@@ -48,10 +48,15 @@ private enum CallState661 { case departed, alongside, next, scheduled }
 private struct PortCall_661: Identifiable {
     let id = UUID()
     let port: String
+    let unlocode: String           // raw UN/LOCODE for the catalog lookup
     let codeLine: String
     let pill: String
     let offset: String
     let state: CallState661
+    /// Real catalog coordinate (PortDirectory.find(unlocode:)) — nil when the
+    /// call's UN/LOCODE is not in the NGA Pub 150 directory; such calls stay in
+    /// the schedule list but are SKIPPED from the map (no fabricated point).
+    let coord: HereLatLng?
 }
 
 // MARK: - ONE live tick (the fusion source · WS_EVENTS.PORT_CALL_TICK)
@@ -82,6 +87,43 @@ private final class RotationVM_661: ObservableObject {
     @Published var calls: [PortCall_661] = []
 
     private var streamTask: Task<Void, Never>?
+
+    // MARK: derived map state — port pins + call sequence (real catalog coords)
+
+    /// Calls that resolved to a real PortDirectory coordinate, IN ROTATION ORDER.
+    /// Calls whose UN/LOCODE is not in the catalog are dropped here (skipped from
+    /// the map) but stay in `calls` for the schedule list.
+    var mappableCalls: [PortCall_661] { calls.filter { $0.coord != nil } }
+
+    /// True when at least one port call resolved to a catalog coordinate.
+    var hasMappablePorts: Bool { mappableCalls.contains { $0.coord != nil } }
+
+    /// Map camera center = mean of the resolved port coordinates (the rotation's
+    /// geographic centroid). nil ⇒ nothing to frame.
+    var mapCenter: HereLatLng? {
+        let pts = mappableCalls.compactMap { $0.coord }
+        guard !pts.isEmpty else { return nil }
+        let lat = pts.map(\.lat).reduce(0, +) / Double(pts.count)
+        let lng = pts.map(\.lng).reduce(0, +) / Double(pts.count)
+        return HereLatLng(lat, lng)
+    }
+
+    /// Ocean-register zoom from the resolved-port coordinate spread. Wider spread
+    /// ⇒ lower zoom. Coarse buckets matched to the great-circle register.
+    var mapZoom: Int {
+        let pts = mappableCalls.compactMap { $0.coord }
+        guard pts.count > 1 else { return 6 }
+        let latSpan = (pts.map(\.lat).max() ?? 0) - (pts.map(\.lat).min() ?? 0)
+        let lngSpan = (pts.map(\.lng).max() ?? 0) - (pts.map(\.lng).min() ?? 0)
+        let span = max(latSpan, lngSpan)
+        switch span {
+        case ..<2:    return 7
+        case ..<6:    return 6
+        case ..<14:   return 5
+        case ..<30:   return 4
+        default:      return 3
+        }
+    }
 
     // MARK: live tick — closes the AIS distance to the loaded next call.
     func startStream() {
@@ -158,12 +200,22 @@ private final class RotationVM_661: ObservableObject {
                     : alongside ? "ALONGSIDE"
                     : (state == .next ? "NEXT" : "SCHEDULED")
 
+                // Resolve UN/LOCODE → real coordinate via the SAME catalog
+                // Vessel 660/003 use (PortDirectory.find(unlocode:) — NGA Pub 150).
+                // Calls whose code is not in the directory carry coord == nil and
+                // are skipped from the map below; they remain in the schedule list.
+                let geo: HereLatLng? = (c.unlocode.flatMap { uc in
+                    PortDirectory.find(unlocode: uc.uppercased())
+                }).map { HereLatLng($0.lat, $0.lng) }
+
                 mapped.append(PortCall_661(
                     port: port,
+                    unlocode: code,
                     codeLine: timeLine,
                     pill: pill,
                     offset: Self.dayOffset(arrival: c.arrivalTime, departure: c.departureTime),
-                    state: state))
+                    state: state,
+                    coord: geo))
             }
 
             calls = mapped
@@ -234,6 +286,7 @@ struct VesselPortCallsScreen: View {
 
 private struct VesselPortCallsBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var vm = RotationVM_661()
 
     var body: some View {
@@ -252,6 +305,7 @@ private struct VesselPortCallsBody: View {
                                    subtitle: "getVesselPortCalls returned no AIS port-call history for this rotation. Nothing to plot, no fabricated calls.")
                 } else {
                     rotationHero
+                    rotationMap
                     scheduleList
                     esangCard
                     ctaRow
@@ -325,6 +379,82 @@ private struct VesselPortCallsBody: View {
         .padding(18)
         .background(RoundedRectangle(cornerRadius: 18).fill(palette.bgCard))
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
+    }
+
+    // MARK: ROTATION MAP · UN/LOCODE → catalog coordinate (ocean register)
+    //
+    // Each port call's UN/LOCODE is resolved to a REAL coordinate via
+    // PortDirectory.find(unlocode:) (NGA Pub 150, the SAME catalog Vessel 660/003
+    // use). Resolved ports plot as hollow port pins on the .ocean great-circle
+    // register, joined IN ROTATION ORDER by a call-sequence polyline. Calls whose
+    // code is not in the directory are skipped from the map (no fabricated point);
+    // they still appear in the schedule list below. If NONE resolve, an honest
+    // "no catalog coordinates" note replaces the canvas — never a blank/faked map.
+    @ViewBuilder private var rotationMap: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("ROTATION MAP · UN/LOCODE → PORT DIRECTORY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 8)
+                Text("\(vm.mappableCalls.count)/\(vm.calls.count) plotted")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.bottom, 10)
+
+            if let center = vm.mapCenter, vm.hasMappablePorts {
+                BespokeMapCanvas(
+                    center: center,
+                    zoom: vm.mapZoom,
+                    interactive: true,
+                    tilt: 0,
+                    isDark: colorScheme == .dark,
+                    layers: rotationLayers,
+                    style: .ocean,
+                    onSelectMarker: { _ in }     // informational pins — no handler nav
+                )
+                .frame(height: 230)
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+            } else {
+                // Every call's UN/LOCODE missing from the catalog — honest note.
+                VStack(spacing: 6) {
+                    Image(systemName: "mappin.slash")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                    Text("No catalog coordinates")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("None of these UN/LOCODEs are in the PortDirectory catalog — nothing to plot, no fabricated pins.")
+                        .font(.system(size: 11))
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 28).padding(.horizontal, 16)
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(palette.bgCard))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(palette.borderFaint))
+            }
+        }
+    }
+
+    /// Ocean-register layers: the call-sequence polyline (resolved ports, in
+    /// rotation order) + hollow port pins. Departed calls render as the grey
+    /// `.delivery` ring; active / upcoming calls as the primary `.pickup` ring.
+    private var rotationLayers: [HereMapLayer] {
+        let line = vm.mappableCalls.compactMap { $0.coord }
+        var layers: [HereMapLayer] = []
+        if line.count >= 2 {
+            layers.append(.route(polyline: line, colorHex: "#1473FF"))
+        }
+        layers.append(.markers(vm.mappableCalls.compactMap { call in
+            guard let at = call.coord else { return nil }
+            let kind: HereMarker.Kind = (call.state == .departed) ? .delivery : .pickup
+            return HereMarker(at: at, kind: kind, label: call.port, id: call.unlocode)
+        }))
+        return layers
     }
 
     // MARK: CALL SCHEDULE · GEOFENCE-DRIVEN STATUS

@@ -232,6 +232,7 @@ struct CatalystMatchDetail: View {
     @ViewBuilder
     private func detailCards(for detail: LoadsAPI.LoadDetail) -> some View {
         metricsRow(detail)
+        routeMapCard(detail)
         scheduleCard(detail)
         cargoCard(detail)
         spectraMatchCard(detail)
@@ -317,6 +318,108 @@ struct CatalystMatchDetail: View {
                 .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Route preview (in-house HERE)
+    //
+    // Origin → destination route-preview on the OMV vector renderer
+    // (HereLiveMapView, `.shipperTracking` watcher add-ons — weather +
+    // traffic + ad-zones, no driver gamification fan-out). Coords bind
+    // ONLY to the REAL `pickupLocation.lat/.lng` + `deliveryLocation
+    // .lat/.lng` the same `loads.getById` envelope carries (the
+    // `LoadCityState.lat/lng` slots the server self-heals via HERE
+    // geocode, EusoTripAPI.swift:1219-1220 / loads.ts self-heal
+    // 175-206). Identical lane-resolution to the sibling
+    // 305_CatalystLoadDetail.routeMapCard — same store, same proc,
+    // same fields.
+    //
+    // Driver 013 coord gate (`laneCoords` → nil on any zero/nil
+    // endpoint): when this match's load has only city names and no
+    // geocoded fix, honest-skip to a neutral "Route loading…"
+    // placeholder. Never geocode a place name client-side; never
+    // frame on null island.
+    @ViewBuilder
+    private func routeMapCard(_ l: LoadsAPI.LoadDetail) -> some View {
+        if let coords = laneCoords(l) {
+            let midLat = (coords.pickupLat + coords.deliveryLat) / 2
+            let midLng = (coords.pickupLng + coords.deliveryLng) / 2
+            HereLiveMapView(
+                center: .init(midLat, midLng),
+                zoom: 6,
+                route: [
+                    .init(coords.pickupLat, coords.pickupLng),
+                    .init(coords.deliveryLat, coords.deliveryLng)
+                ],
+                baseLayers: [
+                    .route(
+                        polyline: [
+                            .init(coords.pickupLat, coords.pickupLng),
+                            .init(coords.deliveryLat, coords.deliveryLng)
+                        ],
+                        colorHex: "#1473FF"
+                    ),
+                    .markers([
+                        .init(at: .init(coords.pickupLat, coords.pickupLng),
+                              kind: .pickup, label: coords.originTitle),
+                        .init(at: .init(coords.deliveryLat, coords.deliveryLng),
+                              kind: .delivery, label: coords.destinationTitle)
+                    ])
+                ],
+                addOns: .shipperTracking
+            )
+            .frame(height: 200)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .accessibilityLabel("Match route preview, \(coords.originTitle) to \(coords.destinationTitle)")
+        } else {
+            // Coord gate (Driver 013 pattern): no real fix on one or
+            // both endpoints yet (match load carries only city names) —
+            // neutral placeholder, never a demo route, never a
+            // client-side geocode of the city string.
+            Rectangle()
+                .fill(palette.bgCard)
+                .frame(height: 200)
+                .overlay(
+                    VStack(spacing: 6) {
+                        Image(systemName: "map")
+                            .font(.system(size: 18, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                        Text("Route loading…")
+                            .font(.system(size: 11, weight: .heavy))
+                            .tracking(0.8)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+        }
+    }
+
+    /// Resolves the match load's REAL pickup → delivery coordinates off
+    /// the `loads.getById` envelope (`pickupLocation.lat/.lng` +
+    /// `deliveryLocation.lat/.lng`). Returns nil (→ honest-skip) when
+    /// either endpoint hasn't been geocoded yet — the exact gate
+    /// 305_CatalystLoadDetail.laneCoords uses (non-nil + non-zero on
+    /// both lat/lng). No fabrication, no place-name geocoding.
+    private func laneCoords(_ l: LoadsAPI.LoadDetail)
+        -> (pickupLat: Double, pickupLng: Double,
+            deliveryLat: Double, deliveryLng: Double,
+            originTitle: String, destinationTitle: String)? {
+        guard let p = l.pickupLocation,
+              let d = l.deliveryLocation,
+              let pLat = p.lat, let pLng = p.lng,
+              let dLat = d.lat, let dLng = d.lng,
+              !(pLat == 0 && pLng == 0),
+              !(dLat == 0 && dLng == 0) else { return nil }
+        let origin = p.cityState.isEmpty ? "Origin" : p.cityState
+        let dest = d.cityState.isEmpty ? "Dest" : d.cityState
+        return (pLat, pLng, dLat, dLng, origin, dest)
     }
 
     /// Pickup / delivery / bidding-ends. Em-dash on missing columns

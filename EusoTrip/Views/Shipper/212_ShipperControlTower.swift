@@ -59,6 +59,39 @@ final class ControlTowerStore: ObservableObject {
 
     @Published private(set) var state: LoadState = .loading
 
+    /// Per-load pickup positions for the hero map. Sourced from the
+    /// real `controlTower.getActivePositions` proc, which surfaces the
+    /// `loads.pickupLocation` lat/lng JSON column already persisted in
+    /// the DB (the SAME coords `loads.list` ships to the Catalyst
+    /// dispatch board). The `overview` proc only returns COUNTS, so
+    /// before this the hero map had no markers to draw. Null-island
+    /// loads are gated out server-side AND below.
+    @Published private(set) var positions: [ActiveLoadPosition] = []
+
+    /// One active-load map position. Mirrors the
+    /// `controlTower.getActivePositions` row shape. `lat`/`lng` come
+    /// straight off `loads.pickupLocation` (real geocoded DB coords).
+    struct ActiveLoadPosition: Decodable, Identifiable, Hashable {
+        let id: Int
+        let loadNumber: String?
+        let status: String?
+        let mode: String?
+        let lat: Double
+        let lng: Double
+
+        /// Null-island gate (013:427 doctrine) — a load whose pickup is
+        /// (0,0) is un-geocoded; drop it rather than frame the Atlantic.
+        var fix: HereLatLng? {
+            guard !(lat == 0 && lng == 0) else { return nil }
+            return HereLatLng(lat, lng)
+        }
+    }
+
+    private struct ActivePositionsEnvelope: Decodable {
+        let positions: [ActiveLoadPosition]
+        let total: Int
+    }
+
     private let api: EusoTripAPI
 
     init(api: EusoTripAPI = .shared) {
@@ -68,10 +101,22 @@ final class ControlTowerStore: ObservableObject {
     func refresh() async {
         if case .loaded = state {} else { state = .loading }
         do {
+            struct PositionsInput: Encodable { let limit: Int }
             async let o   = api.controlTower.overview()
             async let exc = api.controlTower.exceptions(limit: 50)
             async let act = api.controlTower.recentActivity(limit: 30)
-            let (overview, exceptions, activity) = try await (o, exc, act)
+            // Per-load map coords from the real getActivePositions proc
+            // (loads.pickupLocation lat/lng). Failure here must NOT take
+            // down the whole dashboard — the counts/exceptions/activity
+            // remain the source of truth, so we degrade the map to its
+            // CONUS-framed empty state instead of erroring the screen.
+            async let pos = (try? api.query(
+                "controlTower.getActivePositions",
+                input: PositionsInput(limit: 200)
+            ) as ActivePositionsEnvelope)
+            let (overview, exceptions, activity, envelope) = try await (o, exc, act, pos)
+
+            positions = (envelope?.positions ?? []).filter { $0.fix != nil }
 
             let allZero =
                 overview.total.active == 0 &&
@@ -267,14 +312,28 @@ struct ShipperControlTower: View {
             // in dark.
             // 2026-06-01 (D-maps-basemap): the bespoke canvas now paints an
             // abstract land basemap UNDER any data, so this CONUS situational
-            // view reads as a real map instead of a blank panel. The
-            // `controlTower.overview` proc carries only per-mode COUNTS (no
-            // per-load lat/lng), so we honestly frame CONUS and add no
-            // fabricated pins; live pucks land when a coords endpoint ships.
-            HereLiveMapView(center: .init(39.5, -98.35), zoom: 4, addOns: .shipperTracking)
+            // view reads as a real map instead of a blank panel.
+            // 2026-06-05 (D-maps-positions): the hero map is now FED real
+            // per-load markers. `controlTower.getActivePositions` returns
+            // the active loads' pickup lat/lng straight off the
+            // `loads.pickupLocation` JSON column (the SAME coords the
+            // Catalyst dispatch board draws from `loads.list`). Null-island
+            // (0,0) loads are gated out server-side AND in the store, so
+            // every pin is a real geocoded pickup. Pins carry the load `id`
+            // so a tap routes through `onSelectMarker` → opens load detail.
+            // When there are genuinely no geocoded active loads the map
+            // honestly frames CONUS with zero pins (no fabricated points).
+            HereLiveMapView(
+                center: mapCenter,
+                zoom: mapZoom,
+                route: [],
+                baseLayers: loadMarkerLayers,
+                addOns: .shipperTracking,
+                onSelectMarker: { loadId in openLoad(loadId) }
+            )
                 .frame(height: 380)
                 .clipped()
-                .accessibilityLabel("Live load map, \(overview.total.active) active loads")
+                .accessibilityLabel("Live load map, \(overview.total.active) active loads, \(store.positions.count) plotted")
 
             VStack(alignment: .leading, spacing: Space.s3) {
                 modeFilterChips(overview: overview)
@@ -283,6 +342,54 @@ struct ShipperControlTower: View {
             .padding(.horizontal, Space.s3)
             .padding(.top, 10)
         }
+    }
+
+    // MARK: Map data plumbing (real loads.pickupLocation coords)
+
+    /// The base-layer markers fed into the hero map — one `.pickup` pin
+    /// per active load, positioned by the real `loads.pickupLocation`
+    /// lat/lng (`controlTower.getActivePositions`). Each pin carries the
+    /// load `id` so its tap routes through `onSelectMarker` → load detail.
+    /// Empty array ⇒ the map honestly frames CONUS with no pins.
+    private var loadMarkerLayers: [HereMapLayer] {
+        let markers: [HereMarker] = store.positions.compactMap { p in
+            guard let fix = p.fix else { return nil }
+            return HereMarker(
+                at: fix,
+                kind: .pickup,
+                label: p.loadNumber ?? "LD-\(p.id)",
+                id: String(p.id)
+            )
+        }
+        guard !markers.isEmpty else { return [] }
+        return [.markers(markers)]
+    }
+
+    /// Frame the lane spread: centroid of the plotted pickups when we
+    /// have real coords, else honest CONUS center. No fabricated points
+    /// ever feed this — an empty `positions` list keeps the wide view.
+    private var mapCenter: HereLatLng {
+        let fixes = store.positions.compactMap { $0.fix }
+        guard !fixes.isEmpty else { return HereLatLng(39.5, -98.35) }
+        let lat = fixes.map(\.lat).reduce(0, +) / Double(fixes.count)
+        let lng = fixes.map(\.lng).reduce(0, +) / Double(fixes.count)
+        return HereLatLng(lat, lng)
+    }
+
+    /// Tighten the zoom once there are pins to look at; stay wide (CONUS)
+    /// when the board is empty so the situational view still reads as a map.
+    private var mapZoom: Int {
+        store.positions.isEmpty ? 4 : 5
+    }
+
+    /// Tap on a load pin → open that load's detail (205), mirroring the
+    /// exception-row hand-off. `id` is the loads.id String the marker carries.
+    private func openLoad(_ loadId: String) {
+        guard let rowId = Int(loadId) else { return }
+        NotificationCenter.default.post(
+            name: .eusoShipperLoadOpen, object: nil,
+            userInfo: ["loadId": rowId]
+        )
     }
 
     @ViewBuilder

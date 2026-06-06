@@ -12,6 +12,21 @@
 //    intermodal.recordTransfer  (EXISTS intermodal.ts:235)  → CTA action
 //    intermodal.advanceSegment  (EXISTS intermodal.ts:198)  → segment cursor advance
 //
+//  Transfer-node map (RAIL .standard board):
+//    Each transfer's `location` is a REAL JSON coord column on
+//    `intermodal_transfers` (drizzle schema: `location json $type<{lat,lng,
+//    description?}>`), written by `recordTransfer` (intermodal.ts:243 input
+//    `{ lat, lng, description? }`) and returned VERBATIM by `getTransfers`
+//    (intermodal.ts:382 `select().from(intermodalTransfers)` = all columns).
+//    We decode `location.lat/lng`, render the modal-interchange node(s) as
+//    pins + draw the rail/dray legs (consecutive transfer nodes joined in
+//    chain order) on BespokeMapCanvas tilt:0 / style:.auto (RAIL has no
+//    dedicated register → standard flat board, same as Rail 628). No fabricated
+//    points: gated on a real `location` coord; honest "awaiting coordinates"
+//    state when no transfer carries one (the table is currently unpopulated —
+//    the seam is wired end-to-end and lights up the moment a transfer is
+//    recorded with a location).
+//
 
 import SwiftUI
 
@@ -34,6 +49,16 @@ struct RailIntermodalTransferScreen: View {
 
 // MARK: - Data shapes
 
+/// Real transfer-node coordinate. Mirrors the `location` JSON column on
+/// `intermodal_transfers` (drizzle: `$type<{ lat: number; lng: number;
+/// description?: string }>`). `getTransfers` returns it verbatim; `recordTransfer`
+/// writes it. NOT geocoded — the catalog/recorded coordinate of the ramp/yard.
+private struct TransferNodeGeo566: Decodable, Hashable {
+    let lat: Double?
+    let lng: Double?
+    let description: String?
+}
+
 private struct IntermodalTransfer566: Decodable, Identifiable {
     let id: Int
     let containerNumber: String?
@@ -43,18 +68,33 @@ private struct IntermodalTransfer566: Decodable, Identifiable {
     let totalSegments: Int?
     let facilityName: String?
     let facilityType: String?           // "rail_yard" | "ramp" | "depot"
-    let location: String?
+    let location: TransferNodeGeo566?   // REAL coord JSON {lat,lng,description?} (intermodal_transfers.location)
     let transferCost: Double?
     let notes: String?
     let status: String?                 // "completed" | "active" | "queued"
     let timestamp: String?
     let transferTimeMinutes: Double?
+
+    /// The recorded node coordinate, gated against null-island (never frame on 0,0).
+    var nodeFix: HereLatLng? {
+        guard let lat = location?.lat, let lng = location?.lng,
+              !(lat == 0 && lng == 0) else { return nil }
+        return HereLatLng(lat, lng)
+    }
+
+    /// Human label for the node text sites (was the old `location` string) —
+    /// the recorded `description`, falling back to facility name.
+    var locationLabel: String? {
+        if let d = location?.description, !d.isEmpty { return d }
+        return facilityName
+    }
 }
 
 // MARK: - Body
 
 private struct RailIntermodalTransferBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
     let shipmentId: Int
 
     @State private var transfers: [IntermodalTransfer566] = []
@@ -78,6 +118,36 @@ private struct RailIntermodalTransferBody: View {
         guard !times.isEmpty else { return "-" }
         let avg = times.reduce(0, +) / Double(times.count)
         return "\(Int(avg))m"
+    }
+
+    // MARK: Map (real transfer-node coordinates)
+
+    /// Transfers whose recorded `location` carries a real (non-null-island)
+    /// coordinate — the ONLY rows we plot. Chain order = oldest→newest so the
+    /// drawn legs read pickup → interchange → drayage. `getTransfers` returns
+    /// `desc(id)`, so reverse to chronological for the leg polyline.
+    private var mappableTransfers: [IntermodalTransfer566] {
+        Array(transfers.filter { $0.nodeFix != nil }.reversed())
+    }
+
+    /// Camera center = centroid of the real node coordinates (no fabrication).
+    private var mapCenter: HereLatLng {
+        let fixes = mappableTransfers.compactMap { $0.nodeFix }
+        guard !fixes.isEmpty else { return HereLatLng(39.5, -98.35) }
+        let lat = fixes.reduce(0.0) { $0 + $1.lat } / Double(fixes.count)
+        let lng = fixes.reduce(0.0) { $0 + $1.lng } / Double(fixes.count)
+        return HereLatLng(lat, lng)
+    }
+
+    /// Tight zoom on a single node; wider when legs span the chain.
+    private var mapZoom: Int { mappableTransfers.count <= 1 ? 13 : 7 }
+
+    /// Pin kind per modal-interchange direction (truck side vs rail/vessel side).
+    private func nodeKind(_ t: IntermodalTransfer566) -> HereMarker.Kind {
+        switch (t.transferType ?? "").lowercased() {
+        case "rail_to_vessel", "vessel_to_rail", "truck_to_vessel", "vessel_to_truck": return .delivery
+        default: return .pickup
+        }
     }
 
     private func transferTypeLabel(_ t: IntermodalTransfer566) -> String {
@@ -137,6 +207,7 @@ private struct RailIntermodalTransferBody: View {
                 } else {
                     heroCard
                     kpiStrip
+                    transferMapCard
                     transferList
                     advanceLegRow
                     ctaPair
@@ -260,6 +331,81 @@ private struct RailIntermodalTransferBody: View {
             MetricTile(label: "AVG TIME", value: avgTimeLabel, gradientNumeral: avgTimeLabel != "-")
             MetricTile(label: "PENDING",  value: "\(pendingCount)", accent: pendingCount > 0 ? Brand.warning : nil)
         }
+    }
+
+    // MARK: - Transfer-node map (RAIL .standard board)
+
+    /// Renders the modal-interchange node(s) + the rail/dray legs joining them
+    /// on the in-house BespokeMapCanvas (tilt:0, style:.auto = the flat rail
+    /// board — RAIL has no dedicated register). Every coordinate comes from the
+    /// real `intermodal_transfers.location` JSON column via `getTransfers`; the
+    /// legs are consecutive recorded nodes in chain order. When no transfer
+    /// carries a coordinate yet, an honest "awaiting node coordinates" state
+    /// shows instead of a fabricated map — the decode + map path are present and
+    /// light up the instant a transfer is recorded with a `location`.
+    @ViewBuilder
+    private var transferMapCard: some View {
+        let nodes = mappableTransfers
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("TRANSFER NODES · LIVE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 8)
+                Text(nodes.isEmpty ? "location" : "\(nodes.count) node\(nodes.count == 1 ? "" : "s")")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.bottom, Space.s3)
+
+            if nodes.isEmpty {
+                EusoEmptyState(
+                    systemImage: "mappin.slash",
+                    title: "Awaiting node coordinates",
+                    subtitle: "Transfers recorded with a yard/ramp location plot their interchange node here."
+                )
+            } else {
+                BespokeMapCanvas(
+                    center: mapCenter,
+                    zoom: mapZoom,
+                    interactive: true,
+                    tilt: 0,
+                    isDark: colorScheme == .dark,
+                    layers: mapLayers,
+                    onSelectMarker: { _ in }
+                )
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+            }
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+            .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+    }
+
+    /// Map layers: the rail/dray legs (consecutive recorded nodes, rail blue)
+    /// + a pin per transfer node, each tappable-id'd by transfer id.
+    private var mapLayers: [HereMapLayer] {
+        let nodes = mappableTransfers
+        let leg = nodes.compactMap { $0.nodeFix }
+        var out: [HereMapLayer] = []
+        if leg.count >= 2 {
+            out.append(.route(polyline: leg, colorHex: "#1473FF"))
+        }
+        out.append(.markers(nodes.compactMap { t in
+            guard let fix = t.nodeFix else { return nil }
+            return HereMarker(
+                at: fix,
+                kind: nodeKind(t),
+                label: t.facilityName ?? transferTypeLabel(t),
+                id: "\(t.id)")
+        }))
+        return out
     }
 
     // MARK: - Transfer list

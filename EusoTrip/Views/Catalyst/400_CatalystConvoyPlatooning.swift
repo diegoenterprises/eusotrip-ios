@@ -15,17 +15,34 @@
 //    03 Catalyst/Dark-SVG/400 Catalyst Convoy Platooning.svg
 //
 //  Web peer: /catalyst/dispatch/convoy.
-//  tRPC wiring manifest (line-confirmed on disk this fire) — NONE of these
-//  procedures has a Swift client method in EusoTripAPI yet (grep-verified:
-//  no convoy/platoon surface on CatalystAPI or any client), so per the
-//  house 0%-mock contract the Code/ representative seed figures are kept
-//  and each missing call is flagged with a single WIRE marker below.
-//    • map hero + roster        → convoy.getConvoy            (convoy.ts:135)
-//    • live truck spacing        → convoy.getConvoyPositions   (convoy.ts:173)
+//
+//  LIVE MAP WIRING (this fire — real per-truck GPS, no fabricated coords):
+//    The map hero renders each convoy member as a REAL .truck puck on
+//    HereLiveMapView, sourced one-hop from two procs that EXIST and return
+//    real coordinates off the `location_history` table (convoy router is
+//    mounted as `convoy:` at server/routers.ts:2122):
+//      1. convoy.getActiveConvoys {limit}  (convoy.ts:705) → the active
+//         convoy row → its `id` (convoyId) + loadId + lead/load/rear userIds
+//         + currentLead/RearDistance. No coord-by-name needed; this yields
+//         the convoyId the position feed keys on.
+//      2. convoy.getConvoyPositions {convoyId} (convoy.ts:173) → REAL
+//         positions:[{userId, role:"lead"|"load"|"rear", lat, lng, speed,
+//         heading, timestamp}] selected from location_history.latitude/
+//         longitude (convoy.ts:191-192), plus leadDistance/rearDistance the
+//         server computes via haversine. EACH lat/lng is a real GPS fix —
+//         the same kind of feed §375/§376 read via catalysts.getMyDrivers
+//         "lat,lng", but here convoy-native (lead/load/rear formation).
+//    Every fix is coord-gated (!(lat==0 && lng==0)); no active convoy or no
+//    parseable position ⇒ honest "awaiting convoy position feed" placeholder,
+//    never a hand-drawn route. The puck id is the member userId → tap routes
+//    to that member.
+//
+//  Still WIRE-flagged (no coord dependency; not part of the map build):
 //    • rear-gap alert            → convoy.getConvoyAlerts      (convoy.ts:601)
 //    • "Optimize spacing" CTA    → convoy.optimizeConvoyRoute  (convoy.ts:325)
-//                                  + convoy.predictOptimalSpacing (convoy.ts:493)
 //    • "Pause convoy" CTA        → convoy.updateConvoyStatus   (convoy.ts:218)
+//  The fuel-save / draft-time figures have NO DB column (no coordinate
+//  source) — they stay representative labels, clearly NOT coordinate data.
 //  RBAC write gate catalystProcedure (_core/trpc.ts:150). transportMode=truck; US lane.
 //  Persona: Eusotrans LLC · Michael Eusorone lead unit 142 · USDOT 3 194 882.
 //
@@ -88,8 +105,8 @@ private struct ConvoyVM_400 {
     let fuelSaveBadge: String       // "−9.4% FUEL"
     let fuelSave: String            // "−9.4%"
     let fuelSaveSub: String         // "$0.21/mi"
-    let meanGap: String             // "1,465"
-    let meanGapSub: String          // "feet · target 1,400"
+    var meanGap: String             // "1,465" — overwritten with real separation
+    var meanGapSub: String          // "feet · target 1,400"
     let draftTime: String           // "2h 14m"
     let draftSub: String            // "linked · 138 mi left"
     let units: [ConvoyUnit_400]
@@ -97,9 +114,12 @@ private struct ConvoyVM_400 {
     let alertSub: String            // "Auto-optimize recovers the −11% draft savings"
 }
 
-// Representative seed mirrors the SVG verbatim. House 0%-mock: these are
-// overwritten on hydrate once a convoy client lands; until then they are
-// the canonical figures from the Code/ spec (no fabrication).
+// Representative seed mirrors the SVG verbatim. The fuel-save / draft-time /
+// roster spec strings have NO coordinate or DB source, so they remain the
+// canonical Code/ labels (clearly NOT coordinate data). The LIVE map hero is
+// driven entirely by real GPS from convoy.getConvoyPositions — never from
+// this seed. The lane/distance lines are overwritten with real separation
+// distances on hydrate where the server returns them.
 private let convoySeed_400 = ConvoyVM_400(
     lane: "I-10 W · 62 mph", fuelSaveBadge: "−9.4% FUEL",
     fuelSave: "−9.4%", fuelSaveSub: "$0.21/mi",
@@ -128,16 +148,110 @@ extension Notification.Name {
     static let eusoCatalystConvoyAlert_400    = Notification.Name("eusoCatalystConvoyAlert")
 }
 
+// MARK: - Wire models (exact convoy.getActiveConvoys / getConvoyPositions shapes)
+
+/// Mirrors a `convoy.getActiveConvoys` row (convoy.ts:711-721). Carries the
+/// convoyId the position feed keys on + the lead/load/rear userIds and the
+/// server's last-known separation distances (meters).
+private struct ActiveConvoyRow_400: Decodable, Identifiable, Hashable {
+    let id: Int
+    let loadId: Int?
+    let status: String
+    let leadUserId: Int?
+    let loadUserId: Int?
+    let rearUserId: Int?
+    let currentLeadDistance: Double?
+    let currentRearDistance: Double?
+    let startedAt: String?
+}
+
+/// Mirrors one entry of `convoy.getConvoyPositions.positions` (convoy.ts:188-196).
+/// `lat`/`lng` are REAL fixes selected from location_history.latitude/longitude.
+private struct ConvoyPosition_400: Decodable, Identifiable, Hashable {
+    let userId: Int
+    let role: String          // "lead" | "load" | "rear"
+    let lat: Double
+    let lng: Double
+    let speed: Double?
+    let heading: Double?
+    let timestamp: String?
+    var id: Int { userId }
+}
+
+/// Mirrors the `convoy.getConvoyPositions` envelope (convoy.ts:214).
+private struct ConvoyPositions_400: Decodable, Hashable {
+    let convoyId: Int
+    let positions: [ConvoyPosition_400]
+    let leadDistance: Double?
+    let rearDistance: Double?
+    let status: String
+}
+
+private struct ConvoyLimitInput_400: Encodable { let limit: Int }
+private struct ConvoyIdInput_400: Encodable { let convoyId: Int }
+
 // MARK: - Body
 
 private struct ConvoyBody_400: View {
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var scheme
 
-    // House 0%-mock seed; reload() overwrites once a convoy client exists.
+    // Representative labels seed (non-coordinate spec text); reload() refreshes
+    // the distance lines from real separation distances when present.
     @State private var vm: ConvoyVM_400 = convoySeed_400
 
+    // LIVE convoy + real per-truck GPS positions (the map hero source of truth).
+    @State private var activeConvoy: ActiveConvoyRow_400? = nil
+    @State private var positions: [ConvoyPosition_400] = []
+    @State private var mapLoading: Bool = true
+
+    /// Preview-only injection — when set, the body paints the seeded live map
+    /// without a network session (mirrors §375's previewSeed pattern).
+    var previewSeedPositions: [ConvoyPosition_400]? = nil
+    var previewSeedConvoy: ActiveConvoyRow_400? = nil
+
     private var isDark: Bool { scheme == .dark }
+
+    // MARK: Real-coordinate derivations (every fix coord-gated)
+
+    /// A position's real fix, or nil at null island (never frame on 0,0).
+    private func fix(_ p: ConvoyPosition_400) -> HereLatLng? {
+        guard !(p.lat == 0 && p.lng == 0) else { return nil }
+        return HereLatLng(p.lat, p.lng)
+    }
+
+    /// Real fixes ordered nose-to-tail (lead → load → rear) for the polyline.
+    private var orderedFixes: [(role: String, fix: HereLatLng)] {
+        let rank: [String: Int] = ["lead": 0, "load": 1, "rear": 2]
+        return positions
+            .sorted { (rank[$0.role] ?? 9) < (rank[$1.role] ?? 9) }
+            .compactMap { p in fix(p).map { (p.role, $0) } }
+    }
+
+    /// Truck pucks for every real fix; id = userId so a tap routes to that member.
+    private var truckMarkers: [HereMarker] {
+        positions.compactMap { p in
+            guard let f = fix(p) else { return nil }
+            return HereMarker(at: f, kind: .truck, label: roleLabel(p.role), id: String(p.userId))
+        }
+    }
+
+    /// Map center = the load (middle) truck's real fix, else the first real fix.
+    private var mapCenter: HereLatLng? {
+        if let load = positions.first(where: { $0.role == "load" }), let f = fix(load) { return f }
+        return orderedFixes.first?.fix
+    }
+
+    private func roleLabel(_ role: String) -> String {
+        switch role {
+        case "lead": return "LEAD"
+        case "load": return "DRAFTING"
+        case "rear": return "REAR"
+        default:     return role.uppercased()
+        }
+    }
+
+    private var hasLiveFormation: Bool { mapCenter != nil && !truckMarkers.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -187,82 +301,110 @@ private struct ConvoyBody_400: View {
         .padding(.horizontal, Space.s5).padding(.top, Space.s5).padding(.bottom, Space.s3)
     }
 
-    // MARK: Map hero — live platoon spacing
+    // MARK: Map hero — LIVE platoon formation on the in-house HERE basemap
+    //
+    // Replaces the prior hand-drawn Path/.position() schematic entirely. Each
+    // .truck puck sits on a REAL location_history fix from
+    // convoy.getConvoyPositions; the nose-to-tail polyline links the ordered
+    // lead → load → rear fixes. tilt==0 register ⇒ flat catalyst board (the
+    // dispatcher's overhead formation view, not the driver first-person lane).
 
+    @ViewBuilder
     private var mapHero: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(LinearGradient.diagonal)
-            GeometryReader { geo in
-                let w = geo.size.width
-                let h = geo.size.height
-                ZStack {
-                    RoundedRectangle(cornerRadius: Radius.xl - 1.5, style: .continuous)
-                        .fill(isDark ? Color(hex: 0x10141B) : Color(hex: 0xDDE5EF))
-                    // faint cross road
-                    Path { p in
-                        p.move(to: CGPoint(x: 0, y: h * 0.30))
-                        p.addLine(to: CGPoint(x: w, y: h * 0.40))
+        if let center = mapCenter {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).fill(LinearGradient.diagonal)
+                HereLiveMapView(
+                    center: center,
+                    zoom: 9,
+                    interactive: true,
+                    route: orderedFixes.map { $0.fix },
+                    baseLayers: convoyMapLayers,
+                    addOns: .shipperTracking,
+                    showTicker: false,
+                    onSelectMarker: { userId in
+                        // Tap a member puck → open that member's dispatch detail.
+                        NotificationCenter.default.post(
+                            name: .eusoCatalystConvoyAlert_400, object: nil,
+                            userInfo: ["source": "400_CatalystConvoyPlatooning", "memberUserId": userId])
                     }
-                    .stroke(isDark ? Color(hex: 0x222A35) : Color(hex: 0xC7D2E0),
-                            style: StrokeStyle(lineWidth: 7, lineCap: .round))
-                    // primary route I-10
-                    Path { p in
-                        p.move(to: CGPoint(x: w * 0.10, y: h * 0.88))
-                        p.addCurve(to: CGPoint(x: w * 0.93, y: h * 0.18),
-                                   control1: CGPoint(x: w * 0.34, y: h * 0.76),
-                                   control2: CGPoint(x: w * 0.62, y: h * 0.44))
-                    }
-                    .stroke(LinearGradient.primary, style: StrokeStyle(lineWidth: 9, lineCap: .round))
-                    Path { p in
-                        p.move(to: CGPoint(x: w * 0.10, y: h * 0.88))
-                        p.addCurve(to: CGPoint(x: w * 0.93, y: h * 0.18),
-                                   control1: CGPoint(x: w * 0.34, y: h * 0.76),
-                                   control2: CGPoint(x: w * 0.62, y: h * 0.44))
-                    }
-                    .stroke(.white, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [2, 8]))
-                    // gap callouts
-                    Text("1,510 ft").font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(palette.textSecondary)
-                        .position(x: w * 0.40, y: h * 0.68)
-                    Text("1,420 ft").font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(palette.textSecondary)
-                        .position(x: w * 0.66, y: h * 0.48)
-                    // truck markers: rear, middle, lead along the route
-                    truckMarker(.rear).position(x: w * 0.26, y: h * 0.78)
-                    truckMarker(.middle).position(x: w * 0.55, y: h * 0.59)
-                    truckMarker(.lead).position(x: w * 0.82, y: h * 0.30)
-                    // overlays
-                    VStack {
-                        HStack(alignment: .top) {
-                            Text(vm.lane).font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(Color(hex: 0x0D1117))
-                                .padding(.horizontal, 12).padding(.vertical, 6)
-                                .background(Capsule().fill(.white.opacity(0.92)))
-                            Spacer()
-                            Text(vm.fuelSaveBadge)
-                                .font(.system(size: 14, weight: .heavy).monospacedDigit())
-                                .foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 6)
-                                .background(Capsule().fill(Brand.success))
-                        }
-                        Spacer()
-                    }.padding(14)
-                }
+                )
                 .clipShape(RoundedRectangle(cornerRadius: Radius.xl - 1.5, style: .continuous))
                 .padding(1.5)
+                // overlays — lane label + fuel-save badge (representative labels,
+                // NOT coordinate data; the formation itself is the real read)
+                VStack {
+                    HStack(alignment: .top) {
+                        Text(vm.lane).font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color(hex: 0x0D1117))
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Capsule().fill(.white.opacity(0.92)))
+                        Spacer()
+                        Text(vm.fuelSaveBadge)
+                            .font(.system(size: 14, weight: .heavy).monospacedDigit())
+                            .foregroundStyle(.white).padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Capsule().fill(Brand.success))
+                    }
+                    Spacer()
+                    HStack {
+                        Spacer()
+                        Text("LIVE · \(truckMarkers.count)/3 GPS · convoy.getConvoyPositions")
+                            .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Capsule().fill(Color.black.opacity(0.42)))
+                    }
+                }.padding(14)
             }
+            .frame(height: 216)
+        } else {
+            convoyMapPlaceholder
         }
-        .frame(height: 216)
     }
 
-    private func truckMarker(_ role: ConvoyRole_400) -> some View {
-        let stroke: Color = role == .lead ? .clear : (role == .rear ? Brand.warning : Brand.blue)
-        return ZStack {
-            Circle().fill(role == .lead ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Color.white))
-                .overlay(Circle().strokeBorder(stroke, lineWidth: 2.4))
-            Image(systemName: "box.truck.fill").font(.system(size: 11))
-                .foregroundStyle(role == .lead ? Color.white : (role == .rear ? Brand.warning : Brand.blue))
+    /// Real-coordinate map layers: nose-to-tail polyline over the ordered fixes
+    /// + a .truck puck per member. Empty when no real fix resolves.
+    private var convoyMapLayers: [HereMapLayer] {
+        var layers: [HereMapLayer] = []
+        let line = orderedFixes.map { $0.fix }
+        if line.count >= 2 {
+            layers.append(.route(polyline: line, colorHex: "#1473FF"))
         }
-        .frame(width: role == .lead ? 28 : 26, height: role == .lead ? 28 : 26)
+        if !truckMarkers.isEmpty {
+            layers.append(.markers(truckMarkers))
+        }
+        return layers
+    }
+
+    /// Honest empty state — no active convoy or no parseable GPS fix yet.
+    /// Never a fabricated route; the map only draws on real coordinates.
+    private var convoyMapPlaceholder: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                .fill(isDark ? Color(hex: 0x10141B) : Color(hex: 0xDDE5EF))
+            VStack(spacing: 8) {
+                Image(systemName: mapLoading ? "dot.radiowaves.left.and.right" : "map")
+                    .font(.system(size: 26, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(mapLoading ? "Locating convoy formation…" : "Awaiting convoy position feed")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Text(mapLoading
+                     ? "convoy.getConvoyPositions · location_history heartbeat"
+                     : "No active convoy with a live GPS fix · pucks draw on real coordinates only")
+                    .font(.system(size: 10))
+                    .foregroundStyle(palette.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2).minimumScaleFactor(0.75)
+            }
+            .padding(.horizontal, 24)
+        }
+        .frame(height: 216)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+        .redacted(reason: mapLoading ? .placeholder : [])
     }
 
     // MARK: Metric band
@@ -419,24 +561,122 @@ private struct ConvoyBody_400: View {
 
     // MARK: Network
     //
-    // No convoy/platoon client exists on EusoTripAPI yet (grep-verified this
-    // fire). When the convoy router lands a Swift client, hydrate `vm` here
-    // from convoy.getConvoy + convoy.getConvoyPositions + convoy.getConvoyAlerts.
-    // Until then the canonical Code/ seed stands (house 0%-mock contract).
+    // Live chain (real per-truck GPS, no Swift client needed — EusoTripAPI.query
+    // is generic, same as §375 calling catalysts.getMyDrivers by name):
+    //   convoy.getActiveConvoys {limit} → first active convoy → its id
+    //     → convoy.getConvoyPositions {convoyId} → real lead/load/rear fixes.
+    // The map hero hydrates from `positions`; the distance lines hydrate from
+    // the server's real separation distances where present. The fuel-save /
+    // draft-time labels have no coordinate source and stay representative.
     private func reload() async {
-        // WIRE: convoy.getConvoy (convoy.ts:135) + convoy.getConvoyPositions (convoy.ts:173)
-        // self.vm = <map from envelope>
+        // Preview path — no live session; paint the seeded live formation.
+        if let seed = previewSeedPositions {
+            self.activeConvoy = previewSeedConvoy
+            self.positions = seed
+            self.mapLoading = false
+            applyRealDistances()
+            return
+        }
+
+        mapLoading = true
+        defer { mapLoading = false }
+
+        do {
+            let convoys: [ActiveConvoyRow_400] = try await EusoTripAPI.shared.query(
+                "convoy.getActiveConvoys",
+                input: ConvoyLimitInput_400(limit: 20)
+            )
+            // First active convoy is the platoon subject for this surface.
+            guard let convoy = convoys.first else {
+                self.activeConvoy = nil
+                self.positions = []
+                return
+            }
+            self.activeConvoy = convoy
+
+            let env: ConvoyPositions_400? = try? await EusoTripAPI.shared.query(
+                "convoy.getConvoyPositions",
+                input: ConvoyIdInput_400(convoyId: convoy.id)
+            )
+            self.positions = env?.positions ?? []
+            applyRealDistances(positionEnvelope: env)
+        } catch {
+            // Soft-fail to the honest placeholder; never fabricate a formation.
+            self.activeConvoy = nil
+            self.positions = []
+        }
+    }
+
+    /// Overwrite the mean-gap / draft distance lines with REAL separation
+    /// distances (meters → feet) from the server when available; otherwise the
+    /// representative seed line stands. Coordinate-derived, not fabricated.
+    private func applyRealDistances(positionEnvelope env: ConvoyPositions_400? = nil) {
+        let leadM = env?.leadDistance ?? activeConvoy?.currentLeadDistance
+        let rearM = env?.rearDistance ?? activeConvoy?.currentRearDistance
+        let meters = [leadM, rearM].compactMap { $0 }
+        guard !meters.isEmpty else { return }
+        let meanFeet = (meters.reduce(0, +) / Double(meters.count)) * 3.28084
+        vm.meanGap = numberFmt_400(meanFeet)
+        vm.meanGapSub = "feet · live separation · location_history"
+    }
+
+    private func numberFmt_400(_ v: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: v)) ?? String(Int(v))
+    }
+}
+
+// MARK: - Preview seed (real-shape convoy + lead/load/rear GPS fixes)
+
+/// I-10 W nose-to-tail formation (real-shape positions; preview only). These
+/// mirror the convoy.getConvoyPositions envelope so the live map hero renders
+/// in #Preview without a network session — in the app the SAME shape arrives
+/// from location_history via the proc.
+private let convoyPreviewConvoy_400 = ActiveConvoyRow_400(
+    id: 4001, loadId: 88231, status: "active",
+    leadUserId: 142, loadUserId: 207, rearUserId: 318,
+    currentLeadDistance: 433, currentRearDistance: 460, startedAt: nil
+)
+
+private let convoyPreviewPositions_400: [ConvoyPosition_400] = [
+    ConvoyPosition_400(userId: 142, role: "lead", lat: 29.9012, lng: -95.6210, speed: 62, heading: 250, timestamp: nil),
+    ConvoyPosition_400(userId: 207, role: "load", lat: 29.8771, lng: -95.6602, speed: 61, heading: 250, timestamp: nil),
+    ConvoyPosition_400(userId: 318, role: "rear", lat: 29.8534, lng: -95.6981, speed: 60, heading: 250, timestamp: nil),
+]
+
+@MainActor
+private func convoyPreviewBody_400() -> ConvoyBody_400 {
+    var body = ConvoyBody_400()
+    body.previewSeedConvoy = convoyPreviewConvoy_400
+    body.previewSeedPositions = convoyPreviewPositions_400
+    return body
+}
+
+private struct CatalystConvoyPreview_400: View {
+    let theme: Theme.Palette
+    var body: some View {
+        Shell(theme: theme) {
+            convoyPreviewBody_400()
+        } nav: {
+            BottomNav(
+                leading: catalystNavLeading_400(),
+                trailing: catalystNavTrailing_400(),
+                orbState: .idle
+            )
+        }
     }
 }
 
 // MARK: - Previews
 
 #Preview("400 · Catalyst · Convoy · Night") {
-    CatalystConvoyPlatooningScreen(theme: Theme.dark)
+    CatalystConvoyPreview_400(theme: Theme.dark)
         .preferredColorScheme(.dark)
 }
 
 #Preview("400 · Catalyst · Convoy · Afternoon") {
-    CatalystConvoyPlatooningScreen(theme: Theme.light)
+    CatalystConvoyPreview_400(theme: Theme.light)
         .preferredColorScheme(.light)
 }

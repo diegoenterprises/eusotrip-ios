@@ -31,6 +31,26 @@
 //  marker so the live envelope can replace the seed the moment the client
 //  method lands. NO EusoTripAPI method is called that does not exist.
 //
+//  MAP-COORD INVESTIGATION (2026-06-05): the backhaul/deadhead lanes are
+//  CITY-NAME-ONLY — no endpoint lat/lng is reachable for a HereLiveMapView
+//  route overlay, so this screen is an HONEST-SKIP for the map embed:
+//    • The lane model (`BackhaulMatch_398.lane`) is a display string
+//      ("Dallas TX → Kansas City MO"); it carries no coordinate field.
+//    • The sole backing proc `capacityPlanning.getBackhaulOptimizer`
+//      (capacityPlanning.ts:690) extracts ONLY `$.state`/`$.city` from the
+//      loads JSON and matches by STATE-NAME equality
+//      (`del.deliveryState === pend.pickupState`); its `opportunities[]`
+//      shape returns `fromState`/`toState`/`loadNumber`/`estimatedSavings`
+//      and emits NO lat/lng (the `$.lat`/`$.lng` keys present on the
+//      `loads.pickupLocation`/`deliveryLocation` JSON are never selected).
+//    • No `capacityPlanning` iOS client exists, and `loads.getById`
+//      (LoadDetail) narrows pickup/delivery to {city,state} only — so there
+//      is no in-file path to real endpoint coordinates for these lanes.
+//  Drawing lanes would require (a) editing the proc to return per-load
+//  pickup+delivery coords and rework state-match → geo-match, and (b) a new
+//  capacityPlanning client service — both outside this file's edit scope.
+//  No fabricated/hardcoded coordinates are introduced here.
+//
 //  Bottom nav (Catalyst variant): HOME · DISPATCH · [orb] · WALLET · ME
 //  (DISPATCH current).
 //

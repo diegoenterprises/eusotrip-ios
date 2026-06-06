@@ -71,6 +71,43 @@ private struct BlankSailingDashboard688: Decodable {
     let scheduledVoyages: [VesselVoyage688]?
 }
 
+// MARK: - Port-call UN/LOCODE source (REAL catalog join, not geocoding)
+//
+// `vesselShipments.getVesselSchedules` returns raw `vessel_voyages` rows that
+// carry only the integer `departurePortId`/`arrivalPortId` FKs — NO UN/LOCODE
+// strings — so it can't anchor a port map by itself. The sibling proc
+// `multiModal.getVesselSchedules` (protectedProcedure) DOES join the `ports`
+// table and emits `port.code = ports.unlocode` per row (multiModal.ts:648-653):
+// a real UN/LOCODE pulled straight from the DB. We decode those, resolve each
+// against the static `PortDirectory` (NGA Pub 150 World Port Index) via
+// `find(unlocode:)`, and skip any code not in the catalog. That is a pure
+// catalog lookup — never a place-name geocode and never a hardcoded literal.
+
+/// multiModal.getVesselSchedules → { vessels: [...], total, shippingLines }
+private struct MMSchedulePort688: Decodable, Hashable {
+    let code: String?          // ports.unlocode (e.g. "USLGB", "CNSHA→ catalog-only)
+    let name: String?
+}
+private struct MMScheduleRow688: Decodable, Identifiable, Hashable {
+    let id: String
+    let voyage: String?
+    let service: String?
+    let port: MMSchedulePort688?     // destination port (joined ports row)
+}
+private struct MMScheduleResponse688: Decodable {
+    let vessels: [MMScheduleRow688]?
+}
+
+/// A schedule row whose UN/LOCODE resolved to a real catalog port. Carries the
+/// looked-up coordinate (`PortDirectory.Port`) so the map can pin/leg it.
+private struct ResolvedPortCall688: Identifiable, Hashable {
+    let id: String             // the schedule row id (stable, tappable)
+    let unlocode: String
+    let name: String
+    let lat: Double
+    let lng: Double
+}
+
 // MARK: - Body
 
 private struct VesselSailingScheduleBody: View {
@@ -79,9 +116,13 @@ private struct VesselSailingScheduleBody: View {
     let arrivalPortId: Int
 
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var voyages: [VesselVoyage688] = []
     @State private var blank: BlankSailingDashboard688? = nil
+    /// Schedule rows from `multiModal.getVesselSchedules` carrying real port
+    /// UN/LOCODEs (ports.unlocode). Source for the ocean map's port calls.
+    @State private var scheduleRows: [MMScheduleRow688] = []
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -105,6 +146,34 @@ private struct VesselSailingScheduleBody: View {
 
     private var blankCount: Int { blank?.summary?.cancelledSailings ?? 0 }
 
+    /// REAL port calls for the ocean map: every schedule row's destination
+    /// UN/LOCODE (ports.unlocode, surfaced by multiModal.getVesselSchedules)
+    /// resolved against the static `PortDirectory` catalog via
+    /// `find(unlocode:)`. Rows whose code isn't in the ~50-port catalog are
+    /// SKIPPED (no fabricated coords). Consecutive duplicate ports collapse so
+    /// a string that calls the same port twice doesn't draw a zero-length leg;
+    /// order is preserved so voyage legs read along the service string.
+    private var resolvedPortCalls: [ResolvedPortCall688] {
+        var out: [ResolvedPortCall688] = []
+        for row in scheduleRows {
+            guard let code = row.port?.code, !code.isEmpty,
+                  let p = PortDirectory.find(unlocode: code) else { continue }   // catalog miss → skip
+            if out.last?.unlocode == p.unlocode { continue }                     // collapse consecutive repeat
+            out.append(ResolvedPortCall688(
+                id: row.id, unlocode: p.unlocode, name: p.name, lat: p.lat, lng: p.lng))
+        }
+        return out
+    }
+
+    /// How many schedule rows carried a UN/LOCODE we couldn't resolve in the
+    /// catalog — surfaced honestly in the map caption rather than hidden.
+    private var unresolvedPortCount: Int {
+        scheduleRows.reduce(into: 0) { acc, row in
+            if let code = row.port?.code, !code.isEmpty,
+               PortDirectory.find(unlocode: code) == nil { acc += 1 }
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -123,6 +192,9 @@ private struct VesselSailingScheduleBody: View {
                     .padding(.top, Space.s4)
 
                 ganttSection
+                    .padding(.top, Space.s5)
+
+                sailingMapSection
                     .padding(.top, Space.s5)
 
                 berthStrip
@@ -454,6 +526,100 @@ private struct VesselSailingScheduleBody: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    // MARK: - Sailing / port map (ocean register · real catalog coords)
+    //
+    // Renders the service string as port pins + voyage legs on the bespoke
+    // OCEAN basemap (BespokeMapCanvas style: .ocean — the Vessel 003 great-
+    // circle register: AIS-orb cartography, hollow port pins, latitude grid,
+    // coast hints). Every coordinate is a `PortDirectory` catalog lookup on a
+    // real ports.unlocode from the schedule; ports not in the catalog are
+    // skipped. No geocoding, no hardcoded lat/lng.
+
+    private var sailingMapSection: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("SAILING MAP · PORT CALLS · VOYAGE LEGS")
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+
+            let calls = resolvedPortCalls
+            if calls.count < 1 {
+                // Honest empty/awaiting state: the schedule carried no port
+                // UN/LOCODE that resolves to a catalog coordinate. Never frame
+                // an ocean on null island; show why instead.
+                EusoEmptyState(
+                    icon: Image(systemName: "point.topleft.down.to.point.bottomright.curvepath"),
+                    title: "No mappable port calls",
+                    subtitle: scheduleRows.isEmpty
+                        ? "Port-call coordinates resolve from each sailing's UN/LOCODE; none are on this string yet."
+                        : "None of this string's \(scheduleRows.count) sailing port UN/LOCODEs are in the port catalog."
+                )
+            } else {
+                sailingMapCard(calls: calls)
+            }
+        }
+    }
+
+    private func sailingMapCard(calls: [ResolvedPortCall688]) -> some View {
+        // Port pins: hollow ocean port markers (kind .stop) at each real call;
+        // the first call is the live origin (kind .pickup) so the ocean
+        // register draws its gradient origin ring. Voyage legs: a single route
+        // polyline through the consecutive real port coords — the canvas paints
+        // it as the great-circle leg chain under Mercator.
+        let coords: [HereLatLng] = calls.map { HereLatLng($0.lat, $0.lng) }
+        let pins: [HereMarker] = calls.enumerated().map { idx, c in
+            HereMarker(
+                at: HereLatLng(c.lat, c.lng),
+                kind: idx == 0 ? .pickup : (idx == calls.count - 1 ? .delivery : .stop),
+                label: c.unlocode,
+                id: c.id)              // schedule-row id → tappable handler pin
+        }
+        var layers: [HereMapLayer] = []
+        if coords.count >= 2 {
+            layers.append(.route(polyline: coords, colorHex: "#1473FF"))
+        }
+        layers.append(.markers(pins))
+
+        // Camera: center on the leg-chain midpoint (or the single port).
+        let center = coords[coords.count / 2]
+
+        return VStack(alignment: .leading, spacing: 0) {
+            BespokeMapCanvas(
+                center: center,
+                zoom: coords.count >= 2 ? 3 : 5,
+                interactive: true,
+                tilt: 0,
+                isDark: colorScheme == .dark,
+                layers: layers,
+                style: .ocean,
+                onSelectMarker: { _ in /* pin tap → branded port detail card */ }
+            )
+            .frame(height: 240)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1))
+
+            // Caption: real resolved count + honest skip note when a code
+            // wasn't in the catalog.
+            HStack(spacing: 6) {
+                Image(systemName: "mappin.and.ellipse")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(Color(hex: 0x5AA6FF))
+                Text(captionText(resolved: calls.count))
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Spacer(minLength: 0)
+            }
+            .padding(.top, Space.s2)
+        }
+    }
+
+    private func captionText(resolved: Int) -> String {
+        let legs = max(resolved - 1, 0)
+        let base = "\(resolved) port call\(resolved == 1 ? "" : "s") · \(legs) leg\(legs == 1 ? "" : "s") · PortDirectory / UN/LOCODE"
+        return unresolvedPortCount > 0 ? "\(base) · \(unresolvedPortCount) off-catalog skipped" : base
+    }
+
     // MARK: - Berth-window micro-strip (CNSHA)
 
     private var berthStrip: some View {
@@ -622,6 +788,13 @@ private struct VesselSailingScheduleBody: View {
             let arrivalPortId: Int?
             let limit: Int
         }
+        // multiModal.getVesselSchedules surfaces ports.unlocode per row (real
+        // catalog join); used only to anchor the sailing map's port calls.
+        // serviceRoute (when deep-linked) filters by shipping line so the map
+        // shows this string's calls. All inputs optional on the proc.
+        struct MMScheduleIn688: Encodable {
+            let shippingLine: String?
+        }
         do {
             async let sched: [VesselVoyage688] = EusoTripAPI.shared.query(
                 "vesselShipments.getVesselSchedules",
@@ -632,9 +805,14 @@ private struct VesselSailingScheduleBody: View {
                 )
             )
             async let bs: BlankSailingDashboard688 = EusoTripAPI.shared.queryNoInput("blankSailing.dashboard")
-            let (voy, dash) = try await (sched, bs)
+            async let mm: MMScheduleResponse688 = EusoTripAPI.shared.query(
+                "multiModal.getVesselSchedules",
+                input: MMScheduleIn688(shippingLine: serviceRoute.isEmpty ? nil : serviceRoute)
+            )
+            let (voy, dash, mmResp) = try await (sched, bs, mm)
             self.voyages = voy
             self.blank = dash
+            self.scheduleRows = mmResp.vessels ?? []
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

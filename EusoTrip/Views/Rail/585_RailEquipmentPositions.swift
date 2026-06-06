@@ -93,12 +93,46 @@ private struct GetRailcarsEnvelope585: Decodable {
     }
 }
 
+/// railcars.currentLocation / rail_yards.coordinates JSON shape `{ lat, lng, description? }`.
+/// REAL carrier-reported AEI/GPS fix (or the spotted-yard catalog coordinate) — never
+/// geocoded from a name. Tolerant of `lat`/`latitude` + `lng`/`lon`/`longitude` aliases.
+private struct CarGeo585: Decodable, Hashable {
+    let lat: Double?
+    let lng: Double?
+    let description: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case lat, latitude
+        case lng, lon, longitude
+        case description, label, name
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        lat = (try? c.decode(Double.self, forKey: .lat))
+            ?? (try? c.decode(Double.self, forKey: .latitude))
+        lng = (try? c.decode(Double.self, forKey: .lng))
+            ?? (try? c.decode(Double.self, forKey: .lon))
+            ?? (try? c.decode(Double.self, forKey: .longitude))
+        description = (try? c.decode(String.self, forKey: .description))
+            ?? (try? c.decode(String.self, forKey: .label))
+            ?? (try? c.decode(String.self, forKey: .name))
+    }
+    /// A usable HERE coordinate, gated past null-island. `nil` when no real fix.
+    var fix: HereLatLng? {
+        guard let lat, let lng, !(lat == 0 && lng == 0) else { return nil }
+        return HereLatLng(lat, lng)
+    }
+}
+
 private struct Railcar585: Decodable, Identifiable {
     var id: String { carNumber ?? "\(UUID())" }
-    let carNumber: String?          // railcars.carNumber / reportingMark+number
+    let carNumber: String?          // railcars.railcarNumber / reportingMark+number
     let carType: String?            // well_car / flatcar / boxcar …
     let status: String?             // in_transit / at_yard / bad_order …
-    let currentLocation: String?    // free-text AEI / yard location
+    let currentLocationText: String?    // free-text AEI / yard location (display)
+    let currentLocationGeo: CarGeo585?  // railcars.currentLocation {lat,lng,description} (REAL AEI fix)
+    let yardName: String?               // joined rail_yards.name (spotted yard)
+    let yardCoordinates: CarGeo585?     // joined rail_yards.coordinates {lat,lng} (spotted-yard anchor)
     let containerNumber: String?
     let speedMph: Double?
     let dwellHours: Double?
@@ -108,6 +142,7 @@ private struct Railcar585: Decodable, Identifiable {
         case carNumber, reportingMark, number, railcarNumber
         case carType, status
         case currentLocation, location, currentLocationName
+        case yardName, yardCoordinates
         case containerNumber, container
         case speedMph, speed
         case dwellHours, dwell
@@ -129,9 +164,16 @@ private struct Railcar585: Decodable, Identifiable {
         }
         carType         = try? c.decode(String.self, forKey: .carType)
         status          = try? c.decode(String.self, forKey: .status)
-        currentLocation = (try? c.decode(String.self, forKey: .currentLocation))
+        // currentLocation is a JSON object {lat,lng,description} on the real schema,
+        // but a drifting server may send a plain string — decode BOTH shapes.
+        let geo = (try? c.decode(CarGeo585.self, forKey: .currentLocation))
+        currentLocationGeo = geo
+        let textForm = (try? c.decode(String.self, forKey: .currentLocation))
             ?? (try? c.decode(String.self, forKey: .location))
             ?? (try? c.decode(String.self, forKey: .currentLocationName))
+        currentLocationText = textForm ?? geo?.description
+        yardName        = try? c.decode(String.self, forKey: .yardName)
+        yardCoordinates = try? c.decode(CarGeo585.self, forKey: .yardCoordinates)
         containerNumber = (try? c.decode(String.self, forKey: .containerNumber))
             ?? (try? c.decode(String.self, forKey: .container))
         // speed may arrive as Double or Int → tolerate both before falling back to the `speed` alias.
@@ -145,6 +187,14 @@ private struct Railcar585: Decodable, Identifiable {
             ?? (try? c.decode(Int.self, forKey: .dwell)).map(Double.init)
         progressFraction = try? c.decode(Double.self, forKey: .progressFraction)
     }
+
+    /// Best REAL position for this car: its own carrier-reported AEI/GPS fix first,
+    /// then the spotted-yard catalog anchor. `nil` when neither is reported yet
+    /// (the row simply contributes no map pin — never a fabricated point).
+    var mapFix: HereLatLng? { currentLocationGeo?.fix ?? yardCoordinates?.fix }
+
+    /// Display location: free-text AEI line if present, else the spotted yard name.
+    var locationDisplay: String? { currentLocationText ?? yardName }
 }
 
 /// railShipments.liveTrackRailcar → Railinc RailSight position (best-effort, tolerant shape).
@@ -211,7 +261,11 @@ private struct ContainerNumberIn585: Encodable { let containerNumber: String }
 private struct RailEquipmentPositionsBody: View {
     @Environment(\.palette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     let railId: String
+
+    /// Tapped railcar pin → highlights its POSITIONS row (id == car.id).
+    @State private var selectedCarId: String? = nil
 
     @State private var railcars: [Railcar585] = []
     @State private var live: LiveRailcar585? = nil
@@ -255,6 +309,33 @@ private struct RailEquipmentPositionsBody: View {
     }
 
     private var routeLabel: String { "BNSF transcon" }
+
+    // MARK: Real position markers (NO geocoding — only carrier AEI/GPS fix or yard anchor)
+
+    /// One HERE marker per railcar that carries a REAL fix — its carrier-reported
+    /// `railcars.currentLocation` {lat,lng} AEI/GPS, else its spotted-yard catalog
+    /// anchor (`rail_yards.coordinates`). Cars with neither contribute NO pin: we
+    /// never fabricate a coordinate from a yard NAME string. Pin kind tracks state
+    /// (in-motion → moving truck/equipment puck; otherwise the spotted stop pin).
+    private var positionMarkers: [HereMarker] {
+        rows.compactMap { car -> HereMarker? in
+            guard let fix = car.mapFix else { return nil }
+            let kind: HereMarker.Kind = bucket(car.status) == "in_motion" ? .truck
+                : (bucket(car.status) == "bad_order" ? .alert : .stop)
+            return HereMarker(at: fix, kind: kind,
+                              label: car.carNumber ?? "Railcar", id: car.id)
+        }
+    }
+
+    /// True when at least one railcar has a real position to plot.
+    private var hasAnyFix: Bool { !positionMarkers.isEmpty }
+
+    /// Map center: the lead in-motion car's fix, else the first car with any fix.
+    /// `nil` ⇒ no real coordinate yet (the map shows its "awaiting feed" state).
+    private var mapCenter: HereLatLng? {
+        (rows.first(where: { bucket($0.status) == "in_motion" })?.mapFix)
+            ?? rows.first(where: { $0.mapFix != nil })?.mapFix
+    }
 
     /// Real route fraction (origin→current) from the lead in-motion railcar's
     /// `progressFraction`. Falls back to 0 — never a decorative constant — so a
@@ -309,6 +390,7 @@ private struct RailEquipmentPositionsBody: View {
                 } else {
                     heroCard
                     kpiStrip
+                    mapSection
                     positionsSection
                     if containerNumber != nil { containerStrip }
                     ctaPair
@@ -434,6 +516,81 @@ private struct RailEquipmentPositionsBody: View {
         }
     }
 
+    // MARK: Map — real railcar positions (BespokeMapCanvas · RAIL .standard register)
+
+    /// The flat rail board (`.auto` style + `tilt: 0` ⇒ `.standard` register, matching
+    /// Rail 628's call). Pins come ONLY from `positionMarkers` — real carrier AEI/GPS
+    /// fixes or spotted-yard catalog coordinates. When NO railcar has reported a fix
+    /// yet, the map renders an HONEST "live positions pending feed" state instead of a
+    /// fabricated map — the carrier-side rail-equipment GPS stream is the open WIRE-GAP.
+    @ViewBuilder
+    private var mapSection: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("MAP")
+                    .font(.system(size: 9, weight: .black)).kerning(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text(hasAnyFix ? "AEI FIX · LIVE" : "AWAITING FEED")
+                    .font(.system(size: 11).monospaced())
+                    .foregroundStyle(hasAnyFix ? Brand.success : palette.textTertiary)
+            }
+
+            ZStack {
+                if let center = mapCenter {
+                    BespokeMapCanvas(
+                        center: center,
+                        zoom: 6,
+                        isDark: colorScheme == .dark,
+                        layers: [.markers(positionMarkers)],
+                        onSelectMarker: { id in selectedCarId = id }
+                    )
+                    .frame(height: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+                } else {
+                    // HONEST pending-feed state — map + decode path are wired and ready;
+                    // we simply have no real coordinate to plot, so we plot nothing.
+                    awaitingFeedState
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint)
+            )
+
+            if let id = selectedCarId,
+               let car = rows.first(where: { $0.id == id }) {
+                Text("Selected · \(car.carNumber ?? id)\(car.locationDisplay.map { " · \($0)" } ?? "")")
+                    .font(.system(size: 11).monospaced()).kerning(0.3)
+                    .foregroundStyle(palette.textSecondary)
+            }
+        }
+    }
+
+    /// "live positions pending feed" empty state for the map — bespoke to the rail
+    /// board. No fabricated points; names are NOT geocoded.
+    private var awaitingFeedState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .font(.system(size: 26, weight: .regular))
+                .foregroundStyle(palette.textTertiary)
+            Text("Live positions pending feed")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+            Text("Plotting the moment the carrier reports a railcar AEI/GPS fix or spotted yard.")
+                .font(.system(size: 11))
+                .foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Space.s4)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 220)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
     // MARK: POSITIONS — itemized AEI list
 
     private var positionsSection: some View {
@@ -465,7 +622,7 @@ private struct RailEquipmentPositionsBody: View {
     @ViewBuilder
     private func positionRow(_ car: Railcar585) -> some View {
         let (pillLabel, pillColor) = positionPillInfo(car.status)
-        let sub = [car.currentLocation, car.containerNumber]
+        let sub = [car.locationDisplay, car.containerNumber]
             .compactMap { $0 }.joined(separator: " · ")
         let rightValue = positionRightValue(car)
 
@@ -553,7 +710,9 @@ private struct RailEquipmentPositionsBody: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "View on map", action: {}, leadingIcon: "plus")
+            // Map is embedded inline above; "Recenter" clears any pin selection so the
+            // board re-frames on the lead in-motion railcar's real fix.
+            CTAButton(title: "Recenter", action: { selectedCarId = nil }, leadingIcon: "scope")
             Button("Refresh") { Task { await loadAll() } }
                 .font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
                 .frame(maxWidth: .infinity).frame(height: 48)
