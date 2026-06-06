@@ -3,7 +3,7 @@
 //  EusoTrip — Rail Engineer · Route Weather (per-route weather conditions).
 //
 //  Verbatim port of "578 Rail Route Weather.svg" (Light + Dark).
-//  Live NWS weather alerts + impacted-loads count for the active transcon route.
+//  Live NWS weather alerts + impacted-loads count for the active route.
 //  Map hero rendered via SwiftUI Canvas (no MapKit): gradient bg, dotted bezier
 //  route line, origin/dest circles, snow/wind marker circles, ETA pill.
 //  Nav anchored to RailEngineerNavController (HOME · SHIPMENTS[current] · [orb] · COMPLIANCE · ME).
@@ -96,7 +96,7 @@ private struct RailRouteWeatherBody: View {
 
     /// Real lifecycle fraction (0…1) of the corridor that has been *traveled* by the
     /// shipments routed on it, averaged over `getImpactedLoads`. Each load's status maps
-    /// to its position along the transcon arc (en_route_pickup → at_delivery). This is the
+    /// to its position along the route arc (en_route_pickup → at_delivery). This is the
     /// completed segment of the route — bound to live load lifecycle, never decorative.
     /// With no impacted loads, the corridor reads "departed" (small head) so the dash flow
     /// still communicates an active, monitored route.
@@ -204,7 +204,8 @@ private struct RailRouteWeatherBody: View {
                 grid.move(to: CGPoint(x: 0, y: h * 0.5)); grid.addLine(to: CGPoint(x: w, y: h * 0.5))
                 ctx.stroke(grid, with: .color(.black.opacity(0.06)), lineWidth: 0.8)
 
-                // Route bezier (Long Beach → Chicago, W→E transcon arc)
+                // Stylized corridor arc (abstract origin→destination backdrop;
+                // the route-conditions contract carries no real coordinates)
                 let ox = w * 0.095; let oy = h * 0.85
                 let dx = w * 0.940; let dy = h * 0.24
                 let route = Self.routePath(in: size)
@@ -266,7 +267,7 @@ private struct RailRouteWeatherBody: View {
                 ctx.fill(Circle().path(in: CGRect(x: destPt.x-5, y: destPt.y-5, width: 10, height: 10)),
                          with: .color(Color(red: 0.745, green: 0.004, blue: 1.0)))
 
-                // Snow marker (Rockies)
+                // Snow marker (stylized corridor position)
                 let snowPt = CGPoint(x: w * 0.52, y: h * 0.44)
                 ctx.fill(Circle().path(in: CGRect(x: snowPt.x-13, y: snowPt.y-13, width: 26, height: 26)),
                          with: .color(.white))
@@ -281,7 +282,7 @@ private struct RailRouteWeatherBody: View {
                     ctx.stroke(seg, with: .color(sBlue), style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
                 }
 
-                // Wind marker (plains)
+                // Wind marker (stylized corridor position)
                 let windPt = CGPoint(x: w * 0.775, y: h * 0.33)
                 ctx.fill(Circle().path(in: CGRect(x: windPt.x-12, y: windPt.y-12, width: 24, height: 24)),
                          with: .color(.white))
@@ -302,17 +303,24 @@ private struct RailRouteWeatherBody: View {
                 ctx.fill(RoundedRectangle(cornerRadius: 11).path(in: pillRect), with: .color(.white))
                 ctx.stroke(RoundedRectangle(cornerRadius: 11).path(in: pillRect),
                            with: .color(.black.opacity(0.10)), lineWidth: 1)
-                ctx.draw(Text("ETA +14h · weather hold")
+                // Real weather signal (from getAlerts severity), never a
+                // fabricated ETA — the corridor carries no coordinates or ETA.
+                ctx.draw(Text(overallRisk == "CLEAR"
+                              ? "Clear corridor"
+                              : "\(overallRisk.capitalized) weather risk")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.black),
                          at: CGPoint(x: pillCx, y: pillY + pillH / 2), anchor: .center)
 
-                // Origin / destination labels
-                ctx.draw(Text("LONG BEACH")
+                // Origin / destination role labels — the route-conditions
+                // contract carries no coordinates and no canonical corridor,
+                // so we never paint specific invented cities on this stylized
+                // arc. The arc is an honest abstract weather backdrop.
+                ctx.draw(Text("ORIGIN")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                     .foregroundColor(Color(red: 0.051, green: 0.067, blue: 0.090)),
                          at: CGPoint(x: ox + 2, y: oy + 16), anchor: .center)
-                ctx.draw(Text("CHICAGO")
+                ctx.draw(Text("DESTINATION")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                     .foregroundColor(Color(red: 0.051, green: 0.067, blue: 0.090)),
                          at: CGPoint(x: dx - 24, y: dy - 14), anchor: .center)
@@ -494,7 +502,7 @@ private struct RailRouteWeatherBody: View {
 
     // MARK: - Route geometry (single source of truth for line + position dot)
 
-    /// The transcon arc (Long Beach → Chicago) as two cubic Béziers. Built once per draw so
+    /// The stylized corridor arc as two cubic Béziers. Built once per draw so
     /// the traveled/remaining trims and the live-position dot all share identical control points.
     private static func routePath(in size: CGSize) -> Path {
         let w = size.width; let h = size.height

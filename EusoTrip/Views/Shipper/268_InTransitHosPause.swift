@@ -59,8 +59,15 @@ private struct HosPauseBody: View {
     private func commsButton(icon: String, label: String, phone: String?) -> some View {
         let mapDeepLink: URL? = {
             guard icon == "map.fill" else { return nil }
-            if let g = live.lastGeofence {
+            // Parked truck pin first; fall back to the delivery address.
+            // Gate null-island (0,0): an un-locked geofence must NOT deep-link
+            // to the ocean — fall through to the destination address instead.
+            if let g = live.lastGeofence, !(g.latitude == 0 && g.longitude == 0) {
                 return URL(string: "maps://?ll=\(g.latitude),\(g.longitude)&q=Parked")
+            }
+            if let addr = live.delivery?.address, !addr.isEmpty {
+                let q = addr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+                return URL(string: "maps://?q=\(q)")
             }
             return nil
         }()

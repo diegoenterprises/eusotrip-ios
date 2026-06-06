@@ -191,7 +191,7 @@ public struct BespokeMapCanvas: View {
             .onAppear {
                 rebuildIfNeeded(key: key, size: size, style: style, viewport: baseViewport)
             }
-            .onChange(of: key) { newKey in
+            .onChange(of: key) { _, newKey in
                 rebuildIfNeeded(key: newKey, size: size, style: style, viewport: baseViewport)
             }
         }

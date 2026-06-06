@@ -374,7 +374,17 @@ struct DriverTripsPane: View {
     private var activeTripMap: some View {
         if let load = trip.currentLoad,
            let pickup = load.pickupLocation,
-           let delivery = load.deliveryLocation
+           let delivery = load.deliveryLocation,
+           // Null-island + finite gate: an active load whose pickup/delivery
+           // hasn't been geocoded yet defaults to (0,0). Plotting those pins
+           // (and centering the camera on their midpoint) drags the hero map
+           // to the Gulf of Guinea. Mirror `hasRealOriginCoord` / the
+           // `!(lat == 0 && lng == 0)` gate every sibling surface applies, and
+           // fall back to an honest awaiting-coordinates seam below.
+           !(pickup.lat == 0 && pickup.lng == 0),
+           !(delivery.lat == 0 && delivery.lng == 0),
+           pickup.lat.isFinite, pickup.lng.isFinite,
+           delivery.lat.isFinite, delivery.lng.isFinite
         {
             let routeReady = activeRoute != nil
                 && activeRouteLoadID == String(load.id)
@@ -434,7 +444,33 @@ struct DriverTripsPane: View {
             .task(id: String(load.id)) {
                 await fetchActiveRoute(for: load)
             }
+        } else {
+            activeTripMapAwaitingSeam
         }
+    }
+
+    /// Honest placeholder shown while the active load has no real pickup/
+    /// delivery coordinates yet (un-geocoded lane). The hero map lights up
+    /// automatically once the backfill geocoder populates the load's lat/lng
+    /// — we never plot a route across null island in the meantime. Mirrors
+    /// Terminal 700's "Awaiting yard coordinates" seam.
+    private var activeTripMapAwaitingSeam: some View {
+        EusoEmptyState(
+            systemImage: "mappin.slash",
+            title: "Awaiting route coordinates",
+            subtitle: "Your live route will appear here as soon as this load's pickup and delivery coordinates are on file."
+        )
+        .frame(height: 260)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(Brand.blue.opacity(scheme == .dark ? 0.06 : 0.03))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(Brand.blue.opacity(0.18), lineWidth: 1)
+        )
     }
 
     /// Calls HERE Routing v8 for the given active load and caches the

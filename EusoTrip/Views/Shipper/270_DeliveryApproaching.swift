@@ -66,7 +66,7 @@ private struct DeliveryApproachingBody: View {
             if let lat = live.delivery?.lat, let lng = live.delivery?.lng, !(lat == 0 && lng == 0) {
                 return URL(string: "maps://?ll=\(lat),\(lng)&q=Receiver")
             }
-            if let g = live.lastGeofence {
+            if let g = live.lastGeofence, !(g.latitude == 0 && g.longitude == 0) {
                 return URL(string: "maps://?ll=\(g.latitude),\(g.longitude)&q=Truck")
             }
             if let addr = live.delivery?.address, !addr.isEmpty {

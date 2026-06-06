@@ -39,7 +39,7 @@ import WebKit
 
 // MARK: - Public layer model
 
-public struct HereLatLng: Hashable, Codable {
+public struct HereLatLng: Hashable, Codable, Sendable {
     public let lat: Double
     public let lng: Double
     public var weight: Double?      // heatmap weight (ignored by other layers)
@@ -51,20 +51,20 @@ public struct HereLatLng: Hashable, Codable {
     }
 }
 
-public struct HereMarker: Hashable, Codable {
+public struct HereMarker: Hashable, Codable, Sendable {
     public let at: HereLatLng
     public let kind: Kind
     public let label: String?
     /// Optional stable identity passed back through `onSelectMarker` when
     /// the pin is tapped (e.g. a load id on the board). nil = not tappable.
     public let id: String?
-    public enum Kind: String, Codable { case truck, pickup, delivery, stop, fuel, charger, parking, alert, weather, mission, adZone, truckStop, weigh, camera, hotZone }
+    public enum Kind: String, Codable, Sendable { case truck, pickup, delivery, stop, fuel, charger, parking, alert, weather, mission, adZone, truckStop, weigh, camera, hotZone }
     public init(at: HereLatLng, kind: Kind, label: String? = nil, id: String? = nil) {
         self.at = at; self.kind = kind; self.label = label; self.id = id
     }
 }
 
-public struct HerePolygon: Hashable, Codable {
+public struct HerePolygon: Hashable, Codable, Sendable {
     public let ring: [HereLatLng]
     public let fillHex: String      // "#1473FF"
     public let opacity: Double

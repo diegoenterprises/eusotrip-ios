@@ -98,6 +98,12 @@ struct ActiveEnroute: View {
     /// being real HERE measurements.
     @State private var baselineMeters: Double?
 
+    /// Decoded HERE Routing v8 section polyline for the pickup→delivery
+    /// corridor — the real road geometry painted on the basemap. Empty
+    /// until the route resolves; the map then falls back to the straight
+    /// pickup→delivery base line (never a fabricated path). Mirrors 035.
+    @State private var routePolyline: [HereLatLng] = []
+
     // NOTE: turn-by-turn maneuver narration ("Take Exit 228 · …") has
     // NO live source — `HereRouteModels.HereRouteSection` does not
     // decode the `actions` array, so the next-step instruction text is
@@ -155,7 +161,42 @@ struct ActiveEnroute: View {
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         let load = try? await EusoTripAPI.shared.loads.getById(n)
         activeLoad = load
-        if let load { await refreshLiveNav(for: load) }
+        if let load {
+            await refreshLiveNav(for: load)
+            await refreshRoutePolyline(for: load)
+        }
+    }
+
+    /// Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
+    /// its section polyline into the live route line painted on the basemap —
+    /// the real road geometry, not a 2-point great-circle straight segment.
+    /// On any failure (missing coords, HERE error) the polyline stays empty
+    /// and the map draws the straight pickup→delivery base line instead.
+    @MainActor
+    private func refreshRoutePolyline(for load: Load) async {
+        guard let pickup = load.pickupLocation,
+              let delivery = load.deliveryLocation,
+              !(pickup.lat == 0 && pickup.lng == 0),
+              !(delivery.lat == 0 && delivery.lng == 0) else {
+            routePolyline = []
+            return
+        }
+        let stops = HereStops(
+            origin: CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng),
+            destination: CLLocationCoordinate2D(latitude: delivery.lat, longitude: delivery.lng)
+        )
+        let profile = TruckProfile.from(load: load)
+        do {
+            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
+            guard let section = resp.routes.first?.sections.first else {
+                routePolyline = []
+                return
+            }
+            let coords = HereRoutingClient.polyline(for: section)
+            routePolyline = coords.count >= 2 ? coords.map { HereLatLng($0) } : []
+        } catch {
+            routePolyline = []
+        }
     }
 
     /// Computes the live remaining leg from the driver's current GPS
@@ -430,15 +471,19 @@ struct ActiveEnroute: View {
             // fuel / EV / weather / traffic / sponsored ad-zones. The route +
             // pickup/delivery are the base layers; HereLiveMapView fetches the
             // add-ons around the lane and overlays them with a corner legend.
+            // Prefer the decoded HERE section polyline (real curved road
+            // geometry); fall back to the straight pickup→delivery line until
+            // the route resolves — never a fabricated path.
+            let line: [HereLatLng] = routePolyline.count >= 2
+                ? routePolyline
+                : [HereLatLng(pickup.lat, pickup.lng), HereLatLng(delivery.lat, delivery.lng)]
             HereLiveMapView(
                 center: .init(pickup.lat, pickup.lng),
                 zoom: 7,
                 firstPerson: true,
-                route: [.init(pickup.lat, pickup.lng), .init(delivery.lat, delivery.lng)],
+                route: line,
                 baseLayers: [
-                    .route(polyline: [.init(pickup.lat, pickup.lng),
-                                      .init(delivery.lat, delivery.lng)],
-                           colorHex: "#1473FF"),
+                    .route(polyline: line, colorHex: "#1473FF"),
                     .markers([
                         .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: destinationFacility),
                         .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: nil)
