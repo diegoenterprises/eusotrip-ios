@@ -480,7 +480,11 @@ struct LifecycleMapCard: View {
 
         var truck: HereLatLng?
         if mode == .truckAtPickup || mode == .truckAtDelivery || mode == .full,
-           let g = live.lastGeofence {
+           let g = live.lastGeofence,
+           !(g.latitude == 0 && g.longitude == 0) {
+            // Gate null-island (0,0): a freshly-emitted geofence whose GPS
+            // hasn't locked yet (or a malformed row) must NOT drop the truck
+            // puck in the Gulf of Guinea. Mirror Carrier/311_CarrierActiveLoad.
             truck = HereLatLng(g.latitude, g.longitude)
         }
         return (pickup, delivery, truck)

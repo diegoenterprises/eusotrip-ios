@@ -183,12 +183,46 @@ struct RailShipmentDetailScreen: View {
 
 private struct RailShipmentDetail: View {
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
     let shipmentId: Int
 
     // Real loading + error state (honest wiring; no try?-collapse).
     @State private var detail: RailShipmentDetail002? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+
+    // MARK: - Live event geometry (real coords only)
+
+    /// The scan trail: every shipment event that carries a real lat/lng,
+    /// in chronological order (oldest→newest). Null-island scans dropped —
+    /// a (0,0) location is never plotted.
+    private var liveTrailPoints: [HereLatLng] {
+        (detail?.events ?? [])
+            .compactMap { e -> (String, HereLatLng)? in
+                guard let la = e.location?.lat, let lo = e.location?.lng,
+                      !(la == 0 && lo == 0) else { return nil }
+                return (e.timestamp ?? "", HereLatLng(la, lo))
+            }
+            .sorted { $0.0 < $1.0 }
+            .map { $0.1 }
+    }
+
+    /// The live train fix = the latest event that carries a real coordinate.
+    private var liveTrainPoint: HereLatLng? {
+        (detail?.events ?? [])
+            .compactMap { e -> (String, HereLatLng)? in
+                guard let la = e.location?.lat, let lo = e.location?.lng,
+                      !(la == 0 && lo == 0) else { return nil }
+                return (e.timestamp ?? "", HereLatLng(la, lo))
+            }
+            .max { $0.0 < $1.0 }
+            .map { $0.1 }
+    }
+
+    /// True when the event chain has at least one real coordinate to plot.
+    /// When false the decorative route bezier renders instead (honest: no
+    /// geocoded scan on file yet — origin/destination yards carry no coords).
+    private var hasLiveGeo: Bool { !liveTrailPoints.isEmpty }
 
     // SVG lifecycle stages (8) — verbatim labels + order.
     private let stages = ["ORDERED", "TENDERED", "PLACED", "LOADED",
@@ -288,7 +322,45 @@ private struct RailShipmentDetail: View {
 
     // MARK: - Hero rail-route map
 
+    @ViewBuilder
     private var routeMap: some View {
+        if hasLiveGeo {
+            // Real geography on the in-house HERE map: the scan trail draws as
+            // the route line and the latest geocoded scan is the live train
+            // puck. Mirrors Vessel 003 / 560 — real coords only, never a
+            // fabricated curve. (Origin/destination yards carry no coordinates
+            // in the detail contract, so they remain text labels, not pins.)
+            railLiveMap
+        } else {
+            decorativeRouteMap
+        }
+    }
+
+    /// In-house HERE map of the live shipment position, built only when the
+    /// event chain has real coordinates. Every point is server-real and
+    /// null-island guarded upstream — nothing is fabricated.
+    private var railLiveMap: some View {
+        let trail = liveTrailPoints
+        let live = liveTrainPoint
+        let center = live ?? trail.last ?? HereLatLng(39.5, -98.35)
+        var markers: [HereMarker] = trail.map { HereMarker(at: $0, kind: .stop) }
+        if let live { markers.append(HereMarker(at: live, kind: .truck, label: "Live")) }
+        var layers: [HereMapLayer] = []
+        if trail.count >= 2 { layers.append(.route(polyline: trail, colorHex: "#1473FF")) }
+        layers.append(.markers(markers))
+        return BespokeMapCanvas(
+            center: center,
+            zoom: trail.count >= 2 ? 6 : 9,
+            interactive: true,
+            tilt: 0,
+            isDark: colorScheme == .dark,
+            layers: layers
+        )
+        .frame(height: 124)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private var decorativeRouteMap: some View {
         ZStack {
             GeometryReader { geo in
                 let w = geo.size.width

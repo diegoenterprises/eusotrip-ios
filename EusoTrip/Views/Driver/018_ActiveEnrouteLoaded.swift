@@ -34,6 +34,7 @@
 //                 §12 (both previews).
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - Screen
 
@@ -47,6 +48,13 @@ struct ActiveEnrouteLoaded: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @StateObject private var hos = HOSLiveStore()
     @State private var activeLoad: Load?
+
+    /// Decoded HERE Routing v8 section polyline for the pickup→delivery
+    /// corridor — the real road geometry painted on the basemap, not a
+    /// 2-point great-circle straight segment. Empty until the route
+    /// resolves; the map then falls back to the straight pickup→delivery
+    /// base line (never a fabricated path). Mirrors 013 / 035.
+    @State private var routePolyline: [HereLatLng] = []
 
     enum Register { case night, afternoon }
     let register: Register
@@ -327,7 +335,40 @@ struct ActiveEnrouteLoaded: View {
         if !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) {
             activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
         }
+        if let load = activeLoad { await refreshRoutePolyline(for: load) }
         _ = await hosBoot
+    }
+
+    /// Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
+    /// its section polyline into the live route line painted on the basemap —
+    /// real curved road geometry, not a 2-point great-circle straight segment.
+    /// On any failure (missing coords, HERE error) the polyline stays empty
+    /// and the map draws the straight pickup→delivery base line instead.
+    @MainActor
+    private func refreshRoutePolyline(for load: Load) async {
+        guard let pickup = load.pickupLocation,
+              let delivery = load.deliveryLocation,
+              !(pickup.lat == 0 && pickup.lng == 0),
+              !(delivery.lat == 0 && delivery.lng == 0) else {
+            routePolyline = []
+            return
+        }
+        let stops = HereStops(
+            origin: CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng),
+            destination: CLLocationCoordinate2D(latitude: delivery.lat, longitude: delivery.lng)
+        )
+        let profile = TruckProfile.from(load: load)
+        do {
+            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
+            guard let section = resp.routes.first?.sections.first else {
+                routePolyline = []
+                return
+            }
+            let coords = HereRoutingClient.polyline(for: section)
+            routePolyline = coords.count >= 2 ? coords.map { HereLatLng($0) } : []
+        } catch {
+            routePolyline = []
+        }
     }
 
     // MARK: Floating top bar
@@ -414,15 +455,19 @@ struct ActiveEnrouteLoaded: View {
            // honest placeholder until the next read lands coords.
            !(pickup.lat == 0 && pickup.lng == 0),
            !(delivery.lat == 0 && delivery.lng == 0) {
+            // Prefer the decoded HERE section polyline (real curved road
+            // geometry); fall back to the straight pickup→delivery line until
+            // the route resolves — never a fabricated path.
+            let line: [HereLatLng] = routePolyline.count >= 2
+                ? routePolyline
+                : [HereLatLng(pickup.lat, pickup.lng), HereLatLng(delivery.lat, delivery.lng)]
             HereLiveMapView(
                 center: .init(pickup.lat, pickup.lng),
                 zoom: 7,
                 firstPerson: true,
-                route: [.init(pickup.lat, pickup.lng), .init(delivery.lat, delivery.lng)],
+                route: line,
                 baseLayers: [
-                    .route(polyline: [.init(pickup.lat, pickup.lng),
-                                      .init(delivery.lat, delivery.lng)],
-                           colorHex: "#1473FF"),
+                    .route(polyline: line, colorHex: "#1473FF"),
                     .markers([
                         .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: originName),
                         .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: destFlagText)

@@ -145,12 +145,42 @@ private struct AnyCodingKey: CodingKey {
 
 private struct RailLiveTrackingBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
     let shipmentId: Int
     @State private var detail: RailShipmentDetail560? = nil
     @State private var tracking: RailTracking560? = nil
     @State private var liveData: LiveTrack560? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+
+    // MARK: - Live AEI geometry (real coords only)
+
+    /// The live car fix from the AEI tracking chain. nil unless the server
+    /// returned a real, non-null-island coordinate — we never plot (0,0).
+    private var liveCarPoint: HereLatLng? {
+        guard let c = tracking?.currentLocation,
+              let la = c.lat, let lo = c.lng,
+              !(la == 0 && lo == 0) else { return nil }
+        return HereLatLng(la, lo)
+    }
+
+    /// The scan trail: every tracking event that carries a real lat/lng,
+    /// in chronological order (oldest→newest). Null-island scans dropped.
+    private var liveTrailPoints: [HereLatLng] {
+        (tracking?.events ?? [])
+            .compactMap { e -> (String, HereLatLng)? in
+                guard let la = e.location?.lat, let lo = e.location?.lng,
+                      !(la == 0 && lo == 0) else { return nil }
+                return (e.timestamp ?? "", HereLatLng(la, lo))
+            }
+            .sorted { $0.0 < $1.0 }
+            .map { $0.1 }
+    }
+
+    /// True when the AEI chain has at least one real coordinate to plot.
+    /// When false the card falls back to the decorative `RouteArc560`
+    /// (honest: no live geographic fix on file yet).
+    private var hasLiveGeo: Bool { liveCarPoint != nil || !liveTrailPoints.isEmpty }
 
     private var originLabel: String {
         guard let y = detail?.originYard else { return "-" }
@@ -278,7 +308,18 @@ private struct RailLiveTrackingBody: View {
                         RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                             .strokeBorder(palette.borderFaint, lineWidth: 1)
                     )
-                RouteArc560(progress: journeyProgress, palette: palette)
+                if hasLiveGeo {
+                    // Real AEI geography on the in-house HERE map: the scan
+                    // trail as a route line, each scan as a stop pin, and the
+                    // live car fix as the truck puck. Mirrors Vessel 003's
+                    // live-position map — real coords only, never a fabricated
+                    // arc. (Origin/destination yards carry no coordinates in
+                    // the tracking contract, so they stay as text labels below
+                    // rather than invented pins.)
+                    railLiveMap
+                } else {
+                    RouteArc560(progress: journeyProgress, palette: palette)
+                }
                 // Overlay chips + labels
                 VStack(alignment: .leading) {
                     HStack {
@@ -310,6 +351,33 @@ private struct RailLiveTrackingBody: View {
             }
             .frame(height: 160)
         }
+    }
+
+    /// In-house HERE map of the live AEI position. The scan trail (events with
+    /// real coords) draws as the route line; the live car fix is the truck
+    /// puck. Built only when `hasLiveGeo` — every coordinate is server-real
+    /// and null-island guarded upstream, so nothing is ever fabricated.
+    private var railLiveMap: some View {
+        let trail = liveTrailPoints
+        let car = liveCarPoint
+        // Route line = trail, with the live car appended as the leading edge.
+        var line = trail
+        if let car, line.last != car { line.append(car) }
+        let center = car ?? trail.last ?? HereLatLng(39.5, -98.35)
+        var markers: [HereMarker] = trail.map { HereMarker(at: $0, kind: .stop) }
+        if let car { markers.append(HereMarker(at: car, kind: .truck, label: currentPositionLabel)) }
+        var layers: [HereMapLayer] = []
+        if line.count >= 2 { layers.append(.route(polyline: line, colorHex: "#1473FF")) }
+        layers.append(.markers(markers))
+        return BespokeMapCanvas(
+            center: center,
+            zoom: trail.count >= 2 || car != nil ? 6 : 9,
+            interactive: true,
+            tilt: 0,
+            isDark: colorScheme == .dark,
+            layers: layers
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
     // MARK: KPI Strip

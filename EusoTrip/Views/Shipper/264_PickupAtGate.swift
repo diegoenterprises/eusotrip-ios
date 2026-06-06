@@ -60,7 +60,7 @@ private struct AtGateBody: View {
     private func commsButton(icon: String, label: String, phone: String?) -> some View {
         let mapDeepLink: URL? = {
             guard icon == "map.fill" else { return nil }
-            if let lat = live.pickup?.lat, let lng = live.pickup?.lng {
+            if let lat = live.pickup?.lat, let lng = live.pickup?.lng, !(lat == 0 && lng == 0) {
                 return URL(string: "maps://?ll=\(lat),\(lng)&q=\(label)")
             }
             if let addr = live.pickup?.address, !addr.isEmpty {

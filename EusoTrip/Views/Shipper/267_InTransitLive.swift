@@ -315,10 +315,12 @@ private struct InTransitBody: View {
             guard icon == "map.fill" else { return nil }
             // Truck's current pin first; fall back to delivery
             // facility coords; finally the destination address.
-            if let g = live.lastGeofence {
+            // Gate null-island (0,0): an un-locked geofence must fall through
+            // to the delivery/address branch, never deep-link to the ocean.
+            if let g = live.lastGeofence, !(g.latitude == 0 && g.longitude == 0) {
                 return URL(string: "maps://?ll=\(g.latitude),\(g.longitude)&q=Truck")
             }
-            if let lat = live.delivery?.lat, let lng = live.delivery?.lng {
+            if let lat = live.delivery?.lat, let lng = live.delivery?.lng, !(lat == 0 && lng == 0) {
                 return URL(string: "maps://?ll=\(lat),\(lng)&q=Delivery")
             }
             if let addr = live.delivery?.address, !addr.isEmpty {

@@ -61,10 +61,12 @@ private struct DeliveryApproachingBody: View {
         let mapDeepLink: URL? = {
             guard icon == "map.fill" else { return nil }
             // Receiver coords first; truck pin second; receiver address last.
-            if let lat = live.delivery?.lat, let lng = live.delivery?.lng {
+            // Gate null-island (0,0): an un-geocoded delivery must fall through
+            // to the truck pin / address link, never deep-link to the ocean.
+            if let lat = live.delivery?.lat, let lng = live.delivery?.lng, !(lat == 0 && lng == 0) {
                 return URL(string: "maps://?ll=\(lat),\(lng)&q=Receiver")
             }
-            if let g = live.lastGeofence {
+            if let g = live.lastGeofence, !(g.latitude == 0 && g.longitude == 0) {
                 return URL(string: "maps://?ll=\(g.latitude),\(g.longitude)&q=Truck")
             }
             if let addr = live.delivery?.address, !addr.isEmpty {

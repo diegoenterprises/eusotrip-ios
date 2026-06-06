@@ -374,7 +374,17 @@ struct DriverTripsPane: View {
     private var activeTripMap: some View {
         if let load = trip.currentLoad,
            let pickup = load.pickupLocation,
-           let delivery = load.deliveryLocation
+           let delivery = load.deliveryLocation,
+           // Null-island + finite gate: an active load whose pickup/delivery
+           // hasn't been geocoded yet defaults to (0,0). Plotting those pins
+           // (and centering the camera on their midpoint) drags the hero map
+           // to the Gulf of Guinea. Mirror `hasRealOriginCoord` / the
+           // `!(lat == 0 && lng == 0)` gate every sibling surface applies, and
+           // fall back to an honest awaiting-coordinates seam below.
+           !(pickup.lat == 0 && pickup.lng == 0),
+           !(delivery.lat == 0 && delivery.lng == 0),
+           pickup.lat.isFinite, pickup.lng.isFinite,
+           delivery.lat.isFinite, delivery.lng.isFinite
         {
             let routeReady = activeRoute != nil
                 && activeRouteLoadID == String(load.id)
@@ -434,7 +444,33 @@ struct DriverTripsPane: View {
             .task(id: String(load.id)) {
                 await fetchActiveRoute(for: load)
             }
+        } else {
+            activeTripMapAwaitingSeam
         }
+    }
+
+    /// Honest placeholder shown while the active load has no real pickup/
+    /// delivery coordinates yet (un-geocoded lane). The hero map lights up
+    /// automatically once the backfill geocoder populates the load's lat/lng
+    /// — we never plot a route across null island in the meantime. Mirrors
+    /// Terminal 700's "Awaiting yard coordinates" seam.
+    private var activeTripMapAwaitingSeam: some View {
+        EusoEmptyState(
+            systemImage: "mappin.slash",
+            title: "Awaiting route coordinates",
+            subtitle: "Your live route will appear here as soon as this load's pickup and delivery coordinates are on file."
+        )
+        .frame(height: 260)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(Brand.blue.opacity(scheme == .dark ? 0.06 : 0.03))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(Brand.blue.opacity(0.18), lineWidth: 1)
+        )
     }
 
     /// Calls HERE Routing v8 for the given active load and caches the
@@ -667,7 +703,15 @@ struct DriverTripsPane: View {
         // add-on overlays here: the board is a pick-a-load surface, kept
         // clean. (Migrated off the raster `HereMapView` onto the canonical
         // OMV vector renderer that the plan actually serves.)
-        let boardMarkers: [HereMarker] = filtered.map { load in
+        // Fix gate — pin ONLY loads whose pickup centroid is a real table
+        // hit. Loads the adapter couldn't geocode resolve to the CONUS
+        // fabrication sentinel (39.8283, -98.5795) or null-island (0,0);
+        // plotting those stacks every unknown city in Kansas and biases
+        // the camera centroid toward CONUS-center. `compactMap` (here a
+        // `filter`) drops them entirely — exactly as the distance path now
+        // omits un-geocoded lanes — so "no real coord" means "no pin".
+        let mappableLoads = filtered.filter { $0.hasRealOriginCoord }
+        let boardMarkers: [HereMarker] = mappableLoads.map { load in
             HereMarker(
                 at: HereLatLng(load.originLat, load.originLng),
                 kind: .pickup,
@@ -1151,6 +1195,32 @@ struct AvailableLoad: Identifiable, Equatable {
     /// (`TransportLexicon.short(..., equipmentRaw:)`) so sub-mode-specific
     /// terminology resolves correctly. nil when the source carries none.
     var equipmentRaw: String? = nil
+
+    /// Fix gate — true only when the pickup centroid is a REAL table hit,
+    /// never a fabricated anchor. The `AvailableLoad.from(_:)` adapter
+    /// resolves un-geocoded cities through the loose `centroid(for:)`,
+    /// which falls back to the CONUS geographic center
+    /// `(39.8283, -98.5795)` so the detail-sheet map has *something* to
+    /// anchor on. That fallback (and the `(0,0)` null-island) must NOT be
+    /// plotted as a pickup pin on the board map — it stacks every unknown
+    /// city in the middle of Kansas and drags the camera centroid there.
+    /// Mirrors the `!(lat == 0 && lng == 0)` gate every sibling surface
+    /// (212 Control Tower, 222 LiveTracking, 301 Dispatch, 375 FleetTrack,
+    /// 400 Convoy) already applies, plus the CONUS-sentinel rejection that
+    /// the distance path got via `centroidStrict` (founder report
+    /// 2026-05-04).
+    var hasRealOriginCoord: Bool {
+        // Null-island gate (lat/lng order: originLat is the latitude).
+        if originLat == 0 && originLng == 0 { return false }
+        // CONUS-center fabrication sentinel — the loose-centroid fallback.
+        // Compare with a small epsilon so float-rounded copies are caught.
+        let conusLat = 39.8283, conusLng = -98.5795
+        if abs(originLat - conusLat) < 0.0001 && abs(originLng - conusLng) < 0.0001 {
+            return false
+        }
+        // Sanity range — reject anything outside legal lat/lng bounds.
+        return abs(originLat) <= 90 && abs(originLng) <= 180
+    }
 
     /// Convenience — pickup as a `LoadLocation` for HERE Maps annotations.
     var pickupLocation: LoadLocation {

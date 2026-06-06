@@ -70,7 +70,7 @@ public struct HereAddOnSet: OptionSet, Hashable {
 
 // MARK: - Legend / ticker item
 
-public struct HereAddOnLegendItem: Identifiable, Hashable {
+public struct HereAddOnLegendItem: Identifiable, Hashable, Sendable {
     public let id = UUID()
     public let glyph: String      // "F" / "E" / "W" / "!" / "$" / "M" …
     public let colorHex: String
@@ -79,7 +79,7 @@ public struct HereAddOnLegendItem: Identifiable, Hashable {
 
 // MARK: - Detail surfaced when a pin is tapped
 
-public struct HereAddOnDetail: Identifiable, Hashable {
+public struct HereAddOnDetail: Identifiable, Hashable, Sendable {
     public let id: String
     public let kind: HereMarker.Kind
     public let title: String

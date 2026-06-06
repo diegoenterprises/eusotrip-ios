@@ -34,8 +34,25 @@ extension AvailableLoad {
     /// lightweight centroid table so the map preview still draws a real
     /// polyline between the two endpoints.
     static func from(_ my: MyLoad) -> AvailableLoad {
-        let (oLat, oLng) = Self.centroid(for: my.origin)
-        let (dLat, dLng) = Self.centroid(for: my.destination)
+        // Honest-or-nothing: only plot a pin when BOTH endpoints resolve
+        // from the STRICT centroid table. The loose `centroid(for:)` used
+        // to fall back to the CONUS geographic center (39.83, -98.58) on
+        // any miss, which dropped a real-looking pickup/delivery pin in
+        // Lebanon, Kansas while the label still read the true city. On a
+        // miss we emit the null-island sentinel (0, 0) so the map/route
+        // card suppresses the lane instead of fabricating a US-center
+        // location — mirroring the distance path's 0-mi-on-miss policy.
+        let oReal = Self.centroidStrict(for: my.origin)
+        let dReal = Self.centroidStrict(for: my.destination)
+        let (oLat, oLng): (Double, Double)
+        let (dLat, dLng): (Double, Double)
+        if let oReal, let dReal {
+            (oLat, oLng) = oReal
+            (dLat, dLng) = dReal
+        } else {
+            (oLat, oLng) = (0, 0)
+            (dLat, dLng) = (0, 0)
+        }
         let rpm = my.miles > 0 ? my.rate / Double(my.miles) : 0
         return AvailableLoad(
             id: my.id,
@@ -176,22 +193,35 @@ extension AvailableLoad {
     /// draws a valid polyline instead of dropping the camera into the
     /// Atlantic.
     static func from(_ s: LoadSummary) -> AvailableLoad {
-        // Map needs SOMETHING to anchor the camera, so use the loose
-        // centroid that falls back to US-center on miss.
-        let (oLat, oLng) = Self.centroid(for: s.origin)
-        let (dLat, dLng) = Self.centroid(for: s.destination)
-        // Distance must be HONEST — only compute haversine when BOTH
-        // endpoints have a real centroid hit. Unknown cities (Long
-        // Beach, Reno, Bakersfield, etc.) returned nil from the
-        // strict lookup → no fabricated miles → UI's `miles > 0`
-        // guard hides the "0 mi" badge cleanly.
+        // Distance AND marker coordinates must both be HONEST. Resolve
+        // each endpoint through the STRICT centroid table once; the loose
+        // `centroid(for:)` used to fall back to the CONUS geographic
+        // center (39.83, -98.58) on any miss, which made the Driver
+        // Eusoboards map (DriverTabPanes.mapCard) and the LoadDetailSheet
+        // route card plot a real-looking pickup pin / origin→destination
+        // polyline in Lebanon, Kansas while the label read the true city.
+        let oReal = Self.centroidStrict(for: s.origin)
+        let dReal = Self.centroidStrict(for: s.destination)
+        // Only compute haversine when BOTH endpoints have a real centroid
+        // hit. Unknown cities (Long Beach, Reno, Bakersfield, etc.)
+        // returned nil from the strict lookup → no fabricated miles →
+        // UI's `miles > 0` guard hides the "0 mi" badge cleanly.
         let estMiles: Int
-        if let oReal = Self.centroidStrict(for: s.origin),
-           let dReal = Self.centroidStrict(for: s.destination) {
+        let (oLat, oLng): (Double, Double)
+        let (dLat, dLng): (Double, Double)
+        if let oReal, let dReal {
             estMiles = Self.haversineRoadMiles(oLat: oReal.0, oLng: oReal.1,
                                                dLat: dReal.0, dLng: dReal.1)
+            // Same strict source feeds the displayed pin/route coords —
+            // no US-center fabrication.
+            (oLat, oLng) = oReal
+            (dLat, dLng) = dReal
         } else {
             estMiles = 0
+            // Null-island sentinel on a centroid miss so the map/route
+            // card suppresses the lane instead of pinning US-center.
+            (oLat, oLng) = (0, 0)
+            (dLat, dLng) = (0, 0)
         }
         let rpm = estMiles > 0 ? s.rate / Double(estMiles) : 0
         return AvailableLoad(
@@ -227,7 +257,12 @@ extension AvailableLoad {
     /// failed so the UI's `miles > 0` guard hides the "0 mi" badge
     /// and "$0.00/mi" rpm display gracefully.
     static func haversineRoadMiles(oLat: Double, oLng: Double, dLat: Double, dLng: Double) -> Int {
-        guard oLat != 0, oLng != 0, dLat != 0, dLng != 0 else { return 0 }
+        // Reject only TRUE null-island endpoints (0, 0). A single-axis
+        // zero is a legitimate coordinate — a point on the equator
+        // (lat == 0) or the prime meridian (lng == 0, e.g. UK / West
+        // Africa freight) — and must NOT be gated out, or the lane's
+        // mileage and $/mi rpm silently collapse to 0.
+        guard !(oLat == 0 && oLng == 0), !(dLat == 0 && dLng == 0) else { return 0 }
         let earthRadiusMiles = 3958.8
         let dLatR = (dLat - oLat) * .pi / 180
         let dLngR = (dLng - oLng) * .pi / 180
@@ -266,26 +301,6 @@ extension MyLoad {
 // MARK: - Centroid table (lightweight)
 
 extension AvailableLoad {
-
-    /// Best-effort lat/lng lookup for common US freight cities. Used by
-    /// the `MyLoad` adapter so the detail-sheet map can still draw a
-    /// blue→magenta polyline instead of a broken pin.
-    ///
-    /// Unknown cities fall back to a neutral CONUS centroid (39.83, -98.58
-    /// — the geographic center of the continental US) so MapKit has
-    /// something legal to render instead of (0, 0) which drops the camera
-    /// into the Atlantic.
-    /// Returns a real centroid lookup for known cities, or the
-    /// US-geographic-center fallback `(39.8283, -98.5795)` for
-    /// unknowns. Map drawers want SOMETHING to anchor the camera even
-    /// when the lookup misses, so the fallback is fine for that
-    /// purpose. **Distance helpers must NOT use this directly** — see
-    /// `centroidStrict(_:)` below for the nil-on-miss variant that
-    /// keeps haversine math honest.
-    fileprivate static func centroid(for cityState: String) -> (Double, Double) {
-        if let hit = centroidStrict(for: cityState) { return hit }
-        return (39.8283, -98.5795)
-    }
 
     /// Strict lookup — returns nil when the city isn't in the table
     /// so callers can branch. The previous loose `centroid(for:)`
