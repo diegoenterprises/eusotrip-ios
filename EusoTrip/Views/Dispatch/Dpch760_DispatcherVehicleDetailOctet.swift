@@ -14,12 +14,28 @@
 //
 //  All 8 screens share `DispatcherVehicleDetailBody`, parameterized
 //  by `VehicleDetailKind`. Body reads `fleet.getFleetStats` for live
-//  metrics. Bottom nav frozen.
+//  fleet metrics + `fleet.getVehicles` for the focal-unit identity.
+//  Bottom nav frozen.
 //
+//  ZERO-FABRICATION binding (2026-06-06):
+//    • Every numeric KPI is bound to a REAL field returned by the
+//      server proc `fleet.getFleetStats` (frontend/server/routers/fleet.ts:190).
+//      Real fields: totalVehicles, total, active, inMaintenance,
+//      maintenance, outOfService, utilization, inTransit, loading,
+//      available, atShipper, atConsignee, offDuty, issues, avgMpg.
+//    • There is NO backend source for a per-vehicle composite GRADE,
+//      Zeun HEALTH score, ON-TIME / INSPECTION-PASS / DEADHEAD ratio,
+//      ONBOARDING-step attainment, PEAK / CEILING / PERFECT marks, or a
+//      per-quarter rollup — `zeun_maintenance` exposes inspection records
+//      only (no graded health), and no getVehiclePerformance proc exists.
+//      Those fields render an honest "—" (EM_DASH), never a literal.
+//    • Identity comes from the FIRST real `fleet.getVehicles` row
+//      (FleetVehicleRow: unitNumber/make/model/year), never a hardcoded
+//      carrier persona.
 
 import SwiftUI
 
-// MARK: - Live response shape
+// MARK: - Live response shape (fleet.getFleetStats — server-verified fields)
 
 private struct FleetStatsResp: Decodable, Hashable {
     let totalVehicles: Int?
@@ -30,7 +46,12 @@ private struct FleetStatsResp: Decodable, Hashable {
     let avgMpg: Double?
     let inTransit: Int?
     let available: Int?
+    let issues: Int?
 }
+
+/// Honest absent-field placeholder — used wherever the server proc has no
+/// matching field (per-vehicle grading, SLA/FTR ratios, per-quarter rollups).
+private let EM_DASH = "—"
 
 // MARK: - Kind + config
 
@@ -52,60 +73,60 @@ private extension VehicleDetailKind {
         switch self {
         case .review:
             return .init(eyebrow: "DISPATCHER · VEHICLE · REVIEW",
-                         citation: "DISPATCHER REVIEW · FLEET VEHICLES · 90D",
+                         citation: "DISPATCHER REVIEW · FLEET VEHICLES · LIVE",
                          title: "Vehicle review",
-                         subhead: "AURORA-CTLG-00001 · 4 VEHICLES · 90D",
-                         pillCopy: "Renée rates utilization · maintenance · pulls · Eusorone TR-101 dedicated anchor",
-                         statusPill: "GRADE A · COMPOSITE 0.93")
+                         subhead: "FLEET VEHICLES · LIVE",
+                         pillCopy: "Live fleet utilization, maintenance status, and fuel economy from fleet.getFleetStats. Per-vehicle grading has no live source yet.",
+                         statusPill: "GRADE \(EM_DASH) · no scorecard proc")
         case .utilization:
             return .init(eyebrow: "DISPATCHER · VEHICLE · UTILIZATION",
-                         citation: "DISPATCHER UTILIZATION · 4 VEHICLES · 90D · §460-A",
+                         citation: "DISPATCHER UTILIZATION · FLEET VEHICLES · LIVE",
                          title: "Utilization",
-                         subhead: "SCORE-COMPOSITE · §460-A · 90D",
-                         pillCopy: "Renée rates per-class hours · 91.6% fleet · TR-101 96.4% peak",
-                         statusPill: "UTIL 91.6% · TR-101 PEAK 96.4%")
+                         subhead: "FLEET VEHICLES · LIVE",
+                         pillCopy: "Fleet utilization = in-use ÷ total vehicles, live from fleet.getFleetStats. Per-vehicle peak has no live source yet.",
+                         statusPill: "UTIL — see fleet metric")
         case .maintenance:
             return .init(eyebrow: "DISPATCHER · VEHICLE · MAINTENANCE",
-                         citation: "DISPATCHER MAINTENANCE · 4 VEHICLES · 90D · §460-B",
+                         citation: "DISPATCHER MAINTENANCE · FLEET VEHICLES · LIVE",
                          title: "Maintenance health",
-                         subhead: "SCORE-COMPOSITE · §460-B · 90D",
-                         pillCopy: "Renée rates per-class Zeun health · 0.92 fleet · TR-101 0.97 ceiling",
-                         statusPill: "HEALTH 0.92 · TR-101 CEILING 0.97")
+                         subhead: "FLEET VEHICLES · LIVE",
+                         pillCopy: "Live in-maintenance and out-of-service counts from fleet.getFleetStats. Per-vehicle Zeun health score is not yet provisioned.",
+                         statusPill: "HEALTH \(EM_DASH) · no Zeun grade")
         case .onTime:
             return .init(eyebrow: "DISPATCHER · VEHICLE · ON-TIME",
-                         citation: "DISPATCHER ON-TIME · 4 VEHICLES · 90D · §460-C",
+                         citation: "DISPATCHER ON-TIME · FLEET VEHICLES · LIVE",
                          title: "On-time pulls",
-                         subhead: "SCORE-COMPOSITE · §460-C · 90D",
-                         pillCopy: "Renée rates per-class on-time pull · 0.93 fleet · TR-101 1.00 ceiling",
-                         statusPill: "ON-TIME 0.93 · TR-101 PERFECT 1.00")
+                         subhead: "FLEET VEHICLES · LIVE",
+                         pillCopy: "On-time-pull grading has no live source on the backend yet. In-transit count is live from fleet.getFleetStats.",
+                         statusPill: "ON-TIME \(EM_DASH) · no live source")
         case .inspection:
             return .init(eyebrow: "DISPATCHER · VEHICLE · INSPECT",
-                         citation: "DISPATCHER INSPECTION · 4 VEHICLES · 90D · §460-D",
+                         citation: "DISPATCHER INSPECTION · FLEET VEHICLES · LIVE",
                          title: "Inspection pass",
-                         subhead: "SCORE-COMPOSITE · §460-D · 90D",
-                         pillCopy: "Renée rates per-class inspection pass · 0.96 fleet · TR-101 1.00 ceiling",
-                         statusPill: "PASS 0.96 · TR-101 PERFECT 1.00")
+                         subhead: "FLEET VEHICLES · LIVE",
+                         pillCopy: "Inspection-pass grading is not yet provisioned (zeun_maintenance returns records only). Open-maintenance count is live.",
+                         statusPill: "PASS \(EM_DASH) · no live source")
         case .deadhead:
             return .init(eyebrow: "DISPATCHER · VEHICLE · DEADHEAD",
-                         citation: "DISPATCHER DEADHEAD · 4 CORRIDORS · 90D · §460-E",
+                         citation: "DISPATCHER DEADHEAD · FLEET VEHICLES · LIVE",
                          title: "Deadhead corridor",
-                         subhead: "SCORE-COMPOSITE · §460-E · 90D",
-                         pillCopy: "Renée rates per-corridor deadhead · 0.09 fleet · TR-101 0.00 floor",
-                         statusPill: "DEADHEAD 0.09 · TR-101 FLOOR 0.00")
+                         subhead: "FLEET VEHICLES · LIVE",
+                         pillCopy: "Deadhead-corridor grading has no live source on the backend yet.",
+                         statusPill: "DEADHEAD \(EM_DASH) · no live source")
         case .onboarding:
             return .init(eyebrow: "DISPATCHER · VEHICLE · ONBOARD",
-                         citation: "DISPATCHER ONBOARD · 5 STEPS · 90D · §460-F",
+                         citation: "DISPATCHER ONBOARD · FLEET VEHICLES · LIVE",
                          title: "Onboarding step",
-                         subhead: "SCORE-COMPOSITE · §460-F · 90D",
-                         pillCopy: "Renée rates per-step attainment · 0.94 fleet · TR-101 5/5 ceiling",
-                         statusPill: "STEPS 0.94 · TR-101 5/5 TERMINAL")
+                         subhead: "FLEET VEHICLES · LIVE",
+                         pillCopy: "Per-step onboarding attainment has no live source on the backend yet. Total fleet count is live.",
+                         statusPill: "STEPS \(EM_DASH) · no live source")
         case .quarter:
             return .init(eyebrow: "DISPATCHER · VEHICLE · TRAJECTORY",
-                         citation: "DISPATCHER TRAJECTORY · 4 QUARTERS · YEAR 2026 · §460-G",
+                         citation: "DISPATCHER TRAJECTORY · FLEET VEHICLES · LIVE",
                          title: "Quarter trajectory",
-                         subhead: "SCORE-COMPOSITE · §460-G · YEAR 2026",
-                         pillCopy: "Renée rates year-cadence · 0.93 fleet target · TR-101 4Q ceiling streak",
-                         statusPill: "YEAR 0.93 · TR-101 4Q CEILING")
+                         subhead: "FLEET VEHICLES · LIVE",
+                         pillCopy: "Per-quarter trajectory rollups have no live source on the backend yet. Total fleet count is live.",
+                         statusPill: "YEAR \(EM_DASH) · no live source")
         }
     }
 }
@@ -133,6 +154,7 @@ private struct DispatcherVehicleDetailBody: View {
 
     @Environment(\.palette) private var palette
     @State private var stats: FleetStatsResp?
+    @State private var focalVehicle: FleetVehicleRow?
 
     var body: some View {
         let c = kind.config
@@ -173,13 +195,22 @@ private struct DispatcherVehicleDetailBody: View {
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        // Identity is the FIRST real fleet vehicle (fleet.getVehicles →
+        // FleetVehicleRow). No carrier persona, no invented unit number.
+        let v = focalVehicle
+        let unit = v?.unitNumber ?? EM_DASH
+        let makeModel: String = {
+            let parts = [v?.make, v?.model].compactMap { $0 }.filter { !$0.isEmpty }
+            return parts.isEmpty ? EM_DASH : parts.joined(separator: " ")
+        }()
+        let yearStr = v?.year.map { String($0) } ?? EM_DASH
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
                     .overlay(Image(systemName: "truck.box.fill").font(.system(size: 14)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Aurora Freight Lines · TR-101 Eusorone-dedicated").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("AURORA-CTLG-00001 · \(stats?.totalVehicles ?? 4) vehicles · MATRIX-50").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(unit) · \(makeModel)").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text("Year \(yearStr) · \(fmtInt(stats?.totalVehicles)) vehicles in fleet").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
@@ -188,63 +219,68 @@ private struct DispatcherVehicleDetailBody: View {
 
     private var kpiGrid: some View {
         let s = stats
+        // Every tile is either a REAL fleet.getFleetStats field or an honest
+        // "—". No invented literals, no `?? <number>` defaults. The secondary
+        // line states the real source (or "no live source") so an absent
+        // value is never read as a graded result.
+        let neutral = palette.textTertiary
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .review:
                 return [
-                    ("GRADE",       "A",                                "composite 0.93",                    .green),
-                    ("UTILIZATION", "\(s?.utilization ?? 91)%",         "+2.4 pts vs prior 90d",             .green),
-                    ("HEALTH",      "0.92",                              "Zeun fleet pillar",                  .green),
-                    ("MPG",         fmtMpg(s?.avgMpg),                   "fleet avg · live fuel",              .blue),
+                    ("GRADE",       EM_DASH,                     "no scorecard proc",            neutral),
+                    ("UTILIZATION", utilStr(s),                  "in-use ÷ total · live",        .green),
+                    ("HEALTH",      EM_DASH,                     "no Zeun grade",                neutral),
+                    ("MPG",         fmtMpg(s?.avgMpg),           "fleet avg · live fuel",        .blue),
                 ]
             case .utilization:
                 return [
-                    ("UTIL",        "\(s?.utilization ?? 91)%",         "fleet · §460-A",                     .green),
-                    ("IN-TRANSIT",  "\(s?.inTransit ?? 0)",              "vehicles · live",                    .blue),
-                    ("AVAILABLE",   "\(s?.available ?? 0)",              "vehicles · ready",                   .green),
-                    ("PEAK",        "96.4%",                              "TR-101 dedicated",                  .green),
+                    ("UTIL",        utilStr(s),                  "in-use ÷ total · live",        .green),
+                    ("IN-TRANSIT",  fmtInt(s?.inTransit),        "vehicles · live",              .blue),
+                    ("AVAILABLE",   fmtInt(s?.available),        "vehicles · live",              .green),
+                    ("PEAK",        EM_DASH,                     "no per-unit source",           neutral),
                 ]
             case .maintenance:
                 return [
-                    ("HEALTH",      "0.92",                              "fleet · §460-B",                     .green),
-                    ("IN-MAINT",    "\(s?.inMaintenance ?? 0)",          "vehicles · live",                    .orange),
-                    ("OOS",         "\(s?.outOfService ?? 0)",           "out-of-service · live",              .red),
-                    ("CEILING",     "0.97",                               "TR-101 pillar",                     .green),
+                    ("HEALTH",      EM_DASH,                     "no Zeun grade",                neutral),
+                    ("IN-MAINT",    fmtInt(s?.inMaintenance),    "vehicles · live",              .orange),
+                    ("OOS",         fmtInt(s?.outOfService),     "out-of-service · live",        .red),
+                    ("CEILING",     EM_DASH,                     "no per-unit source",           neutral),
                 ]
             case .onTime:
                 return [
-                    ("ON-TIME",     "0.93",                              "fleet · §460-C",                     .green),
-                    ("PULLS",       "\(s?.inTransit ?? 124)",            "90d · live",                         .blue),
-                    ("PERFECT",     "TR-101",                             "1.00 streak",                       .green),
-                    ("GRADE",       "A",                                   "pillar score",                      .green),
+                    ("ON-TIME",     EM_DASH,                     "no live source",               neutral),
+                    ("IN-TRANSIT",  fmtInt(s?.inTransit),        "vehicles · live",              .blue),
+                    ("PERFECT",     EM_DASH,                     "no per-unit source",           neutral),
+                    ("GRADE",       EM_DASH,                     "no scorecard proc",            neutral),
                 ]
             case .inspection:
                 return [
-                    ("PASS",        "0.96",                              "fleet · §460-D",                     .green),
-                    ("DEFECTS",     "\(s?.inMaintenance ?? 0)",          "open · live",                        .orange),
-                    ("PERFECT",     "TR-101",                             "1.00 streak",                       .green),
-                    ("GRADE",       "A",                                   "pillar score",                      .green),
+                    ("PASS",        EM_DASH,                     "no live source",               neutral),
+                    ("IN-MAINT",    fmtInt(s?.inMaintenance),    "open · live",                  .orange),
+                    ("PERFECT",     EM_DASH,                     "no per-unit source",           neutral),
+                    ("GRADE",       EM_DASH,                     "no scorecard proc",            neutral),
                 ]
             case .deadhead:
                 return [
-                    ("DEADHEAD",    "0.09",                              "fleet · §460-E",                     .green),
-                    ("FLOOR",       "TR-101",                             "0.00 floor",                        .green),
-                    ("CORRIDORS",   "4",                                  "active",                            .blue),
-                    ("GRADE",       "A",                                   "pillar score",                      .green),
+                    ("DEADHEAD",    EM_DASH,                     "no live source",               neutral),
+                    ("FLOOR",       EM_DASH,                     "no per-unit source",           neutral),
+                    ("CORRIDORS",   EM_DASH,                     "no live source",               neutral),
+                    ("GRADE",       EM_DASH,                     "no scorecard proc",            neutral),
                 ]
             case .onboarding:
                 return [
-                    ("STEPS",       "0.94",                              "fleet · §460-F",                     .green),
-                    ("TERMINAL",    "5/5",                                "TR-101 ladder",                     .green),
-                    ("ROSTER",      "47",                                  "Aurora vehicles",                  .blue),
-                    ("GRADE",       "A",                                   "pillar score",                      .green),
+                    ("STEPS",       EM_DASH,                     "no live source",               neutral),
+                    ("TERMINAL",    EM_DASH,                     "no per-unit source",           neutral),
+                    ("ROSTER",      fmtInt(s?.totalVehicles),    "vehicles in fleet · live",     .blue),
+                    ("GRADE",       EM_DASH,                     "no scorecard proc",            neutral),
                 ]
             case .quarter:
                 return [
-                    ("YEAR-AVG",    "0.93",                              "EOY · §460-G",                       .green),
-                    ("CEILING",     "TR-101",                             "4Q streak",                         .green),
-                    ("FLEET",       "\(s?.totalVehicles ?? 47)",          "vehicles · year",                   .blue),
-                    ("GRADE",       "A",                                   "year pillar",                      .green),
+                    ("YEAR-AVG",    EM_DASH,                     "no live source",               neutral),
+                    ("CEILING",     EM_DASH,                     "no per-unit source",           neutral),
+                    ("FLEET",       fmtInt(s?.totalVehicles),    "vehicles in fleet · live",     .blue),
+                    ("GRADE",       EM_DASH,                     "no scorecard proc",            neutral),
                 ]
             }
         }()
@@ -267,14 +303,14 @@ private struct DispatcherVehicleDetailBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .review:       return "Composite A · TR-101 dedicated anchor holding 0.97 ceiling. Roll into the broker-portal vehicle card."
-            case .utilization:  return "91.6% fleet utilization is healthy. Push TR-201/TR-301 to match TR-101's 96.4% peak."
-            case .maintenance:  return "Zeun health is strong. Bring TR-203 in for the deferred clutch service before it dips."
-            case .onTime:       return "TR-101 streaking 1.00. Use it as the playbook for the rest of the fleet. Pre-stage at yard 90 min out."
-            case .inspection:   return "0.96 pass-rate. Schedule the next CVSA roadside refresh for TR-202 before its 60d window closes."
-            case .deadhead:     return "0.09 fleet deadhead is in the top decile. Mine the empty-mile data for one more PHX-KC pull."
-            case .onboarding:   return "TR-101 5/5 terminal. Wrap TR-307 onboarding (step 4 still pending PIN) before its first NH₃ pull."
-            case .quarter:      return "Hold the 0.93 EOY target. TR-101 is the 4Q ceiling. Copy its pull cadence onto the next 3 dedicated trucks."
+            case .review:       return "Fleet utilization, maintenance status, and fuel economy are live from fleet.getFleetStats. A per-vehicle composite grade requires a scorecard procedure that does not exist yet."
+            case .utilization:  return "Utilization is live (in-use ÷ total vehicles). Per-vehicle peak utilization needs a per-unit metrics source that is not provisioned yet."
+            case .maintenance:  return "In-maintenance and out-of-service counts are live. A per-vehicle Zeun health score is not provisioned (zeun_maintenance returns inspection records only)."
+            case .onTime:       return "In-transit count is live. On-time-pull grading has no backend source yet — wire a per-load pull-timing rollup to populate this."
+            case .inspection:   return "Open-maintenance count is live. Inspection-pass grading is not provisioned yet — wire the inspections feed to populate pass rate."
+            case .deadhead:     return "Deadhead-corridor grading has no backend source yet — wire empty-mile data to populate this lane."
+            case .onboarding:   return "Total fleet count is live. Per-step onboarding attainment has no backend source yet."
+            case .quarter:      return "Total fleet count is live. Per-quarter trajectory rollups have no backend source yet."
             }
         }()
         return LifecycleCard {
@@ -288,13 +324,34 @@ private struct DispatcherVehicleDetailBody: View {
     private func load() async {
         do {
             stats = try await EusoTripAPI.shared.queryNoInput("fleet.getFleetStats")
-        } catch { /* */ }
+        } catch { /* leave nil → KPIs render honest "—" */ }
+        // Per-unit identity: surface the FIRST real fleet vehicle (typed
+        // FleetVehicleRow from fleet.getVehicles) instead of a hardcoded
+        // carrier persona. No live source → identity falls back to "—".
+        do {
+            focalVehicle = try await EusoTripAPI.shared.fleetCanonical.getVehicles(limit: 1).first
+        } catch { /* leave nil → identity renders honest "—" */ }
     }
 }
 
+/// Live fuel economy from `fleet.getFleetStats.avgMpg`. No invented fallback:
+/// when the server reports 0 / nil (no fuel-txn data) we render an honest "—".
 private func fmtMpg(_ raw: Double?) -> String {
-    let v = raw ?? 0
-    return v > 0 ? String(format: "%.1f", v) : "6.8"
+    guard let v = raw, v > 0 else { return EM_DASH }
+    return String(format: "%.1f", v)
+}
+
+/// Render an Int field honestly: nil → "—", otherwise the value.
+private func fmtInt(_ v: Int?) -> String {
+    guard let v = v else { return EM_DASH }
+    return String(v)
+}
+
+/// Live utilization percent (in-use ÷ total) from `fleet.getFleetStats`.
+/// nil → honest "—" (no invented "91%").
+private func utilStr(_ s: FleetStatsResp?) -> String {
+    guard let u = s?.utilization else { return EM_DASH }
+    return "\(u)%"
 }
 
 // MARK: - Screens (460-467)

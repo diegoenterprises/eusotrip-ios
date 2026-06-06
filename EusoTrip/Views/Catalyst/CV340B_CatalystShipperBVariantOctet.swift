@@ -4,30 +4,48 @@
 //
 //  Pixel-match to:
 //    340B Catalyst Shipper Scorecard Axis Detail   (§9.5 · COMPOSITE)
-//    341B Catalyst Shipper Profile Tier Detail     (§13.5 · GOLD)
+//    341B Catalyst Shipper Profile Tier Detail
 //    342B Catalyst Shipper Document Detail
 //    343B Catalyst Shipper Analytic Detail
-//    344B Catalyst Shipper Settlement Detail       (NET-30 12D · INV-A38FB12C7E)
+//    344B Catalyst Shipper Settlement Detail
 //    345B Catalyst Shipper Onboarding Step Detail
 //    346B Catalyst Shipper Compliance Row Detail
-//    347B Catalyst Shipper Quarter Detail          (PERF-Q1ROLL-EUSORONE)
+//    347B Catalyst Shipper Quarter Detail
 //
-//  Closes the Catalyst B-variant set (24/24). Cast: DU · Diego Usoro ·
-//  Eusorone Technologies · SHIP-001-EUSORONE · EIN 87-3104952.
-//  Body reads `shipperScorecard.getScorecard`. Bottom nav frozen.
+//  Closes the Catalyst B-variant set (24/24). Body reads the typed
+//  `shipperScorecard.getScorecard` proc (frontend/server/routers/
+//  shipperScorecard.ts:16) for the live composite + metrics, and the
+//  authenticated session (`EusoTripSession.user` → `AuthUser`) for the
+//  real shipper identity. Bottom nav frozen.
+//
+//  ZERO FABRICATION: the only live fields this proc exposes are
+//  overallScore / grade and metrics{tenderAcceptance, completionRate,
+//  cancellationRate, averageRate, volumeConsistency, totalLoads,
+//  deliveredCount, cancelledCount} + volumeByMonth. There is NO tier,
+//  EIN, document cabinet, DSO, RPM, per-invoice settlement line-item,
+//  onboarding-step ledger, compliance row, or quarter rollup behind this
+//  proc — every such sub-field renders an honest "—" (or, for the
+//  per-invoice settlement that is a confirmed backend gap, an honest
+//  EusoEmptyState). Identity comes from the session, never a persona.
 //
 
 import SwiftUI
 
 private struct CSBResp: Decodable, Hashable {
     let shipperId: Int?
+    let periodDays: Int?
     let overallScore: Int?
     let grade: String?
     let metrics: M?
     struct M: Decodable, Hashable {
         let tenderAcceptance: Double?
-        let totalLoads: Int?
+        let completionRate: Double?
+        let cancellationRate: Double?
         let averageRate: Double?
+        let volumeConsistency: Double?
+        let totalLoads: Int?
+        let deliveredCount: Int?
+        let cancelledCount: Int?
     }
 }
 
@@ -41,10 +59,9 @@ private struct CSBConfig {
     let title: String
     let subhead: String
     let pillCopy: String
-    let rowId: String
+    let rowIdPrefix: String
     let statusBadge: String
     let statusColor: Color
-    let grade: String
 }
 
 private extension CatalystShipperBKind {
@@ -54,66 +71,66 @@ private extension CatalystShipperBKind {
             return .init(eyebrow: "CATALYST · CUSTOMER · SCORECARD AXIS",
                          citation: "§9.5 · LIVE",
                          title: "Axis detail",
-                         subhead: "SHIP-001-EUSORONE · §9.5 · LIVE",
+                         subhead: "Catalyst · customer composite · §9.5 · LIVE",
                          pillCopy: "Catalyst rates shipper · same companyId both sides · clean §9.5 shipper books",
-                         rowId: "SCORE-260427-COMPOSITE-EUSORONE",
-                         statusBadge: "PUBLISHED · LIVE", statusColor: .green, grade: "A")
+                         rowIdPrefix: "SCORE",
+                         statusBadge: "PUBLISHED · LIVE", statusColor: .green)
         case .profileTier:
             return .init(eyebrow: "CATALYST · SHIPPER · TIER",
                          citation: "§13.5 · LIVE",
                          title: "Tier detail",
-                         subhead: "SHIP-001-EUSORONE · §13.5 · LIVE",
+                         subhead: "Catalyst · customer tier · §13.5 · LIVE",
                          pillCopy: "Catalyst rates shipper · same companyId both sides · clean §13.5 tier criteria",
-                         rowId: "TIER-260427-GOLD-SHIP001",
-                         statusBadge: "PUBLISHED · LIVE", statusColor: .green, grade: "G")
+                         rowIdPrefix: "TIER",
+                         statusBadge: "PUBLISHED · LIVE", statusColor: .green)
         case .document:
             return .init(eyebrow: "CATALYST · CUSTOMER · DOCUMENT",
-                         citation: "§387.7 · CURRENT",
+                         citation: "§387.7",
                          title: "Document detail",
-                         subhead: "SHIP-001-EUSORONE · §387.7 · COI on file",
+                         subhead: "Catalyst · customer document cabinet · §387.7",
                          pillCopy: "Catalyst archives shipper docs · same companyId both sides · clean §387.7 COI cabinet",
-                         rowId: "DOC-260427-COI-SHIP001",
-                         statusBadge: "ON FILE · CURRENT", statusColor: .green, grade: "A")
+                         rowIdPrefix: "DOC",
+                         statusBadge: "DOCUMENT CABINET", statusColor: .secondary)
         case .analytic:
             return .init(eyebrow: "CATALYST · CUSTOMER · ANALYTIC",
                          citation: "§9.5 · LIVE",
                          title: "Analytic detail",
-                         subhead: "SHIP-001-EUSORONE · §9.5 · LIVE",
-                         pillCopy: "Catalyst tracks payor KPIs · same companyId · clean tender-win + DSO + lane mix",
-                         rowId: "PERF-260427-DSO-SHIP001",
-                         statusBadge: "PUBLISHED · LIVE", statusColor: .green, grade: "A")
+                         subhead: "Catalyst · payor KPIs · §9.5 · LIVE",
+                         pillCopy: "Catalyst tracks payor KPIs · same companyId · clean tender-win + completion + lane mix",
+                         rowIdPrefix: "PERF",
+                         statusBadge: "PUBLISHED · LIVE", statusColor: .green)
         case .settlement:
             return .init(eyebrow: "CATALYST · CUSTOMER · SETTLEMENT",
-                         citation: "§387 NET-30 PAYOR · NET-30 12D",
+                         citation: "§387 NET-30 PAYOR",
                          title: "Settlement detail",
-                         subhead: "SHIP-001-EUSORONE · LD-…7E · NET-30 12D",
+                         subhead: "Catalyst · payor settlement · §387",
                          pillCopy: "Catalyst earns from shipper · same companyId both sides · clean payor records",
-                         rowId: "INV-260427-A38FB12C7E",
-                         statusBadge: "NET-30 · 12D OUTSTANDING", statusColor: .green, grade: "A")
+                         rowIdPrefix: "INV",
+                         statusBadge: "PAYOR SETTLEMENT", statusColor: .secondary)
         case .onboarding:
             return .init(eyebrow: "CATALYST · CUSTOMER · STEP DETAIL",
-                         citation: "§387 · COMPLETE",
+                         citation: "§387",
                          title: "Step detail",
-                         subhead: "SHIP-001-EUSORONE · §387 · 6/6 closed",
-                         pillCopy: "Catalyst onboards shipper · same companyId · all 6 pillars closed 2024-08-04",
-                         rowId: "STEP-260427-MSA-SHIP001",
-                         statusBadge: "TERMINAL · 6/6", statusColor: .green, grade: "A")
+                         subhead: "Catalyst · onboarding ladder · §387",
+                         pillCopy: "Catalyst onboards shipper · same companyId · onboarding ladder",
+                         rowIdPrefix: "STEP",
+                         statusBadge: "ONBOARDING LADDER", statusColor: .secondary)
         case .compliance:
             return .init(eyebrow: "CATALYST · CUSTOMER · COMPLIANCE ROW",
-                         citation: "§387 §388 · CLEAN",
+                         citation: "§387 §388",
                          title: "Compliance row",
-                         subhead: "SHIP-001-EUSORONE · §388 · BROKER AUTH",
-                         pillCopy: "Catalyst monitors payor · same companyId · clean §387 (cargo liability) §388 (broker auth)",
-                         rowId: "COMP-260427-AUTH-SHIP001",
-                         statusBadge: "CLEAN · 0 DISPUTES", statusColor: .green, grade: "A")
+                         subhead: "Catalyst · payor compliance · §387 §388",
+                         pillCopy: "Catalyst monitors payor · same companyId · §387 (cargo liability) §388 (broker auth)",
+                         rowIdPrefix: "COMP",
+                         statusBadge: "COMPLIANCE MONITOR", statusColor: .secondary)
         case .quarter:
             return .init(eyebrow: "CATALYST · CUSTOMER · QUARTER DETAIL",
-                         citation: "Q1-2026 · CLOSED",
+                         citation: "QUARTERLY",
                          title: "Quarter detail",
-                         subhead: "SHIP-001-EUSORONE · Q1-2026 · CLOSED",
-                         pillCopy: "Catalyst archives Q1 payor rollup · same companyId both sides · clean §6041 1099-NEC closed quarter",
-                         rowId: "PERF-260331-Q1ROLL-EUSORONE",
-                         statusBadge: "CLOSED · QC LOGGED", statusColor: .green, grade: "A")
+                         subhead: "Catalyst · payor quarterly rollup",
+                         pillCopy: "Catalyst archives payor quarterly rollup · same companyId both sides · §6041 1099-NEC",
+                         rowIdPrefix: "PERF",
+                         statusBadge: "QUARTERLY ROLLUP", statusColor: .secondary)
         }
     }
 }
@@ -138,7 +155,11 @@ private struct CatalystShipperBBody: View {
     let kind: CatalystShipperBKind
 
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
     @State private var resp: CSBResp?
+
+    // Honest placeholder for any field with no live source behind getScorecard.
+    private let none = "—"
 
     var body: some View {
         let c = kind.config
@@ -149,6 +170,7 @@ private struct CatalystShipperBBody: View {
                 rowCard(c)
                 identityRow
                 kpiGrid(c)
+                if kind == .settlement { settlementGapCard }
                 nextStepCard
                 Color.clear.frame(height: 96)
             }
@@ -178,13 +200,22 @@ private struct CatalystShipperBBody: View {
         }
     }
 
+    // The grade glyph is the live composite grade from getScorecard, falling
+    // back to the honest placeholder before the proc returns.
     private func rowCard(_ c: CSBConfig) -> some View {
-        LifecycleCard {
+        let grade = resp?.grade ?? none
+        // Honest row id: the prefix + the live shipperId echoed by the proc.
+        // No invented hash/date suffix (e.g. the old "260427-COMPOSITE-EUSORONE").
+        let rowId: String = {
+            if let sid = resp?.shipperId { return "\(c.rowIdPrefix)-\(sid)" }
+            return "\(c.rowIdPrefix)-\(none)"
+        }()
+        return LifecycleCard {
             HStack(spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text(c.grade).font(.system(size: 12, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(grade).font(.system(size: 12, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(c.rowId).font(.caption2.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text(rowId).font(.caption2.weight(.semibold)).foregroundStyle(palette.textPrimary)
                     Text(c.statusBadge).font(.caption2).foregroundStyle(c.statusColor)
                 }
                 Spacer()
@@ -192,14 +223,25 @@ private struct CatalystShipperBBody: View {
         }
     }
 
+    // Identity from the authenticated session — never a hardcoded persona.
     private var identityRow: some View {
-        LifecycleCard {
+        let user = session.user
+        let name = (user?.name?.isEmpty == false) ? user!.name! : none
+        let initials: String = {
+            guard let n = user?.name, !n.isEmpty else { return "—" }
+            let parts = n.split(separator: " ")
+            let chars = parts.prefix(2).compactMap { $0.first }
+            return chars.isEmpty ? "—" : String(chars).uppercased()
+        }()
+        let companyId = (user?.companyId?.isEmpty == false) ? user!.companyId! : none
+        let role = (user?.role.isEmpty == false) ? user!.role : none
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("DU").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(initials).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Diego Usoro · founder · Eusorone Technologies").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("SHIP-001-EUSORONE · companyId 1 · EIN 87-3104952 · MATRIX-50").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text(name).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text("companyId \(companyId) · \(role)").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
@@ -207,65 +249,84 @@ private struct CatalystShipperBBody: View {
     }
 
     private func kpiGrid(_ c: CSBConfig) -> some View {
-        let grade = resp?.grade ?? "A"
+        let grade = resp?.grade ?? none
         let m = resp?.metrics
+        // Honest live formatters: real field or the placeholder, never an invented literal.
+        let tender: String = m?.tenderAcceptance.map { String(format: "%.1f%%", $0) } ?? none
+        let completion: String = m?.completionRate.map { String(format: "%.1f%%", $0) } ?? none
+        let loads: String = m?.totalLoads.map(String.init) ?? none
+        _ = completion  // live field retained on the decode struct; not surfaced in this layout
+        let delivered: String = m?.deliveredCount.map(String.init) ?? none
+        let avgRate: String = m?.averageRate.map { "$\($0)" } ?? none
+        let state: String = (resp == nil) ? none : "LIVE"
+
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .scoreAxis:
                 return [
-                    ("GRADE",    grade,                                              "composite axis · §9.5",  .green),
-                    ("TENDER",   String(format: "%.1f%%", m?.tenderAcceptance ?? 88), "acceptance",          .green),
-                    ("LOADS",    "\(m?.totalLoads ?? 9)",                              "90d aggregate",       .blue),
-                    ("STATE",    "LIVE",                                                c.statusBadge,        .green),
+                    ("GRADE",      grade,      "composite axis · §9.5",   grade == none ? .secondary : .green),
+                    ("TENDER",     tender,     "acceptance",              tender == none ? .secondary : .green),
+                    ("LOADS",      loads,      "period aggregate",        loads == none ? .secondary : .blue),
+                    ("STATE",      state,      c.statusBadge,             state == "LIVE" ? .green : .secondary),
                 ]
             case .profileTier:
+                // No tier / EIN / pillar-boost source behind getScorecard — honest "—".
                 return [
-                    ("TIER",     "GOLD",                                                  "Eusorone · §13.5",   .green),
-                    ("EIN",      "87-3104952",                                              "verified",        .blue),
-                    ("STATE",    "LIVE",                                                    c.statusBadge,     .green),
-                    ("EFFECT",   "+0.06",                                                    "pillar boost",   .green),
+                    ("TIER",       none,       "no tier source",          .secondary),
+                    ("EIN",        none,       "no source",               .secondary),
+                    ("GRADE",      grade,      "payor pillar",            grade == none ? .secondary : .green),
+                    ("EFFECT",     none,       "no pillar-boost source",  .secondary),
                 ]
             case .document:
+                // No document-cabinet source behind getScorecard — honest "—".
                 return [
-                    ("DOC",      "COI",                                                      "§387.7 · auto+general", .green),
-                    ("STATE",    "ON FILE",                                                   c.statusBadge,    .green),
-                    ("RUNWAY",   "187d",                                                        "to expiry",   .green),
-                    ("OWNER",    "Eusorone",                                                    "on file",     .blue),
+                    ("DOC",        none,       "no document source",      .secondary),
+                    ("STATE",      none,       c.statusBadge,             .secondary),
+                    ("RUNWAY",     none,       "no expiry source",        .secondary),
+                    ("OWNER",      none,       "no source",               .secondary),
                 ]
             case .analytic:
+                // DSO / RPM are NOT in getScorecard — honest "—". averageRate is the
+                // only live rate field (avg per load, not per-mile).
                 return [
-                    ("DSO",      "5.8d",                                                         "Eusorone floor",  .green),
-                    ("TENDER",   String(format: "%.1f%%", m?.tenderAcceptance ?? 88),             "acceptance",     .green),
-                    ("STATE",    "LIVE",                                                          c.statusBadge,    .green),
-                    ("RPM",      "$5.12",                                                          "lane average",  .blue),
+                    ("DSO",        none,       "no DSO source",           .secondary),
+                    ("TENDER",     tender,     "acceptance",              tender == none ? .secondary : .green),
+                    ("AVG RATE",   avgRate,    "avg per load · period",   avgRate == none ? .secondary : .blue),
+                    ("RPM",        none,       "no per-mile source",      .secondary),
                 ]
             case .settlement:
+                // Per-invoice settlement line-item is a confirmed backend gap.
+                // No invented invoice / chain / NET-30 / book literals.
                 return [
-                    ("INVOICE",  "$1,805",                                                          "this allocation",  .green),
-                    ("CHAIN",    "LD-...7E",                                                         "billed",         .blue),
-                    ("STATE",    "NET-30",                                                            "12d outstanding", .green),
-                    ("BOOK",     "§387",                                                              "payor clean",   .blue),
+                    ("INVOICE",    none,       "per-invoice backend gap", .secondary),
+                    ("CHAIN",      none,       "no source",               .secondary),
+                    ("STATE",      none,       c.statusBadge,             .secondary),
+                    ("BOOK",       none,       "no source",               .secondary),
                 ]
             case .onboarding:
+                // No onboarding-step ledger behind getScorecard — honest "—".
                 return [
-                    ("STEPS",    "6/6",                                                                "MSA · COI · etc",    .green),
-                    ("STATE",    "TERMINAL",                                                            c.statusBadge,       .green),
-                    ("CLOSED",   "2024-08-04",                                                           "anniversary",     .blue),
-                    ("OWNER",    "Eusorone",                                                              "all closed",     .green),
+                    ("STEPS",      none,       "no step source",          .secondary),
+                    ("STATE",      none,       c.statusBadge,             .secondary),
+                    ("CLOSED",     none,       "no source",               .secondary),
+                    ("OWNER",      none,       "no source",               .secondary),
                 ]
             case .compliance:
+                // No per-compliance-row source behind getScorecard — honest "—".
                 return [
-                    ("AUTH",     "BROKER",                                                                 "§388 · MC-306",  .green),
-                    ("STATE",    "CLEAN",                                                                   c.statusBadge,   .green),
-                    ("DISPUTES", "0",                                                                        "YTD",           .green),
-                    ("CARGO",    "$100K",                                                                     "§387 minimum",  .green),
+                    ("AUTH",       none,       "no auth source",          .secondary),
+                    ("STATE",      none,       c.statusBadge,             .secondary),
+                    ("DISPUTES",   none,       "no source",               .secondary),
+                    ("CARGO",      none,       "no source",               .secondary),
                 ]
             case .quarter:
+                // No per-quarter rollup behind getScorecard — only the live
+                // period aggregate (loads delivered) is real; gross / 1099 are gaps.
                 return [
-                    ("Q1",       "CLOSED",                                                                    "2026-03-31",     .green),
-                    ("INVOICES", "\(m?.totalLoads ?? 9)",                                                     "$14,820 gross", .green),
-                    ("1099-NEC", "READY",                                                                      "§6041 closed",  .blue),
-                    ("STATE",    "QC LOGGED",                                                                   c.statusBadge,  .green),
+                    ("QUARTER",    none,       "no quarter rollup",       .secondary),
+                    ("DELIVERED",  delivered,  "period · live",           delivered == none ? .secondary : .green),
+                    ("1099-NEC",   none,       "no source",               .secondary),
+                    ("STATE",      none,       c.statusBadge,             .secondary),
                 ]
             }
         }()
@@ -285,17 +346,28 @@ private struct CatalystShipperBBody: View {
         }
     }
 
+    // Per-invoice settlement is a confirmed backend gap — surface it honestly
+    // rather than inventing a $1,805 / INV-…7E / 12d-outstanding line item.
+    private var settlementGapCard: some View {
+        EusoEmptyState(
+            systemImage: "doc.text.magnifyingglass",
+            title: "No per-invoice settlement",
+            subtitle: "shipperScorecard.getScorecard returns the payor composite and aggregate metrics only. Per-invoice settlement line-items are a backend gap.",
+            comingSoon: true
+        )
+    }
+
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .scoreAxis:   return "Composite axis A. Pinned to §9.5 shipper books. Refresh weekly with the next QC cycle."
-            case .profileTier: return "Gold tier (§13.5) holds +0.06 pillar boost. Reconfirm criteria on Q2 baseline."
-            case .document:    return "COI (§387.7) on file with 187d runway. Set 60-day reminder before anniversary."
-            case .analytic:    return "DSO 5.8d, tender 88%. Best-in-class payor. Replicate the playbook on dormant accounts."
-            case .settlement:  return "Invoice A38FB12C7E at $1,805, NET-30, 12d outstanding. Auto-collect at maturity."
-            case .onboarding:  return "All 6 steps closed (MSA / W-9 / COI / terms / rate-card / first PO). Lock for Q2."
-            case .compliance:  return "§387 §388 clean. Renew COI 30 days before 2026-08-04 anniversary."
-            case .quarter:     return "Q1 closed 2026-03-31. 1099-NEC ready for §6041 export end-of-quarter."
+            case .scoreAxis:   return "Composite axis is pinned to §9.5 shipper books. Refresh with the next QC cycle."
+            case .profileTier: return "Tier criteria (§13.5) are not exposed by getScorecard. Reconfirm on the source-of-record."
+            case .document:    return "Document cabinet (§387.7) is not exposed by getScorecard. Open the document service for COI runway."
+            case .analytic:    return "Tender acceptance and average rate are live. DSO / RPM are not exposed by this proc."
+            case .settlement:  return "Per-invoice settlement is a backend gap. Open settlements for the live ledger."
+            case .onboarding:  return "Onboarding-step ledger is not exposed by getScorecard. Open onboarding for step state."
+            case .compliance:  return "Per-compliance-row detail (§387 §388) is not exposed by getScorecard. Open the compliance service."
+            case .quarter:     return "Quarterly rollup is not exposed by getScorecard. Only the live period aggregate is shown here."
             }
         }()
         return LifecycleCard {
@@ -308,7 +380,15 @@ private struct CatalystShipperBBody: View {
 
     private func load() async {
         struct In: Encodable { let shipperId: Int; let periodDays: Int }
-        do { resp = try await EusoTripAPI.shared.query("shipperScorecard.getScorecard", input: In(shipperId: 0, periodDays: 90)) } catch { /* */ }
+        // The current user is the shipper of record; derive the id from the
+        // authenticated session (numeric ids only), else 0 — never a persona.
+        let sid = Int(session.user?.id ?? "") ?? 0
+        do {
+            resp = try await EusoTripAPI.shared.query(
+                "shipperScorecard.getScorecard",
+                input: In(shipperId: sid, periodDays: 90)
+            )
+        } catch { /* leave resp nil → honest "—" placeholders */ }
     }
 }
 

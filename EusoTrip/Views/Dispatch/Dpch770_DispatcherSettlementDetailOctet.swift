@@ -16,9 +16,28 @@
 //  `payroll.getSettlementStats` for live finance metrics. Bottom nav
 //  frozen (Dispatcher: Home / Board / ESANG / Me).
 //
+//  ZERO-FABRICATION binding (2026-06-06):
+//  Bound to `payroll.getSettlementStats` (frontend/server/routers/payroll.ts
+//  §getSettlementStats). The proc returns ONLY three live fields, computed
+//  from completed payrollItems for the resolved company:
+//      • totalSettled / totalPaid  = SUM(netAmount) of completed items
+//      • total                     = COUNT of completed items
+//  The proc hard-codes `pending`, `thisWeek`, and `totalRevenue` to 0 — they
+//  carry no signal, so nothing is derived from them. There is NO live source
+//  for: company/carrier identity name, GRADE, DSO, QPAY velocity, open-ledger
+//  balance, clean/adjustment rate, onboarding steps, compliance rows, per-class
+//  breakdowns, §-citations, or per-quarter rollups. Every one of those renders
+//  an honest em-dash ("—"). Identity comes from the authenticated session
+//  (`session.user`), never a hardcoded persona.
+//
 
 import SwiftUI
 
+private let kEmDash = "—"
+
+/// Wire shape of `payroll.getSettlementStats`. Mirrors the proc's return object
+/// 1:1. `pending`, `thisWeek`, and `totalRevenue` are hard-zeroed server-side and
+/// are NOT surfaced as metrics.
 private struct DSPayrollStats: Decodable, Hashable {
     let totalPaid: Double?
     let pending: Double?
@@ -34,11 +53,9 @@ enum DispatcherSettlementKind: String {
 
 private struct DSConfig {
     let eyebrow: String
-    let citation: String
     let title: String
     let subhead: String
     let pillCopy: String
-    let statusPill: String
 }
 
 private extension DispatcherSettlementKind {
@@ -46,60 +63,44 @@ private extension DispatcherSettlementKind {
         switch self {
         case .review:
             return .init(eyebrow: "DISPATCHER · SETTLEMENT · REVIEW",
-                         citation: "DISPATCHER REVIEW · SETTLEMENT STREAMS · 90D",
                          title: "Settlement review",
-                         subhead: "AURORA-CTLG-00001 · 4 CLASSES · 90D",
-                         pillCopy: "Renée rates DSO · quick-pay velocity · adjustments · Eusorone NH₃ settlement anchor",
-                         statusPill: "GRADE A · COMPOSITE 0.93")
+                         subhead: "SETTLEMENT STREAMS",
+                         pillCopy: "Review settled volume and cleared-event count from completed payroll runs.")
         case .dso:
             return .init(eyebrow: "DISPATCHER · SETTLEMENT · DSO",
-                         citation: "DISPATCHER DSO · 4 CLASSES · 90D · §500-A",
                          title: "DSO axis",
-                         subhead: "SCORE-COMPOSITE · §500-A · 90D",
-                         pillCopy: "Renée rates per-class DSO · 11.4d fleet · EUSORONE 4.2d floor",
-                         statusPill: "DSO 11.4d · EUSORONE FLOOR 4.2d")
+                         subhead: "SCORE-COMPOSITE",
+                         pillCopy: "Days-sales-outstanding grading is not yet computed by the settlement service.")
         case .qpayVelocity:
             return .init(eyebrow: "DISPATCHER · SETTLEMENT · QPAY VELOCITY",
-                         citation: "DISPATCHER QPAY · 4 CLASSES · 90D · §500-B",
                          title: "QPAY velocity",
-                         subhead: "SCORE-COMPOSITE · §500-B · 90D",
-                         pillCopy: "Renée rates per-class quick-pay velocity · 0.88 fleet · EUSORONE 1.00 ceiling",
-                         statusPill: "QPAY 0.88 · EUSORONE CEILING 1.00")
+                         subhead: "SCORE-COMPOSITE",
+                         pillCopy: "Quick-pay velocity grading is not yet computed by the settlement service.")
         case .openLedger:
             return .init(eyebrow: "DISPATCHER · SETTLEMENT · OPEN LEDGER",
-                         citation: "DISPATCHER OPEN LEDGER · 4 CLASSES · 90D · §500-C",
                          title: "Open ledger",
-                         subhead: "SCORE-COMPOSITE · §500-C · 90D",
-                         pillCopy: "Renée rates per-class balance · $48.7K fleet · EUSORONE $0 floor",
-                         statusPill: "OPEN $48.7K · EUSORONE FLOOR $0")
+                         subhead: "SCORE-COMPOSITE",
+                         pillCopy: "Open-balance ledger totals are not yet reported by the settlement service.")
         case .cleanRate:
             return .init(eyebrow: "DISPATCHER · SETTLEMENT · CLEAN RATE",
-                         citation: "DISPATCHER CLEAN RATE · 4 CLASSES · 90D · §500-D",
                          title: "Clean rate",
-                         subhead: "SCORE-COMPOSITE · §500-D · 90D",
-                         pillCopy: "Renée reconciles per-class ratios · 0.96 fleet · EUSORONE 1.00 ceiling",
-                         statusPill: "CLEAN 0.96 · EUSORONE CEILING 1.00")
+                         subhead: "SCORE-COMPOSITE",
+                         pillCopy: "Adjustment / clean-rate ratios are not yet computed by the settlement service.")
         case .onboarding:
             return .init(eyebrow: "DISPATCHER · SETTLEMENT · ONBOARDING",
-                         citation: "DISPATCHER ONBOARDING · 4 CLASSES · 90D · §500-E",
                          title: "Onboarding",
-                         subhead: "SCORE-COMPOSITE · §500-E · 90D",
-                         pillCopy: "Renée onboards per-class steps · 4.05 fleet · EUSORONE 5/5 ceiling",
-                         statusPill: "STEPS 4.05 · EUSORONE 5/5 TERMINAL")
+                         subhead: "SCORE-COMPOSITE",
+                         pillCopy: "Per-class onboarding step scoring is not yet reported by the settlement service.")
         case .compliance:
             return .init(eyebrow: "DISPATCHER · SETTLEMENT · COMPLIANCE",
-                         citation: "DISPATCHER COMPLIANCE · 4 CLASSES · 90D · §500-F",
                          title: "Compliance",
-                         subhead: "SCORE-COMPOSITE · §500-F · 90D",
-                         pillCopy: "Renée audits per-class compliance rows · 4.15 fleet · EUSORONE 5/5 ceiling",
-                         statusPill: "ROWS 4.15 · EUSORONE 5/5 CLEAN")
+                         subhead: "SCORE-COMPOSITE",
+                         pillCopy: "Per-class compliance-row scoring is not yet reported by the settlement service.")
         case .quarter:
             return .init(eyebrow: "DISPATCHER · SETTLEMENT · TRAJECTORY",
-                         citation: "DISPATCHER SETTLEMENT TRAJECTORY · 4 QUARTERS · YEAR 2026 · §500-G",
                          title: "Quarter trajectory",
-                         subhead: "SCORE-COMPOSITE · §500-G · YEAR 2026",
-                         pillCopy: "Renée rates year-cadence · 0.95 fleet target · EUSORONE 4Q ceiling streak",
-                         statusPill: "YEAR 0.95 · EUSORONE 4Q CEILING")
+                         subhead: "SCORE-COMPOSITE",
+                         pillCopy: "Per-quarter trajectory rollups are not yet reported by the settlement service.")
         }
     }
 }
@@ -124,6 +125,7 @@ private struct DispatcherSettlementBody: View {
     let kind: DispatcherSettlementKind
 
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
     @State private var stats: DSPayrollStats?
 
     var body: some View {
@@ -157,21 +159,38 @@ private struct DispatcherSettlementBody: View {
     private func pill(_ c: DSConfig) -> some View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+                Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 Text(c.pillCopy).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                Text(c.statusPill).font(.caption2).foregroundStyle(palette.textSecondary)
+                Text(statusPill).font(.caption2).foregroundStyle(palette.textSecondary)
             }
         }
     }
 
+    /// Status pill. Only the `review` lane has a live composite to show
+    /// (settled volume + cleared-event count). Every other lane has no live
+    /// grade/score source, so it renders an honest em-dash.
+    private var statusPill: String {
+        switch kind {
+        case .review:
+            let settled = currencyKLive(stats?.totalSettled)
+            let events = stats?.total.map(String.init) ?? kEmDash
+            return "SETTLED \(settled) · \(events) EVENTS"
+        default:
+            return kEmDash
+        }
+    }
+
     private var identityRow: some View {
-        LifecycleCard {
+        // Identity from the authenticated session — never a hardcoded persona.
+        let displayName = session.user?.name ?? "Dispatch user"
+        let companyLine = session.user?.companyId.map { "companyId · \($0)" } ?? kEmDash
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
                     .overlay(Image(systemName: "dollarsign.circle.fill").font(.system(size: 14)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Aurora Freight Lines · Settlement Streams").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("AURORA-CTLG-00001 · 4 classes · 184 events · EUSORONE TIER 1 DEDICATED").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(displayName) · Settlement Streams").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text(companyLine).font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
@@ -180,64 +199,69 @@ private struct DispatcherSettlementBody: View {
 
     private var kpiGrid: some View {
         let s = stats
-        let openLedger = (s?.pending ?? 0) > 0 ? "$\(Int(s!.pending! / 1000))K" : "$48.7K"
+        // The only live values from payroll.getSettlementStats are settled
+        // volume (totalSettled / totalPaid) and cleared-event count (total).
+        let settled = currencyKLive(s?.totalSettled)
+        let volume = currencyKLive(s?.totalPaid)
+        let events = s?.total.map(String.init) ?? kEmDash
+        // Lane-specific grades/scores have no live source → honest em-dash.
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .review:
                 return [
-                    ("GRADE",     "A",                                "composite 0.93",            .green),
-                    ("DSO",       "11.4d",                             "fleet · EUSO 4.2d floor",  .green),
-                    ("SETTLED",   currencyK(s?.totalSettled ?? 0, fallback: 148.2), "90d gross",   .blue),
-                    ("EVENTS",    "\(s?.total ?? 184)",                "90d aggregate",            .blue),
+                    ("GRADE",     kEmDash,  "no grading source",   .gray),
+                    ("DSO",       kEmDash,  "no DSO source",       .gray),
+                    ("SETTLED",   settled,  "completed runs",      .blue),
+                    ("EVENTS",    events,   "cleared",             .blue),
                 ]
             case .dso:
                 return [
-                    ("DSO",       "11.4d",                             "fleet · §500-A",           .green),
-                    ("EUSO",      "4.2d",                              "floor · 90d",             .green),
-                    ("EVENTS",    "\(s?.total ?? 184)",                "90d · cleared",            .blue),
-                    ("GRADE",     "A",                                  "DSO pillar",              .green),
+                    ("DSO",       kEmDash,  "no DSO source",       .gray),
+                    ("FLOOR",     kEmDash,  "no floor source",    .gray),
+                    ("EVENTS",    events,   "cleared",             .blue),
+                    ("GRADE",     kEmDash,  "no grading source",  .gray),
                 ]
             case .qpayVelocity:
                 return [
-                    ("QPAY",      "0.88",                               "velocity · §500-B",        .green),
-                    ("CEILING",   "1.00",                                "EUSORONE peak",          .green),
-                    ("VOLUME",    currencyK(s?.totalPaid ?? 0, fallback: 148.2), "90d via QPAY",    .blue),
-                    ("GRADE",     "A",                                    "velocity pillar",        .green),
+                    ("QPAY",      kEmDash,  "no velocity source",  .gray),
+                    ("CEILING",   kEmDash,  "no ceiling source",  .gray),
+                    ("VOLUME",    volume,   "settled, completed",  .blue),
+                    ("GRADE",     kEmDash,  "no grading source",  .gray),
                 ]
             case .openLedger:
                 return [
-                    ("OPEN",      openLedger,                              "ledger · §500-C",       .orange),
-                    ("EUSO",      "$0",                                     "floor · 90d",          .green),
-                    ("EVENTS",    "\(s?.total ?? 184)",                      "in-flight",          .blue),
-                    ("GRADE",     "A",                                        "balance pillar",     .green),
+                    ("OPEN",      kEmDash,  "no ledger source",    .gray),
+                    ("FLOOR",     kEmDash,  "no floor source",    .gray),
+                    ("EVENTS",    events,   "cleared",             .blue),
+                    ("GRADE",     kEmDash,  "no grading source",  .gray),
                 ]
             case .cleanRate:
                 return [
-                    ("CLEAN",     "0.96",                                     "rate · §500-D",       .green),
-                    ("CEILING",   "1.00",                                      "EUSORONE peak",     .green),
-                    ("ADJUST",    "3.8%",                                       "fleet · 90d",      .orange),
-                    ("GRADE",     "A",                                            "ratio pillar",   .green),
+                    ("CLEAN",     kEmDash,  "no rate source",      .gray),
+                    ("CEILING",   kEmDash,  "no ceiling source",  .gray),
+                    ("ADJUST",    kEmDash,  "no adjust source",   .gray),
+                    ("GRADE",     kEmDash,  "no grading source",  .gray),
                 ]
             case .onboarding:
                 return [
-                    ("STEPS",     "4.05",                                          "fleet · §500-E",  .green),
-                    ("CEILING",   "5/5",                                            "EUSORONE peak", .green),
-                    ("OPEN-IP",   "3",                                                "in-progress", .orange),
-                    ("GRADE",     "A",                                                  "steps pillar", .green),
+                    ("STEPS",     kEmDash,  "no steps source",     .gray),
+                    ("CEILING",   kEmDash,  "no ceiling source",  .gray),
+                    ("OPEN-IP",   kEmDash,  "no progress source", .gray),
+                    ("GRADE",     kEmDash,  "no grading source",  .gray),
                 ]
             case .compliance:
                 return [
-                    ("ROWS",      "4.15",                                                "fleet · §500-F", .green),
-                    ("CEILING",   "5/5",                                                  "EUSORONE peak", .green),
-                    ("AUDIT",     "0 OPEN",                                                "90d · clean",  .green),
-                    ("GRADE",     "A",                                                      "compliance pillar", .green),
+                    ("ROWS",      kEmDash,  "no rows source",      .gray),
+                    ("CEILING",   kEmDash,  "no ceiling source",  .gray),
+                    ("AUDIT",     kEmDash,  "no audit source",    .gray),
+                    ("GRADE",     kEmDash,  "no grading source",  .gray),
                 ]
             case .quarter:
                 return [
-                    ("YEAR-AVG",  "0.95",                                                    "EOY · §500-G", .green),
-                    ("CEILING",   "EUSORONE",                                                  "4Q streak",   .green),
-                    ("EVENTS",    "\(s?.total ?? 184)",                                          "year",       .blue),
-                    ("GRADE",     "A",                                                              "year pillar", .green),
+                    ("YEAR-AVG",  kEmDash,  "no rollup source",    .gray),
+                    ("CEILING",   kEmDash,  "no ceiling source",  .gray),
+                    ("EVENTS",    events,   "cleared",             .blue),
+                    ("GRADE",     kEmDash,  "no grading source",  .gray),
                 ]
             }
         }()
@@ -258,16 +282,16 @@ private struct DispatcherSettlementBody: View {
     }
 
     private var nextStepCard: some View {
+        // Only the review lane has a live figure to act on. Every score-driven
+        // lane has no live source, so the next-step copy says so honestly.
         let copy: String = {
             switch kind {
-            case .review:        return "Composite A · EUSORONE NH₃ settlement anchor holding 4.2d DSO floor. Refresh weekly."
-            case .dso:           return "11.4d fleet DSO is healthy. Push TR-201 / TR-301 to match EUSORONE's 4.2d floor."
-            case .qpayVelocity:  return "0.88 QPAY velocity, accelerate the slow accounts via the next NACHA window."
-            case .openLedger:    return "$48.7K open across 4 classes. Drain via QPAY in the next NACHA cycle."
-            case .cleanRate:     return "Clean rate 0.96. Investigate the 3.8% adjustment band, most likely lumper reconciliation."
-            case .onboarding:    return "EUSORONE 5/5 closed; bring the 3 in-progress accounts to terminal before Q2 cut."
-            case .compliance:    return "Zero open audits. Quarterly compliance row clean, archive Q1 evidence pack."
-            case .quarter:       return "Year-rolling 0.95 target. EUSORONE 4Q streak. Copy playbook to next 3 dedicated accounts."
+            case .review:
+                let events = stats?.total.map(String.init) ?? kEmDash
+                let settled = currencyKLive(stats?.totalSettled)
+                return "\(events) cleared settlement events totalling \(settled). Refresh to reconcile against the latest completed payroll run."
+            default:
+                return "No live score is reported by the settlement service for this lane yet. Values render as \(kEmDash) until the metric is wired."
             }
         }()
         return LifecycleCard {
@@ -283,8 +307,10 @@ private struct DispatcherSettlementBody: View {
     }
 }
 
-private func currencyK(_ value: Double, fallback: Double) -> String {
-    let v = value > 0 ? value : fallback * 1000
+/// Currency formatter for a genuinely-optional live figure. Returns an honest
+/// em-dash when the field is absent — never a fabricated fallback amount.
+private func currencyKLive(_ value: Double?) -> String {
+    guard let v = value else { return kEmDash }
     if v >= 1000 { return String(format: "$%.1fK", v / 1000) }
     return String(format: "$%.0f", v)
 }

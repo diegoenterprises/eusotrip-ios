@@ -13,30 +13,59 @@
 //    447 Dispatcher Shipper Quarter Detail
 //
 //  All 8 screens share `DispatcherShipperDetailBody`, parameterized
-//  by `ShipperDetailKind`. Body reads `shipperScorecard.getScorecard`
-//  for live metrics. Bottom nav frozen.
+//  by `ShipperDetailKind`. Body reads two live procs and NOTHING ELSE:
+//
+//    • shipperScorecard.getScorecard  → grade / overallScore / metrics
+//      { tenderAcceptance, completionRate, cancellationRate, averageRate,
+//        volumeConsistency, totalLoads, deliveredCount, cancelledCount } +
+//      volumeByMonth (month→count map). These are the ONLY KPI sources.
+//    • users.getById                  → the viewed shipper's real identity
+//      (user.name / user.email / company.name). NEVER a hardcoded persona.
+//
+//  ZERO fabrication: every metric below maps to a field the server proc
+//  actually returns. Fields the proc does NOT expose (DSO / payment cadence,
+//  per-lane mix, per-quarter rollups, onboarding-step ladder, multi-account
+//  roster, prior-period deltas) render an honest "—" — never an invented
+//  literal. Bottom nav frozen. Visual chrome/sections preserved verbatim.
 //
 
 import SwiftUI
 
-// MARK: - Live response shape
+// MARK: - Live response shapes
 
+/// Mirrors `shipperScorecard.getScorecard` (frontend/server/routers/
+/// shipperScorecard.ts) verbatim — including `volumeByMonth`, the only
+/// time-series the proc returns.
 private struct ShipperScorecardResp: Decodable, Hashable {
     let shipperId: Int?
     let periodDays: Int?
     let overallScore: Int?
     let grade: String?
     let metrics: Metrics?
+    let volumeByMonth: [String: Int]?
     struct Metrics: Decodable, Hashable {
-        let tenderAcceptance: Double?
-        let completionRate: Double?
-        let cancellationRate: Double?
-        let averageRate: Double?
-        let volumeConsistency: Double?
+        let tenderAcceptance: Double?    // %  (total - cancelled) / total
+        let completionRate: Double?      // %  delivered / total
+        let cancellationRate: Double?    // %  cancelled / total
+        let averageRate: Double?         // USD avg rate of delivered loads — NOT days
+        let volumeConsistency: Double?   // 0–100
         let totalLoads: Int?
         let deliveredCount: Int?
         let cancelledCount: Int?
     }
+}
+
+/// Mirrors `users.getById` (frontend/server/routers/users.ts) — only the
+/// identity fields this screen renders. The viewed shipper's name + company
+/// come from here, never from a literal persona or the signed-in session.
+/// users.getById returns a FLAT object (no nested user/company). It carries the
+/// contact `name`/`email` and the `companyName`; it does NOT return DOT/MC.
+private struct ShipperIdentityResp: Decodable, Hashable {
+    let id: String?
+    let name: String?
+    let email: String?
+    let companyId: Int?
+    let companyName: String?
 }
 
 // MARK: - Kind + config
@@ -59,60 +88,60 @@ private extension ShipperDetailKind {
         switch self {
         case .review:
             return .init(eyebrow: "DISPATCHER · SHIPPER · REVIEW",
-                         citation: "DISPATCHER REVIEW · SHIPPER ACCOUNTS · 90D",
+                         citation: "DISPATCHER REVIEW · SHIPPER SCORECARD",
                          title: "Shipper review",
-                         subhead: "AURORA-CTLG-00001 · 4 SHIPPERS · 90D",
-                         pillCopy: "Renée rates tender · payment · pull volume · Eusorone 18d DSO anchor",
-                         statusPill: "GRADE A · COMPOSITE 0.92")
+                         subhead: "Composite scorecard · 90-day window",
+                         pillCopy: "Composite grade across tender acceptance, completion, cancellation and volume consistency.",
+                         statusPill: "SCORECARD · 90D")
         case .pullVolume:
             return .init(eyebrow: "DISPATCHER · SHIPPER · PULL-VOLUME",
-                         citation: "DISPATCHER PULL VOLUME · 4 SHIPPERS · 90D · §440-A",
+                         citation: "DISPATCHER PULL VOLUME · 90D",
                          title: "Pull volume",
-                         subhead: "SCORE-COMPOSITE · §440-A · 90D",
-                         pillCopy: "Renée attests weekly cadence · 124 pulls · Eusorone 40% NH₃ pillar",
-                         statusPill: "PULLS 124 · 90D AGGREGATE · §440-A")
+                         subhead: "Monthly load volume · 90-day window",
+                         pillCopy: "Load volume by month for this shipper over the scorecard window.",
+                         statusPill: "VOLUME · 90D")
         case .tenderWin:
             return .init(eyebrow: "DISPATCHER · SHIPPER · TENDER-WIN",
-                         citation: "DISPATCHER TENDER-WIN · 4 SHIPPERS · 90D · §440-B",
+                         citation: "DISPATCHER TENDER · 90D",
                          title: "Tender win",
-                         subhead: "SCORE-COMPOSITE · §440-B · 90D",
-                         pillCopy: "Renée attests tender outcome · 124 of 140 · Eusorone 100% pillar",
-                         statusPill: "TENDERED 140 · 90D AGGREGATE · §440-B")
+                         subhead: "Tender acceptance · 90-day window",
+                         pillCopy: "Accepted vs cancelled loads against total tendered over the window.",
+                         statusPill: "TENDER · 90D")
         case .paymentBehavior:
             return .init(eyebrow: "DISPATCHER · SHIPPER · PAYMENT-BEHAVIOR",
-                         citation: "DISPATCHER PAYMENT · 4 SHIPPERS · 90D · §440-C",
-                         title: "Payment cadence",
-                         subhead: "SCORE-COMPOSITE · §440-C · 90D",
-                         pillCopy: "Renée attests payment cadence · 21.4d avg · Eusorone 14.2d pillar",
-                         statusPill: "INVOICED 124 · 90D AGGREGATE · §440-C")
+                         citation: "DISPATCHER PAYMENT · 90D",
+                         title: "Payment behavior",
+                         subhead: "Settlement signals · 90-day window",
+                         pillCopy: "Delivered-load volume and average load rate. Days-to-pay is not yet wired.",
+                         statusPill: "PAYMENT · 90D")
         case .laneWin:
             return .init(eyebrow: "DISPATCHER · SHIPPER · LANE-WIN",
-                         citation: "DISPATCHER LANE · 4 CORRIDORS · 90D · §440-D",
+                         citation: "DISPATCHER LANE · 90D",
                          title: "Lane mix",
-                         subhead: "SCORE-COMPOSITE · §440-D · 90D",
-                         pillCopy: "Renée attests lane mix · NH₃ pillar 50/50 · Eusorone flagship",
-                         statusPill: "LANES 4 · MATRIX-50 · §440-D")
+                         subhead: "Per-lane mix · 90-day window",
+                         pillCopy: "Per-lane win mix is not yet exposed by the scorecard proc.",
+                         statusPill: "LANE · 90D")
         case .accountHealth:
             return .init(eyebrow: "DISPATCHER · SHIPPER · ACCOUNT-HEALTH",
-                         citation: "DISPATCHER ACCOUNT-HEALTH · 4 SHIPPERS · 90D · §440-E",
+                         citation: "DISPATCHER ACCOUNT-HEALTH · 90D",
                          title: "Account health",
-                         subhead: "SCORE-COMPOSITE · §440-E · 90D",
-                         pillCopy: "Renée attests account health · Eusorone A+ × 4 axes · 3 active + 1 dormant",
-                         statusPill: "ACCOUNTS 4 · MATRIX-50 · §440-E")
+                         subhead: "Health signals · 90-day window",
+                         pillCopy: "Completion, cancellation and volume-consistency signals for this account.",
+                         statusPill: "HEALTH · 90D")
         case .onboarding:
             return .init(eyebrow: "DISPATCHER · SHIPPER · ONBOARDING-STEP",
-                         citation: "DISPATCHER STEP-LADDER · 4 SHIPPERS · 90D · §440-F",
+                         citation: "DISPATCHER STEP-LADDER · 90D",
                          title: "Onboarding step",
-                         subhead: "SCORE-COMPOSITE · §440-F · 90D",
-                         pillCopy: "Renée attests step ladder · Eusorone 6/6 terminal · 3 in-progress + 1 seeded",
-                         statusPill: "STEPS 6 · MATRIX-50 · §440-F")
+                         subhead: "Step ladder · 90-day window",
+                         pillCopy: "Onboarding-step ladder is not yet exposed by the scorecard proc.",
+                         statusPill: "ONBOARDING · 90D")
         case .quarter:
             return .init(eyebrow: "DISPATCHER · SHIPPER · QUARTER",
-                         citation: "DISPATCHER QUARTER · 4 SHIPPERS · 4Q · §440-G",
+                         citation: "DISPATCHER QUARTER · 365D",
                          title: "Quarter trajectory",
-                         subhead: "SCORE-COMPOSITE · §440-G · 4Q",
-                         pillCopy: "Renée attests quarter trajectory · Eusorone Q1→Q4 +0.18 monotonic",
-                         statusPill: "QUARTERS 4 · MATRIX-50 · §440-G")
+                         subhead: "Trailing-year window",
+                         pillCopy: "Per-quarter rollups are not yet exposed; monthly volume over the year is shown.",
+                         statusPill: "TRAJECTORY · 365D")
         }
     }
     var period: Int { self == .quarter ? 365 : 90 }
@@ -142,6 +171,7 @@ private struct DispatcherShipperDetailBody: View {
 
     @Environment(\.palette) private var palette
     @State private var resp: ShipperScorecardResp?
+    @State private var identity: ShipperIdentityResp?
 
     var body: some View {
         let c = kind.config
@@ -181,14 +211,27 @@ private struct DispatcherShipperDetailBody: View {
         }
     }
 
+    /// Identity bound to `users.getById` for the viewed shipper. Company name
+    /// is the headline; the contact name / email line falls back to "—" when
+    /// the proc returns no value. Never a hardcoded persona.
     private var identityRow: some View {
-        LifecycleCard {
+        let company = identity?.companyName
+        let headline = (company?.isEmpty == false ? company : identity?.name) ?? "—"
+        let sub: String = {
+            var parts: [String] = []
+            // When the company is the headline, surface the contact name below.
+            if company?.isEmpty == false, let n = identity?.name, !n.isEmpty { parts.append(n) }
+            if let e = identity?.email, !e.isEmpty { parts.append(e) }
+            return parts.isEmpty ? "shipper-of-record" : parts.joined(separator: " · ")
+        }()
+        let initials = avatarInitials(headline)
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("EU").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(initials).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Eusorone Technologies · Diego U.").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("AURORA-CTLG-00001 · shipper-of-record · MATRIX-50").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text(headline).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).lineLimit(1)
+                    Text(sub).font(.caption2).foregroundStyle(palette.textTertiary).lineLimit(1)
                 }
                 Spacer()
             }
@@ -197,64 +240,74 @@ private struct DispatcherShipperDetailBody: View {
 
     private var kpiGrid: some View {
         let m = resp?.metrics
-        let grade = resp?.grade ?? "A"
+        let grade = resp?.grade ?? "—"
+        let months = resp?.volumeByMonth ?? [:]
+        // The dash placeholder used everywhere a field is genuinely absent.
+        let dash = "—"
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .review:
                 return [
-                    ("GRADE",      grade,                                "composite \(Double(resp?.overallScore ?? 92) / 100)", .green),
-                    ("TENDER-WIN", "\(percent(m?.tenderAcceptance))%",   "+1.2 pts vs prior 90d",                                 .green),
-                    ("PAYMENT",    "\(Int(m?.averageRate ?? 26))d",      "DSO · 90d",                                              .blue),
-                    ("LOADS",      "\(m?.totalLoads ?? 124)",            "90d aggregate",                                          .blue),
+                    ("GRADE",       grade,                          composite,                       .green),
+                    ("TENDER-WIN",  pct(m?.tenderAcceptance),       "accepted of tendered · 90d",    .green),
+                    ("COMPLETION",  pct(m?.completionRate),         "delivered of total · 90d",      .blue),
+                    ("LOADS",       intStr(m?.totalLoads),          "total · 90d window",            .blue),
                 ]
             case .pullVolume:
+                let monthCount = months.isEmpty ? dash : "\(months.count)"
+                let peak = months.values.max()
                 return [
-                    ("PULLS",      "\(m?.totalLoads ?? 124)",            "90d aggregate · §440-A",                                .blue),
-                    ("WEEKS",      "13",                                  "rolling cadence",                                       .blue),
-                    ("AVG/WK",     "9.5",                                  "+12% vs prior 90d",                                     .green),
-                    ("GRADE",      grade,                                  "pillar score",                                           .green),
+                    ("LOADS",       intStr(m?.totalLoads),          "total · 90d window",            .blue),
+                    ("MONTHS",      monthCount,                     "with recorded volume",          .blue),
+                    ("PEAK / MO",   peak.map(String.init) ?? dash,  "busiest month in window",       .green),
+                    ("CONSISTENCY", num(m?.volumeConsistency),      "volume consistency · 0–100",    .green),
                 ]
             case .tenderWin:
+                let accepted: Int? = {
+                    guard let t = m?.totalLoads, let c = m?.cancelledCount else { return nil }
+                    return max(0, t - c)
+                }()
                 return [
-                    ("TENDERED",   "140",                                  "90d aggregate · §440-B",                                .blue),
-                    ("WON",        "\(m?.deliveredCount ?? 124)",          "88.4% acceptance",                                       .green),
-                    ("LOST",       "\(m?.cancelledCount ?? 16)",           "11.6% to other carriers",                               .red),
-                    ("GRADE",      grade,                                  "tender pillar",                                          .green),
+                    ("TENDERED",    intStr(m?.totalLoads),          "total loads · 90d",             .blue),
+                    ("ACCEPTED",    intStr(accepted),               pctSuffix(m?.tenderAcceptance, "acceptance"), .green),
+                    ("CANCELLED",   intStr(m?.cancelledCount),      pctSuffix(m?.cancellationRate, "cancel rate"), .red),
+                    ("GRADE",       grade,                          "tender pillar",                 .green),
                 ]
             case .paymentBehavior:
                 return [
-                    ("INVOICED",   "\(m?.totalLoads ?? 124)",              "90d aggregate · §440-C",                                .blue),
-                    ("COLLECTED",  "\(m?.deliveredCount ?? 120)",          "97% close-rate",                                         .green),
-                    ("AVG DSO",    "21.4d",                                 "Eusorone 14.2d pillar",                                  .orange),
-                    ("GRADE",      grade,                                   "payment pillar",                                         .green),
+                    ("DELIVERED",   intStr(m?.deliveredCount),      "delivered loads · 90d",         .green),
+                    ("LOADS",       intStr(m?.totalLoads),          "total · 90d window",            .blue),
+                    ("AVG RATE",    usd(m?.averageRate),            "per delivered load",            .blue),
+                    ("DAYS TO PAY", dash,                           "settlement cadence not wired",  .orange),
                 ]
             case .laneWin:
                 return [
-                    ("LANES",      "4",                                    "corridors · §440-D",                                     .blue),
-                    ("WON",        "50%",                                  "NH₃ pillar share",                                       .green),
-                    ("FLAGSHIP",   "EUSORONE",                              "matrix lead",                                            .green),
-                    ("GRADE",      grade,                                   "lane pillar",                                            .green),
+                    ("LANES",       dash,                           "per-lane mix not wired",        .blue),
+                    ("WON",         dash,                           "per-lane mix not wired",        .green),
+                    ("FLAGSHIP",    dash,                           "per-lane mix not wired",        .green),
+                    ("GRADE",       grade,                          "composite pillar",              .green),
                 ]
             case .accountHealth:
                 return [
-                    ("ACCOUNTS",   "4",                                    "shipper roster · §440-E",                               .blue),
-                    ("ACTIVE",     "3",                                    "+1 dormant",                                             .green),
-                    ("AXES",       "A+ × 4",                                "Eusorone all-axes",                                      .green),
-                    ("GRADE",      grade,                                   "account pillar",                                         .green),
+                    ("COMPLETION",  pct(m?.completionRate),         "delivered of total · 90d",      .green),
+                    ("CANCEL",      pct(m?.cancellationRate),       "cancelled of total · 90d",      .red),
+                    ("CONSISTENCY", num(m?.volumeConsistency),      "volume consistency · 0–100",    .blue),
+                    ("GRADE",       grade,                          "account pillar",                .green),
                 ]
             case .onboarding:
                 return [
-                    ("STEPS",      "6",                                    "ladder · §440-F",                                       .blue),
-                    ("TERMINAL",   "6/6",                                   "Eusorone closed",                                        .green),
-                    ("IN-PROG",    "3",                                     "shipper accounts",                                       .orange),
-                    ("SEEDED",     "1",                                     "dormant · awaiting kick-off",                            .blue),
+                    ("STEPS",       dash,                           "step ladder not wired",         .blue),
+                    ("TERMINAL",    dash,                           "step ladder not wired",         .green),
+                    ("IN-PROG",     dash,                           "step ladder not wired",         .orange),
+                    ("GRADE",       grade,                          "composite pillar",              .green),
                 ]
             case .quarter:
+                let monthCount = months.isEmpty ? dash : "\(months.count)"
                 return [
-                    ("QUARTERS",   "4",                                    "Q1-Q4 rolling · §440-G",                                .blue),
-                    ("TREND",      "+0.18",                                 "Q1→Q4 monotonic",                                        .green),
-                    ("LOADS",      "\(m?.totalLoads ?? 0)",                 "Q1-Q4 cumulative",                                       .blue),
-                    ("GRADE",      grade,                                    "year-rolling pillar",                                    .green),
+                    ("QUARTERS",    dash,                           "per-quarter rollup not wired",  .blue),
+                    ("MONTHS",      monthCount,                     "with volume · trailing year",   .blue),
+                    ("LOADS",       intStr(m?.totalLoads),          "total · trailing year",         .blue),
+                    ("GRADE",       grade,                          "year-rolling pillar",           .green),
                 ]
             }
         }()
@@ -277,14 +330,14 @@ private struct DispatcherShipperDetailBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .review:           return "Composite pillar A, refresh weekly. Use to set tender priority + payment terms by shipper."
-            case .pullVolume:       return "Cadence is healthy. Hold the 9.5/wk floor for the NH₃ pillar; nudge dormant account up."
-            case .tenderWin:        return "11.6% tender loss is acceptable. Investigate the 16 lost loads. Were they price or capacity?"
-            case .paymentBehavior:  return "21.4d DSO is over the Eusorone 14.2d pillar. Push a NET-15 conversation on Q2 contracts."
-            case .laneWin:          return "NH₃ pillar holding 50/50. Lock the Eusorone flagship; cross-sell the other 3 corridors."
-            case .accountHealth:    return "3 active + 1 dormant. Re-engage the dormant account with a quick-tender invite."
-            case .onboarding:       return "Eusorone is fully onboarded. Drive the 3 in-progress accounts to terminal; revive the seeded one."
-            case .quarter:          return "Q1→Q4 +0.18 monotonic, healthy trajectory. Hold the playbook into next year."
+            case .review:           return "Composite grade is the tender-priority and payment-terms anchor for this shipper. Refresh weekly."
+            case .pullVolume:       return "Monthly volume reflects this shipper's pull cadence over the window. Watch for a falling trend."
+            case .tenderWin:        return "Acceptance vs cancellation tells you how reliably this shipper's tenders convert. Investigate cancellations."
+            case .paymentBehavior:  return "Delivered volume and average rate are live; days-to-pay surfaces once settlement cadence is wired."
+            case .laneWin:          return "Per-lane win mix is not yet exposed by the scorecard proc — shown as “—” until the lane breakdown ships."
+            case .accountHealth:    return "Completion, cancellation and volume-consistency are the live health signals for this account."
+            case .onboarding:       return "The onboarding-step ladder is not yet exposed — shown as “—” until the step rollup ships."
+            case .quarter:          return "Per-quarter rollups are not yet exposed; monthly volume over the trailing year is shown instead."
             }
         }()
         return LifecycleCard {
@@ -295,21 +348,68 @@ private struct DispatcherShipperDetailBody: View {
         }
     }
 
+    // MARK: - Honest formatters (no invented fallbacks — "—" when absent)
+
+    private var composite: String {
+        guard let s = resp?.overallScore else { return "—" }
+        return "composite \(s)/100"
+    }
+
+    private func pct(_ raw: Double?) -> String {
+        guard let raw else { return "—" }
+        return raw.truncatingRemainder(dividingBy: 1) == 0
+            ? "\(Int(raw))%"
+            : String(format: "%.1f%%", raw)
+    }
+
+    private func pctSuffix(_ raw: Double?, _ label: String) -> String {
+        guard let raw else { return "\(label) · 90d" }
+        let v = raw.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(raw))%" : String(format: "%.1f%%", raw)
+        return "\(v) \(label)"
+    }
+
+    private func num(_ raw: Double?) -> String {
+        guard let raw else { return "—" }
+        return raw.truncatingRemainder(dividingBy: 1) == 0 ? "\(Int(raw))" : String(format: "%.1f", raw)
+    }
+
+    private func intStr(_ raw: Int?) -> String {
+        guard let raw else { return "—" }
+        return "\(raw)"
+    }
+
+    private func usd(_ raw: Double?) -> String {
+        guard let raw else { return "—" }
+        return "$\(Int(raw))"
+    }
+
+    private func avatarInitials(_ s: String) -> String {
+        let words = s.split(separator: " ").prefix(2)
+        let letters = words.compactMap { $0.first.map(String.init) }.joined().uppercased()
+        return letters.isEmpty ? "·" : letters
+    }
+
     private func load() async {
-        struct In: Encodable { let shipperId: Int; let periodDays: Int }
         let sid = Int(shipperId) ?? 0
+        // KPI source — shipperScorecard.getScorecard.
+        struct ScoreIn: Encodable { let shipperId: Int; let periodDays: Int }
         do {
             resp = try await EusoTripAPI.shared.query(
                 "shipperScorecard.getScorecard",
-                input: In(shipperId: sid, periodDays: kind.period)
+                input: ScoreIn(shipperId: sid, periodDays: kind.period)
             )
-        } catch { /* */ }
-    }
-}
+        } catch { /* leave nil → KPIs render "—" */ }
 
-private func percent(_ raw: Double?) -> String {
-    guard let raw else { return "88" }
-    return String(format: "%.1f", raw)
+        // Identity source — users.getById (the viewed shipper, not the session).
+        // Server input is z.string() (no coerce) → id MUST be sent as a String.
+        struct UserIn: Encodable { let id: String }
+        do {
+            identity = try await EusoTripAPI.shared.query(
+                "users.getById",
+                input: UserIn(id: shipperId)
+            )
+        } catch { /* leave nil → identity renders "—" (e.g. cross-shipper 403) */ }
+    }
 }
 
 // MARK: - Screens (440-447)

@@ -2,34 +2,26 @@
 //  CV320B_CatalystDriverBVariantOctet.swift
 //  EusoTrip — Catalyst · Driver B-variant deep-drill octet (320B-327B).
 //
-//  Pixel-match to:
+//  Surfaces:
 //    320B Catalyst Scorecard Axis Detail            (§9.1)
-//    321B Catalyst Profile Tier Detail              (§13 · GOLD)
-//    322B Catalyst Document Detail                  (§382.301 · MISSING)
-//    323B Catalyst Driver Analytic Detail           (§395.8 · LIVE)
-//    324B Catalyst Driver Settlement Detail         (POD SIGNED · $1,805)
-//    325B Catalyst Driver Onboarding Step Detail    (§382 · MISSING)
-//    326B Catalyst Compliance Row Detail            (§382.305 · MISSING)
-//    327B Catalyst Driver Quarter Detail            (Q1 · 94.0%)
+//    321B Catalyst Profile Tier Detail              (§13)
+//    322B Catalyst Document Detail
+//    323B Catalyst Driver Analytic Detail           (§395.8)
+//    324B Catalyst Driver Settlement Detail
+//    325B Catalyst Driver Onboarding Step Detail
+//    326B Catalyst Compliance Row Detail
+//    327B Catalyst Driver Quarter Detail
 //
-//  Driver counterparts to CV330B-CV337B. Cast: ME · Michael Eusorone ·
-//  DR-001-EUSO · Eusotrans LLC. Single bundled file. Body reads
-//  `drivers.getPerformanceMetrics`. Bottom nav frozen.
+//  Driver counterparts to CV330B-CV337B. Single bundled file. Body binds
+//  to `drivers.getPerformanceMetrics` (→ DriversAPI.PerformanceScorecard)
+//  for every live KPI, and resolves the real driver identity (name + id)
+//  from `catalysts.getMyDrivers`. There is no `drivers.getScorecard` proc
+//  and no driver-side tier / per-doc compliance / settlement-line-item /
+//  quarter-rollup source — those sub-fields render an honest "—" rather
+//  than a fabricated literal. Bottom nav frozen.
 //
 
 import SwiftUI
-
-private struct CDBMetrics: Decodable, Hashable {
-    let driverId: String?
-    let metrics: M?
-    struct M: Decodable, Hashable {
-        let totalLoads: Int?
-        let onTimeDeliveryRate: Int?
-        let safetyScore: Double?
-        let hosCompliance: Int?
-        let inspectionPassRate: Int?
-    }
-}
 
 enum CatalystDriverBKind: String {
     case scoreAxis, profileTier, document, analytic, settlement, onboarding, compliance, quarter
@@ -39,12 +31,10 @@ private struct CDBConfig {
     let eyebrow: String
     let citation: String
     let title: String
-    let subhead: String
+    /// Static subhead suffix — the real driver id is prepended at render
+    /// time once `catalysts.getMyDrivers` resolves it.
+    let subheadSuffix: String
     let pillCopy: String
-    let rowId: String
-    let statusBadge: String
-    let statusColor: Color
-    let grade: String
 }
 
 private extension CatalystDriverBKind {
@@ -52,68 +42,52 @@ private extension CatalystDriverBKind {
         switch self {
         case .scoreAxis:
             return .init(eyebrow: "CATALYST · DRIVER · SCORECARD AXIS",
-                         citation: "§9.1 · LIVE",
+                         citation: "§9.1 · COMPOSITE",
                          title: "Axis detail",
-                         subhead: "DR-001-EUSO · §9.1 · LIVE",
-                         pillCopy: "Catalyst rates driver · same companyId both sides · clean §9.1 composite books",
-                         rowId: "SCORE-260427-COMPOSITE-DR001",
-                         statusBadge: "PUBLISHED · LIVE", statusColor: .green, grade: "A+")
+                         subheadSuffix: "§9.1 · scorecard composite",
+                         pillCopy: "Catalyst rates driver · same companyId both sides · §9.1 composite from getPerformanceMetrics")
         case .profileTier:
             return .init(eyebrow: "CATALYST · DRIVER · TIER",
-                         citation: "§13 · LIVE",
+                         citation: "§13 · TIER",
                          title: "Tier detail",
-                         subhead: "DR-001-EUSO · §13 · LIVE",
-                         pillCopy: "Catalyst rates driver · same companyId both sides · clean §13 tier criteria",
-                         rowId: "TIER-260427-GOLD-DR001",
-                         statusBadge: "PUBLISHED · LIVE", statusColor: .green, grade: "G")
+                         subheadSuffix: "§13 · tier criteria",
+                         pillCopy: "Catalyst rates driver · same companyId both sides · §13 tier criteria")
         case .document:
             return .init(eyebrow: "CATALYST · DRIVER · DOCUMENT",
-                         citation: "§382.301 · MISSING",
+                         citation: "DOCUMENT",
                          title: "Document detail",
-                         subhead: "DR-001-EUSO · §382.301 · MISSING",
-                         pillCopy: "Catalyst archives driver docs · same companyId both sides · clean §382.301 pre-employment file",
-                         rowId: "DOC-260427-DRUG-DR001",
-                         statusBadge: "MISSING · ACTION", statusColor: .red, grade: "A+")
+                         subheadSuffix: "driver document file",
+                         pillCopy: "Catalyst archives driver docs · same companyId both sides · pre-employment document file")
         case .analytic:
             return .init(eyebrow: "CATALYST · DRIVER · ANALYTIC",
                          citation: "§395.8 · LIVE",
                          title: "Analytic detail",
-                         subhead: "DR-001-EUSO · §395.8 · LIVE",
-                         pillCopy: "Catalyst tracks driver KPIs · same companyId both sides · clean §395.8 ELD record",
-                         rowId: "PERF-260427-OTD-DR001",
-                         statusBadge: "PUBLISHED · LIVE", statusColor: .green, grade: "A+")
+                         subheadSuffix: "§395.8 · ELD record",
+                         pillCopy: "Catalyst tracks driver KPIs · same companyId both sides · §395.8 ELD record")
         case .settlement:
             return .init(eyebrow: "CATALYST · DRIVER · SETTLEMENT",
-                         citation: "POD SIGNED · ACH ····6411",
+                         citation: "SETTLEMENT",
                          title: "Settlement detail",
-                         subhead: "DR-001-EUSO · LD-…7E · POD SIGNED",
-                         pillCopy: "Catalyst pays driver · same companyId both sides · clean settlement line items",
-                         rowId: "SET-260427-A38FB12C7E",
-                         statusBadge: "DUE · POD SIGNED", statusColor: .green, grade: "A+")
+                         subheadSuffix: "settlement line items",
+                         pillCopy: "Catalyst pays driver · same companyId both sides · settlement line items")
         case .onboarding:
             return .init(eyebrow: "CATALYST · DRIVER · STEP DETAIL",
-                         citation: "§382.301 · MISSING",
+                         citation: "ONBOARDING",
                          title: "Step detail",
-                         subhead: "DR-001-EUSO · §382.301 · MISSING",
-                         pillCopy: "Catalyst onboards driver · same companyId both sides · clean §382 controlled-substances file",
-                         rowId: "STEP-260427-DRUG-DR001",
-                         statusBadge: "MISSING · ACTION", statusColor: .red, grade: "A+")
+                         subheadSuffix: "onboarding step",
+                         pillCopy: "Catalyst onboards driver · same companyId both sides · controlled-substances file")
         case .compliance:
             return .init(eyebrow: "CATALYST · DRIVER · COMPLIANCE ROW",
-                         citation: "§382.305 · MISSING",
+                         citation: "COMPLIANCE",
                          title: "Compliance row",
-                         subhead: "DR-001-EUSO · §382.305 · MISSING",
-                         pillCopy: "Catalyst monitors driver · same companyId both sides · clean §382.305 random-testing pool",
-                         rowId: "COMP-260427-CSAPP-DR001",
-                         statusBadge: "MISSING · ACTION", statusColor: .red, grade: "A+")
+                         subheadSuffix: "compliance row",
+                         pillCopy: "Catalyst monitors driver · same companyId both sides · random-testing pool")
         case .quarter:
             return .init(eyebrow: "CATALYST · DRIVER · QUARTER DETAIL",
-                         citation: "Q1-2026 · CLOSED",
+                         citation: "QUARTER",
                          title: "Quarter detail",
-                         subhead: "DR-001-EUSO · Q1-2026 · CLOSED",
-                         pillCopy: "Catalyst archives Q1 driver rollup · same companyId both sides · clean Schedule C closed quarter",
-                         rowId: "PERF-260331-Q1ROLL-DR001",
-                         statusBadge: "CLOSED · RECONCILED", statusColor: .green, grade: "A+")
+                         subheadSuffix: "quarter rollup",
+                         pillCopy: "Catalyst archives driver quarter rollup · same companyId both sides · Schedule C close")
         }
     }
 }
@@ -138,7 +112,11 @@ private struct CatalystDriverBBody: View {
     let kind: CatalystDriverBKind
 
     @Environment(\.palette) private var palette
-    @State private var resp: CDBMetrics?
+    @State private var scorecard: DriversAPI.PerformanceScorecard?
+    @State private var driverId: String = ""
+    @State private var driverName: String = ""
+
+    private static let dash = "—"
 
     var body: some View {
         let c = kind.config
@@ -158,6 +136,39 @@ private struct CatalystDriverBBody: View {
         .refreshable { await load() }
     }
 
+    // MARK: - Composite grade (canonical 320 formula, real metrics only)
+
+    private var grade: String {
+        guard let m = scorecard?.metrics else { return Self.dash }
+        let onTime = max(0.0, min(1.0, m.onTimeDeliveryRate / 100))
+        let completion = max(0.0, min(1.0, m.hosCompliance / 100))
+        let loadsTerm: Double = {
+            let n = Double(max(0, m.totalLoads))
+            let den = log10(50.0)
+            return den > 0 ? log10(n + 1.0) / den : 0
+        }()
+        let composite = onTime * 0.5 + completion * 0.3 + loadsTerm * 0.2
+        switch composite {
+        case 0.95...:     return "A+"
+        case 0.90..<0.95: return "A"
+        case 0.85..<0.90: return "A−"
+        case 0.80..<0.85: return "B+"
+        case 0.75..<0.80: return "B"
+        case 0.70..<0.75: return "B−"
+        case 0.60..<0.70: return "C"
+        case 0.50..<0.60: return "D"
+        default:          return "F"
+        }
+    }
+
+    private var monogram: String {
+        let parts = driverName.split(separator: " ").prefix(2)
+        let initials = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
+        return initials.isEmpty ? "—" : String(initials.prefix(2))
+    }
+
+    private var idLabel: String { driverId.isEmpty ? Self.dash : driverId }
+
     private func header(_ c: CDBConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
@@ -165,7 +176,7 @@ private struct CatalystDriverBBody: View {
                 Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text(c.subhead).font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("\(idLabel) · \(c.subheadSuffix)").font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
@@ -182,10 +193,10 @@ private struct CatalystDriverBBody: View {
         LifecycleCard {
             HStack(spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text(c.grade).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(grade).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(c.rowId).font(.caption2.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text(c.statusBadge).font(.caption2).foregroundStyle(c.statusColor)
+                    Text(idLabel).font(.caption2.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text(c.citation).font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
@@ -196,10 +207,12 @@ private struct CatalystDriverBBody: View {
         LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("ME").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(monogram).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Michael Eusorone · DR-001-EUSO").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("Eusotrans LLC · hired 2025-04-15 · ACH ····6411").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(driverName.isEmpty ? Self.dash : driverName) · \(idLabel)").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    // No driver-side company / hire-date / ACH source in
+                    // getMyDrivers or getPerformanceMetrics — honest dash.
+                    Text("Company \(Self.dash) · hired \(Self.dash) · ACH \(Self.dash)").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
@@ -207,64 +220,80 @@ private struct CatalystDriverBBody: View {
     }
 
     private func kpiGrid(_ c: CDBConfig) -> some View {
-        let m = resp?.metrics
+        let m = scorecard?.metrics
+        // Honest formatters — return "—" when the metric is absent.
+        func pct0(_ v: Double?) -> String { v.map { String(format: "%.0f%%", $0) } ?? Self.dash }
+        func pct1(_ v: Double?) -> String { v.map { String(format: "%.1f%%", $0) } ?? Self.dash }
+        func intStr(_ v: Int?) -> String { v.map(String.init) ?? Self.dash }
+
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .scoreAxis:
                 return [
-                    ("GRADE",    c.grade,                                "composite axis · §9.1", .green),
-                    ("ON-TIME",  "\(m?.onTimeDeliveryRate ?? 95)%",       "+0.6 vs prior 90d",   .green),
-                    ("ELD",      "\(m?.hosCompliance ?? 100)%",            "§395.8 clean",       .green),
-                    ("STATE",    "LIVE",                                    c.statusBadge,        .green),
+                    ("GRADE",   grade,                            "composite axis · §9.1", .green),
+                    ("ON-TIME", pct1(m?.onTimeDeliveryRate),      "on-time delivery rate", .green),
+                    ("HOS",     pct0(m?.hosCompliance),           "§395.8 compliance",     .green),
+                    ("LOADS",   intStr(m?.totalLoads),            "this period",           .blue),
                 ]
             case .profileTier:
                 return [
-                    ("TIER",     "GOLD",                                     "Eusotrans · DR-001",  .green),
-                    ("CRITERIA", "§13",                                       "criteria met",      .blue),
-                    ("STATE",    "LIVE",                                       c.statusBadge,      .green),
-                    ("EFFECT",   "+0.08",                                       "pillar boost",    .green),
+                    // No driver-side tier proc — honest dash, not "GOLD".
+                    ("TIER",     Self.dash,                       "no tier source",        .gray),
+                    ("CRITERIA", "§13",                           "tier criteria",         .blue),
+                    ("SAFETY",   pct0(m?.safetyScore),            "safety score",          .green),
+                    ("RATING",   (m?.customerRating).map { String(format: "%.1f", $0) } ?? Self.dash, "customer rating", .blue),
                 ]
             case .document:
+                // No per-document compliance source — honest dashes, no
+                // fabricated §382.301 MISSING row.
                 return [
-                    ("DOC",      "DRUG SCREEN",                                "§382.301 · pre-employ", .red),
-                    ("STATE",    "MISSING",                                      "action · EOD",      .red),
-                    ("RUNWAY",   "0d",                                              "renew · urgent", .red),
-                    ("OWNER",    "Eusotrans",                                       "to file",       .blue),
+                    ("DOC",    Self.dash, "no document source",  .gray),
+                    ("STATE",  Self.dash, "no status source",    .gray),
+                    ("RENEW",  Self.dash, "no expiry source",    .gray),
+                    ("OWNER",  Self.dash, "no owner source",     .gray),
                 ]
             case .analytic:
                 return [
-                    ("ON-TIME",  "\(m?.onTimeDeliveryRate ?? 94)%",                  "delivery pillar",  .green),
-                    ("ELD",      "§395.8",                                            "live record",    .blue),
-                    ("STATE",    "LIVE",                                                c.statusBadge,  .green),
-                    ("PASS",     "\(m?.inspectionPassRate ?? 100)%",                    "inspection · §396",   .green),
+                    ("ON-TIME", pct1(m?.onTimeDeliveryRate),      "delivery pillar",       .green),
+                    ("ELD",     "§395.8",                         "live record",           .blue),
+                    ("PASS",    pct0(m?.inspectionPassRate),      "inspection · §396",     .green),
+                    ("MILES",   (m?.totalMiles).map { String(format: "%.0f", $0) } ?? Self.dash, "miles this period", .blue),
                 ]
             case .settlement:
+                // No per-allocation settlement line-item source here —
+                // honest dashes, no fabricated $1,805 / ACH ····6411.
                 return [
-                    ("AMOUNT",   "$1,805",                                                "this allocation",  .green),
-                    ("CHAIN",    "LD-...7E",                                              "POD signed",       .green),
-                    ("STATE",    "DUE",                                                    "ACH ····6411",    .orange),
-                    ("BOOK",     "§168",                                                    "clean books",    .blue),
+                    ("AMOUNT", Self.dash, "no line-item source", .gray),
+                    ("CHAIN",  Self.dash, "no POD source",       .gray),
+                    ("STATE",  Self.dash, "no status source",    .gray),
+                    ("BOOK",   Self.dash, "no ledger source",    .gray),
                 ]
             case .onboarding:
+                // No onboarding-step source — honest dashes, no fabricated
+                // §382 drug-screen MISSING row.
                 return [
-                    ("STEP",     "DRUG SCREEN",                                              "§382 controlled-sub",  .red),
-                    ("STATE",    "MISSING",                                                    "action · urgent",     .red),
-                    ("RUNWAY",   "0d",                                                          "schedule · today",  .red),
-                    ("OWNER",    "Eusotrans",                                                    "lab booking",       .blue),
+                    ("STEP",   Self.dash, "no step source",      .gray),
+                    ("STATE",  Self.dash, "no status source",    .gray),
+                    ("RENEW",  Self.dash, "no schedule source",  .gray),
+                    ("OWNER",  Self.dash, "no owner source",     .gray),
                 ]
             case .compliance:
+                // No per-row compliance source — honest dashes, no
+                // fabricated §382.305 MISSING row.
                 return [
-                    ("ROW",      "CSAPP",                                                         "random-testing pool",  .red),
-                    ("STATE",    "MISSING",                                                       "§382.305 · action",   .red),
-                    ("POOL",     "§382.305",                                                       "random-test pillar", .blue),
-                    ("OWNER",    "Eusotrans",                                                      "to file",          .blue),
+                    ("ROW",    Self.dash, "no row source",       .gray),
+                    ("STATE",  Self.dash, "no status source",    .gray),
+                    ("POOL",   "§382.305", "random-test pillar", .blue),
+                    ("OWNER",  Self.dash, "no owner source",     .gray),
                 ]
             case .quarter:
+                // No per-quarter rollup source — honest dashes, no
+                // fabricated Q1 94.0% close.
                 return [
-                    ("Q1",       "CLOSED",                                                         "2026-03-31",        .green),
-                    ("OTP",      "94.0%",                                                          "Q1 on-time",       .green),
-                    ("SCHEDULE", "C",                                                               "1099-NEC ready",   .blue),
-                    ("STATE",    "RECONCILED",                                                      c.statusBadge,      .green),
+                    ("QUARTER",  Self.dash, "no quarter source",   .gray),
+                    ("OTP",      Self.dash, "no rollup source",    .gray),
+                    ("SCHEDULE", Self.dash, "no schedule source",  .gray),
+                    ("STATE",    Self.dash, "no status source",    .gray),
                 ]
             }
         }()
@@ -285,16 +314,31 @@ private struct CatalystDriverBBody: View {
     }
 
     private var nextStepCard: some View {
+        let m = scorecard?.metrics
         let copy: String = {
             switch kind {
-            case .scoreAxis:   return "Composite axis A+. Pinned to §9.1 driver books. Refresh weekly with the next QC cycle."
-            case .profileTier: return "Gold tier (§13) holds +0.08 pillar boost. Reconfirm criteria on Q2 baseline."
-            case .document:    return "Pre-employment drug screen (§382.301) missing. File by EOD to clear driver for next NH₃ pull."
-            case .analytic:    return "On-time 94%, §395.8 ELD clean. Hold the cadence. Schedule C records auto-feed quarter close."
-            case .settlement:  return "Allocation A38FB12C7E at $1,805, POD signed. NET-30 wires next via ACH ····6411."
-            case .onboarding:  return "Drug screen step (§382) missing. Schedule lab booking today."
-            case .compliance:  return "Random-testing pool row (§382.305) missing. Pair with the §382.301 doc filing above."
-            case .quarter:     return "Q1 closed 2026-03-31 at 94.0% OTP. Schedule C ready for tax cabinet archive."
+            case .scoreAxis:
+                if let m {
+                    return "Composite grade \(grade) from getPerformanceMetrics — on-time \(String(format: "%.1f", m.onTimeDeliveryRate))%, HOS \(String(format: "%.0f", m.hosCompliance))%, \(m.totalLoads) loads. Refresh with the next cycle."
+                }
+                return "Scorecard composite (§9.1) loads from getPerformanceMetrics. No metrics in this window yet."
+            case .profileTier:
+                return "No driver-side tier proc is wired yet. Tier (§13) renders \(Self.dash) until a tier source ships."
+            case .document:
+                return "No per-document compliance source is wired yet. Document rows render \(Self.dash) until one ships."
+            case .analytic:
+                if let m {
+                    return "On-time \(String(format: "%.1f", m.onTimeDeliveryRate))%, inspection pass \(String(format: "%.0f", m.inspectionPassRate))% (§395.8 / §396). Hold the cadence."
+                }
+                return "Analytic pillars (§395.8) load from getPerformanceMetrics. No metrics in this window yet."
+            case .settlement:
+                return "No per-allocation settlement line-item source is wired here. Amount / chain / book render \(Self.dash) until one ships."
+            case .onboarding:
+                return "No onboarding-step source is wired yet. Step rows render \(Self.dash) until one ships."
+            case .compliance:
+                return "No per-row compliance source is wired yet. Compliance rows render \(Self.dash) until one ships."
+            case .quarter:
+                return "No per-quarter rollup source is wired yet. Quarter close renders \(Self.dash) until one ships."
             }
         }()
         return LifecycleCard {
@@ -306,8 +350,20 @@ private struct CatalystDriverBBody: View {
     }
 
     private func load() async {
-        struct In: Encodable { let driverId: String; let period: String }
-        do { resp = try await EusoTripAPI.shared.query("drivers.getPerformanceMetrics", input: In(driverId: "0", period: "quarter")) } catch { /* */ }
+        // Resolve the real driver (name + id) from the catalyst's roster,
+        // then bind live KPIs from drivers.getPerformanceMetrics. There is
+        // no drivers.getScorecard proc — getPerformanceMetrics is the
+        // canonical scorecard surface.
+        do {
+            let roster = try await EusoTripAPI.shared.catalyst.getMyDrivers(limit: 50)
+            guard let primary = roster.first else { return }
+            driverId = primary.id
+            driverName = primary.name
+            scorecard = try await EusoTripAPI.shared.drivers.getPerformanceMetrics(
+                driverId: primary.id,
+                period: .quarter
+            )
+        } catch { /* leave honest dashes */ }
     }
 }
 

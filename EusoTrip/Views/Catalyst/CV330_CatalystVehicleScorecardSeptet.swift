@@ -13,14 +13,31 @@
 //
 //  IDs prefixed `CV` (Catalyst Vehicle) to avoid collisions with
 //  Shipper-side 330-336. All 7 share `CatalystVehicleBody`,
-//  parameterized by `CatalystVehicleKind`. Body reads
-//  `fleet.getFleetStats` for fleet-wide metrics + (optional)
-//  `fleet.getVehicles` row for the focal truck. Bottom nav frozen
-//  (Catalyst: Home / Fleet / Wallet / Me).
+//  parameterized by `CatalystVehicleKind`.
+//
+//  ZERO-FABRICATION BINDING (2026-06-06):
+//    • fleet.getFleetStats        → CVFleetStats  (utilization, avgMpg,
+//      active/inTransit/available counts) — MCP-verified shape at
+//      frontend/server/routers/fleet.ts:190.
+//    • vehicles.getScorecardAxis  → CVScorecardAxis (vehicleName,
+//      companyName, assetCode, titledAt, status, grade, composite,
+//      laneAvgDelta) — MCP-verified at frontend/server/routers/vehicles.ts:532.
+//      The server DERIVES composite/grade honestly from delivered-load
+//      throughput (util+volume axes; mpg untelemetered) and returns `null`
+//      when the vehicle / company can't be resolved, so it is decoded
+//      optional and every field degrades to an honest "—".
+//
+//  NO server source exists for VIN, per-vehicle MPG/RPM, per-vehicle
+//  90-day revenue / settlement line-items, year/class/CVSA, per-doc
+//  compliance rows, SAFER/OOS, or per-quarter rollups — every such slot
+//  renders an honest "—" rather than a fabricated literal or persona.
+//  Bottom nav frozen (Catalyst: Home / Fleet / Wallet / Me).
 //
 
 import SwiftUI
 
+// fleet.getFleetStats — bare object. Only the fields this screen reads are
+// declared; all optional so a partial server response degrades gracefully.
 private struct CVFleetStats: Decodable, Hashable {
     let totalVehicles: Int?
     let active: Int?
@@ -32,6 +49,22 @@ private struct CVFleetStats: Decodable, Hashable {
     let available: Int?
 }
 
+// vehicles.getScorecardAxis — real vehicle identity + §9.4 composite
+// headline. Server returns this object or `null`; decoded optional.
+private struct CVScorecardAxis: Decodable, Hashable {
+    let axisId: String?
+    let vehicleId: String?
+    let scoreId: String?
+    let vehicleName: String?     // "Peterbilt 579 · 2022" (real make/model/year)
+    let companyName: String?     // real companies.name (nullable)
+    let assetCode: String?       // "TRK-001"
+    let titledAt: String?        // vehicle createdAt date (nullable)
+    let status: String?          // "PUBLISHED · LIVE" / "ARCHIVED"
+    let grade: String?           // derived A–F
+    let composite: Double?       // derived 0–1
+    let laneAvgDelta: Double?    // vehicle composite − fleet mean
+}
+
 enum CatalystVehicleKind: String {
     case scorecard, profile, documents, analytics, settlements, onboarding, compliance
 }
@@ -40,9 +73,7 @@ private struct CatalystVehicleConfig {
     let eyebrow: String
     let citation: String
     let title: String
-    let subhead: String
     let pillCopy: String
-    let statusPill: String
 }
 
 private extension CatalystVehicleKind {
@@ -52,51 +83,37 @@ private extension CatalystVehicleKind {
             return .init(eyebrow: "CATALYST · VEHICLE · SCORECARD",
                          citation: "OWNER-OP SEAM · CLEAN ASSET",
                          title: "Vehicle scorecard",
-                         subhead: "Eusotrans LLC · Peterbilt 579 · VIN 1FUJGLDR8GLGT1842 · last 90 days",
-                         pillCopy: "Catalyst tracks vehicle · same companyId both sides · clean depreciation books",
-                         statusPill: "GRADE A · COMPOSITE 0.93")
+                         pillCopy: "Catalyst tracks vehicle · same companyId both sides · clean depreciation books")
         case .profile:
             return .init(eyebrow: "CATALYST · VEHICLE · PROFILE",
                          citation: "OWNER-OP SEAM · CLEAN ASSET",
                          title: "Vehicle profile",
-                         subhead: "TRK-001-PB579 · 90D · PB",
-                         pillCopy: "Catalyst owns asset · same companyId both sides · clean depreciation books",
-                         statusPill: "PETERBILT 579 · 2022 · MC-306 · REEFER · CVSA L1")
+                         pillCopy: "Catalyst owns asset · same companyId both sides · clean depreciation books")
         case .documents:
             return .init(eyebrow: "CATALYST · VEHICLE · DOCUMENTS",
                          citation: "OWNER-OP SEAM · §396 EVIDENCE",
                          title: "Vehicle documents",
-                         subhead: "TRK-001-PB579 · 14 docs · all current",
-                         pillCopy: "Catalyst pins title + registration + cab card + inspection · clean §396 cabinet",
-                         statusPill: "TITLE · REG · CAB · ANNUAL ALL CURRENT")
+                         pillCopy: "Catalyst pins title + registration + cab card + inspection · clean §396 cabinet")
         case .analytics:
             return .init(eyebrow: "CATALYST · VEHICLE · ANALYTICS",
                          citation: "OWNER-OP SEAM · 90D ROLLING",
                          title: "Vehicle analytics",
-                         subhead: "TRK-001-PB579 · 9 loads · MPG / RPM / dwell",
-                         pillCopy: "Catalyst dashboards asset · same companyId · clean rate-per-mile, MPG and dwell decomposition",
-                         statusPill: "RPM $5.12 · MPG 6.8 · DWELL 0:48 AVG")
+                         pillCopy: "Catalyst dashboards asset · same companyId · clean rate-per-mile, MPG and dwell decomposition")
         case .settlements:
             return .init(eyebrow: "CATALYST · VEHICLE · LEDGER",
                          citation: "OWNER-OP SEAM · §396 CLEAN ASSET",
                          title: "Vehicle settlements",
-                         subhead: "TRK-001-PB579 · 90D · 9 SETTLEMENTS",
-                         pillCopy: "Catalyst earns on asset · same companyId both sides · clean depreciation books",
-                         statusPill: "REV 90D $14,820 · 9 LOADS · GROSS")
+                         pillCopy: "Catalyst earns on asset · same companyId both sides · clean depreciation books")
         case .onboarding:
             return .init(eyebrow: "CATALYST · VEHICLE · ONBOARD",
                          citation: "OWNER-OP SEAM · 5-STEP LADDER",
                          title: "Vehicle onboarding",
-                         subhead: "TRK-001-PB579 · 5/5 steps · terminal",
-                         pillCopy: "Catalyst seats asset · same companyId · all 5 onboarding pillars closed by Eusotrans LLC",
-                         statusPill: "TERMINAL · PIN · TITLE · INSURE · INSPECT · ROUTE")
+                         pillCopy: "Catalyst seats asset · same companyId · 5 onboarding pillars")
         case .compliance:
             return .init(eyebrow: "CATALYST · VEHICLE · COMPLIANCE",
-                         citation: "OWNER-OP SEAM · §396 §393 §397 CLEAN",
+                         citation: "OWNER-OP SEAM · §396 §393 §397",
                          title: "Vehicle compliance",
-                         subhead: "TRK-001-PB579 · §396 · 0 OOS YTD",
-                         pillCopy: "Catalyst monitors asset · same companyId both sides · clean §396 §393 §397 record",
-                         statusPill: "SAFER A · 0 OOS YTD · §396 §393 §397")
+                         pillCopy: "Catalyst monitors asset · same companyId both sides · §396 §393 §397 record")
         }
     }
 }
@@ -117,11 +134,19 @@ private struct CatalystVehicleShell<Content: View>: View {
     }
 }
 
+private let kCVDash = "—"
+
 private struct CatalystVehicleBody: View {
     let kind: CatalystVehicleKind
 
+    // The focal asset for this scorecard. The septet screens are reached
+    // from the Fleet roster, which passes the selected vehicleId; default
+    // is the caller's first assigned asset (resolved server-side).
+    let vehicleId: String
+
     @Environment(\.palette) private var palette
     @State private var stats: CVFleetStats?
+    @State private var axis: CVScorecardAxis?
 
     var body: some View {
         let c = kind.config
@@ -140,6 +165,13 @@ private struct CatalystVehicleBody: View {
         .refreshable { await load() }
     }
 
+    // Subhead binds to the real asset identity (name · asset code · window).
+    private var subhead: String {
+        let name = axis?.vehicleName?.nilIfBlank ?? kCVDash
+        let code = axis?.assetCode?.nilIfBlank ?? kCVDash
+        return "\(name) · \(code) · last 90 days"
+    }
+
     private func header(_ c: CatalystVehicleConfig) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
@@ -147,7 +179,20 @@ private struct CatalystVehicleBody: View {
                 Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text(c.subhead).font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text(subhead).font(EType.caption).foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    // Status pill caption binds to the real composite/grade/status from the
+    // scorecard axis. When the axis is unresolved every token is "—".
+    private var statusPill: String {
+        switch kind {
+        case .scorecard, .analytics:
+            let grade = axis?.grade?.nilIfBlank ?? kCVDash
+            let comp = axis?.composite.map { String(format: "%.2f", $0) } ?? kCVDash
+            return "GRADE \(grade) · COMPOSITE \(comp)"
+        default:
+            return axis?.status?.nilIfBlank ?? kCVDash
         }
     }
 
@@ -156,77 +201,106 @@ private struct CatalystVehicleBody: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 Text(c.pillCopy).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                Text(c.statusPill).font(.caption2).foregroundStyle(palette.textSecondary)
+                Text(statusPill).font(.caption2).foregroundStyle(palette.textSecondary)
             }
         }
     }
 
+    // Identity row binds to the real vehicle name / asset code / company.
+    // VIN has no server source on this lane → omitted (no fabricated VIN).
     private var identityRow: some View {
-        LifecycleCard {
+        let name = axis?.vehicleName?.nilIfBlank ?? kCVDash
+        let code = axis?.assetCode?.nilIfBlank ?? kCVDash
+        let company = axis?.companyName?.nilIfBlank ?? kCVDash
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("PB").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(assetMonogram).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Peterbilt 579 · 2022 · TRK-001-PB579").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("Eusotrans LLC · owner-op · MC-306 · VIN 1FUJGLDR8GLGT1842").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(name) · \(code)").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text("\(company) · owner-op").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
         }
     }
 
+    // Monogram from the real make initials; "—" when no name is resolved.
+    private var assetMonogram: String {
+        guard let name = axis?.vehicleName?.nilIfBlank else { return kCVDash }
+        let initials = name.split(separator: " ").prefix(2).compactMap { $0.first }.map(String.init).joined()
+        return initials.isEmpty ? kCVDash : initials.uppercased()
+    }
+
     private var kpiGrid: some View {
         let s = stats
+        let a = axis
+        // Only KPIs with a live server source carry a value; every slot
+        // with no real source renders "—" (no fabricated literal). Color
+        // stays neutral textPrimary when the value is the honest dash so we
+        // never paint a "—" green/success.
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .scorecard:
                 return [
-                    ("GRADE",       "A",                                 "composite 0.93",            .green),
-                    ("UTILIZATION", "\(s?.utilization ?? 84)%",         "+3.2 pts vs prior 90d",      .green),
-                    ("MPG",         fmtCVMpg(s?.avgMpg),                  "fleet · live fuel",          .blue),
-                    ("LOADS-90D",   "9",                                  "Eusotrans LLC roster",       .blue),
+                    kpi("GRADE",       a?.grade?.nilIfBlank,
+                        a?.composite.map { "composite \(String(format: "%.2f", $0))" } ?? "—", .green),
+                    kpi("UTILIZATION", s?.utilization.map { "\($0)%" },
+                        "fleet · in-use share", .green),
+                    kpi("MPG",         fmtCVMpg(s?.avgMpg),
+                        "fleet · live fuel", .blue),
+                    kpi("LANE Δ",      a?.laneAvgDelta.map { fmtSignedDelta($0) },
+                        "vs fleet mean composite", .blue),
                 ]
             case .profile:
                 return [
-                    ("YEAR",        "2022",                              "Peterbilt 579",              .blue),
-                    ("CLASS",       "REEFER",                              "53' · MC-306",              .blue),
-                    ("CVSA",        "L1",                                  "passed · current annual",   .green),
-                    ("STATUS",      activeStatus(s),                       "live ops",                  .green),
+                    kpi("VEHICLE",     a?.vehicleName?.nilIfBlank, "make · model · year", .blue),
+                    kpi("ASSET",       a?.assetCode?.nilIfBlank,   "unit code", .blue),
+                    kpi("TITLED",      a?.titledAt?.nilIfBlank,    "on record", .green),
+                    kpi("STATUS",      activeStatus(s),            "live ops", .green),
                 ]
             case .documents:
+                // No per-doc compliance source on this lane → honest "—".
                 return [
-                    ("DOCS",        "14",                                  "pinned · current",          .blue),
-                    ("TITLE",       "OK",                                   "titled 2024-08-04",        .green),
-                    ("INSURE",      "OK",                                   "MC-306 active",            .green),
-                    ("ANNUAL",      "OK",                                   "CVSA L1 · 2026-01-12",     .green),
+                    kpi("DOCS",        nil, "pinned · current", .blue),
+                    kpi("TITLE",       nil, "—", .green),
+                    kpi("INSURE",      nil, "—", .green),
+                    kpi("ANNUAL",      nil, "—", .green),
                 ]
             case .analytics:
                 return [
-                    ("RPM",         "$5.12",                                "rate per mile",             .green),
-                    ("MPG",         fmtCVMpg(s?.avgMpg),                    "90d · live fuel",           .blue),
-                    ("DWELL",       "0:48",                                 "avg dock dwell",            .orange),
-                    ("DEADHEAD",    "0.07",                                 "fleet pillar floor",        .green),
+                    // No per-vehicle RPM source → "—".
+                    kpi("RPM",         nil,                   "rate per mile", .green),
+                    kpi("MPG",         fmtCVMpg(s?.avgMpg),   "fleet · live fuel", .blue),
+                    kpi("COMPOSITE",   a?.composite.map { String(format: "%.2f", $0) },
+                        "§9.4 derived · 90d", .blue),
+                    kpi("UTILIZATION", s?.utilization.map { "\($0)%" },
+                        "fleet · in-use share", .green),
                 ]
             case .settlements:
+                // No per-vehicle 90d revenue / settlement line-items on this
+                // lane → every settlement KPI is an honest "—".
                 return [
-                    ("REV-90D",     "$14,820",                              "9 loads · gross",          .green),
-                    ("AVG/LOAD",    "$1,647",                                "per load · 90d",           .blue),
-                    ("PAYOUTS",     "9",                                     "NET-30 closed",           .green),
-                    ("PENDING",     "0",                                     "AR clean",                .green),
+                    kpi("REV-90D",     nil, "—", .green),
+                    kpi("AVG/LOAD",    nil, "—", .blue),
+                    kpi("PAYOUTS",     nil, "—", .green),
+                    kpi("PENDING",     nil, "—", .green),
                 ]
             case .onboarding:
+                // No onboarding-step ladder source on this lane → "—".
                 return [
-                    ("STEPS",       "5/5",                                  "terminal · ladder",        .green),
-                    ("PIN",         "OK",                                   "ELD · gateway armed",      .green),
-                    ("TITLE",       "OK",                                   "owner-op clean",           .green),
-                    ("ROUTE",       "OK",                                   "first 9 loads live",       .green),
+                    kpi("STEPS",       nil, "terminal · ladder", .green),
+                    kpi("PIN",         nil, "—", .green),
+                    kpi("TITLE",       a?.titledAt?.nilIfBlank, "on record", .green),
+                    kpi("STATUS",      a?.status?.nilIfBlank,   "asset state", .green),
                 ]
             case .compliance:
+                // No SAFER / OOS / §396 §393 §397 row source on this lane → "—".
                 return [
-                    ("SAFER",       "A",                                    "FMCSA · 4 min ago",         .green),
-                    ("OOS-YTD",     "0",                                    "no out-of-service",         .green),
-                    ("§396",        "CLEAN",                                 "annual current",           .green),
-                    ("§393 §397",   "CLEAN",                                  "no open defects",         .green),
+                    kpi("SAFER",       nil, "—", .green),
+                    kpi("OOS-YTD",     nil, "—", .green),
+                    kpi("§396",        nil, "—", .green),
+                    kpi("§393 §397",   nil, "—", .green),
                 ]
             }
         }()
@@ -246,16 +320,26 @@ private struct CatalystVehicleBody: View {
         }
     }
 
+    // KPI builder: a present value keeps its tint; an absent value renders
+    // the honest dash in neutral textPrimary so the empty slot never reads
+    // as a passing/green metric.
+    private func kpi(_ label: String, _ value: String?, _ sub: String, _ tint: Color) -> (String, String, String, Color) {
+        if let v = value?.nilIfBlank {
+            return (label, v, sub, tint)
+        }
+        return (label, kCVDash, sub, palette.textPrimary)
+    }
+
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .scorecard:    return "A composite. Refresh weekly. Use this asset as the carrier-pitch reference for next NH₃ pull."
-            case .profile:      return "Peterbilt 579, 2022, owner-op, clean. Confirm MC-306 doesn't lapse before next §391 refresh."
-            case .documents:    return "All 14 documents are current. Set a 60-day reminder before the CVSA L1 anniversary."
-            case .analytics:    return "RPM $5.12, MPG 6.8, solid. Mine the 0:48 dwell for one more loaded mile vs. dock idle."
-            case .settlements:  return "$14,820 in 9 loads, 0 pending AR. Push a 10th load this 90-day window to close the rolling target."
-            case .onboarding:   return "All 5 onboarding steps closed. Asset is fully seated. Push to backhaul tender priority A."
-            case .compliance:   return "SAFER A, 0 OOS YTD. Stay on the §396 + §397 cadence to hold the clean record."
+            case .scorecard:    return "Refresh weekly. Use this asset's composite as the carrier-pitch reference for the next pull."
+            case .profile:      return "Confirm the asset record stays current — title, unit code and status drive the scorecard identity."
+            case .documents:    return "Per-document compliance has no live feed on this lane yet — file the §396 cabinet to populate it."
+            case .analytics:    return "Composite is derived from delivered-load throughput. Hold the cadence to defend the grade."
+            case .settlements:  return "Per-vehicle settlement line-items have no live feed on this lane yet — see the Wallet ledger."
+            case .onboarding:   return "Onboarding-step status has no live feed on this lane yet — seat the asset from the Fleet roster."
+            case .compliance:   return "SAFER / OOS / §396 rows have no live feed on this lane yet — pull FMCSA to populate them."
             }
         }()
         return LifecycleCard {
@@ -268,46 +352,74 @@ private struct CatalystVehicleBody: View {
 
     private func load() async {
         do { stats = try await EusoTripAPI.shared.queryNoInput("fleet.getFleetStats") } catch { /* */ }
+        do {
+            axis = try await EusoTripAPI.shared.query(
+                "vehicles.getScorecardAxis",
+                input: ScorecardAxisInput(vehicleId: vehicleId, axisId: nil)
+            )
+        } catch { /* axis stays nil → honest "—" everywhere */ }
+    }
+
+    private struct ScorecardAxisInput: Encodable {
+        let vehicleId: String
+        let axisId: String?
     }
 }
 
-private func fmtCVMpg(_ raw: Double?) -> String {
-    let v = raw ?? 6.8
-    return String(format: "%.1f", v > 0 ? v : 6.8)
+// MPG formatter: real fleet avg when > 0, honest "—" otherwise (no 6.8 default).
+private func fmtCVMpg(_ raw: Double?) -> String? {
+    guard let v = raw, v > 0 else { return nil }
+    return String(format: "%.1f", v)
 }
-private func activeStatus(_ s: CVFleetStats?) -> String {
-    (s?.inTransit ?? 0) > 0 ? "IN-TRANSIT" : "AVAILABLE"
+private func fmtSignedDelta(_ v: Double) -> String {
+    let sign = v >= 0 ? "+" : ""
+    return "\(sign)\(String(format: "%.2f", v))"
+}
+private func activeStatus(_ s: CVFleetStats?) -> String? {
+    guard let s, (s.inTransit ?? 0) + (s.available ?? 0) > 0 || (s.active ?? 0) > 0 else { return nil }
+    return (s.inTransit ?? 0) > 0 ? "IN-TRANSIT" : "AVAILABLE"
+}
+
+private extension String {
+    var nilIfBlank: String? { trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : self }
 }
 
 // MARK: - Screens (CV330-CV336)
 
 struct CatalystVehicleScorecardScreen: View {
     let theme: Theme.Palette
-    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .scorecard) } }
+    var vehicleId: String = "1"
+    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .scorecard, vehicleId: vehicleId) } }
 }
 struct CatalystVehicleProfileScreen: View {
     let theme: Theme.Palette
-    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .profile) } }
+    var vehicleId: String = "1"
+    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .profile, vehicleId: vehicleId) } }
 }
 struct CatalystVehicleDocumentsScreen: View {
     let theme: Theme.Palette
-    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .documents) } }
+    var vehicleId: String = "1"
+    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .documents, vehicleId: vehicleId) } }
 }
 struct CatalystVehicleAnalyticsScreen: View {
     let theme: Theme.Palette
-    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .analytics) } }
+    var vehicleId: String = "1"
+    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .analytics, vehicleId: vehicleId) } }
 }
 struct CatalystVehicleSettlementsScreen: View {
     let theme: Theme.Palette
-    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .settlements) } }
+    var vehicleId: String = "1"
+    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .settlements, vehicleId: vehicleId) } }
 }
 struct CatalystVehicleOnboardingScreen: View {
     let theme: Theme.Palette
-    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .onboarding) } }
+    var vehicleId: String = "1"
+    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .onboarding, vehicleId: vehicleId) } }
 }
 struct CatalystVehicleComplianceScreen: View {
     let theme: Theme.Palette
-    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .compliance) } }
+    var vehicleId: String = "1"
+    var body: some View { CatalystVehicleShell(theme: theme) { CatalystVehicleBody(kind: .compliance, vehicleId: vehicleId) } }
 }
 
 // MARK: - Previews
