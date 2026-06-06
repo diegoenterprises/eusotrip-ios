@@ -496,7 +496,7 @@ struct BrokerTenderDetail: View {
               let dl = d.deliveryLocation,
               let pLat = p.lat, let pLng = p.lng,
               let dLat = dl.lat, let dLng = dl.lng,
-              pLat != 0, pLng != 0, dLat != 0, dLng != 0 else { return nil }
+              !(pLat == 0 && pLng == 0), !(dLat == 0 && dLng == 0) else { return nil }
         return HereMapView.Lane(
             id: "tender_\(d.id)",
             originTitle: originLabel(d),

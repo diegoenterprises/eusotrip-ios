@@ -479,45 +479,113 @@ struct LoadDetailSheet: View {
             delivery: CLLocationCoordinate2D(latitude: load.destLat,
                                              longitude: load.destLng)
         )
-        return sectionCard(title: "ROUTE",
-                           subtitle: "\(load.miles) mi · estimated \(estimatedDriveTime)") {
-            ZStack(alignment: .bottomLeading) {
-                // 2026-05-22: migrated off the legacy raster HereMapView onto
-                // the OMV vector renderer + live add-on layer (HereLiveMapView),
-                // matching the 205_ShipperLoadDetail hero map. Pickup/delivery
-                // pins + route connector on the vector basemap; shipper
-                // situational add-ons (weather + traffic + sponsored ad-zones).
-                HereLiveMapView(
-                    center: .init(
-                        (lane.pickup.latitude + lane.delivery.latitude) / 2,
-                        (lane.pickup.longitude + lane.delivery.longitude) / 2
-                    ),
-                    zoom: 6,
-                    route: [.init(lane.pickup), .init(lane.delivery)],
-                    baseLayers: [
-                        .route(
-                            polyline: [.init(lane.pickup), .init(lane.delivery)],
-                            colorHex: "#1473FF"
+        // Distance/ETA are only honest when the adapter computed a real
+        // mileage (miles == 0 is the centroid-miss sentinel). Show an
+        // em-dash rather than a fabricated "0 mi · estimated 0h 0m".
+        let routeSubtitle = load.miles > 0
+            ? "\(load.miles) mi · estimated \(estimatedDriveTime)"
+            : "Distance pending"
+        return sectionCard(title: "ROUTE", subtitle: routeSubtitle) {
+            // Only draw the map when BOTH endpoints are real, distinct,
+            // in-range coordinates. Loads adapted from a centroid miss carry
+            // the US-geographic-center sentinel (39.8283, -98.5795) on both
+            // ends, which would collapse the polyline to a near-zero segment
+            // and center the camera on a fake midpoint. Gate it out and show
+            // a placeholder instead of a confident-but-fake route.
+            if routeCoordinatesAreReal(pickup: lane.pickup, delivery: lane.delivery) {
+                ZStack(alignment: .bottomLeading) {
+                    // 2026-05-22: migrated off the legacy raster HereMapView onto
+                    // the OMV vector renderer + live add-on layer (HereLiveMapView),
+                    // matching the 205_ShipperLoadDetail hero map. Pickup/delivery
+                    // pins + route connector on the vector basemap; shipper
+                    // situational add-ons (weather + traffic + sponsored ad-zones).
+                    HereLiveMapView(
+                        center: .init(
+                            (lane.pickup.latitude + lane.delivery.latitude) / 2,
+                            (lane.pickup.longitude + lane.delivery.longitude) / 2
                         ),
-                        .markers([
-                            .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
-                            .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
-                        ])
-                    ],
-                    addOns: .shipperTracking
-                )
-                    .frame(height: 200)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md,
-                                                style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md,
-                                         style: .continuous)
-                            .strokeBorder(palette.borderFaint)
+                        zoom: 6,
+                        route: [.init(lane.pickup), .init(lane.delivery)],
+                        baseLayers: [
+                            .route(
+                                polyline: [.init(lane.pickup), .init(lane.delivery)],
+                                colorHex: "#1473FF"
+                            ),
+                            .markers([
+                                .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
+                                .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
+                            ])
+                        ],
+                        addOns: .shipperTracking
                     )
-                pickupDeliveryStops
-                    .padding(10)
+                        .frame(height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md,
+                                                    style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md,
+                                             style: .continuous)
+                                .strokeBorder(palette.borderFaint)
+                        )
+                    pickupDeliveryStops
+                        .padding(10)
+                }
+            } else {
+                routeUnavailablePlaceholder
             }
         }
+    }
+
+    /// True only when pickup and delivery are real, distinct, in-range
+    /// coordinates that are not the null-island (0,0) or the
+    /// US-geographic-center centroid-miss sentinel. The sentinel lands on
+    /// BOTH endpoints when a city missed the centroid table, so an
+    /// endpoint sitting on it (or both endpoints coinciding) means we have
+    /// no honest geometry to plot.
+    private func routeCoordinatesAreReal(pickup: CLLocationCoordinate2D,
+                                         delivery: CLLocationCoordinate2D) -> Bool {
+        func isPlottable(_ c: CLLocationCoordinate2D) -> Bool {
+            guard CLLocationCoordinate2DIsValid(c) else { return false }
+            // Null island — fabricated/empty coordinate.
+            if c.latitude == 0 && c.longitude == 0 { return false }
+            // US-geographic-center sentinel emitted on a centroid miss.
+            if abs(c.latitude - 39.8283) < 0.0001 &&
+               abs(c.longitude - (-98.5795)) < 0.0001 { return false }
+            // Range sanity (lat ±90, lng ±180).
+            if abs(c.latitude) > 90 || abs(c.longitude) > 180 { return false }
+            return true
+        }
+        guard isPlottable(pickup), isPlottable(delivery) else { return false }
+        // Endpoints must be distinct — a zero-length lane is not a route.
+        if abs(pickup.latitude - delivery.latitude) < 0.0001 &&
+           abs(pickup.longitude - delivery.longitude) < 0.0001 { return false }
+        return true
+    }
+
+    /// Shown in place of the route map when the lane has no honest
+    /// geometry (centroid miss / missing coords). Never fabricates a route.
+    private var routeUnavailablePlaceholder: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "map")
+                .font(.system(size: 26, weight: .regular))
+                .foregroundStyle(palette.textTertiary)
+            Text("Route preview unavailable")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Text("Awaiting verified pickup & delivery coordinates")
+                .font(EType.micro)
+                .foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 200)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
     }
 
     private var pickupDeliveryStops: some View {
@@ -558,6 +626,9 @@ struct LoadDetailSheet: View {
     }
 
     private var estimatedDriveTime: String {
+        // miles == 0 is the honest centroid-miss value, not a real
+        // zero-mile lane — don't fabricate a "0h 0m" ETA from it.
+        guard load.miles > 0 else { return "—" }
         // Rough heuristic: highway avg 52 mph.
         let hours = Double(load.miles) / 52.0
         let h = Int(hours)

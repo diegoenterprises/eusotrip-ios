@@ -308,7 +308,8 @@ private struct VesselLiveTrackingBody: View {
     /// Origin coordinate: aggregator port join → PortDirectory catalog →
     /// live AIS fix (so the arc anchors on the real vessel). nil ⇒ schematic.
     private var originCoord: HereLatLng? {
-        if let lat = board?.booking?.originLat, let lng = board?.booking?.originLng {
+        if let lat = board?.booking?.originLat, let lng = board?.booking?.originLng,
+           !(lat == 0 && lng == 0) {
             return HereLatLng(lat, lng)
         }
         if let code = board?.booking?.originUnlocode, let p = PortDirectory.find(unlocode: code) {
@@ -320,7 +321,8 @@ private struct VesselLiveTrackingBody: View {
     /// Destination coordinate: aggregator port join → PortDirectory catalog.
     /// (No AIS fallback here — that anchors origin; the dest must be authored.)
     private var destinationCoord: HereLatLng? {
-        if let lat = board?.booking?.destinationLat, let lng = board?.booking?.destinationLng {
+        if let lat = board?.booking?.destinationLat, let lng = board?.booking?.destinationLng,
+           !(lat == 0 && lng == 0) {
             return HereLatLng(lat, lng)
         }
         if let code = board?.booking?.destinationUnlocode, let p = PortDirectory.find(unlocode: code) {

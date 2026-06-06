@@ -1148,7 +1148,7 @@ struct ShipperLoadDetail: View {
               let d = liveDetail?.deliveryLocation,
               let pLat = p.lat, let pLng = p.lng,
               let dLat = d.lat, let dLng = d.lng,
-              pLat != 0, pLng != 0, dLat != 0, dLng != 0 else { return nil }
+              !(pLat == 0 && pLng == 0), !(dLat == 0 && dLng == 0) else { return nil }
         return HereMapView.Lane(
             id: "load_\(loadId)",
             originTitle: originLabel,

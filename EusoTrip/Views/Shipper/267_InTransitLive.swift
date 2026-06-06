@@ -318,7 +318,7 @@ private struct InTransitBody: View {
             if let g = live.lastGeofence {
                 return URL(string: "maps://?ll=\(g.latitude),\(g.longitude)&q=Truck")
             }
-            if let lat = live.delivery?.lat, let lng = live.delivery?.lng {
+            if let lat = live.delivery?.lat, let lng = live.delivery?.lng, !(lat == 0 && lng == 0) {
                 return URL(string: "maps://?ll=\(lat),\(lng)&q=Delivery")
             }
             if let addr = live.delivery?.address, !addr.isEmpty {

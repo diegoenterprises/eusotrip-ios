@@ -368,16 +368,20 @@ private final class GeocodeRetryAfterBox: @unchecked Sendable {
 
 extension HereGeocodeItem {
     /// Converts a HERE geocode hit to EusoTrip's `LoadLocation`.
-    /// Falls back to (0,0) only for a coordless categorical hit — callers
-    /// should resolve those via `HereGeocodingClient.resolve(_:)` first.
-    func asLoadLocation() -> LoadLocation {
-        LoadLocation(
+    /// Returns `nil` for a coordless or null-island/out-of-range hit (e.g. a
+    /// categorical result) — never fabricates a (0,0) coordinate. Callers must
+    /// resolve such hits via `HereGeocodingClient.resolve(_:)` first.
+    func asLoadLocation() -> LoadLocation? {
+        guard let pos = position, HereGeocodingClient.isSane(pos.lat, pos.lng) else {
+            return nil
+        }
+        return LoadLocation(
             address:  [address.houseNumber, address.street].compactMap { $0 }.joined(separator: " "),
             city:     address.city ?? "",
             state:    address.stateCode ?? address.state ?? "",
             zipCode:  address.postalCode ?? "",
-            lat:      position?.lat ?? 0,
-            lng:      position?.lng ?? 0
+            lat:      pos.lat,
+            lng:      pos.lng
         )
     }
 }

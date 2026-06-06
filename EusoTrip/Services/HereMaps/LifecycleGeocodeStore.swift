@@ -147,14 +147,31 @@ final class LifecycleGeocodeStore: ObservableObject {
         let key = cacheKey(loadId: loadId, side: side)
         defer { inflight.remove(key) }
         do {
+            // Pull several candidates (not just `.first`) so the admin-aware
+            // policy has alternatives to disambiguate among — a bare address
+            // line frequently returns a same-named place on the wrong coast.
             let results = try await HereGeocodingClient.shared.geocode(
                 query: query,
-                limit: 1
+                limit: 5
             )
-            guard let top = results.first, let pos = top.position else { return }
+            guard let top = results.first else { return }
+
+            // Route the top hit through the admin-aware confirming resolve
+            // (`pickBestMatch` + nearest-to-hit / within-100-mi sanity gate)
+            // instead of blind-accepting `results.first`. That policy exists
+            // precisely to stop a wrong-coast coordinate from getting cached
+            // forever. `resolve(_:)` returns nil rather than invent a coord.
+            guard let resolved = await HereGeocodingClient.shared.resolve(top) else { return }
+            let lat = resolved.coordinate.latitude
+            let lng = resolved.coordinate.longitude
+
+            // Final mapping-doctrine gate: never cache null-island (0,0) or an
+            // out-of-range coordinate, since the cache never auto-expires.
+            guard HereGeocodingClient.isSane(lat, lng) else { return }
+
             let coord = Coord(
-                lat: pos.lat,
-                lng: pos.lng,
+                lat: lat,
+                lng: lng,
                 resolvedAt: Date()
             )
             coords[key] = coord
