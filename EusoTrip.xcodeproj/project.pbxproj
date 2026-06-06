@@ -95,6 +95,7 @@
 		A1D061193673EC398AB67E44 /* 017_PickupBolSigning.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F1968282989372CA735A10 /* 017_PickupBolSigning.swift */; };
 		A1D4E2D6D079F0A6924FACD1 /* 002_CreateAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A4741520D5DE7A968DABA8 /* 002_CreateAccount.swift */; };
 		A1DMC0001000000000000001 /* HereBearerFetch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DMC0001000000000000002 /* HereBearerFetch.swift */; };
+		A1RLIM0001000000000000A1 /* HereRateLimiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1RLIM0001000000000000A2 /* HereRateLimiter.swift */; };
 		A1DMC0001000000000000003 /* HereFuelPricesClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DMC0001000000000000004 /* HereFuelPricesClient.swift */; };
 		A1DMC0001000000000000005 /* HereWeatherClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DMC0001000000000000006 /* HereWeatherClient.swift */; };
 		A1DMC0001000000000000007 /* HereTrafficClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DMC0001000000000000008 /* HereTrafficClient.swift */; };
@@ -1103,6 +1104,7 @@
 		A1D507CFE4BE8224D0EF83E2 /* ForgotPasswordViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordViewModel.swift; sourceTree = "<group>"; };
 		A1D98E53AF24D307F0593138 /* RegistrationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegistrationViewModel.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000002 /* HereBearerFetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereBearerFetch.swift; sourceTree = "<group>"; };
+		A1RLIM0001000000000000A2 /* HereRateLimiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereRateLimiter.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000004 /* HereFuelPricesClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereFuelPricesClient.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000006 /* HereWeatherClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereWeatherClient.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000008 /* HereTrafficClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereTrafficClient.swift; sourceTree = "<group>"; };
@@ -2782,6 +2784,7 @@
 				A1DMC000100000000000000E /* HereSafetyCamerasClient.swift */,
 				A1DMC0001000000000000010 /* HereTrafficAnalyticsClient.swift */,
 				A1DMC0001000000000000023 /* HereWeatherAdapter.swift */,
+				A1RLIM0001000000000000A2 /* HereRateLimiter.swift */,
 			);
 			path = HereMaps;
 			sourceTree = "<group>";
@@ -3745,6 +3748,7 @@
 				MSGS00010CE0FF10000011A1 /* MessagesScreen.swift in Sources */,
 				A12E1A1C0010CE0FF1000021 /* HEREAuthService.swift in Sources */,
 				A1DMC0001000000000000001 /* HereBearerFetch.swift in Sources */,
+				A1RLIM0001000000000000A1 /* HereRateLimiter.swift in Sources */,
 				A1DMC0001000000000000003 /* HereFuelPricesClient.swift in Sources */,
 				A1DMC0001000000000000005 /* HereWeatherClient.swift in Sources */,
 				A1DMC0001000000000000007 /* HereTrafficClient.swift in Sources */,

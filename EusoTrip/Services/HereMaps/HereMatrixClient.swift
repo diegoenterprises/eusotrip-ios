@@ -86,30 +86,45 @@ actor HereMatrixClient {
         )
         let bodyData = try encoder.encode(body)
 
-        // Bearer-authenticated POST with a single 401 retry.
-        func attempt() async throws -> (Data, HTTPURLResponse) {
-            let token = try await HereMapsConfig.requireBearerToken()
-            var req = URLRequest(url: url)
-            req.httpMethod = "POST"
-            req.setValue("application/json",         forHTTPHeaderField: "Content-Type")
-            req.setValue("Bearer \(token)",          forHTTPHeaderField: "Authorization")
-            req.httpBody = bodyData
-            let (data, resp) = try await session.data(for: req)
-            guard let http = resp as? HTTPURLResponse else {
-                throw HereMapsError.providerError("No HTTP response")
+        // RATE-LIMIT GATE: matrix is a Bearer-authenticated POST that
+        // bypasses `HereBearerFetch`, so it pages through
+        // `HereRateLimiter.shared` directly for the same paced slot +
+        // deterministic 429 backoff. Only the fetch is gated; the JSON
+        // decode below stays outside the slot.
+        let lastRetryAfter = MatrixRetryAfterBox()
+        let data = try await HereRateLimiter.shared.runData(
+            retryAfterFor: { _ in lastRetryAfter.seconds }
+        ) { [session, bodyData, url] in
+            // Bearer-authenticated POST with a single 401 retry.
+            func attempt() async throws -> (Data, HTTPURLResponse) {
+                let token = try await HereMapsConfig.requireBearerToken()
+                var req = URLRequest(url: url)
+                req.httpMethod = "POST"
+                req.setValue("application/json",         forHTTPHeaderField: "Content-Type")
+                req.setValue("Bearer \(token)",          forHTTPHeaderField: "Authorization")
+                req.httpBody = bodyData
+                let (data, resp) = try await session.data(for: req)
+                guard let http = resp as? HTTPURLResponse else {
+                    throw HereMapsError.providerError("No HTTP response")
+                }
+                return (data, http)
             }
-            return (data, http)
+
+            var (data, http) = try await attempt()
+            if http.statusCode == 401 {
+                await HEREAuthService.shared.invalidate()
+                (data, http) = try await attempt()
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                if http.statusCode == 429 {
+                    lastRetryAfter.seconds = HereRateLimiter.retryAfterSeconds(from: http)
+                }
+                let msg = String(data: data, encoding: .utf8) ?? ""
+                throw HereMapsError.http(http.statusCode, msg)
+            }
+            return data
         }
 
-        var (data, http) = try await attempt()
-        if http.statusCode == 401 {
-            await HEREAuthService.shared.invalidate()
-            (data, http) = try await attempt()
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            let msg = String(data: data, encoding: .utf8) ?? ""
-            throw HereMapsError.http(http.statusCode, msg)
-        }
         do {
             return try decoder.decode(HereMatrixResponse.self, from: data)
         } catch {
@@ -167,4 +182,10 @@ actor HereMatrixClient {
                 : profile.shippedHazardousGoods.map(\.hereValue).sorted()
         }
     }
+}
+
+/// Carries a 429 `Retry-After` out of one gated matrix POST into the
+/// limiter's backoff hook. Confined to a single `runData` call.
+private final class MatrixRetryAfterBox: @unchecked Sendable {
+    var seconds: TimeInterval?
 }

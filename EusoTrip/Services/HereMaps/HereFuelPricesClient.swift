@@ -164,27 +164,47 @@ final class HereFuelPricesClient {
 
     // MARK: - Bearer auth with 401 retry (mirrors HereRoutingClient)
 
+    /// RATE-LIMIT GATE: fuel-prices has its own 401 recipe (bypasses
+    /// `HereBearerFetch`), so it pages through `HereRateLimiter.shared`
+    /// directly for the same paced slot + deterministic 429 backoff.
+    /// Fuel is part of the add-on fan-out, so pacing it here keeps a
+    /// map move from spiking the basic-tier ceiling.
     private func authorizedData(for url: URL) async throws -> Data {
-        func attempt() async throws -> (Data, HTTPURLResponse) {
-            let token = try await HereMapsConfig.requireBearerToken()
-            var req = URLRequest(url: url)
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            let (data, resp) = try await session.data(for: req)
-            guard let http = resp as? HTTPURLResponse else {
-                throw HereMapsError.providerError("No HTTP response")
-            }
-            return (data, http)
-        }
+        let lastRetryAfter = FuelRetryAfterBox()
 
-        var (data, http) = try await attempt()
-        if http.statusCode == 401 {
-            await HEREAuthService.shared.invalidate()
-            (data, http) = try await attempt()
+        return try await HereRateLimiter.shared.runData(
+            retryAfterFor: { _ in lastRetryAfter.seconds }
+        ) { [session] in
+            func attempt() async throws -> (Data, HTTPURLResponse) {
+                let token = try await HereMapsConfig.requireBearerToken()
+                var req = URLRequest(url: url)
+                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                let (data, resp) = try await session.data(for: req)
+                guard let http = resp as? HTTPURLResponse else {
+                    throw HereMapsError.providerError("No HTTP response")
+                }
+                return (data, http)
+            }
+
+            var (data, http) = try await attempt()
+            if http.statusCode == 401 {
+                await HEREAuthService.shared.invalidate()
+                (data, http) = try await attempt()
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                if http.statusCode == 429 {
+                    lastRetryAfter.seconds = HereRateLimiter.retryAfterSeconds(from: http)
+                }
+                let body = String(data: data, encoding: .utf8) ?? ""
+                throw HereMapsError.http(http.statusCode, body)
+            }
+            return data
         }
-        guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw HereMapsError.http(http.statusCode, body)
-        }
-        return data
     }
+}
+
+/// Carries a 429 `Retry-After` out of one gated fuel fetch into the
+/// limiter's backoff hook. Confined to a single `runData` call.
+private final class FuelRetryAfterBox: @unchecked Sendable {
+    var seconds: TimeInterval?
 }

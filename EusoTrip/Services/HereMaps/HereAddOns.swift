@@ -415,14 +415,21 @@ public final class HereAddOnsModel: ObservableObject {
     ) async -> AddOnFetch {
         var out = AddOnFetch()
         do {
+            // RATE-LIMIT GATE: this branch of the fan-out hits HERE via our
+            // backend proxy (`hereMaps.discoverNearby`) rather than a gated
+            // client, so pace it explicitly through the shared limiter so
+            // the 10-call fan-out stays a paced trickle, not a simultaneous
+            // burst. `withSlot` acquires + always releases.
             // `discoverNearby` is a main-actor async method; awaiting it from
             // this nonisolated context hops to the main actor only to ISSUE the
             // request, then suspends (releasing the actor) for the network I/O.
-            let places = try await EusoTripAPI.shared.hereMaps.discoverNearby(
-                query: query,
-                at: .init(lat: center.lat, lng: center.lng),
-                radiusMeters: 60_000
-            )
+            let places = try await HereRateLimiter.shared.withSlot {
+                try await EusoTripAPI.shared.hereMaps.discoverNearby(
+                    query: query,
+                    at: .init(lat: center.lat, lng: center.lng),
+                    radiusMeters: 60_000
+                )
+            }
             for place in places {
                 guard let lat = place.lat, let lng = place.lng else { continue }
                 let id = "\(kind.rawValue):\(place.id)"
@@ -451,7 +458,11 @@ public final class HereAddOnsModel: ObservableObject {
         var out = AddOnFetch()
         do {
             let bbox = Self.boundingBox(center: center, route: route)
-            let zones = try await EusoTripAPI.shared.hereMaps.adZonesInBbox(bbox)
+            // RATE-LIMIT GATE: backend-proxied HERE call — pace it through the
+            // shared limiter so the fan-out doesn't fire it simultaneously.
+            let zones = try await HereRateLimiter.shared.withSlot {
+                try await EusoTripAPI.shared.hereMaps.adZonesInBbox(bbox)
+            }
             for z in zones {
                 guard let poly = z.polygon, poly.count > 2 else { continue }
                 let ring = poly.map { HereLatLng($0.lat, $0.lng) }
@@ -483,7 +494,11 @@ public final class HereAddOnsModel: ObservableObject {
     nonisolated private static func fetchISA(_ center: HereLatLng) async -> AddOnFetch {
         var out = AddOnFetch()
         do {
-            let isa = try await EusoTripAPI.shared.hereMaps.isaForPoint(lat: center.lat, lng: center.lng)
+            // RATE-LIMIT GATE: backend-proxied HERE call — pace it through the
+            // shared limiter so the fan-out doesn't fire it simultaneously.
+            let isa = try await HereRateLimiter.shared.withSlot {
+                try await EusoTripAPI.shared.hereMaps.isaForPoint(lat: center.lat, lng: center.lng)
+            }
             guard let kph = isa.speedLimitKph else { return out }
             let unit = (isa.speedUnit ?? "kph").lowercased()
             let text: String

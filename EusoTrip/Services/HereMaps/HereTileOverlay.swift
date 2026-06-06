@@ -117,6 +117,15 @@ final class HereTileOverlay: MKTileOverlay {
 
         Task { [session] in
             func attempt() async throws -> (Data, HTTPURLResponse) {
+                // RATE-LIMIT GATE: tile fetches bypass `HereBearerFetch`
+                // (MapKit hands us a header-less request), so each tile
+                // round-trip takes a paced slot from the shared limiter
+                // and releases it. MapKit can ask for dozens of tiles at
+                // once on a pan/zoom — without this gate that burst alone
+                // can blow the basic-tier RPM ceiling. Slot is released
+                // even on throw.
+                await HereRateLimiter.shared.acquire()
+                defer { Task { await HereRateLimiter.shared.release() } }
                 let token = try await HereMapsConfig.requireBearerToken()
                 var req = URLRequest(url: url)
                 req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -146,6 +155,26 @@ final class HereTileOverlay: MKTileOverlay {
                         name: Notification.Name("eusoHereNightTileBlocked"),
                         object: nil
                     )
+                    (data, http) = try await attempt()
+                }
+                // 429 → deterministic backoff + cooldown, then retry a
+                // few times. Tiles degrade by drawing nothing (the brand
+                // basemap shows through), so after the budget we return
+                // nil rather than crash the renderer.
+                var backoffAttempt = 0
+                let maxTileRetries = await HereRateLimiter.shared.maxBackoffRetries
+                while http.statusCode == 429 {
+                    let retryAfter = HereRateLimiter.retryAfterSeconds(from: http)
+                    await HereRateLimiter.shared.note429(retryAfter: retryAfter)
+                    if backoffAttempt >= maxTileRetries {
+                        // Degrade: no tile for this cell, no error spam.
+                        result(nil, nil)
+                        return
+                    }
+                    let nanos = await HereRateLimiter.shared
+                        .backoffDelayNanos(attempt: backoffAttempt, retryAfter: retryAfter)
+                    try? await Task.sleep(nanoseconds: nanos)
+                    backoffAttempt += 1
                     (data, http) = try await attempt()
                 }
                 guard (200..<300).contains(http.statusCode) else {

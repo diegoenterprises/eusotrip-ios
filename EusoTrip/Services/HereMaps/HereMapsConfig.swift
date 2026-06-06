@@ -24,12 +24,56 @@
 //      // REDACTED — rotated 2026-04-22
 //  and is now invalid at the HERE portal. Do not restore.
 //
+//  ─────────────────────────────────────────────────────────────────────
+//  ENTERPRISE SEAM (HERE basic → enterprise migration)
+//
+//  HERE is moving this account from the basic/public tier to a dedicated
+//  enterprise tier. When their team hands over the enterprise endpoints +
+//  keys, the swap is a SINGLE, OBVIOUS change — see `HereTier` and the
+//  `ENTERPRISE SWAP` blocks below:
+//    1. Flip `activeTier` from `.basic` to `.enterprise`.
+//    2. Fill `enterpriseHosts` with the per-service enterprise hosts HERE
+//       provides (routing / matrix / geocoding / tiles / isoline / traffic).
+//    3. Drop the enterprise credentials into the SAME xcconfig keys below —
+//       no new symbols, no code change. (If enterprise mints tokens from a
+//       different `/oauth2/token` host, that already flows through the
+//       existing `HERE_TOKEN_ENDPOINT_URL` xcconfig value.)
+//  Until all three are done, leave `activeTier = .basic`: every accessor
+//  resolves to today's public hosts, so behavior is unchanged. NO fake or
+//  placeholder enterprise credentials are staged — the enterprise host map
+//  ships empty and falls back to the basic hosts.
+//  ─────────────────────────────────────────────────────────────────────
+//
 //  Powered by ESANG AI™.
 //
 
 import Foundation
 
+/// HERE Platform service tier. The account is migrating basic → enterprise;
+/// this is the single switch that selects which set of host endpoints the
+/// REST clients hit. Credentials are read from the SAME xcconfig/Info.plist
+/// keys regardless of tier (see `HereMapsConfig`'s readers) — only the host
+/// endpoints differ, so swapping tiers never touches the OAuth flow.
+enum HereTier {
+    /// Public `*.hereapi.com` hosts on the basic plan. Current production.
+    case basic
+    /// Dedicated enterprise hosts handed over by the HERE team. Endpoints
+    /// live in `HereMapsConfig.enterpriseHosts`; not active until that map
+    /// is populated and `activeTier` is flipped to `.enterprise`.
+    case enterprise
+}
+
 enum HereMapsConfig {
+
+    // MARK: - Tier selection (ENTERPRISE SWAP point #1)
+
+    /// The HERE service tier all REST clients route through.
+    ///
+    /// ENTERPRISE SWAP: when HERE provides enterprise endpoints + keys,
+    /// change this to `.enterprise` (after populating `enterpriseHosts`
+    /// and the `HERE_*` xcconfig credentials). Leave at `.basic` today so
+    /// every accessor resolves to the current public hosts unchanged.
+    static let activeTier: HereTier = .basic
 
     // MARK: - Info.plist keys
 
@@ -63,41 +107,102 @@ enum HereMapsConfig {
     /// change this ONE constant to match the portal trusted-domains list.
     static let jsTrustedReferrerOrigin = "https://eusotrip.com"
 
-    // MARK: - Base URLs
+    // MARK: - Per-service host map (ENTERPRISE SWAP point #2)
+
+    /// One HERE REST service. Each case owns a basic (public) host and an
+    /// enterprise host slot; `host` returns the right one for `activeTier`.
+    /// The PATHs (v8/routes, v1/geocode, …) are stable across tiers and live
+    /// with the base-URL accessors below — only the HOST changes per tier.
+    enum Service {
+        case routing, matrix, geocode, reverseGeocode, autosuggest, isoline, traffic, tile
+
+        /// Public `*.hereapi.com` host on the basic plan. Current production.
+        var basicHost: String {
+            switch self {
+            case .routing:        return "router.hereapi.com"
+            case .matrix:         return "matrix.router.hereapi.com"
+            case .geocode:        return "geocode.search.hereapi.com"
+            case .reverseGeocode: return "revgeocode.search.hereapi.com"
+            case .autosuggest:    return "autosuggest.search.hereapi.com"
+            case .isoline:        return "isoline.router.hereapi.com"
+            case .traffic:        return "data.traffic.hereapi.com"
+            case .tile:           return "maps.hereapi.com"
+            }
+        }
+    }
+
+    /// Enterprise host overrides, keyed by `Service`.
+    ///
+    /// ENTERPRISE SWAP: when HERE hands over the enterprise endpoints, drop
+    /// each enterprise host here, e.g.
+    ///     [.routing: "routing.enterprise.<tenant>.here.com",
+    ///      .tile:    "tiles.enterprise.<tenant>.here.com", …]
+    /// A `Service` missing from this map falls back to its `basicHost`, so a
+    /// partial enterprise rollout is safe. Ships EMPTY today — no fake hosts
+    /// staged — so `.enterprise` would currently resolve to the basic hosts.
+    static let enterpriseHosts: [Service: String] = [:]
+
+    /// Resolves the live host for `service` under the active tier: the
+    /// enterprise override when on `.enterprise` and one is provided,
+    /// otherwise the basic public host.
+    static func host(for service: Service) -> String {
+        switch activeTier {
+        case .basic:
+            return service.basicHost
+        case .enterprise:
+            return enterpriseHosts[service] ?? service.basicHost
+        }
+    }
+
+    // MARK: - Base URLs (host = tier-resolved, path = tier-stable)
 
     /// Routing API v8  — truck-aware route computation.
     /// https://developer.here.com/documentation/routing-api/
-    static let routingBaseURL = URL(string: "https://router.hereapi.com/v8/routes")!
+    static var routingBaseURL: URL { URL(string: "https://\(host(for: .routing))/v8/routes")! }
 
     /// Matrix Routing API v8 — many-to-many cost matrix for dispatch.
     /// https://developer.here.com/documentation/matrix-routing-api/
-    static let matrixBaseURL = URL(string: "https://matrix.router.hereapi.com/v8/matrix")!
+    static var matrixBaseURL: URL { URL(string: "https://\(host(for: .matrix))/v8/matrix")! }
 
     /// Geocoding & Search API v7 — forward geocoding (address → lat/lng).
     /// https://developer.here.com/documentation/geocoding-search-api/
-    static let geocodeBaseURL = URL(string: "https://geocode.search.hereapi.com/v1/geocode")!
+    static var geocodeBaseURL: URL { URL(string: "https://\(host(for: .geocode))/v1/geocode")! }
 
     /// Reverse geocoding — lat/lng → address.
-    static let reverseGeocodeBaseURL = URL(string: "https://revgeocode.search.hereapi.com/v1/revgeocode")!
+    static var reverseGeocodeBaseURL: URL { URL(string: "https://\(host(for: .reverseGeocode))/v1/revgeocode")! }
 
     /// Autosuggest — partial address lookups for pickers.
-    static let autosuggestBaseURL = URL(string: "https://autosuggest.search.hereapi.com/v1/autosuggest")!
+    static var autosuggestBaseURL: URL { URL(string: "https://\(host(for: .autosuggest))/v1/autosuggest")! }
 
     /// Isoline Routing API v8 — drive-time polygons (geofence "within 30 min" etc).
-    static let isolineBaseURL = URL(string: "https://isoline.router.hereapi.com/v8/isolines")!
+    static var isolineBaseURL: URL { URL(string: "https://\(host(for: .isoline))/v8/isolines")! }
 
     /// Traffic API v7 — incidents + flow overlays.
-    static let trafficBaseURL = URL(string: "https://data.traffic.hereapi.com/v7")!
+    static var trafficBaseURL: URL { URL(string: "https://\(host(for: .traffic))/v7")! }
 
     /// Maps Tile API v3 (raster PNG). Authenticated via `Authorization: Bearer`
     /// on the request (not a query param) — see `HereTileOverlay.swift`.
     ///
     /// Example rendered:
     ///   https://maps.hereapi.com/v3/base/mc/12/1204/1540/512/png?style=explore.day&ppi=400
-    static let tileBaseHost = "maps.hereapi.com"
+    static var tileBaseHost: String { host(for: .tile) }
     static let tileBasePath = "/v3/base/mc"
 
-    // MARK: - Info.plist readers
+    // MARK: - Info.plist readers (ENTERPRISE SWAP point #3 — credentials)
+
+    /// All HERE credentials are read from Info.plist (populated from the
+    /// git-ignored xcconfig at build time), regardless of tier.
+    ///
+    /// ENTERPRISE SWAP: when HERE issues the enterprise OAuth credentials,
+    /// replace the values of the SAME xcconfig keys — no symbols change here:
+    ///   HERE_ACCESS_KEY_ID      → `accessKeyIdPlistKey`     (HEREAccessKeyId)
+    ///   HERE_ACCESS_KEY_SECRET  → `accessKeySecretPlistKey` (HEREAccessKeySecret)
+    ///   HERE_TOKEN_ENDPOINT_URL → `tokenEndpointURLPlistKey` (only if the
+    ///                             enterprise token host differs from
+    ///                             account.api.here.com/oauth2/token)
+    ///   HERE_JS_API_KEY         → `jsApiKeyPlistKey` (Maps JS SDK / Hot Zones)
+    /// No enterprise credential values are committed — the xcconfig is the
+    /// single source of truth and stays git-ignored (honest vendor seam).
 
     /// Reads a string from Info.plist, rejecting empty strings and
     /// unsubstituted `$(...)` placeholders (which indicate the xcconfig
