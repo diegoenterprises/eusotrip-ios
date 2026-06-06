@@ -8,36 +8,57 @@
 //
 //  §387 CATALYST-VANTAGE PICKUP ON-SITE ECHO on M-04 · PICKUP QUARTET 2/N
 //  — consumer-side of the §386 driver-vantage PICKUP ON-SITE. The CEL
-//  fleet-tracker reflects JR Reyes on-site at ATL West Caswell DC dock 4A.
+//  fleet-tracker reflects the assigned driver on-site at the pickup dock.
 //
 //  Chain context (M-04 lifecycle · catalyst vantage):
 //    §386 driver PICKUP ON-SITE  · AWARDED→PICKUP · drivers.updateLoadStatus
 //                                  (status:"at_pickup") · drivers.ts:857
 //    §387 catalyst ON-SITE ECHO  · THIS FILE · CEL fleet-tracker reflects
-//                                  JR on-site · NO ring transition · consumes
-//                                  loadLifecycle.emitLoadStateChange envelope
-//                                  stage="pickup.on_site"
+//                                  the driver on-site · NO ring transition ·
+//                                  consumes loadLifecycle.emitLoadStateChange
+//                                  envelope stage="pickup.on_site"
 //
-//  Server wiring (no stubs / no fake data — every field paints a real value
-//  or the honest empty state). Both anchors MCP-confirmed THIS port against
-//  frontend/server/routers/catalysts.ts:
+//  ZERO-FABRICATION REBUILD (2026-06-06). Every visible business value
+//  binds to a real tRPC proc, or paints "-"/"—" / a real EusoEmptyState.
+//  The seed VM persona (Naomi Chen / Atlanta→Charlotte / $1,610 / JR Reyes
+//  / JR-CEL-001 / dock 4A / ATL West Caswell DC / Carolina Express / Diego
+//  Usoro / Eusorone / founder pin 154) and the three fabricated check-in
+//  sub-rows (concrete clock times + fan-out events with no DB source) are
+//  DELETED. No `?? <invented>` fallbacks remain.
 //
-//    • `catalysts.getActiveLoads`  (catalysts.ts:509) — input { limit } →
-//      rows { id, loadNumber, status, origin, destination, driver, eta, rate }.
-//      M-04 now appears with status=at_pickup (was AWARDED at §369); this
-//      row anchors the hero load + drives the lifecycle stage to PICKUP and
-//      the on-site echo state.
-//    • `catalysts.getMyDrivers`    (catalysts.ts:430) — input { limit } →
-//      rows { id, name, status, currentLoad, hoursRemaining, location }.
-//      JR's row (matched to the active load's driver) composes the
-//      fleet-tracker on-site card — HOS + status painted from REAL data,
-//      not a fabricated label. The real fleet-location read replaces the
-//      projected (non-existent) catalysts.fleetTracker.subscribePickupWatchGate.
+//  Server wiring (both anchors MCP-confirmed against
+//  frontend/server/routers/catalysts.ts):
 //
-//  Honest empty/error: when getActiveLoads returns no at_pickup row the
-//  surface paints the awaiting state; when getMyDrivers has no matching
-//  driver the fleet card collapses to "Awaiting on-site echo" — never a
-//  fake driver. Seed data lives ONLY in #Preview.
+//    • `catalysts.getActiveLoads`  (catalysts.ts:510) — input { limit } →
+//      rows { id:String, loadNumber, status, origin, destination, driver,
+//      eta, rate:Double }. `origin`/`destination` are server-joined
+//      "City, ST" strings (or the literal "Unknown" when the load has no
+//      geocoded pickup/delivery); `driver` is the joined name (or the
+//      literal "Assigned"/"Unassigned"). M-04 appears here once it is at
+//      at_pickup; this row anchors the hero load + drives the lifecycle
+//      stage to PICKUP and the on-site echo state.
+//    • `catalysts.getMyDrivers`    (catalysts.ts:431) — input { limit } →
+//      rows { id:String, name, status, currentLoad:String?,
+//      hoursRemaining:Double?, location:"DD.DD, DD.DD"|"Unknown" }.
+//      The roster row matched to the active load's driver composes the
+//      fleet-tracker on-site card — HOS + status + location painted from
+//      REAL data, never a fabricated label.
+//
+//  Honest backend gaps (rendered as "—" / EusoEmptyState, never faked):
+//    • Dock assignment + dwell timer — no dock/dwell column or proc on the
+//      catalyst router → dock "—", dwell "—".
+//    • On-site check-in ledger — no check-in/event-log proc surfaces the
+//      gate-clear / HOS-transition fan-out to the catalyst → the ledger
+//      renders an EusoEmptyState ("No on-site check-ins yet").
+//    • Shipper-of-record — getActiveLoads carries no shipper party, and
+//      loads.getById is not read on this echo surface → the shipper card
+//      paints "—" (no Diego Usoro / Eusorone / founder pin fabrication).
+//
+//  No carrier-side "confirm at dock" mutation exists on the catalysts
+//  router (the dock-arrival verb is the driver's drivers.updateLoadStatus),
+//  so the action ribbon stays a labeled read-only echo — no fake success.
+//
+//  Seed data lives ONLY in #Preview.
 //
 //  Powered by ESANG AI™.
 //
@@ -94,26 +115,26 @@ private struct CatalystMyDriversInput_374: Encodable { let limit: Int }
 
 // MARK: - Wire models (decode the REAL server row shapes)
 
-/// One row of `catalysts.getActiveLoads` (catalysts.ts:509).
+/// One row of `catalysts.getActiveLoads` (catalysts.ts:510).
 private struct CatalystActiveLoad_374: Decodable, Identifiable, Hashable {
     let id: String
     let loadNumber: String
     let status: String
-    let origin: String
-    let destination: String
-    let driver: String
+    let origin: String        // "City, ST" or the literal "Unknown"
+    let destination: String   // "City, ST" or the literal "Unknown"
+    let driver: String        // joined name, or "Assigned"/"Unassigned"
     let eta: String
     let rate: Double
 }
 
-/// One row of `catalysts.getMyDrivers` (catalysts.ts:430).
+/// One row of `catalysts.getMyDrivers` (catalysts.ts:431).
 private struct CatalystFleetDriver_374: Decodable, Identifiable, Hashable {
     let id: String
     let name: String
     let status: String
     let currentLoad: String?
     let hoursRemaining: Double?
-    let location: String
+    let location: String      // "DD.DD, DD.DD" or the literal "Unknown"
 }
 
 // MARK: - Model
@@ -156,81 +177,58 @@ private enum PickupSubAxis_374: Int, CaseIterable {
     var total: Int { 5 }
 }
 
-/// One on-site check-in echo sub-row. `realParamAnchor` documents the
-/// real procedure / parameter / side-effect each sub-row reflects so the
-/// surface never implies an invented API.
+/// One on-site check-in echo sub-row. The catalyst router exposes no
+/// check-in / event-log proc, so this is only ever populated from a real
+/// source if one ships; until then the ledger renders EusoEmptyState.
 private struct OnSiteCheckInRow_374: Identifiable {
     let id = UUID()
     let title: String
     let detail: String
     let elapsed: String
-    let realParamAnchor: String
 }
 
 /// Fleet-tracker on-site projection composed from a real
-/// `catalysts.getMyDrivers` row + the active-load echo.
+/// `catalysts.getMyDrivers` row + the active-load echo. Fields with no
+/// live source default to the honest em-dash ("—").
 private struct FleetTrackerOnSite_374 {
-    let driverInitials: String
-    let driverName: String
-    let driverId: String
-    let hos: String
-    let status: String
-    let dock: String
-    let dwell: String
-    let location: String
+    var driverInitials: String = "—"
+    var driverName: String = "—"
+    var driverId: String = "—"
+    var hos: String = "—"
+    var status: String = "—"
+    var dock: String = "—"      // no dock column / proc on the catalyst router
+    var dwell: String = "—"     // no dwell timer source
+    var location: String = "—"
 }
 
-/// Hero / load + persona seed. Static fields are canonical persona copy
-/// (skill § "Canonical personas"); live fields are filled from the wire.
+/// Hero / load view model. ALL fields are live-bound from the wire or
+/// render the honest em-dash — no seeded persona / lane / amount remains.
 private struct CatalystPickupOnSiteVM_374 {
-    // Hero / load (live-overridable in the view)
-    var loadId = "LD-260427-E5C9A41B22"
-    var loadNumber = "M-04"
-    var lane = "Atlanta GA → Charlotte NC"
-    var equipment = "53' Dry Van"
-    var awardedUsd: Double = 1_610
-
-    // Catalyst (M-04 winner)
-    let catalystName = "Carolina Express Logistics"
-    let catalystCode = "CEL"
-    let dispatcherName = "Naomi Chen"
-
-    // Shipper of record (founder pin 154)
-    let shipperName = "Diego Usoro"
-    let shipperCompany = "Eusorone Technologies"
-    let shipperMonogram = "DU"
-    let founderPin = 154
+    // Hero / load (filled from getActiveLoads; "—" until resolved)
+    var loadId = ""
+    var loadNumber = "—"
+    var lane = "—"
+    var equipment = "—"        // no equipment column on getActiveLoads rows
+    var awardedUsd: Double? = nil
 
     // Lifecycle
     var stage: LifecycleStage_374 = .pickup
     let subAxis: PickupSubAxis_374 = .onSite
     let quartetPosition = "2/N"
-    let dockLocation = "ATL West Caswell DC dock 4A"
 
-    var fleet = FleetTrackerOnSite_374(
-        driverInitials: "JR",
-        driverName: "Reyes, J.",
-        driverId: "JR-CEL-001",
-        hos: "on-duty",
-        status: "ON-SITE",
-        dock: "dock 4A",
-        dwell: "0:02",
-        location: "ATL West Caswell DC")
+    // Fleet-tracker on-site card (driver matched from getMyDrivers)
+    var fleet = FleetTrackerOnSite_374()
 
-    let checkIns: [OnSiteCheckInRow_374] = [
-        .init(title: "Arrived ATL West Caswell DC",
-              detail: "08:04 EDT 5/21 · status → at_pickup",
-              elapsed: "0:00",
-              realParamAnchor: "drivers.updateLoadStatus(status:\"at_pickup\") · drivers.ts:857"),
-        .init(title: "Gate cleared · dock 4A assigned",
-              detail: "08:06 EDT · pickup.on_site fan-out",
-              elapsed: "0:02",
-              realParamAnchor: "loadLifecycle.emitLoadStateChange · loadLifecycle.ts:2802"),
-        .init(title: "HOS → on-duty (not driving)",
-              detail: "organic at_pickup → on_duty",
-              elapsed: "0:01",
-              realParamAnchor: "HOS_STATUS_MAP at_pickup→on_duty · drivers.ts:874-905")
-    ]
+    // On-site check-in ledger — no catalyst-router source; empty until one
+    // ships. An empty array drives the EusoEmptyState in the ledger section.
+    var checkIns: [OnSiteCheckInRow_374] = []
+
+    /// Awarded-amount display — "$1,610" when a real rate is present, "—"
+    /// otherwise. No invented amount.
+    var awardedDisplay: String {
+        guard let a = awardedUsd, a > 0 else { return "—" }
+        return "$\(Int(a.rounded()).formatted(.number))"
+    }
 }
 
 // MARK: - StatusPill (PickupOnSiteEchoCatalystPill_374)
@@ -275,7 +273,7 @@ private struct KpiQuartetPickupOnSiteCatalyst_374: View {
         return HStack(spacing: 8) {
             tile("ON-SITE", fleet.driverInitials, fleet.dock)
             tile("DWELL", fleet.dwell, "on-site now")
-            tile("HOS", fleet.hos, "10h avail")
+            tile("HOS", fleet.hos, "remaining")
             tile("PICKUP", "1/5", "ON-SITE")
         }
     }
@@ -385,21 +383,21 @@ private struct OnSiteCheckInRowView_374: View {
     }
 }
 
-// MARK: - ShipperOfRecordCard_374 (DU founder pin co-anchor · pin 154)
+// MARK: - ShipperOfRecordCard_374 (no live shipper source on this echo → "—")
 
 private struct ShipperOfRecordCard_374: View {
     let vm: CatalystPickupOnSiteVM_374
     var body: some View {
         HStack(spacing: 10) {
             Circle().fill(Theme374.gradientDiag).frame(width: 26, height: 26)
-                .overlay(Text(vm.shipperMonogram).font(.system(size: 9, weight: .heavy)).foregroundColor(.white))
+                .overlay(Text("—").font(.system(size: 9, weight: .heavy)).foregroundColor(.white))
             VStack(alignment: .leading, spacing: 3) {
-                Text("Shipper of record · \(vm.shipperName)").font(.system(size: 10, weight: .heavy))
-                Text("\(vm.shipperCompany) · companyId 1 · \(vm.loadNumber) PICKUP echo")
+                Text("Shipper of record · —").font(.system(size: 10, weight: .heavy))
+                Text("— · \(vm.loadNumber) PICKUP echo")
                     .font(.system(size: 8, design: .monospaced)).foregroundColor(.secondary)
             }
             Spacer()
-            Text("pin \(vm.founderPin)").font(.system(size: 8, weight: .heavy)).foregroundStyle(Theme374.gradient)
+            Text("—").font(.system(size: 8, weight: .heavy)).foregroundStyle(Theme374.gradient)
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12).fill(Theme374.gradient.opacity(0.14)))
@@ -410,6 +408,7 @@ private struct ShipperOfRecordCard_374: View {
 // MARK: - ActionRibbon (ActionRibbonPickupOnSiteCatalyst_374)
 
 private struct ActionRibbonPickupOnSiteCatalyst_374: View {
+    let driverInitials: String
     var body: some View {
         HStack(spacing: 8) {
             // STUB — no carrier-side "confirm at dock" mutation exists on the
@@ -418,7 +417,7 @@ private struct ActionRibbonPickupOnSiteCatalyst_374: View {
             Text("CONFIRM AT DOCK").font(.system(size: 9, weight: .heavy)).kerning(0.5)
                 .foregroundColor(.white).frame(width: 156, height: 36)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Theme374.gradient))
-            Text("MESSAGE JR").font(.system(size: 9, weight: .heavy)).kerning(0.5)
+            Text("MESSAGE \(driverInitials)").font(.system(size: 9, weight: .heavy)).kerning(0.5)
                 .foregroundStyle(Theme374.gradient).frame(width: 120, height: 36)
                 .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme374.gradient.opacity(0.55), lineWidth: 1))
             Text("VIEW LOAD").font(.system(size: 9, weight: .heavy)).kerning(0.5)
@@ -492,7 +491,17 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
         // On-site check-in echo sub-rows
         Text("FLEET-TRACKER ECHO · ON-SITE CHECK-IN · drivers.updateLoadStatus(at_pickup)")
             .font(.system(size: 8, weight: .heavy)).kerning(0.5).foregroundColor(.secondary)
-        ForEach(vm.checkIns) { OnSiteCheckInRowView_374(row: $0) }
+        if vm.checkIns.isEmpty {
+            // No catalyst-router check-in / event-log source — honest empty.
+            EusoEmptyState(
+                systemImage: "checklist.unchecked",
+                title: "No on-site check-ins yet",
+                subtitle: "Gate-clear and HOS-transition echoes appear here once the on-site ledger fans out."
+            )
+            .frame(maxWidth: .infinity)
+        } else {
+            ForEach(vm.checkIns) { OnSiteCheckInRowView_374(row: $0) }
+        }
 
         // PICKUP sub-axis progress capsule (1/5 = 20%)
         VStack(alignment: .leading, spacing: 4) {
@@ -508,7 +517,7 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
 
         ShipperOfRecordCard_374(vm: vm)
 
-        ActionRibbonPickupOnSiteCatalyst_374()
+        ActionRibbonPickupOnSiteCatalyst_374(driverInitials: vm.fleet.driverInitials)
 
         Color.clear.frame(height: 24)
     }
@@ -552,41 +561,53 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
 
             // Prefer a row at the pickup stage (at_pickup / assigned /
             // loading); fall back to the first row so the lane/rate still
-            // paint rather than collapsing to a fake.
+            // paint rather than collapsing. No fabricated fallback row.
             let pickupRow = loads.first { row in
                 LifecycleStage_374.from(loadStatus: row.status) == .pickup
             }
-            if let row = pickupRow ?? loads.first {
-                vm.loadId = row.id
-                vm.loadNumber = row.loadNumber
-                vm.lane = "\(row.origin) → \(row.destination)"
-                if row.rate > 0 { vm.awardedUsd = row.rate }
-                vm.stage = LifecycleStage_374.from(loadStatus: row.status)
+            guard let row = pickupRow ?? loads.first else {
+                // No active load — honest awaiting state; VM stays all "—".
+                hasOnSiteEcho = false
+                return
+            }
 
-                // 2) Driver roster — match the active load's driver to the
-                //    fleet-tracker on-site row (real HOS + location).
-                let drivers: [CatalystFleetDriver_374] = try await EusoTripAPI.shared.query(
-                    "catalysts.getMyDrivers",
-                    input: CatalystMyDriversInput_374(limit: 50))
+            vm.loadId = row.id
+            vm.loadNumber = row.loadNumber.isEmpty ? "—" : row.loadNumber
+            vm.lane = laneDisplay(origin: row.origin, destination: row.destination)
+            vm.awardedUsd = row.rate > 0 ? row.rate : nil
+            vm.stage = LifecycleStage_374.from(loadStatus: row.status)
 
-                let matched = drivers.first { $0.name == row.driver }
-                    ?? drivers.first { $0.currentLoad == row.loadNumber }
-                if let d = matched {
-                    vm.fleet = FleetTrackerOnSite_374(
-                        driverInitials: monogram(d.name),
-                        driverName: d.name,
-                        driverId: d.id,
-                        hos: d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "on-duty",
-                        status: row.status.uppercased() == "AT_PICKUP" ? "ON-SITE" : d.status.uppercased(),
-                        dock: vm.fleet.dock,
-                        dwell: vm.fleet.dwell,
-                        location: d.location)
-                    hasOnSiteEcho = (vm.stage == .pickup)
-                } else {
-                    hasOnSiteEcho = false
-                }
+            // 2) Driver roster — match the active load's driver to the
+            //    fleet-tracker on-site row (real HOS + location). The server
+            //    emits the literal "Assigned"/"Unassigned" when no name is
+            //    joined — those are not a real driver name to match against.
+            let drivers: [CatalystFleetDriver_374] = try await EusoTripAPI.shared.query(
+                "catalysts.getMyDrivers",
+                input: CatalystMyDriversInput_374(limit: 50))
+
+            let driverName = row.driver
+            let nameIsReal = !driverName.isEmpty
+                && driverName != "Assigned"
+                && driverName != "Unassigned"
+            let matched = (nameIsReal ? drivers.first { $0.name == driverName } : nil)
+                ?? drivers.first { $0.currentLoad == row.loadNumber }
+
+            if let d = matched {
+                var fleet = FleetTrackerOnSite_374()
+                fleet.driverInitials = monogram(d.name)
+                fleet.driverName = d.name
+                fleet.driverId = d.id
+                fleet.hos = d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "—"
+                fleet.status = row.status.uppercased() == "AT_PICKUP"
+                    ? "ON-SITE"
+                    : (d.status.isEmpty ? "—" : d.status.uppercased())
+                // No dock/dwell source on the catalyst router — honest "—".
+                fleet.dock = "—"
+                fleet.dwell = "—"
+                fleet.location = displayLocation(d.location)
+                vm.fleet = fleet
+                hasOnSiteEcho = (vm.stage == .pickup)
             } else {
-                // No active pickup row — honest awaiting state.
                 hasOnSiteEcho = false
             }
         } catch {
@@ -594,10 +615,27 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
         }
     }
 
+    /// "Origin → Dest" lane from the server-joined city strings. The proc
+    /// emits the literal "Unknown" when a leg has no geocoded city; map that
+    /// to the honest em-dash rather than echoing "Unknown".
+    private func laneDisplay(origin: String, destination: String) -> String {
+        let o = origin == "Unknown" || origin.isEmpty ? "—" : origin
+        let d = destination == "Unknown" || destination.isEmpty ? "—" : destination
+        if o == "—" && d == "—" { return "—" }
+        return "\(o) → \(d)"
+    }
+
+    /// GPS "DD.DD, DD.DD" pair, or the honest em-dash when the server emits
+    /// its "Unknown" sentinel / a blank string.
+    private func displayLocation(_ loc: String) -> String {
+        let trimmed = loc.trimmingCharacters(in: .whitespaces)
+        return (trimmed.isEmpty || trimmed == "Unknown") ? "—" : trimmed
+    }
+
     private func monogram(_ name: String) -> String {
         let parts = name.split(whereSeparator: { $0 == " " || $0 == "," }).prefix(2)
         let initials = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
-        return initials.isEmpty ? "?" : String(initials.prefix(2))
+        return initials.isEmpty ? "—" : String(initials.prefix(2))
     }
 }
 

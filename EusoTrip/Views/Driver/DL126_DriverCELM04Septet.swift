@@ -12,31 +12,45 @@
 //    132 Driver Pretrip DVIR Section 6 Ack Cel M04
 //
 //  Carrier-side counterpart to the SH261-SH269 M-04 scenario, framed
-//  from the driver's vantage. Cast: JR (driver) / NC (CEL dispatcher
-//  Naomi Chen) / DU (shipper). Atlanta → Charlotte · 245 mi · 53'
-//  Dry Van · CEL fleet. Single bundled file. All 7 share
+//  from the driver's vantage. Single bundled file. All 7 share
 //  `CELM04Body`. Body reads `loads.getById`. Bottom nav frozen.
+//
+//  Every rendered business value binds to live fetched data; anything
+//  without a live source renders an honest "-". No persona/economics
+//  are baked in.
+//
+//  Honest binding parity with sibling DL133_DriverCELM04DVIRContinuationOctet
+//  (loads.getById top-level id String?, nested pickupLocation/deliveryLocation
+//  {city,state}, numeric party ids).
 //
 
 import SwiftUI
 
 private struct CMELoadCtx: Decodable, Hashable {
-    let id: Int?
+    // Top-level load id is a String on the wire (loads.getById -> String(load.id));
+    // decoding as Int throws typeMismatch and fails the WHOLE decode -> blank.
+    // pickup/delivery are nested {city,state} objects (NOT flat city fields).
+    let id: String?
     let loadNumber: String?
-    let pickupCity: String?
-    let destCity: String?
+    let pickupLocation: CMELoc?
+    let deliveryLocation: CMELoc?
     let rate: String?
     let distance: Double?
     let equipmentType: String?
     let driver: CMEParty?
     let catalyst: CMEParty?
     let shipper: CMEParty?
+    struct CMELoc: Decodable, Hashable {
+        let city: String?
+        let state: String?
+    }
     struct CMEParty: Decodable, Hashable {
-        let id: Int?
+        let id: Int?            // party (user/company) id is numeric on the wire
         let name: String?
         let initials: String?
         let companyName: String?
         let mcNumber: String?
+        let dotNumber: String?
     }
 }
 
@@ -161,15 +175,20 @@ private struct CELM04Body: View {
         .refreshable { await loadCtx() }
     }
 
-    // MARK: - Dynamic display helpers
+    // MARK: - Dynamic display helpers (live-bound; honest "-" fallback)
 
     private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var carrierCodeDisplay: String {
         load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
     }
     private var laneDisplay: String? {
-        guard let p = load?.pickupCity, let d = load?.destCity else { return nil }
-        return "\(p) → \(d)"
+        // Nested {city,state}; server sends "" (not nil) when missing.
+        let o = [load?.pickupLocation?.city, load?.pickupLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        guard !o.isEmpty || !d.isEmpty else { return nil }
+        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
     }
 
     private func header(_ c: CEConfig) -> some View {
@@ -284,7 +303,7 @@ private struct CELM04Body: View {
                     ("DVIR",    "\(c.sectionsCompleted)/14",          labels[c.sectionsCompleted] ?? "ADVANCING",     .green),
                     ("PAYOUT",  payout,                               "LOCKED · \(carrierCodeDisplay)",               .green),
                     ("DIST",    dist,                                 lane,                                            .blue),
-                    ("HOS",     "10h 30m",                            "headroom · clean",                             .green),
+                    ("STATE",   "ADVANCING",                          c.citation.components(separatedBy: " · ").first ?? "DVIR", .blue),
                 ]
             }
         }()
@@ -307,7 +326,7 @@ private struct CELM04Body: View {
     private func nextStepCard(_ c: CEConfig) -> some View {
         let copy: String = {
             switch kind {
-            case .assignedReceipt: return "M-04 tender awarded to CEL at $1,610. Naomi (dispatcher) opens DVIR sub-axis; pretrip begins immediately."
+            case .assignedReceipt: return "M-04 tender awarded. Dispatcher opens the DVIR sub-axis; pretrip begins immediately."
             case .s1: return "Lights & reflectors cleared. Brakes + air system (S2) up next."
             case .s2: return "Brakes & air system passed. Tires + wheels (S3) next."
             case .s3: return "Tires & wheels logged. Coupling devices (S4) next."
