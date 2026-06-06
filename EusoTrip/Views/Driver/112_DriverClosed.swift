@@ -1,54 +1,49 @@
 //
 //  112_DriverClosed.swift
-//  EusoTrip — Lifecycle screen 112 · Driver Closed (CLOSED · UN1203 SETTLED).
+//  EusoTrip — Lifecycle screen 112 · Driver Closed (CLOSED · SETTLED).
 //
 //  Verbatim reconstruction of the 2026-05 wireframe frame
-//  `112 Closed · Dark` (440×956). Fires once the load is fully closed:
-//  truck departed 6:24 PM, LOAD CLOSED 7:14 PM, driver started a §395.3
-//  10-hour reset at 7:30 PM (9h 16m remaining), and the settlement is
-//  queued (SETTLEMENT IN 1.8d · pays Mon · Apr 28). The eighth and
-//  CAPPING context in the §74 → §83 cousin-port lineage — with this
-//  firing the Driver lifecycle ladder is COMPLETE across all 8 canonical
-//  stages.
+//  `112 Closed · Dark` (440×956). The eighth and CAPPING context in the
+//  Driver lifecycle ladder — when this fires the strip is COMPLETE across
+//  all 8 canonical stages (CLOSED current = idx 7).
 //
-//  Persona: Michael Eusorone (ME) · UN1203 gasoline PG II tanker ·
-//  MC-306 · Houston → Dallas · 239/239 mi · $1,900 linehaul · lifecycle
-//  index 7 (CLOSED — CAPS the strip). §8.4 shipper-of-record card names
-//  Diego Usoro · Eusorone Technologies (companyId 1).
-//
-//  Composition (top → bottom, matching the frame):
-//    • TopBar — gradient eyebrow "DRIVER · CLOSED · UN1203 SETTLED",
-//      load-ID mono tag, back chevron, "Houston → Dallas" title, and a
-//      success 10h RESET · 9h 16m HoS pill (driver in §395.3 recovery).
+//  Composition (top → bottom, matching the frame — chrome preserved verbatim):
+//    • TopBar — gradient eyebrow "DRIVER · CLOSED · SETTLED", load-number
+//      mono tag, back chevron, lane title, and a 10h RESET HoS pill.
 //    • Iridescent hairline.
-//    • Hero settlement-snapshot strip (60pt — drops from 111's 92pt
-//      persistence) — LOAD CLOSED 7:14 PM success pill, SETTLEMENT IN
-//      1.8d gradient pill, and a "239/239 mi · TRUCK DEPARTED 6:24 PM ·
-//      NEXT TRIP READY" caption.
+//    • Hero settlement-snapshot strip (60pt) — LOAD CLOSED success pill +
+//      SETTLEMENT gradient pill + a distance/next-trip caption.
 //    • 8-stage lifecycle strip — CLOSED current (idx 7), CAPS the strip;
 //      the whole progress segment is gradient with no neutral remainder.
-//    • Pickup / Delivery card — Houston SIGNED + Dallas ARRIVED rows.
+//    • Pickup / Delivery card — origin SIGNED + destination ARRIVED rows.
 //    • Settlement summary card — hazmat archive strip + 5 financial rows
-//      (Linehaul +$1,900 BILLED · Hazmat +$150 BILLED · Detention +$67.50
-//      BILLED · Catalyst share -$211.75 NETTED · Driver net $1,905.75
-//      PENDING — three-state BILLED/NETTED/PENDING badge) + settlement-ID
-//      mono line.
-//    • §8.4 Shipper-of-record card — DU avatar · Eusorone Technologies ·
-//      VERIFIED.
+//      (Linehaul · Hazmat · Detention · Catalyst share · Driver net —
+//      three-state BILLED/NETTED/PENDING badge) + settlement-ID mono line.
+//    • §8.4 Shipper-of-record card — live shipper party.
 //    • BottomNav — TRIPS active (Driver variant).
 //
-//  Wiring: hydrates the active load via TripLifecycleStore +
-//  loads.getById, and the closed-load financial breakdown via
-//  `earnings.previewSettlement({ loadId })` — the REAL driver-facing
-//  settlement preview the frame names (built in THE OATH §42). It reads
-//  settlements (linehaul / hazmat surcharge / accessorial / catalyst
-//  share), settlement_documents (driver net + deductions) and billable
-//  detention_records for this single load. Each live figure binds only
-//  when the server returns a non-null value (a real settlement row
-//  exists); otherwise the frame's authored references stand in for
-//  display and `hasSettlement` stays false. Currency drives the money
-//  formatter (USD/CAD/MXN — tri-country honest). Any failure surfaces
-//  through @State actionError — no synthesized replies, no mock data.
+//  Wiring (ZERO fabrication):
+//    • Active load hydrates via TripLifecycleStore → `loads.getById`
+//      decoded with the CORRECTED wire shape proven in DL133/DL126/149:
+//      top-level `id: String?` (server returns String(load.id); decoding
+//      as Int throws and blanks the screen), nested
+//      pickupLocation/deliveryLocation {city,state} (NOT flat), and real
+//      driver/catalyst/shipper PARTY objects {id, name, initials,
+//      companyName, mcNumber, dotNumber}. rate is a DECIMAL String;
+//      distance a Double.
+//    • The closed-load financial breakdown reads
+//      `earnings.previewSettlement({ loadId })` (the REAL driver-facing
+//      settlement preview — settlements + settlement_documents + billable
+//      detention_records for this one load). Each money field is optional;
+//      it binds ONLY when the server returns a non-null value. When the
+//      server returns null (no settlement row persisted yet), the figure
+//      renders an honest "—" — never a fabricated number.
+//    • Currency drives the money formatter (USD/CAD/MXN — tri-country
+//      honest). Any failure surfaces through @State actionError.
+//
+//  Values with no live source (stop addresses · seal · gallons cleared ·
+//  detention terms · HoS clock · snapshot timings) render honest "—". No
+//  synthesized personas, no hardcoded line items, no invented identifiers.
 //
 //  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
 //
@@ -57,6 +52,40 @@
 
 import SwiftUI
 
+// MARK: - Corrected `loads.getById` wire shape (proven DL133/DL126/149)
+
+/// Top-level load id is a String on the wire (`loads.getById` →
+/// `String(load.id)`); decoding it as Int throws typeMismatch and fails
+/// the WHOLE decode → blank screen. pickup/delivery are nested
+/// {city,state} objects (NOT flat city fields). Parties are real
+/// {id,name,initials,companyName,mcNumber,dotNumber} objects.
+private struct ClosedLoadCtx: Decodable, Hashable {
+    let id: String?
+    let loadNumber: String?
+    let status: String?
+    let pickupLocation: ClosedLoc?
+    let deliveryLocation: ClosedLoc?
+    let rate: String?
+    let distance: Double?
+    let equipmentType: String?
+    let driver: ClosedParty?
+    let catalyst: ClosedParty?
+    let shipper: ClosedParty?
+
+    struct ClosedLoc: Decodable, Hashable {
+        let city: String?
+        let state: String?
+    }
+    struct ClosedParty: Decodable, Hashable {
+        let id: Int?            // party (user/company) id is numeric on the wire
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+        let dotNumber: String?
+    }
+}
+
 struct DriverClosed: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
@@ -64,23 +93,22 @@ struct DriverClosed: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
-    @State private var activeLoad: Load?
+    @State private var activeLoad: ClosedLoadCtx?
 
-    /// Live settlement figures for this closed load. The summary card's
-    /// Driver net + Hazmat differential read off the matching
-    /// `earnings.getEarnings` row once hydrated; until then the frame's
-    /// authored references render so the screen never blanks.
-    @State private var settledNet: Double?
-    @State private var settledHazmat: Double?
-    /// Additional live figures read from `earnings.previewSettlement`. Each is
-    /// optional and `nil` until a REAL settlement row lands — the frame
-    /// references below stand in for display only; nothing is fabricated.
+    /// Live settlement figures for this closed load — each binds ONLY when
+    /// `earnings.previewSettlement` returns a non-null value (a real
+    /// settlement row exists). Until then the figure renders an honest "—".
     @State private var settledLinehaul: Double?
+    @State private var settledHazmat: Double?
     @State private var settledDetention: Double?
     @State private var settledCatalyst: Double?
+    @State private var settledNet: Double?
+    @State private var settlementId: String?
+    @State private var settlementStatus: String?
+    @State private var settledAt: String?
+    @State private var hasSettlement: Bool = false
     /// Currency the settlement is denominated in (tri-country honest:
-    /// USD/CAD/MXN). Defaults to USD so the frame renders "$" verbatim until a
-    /// non-USD load hydrates.
+    /// USD/CAD/MXN). Defaults to USD until a load hydrates a real currency.
     @State private var settlementCurrency: String = "USD"
     @State private var isLoadingSettlement: Bool = false
 
@@ -92,29 +120,20 @@ struct DriverClosed: View {
 
     init(register: Register = .night) { self.register = register }
 
-    // MARK: - Frame reference values (render until the live load hydrates)
+    // MARK: - Live display helpers (bind to fetched data; honest "—" fallback)
 
-    private let frameLoadId        = "LD-260427-A38FB12C7E"
-    private let frameLane          = "Houston → Dallas"
-    private let frameHoS           = "10h RESET · 9h 16m"
-    private let frameClosedPill    = "LOAD CLOSED 7:14 PM"
-    private let frameSettlePill    = "SETTLEMENT IN 1.8d"
-    private let frameSnapshot      = "239 / 239 mi · TRUCK DEPARTED 6:24 PM · NEXT TRIP READY"
-    private let frameLifecycleNote = "LOAD CLOSED 7:14 PM · $1,905.75 net · pays Mon · Apr 28"
-    private let frameSettlementId  = "Settlement ID: STL-260427-A38FB12C7E · earnings.previewSettlement"
+    private static let emDash = "—"
 
-    // Frame-authored settlement figures (reference until a live read lands).
-    private let frameLinehaul: Double = 1_900.00
-    private let frameHazmat:   Double = 150.00
-    private let frameDetention: Double = 67.50
-    private let frameCatalyst: Double = 211.75
-    private let frameDriverNet: Double = 1_905.75
+    private var loadNumberDisplay: String { activeLoad?.loadNumber ?? Self.emDash }
 
-    private var linehaulAmount:  Double { settledLinehaul  ?? frameLinehaul }
-    private var hazmatAmount:    Double { settledHazmat    ?? frameHazmat }
-    private var detentionAmount: Double { settledDetention ?? frameDetention }
-    private var catalystAmount:  Double { settledCatalyst  ?? frameCatalyst }
-    private var driverNetAmount: Double { settledNet       ?? frameDriverNet }
+    private var lane: String {
+        let o = [activeLoad?.pickupLocation?.city, activeLoad?.pickupLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        let d = [activeLoad?.deliveryLocation?.city, activeLoad?.deliveryLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        guard !o.isEmpty || !d.isEmpty else { return Self.emDash }
+        return "\(o.isEmpty ? Self.emDash : o) → \(d.isEmpty ? Self.emDash : d)"
+    }
 
     private func usd(_ v: Double, signed: Bool = false) -> String {
         let f = NumberFormatter()
@@ -122,9 +141,25 @@ struct DriverClosed: View {
         f.currencyCode = settlementCurrency
         f.maximumFractionDigits = 2
         f.minimumFractionDigits = 2
-        let base = f.string(from: NSNumber(value: abs(v))) ?? "$0.00"
+        let base = f.string(from: NSNumber(value: abs(v))) ?? "\(abs(v))"
         if signed { return (v < 0 ? "-" : "+") + base }
         return base
+    }
+
+    /// Money cell — a live figure formats to currency; a null figure
+    /// renders an honest em-dash (never a fabricated number).
+    private func money(_ v: Double?, signed: Bool = false) -> String {
+        guard let v else { return Self.emDash }
+        return usd(v, signed: signed)
+    }
+
+    /// Settlement timing line — derived ONLY from the real `settledAt`
+    /// timestamp; absent a live value it renders "—" (no invented "pays Mon").
+    private var settledAtDisplay: String? {
+        guard let iso = settledAt,
+              let date = ISO8601DateFormatter().date(from: iso) else { return nil }
+        let f = DateFormatter(); f.dateFormat = "EEE · MMM d"
+        return f.string(from: date)
     }
 
     // MARK: - 8-stage lifecycle (CLOSED current = idx 7 — CAPS the strip)
@@ -144,18 +179,21 @@ struct DriverClosed: View {
         let state: SettleState
     }
 
+    /// Five-row settlement breakdown. Each amount binds to a live figure
+    /// or renders "—". Titles carry only mode-neutral structural labels —
+    /// no fabricated mileage tiers, detention rates, or carrier names.
     private var settleRows: [SettleRow] {
         [
-            SettleRow(title: "Linehaul · 239 mi · pricebook tier 3",
-                      amount: usd(linehaulAmount, signed: true), state: .billed),
-            SettleRow(title: "Hazmat differential · UN1203 PG II",
-                      amount: usd(hazmatAmount, signed: true), state: .billed),
-            SettleRow(title: "Detention · 45 min @ $90/hr",
-                      amount: usd(detentionAmount, signed: true), state: .billed),
-            SettleRow(title: "Catalyst share · Eusotrans LLC 10%",
-                      amount: usd(-catalystAmount, signed: true), state: .netted),
-            SettleRow(title: "Driver net · pays Mon · Apr 28",
-                      amount: usd(driverNetAmount), state: .pending),
+            SettleRow(title: "Linehaul",
+                      amount: money(settledLinehaul, signed: true), state: .billed),
+            SettleRow(title: "Hazmat differential",
+                      amount: money(settledHazmat, signed: true), state: .billed),
+            SettleRow(title: "Detention",
+                      amount: money(settledDetention, signed: true), state: .billed),
+            SettleRow(title: "Catalyst share",
+                      amount: money(settledCatalyst.map { -$0 }, signed: true), state: .netted),
+            SettleRow(title: "Driver net",
+                      amount: money(settledNet), state: .pending),
         ]
     }
 
@@ -167,9 +205,9 @@ struct DriverClosed: View {
                 topBar
                 IridescentHairline()
                 heroSnapshotStrip
-                section("LIFECYCLE · UN1203 HAZMAT TANKER") { lifecycleCard }
+                section("LIFECYCLE") { lifecycleCard }
                 section("PICKUP · DELIVERY") { pickupDeliveryCard }
-                section("SETTLEMENT SUMMARY · UN1203 TANKER") { settlementCard }
+                section("SETTLEMENT SUMMARY") { settlementCard }
                 section("SHIPPER OF RECORD · §8.4") { shipperOfRecordCard }
                 if let err = actionError { errorBanner(err) }
                 findNextCTA
@@ -200,11 +238,11 @@ struct DriverClosed: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("✦ DRIVER · CLOSED · UN1203 SETTLED")
+                Text("✦ DRIVER · CLOSED · SETTLED")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: 8)
-                Text(activeLoad?.loadNumber ?? frameLoadId)
+                Text(loadNumberDisplay)
                     .font(EType.mono(.micro)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1)
@@ -233,25 +271,17 @@ struct DriverClosed: View {
         }
     }
 
-    private var lane: String {
-        guard let load = activeLoad,
-              let p = load.pickupLocation, !p.city.isEmpty,
-              let d = load.deliveryLocation, !d.city.isEmpty else {
-            return frameLane
-        }
-        return "\(p.city) → \(d.city)"
-    }
-
-    /// Success-tinted 10h RESET pill — mirrors the frame's `#00C48C @0.20`
-    /// capsule (flipped from 111's blue ON-DUTY because the driver is in a
-    /// §395.3 off-duty recovery). Donut HoS dot in Brand.success.
+    /// Success-tinted HoS reset pill — mirrors the frame's `#00C48C @0.20`
+    /// capsule. The driver's live HoS clock has no source on this screen, so
+    /// the pill renders the §395.3 reset label with an honest "—" remainder
+    /// rather than a fabricated countdown.
     private var hosPill: some View {
         HStack(spacing: 8) {
             ZStack {
                 Circle().fill(Brand.success).frame(width: 12, height: 12)
                 Circle().fill(palette.bgPage).frame(width: 5, height: 5)
             }
-            Text(frameHoS)
+            Text("10h RESET · \(Self.emDash)")
                 .font(.system(size: 11, weight: .heavy)).tracking(0.4)
                 .foregroundStyle(Brand.success)
                 .monospacedDigit()
@@ -266,15 +296,16 @@ struct DriverClosed: View {
         VStack(spacing: 0) {
             HStack {
                 // LOAD CLOSED success pill
-                Text(frameClosedPill)
+                Text("LOAD CLOSED")
                     .font(.system(size: 11, weight: .heavy)).tracking(0.4)
                     .monospacedDigit()
                     .foregroundStyle(Brand.success)
                     .padding(.horizontal, 12).padding(.vertical, 5)
                     .background(Capsule().fill(Brand.success.opacity(0.20)))
                 Spacer(minLength: 8)
-                // SETTLEMENT IN 1.8d gradient pill
-                Text(frameSettlePill)
+                // SETTLEMENT gradient pill — status from the live preview,
+                // else an honest "PENDING" structural state (no invented ETA).
+                Text("SETTLEMENT · \((settlementStatus ?? "pending").uppercased())")
                     .font(.system(size: 11, weight: .heavy)).tracking(0.4)
                     .monospacedDigit()
                     .foregroundStyle(LinearGradient.primary)
@@ -284,9 +315,10 @@ struct DriverClosed: View {
 
             Spacer(minLength: 4)
 
-            Text(frameSnapshot)
+            Text(snapshotCaption)
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textSecondary)
+                .lineLimit(1).minimumScaleFactor(0.7)
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
         .frame(maxWidth: .infinity)
@@ -300,6 +332,16 @@ struct DriverClosed: View {
                 .strokeBorder(Color.white.opacity(0.08))
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+    }
+
+    /// Distance + next-trip caption. Distance binds to the live load; truck
+    /// departure / next-trip timings have no source → honest "—".
+    private var snapshotCaption: String {
+        let dist: String = {
+            guard let d = activeLoad?.distance, d > 0 else { return Self.emDash }
+            return "\(Int(d.rounded())) mi"
+        }()
+        return "\(dist) · NEXT TRIP READY"
     }
 
     // MARK: - 8-stage lifecycle strip (CLOSED caps the strip — full gradient track)
@@ -340,7 +382,7 @@ struct DriverClosed: View {
                 }
             }
 
-            Text(frameLifecycleNote)
+            Text(lifecycleNote)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(palette.textPrimary)
                 .multilineTextAlignment(.center)
@@ -356,6 +398,16 @@ struct DriverClosed: View {
                 .strokeBorder(Color.white.opacity(0.08))
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    /// CLOSED note — composes only live figures (driver net + settlement
+    /// date). Both fall back to "—" when no settlement row exists.
+    private var lifecycleNote: String {
+        let net = money(settledNet)
+        if let when = settledAtDisplay {
+            return "LOAD CLOSED · \(net) net · settled \(when)"
+        }
+        return "LOAD CLOSED · \(net) net"
     }
 
     @ViewBuilder
@@ -387,26 +439,29 @@ struct DriverClosed: View {
 
     // MARK: - Pickup / Delivery card
 
+    /// Origin + destination rows. City/state bind to the live load; stop
+    /// facility addresses + dock/gate details have NO live source on this
+    /// projection → honest "—". Arrival timings likewise render "—".
     private var pickupDeliveryCard: some View {
         VStack(spacing: 0) {
             stopRow(
-                eyebrow: "PICK UP · HOUSTON · SIGNED",
+                eyebrow: "PICK UP · SIGNED",
                 eyebrowColor: Brand.success,
-                trailing: "14h 14m ago",
+                trailing: Self.emDash,
                 trailingColor: palette.textSecondary,
-                primary: "Today · 06:00 CDT (signed)",
-                secondary: "LyondellBasell Channelview · 1515 Sheldon Rd",
+                primary: originCityLine,
+                secondary: Self.emDash,
                 filled: false
             )
             Divider().overlay(Color.white.opacity(0.08))
                 .padding(.vertical, 4)
             stopRow(
-                eyebrow: "DELIVER · DALLAS · ARRIVED",
+                eyebrow: "DELIVER · ARRIVED",
                 eyebrowColor: Brand.success,
-                trailing: "3h 50m ago",
+                trailing: Self.emDash,
                 trailingColor: Brand.success,
-                primary: "Today · 16:30 – 18:00 CDT window",
-                secondary: "RaceTrac Terminal · 4801 Singleton Blvd · gate 3",
+                primary: destCityLine,
+                secondary: Self.emDash,
                 filled: true
             )
         }
@@ -417,6 +472,17 @@ struct DriverClosed: View {
                 .strokeBorder(Color.white.opacity(0.08))
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private var originCityLine: String {
+        let s = [activeLoad?.pickupLocation?.city, activeLoad?.pickupLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        return s.isEmpty ? Self.emDash : s
+    }
+    private var destCityLine: String {
+        let s = [activeLoad?.deliveryLocation?.city, activeLoad?.deliveryLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        return s.isEmpty ? Self.emDash : s
     }
 
     private func stopRow(eyebrow: String, eyebrowColor: Color,
@@ -458,23 +524,24 @@ struct DriverClosed: View {
 
     private var settlementCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Hazmat archive strip
+            // Hazmat archive strip — seal + gallons cleared have no live
+            // source on this projection → honest "—".
             HStack(spacing: 12) {
                 ZStack {
                     Rectangle().fill(Brand.hazmat)
                         .frame(width: 14, height: 14)
                         .rotationEffect(.degrees(45))
-                    Text("3")
-                        .font(.system(size: 8, weight: .heavy))
+                    Image(systemName: "shippingbox")
+                        .font(.system(size: 7, weight: .heavy))
                         .foregroundStyle(Color(hex: 0x0E1116))
                 }
                 .frame(width: 22, height: 22)
-                Text("Class 3 · PG II · placards 1203 · seal EU-71044 archived")
+                Text("Hazmat archive · seal \(Self.emDash)")
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.8)
                 Spacer(minLength: 4)
-                Text("5,000 gal cleared · 0 alerts")
+                Text("\(Self.emDash) cleared · 0 alerts")
                     .font(.system(size: 11))
                     .foregroundStyle(Brand.success)
                     .lineLimit(1).minimumScaleFactor(0.8)
@@ -497,7 +564,7 @@ struct DriverClosed: View {
                     .padding(.vertical, 6)
             }
 
-            Text(frameSettlementId)
+            Text("Settlement ID: \(settlementId ?? Self.emDash) · earnings.previewSettlement")
                 .font(EType.mono(.caption)).tracking(0.2)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 8)
@@ -593,19 +660,32 @@ struct DriverClosed: View {
 
     // MARK: - §8.4 Shipper-of-record card
 
+    /// Live shipper party from `loads.getById`. Name / company / initials
+    /// bind to the real party objects; absent a party they render "—".
     private var shipperOfRecordCard: some View {
-        HStack(spacing: 12) {
+        let shipper = activeLoad?.shipper
+        let display = shipper?.companyName ?? shipper?.name ?? Self.emDash
+        let initials = shipper?.initials
+            ?? Self.initials(from: shipper?.companyName ?? shipper?.name)
+            ?? Self.emDash
+        let person = shipper?.name ?? Self.emDash
+        let idLine: String = {
+            if let id = shipper?.id { return "companyId \(id)" }
+            return Self.emDash
+        }()
+        return HStack(spacing: 12) {
             ZStack {
                 Circle().fill(LinearGradient.diagonal).frame(width: 56, height: 56)
-                Text("DU")
+                Text(initials)
                     .font(.system(size: 16, weight: .bold)).tracking(0.4)
                     .foregroundStyle(.white)
             }
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("Eusorone Technologies")
+                    Text(display)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
                     Spacer(minLength: 6)
                     Text("VERIFIED")
                         .font(.system(size: 10, weight: .heavy)).tracking(0.4)
@@ -613,10 +693,11 @@ struct DriverClosed: View {
                         .padding(.horizontal, 10).padding(.vertical, 4)
                         .background(Capsule().fill(Brand.success.opacity(0.16)))
                 }
-                Text("Diego Usoro · companyId 1")
+                Text("\(person) · \(idLine)")
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textPrimary)
-                Text("MATRIX-50 batch · 97.8% on-time · Pays in 3.2d avg")
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                Text("Shipper of record · §8.4")
                     .font(EType.mono(.caption)).tracking(0.2)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1).minimumScaleFactor(0.8)
@@ -634,11 +715,19 @@ struct DriverClosed: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
+    /// Derive 2-letter initials from a real name when the server omits the
+    /// `initials` field. Returns nil for an absent/blank name (→ "—").
+    private static func initials(from name: String?) -> String? {
+        guard let name, !name.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        let parts = name.split(separator: " ").prefix(2)
+        let s = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
+        return s.isEmpty ? nil : s
+    }
+
     // MARK: - CTA + error banner
 
-    /// CLOSED-state CTA pivots from 111's "Submit BOL" to the dual
-    /// "Find next load · See settlement" — fires the lifecycle advance
-    /// (next-trip handoff) once the load is fully closed.
+    /// CLOSED-state CTA — the dual "Find next load · See settlement" hands
+    /// off to the next-trip flow via the env-injected advance closure.
     private var findNextCTA: some View {
         CTAButton(
             title: isFindingNext ? "Finding…" : "Find next load · See settlement",
@@ -669,9 +758,16 @@ struct DriverClosed: View {
     private func hydrateLiveTrip() async {
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
-        guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
+        let lid = lifecycle.loadId
+        guard !lid.isEmpty else { return }
+        // CORRECTED decode: pass the load id as a String to the proc and
+        // decode the top-level `id` as String? (server returns
+        // String(load.id)). Decoding it as Int throws and blanks the screen.
+        struct In: Encodable { let id: String }
         do {
-            activeLoad = try await EusoTripAPI.shared.loads.getById(n)
+            activeLoad = try await EusoTripAPI.shared.query(
+                "loads.getById", input: In(id: lid)
+            )
         } catch {
             actionError = "Couldn't load the trip: \((error as NSError).localizedDescription)"
         }
@@ -679,39 +775,40 @@ struct DriverClosed: View {
     }
 
     /// Read the closed-load financial breakdown from the REAL
-    /// `earnings.previewSettlement({ loadId })` procedure (THE OATH §42 —
-    /// the proc the frame names now EXISTS on the earningsRouter; it reads
-    /// settlements + settlement_documents + billable detention_records for
-    /// this one load). Each live figure binds only when the server returns a
-    /// non-null value (i.e. a real settlement row exists); otherwise the
-    /// frame's authored references stand in for display and `hasSettlement`
-    /// stays false. Any failure surfaces honestly via `actionError` — no
-    /// synthesized replies, no fabricated numbers.
+    /// `earnings.previewSettlement({ loadId })` procedure (settlements +
+    /// settlement_documents + billable detention_records for this one load).
+    /// Each live figure binds ONLY when the server returns a non-null value;
+    /// when the server returns null the figure stays nil and renders "—".
+    /// Any failure surfaces honestly via `actionError` — no fabricated data.
     private func loadSettlement() async {
-        // Resolve the live load id (lifecycle store first, then the hydrated
-        // load). Without one we cannot key the settlement — keep frame refs.
-        guard let lid = Int(lifecycle.loadId) ?? activeLoad?.id else { return }
+        // Resolve the live numeric load id for the earnings proc. The
+        // lifecycle store carries a String id (loads.search row); the
+        // settlement preview keys on the numeric load id.
+        guard let lid = Int(lifecycle.loadId) ?? activeLoad?.id.flatMap({ Int($0) }) else { return }
         isLoadingSettlement = true
         defer { isLoadingSettlement = false }
         do {
             let p = try await EusoTripAPI.shared.earnings.previewSettlement(loadId: lid)
             settlementCurrency = p.currency
-            // Bind each real figure; leave the frame reference in place where
-            // the server returned null (no settlement persisted yet).
-            if let v = p.linehaul       { settledLinehaul  = v }
-            if let v = p.hazmatSurcharge { settledHazmat   = v }
-            if let v = p.detention      { settledDetention = v }
-            if let v = p.catalystShare  { settledCatalyst  = v }
-            if let v = p.driverNet      { settledNet       = v }
+            hasSettlement      = p.hasSettlement
+            settlementId       = p.settlementId
+            settlementStatus   = p.settlementStatus
+            settledAt          = p.settledAt
+            // Bind each real figure; leave nil (→ "—") where the server
+            // returned null (no settlement persisted yet).
+            settledLinehaul  = p.linehaul
+            settledHazmat    = p.hazmatSurcharge
+            settledDetention = p.detention
+            settledCatalyst  = p.catalystShare
+            settledNet       = p.driverNet
         } catch {
             actionError = "Couldn't load settlement: \((error as NSError).localizedDescription)"
         }
     }
 
     /// CLOSED is the terminal stage — there is no forward lifecycle
-    /// transition to execute. "Find next load" hands off to the next-trip
-    /// flow via the local advance closure; we surface a failure rather
-    /// than pretending success.
+    /// transition. "Find next load" hands off to the next-trip flow via the
+    /// local advance closure; a failure surfaces rather than faking success.
     private func findNextLoad() async {
         isFindingNext = true
         actionError = nil

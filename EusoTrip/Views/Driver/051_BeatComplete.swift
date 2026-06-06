@@ -9,6 +9,24 @@
 //  (HOS / weather / fuel) + 3-row product-aware queued list +
 //  ESANG voice strip + Snooze / Start pre-trip CTAs.
 //
+//  ── Honest-binding pass (zero fabrication) ───────────────────────
+//  • HOS hero line + HOS status tile bind to the live `hos.getStatus`
+//    snapshot (drivingRemaining / onDutyRemaining / cycleRemaining
+//    hours). The previous hard-coded "0/11/14" / "HOS 0/11/14" was a
+//    fabrication and is gone — em-dash until the snapshot lands.
+//  • Lane + Load ID bind to `loads.getById` decoded with the CORRECTED
+//    wire shape proven in DL133/DL126: top-level `id: String?` (server
+//    sends `String(load.id)`; decoding as Int throws typeMismatch and
+//    blanks the whole screen) + nested {city,state} pickup/delivery
+//    objects (NOT flat) + real driver/catalyst/shipper PARTY objects.
+//    The old fixture switch leaked third-party customer brand
+//    identifiers (a distributor → fertilizer-plant lane) into the
+//    production path; that ledger-hygiene violation is removed.
+//  • Weather + Fuel have no live source → honest em-dash, never faked.
+//  • Every prior `?? <invented literal>` (EUSO-load#, 42°F, 92%) and
+//    every hardcoded persona is dropped; values with no live source
+//    render "-"/"—".
+//
 //  Powered by ESANG AI™.
 //
 
@@ -23,6 +41,8 @@ struct BeatComplete: View {
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
+    @State private var loadCtx: BCLoadCtx?
+    @State private var hos: HOSStatus?
     @State private var isStartingPrehaul: Bool = false
 
     enum Register { case night, afternoon }
@@ -33,14 +53,50 @@ struct BeatComplete: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    private let fallbackClock        = "09:30"
-    private let fallbackOffDutyTotal = "34:00"
-    private let fallbackHosLine      = "HOS 0/11/14"
-    private let fallbackGreeting     = "-"
-    private let fallbackCadence      = "New tender waiting · depart 10:15 · weather 42°F scattered"
-    private let fallbackDate         = "2026-04-19"
-    private let fallbackDepart       = "10:15 from yard"
-    private let fallbackEta          = "-"
+    // MARK: - Corrected `loads.getById` decode shape
+    //
+    // Proven in DL133_DriverCELM04DVIRContinuationOctet /
+    // DL126_DriverCELM04Septet. The server serializes `id` as
+    // `String(load.id)` and `distance` as a Number; `pickupLocation` /
+    // `deliveryLocation` are nested {city,state} objects (the server
+    // sends "" — not nil — when a piece is missing); driver / catalyst
+    // / shipper are PARTY objects carrying the human-readable carrier /
+    // driver names. Decoding the top-level id as Int throws typeMismatch
+    // and fails the WHOLE decode → blank screen.
+    struct BCLoadCtx: Decodable, Hashable {
+        let id: String?              // String on the wire (String(load.id))
+        let loadNumber: String?
+        let pickupLocation: BCLoc?   // nested {city,state}, NOT flat
+        let deliveryLocation: BCLoc?
+        let rate: String?            // DECIMAL → String on the wire
+        let distance: Double?        // resolved Number on the wire
+        let equipmentType: String?
+        let driver: BCParty?
+        let catalyst: BCParty?
+        let shipper: BCParty?
+        struct BCLoc: Decodable, Hashable {
+            let city: String?
+            let state: String?
+        }
+        struct BCParty: Decodable, Hashable {
+            let id: Int?             // party (user/company) id is numeric
+            let name: String?
+            let initials: String?
+            let companyName: String?
+            let mcNumber: String?
+            let dotNumber: String?
+        }
+    }
+
+    // MARK: - Honest display constants
+    //
+    // The morning hero copy is register-flavor chrome, not load data —
+    // it carries no fabricated business value. Anything that *would* be
+    // a load- or telemetry-derived value (clock, off-duty total, HOS,
+    // weather, fuel, lane, load#, depart, ETA) resolves live below and
+    // collapses to an honest em-dash when no source has shipped.
+    private let emDash = "—"
+    private let dash   = "-"
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -74,7 +130,7 @@ struct BeatComplete: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text("SUNDAY · RESET RETURNED")
+                    Text("RESET RETURNED")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
                     LoadModeBadge(modeRaw: activeLoad?.transportMode,
@@ -83,34 +139,42 @@ struct BeatComplete: View {
                 }
             }
             Spacer(minLength: 0)
-            Text(fallbackClock)
+            // No live wall-clock telemetry source on this surface — the
+            // duty clock comes from HOS below, not a fabricated string.
+            Text(emDash)
                 .font(EType.mono(.caption)).fontWeight(.semibold)
                 .foregroundStyle(palette.textPrimary)
         }
         .padding(.top, 4)
     }
 
+    // The big hero number is the driver's remaining 70/8-day cycle from
+    // the live HOS snapshot — the clearest "you have a fresh reset"
+    // signal — rendered em-dash until the snapshot lands. The previous
+    // "34:00" + "HOS 0/11/14" pair was hand-typed and is removed.
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text(fallbackOffDutyTotal)
+                Text(hos?.cycleRemainingDisplay ?? emDash)
                     .font(.system(size: 38, weight: .heavy, design: .rounded))
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
-                Text("off-duty · \(fallbackHosLine)")
+                Text("cycle left · \(hosLineDisplay)")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
-                Text("RESET COMPLETE")
-                    .font(.system(size: 10, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(Brand.success)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .overlay(Capsule().stroke(Brand.success.opacity(0.5), lineWidth: 1))
+                if let h = hos, h.canDrive {
+                    Text("RESET COMPLETE")
+                        .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(Brand.success)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .overlay(Capsule().stroke(Brand.success.opacity(0.5), lineWidth: 1))
+                }
             }
-            Text(fallbackGreeting)
+            Text("Beat complete")
                 .font(.system(size: 18, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
-            Text(fallbackCadence)
+            Text(heroSubline)
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -124,6 +188,21 @@ struct BeatComplete: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
+    /// "drive 7h 22m · on-duty 11h 48m" from the live snapshot; em-dash
+    /// until `hos.getStatus` lands.
+    private var hosLineDisplay: String {
+        guard let h = hos else { return emDash }
+        return "drive \(h.drivingRemainingDisplay) · on-duty \(h.onDutyRemainingDisplay)"
+    }
+
+    /// Honest hero subline: leads with the live lane when present,
+    /// otherwise the next queued action — never a fabricated weather or
+    /// depart-time string.
+    private var heroSubline: String {
+        if let lane = laneDisplay { return "Next tender · \(lane)" }
+        return "Next tender waiting · pre-trip checklist loads on tap"
+    }
+
     private var dayPlanCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -133,7 +212,7 @@ struct BeatComplete: View {
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(.white)
                 }
-                Text("Day plan · \(fallbackDate)")
+                Text("Day plan · \(loadNumberDisplay)")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                 Spacer()
@@ -143,14 +222,14 @@ struct BeatComplete: View {
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .overlay(Capsule().stroke(Brand.success.opacity(0.5), lineWidth: 1))
             }
-            Text("LEG 1 OF 1 · \(legLabel)")
+            Text("LEG 1 OF 1 · \(laneDisplay ?? emDash)")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
             VStack(spacing: 0) {
                 planRow(label: "COMMODITY",   value: ctx.beatCommodityDescriptor)
-                planRow(label: "DEPART",      value: fallbackDepart)
-                planRow(label: "ETA RECEIVER", value: fallbackEta)
-                planRow(label: "LOAD ID",     value: activeLoad?.loadNumber ?? "EUSO-2026-04-19-004640")
+                planRow(label: "CARRIER",      value: carrierDisplay)
+                planRow(label: "DISTANCE",     value: distanceDisplay)
+                planRow(label: "LOAD ID",      value: loadNumberDisplay)
             }
         }
         .padding(Space.s3)
@@ -162,25 +241,31 @@ struct BeatComplete: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // M2 doctrine — em-dash sentinel until LifecycleProductContext exposes
-    // `pickupOriginLabel` / `dropoffDestinationLabel` from the live Load record.
-    // The previous fixture switch leaked third-party customer brand
-    // identifiers (a big-box DC, distributor, fertilizer plant, port basin,
-    // etc.) into the production-path UI, which is a ledger-hygiene
-    // violation. We render "-" for the cases on the deferred-low-risk path
-    // (.reefer, .dryVan) per the 111th firing's recommendation; the
-    // remaining vertical fixtures stay until the broader LifecycleProductContext
-    // rewrite (pending; see 111th firing report Branch C / explicit non-recommendation).
-    private var legLabel: String {
-        switch ctx.product {
-        case .hazmatTanker, .vesselTanker:  return "Univar Curtis Bay → Yara York"
-        case .reefer:                       return "-"
-        case .flatbed:                      return "Birmingham Steel → Houston yard"
-        case .container, .vesselContainer:  return "Curtis Bay port → Norfolk ramp"
-        case .railIntermodal:               return "Ramp → Curtis Bay port"
-        case .railBulk, .vesselBulk:        return "Spur 3 → Texas City"
-        case .dryVan:                       return "-"
-        }
+    // MARK: - Live display helpers (honest em-dash fallback)
+
+    /// Server sends "" (not nil) for missing city/state pieces, so the
+    /// compactMap filters empties before joining. Nested {city,state}
+    /// per the corrected getById shape — never the old fixture switch.
+    private var laneDisplay: String? {
+        let o = [loadCtx?.pickupLocation?.city, loadCtx?.pickupLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        let d = [loadCtx?.deliveryLocation?.city, loadCtx?.deliveryLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        guard !o.isEmpty || !d.isEmpty else { return nil }
+        return "\(o.isEmpty ? emDash : o) → \(d.isEmpty ? emDash : d)"
+    }
+
+    private var loadNumberDisplay: String { loadCtx?.loadNumber ?? dash }
+
+    /// Carrier-of-record from the live catalyst PARTY object.
+    private var carrierDisplay: String {
+        loadCtx?.catalyst?.companyName ?? loadCtx?.catalyst?.name ?? dash
+    }
+
+    /// "620 mi" from the live `distance` Double; em-dash when missing.
+    private var distanceDisplay: String {
+        guard let d = loadCtx?.distance, d > 0 else { return emDash }
+        return "\(Int(d.rounded())) mi"
     }
 
     private func planRow(label: String, value: String) -> some View {
@@ -198,11 +283,16 @@ struct BeatComplete: View {
         .padding(.vertical, 6)
     }
 
+    // HOS tile binds the live drive/on-duty/cycle remaining hours.
+    // Weather + Fuel have no telemetry source on this surface → honest
+    // em-dash (never the old "42°F" / "92%" fabrications).
     private var statusTiles: some View {
         HStack(spacing: Space.s2) {
-            tile(label: "HOS", primary: "0/11/14",  sub: "FRESH · RESET ON 0")
-            tile(label: "WEATHER", primary: "42°F", sub: "SCATTERED SHOWERS")
-            tile(label: "FUEL",   primary: "92%",   sub: "TOPPED SAT NIGHT")
+            tile(label: "HOS",
+                 primary: hos.map { "\($0.drivingRemainingDisplay)" } ?? emDash,
+                 sub: hos != nil ? "DRIVE REMAINING" : "AWAITING ELD")
+            tile(label: "WEATHER", primary: emDash, sub: "NO SOURCE")
+            tile(label: "FUEL",    primary: emDash, sub: "NO SOURCE")
         }
     }
 
@@ -269,7 +359,7 @@ struct BeatComplete: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(LinearGradient.diagonal)
-            Text("ESANG · TENDER IS HOT · I PULLED ROUTES + WEATHER · PRE-TRIP CHECKLIST LOADED ON TAP")
+            Text("ESANG · NEXT TENDER QUEUED · PRE-TRIP CHECKLIST LOADS ON TAP")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2)
@@ -310,8 +400,26 @@ struct BeatComplete: View {
     private func hydrateLiveTrip() async {
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
-        guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
-        activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+
+        // Live HOS snapshot — drives the hero cycle number + HOS tile.
+        hos = try? await EusoTripAPI.shared.hos.getStatus()
+
+        guard !lifecycle.loadId.isEmpty else { return }
+
+        // Legacy `Load` record powers the LifecycleProductContext
+        // (commodity descriptor + beat queue), which already routes
+        // every per-load segment through honest em-dash facets.
+        if let n = Int(lifecycle.loadId) {
+            activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        }
+
+        // Lane + load# + carrier name decode with the CORRECTED shape:
+        // top-level id String?, nested {city,state}, party objects. The
+        // server's Zod input is `{ id: string }`.
+        struct In: Encodable { let id: String }
+        loadCtx = try? await EusoTripAPI.shared.query(
+            "loads.getById", input: In(id: lifecycle.loadId)
+        )
     }
 
     private func startPretrip() async {

@@ -8,32 +8,52 @@
 //    143 Driver Pickup Loading CEL M04        (§391 · 3/5)
 //    144 Driver Pickup Bol Sign CEL M04       (§392 · 4/5)
 //    145 Driver Pickup Departed CEL M04       (§393 · 5/5)
-//    146 Driver In Transit CEL M04            (§394 · Rolling I-85 SE)
-//    147 Driver At Delivery Arrival CEL M04   (§398 · On-Site CLT Newell)
+//    146 Driver In Transit CEL M04            (§394 · Rolling)
+//    147 Driver At Delivery Arrival CEL M04   (§398 · On-Site)
 //    148 Driver POD Sign Unload CEL M04       (§402 · POD Signed)
 //
 //  Closes the full CEL M-04 chain (DL126 → DL148). Single bundled file.
 //  All 8 share `CELCloseBody`. Body reads `loads.getById`. Bottom nav
 //  frozen.
 //
+//  Honest binding parity with sibling DL133_DriverCELM04DVIRContinuationOctet
+//  and DL126_DriverCELM04Septet (loads.getById parties / rate / distance /
+//  lane). Every rendered business value binds to live fetched data:
+//    · DIST   = load.distance          (live)
+//    · lane   = pickup → deliveryLocation {city,state}  (live)
+//    · PAYOUT = load.rate              (live decimal String)
+//    · carrier / driver / dispatcher / shipper names = PARTY objects (live)
+//  Real-time DOCK / DWELL / ETA / WINDOW / APPT / HOS / delivery clocks
+//  have no live source on loads.getById, so they render an honest "—".
+//
 
 import SwiftUI
 
 private struct CMCLoadCtx: Decodable, Hashable {
-    let id: Int?
+    // Top-level load id is a String on the wire (loads.getById -> String(load.id));
+    // decoding as Int throws typeMismatch and fails the WHOLE decode -> blank.
+    // pickup/delivery are nested {city,state} objects (NOT flat city fields).
+    let id: String?
     let loadNumber: String?
-    let pickupCity: String?
-    let destCity: String?
+    let pickupLocation: CMCLoc?
+    let deliveryLocation: CMCLoc?
     let rate: String?
+    let distance: Double?
+    let equipmentType: String?
     let driver: CMCParty?
     let catalyst: CMCParty?
     let shipper: CMCParty?
+    struct CMCLoc: Decodable, Hashable {
+        let city: String?
+        let state: String?
+    }
     struct CMCParty: Decodable, Hashable {
-        let id: Int?
+        let id: Int?            // party (user/company) id is numeric on the wire
         let name: String?
         let initials: String?
         let companyName: String?
         let mcNumber: String?
+        let dotNumber: String?
     }
 }
 
@@ -206,15 +226,26 @@ private struct CELCloseBody: View {
         }
     }
 
-    // MARK: - Dynamic display helpers
+    // MARK: - Dynamic display helpers (live-bound; honest "-"/"—" fallback)
 
     private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var carrierCodeDisplay: String {
         load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
     }
     private var laneDisplay: String? {
-        guard let p = load?.pickupCity, let d = load?.destCity else { return nil }
-        return "\(p) → \(d)"
+        // Nested {city,state}; server sends "" (not nil) when missing.
+        let o = [load?.pickupLocation?.city, load?.pickupLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        guard !o.isEmpty || !d.isEmpty else { return nil }
+        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
+    }
+    /// Delivery (destination) label alone — used as the DIST KPI subtitle.
+    private var destinationDisplay: String {
+        let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        return d.isEmpty ? "—" : "to \(d)"
     }
 
     private func header(_ c: CCConfig) -> some View {
@@ -266,9 +297,10 @@ private struct CELCloseBody: View {
 
     private var identityRow: some View {
         let driverIni = load?.driver?.initials ?? "-"
-        let driverName = load?.driver?.name ?? "driver"
+        let driverName = load?.driver?.name ?? "-"
         let carrierFull = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
         let mc = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "-"
+        let dot = load?.catalyst?.dotNumber.map { "USDOT \($0)" } ?? "-"
         let dispatchName = load?.catalyst?.name ?? "-"
         let shipperName = load?.shipper?.name ?? "-"
         return LifecycleCard {
@@ -280,7 +312,7 @@ private struct CELCloseBody: View {
                         .font(EType.caption.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text("\(carrierFull) · \(mc) · \(dispatchName) dispatcher · \(shipperName) shipper")
+                    Text("\(carrierFull) · \(dot) · \(mc) · \(dispatchName) dispatcher · \(shipperName) shipper")
                         .font(.caption2).foregroundStyle(palette.textTertiary)
                         .lineLimit(2)
                 }
@@ -290,63 +322,66 @@ private struct CELCloseBody: View {
     }
 
     private var kpiGrid: some View {
+        let payout = Self.payoutDisplay(load?.rate)
+        let dist = Self.distanceDisplay(load?.distance)
+        let dest = destinationDisplay
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .onSite:
                 return [
-                    ("DOCK",   "4A",                 "gated in · 0:00",      .orange),
-                    ("WINDOW", "08:00-10:00",          "EDT pickup",         .blue),
-                    ("PAYOUT", Self.payoutDisplay(load?.rate),                "CEL margin",        .green),
-                    ("STATE",  "ON-SITE",                "§386 · 1/5",       .green),
+                    ("DOCK",   "—",                  "gated in",           .orange),
+                    ("WINDOW", "—",                  "pickup window",      .blue),
+                    ("PAYOUT", payout,               "CEL margin",         .green),
+                    ("STATE",  "ON-SITE",            "§386 · 1/5",         .green),
                 ]
             case .atDock:
                 return [
-                    ("DOCK",   "4A",                       "BACKED IN",      .orange),
-                    ("DWELL",  "0:12",                       "within free",  .green),
-                    ("PAYOUT", Self.payoutDisplay(load?.rate),                       "LOCKED",     .green),
-                    ("STATE",  "AT-DOCK",                       "§390 · 2/5", .blue),
+                    ("DOCK",   "—",                  "BACKED IN",          .orange),
+                    ("DWELL",  "—",                  "within free",        .green),
+                    ("PAYOUT", payout,               "LOCKED",             .green),
+                    ("STATE",  "AT-DOCK",            "§390 · 2/5",         .blue),
                 ]
             case .loading:
                 return [
-                    ("DOCK",   "4A",                              "loading active", .orange),
-                    ("DWELL",  "0:24",                              "within free",  .green),
-                    ("LOAD",   "STARTED",                            "0:06 ago",    .blue),
-                    ("STATE",  "LOADING",                              "§391 · 3/5", .blue),
+                    ("DOCK",   "—",                  "loading active",     .orange),
+                    ("DWELL",  "—",                  "within free",        .green),
+                    ("LOAD",   "STARTED",            "loading commenced",  .blue),
+                    ("STATE",  "LOADING",            "§391 · 3/5",         .blue),
                 ]
             case .bolSign:
                 return [
-                    ("STATE",  "BOL-SIGN",                              "§392 · 4/5",  .green),
-                    ("DWELL",  "0:34",                                    "within free", .green),
-                    ("STATUS", "LOADED + SEALED",                          "ready to sign", .green),
-                    ("PAYOUT", Self.payoutDisplay(load?.rate),                                    "LOCKED",     .green),
+                    ("STATE",  "BOL-SIGN",           "§392 · 4/5",         .green),
+                    ("DWELL",  "—",                  "within free",        .green),
+                    ("STATUS", "LOADED + SEALED",    "ready to sign",      .green),
+                    ("PAYOUT", payout,               "LOCKED",             .green),
                 ]
             case .departed:
                 return [
-                    ("STATE",  "DEPARTED",                                    "§393 · 5/5",  .green),
-                    ("DIST",   "245 mi",                                       "to CLT Newell", .blue),
-                    ("ETA",    "12:46",                                         "EDT",        .blue),
-                    ("PAYOUT", Self.payoutDisplay(load?.rate),                                          "LOCKED",   .green),
+                    ("STATE",  "DEPARTED",           "§393 · 5/5",         .green),
+                    ("DIST",   dist,                 dest,                 .blue),
+                    ("ETA",    "—",                  "in transit",         .blue),
+                    ("PAYOUT", payout,               "LOCKED",             .green),
                 ]
             case .inTransit:
                 return [
-                    ("ROUTE",  "I-85 SE",                                         "rolling",   .blue),
-                    ("DIST",   "199 mi",                                           "to CLT",  .blue),
-                    ("ETA",    "12:44",                                              "EDT",   .blue),
-                    ("HOS",    "10:14",                                                "driving · clean", .green),
+                    ("ROUTE",  "—",                  "rolling",            .blue),
+                    ("DIST",   dist,                 dest,                 .blue),
+                    ("ETA",    "—",                  "in transit",         .blue),
+                    ("HOS",    "—",                  "driving",            .green),
                 ]
             case .atDelivery:
                 return [
-                    ("STATE",  "ARRIVED",                                                "§398 · early",     .green),
-                    ("APPT",   "14:00",                                                    "EDT · on-time",  .green),
-                    ("RECV",   "CLT NEWELL",                                                  "Receiving",   .blue),
-                    ("PAYOUT", Self.payoutDisplay(load?.rate),                                                        "LOCKED",   .green),
+                    ("STATE",  "ARRIVED",            "§398",               .green),
+                    ("APPT",   "—",                  "receiver appt",      .green),
+                    ("RECV",   dest,                 "Receiving",          .blue),
+                    ("PAYOUT", payout,               "LOCKED",             .green),
                 ]
             case .podSigned:
                 return [
-                    ("POD",    "SIGNED",                                                          "§402 · CLT",    .green),
-                    ("DELIV",  "13:34",                                                            "EDT · early",  .green),
-                    ("CHAIN",  "FIRED",                                                              "ring rolled · pod_pending → DU", .green),
-                    ("PAYOUT", Self.payoutDisplay(load?.rate),                                                                "release queued",  .green),
+                    ("POD",    "SIGNED",             "§402",               .green),
+                    ("DELIV",  "—",                  "delivered",          .green),
+                    ("CHAIN",  "FIRED",              "ring rolled · pod_pending → DU", .green),
+                    ("PAYOUT", payout,               "release queued",     .green),
                 ]
             }
         }()
@@ -369,14 +404,14 @@ private struct CELCloseBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .onSite:     return "Gated in at dock 4A. Pickup window 08:00-10:00 EDT, back to the dock when receiver waves."
-            case .atDock:     return "Backed in at 4A. Forklift will arrive within free-dwell; loading-state arms on first pallet."
-            case .loading:    return "Loading commenced. Watch dwell against the 2h free window; ESang nudges if it threatens to spill."
+            case .onSite:     return "Gated in at the pickup dock. Back to the assigned door when the receiver waves; loading-state arms on first pallet."
+            case .atDock:     return "Backed in at the door. Forklift will arrive within free-dwell; loading-state arms on first pallet."
+            case .loading:    return "Loading commenced. Watch dwell against the free window; ESang nudges if it threatens to spill."
             case .bolSign:    return "Loaded and sealed. Tap to sign BOL, gradient ink commits the pickup chain."
-            case .departed:   return "Gate-out cleared. 245 mi long-haul leg begins; ETA holds 12:46 EDT to CLT Newell."
-            case .inTransit:  return "Rolling I-85 SE with 199 mi left. ESang nudges if ETA drifts >10 min vs 12:44 target."
-            case .atDelivery: return "Arrived CLT Newell at 12:43, 17 min early. Receiver will dock-in for unload."
-            case .podSigned:  return "POD signed at 13:34, delivered fired. Ring rolls to DU; payout release queues next."
+            case .departed:   return "Gate-out cleared. The long-haul leg begins toward the delivery lane."
+            case .inTransit:  return "Rolling toward the delivery lane. ESang nudges if ETA drifts vs the receiver appointment."
+            case .atDelivery: return "Arrived at the delivery facility. Receiver will dock-in for unload."
+            case .podSigned:  return "POD signed, delivered fired. Ring rolls to DU; payout release queues next."
             }
         }()
         return LifecycleCard {
@@ -398,6 +433,12 @@ private struct CELCloseBody: View {
         guard let r = rate, let n = Double(r), n > 0 else { return "-" }
         let v = n.rounded()
         return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
+    }
+
+    /// Format the load's distance in miles. Falls back to "—".
+    private static func distanceDisplay(_ d: Double?) -> String {
+        guard let d, d > 0 else { return "—" }
+        return "\(Int(d.rounded())) mi"
     }
 }
 

@@ -14,16 +14,48 @@
 //  reads `loads.getById` + `inspections.getDVIRHistory`. Bottom nav
 //  frozen.
 //
+//  ZERO fabrication. Every business value binds to live fetched data;
+//  identity / lane / payout / distance / RPM / equipment all come from
+//  loads.getById party + rate + distance + nested location fields, and
+//  anything without a live source renders an honest "-"/"—". No baked
+//  personas, MC/DOT numbers, load numbers, or `?? <invented>` defaults.
+//
+//  Honest binding parity with DL091 (loads.getById rate/distance/RPM)
+//  and DL126/DL133 (CORRECTED getById shape: top-level `id: String?`,
+//  nested pickupLocation/deliveryLocation {city,state}, real party
+//  objects). Decoding `id` as Int throws typeMismatch and blanks the
+//  whole screen — it MUST be String?.
+//
 
 import SwiftUI
 
 private struct DLCLoadCtx: Decodable, Hashable {
-    let id: Int?
+    // loads.getById returns String(load.id) on the wire — decoding as
+    // Int throws typeMismatch and fails the WHOLE decode (blank screen).
+    let id: String?
     let loadNumber: String?
-    let pickupCity: String?
-    let destCity: String?
-    let rate: String?
+    // pickup/delivery arrive as nested {city,state} objects (NOT flat
+    // city fields). Server emits "" (not nil) for missing parts.
+    let pickupLocation: DLCLoc?
+    let deliveryLocation: DLCLoc?
+    let rate: String?            // decimal string
     let distance: Double?
+    let equipmentType: String?
+    let driver: DLCParty?
+    let catalyst: DLCParty?
+    let shipper: DLCParty?
+    struct DLCLoc: Decodable, Hashable {
+        let city: String?
+        let state: String?
+    }
+    struct DLCParty: Decodable, Hashable {
+        let id: Int?            // party (user/company) id is numeric on the wire
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+        let dotNumber: String?
+    }
 }
 
 private struct DLCDVIRRow: Decodable, Hashable {
@@ -54,8 +86,7 @@ private struct DVIRSectionAckBody: View {
     let loadId: String
     let sectionsCompleted: Int       // 8 / 9 / 10 / 11 / 12
     let citation: String              // "§315" / "§316" / …
-    let elapsedSinceAccept: String    // "6:12" / "7:14" / …
-    let pickupCountdownText: String   // "8h 00m" / "6h 58m" / …
+    let sectionLabel: String          // "CAB INTERIOR & BRAKES" / …
 
     @Environment(\.palette) private var palette
     @State private var load: DLCLoadCtx?
@@ -64,6 +95,27 @@ private struct DVIRSectionAckBody: View {
     private let sectionTotal = 14
     private var progressPct: Double { Double(sectionsCompleted) / Double(sectionTotal) }
     private var pastMidpointPct: Int { Int((Double(sectionsCompleted) / Double(sectionTotal)) * 100) }
+
+    // MARK: - Dynamic display helpers (live-bound; honest "-"/"—" fallback)
+
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
+    private var carrierCodeDisplay: String {
+        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
+    }
+    private var laneDisplay: String? {
+        // Nested {city,state}; server sends "" (not nil) when missing.
+        let o = [load?.pickupLocation?.city, load?.pickupLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        guard !o.isEmpty || !d.isEmpty else { return nil }
+        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
+    }
+    /// DVIR id from the inspections store when present, else "-".
+    private var dvirIdDisplay: String {
+        guard let id = dvir?.id else { return "-" }
+        return "dvir-\(id)"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -89,20 +141,21 @@ private struct DVIRSectionAckBody: View {
                 Text("DRIVER · TRIPS · BACKHAUL · DVIR · S\(sectionsCompleted)").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Section \(sectionsCompleted) · acked").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            if let l = load {
-                Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-")")
-                    .font(EType.caption).foregroundStyle(palette.textSecondary)
-            }
+            Text("\(loadNumberDisplay) · \(laneDisplay ?? "—")")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
     private var citationBanner: some View {
-        LifecycleCard(accentGradient: true) {
+        let driverIni = load?.driver?.initials ?? "-"
+        let dispIni   = load?.catalyst?.initials ?? "-"
+        let shipIni   = load?.shipper?.initials ?? "-"
+        return LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("\(citation) · BACKHAUL DVIR · WITHIN-TRACK SECTION-\(sectionsCompleted)-ACK").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text("§302 ACCEPTED · §\(citation.replacingOccurrences(of: "§", with: "")) DVIR ADVANCING · \(sectionsCompleted)/14 SECTIONS · \(elapsedSinceAccept) SINCE ACCEPT")
+                Text("§302 ACCEPTED · \(citation) DVIR ADVANCING · \(sectionsCompleted)/14 SECTIONS · \(sectionLabel) ACKED")
                     .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                Text("LD-BH7C3A · PHX-LA · AWARDED · DVIR \(sectionsCompleted)/14 · \(pastMidpointPct)% PAST MIDPOINT").font(.caption2).foregroundStyle(palette.textSecondary)
+                Text("\(loadNumberDisplay) · \(laneDisplay ?? "—") · DVIR \(dvirIdDisplay) · \(sectionsCompleted)/14 · \(pastMidpointPct)% · \(driverIni) driver · \(dispIni) ops · \(shipIni) shipper").font(.caption2).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -125,7 +178,9 @@ private struct DVIRSectionAckBody: View {
                 }
                 .frame(height: 8)
                 if let d = dvir {
-                    Text("Live session · \(d.unitNumber ?? "unit") · \((d.make ?? "") + " " + (d.model ?? ""))")
+                    let unit = (d.unitNumber?.isEmpty == false) ? d.unitNumber! : "unit"
+                    let mk = [d.make, d.model].compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: " ")
+                    Text("Live session · \(unit)\(mk.isEmpty ? "" : " · \(mk)")")
                         .font(.caption2).foregroundStyle(palette.textTertiary)
                 } else {
                     Text("Walk-around in progress · advancing live").font(.caption2).foregroundStyle(palette.textTertiary)
@@ -135,13 +190,24 @@ private struct DVIRSectionAckBody: View {
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        let dispIni     = load?.catalyst?.initials ?? "-"
+        let dispName    = load?.catalyst?.name ?? "-"
+        let carrierFull = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
+        let dot         = load?.catalyst?.dotNumber.map { "USDOT \($0)" } ?? "-"
+        let mc          = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "-"
+        let driverName  = load?.driver?.name ?? "-"
+        let shipperName = load?.shipper?.name ?? "-"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("RM").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(dispIni).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Aurora Freight Lines · Renée Marquette").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("USDOT 3 482 119 · MC-942 008 · Cedar Rapids IA · senior dispatcher").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(carrierCodeDisplay) · \(dispName) · dispatcher")
+                        .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("\(carrierFull) · \(dot) · \(mc) · \(driverName) (driver) · \(shipperName) (shipper)")
+                        .font(.caption2).foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
                 }
                 Spacer()
             }
@@ -149,11 +215,15 @@ private struct DVIRSectionAckBody: View {
     }
 
     private var kpiGrid: some View {
+        let payout = Self.payoutDisplay(load?.rate)
+        let dist = Self.distanceDisplay(load?.distance)
+        let rpm = Self.rpmDisplay(rate: load?.rate, distance: load?.distance)
+        let lane = laneDisplay ?? "-"
         let kpis: [(String, String, String, Color)] = [
-            ("PAYOUT",   "$\(load?.rate ?? "2,128")", "NET-30 LOCKED",                .green),
-            ("RPM",      "$5.38",                      "\(Int(load?.distance ?? 372)) mi LOCKED", .blue),
-            ("PICKUP",   pickupCountdownText,             "04:00 MST",                  .orange),
-            ("DVIR",     "\(sectionsCompleted)/14",        "advancing · \(pastMidpointPct)%", sectionsCompleted >= 12 ? .green : .blue),
+            ("PAYOUT",   payout,                       "NET-30 LOCKED · \(carrierCodeDisplay)",   .green),
+            ("RPM",      rpm,                          "\(dist) · \(lane)",                       .blue),
+            ("DIST",     dist,                         lane,                                      .blue),
+            ("DVIR",     "\(sectionsCompleted)/14",    "advancing · \(pastMidpointPct)%",         sectionsCompleted >= 12 ? .green : .blue),
         ]
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         return LazyVGrid(columns: cols, spacing: 8) {
@@ -201,6 +271,27 @@ private struct DVIRSectionAckBody: View {
             dvir = rows.first
         } catch { /* */ }
     }
+
+    /// Format the load's rate (decimal string from server) as a payout
+    /// display. Falls back to "-" when missing/invalid. No invented default.
+    private static func payoutDisplay(_ rate: String?) -> String {
+        guard let r = rate, let n = Double(r), n > 0 else { return "-" }
+        let v = n.rounded()
+        return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
+    }
+
+    /// Format the load's distance in miles. Falls back to "-".
+    private static func distanceDisplay(_ d: Double?) -> String {
+        guard let d, d > 0 else { return "-" }
+        return "\(Int(d.rounded())) mi"
+    }
+
+    /// Computed rate-per-mile = rate / distance. Both must be live + > 0,
+    /// else "-". No hardcoded $5.38.
+    private static func rpmDisplay(rate: String?, distance: Double?) -> String {
+        guard let r = rate, let n = Double(r), n > 0, let d = distance, d > 0 else { return "-" }
+        return String(format: "$%.2f", n / d)
+    }
 }
 
 // MARK: - Screens (DL109-DL113)
@@ -209,7 +300,7 @@ struct DriverDVIRSection8Screen: View {
     let theme: Theme.Palette; let loadId: String
     var body: some View {
         DVIRSectionAckShell(theme: theme) {
-            DVIRSectionAckBody(loadId: loadId, sectionsCompleted: 8, citation: "§315", elapsedSinceAccept: "6:12", pickupCountdownText: "8h 00m")
+            DVIRSectionAckBody(loadId: loadId, sectionsCompleted: 8, citation: "§315", sectionLabel: "CAB INTERIOR & BRAKES")
         }
     }
 }
@@ -217,7 +308,7 @@ struct DriverDVIRSection9Screen: View {
     let theme: Theme.Palette; let loadId: String
     var body: some View {
         DVIRSectionAckShell(theme: theme) {
-            DVIRSectionAckBody(loadId: loadId, sectionsCompleted: 9, citation: "§316", elapsedSinceAccept: "7:14", pickupCountdownText: "6h 58m")
+            DVIRSectionAckBody(loadId: loadId, sectionsCompleted: 9, citation: "§316", sectionLabel: "COUPLING & AIR SYSTEM")
         }
     }
 }
@@ -225,7 +316,7 @@ struct DriverDVIRSection10Screen: View {
     let theme: Theme.Palette; let loadId: String
     var body: some View {
         DVIRSectionAckShell(theme: theme) {
-            DVIRSectionAckBody(loadId: loadId, sectionsCompleted: 10, citation: "§317", elapsedSinceAccept: "8:16", pickupCountdownText: "5h 56m")
+            DVIRSectionAckBody(loadId: loadId, sectionsCompleted: 10, citation: "§317", sectionLabel: "TIRE CHAINS & EMERGENCY KIT")
         }
     }
 }
@@ -233,7 +324,7 @@ struct DriverDVIRSection11Screen: View {
     let theme: Theme.Palette; let loadId: String
     var body: some View {
         DVIRSectionAckShell(theme: theme) {
-            DVIRSectionAckBody(loadId: loadId, sectionsCompleted: 11, citation: "§318", elapsedSinceAccept: "9:18", pickupCountdownText: "4h 54m")
+            DVIRSectionAckBody(loadId: loadId, sectionsCompleted: 11, citation: "§318", sectionLabel: "REEFER & CARGO SEAL")
         }
     }
 }
@@ -241,7 +332,7 @@ struct DriverDVIRSection12Screen: View {
     let theme: Theme.Palette; let loadId: String
     var body: some View {
         DVIRSectionAckShell(theme: theme) {
-            DVIRSectionAckBody(loadId: loadId, sectionsCompleted: 12, citation: "§319", elapsedSinceAccept: "10:20", pickupCountdownText: "3h 52m")
+            DVIRSectionAckBody(loadId: loadId, sectionsCompleted: 12, citation: "§319", sectionLabel: "ELD & COMMS")
         }
     }
 }
