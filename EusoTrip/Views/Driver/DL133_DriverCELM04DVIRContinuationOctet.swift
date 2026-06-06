@@ -26,18 +26,25 @@
 import SwiftUI
 
 private struct CMDLoadCtx: Decodable, Hashable {
-    let id: Int?
+    // Top-level load id is a String on the wire (loads.getById -> String(load.id));
+    // decoding as Int throws typeMismatch and fails the WHOLE decode -> blank.
+    // pickup/delivery are nested {city,state} objects (NOT flat city fields).
+    let id: String?
     let loadNumber: String?
-    let pickupCity: String?
-    let destCity: String?
+    let pickupLocation: CMDLoc?
+    let deliveryLocation: CMDLoc?
     let rate: String?
     let distance: Double?
     let equipmentType: String?
     let driver: CMDParty?
     let catalyst: CMDParty?
     let shipper: CMDParty?
+    struct CMDLoc: Decodable, Hashable {
+        let city: String?
+        let state: String?
+    }
     struct CMDParty: Decodable, Hashable {
-        let id: Int?
+        let id: Int?            // party (user/company) id is numeric on the wire
         let name: String?
         let initials: String?
         let companyName: String?
@@ -105,8 +112,13 @@ private struct CELDVIRBody: View {
         load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
     }
     private var laneDisplay: String? {
-        guard let p = load?.pickupCity, let d = load?.destCity else { return nil }
-        return "\(p) → \(d)"
+        // Nested {city,state}; server sends "" (not nil) when missing.
+        let o = [load?.pickupLocation?.city, load?.pickupLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        guard !o.isEmpty || !d.isEmpty else { return nil }
+        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
     }
     /// DVIR id from the inspections store when present, else "-".
     private var dvirIdDisplay: String {
