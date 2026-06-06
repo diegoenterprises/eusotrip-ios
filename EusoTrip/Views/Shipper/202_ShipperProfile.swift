@@ -16,8 +16,15 @@
 //  + benefits + eSang copy synthesis kept verbatim — only chrome
 //  rewritten to match wireframe recipe.
 //
-//  Persona canon (§11): Diego Usoro · Eusorone Technologies (companyId 1)
-//                        · DU monogram on diagonal gradient.
+//  Zero-fabrication pass (2026-06-06): every business value binds to
+//  the named real proc — name/email/companyId from the session
+//  AuthUser, company/DOT/MC/verified/memberSince from
+//  `shippers.getProfile` (ShipperAPI.Profile), and loads/spend/on-time/
+//  payment from `shippers.getStats` (ShipperAPI.Stats, the shipper
+//  scorecard envelope). No founder persona, no invented company, no
+//  invented credentials. Blank fields render honest "—" sentinels;
+//  unverifiable compliance renders "unavailable" — never an asserted
+//  positive (no "$2M GL / $1M cargo", no "BBB A+", no fake EIN/DUNS).
 //
 //  Web peer: ShipperProfile.tsx (`/shipper/profile`).
 //  Notification names: eusoShipperProfileEdit, eusoShippereSangOpen.
@@ -114,11 +121,11 @@ struct ShipperProfile: View {
         guard
             let p = profileStore.state.value ?? nil,
             !p.memberSince.isEmpty
-        else { return "MEMBER 2024" }
+        else { return "MEMBER —" }
         let isoF = ISO8601DateFormatter()
         isoF.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date = isoF.date(from: p.memberSince) ?? ISO8601DateFormatter().date(from: p.memberSince)
-        guard let date else { return "MEMBER 2024" }
+        guard let date else { return "MEMBER —" }
         let out = DateFormatter()
         out.dateFormat = "yyyy"
         return "MEMBER \(out.string(from: date))"
@@ -169,7 +176,11 @@ struct ShipperProfile: View {
                         .lineLimit(1)
                     HStack(spacing: 8) {
                         verifiedPill
-                        hazmatPill
+                        // HAZMAT endorsement pill removed: no real source
+                        // field on `shippers.getProfile` (ShipperAPI.Profile),
+                        // so rendering it would assert an unverified
+                        // compliance credential. Reinstate when the proc
+                        // exposes a hazmat endorsement flag.
                     }
                     .padding(.top, 4)
                 }
@@ -193,70 +204,102 @@ struct ShipperProfile: View {
                 .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
         )
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(displayName), \(displayCompany), verified shipper")
+        .accessibilityLabel(heroAccessibilityLabel)
+    }
+
+    private var heroAccessibilityLabel: String {
+        // Only voice "verified" when the proc actually reports it — never
+        // assert verification status the backend hasn't confirmed.
+        let verified = (profileStore.state.value ?? nil)?.verified ?? false
+        let status = verified ? "verified shipper" : "verification pending"
+        return "\(displayName), \(displayCompany), \(status)"
     }
 
     private var displayName: String {
-        if let u = session.user, !(u.name?.isEmpty ?? true) {
-            return u.name ?? "Diego Usoro"
-        }
-        return "Diego Usoro"
+        // Real source only: the authenticated session user's name. No
+        // founder persona fallback — an unresolved session renders "—".
+        if let n = session.user?.name, !n.isEmpty { return n }
+        return "—"
     }
 
     private var displayCompany: String {
+        // Real source only: `shippers.getProfile` → companyName. When the
+        // server hasn't hydrated the companies row it returns an empty
+        // string — surface "—", never the founder company. We do NOT
+        // substitute a session value because AuthUser carries only a
+        // companyId, not a company name.
         guard
             let p = profileStore.state.value ?? nil,
             !p.companyName.isEmpty
-        else { return "Eusorone Technologies" }
+        else { return "—" }
         return p.companyName
     }
 
     private var companyMetaLine: String {
-        guard let p = profileStore.state.value ?? nil else {
-            return "companyId 1 · DUNS pending"
-        }
-        let id = "companyId \(session.user?.companyId ?? "1")"
-        let dot = p.dotNumber.isEmpty ? "DUNS pending" : "DOT \(p.dotNumber)"
-        return "\(id) · \(dot)"
+        // Real sources only: companyId from the session AuthUser, DOT
+        // from `shippers.getProfile`. No invented "companyId 1" and no
+        // invented "DUNS pending" — each segment is dropped to "—" when
+        // its real source is empty.
+        let companyId = session.user?.companyId
+        let idPart = (companyId?.isEmpty == false) ? "Company \(companyId!)" : "Company —"
+        let p = profileStore.state.value ?? nil
+        let dotPart = (p?.dotNumber.isEmpty == false) ? "DOT \(p!.dotNumber)" : "DOT —"
+        return "\(idPart) · \(dotPart)"
     }
 
     private var emailLine: String {
+        // Real source only: the authenticated session user's email.
         if let u = session.user, !u.email.isEmpty { return u.email }
-        return "shipper@eusotrip.com"
+        return "—"
     }
 
     private var duAvatar88: some View {
-        let initials: String = {
-            if let n = session.user?.name, !n.isEmpty {
-                let parts = n.split(separator: " ").prefix(2).map(String.init)
-                let chars = parts.compactMap { $0.first }.map(String.init)
-                return chars.joined().uppercased().isEmpty ? "DU" : chars.joined().uppercased()
-            }
-            return "DU"
+        // Initials derive ONLY from the real session user name. With no
+        // resolved name we render a neutral person glyph rather than a
+        // fabricated founder monogram ("DU").
+        let initials: String? = {
+            guard let n = session.user?.name, !n.isEmpty else { return nil }
+            let parts = n.split(separator: " ").prefix(2).map(String.init)
+            let chars = parts.compactMap { $0.first }.map(String.init)
+            let joined = chars.joined().uppercased()
+            return joined.isEmpty ? nil : joined
         }()
         return ZStack(alignment: .bottomTrailing) {
             ZStack {
                 Circle().fill(LinearGradient.diagonal)
-                Text(initials)
-                    .font(.system(size: 28, weight: .bold)).tracking(0.4)
-                    .foregroundStyle(.white)
+                if let initials {
+                    Text(initials)
+                        .font(.system(size: 28, weight: .bold)).tracking(0.4)
+                        .foregroundStyle(.white)
+                } else {
+                    Image(systemName: "person.fill")
+                        .font(.system(size: 34, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
             }
             .frame(width: 88, height: 88)
 
-            ZStack {
-                Circle().fill(palette.bgCard).frame(width: 22, height: 22)
-                Circle().fill(Brand.success).frame(width: 20, height: 20)
-                Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .heavy))
-                    .foregroundStyle(.white)
+            // Verified checkmark badge renders ONLY when the proc reports
+            // verified — never asserts verification the backend didn't.
+            if (profileStore.state.value ?? nil)?.verified ?? false {
+                ZStack {
+                    Circle().fill(palette.bgCard).frame(width: 22, height: 22)
+                    Circle().fill(Brand.success).frame(width: 20, height: 20)
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(.white)
+                }
+                .offset(x: 2, y: 2)
             }
-            .offset(x: 2, y: 2)
         }
         .accessibilityHidden(true)
     }
 
     private var verifiedPill: some View {
-        let isVerified = (profileStore.state.value ?? nil)?.verified ?? true
+        // Never assert verified without a real source: default to NOT
+        // verified (PENDING) when `shippers.getProfile` hasn't resolved
+        // or reports false.
+        let isVerified = (profileStore.state.value ?? nil)?.verified ?? false
         return HStack(spacing: 6) {
             Image(systemName: isVerified ? "checkmark" : "clock")
                 .font(.system(size: 9, weight: .heavy))
@@ -267,14 +310,6 @@ struct ShipperProfile: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .background(Capsule().fill((isVerified ? Brand.success : Brand.warning).opacity(0.10)))
-    }
-
-    private var hazmatPill: some View {
-        Text("HAZMAT")
-            .font(EType.micro).tracking(0.5)
-            .foregroundStyle(Color(hex: 0xB27300))
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(Capsule().fill(Brand.hazmat.opacity(0.16)))
     }
 
     private func metaRow(systemImage: String, text: String) -> some View {
@@ -554,7 +589,7 @@ struct ShipperProfile: View {
             statTile(
                 label: "Total loads",
                 value: s.totalLoads <= 0 ? "-" : "\(s.totalLoads)",
-                trail: s.totalLoads <= 0 ? "lifetime" : "lifetime",
+                trail: "lifetime",
                 trailColor: Brand.success
             )
             statTile(
@@ -622,35 +657,53 @@ struct ShipperProfile: View {
         let detail: String
         let badge: BadgeStyle
         enum Kind { case fmcsa, insurance, bbb, payment }
-        enum BadgeStyle { case active, verified, reviewed, pending }
+        enum BadgeStyle { case active, verified, reviewed, pending, unavailable }
     }
 
     private var wireframeCredentials: [WireframeCredential] {
         let p = profileStore.state.value ?? nil
         let s = statsStore.state.value ?? nil
 
-        let fmcsaActive = (p?.dotNumber.isEmpty == false) && (p?.mcNumber.isEmpty == false) && (p?.verified ?? false)
+        // FMCSA — real `shippers.getProfile` fields only. ACTIVE only when
+        // the proc reports DOT + MC + verified; PENDING when a DOT exists
+        // but verification hasn't landed; UNAVAILABLE when no identifiers
+        // are on file. No invented "MC pending" / "USDOT · pending".
+        let hasDot = p?.dotNumber.isEmpty == false
+        let hasMc  = p?.mcNumber.isEmpty == false
+        let fmcsaVerified = hasDot && hasMc && (p?.verified ?? false)
+        let fmcsaBadge: WireframeCredential.BadgeStyle =
+            fmcsaVerified ? .active : (hasDot ? .pending : .unavailable)
         let fmcsaDetail: String = {
-            if let p = p {
-                if !p.dotNumber.isEmpty && !p.mcNumber.isEmpty { return "DOT \(p.dotNumber) · MC \(p.mcNumber)" }
-                if !p.dotNumber.isEmpty { return "DOT \(p.dotNumber) · MC pending" }
+            switch (hasDot, hasMc) {
+            case (true, true):  return "DOT \(p!.dotNumber) · MC \(p!.mcNumber)"
+            case (true, false): return "DOT \(p!.dotNumber)"
+            default:            return "Not on file"
             }
-            return "USDOT · pending"
         }()
 
+        // INSURANCE — no insurance fields exist on `shippers.getProfile`
+        // or `shippers.getStats`. We must NOT assert "$2M GL / $1M cargo
+        // VERIFIED" with no source. Render unavailable honestly.
+        let insuranceDetail = "Unavailable"
+
+        // BBB — no BBB accreditation field on either proc. Drop the
+        // invented "A+ / Accredited 2024 REVIEWED" assertion.
+        let bbbDetail = "Unavailable"
+
+        // PAYMENT — real `shippers.getStats.avgPaymentTime` (server TODO
+        // returns 0 until populated). No invented "Stripe + Wallet".
+        let avgPay = s?.avgPaymentTime ?? 0
+        let paymentBadge: WireframeCredential.BadgeStyle = avgPay > 0 ? .verified : .unavailable
         let paymentDetail: String = {
-            if let s = s, s.avgPaymentTime > 0 {
-                let days = Int(s.avgPaymentTime.rounded())
-                return "Avg \(days)-day settle"
-            }
-            return "Stripe + Wallet"
+            if avgPay > 0 { return "Avg \(Int(avgPay.rounded()))-day settle" }
+            return "Unavailable"
         }()
 
         return [
-            WireframeCredential(kind: .fmcsa,     label: "FMCSA",      detail: fmcsaDetail,        badge: fmcsaActive ? .active : .pending),
-            WireframeCredential(kind: .insurance, label: "INSURANCE",  detail: "$2M GL · $1M cargo", badge: .verified),
-            WireframeCredential(kind: .bbb,       label: "BBB · A+",   detail: "Accredited 2024",   badge: .reviewed),
-            WireframeCredential(kind: .payment,   label: "PAYMENT",    detail: paymentDetail,       badge: .verified),
+            WireframeCredential(kind: .fmcsa,     label: "FMCSA",     detail: fmcsaDetail,     badge: fmcsaBadge),
+            WireframeCredential(kind: .insurance, label: "INSURANCE", detail: insuranceDetail, badge: .unavailable),
+            WireframeCredential(kind: .bbb,       label: "BBB",       detail: bbbDetail,       badge: .unavailable),
+            WireframeCredential(kind: .payment,   label: "PAYMENT",   detail: paymentDetail,   badge: paymentBadge),
         ]
     }
 
@@ -671,7 +724,7 @@ struct ShipperProfile: View {
 
     private func credentialTile(_ c: WireframeCredential) -> some View {
         HStack(alignment: .top, spacing: Space.s3) {
-            credentialGlyph(c.kind)
+            credentialGlyph(c.kind, badge: c.badge)
                 .frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 4) {
                 Text(c.label)
@@ -696,33 +749,44 @@ struct ShipperProfile: View {
     }
 
     @ViewBuilder
-    private func credentialGlyph(_ kind: WireframeCredential.Kind) -> some View {
+    private func credentialGlyph(_ kind: WireframeCredential.Kind,
+                                 badge: WireframeCredential.BadgeStyle) -> some View {
         switch kind {
         case .fmcsa:
+            // The verified-green checkmark shield only renders when FMCSA
+            // is genuinely ACTIVE. Otherwise show a neutral shield so the
+            // glyph never asserts compliance the proc didn't confirm.
+            let active = badge == .active
+            let tint = active ? Brand.success : palette.textTertiary
             ZStack {
                 Image(systemName: "shield.fill")
                     .font(.system(size: 22, weight: .regular))
-                    .foregroundStyle(Brand.success.opacity(0.18))
+                    .foregroundStyle(tint.opacity(0.18))
                 Image(systemName: "shield")
                     .font(.system(size: 22, weight: .regular))
-                    .foregroundStyle(Brand.success)
-                Image(systemName: "checkmark")
-                    .font(.system(size: 10, weight: .heavy))
-                    .foregroundStyle(Brand.success)
-                    .offset(y: 1)
+                    .foregroundStyle(tint)
+                if active {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Brand.success)
+                        .offset(y: 1)
+                }
             }
         case .insurance:
             Image(systemName: "shield.lefthalf.filled")
                 .font(.system(size: 22, weight: .regular))
                 .foregroundStyle(Brand.info)
         case .bbb:
+            // Neutral BBB mark — no fabricated "A+" grade (no real source).
             ZStack {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(LinearGradient.primary)
+                    .fill(palette.bgCardSoft)
+                    .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
+                                .strokeBorder(palette.borderSoft))
                     .frame(width: 30, height: 22)
-                Text("A+")
-                    .font(.system(size: 10, weight: .heavy))
-                    .foregroundStyle(.white)
+                Text("BBB")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.3)
+                    .foregroundStyle(palette.textSecondary)
             }
         case .payment:
             Image(systemName: "creditcard.fill")
@@ -734,10 +798,11 @@ struct ShipperProfile: View {
     private func badgePill(_ b: WireframeCredential.BadgeStyle) -> some View {
         let (label, tint, bg): (String, Color, Color) = {
             switch b {
-            case .active:   return ("ACTIVE",   Brand.success, Brand.success.opacity(0.10))
-            case .verified: return ("VERIFIED", Brand.success, Brand.success.opacity(0.10))
-            case .reviewed: return ("REVIEWED", Brand.info,    Brand.info.opacity(0.10))
-            case .pending:  return ("PENDING",  Brand.warning, Brand.warning.opacity(0.10))
+            case .active:      return ("ACTIVE",      Brand.success, Brand.success.opacity(0.10))
+            case .verified:    return ("VERIFIED",    Brand.success, Brand.success.opacity(0.10))
+            case .reviewed:    return ("REVIEWED",    Brand.info,    Brand.info.opacity(0.10))
+            case .pending:     return ("PENDING",     Brand.warning, Brand.warning.opacity(0.10))
+            case .unavailable: return ("UNAVAILABLE", palette.textTertiary, palette.textTertiary.opacity(0.10))
             }
         }()
         return Text(label)
