@@ -134,6 +134,7 @@ private struct HotZonesBody: View {
                 header
                 kpiStrip
                 heatmapCard
+                hotZoneMapCard
                 filterTabs
                 if loading && envelope == nil {
                     LifecycleCard { Text("Loading hot zones…").font(EType.caption).foregroundStyle(palette.textSecondary) }
@@ -187,6 +188,68 @@ private struct HotZonesBody: View {
         .padding(10)
         .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(color.opacity(0.3)))
+    }
+
+    // Live geographic map of the metro hot zones — the REAL lat/lng centers
+    // (hotZones.getActiveZones `center`) on the in-house HERE vector renderer,
+    // mirroring the driver 100_MeHotZones / HotZonesWidget treatment. Only
+    // zones carrying a real coordinate are pinned; the card is hidden (honest
+    // empty) when no zone has coords. Tapping a pin jumps the filter lens, the
+    // same affordance as a heatmap cell.
+    private var mappedZones: [HotZone] {
+        zones.filter { z in
+            guard let c = z.center else { return false }
+            return !(c.lat == 0 && c.lng == 0)
+        }
+    }
+
+    private var zonesMapCenter: HereLatLng {
+        let pts = mappedZones.compactMap { $0.center }
+        guard !pts.isEmpty else { return .init(39.5, -98.35) } // CONUS (unused: card hidden when empty)
+        let lat = pts.map { $0.lat }.reduce(0, +) / Double(pts.count)
+        let lng = pts.map { $0.lng }.reduce(0, +) / Double(pts.count)
+        return .init(lat, lng)
+    }
+
+    @ViewBuilder
+    private var hotZoneMapCard: some View {
+        if !mappedZones.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Live metro map")
+                    .font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                Text("Risk + clear metros · tap a pin to filter")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textSecondary)
+                HereLiveMapView(
+                    center: zonesMapCenter,
+                    zoom: 5,
+                    baseLayers: [
+                        .markers(mappedZones.compactMap { z -> HereMarker? in
+                            guard let c = z.center else { return nil }
+                            return HereMarker(
+                                at: .init(c.lat, c.lng),
+                                kind: .hotZone,
+                                label: z.metro ?? z.state ?? "Zone",
+                                id: z.id
+                            )
+                        })
+                    ],
+                    addOns: [],
+                    showLegend: false,
+                    showTicker: false,
+                    onSelectMarker: { id in
+                        if let z = mappedZones.first(where: { $0.id == id }),
+                           let lens = ZoneFilter(rawValue: z.kind.capitalized) {
+                            filter = lens
+                        }
+                    }
+                )
+                .frame(height: 200)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.18), lineWidth: 1))
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+        }
     }
 
     // Demand heatmap — load-to-truck intensity per metro, the same
