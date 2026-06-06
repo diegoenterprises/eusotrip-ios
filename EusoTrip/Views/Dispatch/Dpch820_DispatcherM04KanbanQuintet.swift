@@ -26,7 +26,10 @@ import SwiftUI
 // MARK: - tRPC decode shape (mirrors Models/Load.swift LoadLocation)
 
 private struct DKLoadCtx: Decodable, Hashable {
-    let id: Int?
+    // Top-level load id is a String on the wire (loads.getById returns
+    // String(load.id)); decoding it as Int throws typeMismatch and fails the
+    // WHOLE object decode, blanking the screen. Party ids below stay Int.
+    let id: String?
     let loadNumber: String?
     let status: String?
     let rate: String?
