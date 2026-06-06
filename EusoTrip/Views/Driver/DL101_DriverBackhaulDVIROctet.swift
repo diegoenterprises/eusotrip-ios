@@ -16,22 +16,51 @@
 //  103-108 share DVIRBody (loads.getById + inspections.getDVIRHistory).
 //  Bottom nav frozen.
 //
+//  Honest binding (2026-06-06): every business value binds to live
+//  loads.getById / inspections.getDVIRHistory data. The CORRECTED
+//  decode shape proven in DL133/DL126:
+//    • top-level `id: String?` — the server returns String(load.id);
+//      decoding as Int throws typeMismatch and blanks the whole screen.
+//    • pickup/delivery are nested {city,state} objects (NOT flat fields).
+//    • driver/catalyst/shipper are real PARTY objects carrying real
+//      names / initials / companyName / mcNumber / dotNumber.
+//  rate is a decimal String; distance a Double; RPM = rate/distance
+//  computed. Anything with no live source (pickup countdown, deadhead)
+//  renders an honest "—". No fabricated personas, DOT/MC numbers, or
+//  rates are baked in.
+//
 
 import SwiftUI
 
 // MARK: - Live context
 
 private struct BHLoadCtx: Decodable, Hashable {
-    let id: Int?
+    // Top-level load id is a String on the wire (loads.getById -> String(load.id));
+    // decoding as Int throws typeMismatch and fails the WHOLE decode -> blank.
+    // pickup/delivery are nested {city,state} objects (NOT flat city fields).
+    let id: String?
     let loadNumber: String?
-    let pickupCity: String?
-    let destCity: String?
-    let trailerType: String?
-    let cargoType: String?
+    let pickupLocation: BHLoc?
+    let deliveryLocation: BHLoc?
     let rate: String?
     let distance: Double?
-    let deadheadMiles: Double?
-    let pickupDate: String?
+    let equipmentType: String?
+    let cargoType: String?
+    let driver: BHParty?
+    let catalyst: BHParty?
+    let shipper: BHParty?
+    struct BHLoc: Decodable, Hashable {
+        let city: String?
+        let state: String?
+    }
+    struct BHParty: Decodable, Hashable {
+        let id: Int?            // party (user/company) id is numeric on the wire
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+        let dotNumber: String?
+    }
 }
 
 private struct DVIRSessionRow: Decodable, Hashable {
@@ -41,6 +70,40 @@ private struct DVIRSessionRow: Decodable, Hashable {
     let unitNumber: String?
     let make: String?
     let model: String?
+}
+
+// MARK: - Shared display helpers (live-bound; honest "-"/"—" fallback)
+
+private enum BHFmt {
+    /// Format the load's rate (decimal string from server) as a payout
+    /// display. Falls back to "-" when missing/invalid.
+    static func payout(_ rate: String?) -> String {
+        guard let r = rate, let n = Double(r), n > 0 else { return "-" }
+        let v = n.rounded()
+        return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
+    }
+
+    /// Format the load's distance in miles. Falls back to "-".
+    static func distance(_ d: Double?) -> String {
+        guard let d, d > 0 else { return "-" }
+        return "\(Int(d.rounded())) mi"
+    }
+
+    /// Computed rate-per-mile (rate / distance). Falls back to "-".
+    static func rpm(_ rate: String?, _ dist: Double?) -> String {
+        guard let r = rate, let n = Double(r), n > 0,
+              let d = dist, d > 0 else { return "-" }
+        return String(format: "$%.2f", n / d)
+    }
+
+    /// Lane line from nested {city,state}; server sends "" (not nil)
+    /// when missing. Returns nil only when both endpoints are empty.
+    static func lane(_ p: BHLoadCtx.BHLoc?, _ d: BHLoadCtx.BHLoc?) -> String? {
+        let o = [p?.city, p?.state].compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        let dest = [d?.city, d?.state].compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        guard !o.isEmpty || !dest.isEmpty else { return nil }
+        return "\(o.isEmpty ? "—" : o) → \(dest.isEmpty ? "—" : dest)"
+    }
 }
 
 // MARK: - Shared shell
@@ -117,7 +180,7 @@ private struct BackhaulBody: View {
             }
             Text(title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             if let l = load {
-                Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-")")
+                Text("\(l.loadNumber ?? "-") · \(BHFmt.lane(l.pickupLocation, l.deliveryLocation) ?? "—")")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
         }
@@ -133,13 +196,20 @@ private struct BackhaulBody: View {
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        let dispIni     = load?.catalyst?.initials ?? "—"
+        let carrierName = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
+        let dispName    = load?.catalyst?.name ?? "-"
+        let dot         = load?.catalyst?.dotNumber.map { "USDOT \($0)" } ?? "USDOT —"
+        let mc          = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "MC-—"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("RM").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(dispIni).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Aurora Freight Lines · Renée Marquette").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("USDOT 3 482 119 · MC-942 008 · Cedar Rapids IA").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(carrierName) · \(dispName)").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("\(dot) · \(mc)").font(.caption2).foregroundStyle(palette.textTertiary)
+                        .lineLimit(1)
                 }
                 Spacer()
             }
@@ -213,7 +283,8 @@ private struct BackhaulBody: View {
         do {
             let resp: Out = try await EusoTripAPI.shared.mutation("dispatchRole.acceptLoad", input: In(loadId: loadId))
             if resp.success == true {
-                actionAck = "Backhaul tender accepted · LD-\(resp.loadId ?? loadId) locked · DVIR opens 60m before pickup."
+                let ln = load?.loadNumber ?? resp.loadId ?? loadId
+                actionAck = "Backhaul tender accepted · \(ln) locked · DVIR opens 60m before pickup."
                 await loadCtx()
             } else {
                 actionError = "Accept returned no success flag, reload and try again."
@@ -234,7 +305,8 @@ private struct BackhaulBody: View {
                 input: In(loadId: loadId, reason: "Driver declined backhaul tender via DL101")
             )
             if resp.success == true {
-                actionAck = "Backhaul tender declined · returned to Aurora's pool."
+                let carrier = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "the carrier"
+                actionAck = "Backhaul tender declined · returned to \(carrier)'s pool."
                 await loadCtx()
             } else {
                 actionError = "Decline returned no success flag, reload and try again."
@@ -269,6 +341,8 @@ private struct DVIRBody: View {
     private var progressPct: Double { Double(sectionsCompleted) / Double(sectionTotal) }
     private var stateLabel: String { sectionsCompleted == 0 ? "IN PROGRESS" : "ADVANCING" }
 
+    private var carrierName: String { load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-" }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -299,7 +373,7 @@ private struct DVIRBody: View {
                                         : "Section \(sectionsCompleted) · acked")
                 .font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             if let l = load {
-                Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-")")
+                Text("\(l.loadNumber ?? "-") · \(BHFmt.lane(l.pickupLocation, l.deliveryLocation) ?? "—")")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
         }
@@ -344,13 +418,19 @@ private struct DVIRBody: View {
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        let dispIni  = load?.catalyst?.initials ?? "—"
+        let dispName = load?.catalyst?.name ?? "-"
+        let dot      = load?.catalyst?.dotNumber.map { "USDOT \($0)" } ?? "USDOT —"
+        let mc       = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "MC-—"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("RM").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(dispIni).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Aurora Freight Lines · Renée Marquette").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("USDOT 3 482 119 · MC-942 008 · Cedar Rapids IA").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(carrierName) · \(dispName)").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("\(dot) · \(mc)").font(.caption2).foregroundStyle(palette.textTertiary)
+                        .lineLimit(1)
                 }
                 Spacer()
             }
@@ -358,11 +438,15 @@ private struct DVIRBody: View {
     }
 
     private var kpiGrid: some View {
-        let payout = load?.rate ?? "-"
+        let payout = BHFmt.payout(load?.rate)
+        let rpm = BHFmt.rpm(load?.rate, load?.distance)
+        let dist = BHFmt.distance(load?.distance)
         let kpis: [BHKpi] = [
-            .init(label: "PAYOUT", value: "$\(payout)", subtitle: "NET-30 LOCKED", color: .green),
-            .init(label: "RPM",    value: "$5.38",     subtitle: "\(Int(load?.distance ?? 372)) mi LOCKED", color: .blue),
-            .init(label: "PICKUP", value: pickupCountdown(), subtitle: "04:00 MST", color: .orange),
+            .init(label: "PAYOUT", value: payout, subtitle: "NET-30 LOCKED", color: .green),
+            // RPM = rate/distance computed; subtitle carries live distance.
+            .init(label: "RPM",    value: rpm, subtitle: "\(dist) LOCKED", color: .blue),
+            // No pickup-countdown source on loads.getById -> honest "—".
+            .init(label: "PICKUP", value: "—", subtitle: "no countdown source", color: .orange),
             .init(label: "DVIR",   value: "\(sectionsCompleted)/14", subtitle: stateLabel.lowercased(), color: sectionsCompleted == 7 ? .green : .blue),
         ]
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
@@ -401,20 +485,6 @@ private struct DVIRBody: View {
         }
     }
 
-    private func pickupCountdown() -> String {
-        // Match SVG copy roughly to elapsed-since-accept; pickup window is
-        // 14h from accept and counts down 1h per section in the SVGs.
-        switch sectionsCompleted {
-        case 0: return "14h 18m"
-        case 3: return "13h 10m"
-        case 4: return "12h 08m"
-        case 5: return "11h 06m"
-        case 6: return "10h 04m"
-        case 7: return "9h 02m"
-        default: return "-"
-        }
-    }
-
     private func loadCtx() async {
         struct In: Encodable { let id: String }
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
@@ -442,17 +512,18 @@ struct DriverBackhaulOfferScreen: View {
         DLOctetShell(theme: theme) {
             BackhaulBody(
                 loadId: loadId,
-                eyebrow: "DRIVER · OFFER · BACKHAUL · 53' REEFER",
+                eyebrow: "DRIVER · OFFER · BACKHAUL",
                 citation: "§297 · BACKHAUL TENDER · CARRIER-DISPATCHED · NEXT-CHAIN PORT 1/N",
-                title: "Tender · 8m",
-                pillCopy: "LD-BH7C3A · PHX-LA · 372 mi · 0 deadhead · 9h HOS · ACCEPT IN 8m",
+                title: "Backhaul tender",
+                pillCopy: "§297 BACKHAUL TENDER · CARRIER-DISPATCHED · ACCEPT TO LOCK THE CHAIN",
                 kpis: { l in [
-                    .init(label: "RATE", value: "$\(l?.rate ?? "2,300")", subtitle: "line haul + FSC", color: .green),
-                    .init(label: "PER MILE", value: "$5.38", subtitle: "+8.7% vs avg", color: .green),
-                    .init(label: "HOS", value: "9h", subtitle: "post 10h reset", color: .blue),
-                    .init(label: "DEADHEAD", value: "0 mi", subtitle: "at origin now", color: .green),
+                    .init(label: "RATE", value: BHFmt.payout(l?.rate), subtitle: "line haul + FSC", color: .green),
+                    .init(label: "PER MILE", value: BHFmt.rpm(l?.rate, l?.distance), subtitle: "rate ÷ distance", color: .green),
+                    .init(label: "DIST", value: BHFmt.distance(l?.distance), subtitle: BHFmt.lane(l?.pickupLocation, l?.deliveryLocation) ?? "—", color: .blue),
+                    // No deadhead source on loads.getById -> honest "—".
+                    .init(label: "DEADHEAD", value: "—", subtitle: "no deadhead source", color: .green),
                 ] },
-                nextStep: "Tender expires in 8 minutes. Accept to lock the chain, decline to release back to Aurora.",
+                nextStep: "Accept to lock the chain, decline to release back to the carrier's pool.",
                 showTenderActions: true
             )
         }
@@ -473,12 +544,13 @@ struct DriverBackhaulAcceptedScreen: View {
                 eyebrow: "DRIVER · TRIPS · BACKHAUL · ACCEPTED",
                 citation: "§302 · BACKHAUL TENDER · CARRIER-DISPATCHED · NEXT-CHAIN PORT 5/N",
                 title: "Tender accepted",
-                pillCopy: "§302 ACCEPTED · 0:00 AGO · 4:00 LEFT ON WINDOW · DISPATCH LOCKED",
+                pillCopy: "§302 ACCEPTED · DISPATCH LOCKED · DVIR OPENS BEFORE PICKUP",
                 kpis: { l in [
-                    .init(label: "PAYOUT", value: "$\(l?.rate ?? "2,128")", subtitle: "NET-30 to ME", color: .green),
-                    .init(label: "RPM",    value: "$5.38", subtitle: "\(Int(l?.distance ?? 372)) mi · +8.7%", color: .blue),
-                    .init(label: "PICKUP", value: "14h 18m", subtitle: "04:00 MST", color: .orange),
-                    .init(label: "HOS",    value: "9h",   subtitle: "post 10h reset", color: .blue),
+                    .init(label: "PAYOUT", value: BHFmt.payout(l?.rate), subtitle: "NET-30 to ME", color: .green),
+                    .init(label: "RPM",    value: BHFmt.rpm(l?.rate, l?.distance), subtitle: BHFmt.distance(l?.distance), color: .blue),
+                    // No pickup-countdown source on loads.getById -> honest "—".
+                    .init(label: "PICKUP", value: "—", subtitle: "no countdown source", color: .orange),
+                    .init(label: "DIST",   value: BHFmt.distance(l?.distance), subtitle: BHFmt.lane(l?.pickupLocation, l?.deliveryLocation) ?? "—", color: .blue),
                 ] },
                 nextStep: "DVIR opens 60 minutes before pickup. ESang queues the pretrip checklist on your watch."
             )

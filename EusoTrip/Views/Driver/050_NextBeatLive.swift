@@ -3,16 +3,77 @@
 //  EusoTrip — Lifecycle screen 050 · Next Beat Live (off-duty reset).
 //
 //  Pixel-matched to the 2026-04-24 Figma frame
-//  `050 Next Beat Live.png`. DVIR submitted, sleeper bay keyed,
-//  34-hour reset clock running. Resting hero ring + off-duty
-//  card + 3 amenity tiles + product-aware ESANG-holds list +
-//  ESANG voice strip + Amenities / Set do-not-disturb CTAs.
+//  `050 Next Beat Live.png`. Resting hero ring + off-duty card +
+//  3 amenity tiles + product-aware ESANG-holds list + ESANG voice
+//  strip + Amenities / Set do-not-disturb CTAs.
+//
+//  LIVE BINDING (zero fabrication):
+//  -------------------------------
+//  • The resting hero ring + duty state + break/reset lines read off the
+//    typed HOS API the app already owns — `HOSLiveStore` (which wraps
+//    `hos.getStatus` / `hos.getDailyLog` / `hos.getLogHistory` [the HOS
+//    audit log] / `hos.getViolations`) and `HOSClockService.shared` (the
+//    5-min dashboard poll mirror). The "hours remaining" ring is the
+//    §395.3(b) 70-hr/8-day CYCLE counter — the real reset clock — not a
+//    fabricated 34:00. Anything the backend hasn't shipped renders an
+//    honest em-dash; the bay assignment has no live source → "—".
+//  • The active load (parties / lane / rate / distance / weight) decodes
+//    with the CORRECTED `loads.getById` shape proven in DL133/DL126:
+//    top-level `id: String?` (the server returns `String(load.id)`, so
+//    decoding as Int throws typeMismatch and BLANKS the whole screen),
+//    nested `pickupLocation`/`deliveryLocation {city,state}` (NOT flat),
+//    and real driver/catalyst/shipper PARTY objects {id:Int?, name,
+//    initials, companyName, mcNumber, dotNumber} for carrier/driver
+//    NAMES. `rate` is a DECIMAL String; `distance` is a Double.
+//  • Every prior `?? <invented number/string>` and every hardcoded
+//    persona/load number is gone. No value is shown unless it has a live
+//    source; otherwise it renders "-" / "—" / an empty-state.
 //
 //  Powered by ESANG AI™.
 //
 
 import SwiftUI
 import CoreLocation
+
+// MARK: - Corrected `loads.getById` decode (DL133/DL126 proven shape)
+//
+// Top-level `id` is a String on the wire (`String(load.id)`); decoding
+// as Int throws and fails the WHOLE decode → blank screen. pickup/
+// delivery are nested {city,state} objects (NOT flat city fields).
+// Party (user/company) ids are numeric on the wire.
+private struct NBLoadCtx: Decodable, Hashable {
+    let id: String?
+    let loadNumber: String?
+    let pickupLocation: NBLoc?
+    let deliveryLocation: NBLoc?
+    let rate: String?            // DECIMAL string
+    let distance: Double?        // resolved number
+    let equipmentType: String?
+    let cargoType: String?
+    let hazmatClass: String?
+    let weight: String?          // DECIMAL string
+    let weightUnit: String?
+    let transportMode: String?
+    let multiVehicleCount: Int?
+    let driver: NBParty?
+    let catalyst: NBParty?
+    let shipper: NBParty?
+    struct NBLoc: Decodable, Hashable {
+        let city: String?
+        let state: String?
+    }
+    struct NBParty: Decodable, Hashable {
+        let id: Int?
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+        let dotNumber: String?
+    }
+
+    /// Weight as Double (proxy target for the fill gauge) — 0 when missing.
+    var weightValue: Double { Double(weight ?? "") ?? 0 }
+}
 
 struct NextBeatLive: View {
     @Environment(\.palette) private var palette
@@ -22,8 +83,15 @@ struct NextBeatLive: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
-    @State private var activeLoad: Load?
+    /// Typed HOS surface the app already owns — wraps `hos.getStatus` /
+    /// `hos.getDailyLog` / `hos.getLogHistory` (HOS audit log) /
+    /// `hos.getViolations`, mirroring `HOSClockService.shared`'s poll.
+    @StateObject private var hos = HOSLiveStore()
+    @State private var loadCtx: NBLoadCtx?
     @State private var isMutingDND: Bool = false
+    /// Live device wall clock for the LIVE-RESET strip (honest — the
+    /// device's own time, not a baked snapshot).
+    @State private var now: Date = Date()
     /// Toggle for the "Amenities" sheet — surfaces nearby parking +
     /// fuel via the HERE clients. Replaces the prior dead `navBack()`
     /// secondary CTA per the no-dead-buttons sweep.
@@ -47,15 +115,88 @@ struct NextBeatLive: View {
     let register: Register
     init(register: Register = .night) { self.register = register }
 
+    /// Product/vertical context — resolves the bay/spur/berth word + the
+    /// ESANG-holds list. Built from the live cargo/hazmat strings the
+    /// corrected decode ships (no `Load` object needed for the values
+    /// this screen reads).
     private var ctx: LifecycleProductContext {
-        LifecycleProductContext(load: activeLoad, role: session.user?.role)
+        LifecycleProductContext.forCargo(
+            cargoType: loadCtx?.cargoType,
+            hazmatClass: loadCtx?.hazmatClass,
+            role: session.user?.role
+        )
     }
 
-    private let fallbackClock        = "23:30"
-    private let fallbackHoursRemain  = "34:00"
-    private let fallbackEndsAt       = "Sun 09:30"
-    private let fallbackBayLabel     = "Bay 14 keyed"
-    private let fallbackPrePing      = "ESANG pre-trip ping queued for 09:30"
+    // MARK: - Honest display helpers (live-bound; "-"/"—" fallback)
+
+    private let dash = "-"
+
+    /// Live device clock "HH:mm" for the LIVE-RESET strip.
+    private var clockDisplay: String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: now)
+    }
+
+    /// §395.3(b) 70-hr/8-day CYCLE remaining — the real reset clock the
+    /// ring renders. Em-dash until the HOS snapshot lands.
+    private var cycleRemainingDisplay: String {
+        hos.status?.cycleRemainingDisplay ?? dash
+    }
+
+    /// Whether the driver is in a reset/off-duty state per the live
+    /// duty code. Drives the "Resting. Clock running." headline vs. the
+    /// real status when the driver isn't actually resting.
+    private var isResting: Bool {
+        switch hos.currentDuty {
+        case .offDuty, .sleeperBerth: return true
+        case .driving, .onDuty:       return false
+        }
+    }
+
+    /// Live duty-state headline. "Resting. Clock running." only when the
+    /// live duty code says off-duty/sleeper; otherwise the real label.
+    private var dutyHeadline: String {
+        guard hos.status != nil else { return "Off-duty status loading…" }
+        switch hos.currentDuty {
+        case .offDuty:      return "Resting. Clock running."
+        case .sleeperBerth: return "Sleeper berth. Clock running."
+        case .driving:      return "Driving."
+        case .onDuty:       return "On duty."
+        }
+    }
+
+    /// Next break / reset milestone line, sourced from the live snapshot.
+    /// We surface the §395.3(a)(3)(ii) 30-min break due time when present
+    /// (the only forward-looking milestone the snapshot ships). Bay has
+    /// no live source → "—".
+    private var milestoneLine: String {
+        let bay = "—"   // no live bay-assignment source on the HOS/load envelope
+        guard let s = hos.status else { return "Next milestone — · Bay \(bay)" }
+        if s.breakRequired {
+            return "Break required now · Bay \(bay)"
+        }
+        if let iso = s.nextBreakDue,
+           let d = ISO8601DateFormatter().date(from: iso) {
+            let f = DateFormatter(); f.dateFormat = "EEE HH:mm"
+            return "Break due \(f.string(from: d)) · Bay \(bay)"
+        }
+        return "No break due · Bay \(bay)"
+    }
+
+    /// ESANG pre-trip line — derived from the live break/cycle snapshot,
+    /// never a baked "09:30". Em-dash when no snapshot.
+    private var prePingLine: String {
+        guard let s = hos.status else { return "ESANG pre-trip prompt — awaiting HOS sync" }
+        if let iso = s.nextBreakDue,
+           let d = ISO8601DateFormatter().date(from: iso) {
+            let f = DateFormatter(); f.dateFormat = "EEE HH:mm"
+            return "ESANG pre-trip prompt at \(f.string(from: d))"
+        }
+        return s.canDrive
+            ? "ESANG pre-trip prompt queued · drive bank open"
+            : "ESANG holds dispatch until reset clears"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -74,7 +215,7 @@ struct NextBeatLive: View {
             .padding(.top, 8)
         }
         .task { await hydrateLiveTrip() }
-        .onAppear { startFillAnimation() }
+        .onAppear { startFillAnimation(); now = Date() }
         .screenTileRoot()
         .sheet(isPresented: $showAmenities) {
             AmenitiesNearbySheet(palette: palette)
@@ -94,8 +235,8 @@ struct NextBeatLive: View {
                     .clipShape(Circle())
             }
             Spacer()
-            LoadModeBadge(modeRaw: activeLoad?.transportMode,
-                          multiVehicleCount: activeLoad?.multiVehicleCount,
+            LoadModeBadge(modeRaw: loadCtx?.transportMode,
+                          multiVehicleCount: loadCtx?.multiVehicleCount,
                           compact: true)
             HStack(spacing: 4) {
                 Circle().fill(Brand.success).frame(width: 6, height: 6)
@@ -103,7 +244,7 @@ struct NextBeatLive: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(Brand.success)
             }
-            Text(fallbackClock)
+            Text(clockDisplay)
                 .font(EType.mono(.caption)).fontWeight(.semibold)
                 .foregroundStyle(palette.textPrimary)
         }
@@ -120,10 +261,12 @@ struct NextBeatLive: View {
                     .rotationEffect(.degrees(-90))
                     .frame(width: 84, height: 84)
                 VStack(spacing: -2) {
-                    Text(fallbackHoursRemain)
-                        .font(.system(size: 24, weight: .heavy, design: .rounded))
+                    Text(cycleRemainingDisplay)
+                        .font(.system(size: 20, weight: .heavy, design: .rounded))
                         .foregroundStyle(LinearGradient.diagonal)
                         .monospacedDigit()
+                        .minimumScaleFactor(0.6)
+                        .lineLimit(1)
                     Text("HOURS REMAINING")
                         .font(.system(size: 7, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
@@ -131,17 +274,17 @@ struct NextBeatLive: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text("OFF-DUTY · 34-HOUR RESET")
+                    Text("OFF-DUTY · 70-HR/8-DAY CYCLE")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                 }
-                Text("Resting. Clock running.")
+                Text(dutyHeadline)
                     .font(.system(size: 18, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
-                Text("Ends \(fallbackEndsAt) · \(fallbackBayLabel)")
+                Text(milestoneLine)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
-                Text(fallbackPrePing)
+                Text(prePingLine)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(LinearGradient.diagonal)
             }
@@ -169,94 +312,74 @@ struct NextBeatLive: View {
     // large progress ring whose arc + count-up percent track the same
     // bound fraction.
 
-    /// Single source of truth for the gauge. Loaded / target gallons +
-    /// the derived fraction come from live load state when the backend
-    /// has shipped the fill telemetry; otherwise we fall back to the
-    /// operational reference fill (3,240 / 8,400 gal) so the proof bar
-    /// renders. `gpm` / `minLeft` / `etaDome` are derived from the same
-    /// numbers so the flow line stays internally consistent.
+    /// Single source of truth for the gauge. The backend has NOT shipped
+    /// a metered loaded-gallons column on the load envelope (fill net is
+    /// captured by viga AI photo at the rack, per
+    /// `LiveLoadFacets.loadedGallons`, which is a known em-dash gap), so
+    /// `loaded` has no live source and the gauge renders honest "—" for
+    /// the loaded value, percent, and ETA. The TARGET is derived from the
+    /// live load weight when present (DECIMAL string → gallons proxy);
+    /// when absent the whole readout is em-dash. Nothing here is faked.
     private struct FillModel {
-        let loaded: Double      // gallons in the compartment now
-        let target: Double      // ticketed batch size
-        let gpm: Double         // metered flow rate
-        let arm: Int            // active rack arm number
+        let loaded: Double?     // gallons in the compartment now (no live source → nil)
+        let target: Double?     // ticketed batch size proxy (from live weight)
 
-        /// Loaded ÷ target, clamped to a sane 0…1. The ring sweep, the
-        /// percent count-up, and the rising liquid level all read this.
-        var fraction: CGFloat {
-            guard target > 0 else { return 0 }
+        /// Loaded ÷ target, clamped to 0…1. nil when either side has no
+        /// live source — the ring then renders empty (0) rather than a
+        /// fabricated fraction.
+        var fraction: CGFloat? {
+            guard let loaded, let target, target > 0 else { return nil }
             return CGFloat(min(max(loaded / target, 0), 1))
-        }
-        /// Whole-percent for the readout (38.6% → renders as 39 while
-        /// counting, settles on the true value).
-        var pct: Int { Int((fraction * 100).rounded()) }
-        /// Gallons remaining ÷ flow rate, in whole minutes.
-        var minLeft: Int {
-            guard gpm > 0 else { return 0 }
-            return Int(((target - loaded) / gpm).rounded())
-        }
-        /// Wall-clock the dome should close, derived from minutes left.
-        var etaDome: String {
-            let now = Date().addingTimeInterval(Double(minLeft) * 60)
-            let f = DateFormatter()
-            f.dateFormat = "HH:mm"
-            return f.string(from: now)
         }
         private static let grouped: NumberFormatter = {
             let f = NumberFormatter(); f.numberStyle = .decimal
             f.maximumFractionDigits = 0; return f
         }()
-        func gal(_ v: Double) -> String {
-            Self.grouped.string(from: NSNumber(value: v)) ?? "\(Int(v))"
+        func gal(_ v: Double?) -> String {
+            guard let v else { return "—" }
+            return Self.grouped.string(from: NSNumber(value: v)) ?? "\(Int(v))"
         }
     }
 
-    /// Resolve the gauge from live state. The backend hasn't yet shipped
-    /// a metered loaded-gallons column on `Load` (fill net is captured by
-    /// viga AI photo at the rack, per `LiveLoadFacets.loadedGallons`), so
-    /// we derive the target from the load weight when present and fall
-    /// back to the operational reference batch otherwise. Fraction is
-    /// always COMPUTED — never a literal.
+    /// Resolve the gauge from live state. Target is derived from the
+    /// live load weight when present; loaded gallons have NO live source
+    /// on the load envelope yet (viga fill telemetry isn't surfaced), so
+    /// it stays nil and the readout renders honest em-dash. Fraction is
+    /// always COMPUTED — never a literal — and nil when not derivable.
     private var fillModel: FillModel {
-        // Target: prefer a real ticketed volume off the load weight
-        // (DECIMAL string → gallons proxy), else the reference batch.
-        let w = activeLoad?.weightValue ?? 0
-        let target = w > 1_000 ? (w / 1_000).rounded() * 1_000 : 8_400
-        // Loaded: viga fill telemetry isn't on the model yet, so this is
-        // the reference partial fill until that column lands. The point
-        // of the proof is the COMPUTED fraction, not the literal.
-        let loaded = min(3_240, target)
-        return FillModel(loaded: loaded, target: target, gpm: 600, arm: 3)
+        let w = loadCtx?.weightValue ?? 0
+        let target: Double? = w > 1_000 ? (w / 1_000).rounded() * 1_000 : nil
+        return FillModel(loaded: nil, target: target)
     }
 
     private var fillGaugeCard: some View {
         let m = fillModel
-        let frac = m.fraction
-        // Live fraction the ring + liquid render at: the animated
-        // progress on first paint, snapping to the true fraction under
-        // reduce-motion.
+        // No live fraction (loaded gallons unsourced) → ring renders
+        // empty (0) and the percent reads "—". When the backend ships
+        // loaded-net-at-fill this lights up automatically.
+        let frac = m.fraction ?? 0
         let shown = reduceMotion ? frac : fillProgress
         return VStack(alignment: .leading, spacing: Space.s3) {
             HStack(spacing: 6) {
                 Image(systemName: "drop.fill")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("ARM \(m.arm) · BOTTOM-LOAD ACTIVE")
+                Text("BOTTOM-LOAD")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
                 HStack(spacing: 4) {
-                    Circle().fill(Brand.success)
+                    Circle().fill(palette.textTertiary)
                         .frame(width: 6, height: 6)
                         .opacity(flowPulseOpacity)
-                    Text("FLOWING")
+                    Text("AWAITING FILL DATA")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(Brand.success)
+                        .foregroundStyle(palette.textTertiary)
                 }
             }
 
             HStack(alignment: .center, spacing: Space.s4) {
-                fillRing(fraction: shown)
+                fillRing(fraction: shown, hasLive: m.fraction != nil)
                     .frame(width: 116, height: 116)
 
                 BottomLoadTankGraphic(fraction: shown,
@@ -273,9 +396,9 @@ struct NextBeatLive: View {
                         .font(EType.mono(.body)).fontWeight(.semibold)
                         .foregroundStyle(palette.textPrimary)
                         .monospacedDigit()
-                    Text("ETA dome \(m.etaDome) · \(Int(m.gpm)) gpm")
+                    Text("Fill telemetry — viga capture")
                         .font(EType.mono(.micro)).tracking(0.3)
-                        .foregroundStyle(LinearGradient.diagonal)
+                        .foregroundStyle(palette.textTertiary)
                 }
                 Spacer(minLength: 0)
             }
@@ -291,12 +414,11 @@ struct NextBeatLive: View {
 
     /// Large progress ring: faint full-circle track + a white/light arc
     /// trimmed to the live fraction, sweeping clockwise from 12 o'clock.
-    /// Center carries the count-up percent + "FILL · <min> MIN LEFT".
-    private func fillRing(fraction: CGFloat) -> some View {
-        let m = fillModel
+    /// Center carries the count-up percent. When there's no live fill
+    /// source the percent reads "—" (no fabricated number).
+    private func fillRing(fraction: CGFloat, hasLive: Bool) -> some View {
         // Count-up percent stays in lockstep with the arc by reading the
-        // SAME animated fraction (not a separate counter), so they can
-        // never drift.
+        // SAME animated fraction — but only when there's a live source.
         let livePct = Int((fraction * 100).rounded())
         return ZStack {
             Circle()
@@ -311,11 +433,11 @@ struct NextBeatLive: View {
                 )
                 .rotationEffect(.degrees(-90))   // start sweep at 12 o'clock
             VStack(spacing: 0) {
-                Text("\(livePct)%")
+                Text(hasLive ? "\(livePct)%" : "—")
                     .font(.system(size: 30, weight: .heavy, design: .rounded))
                     .foregroundStyle(palette.textPrimary)
                     .monospacedDigit()
-                Text("FILL · \(m.minLeft) MIN LEFT")
+                Text("FILL")
                     .font(.system(size: 7.5, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -334,7 +456,7 @@ struct NextBeatLive: View {
     /// liquid level share `fillProgress`; the gpm flow pulse + surface
     /// ripple ride `rippleClock`. Reduce-motion settles both instantly.
     private func startFillAnimation() {
-        let target = fillModel.fraction
+        let target = fillModel.fraction ?? 0
         guard !reduceMotion else {
             fillProgress = target
             rippleClock = 1
@@ -363,16 +485,16 @@ struct NextBeatLive: View {
                 Text("Off-duty · 49 CFR 395.3(c) reset")
                     .font(EType.caption.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
-                Text("Sleeper \(ctx.vertical.bayWord) 14 · key pushed to smart lock")
+                Text("Sleeper \(ctx.vertical.bayWord) — · no smart-lock assignment on file")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            Text("RESTING")
+            Text(isResting ? "RESTING" : hos.currentDuty.shortLabel)
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(Brand.success)
+                .foregroundStyle(isResting ? Brand.success : palette.textSecondary)
                 .padding(.horizontal, 6).padding(.vertical, 2)
-                .overlay(Capsule().stroke(Brand.success.opacity(0.5), lineWidth: 1))
+                .overlay(Capsule().stroke((isResting ? Brand.success : palette.textSecondary).opacity(0.5), lineWidth: 1))
         }
         .padding(Space.s3)
         .background(palette.bgCard)
@@ -385,9 +507,12 @@ struct NextBeatLive: View {
 
     private var amenityTiles: some View {
         HStack(spacing: Space.s2) {
-            tile(label: "BAY 14 TEMP",   value: "21°C", sub: "QUIET")
-            tile(label: "DND",            value: "0H",   sub: "ALERTS SILENCED")
-            tile(label: "BREAKFAST",      value: "06:30", sub: "SLOT MGR")
+            // No live amenity telemetry source (no bay temp / DND-hours /
+            // breakfast-slot feed on the HOS or load envelope) → honest
+            // em-dash values. Labels preserved verbatim.
+            tile(label: "BAY TEMP",  value: "—", sub: "NO SENSOR FEED")
+            tile(label: "DND",       value: isMutingDND ? "ON" : "—", sub: "ALERTS")
+            tile(label: "BREAKFAST", value: "—", sub: "NO SLOT FEED")
         }
     }
 
@@ -465,7 +590,7 @@ struct NextBeatLive: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(LinearGradient.diagonal)
-            Text("ESANG · REST WELL · I'LL WAKE YOU 09:30 SUNDAY · TENDER LOCKED · WEATHER CHECK AT 06:00")
+            Text(esangFooterCopy)
                 .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2)
@@ -478,6 +603,18 @@ struct NextBeatLive: View {
                 .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// ESANG footer copy — composed from the live duty snapshot, never a
+    /// baked "09:30 SUNDAY". Em-dash-safe when no snapshot.
+    private var esangFooterCopy: String {
+        guard let s = hos.status else {
+            return "ESANG · REST WELL · I'LL HOLD YOUR BOARD UNTIL HOS SYNCS"
+        }
+        if s.canDrive {
+            return "ESANG · REST WELL · DRIVE BANK \(s.drivingRemainingDisplay.uppercased()) · CYCLE \(s.cycleRemainingDisplay.uppercased())"
+        }
+        return "ESANG · REST WELL · RESET IN PROGRESS · CYCLE \(s.cycleRemainingDisplay.uppercased()) · I'LL WAKE YOU WHEN THE CLOCK CLEARS"
     }
 
     private var actions: some View {
@@ -508,10 +645,21 @@ struct NextBeatLive: View {
     }
 
     private func hydrateLiveTrip() async {
+        // Live HOS snapshot + audit log (HOSLiveStore wraps the typed
+        // hos.* API and mirrors HOSClockService.shared's poll). Kicked
+        // first so the resting ring + footer bind immediately.
+        HOSClockService.shared.start()
+        await hos.bootstrap()
+
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
-        guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
-        activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        guard !lifecycle.loadId.isEmpty else { return }
+        // CORRECTED loads.getById decode (DL133/DL126 proven shape):
+        // top-level id is a String on the wire — decode it as such or the
+        // WHOLE record throws typeMismatch and the screen blanks.
+        struct In: Encodable { let id: String }
+        loadCtx = try? await EusoTripAPI.shared.query(
+            "loads.getById", input: In(id: lifecycle.loadId))
     }
 
     private func setDND() async {

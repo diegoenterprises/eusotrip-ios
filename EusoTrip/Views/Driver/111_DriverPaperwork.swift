@@ -5,37 +5,33 @@
 //  Verbatim reconstruction of the 2026-05 wireframe frame
 //  `111 Paperwork · Dark` (440×956). Fires once the truck is still on
 //  the dock, the POD is signed, and the driver is collecting the
-//  remaining close-out documents (DOC UPLOAD 2/5 · 3 pending). The
-//  seventh AT-PAPERWORK context in the §74 → §82 cousin-port lineage.
-//
-//  Persona: Michael Eusorone (ME) · UN1203 gasoline PG II tanker ·
-//  MC-306 · Houston → Dallas · 239/239 mi · $1,900 · lifecycle index 6
-//  (PAPERWORK). §8.4 shipper-of-record card names Diego Usoro ·
-//  Eusorone Technologies (companyId 1).
+//  remaining close-out documents. The seventh AT-PAPERWORK context in
+//  the §74 → §82 cousin-port lineage.
 //
 //  Composition (top → bottom, matching the frame):
-//    • TopBar — gradient eyebrow "DRIVER · PAPERWORK · UN1203 HAZMAT",
-//      load-ID mono tag, back chevron, "Houston → Dallas" title, and a
-//      blue ON-DUTY · 3h 32m HoS pill.
+//    • TopBar — gradient eyebrow "DRIVER · PAPERWORK", live load-ID mono
+//      tag, back chevron, live "{pickup} → {delivery}" title, ON-DUTY
+//      HoS pill.
 //    • Iridescent hairline.
-//    • Hero persistence card (92pt) — POD SIGNED 4:48 PM success pill,
-//      DOC UPLOAD · 2/5 gradient pill, center dock-persistence chip, and
-//      "BAY 3 · 239/239 mi · TRUCK STILL ON DOCK" caption.
+//    • Hero persistence card (92pt) — POD-signed success pill, DOC UPLOAD
+//      progress pill (live N/total), center dock-persistence chip, and a
+//      live mileage caption.
 //    • 8-stage lifecycle strip — PAPERWORK current (idx 6), CLOSED next.
-//    • Pickup / Delivery card — Houston SIGNED + Dallas ARRIVED rows.
-//    • Paperwork checklist card — hazmat manifest row + 5 document rows
-//      (BOL DONE · POD DONE · run ticket / haul receipt / accessorial
-//      PENDING) + receiver-POC mono line.
-//    • §8.4 Shipper-of-record card — DU avatar · Eusorone Technologies ·
-//      VERIFIED.
+//    • Pickup / Delivery card — live pickup + delivery rows.
+//    • Paperwork checklist card — live document rows from
+//      documentManagement.getDocuments (DONE/PENDING off real status).
+//    • Shipper-of-record card — live shipper party.
 //    • BottomNav — TRIPS active (Driver variant).
 //
 //  Wiring: hydrates the active load via TripLifecycleStore +
-//  loads.getById, and the document-collection state via
-//  documentManagement.getDocuments (entity-scoped to this load). The
+//  `loads.getById` (decoded with the CORRECTED server shape — top-level
+//  `id: String?`, nested pickup/deliveryLocation {city,state}, real
+//  driver/catalyst/shipper PARTY objects), and the document-collection
+//  state via `documentManagement.getDocuments` (driver-scoped). The
 //  "Submit BOL" CTA executes the lifecycle transition out of PAPERWORK.
-//  All calls surface errors honestly through @State actionError — no
-//  synthesized replies, no mock data.
+//  Every rendered business value binds to live fetched data; anything
+//  without a live source renders an honest "-" / "—" / EusoEmptyState —
+//  no synthesized replies, no mock data, no baked persona.
 //
 //  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
 //
@@ -44,6 +40,44 @@
 
 import SwiftUI
 
+// MARK: - Live load context (CORRECTED server shape)
+//
+// Mirrors the proven binding in DL091 / DL126 / DL133:
+//   • Top-level load id is a String on the wire (loads.getById ->
+//     String(load.id)); decoding as Int throws typeMismatch and fails
+//     the WHOLE decode -> blank screen.
+//   • pickup/delivery are nested {city,state} objects (NOT flat fields).
+//   • driver/catalyst/shipper are PARTY objects; their ids are numeric.
+//   • rate is a DECIMAL String; distance is a Double.
+// Swift Decodable silently ignores unknown JSON keys, so the server may
+// carry more fields than we model here without breaking the decode.
+private struct PWLoadCtx: Decodable, Hashable {
+    let id: String?
+    let loadNumber: String?
+    let pickupLocation: PWLoc?
+    let deliveryLocation: PWLoc?
+    let rate: String?
+    let distance: Double?
+    let equipmentType: String?
+    let cargoType: String?
+    let status: String?
+    let driver: PWParty?
+    let catalyst: PWParty?
+    let shipper: PWParty?
+    struct PWLoc: Decodable, Hashable {
+        let city: String?
+        let state: String?
+    }
+    struct PWParty: Decodable, Hashable {
+        let id: Int?
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+        let dotNumber: String?
+    }
+}
+
 struct DriverPaperwork: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
@@ -51,13 +85,16 @@ struct DriverPaperwork: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
-    @State private var activeLoad: Load?
+    @State private var activeLoad: PWLoadCtx?
 
-    /// Live document-collection state for this load. The hero "DOC
-    /// UPLOAD · 2/5" pill and the checklist DONE/PENDING tails read off
-    /// `uploadedDocCount` once the load hydrates; until then the frame's
-    /// authored 2-of-5 reference renders so the screen never blanks.
-    @State private var uploadedDocCount: Int?
+    /// Live document-collection state for this load, fetched from
+    /// `documentManagement.getDocuments`. The hero "DOC UPLOAD" pill and
+    /// the checklist rows read off these once the load hydrates. Nil
+    /// until a successful read — no authored stand-in, no fabricated
+    /// "2 of 5".
+    @State private var docs: [DocumentManagementAPI.Document] = []
+    @State private var docsTotal: Int?
+    @State private var didLoadDocs: Bool = false
     @State private var isLoadingDocs: Bool = false
 
     @State private var isSubmitting: Bool = false
@@ -68,41 +105,43 @@ struct DriverPaperwork: View {
 
     init(register: Register = .night) { self.register = register }
 
-    // MARK: - Frame reference values (render until the live load hydrates)
-
-    private let frameLoadId      = "LD-260427-A38FB12C7E"
-    private let frameLane        = "Houston → Dallas"
-    private let frameHoS         = "ON-DUTY · 3h 32m"
-    private let framePodTime     = "POD SIGNED 4:48 PM"
-    private let frameDockCaption = "BAY 3 · 239 / 239 mi · TRUCK STILL ON DOCK"
-    private let frameLifecycleNote = "POD signed 4:48 PM · 2 of 5 docs uploaded · 3 pending"
-    private let frameReceiverPOC = "Receiver POC: D. Tran · ext 4218 · last paged 4:24 PM CDT"
-    private let frameTotalDocs   = 5
-
-    /// Documents in / total — reads live when hydrated, else the frame's
-    /// authored 2/5 reference. Never fabricates a higher figure.
-    private var docsIn: Int { uploadedDocCount ?? 2 }
-
     // MARK: - 8-stage lifecycle (PAPERWORK current = idx 6)
 
     private let stages = ["POSTED", "BIDDING", "AWARDED", "PICKUP",
                           "IN TRANSIT", "DELIVERY", "PAPERWORK", "CLOSED"]
     private let currentStageIndex = 6
 
-    // MARK: - Checklist rows (frame-authored)
+    // MARK: - Live display helpers (honest "-" / "—" fallback)
 
-    private struct DocRow: Identifiable {
-        let id = UUID()
-        let title: String
-        let done: Bool
+    /// Mono load-ID tag — live load number, else honest dash.
+    private var loadNumberDisplay: String { activeLoad?.loadNumber ?? "—" }
+
+    /// "{pickup} → {delivery}" from the nested location objects. Server
+    /// sends "" (not nil) when missing, so we treat empty as absent.
+    private var lane: String {
+        let o = locText(activeLoad?.pickupLocation)
+        let d = locText(activeLoad?.deliveryLocation)
+        guard o != nil || d != nil else { return "—" }
+        return "\(o ?? "—") → \(d ?? "—")"
     }
-    private let docRows: [DocRow] = [
-        DocRow(title: "BOL signatures · driver + receiver",    done: true),
-        DocRow(title: "POD photos · 4 of 4 captured",          done: true),
-        DocRow(title: "Run ticket · pending receiver tablet",  done: false),
-        DocRow(title: "Haul receipt · pending dispatcher",     done: false),
-        DocRow(title: "Accessorial reconciliation · in flight", done: false),
-    ]
+
+    private func locText(_ loc: PWLoadCtx.PWLoc?) -> String? {
+        let parts = [loc?.city, loc?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
+    /// Live mileage caption — distance is a real Double on the load.
+    private var distanceCaption: String {
+        guard let d = activeLoad?.distance, d > 0 else { return "—" }
+        return "\(Int(d.rounded())) mi · ON DOCK"
+    }
+
+    /// Documents uploaded for this driver. Reads live; no authored stand-in.
+    private var docsIn: Int { docs.count }
+    /// Total docs the server reports for the page (or the count when the
+    /// total isn't returned). No fabricated checklist length.
+    private var docsTotalDisplay: Int { docsTotal ?? docs.count }
 
     // MARK: - Body
 
@@ -112,10 +151,10 @@ struct DriverPaperwork: View {
                 topBar
                 IridescentHairline()
                 heroPersistenceCard
-                section("LIFECYCLE · UN1203 HAZMAT TANKER") { lifecycleCard }
+                section("LIFECYCLE · PAPERWORK") { lifecycleCard }
                 section("PICKUP · DELIVERY") { pickupDeliveryCard }
-                section("PAPERWORK CHECKLIST · UN1203 HAZMAT") { checklistCard }
-                section("SHIPPER OF RECORD · §8.4") { shipperOfRecordCard }
+                section("PAPERWORK CHECKLIST") { checklistCard }
+                section("SHIPPER OF RECORD") { shipperOfRecordCard }
                 if let err = actionError { errorBanner(err) }
                 submitCTA
                 Color.clear.frame(height: 96)
@@ -145,11 +184,11 @@ struct DriverPaperwork: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("✦ DRIVER · PAPERWORK · UN1203 HAZMAT")
+                Text("✦ DRIVER · PAPERWORK")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: 8)
-                Text(activeLoad?.loadNumber ?? frameLoadId)
+                Text(loadNumberDisplay)
                     .font(EType.mono(.micro)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1)
@@ -178,24 +217,16 @@ struct DriverPaperwork: View {
         }
     }
 
-    private var lane: String {
-        guard let load = activeLoad,
-              let p = load.pickupLocation, !p.city.isEmpty,
-              let d = load.deliveryLocation, !d.city.isEmpty else {
-            return frameLane
-        }
-        return "\(p.city) → \(d.city)"
-    }
-
     /// Blue ON-DUTY pill — mirrors the frame's `#1473FF @0.18` capsule
-    /// with the donut HoS dot.
+    /// with the donut HoS dot. There is no HoS-clock source on the load
+    /// record, so the remaining-time reads an honest "—".
     private var hosPill: some View {
         HStack(spacing: 8) {
             ZStack {
                 Circle().fill(Brand.blue).frame(width: 12, height: 12)
                 Circle().fill(palette.bgPage).frame(width: 5, height: 5)
             }
-            Text(frameHoS)
+            Text("ON-DUTY · —")
                 .font(.system(size: 11, weight: .heavy)).tracking(0.4)
                 .foregroundStyle(Brand.blue)
                 .monospacedDigit()
@@ -209,16 +240,17 @@ struct DriverPaperwork: View {
     private var heroPersistenceCard: some View {
         VStack(spacing: 0) {
             HStack {
-                // POD SIGNED success pill
-                Text(framePodTime)
+                // POD-signed success pill — no POD-signed timestamp source
+                // on the load record, so the time reads an honest "—".
+                Text("POD SIGNED —")
                     .font(.system(size: 11, weight: .heavy)).tracking(0.4)
                     .monospacedDigit()
                     .foregroundStyle(Brand.success)
                     .padding(.horizontal, 12).padding(.vertical, 5)
                     .background(Capsule().fill(Brand.success.opacity(0.20)))
                 Spacer(minLength: 8)
-                // DOC UPLOAD progress pill (gradient)
-                Text("DOC UPLOAD · \(docsIn)/\(frameTotalDocs)")
+                // DOC UPLOAD progress pill (gradient) — live N/total.
+                Text(didLoadDocs ? "DOC UPLOAD · \(docsIn)/\(docsTotalDisplay)" : "DOC UPLOAD · —")
                     .font(.system(size: 11, weight: .heavy)).tracking(0.4)
                     .monospacedDigit()
                     .foregroundStyle(LinearGradient.primary)
@@ -249,7 +281,7 @@ struct DriverPaperwork: View {
 
             Spacer(minLength: 6)
 
-            Text(frameDockCaption)
+            Text(distanceCaption)
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -309,7 +341,7 @@ struct DriverPaperwork: View {
                 }
             }
 
-            Text(frameLifecycleNote)
+            Text(lifecycleNote)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(palette.textPrimary)
                 .multilineTextAlignment(.center)
@@ -325,6 +357,14 @@ struct DriverPaperwork: View {
                 .strokeBorder(Color.white.opacity(0.08))
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    /// Composed from live values only. POD-signed time has no source, so
+    /// it isn't asserted; doc progress reads live or honest "—".
+    private var lifecycleNote: String {
+        let docPart = didLoadDocs ? "\(docsIn) of \(docsTotalDisplay) docs uploaded" : "documents —"
+        let statePart = (activeLoad?.status?.replacingOccurrences(of: "_", with: " ").capitalized).map { "· \($0)" } ?? ""
+        return "Paperwork stage \(docPart) \(statePart)".trimmingCharacters(in: .whitespaces)
     }
 
     @ViewBuilder
@@ -364,23 +404,23 @@ struct DriverPaperwork: View {
     private var pickupDeliveryCard: some View {
         VStack(spacing: 0) {
             stopRow(
-                eyebrow: "PICK UP · HOUSTON · SIGNED",
+                eyebrow: "PICK UP",
                 eyebrowColor: Brand.success,
-                trailing: "11h 24m ago",
+                trailing: "—",
                 trailingColor: palette.textSecondary,
-                primary: "Today · 06:00 CDT (signed)",
-                secondary: "LyondellBasell Channelview · 1515 Sheldon Rd",
+                primary: locText(activeLoad?.pickupLocation) ?? "—",
+                secondary: "—",
                 filled: false
             )
             Divider().overlay(Color.white.opacity(0.08))
                 .padding(.vertical, 4)
             stopRow(
-                eyebrow: "DELIVER · DALLAS · ARRIVED",
+                eyebrow: "DELIVER",
                 eyebrowColor: Brand.success,
-                trailing: "1h ago",
+                trailing: "—",
                 trailingColor: Brand.success,
-                primary: "Today · 16:30 – 18:00 CDT window",
-                secondary: "RaceTrac Terminal · 4801 Singleton Blvd · gate 3",
+                primary: locText(activeLoad?.deliveryLocation) ?? "—",
+                secondary: "—",
                 filled: true
             )
         }
@@ -432,23 +472,23 @@ struct DriverPaperwork: View {
 
     private var checklistCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Hazmat manifest strip
+            // Cargo / equipment strip — live load attributes, honest "—".
             HStack(spacing: 12) {
                 ZStack {
                     Rectangle().fill(Brand.hazmat)
                         .frame(width: 14, height: 14)
                         .rotationEffect(.degrees(45))
-                    Text("3")
-                        .font(.system(size: 8, weight: .heavy))
+                    Image(systemName: "shippingbox.fill")
+                        .font(.system(size: 7, weight: .heavy))
                         .foregroundStyle(Color(hex: 0x0E1116))
                 }
                 .frame(width: 22, height: 22)
-                Text("Class 3 · PG II · placards 1203 · seal EU-71044 retained")
+                Text(cargoStripText)
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.8)
                 Spacer(minLength: 4)
-                Text("5,000 gal dropped · clean")
+                Text(activeLoad?.equipmentType ?? "—")
                     .font(.system(size: 11))
                     .foregroundStyle(Brand.success)
                     .lineLimit(1).minimumScaleFactor(0.8)
@@ -465,24 +505,44 @@ struct DriverPaperwork: View {
             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             .padding(.bottom, 12)
 
-            // 5 document rows
-            ForEach(Array(docRows.enumerated()), id: \.element.id) { idx, row in
-                let done = rowIsDone(idx, row)
-                HStack(spacing: 8) {
-                    checkbox(done: done)
-                    Text(row.title)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(done ? palette.textPrimary : Brand.blue)
-                        .lineLimit(1).minimumScaleFactor(0.85)
-                    Spacer(minLength: 6)
-                    Text(done ? "DONE" : "PENDING")
-                        .font(.system(size: 10, weight: .heavy)).tracking(0.4)
-                        .foregroundStyle(done ? Brand.success : Brand.blue)
+            // Live document rows from documentManagement.getDocuments.
+            // No invented titles; DONE/PENDING reads the real status.
+            if !didLoadDocs && isLoadingDocs {
+                Text("Loading documents…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                    .padding(.vertical, 6)
+            } else if docs.isEmpty {
+                EusoEmptyState(
+                    icon: Image(systemName: "doc.text"),
+                    title: "No documents yet",
+                    subtitle: "Uploaded close-out documents will appear here.",
+                    cta: nil,
+                    comingSoon: false
+                )
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 4)
+            } else {
+                ForEach(docs) { doc in
+                    let done = isDone(doc.status)
+                    HStack(spacing: 8) {
+                        checkbox(done: done)
+                        Text(doc.name)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(done ? palette.textPrimary : Brand.blue)
+                            .lineLimit(1).minimumScaleFactor(0.85)
+                        Spacer(minLength: 6)
+                        Text(doc.status.uppercased())
+                            .font(.system(size: 10, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(done ? Brand.success : Brand.blue)
+                    }
+                    .padding(.vertical, 6)
                 }
-                .padding(.vertical, 6)
             }
 
-            Text(frameReceiverPOC)
+            // Receiver POC — no live source for the receiver contact /
+            // extension on the load record, so the line reads honest "—".
+            Text("Receiver POC: —")
                 .font(EType.mono(.caption)).tracking(0.2)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 8)
@@ -497,12 +557,21 @@ struct DriverPaperwork: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    /// First N rows are DONE, where N tracks live uploaded-doc count
-    /// (default 2 per the frame). The two authored DONE rows (BOL, POD)
-    /// always read done; the remaining three stay PENDING until the
-    /// live count climbs.
-    private func rowIsDone(_ idx: Int, _ row: DocRow) -> Bool {
-        idx < max(docsIn, 0) ? true : row.done
+    /// Cargo strip — composed from live load attributes; "—" when absent.
+    private var cargoStripText: String {
+        if let c = activeLoad?.cargoType, !c.isEmpty { return c }
+        if let e = activeLoad?.equipmentType, !e.isEmpty { return e }
+        return "—"
+    }
+
+    /// A document counts as DONE when its status reads as a terminal/
+    /// verified state. Anything else is PENDING. Reads the real server
+    /// status string — no positional "first N are done" assumption.
+    private func isDone(_ status: String) -> Bool {
+        let s = status.lowercased()
+        return s.contains("verif") || s.contains("approv")
+            || s.contains("complete") || s.contains("signed")
+            || s == "done" || s == "active" || s == "valid"
     }
 
     private func checkbox(done: Bool) -> some View {
@@ -527,21 +596,29 @@ struct DriverPaperwork: View {
         .frame(width: 14, height: 14)
     }
 
-    // MARK: - §8.4 Shipper-of-record card
+    // MARK: - Shipper-of-record card
 
     private var shipperOfRecordCard: some View {
-        HStack(spacing: 12) {
+        let shipper = activeLoad?.shipper
+        let shipName = shipper?.companyName ?? shipper?.name ?? "—"
+        let shipInitials = shipper?.initials ?? "—"
+        let shipContact = shipper?.name ?? "—"
+        let dot = shipper?.dotNumber.map { "USDOT \($0)" }
+        let mc = shipper?.mcNumber.map { "MC-\($0)" }
+        let ids = [dot, mc].compactMap { $0 }.joined(separator: " · ")
+        return HStack(spacing: 12) {
             ZStack {
                 Circle().fill(LinearGradient.diagonal).frame(width: 56, height: 56)
-                Text("DU")
+                Text(shipInitials)
                     .font(.system(size: 16, weight: .bold)).tracking(0.4)
                     .foregroundStyle(.white)
             }
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("Eusorone Technologies")
+                    Text(shipName)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
                     Spacer(minLength: 6)
                     Text("VERIFIED")
                         .font(.system(size: 10, weight: .heavy)).tracking(0.4)
@@ -549,10 +626,10 @@ struct DriverPaperwork: View {
                         .padding(.horizontal, 10).padding(.vertical, 4)
                         .background(Capsule().fill(Brand.success.opacity(0.16)))
                 }
-                Text("Diego Usoro · companyId 1")
+                Text(shipContact)
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textPrimary)
-                Text("MATRIX-50 batch · 97.8% on-time · Pays in 3.2d avg")
+                Text(ids.isEmpty ? "—" : ids)
                     .font(EType.mono(.caption)).tracking(0.2)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1).minimumScaleFactor(0.8)
@@ -603,19 +680,25 @@ struct DriverPaperwork: View {
     private func hydrateLiveTrip() async {
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
-        guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
+        guard !lifecycle.loadId.isEmpty else { return }
+        // CORRECTED shape: top-level id is String?, locations nested,
+        // parties as objects — decode via the local PWLoadCtx so an
+        // Int-id mismatch can never blank the whole screen.
+        struct In: Encodable { let id: String }
         do {
-            activeLoad = try await EusoTripAPI.shared.loads.getById(n)
+            activeLoad = try await EusoTripAPI.shared.query(
+                "loads.getById", input: In(id: lifecycle.loadId)
+            )
         } catch {
             actionError = "Couldn't load the trip: \((error as NSError).localizedDescription)"
         }
         await loadDocs()
     }
 
-    /// Pull this driver's documents and count those scoped to the active
-    /// load so the hero "DOC UPLOAD · N/5" pill and the checklist tails
-    /// reflect real upload progress. Errors surface honestly; the frame's
-    /// authored 2/5 reference stands in until a successful read.
+    /// Pull this driver's documents so the hero "DOC UPLOAD" pill and the
+    /// checklist rows reflect real upload progress. The server scopes
+    /// `getDocuments` to the signed-in driver. Errors surface honestly;
+    /// nothing is fabricated when the read fails.
     private func loadDocs() async {
         isLoadingDocs = true
         defer { isLoadingDocs = false }
@@ -623,11 +706,9 @@ struct DriverPaperwork: View {
             let resp = try await EusoTripAPI.shared.documentManagement.getDocuments(
                 page: 1, pageSize: 50
             )
-            // Count documents already submitted for the close-out
-            // checklist. The server scopes getDocuments to the signed-in
-            // driver; we clamp to the 5-doc checklist so the pill never
-            // exceeds the frame's total.
-            uploadedDocCount = min(resp.documents.count, frameTotalDocs)
+            docs = resp.documents
+            docsTotal = resp.total
+            didLoadDocs = true
         } catch {
             actionError = "Couldn't load documents: \((error as NSError).localizedDescription)"
         }

@@ -8,10 +8,64 @@
 //  exchange, route preview pill, quick-reply chips, and a voice/
 //  text input bar.
 //
+//  ── Honest binding (2026-06-06) ──────────────────────────────
+//  The transcript used to be a hardcoded persona scene (Univar /
+//  Yara / $1,420 / 42°F / Michael Eusorone / MC-331 / EUSO-004640).
+//  None of that had a live source. It is GONE. What renders now:
+//
+//    • Load facts (lane, distance, rate, RPM-vs-lane-avg, HOS
+//      reset) bind to live procs — `loads.getById` (CORRECTED shape:
+//      top-level id:String?, nested pickupLocation/deliveryLocation
+//      {city,state}, party objects), `hos.getStatus`, and
+//      `rates.compareLaneRate`. Anything with no live value renders
+//      an honest "—".
+//    • The transcript binds to the REAL message thread via
+//      `messaging.getMessages(conversationId: loadId)`. When the
+//      thread is empty (the ESANG canned dialogue has no live
+//      source) the message rail shows an honest empty/loading state
+//      — never a fabricated customer/commodity/price line.
+//
+//  Visual layout / chrome / nav are preserved verbatim.
+//
 //  Powered by ESANG AI™.
 //
 
 import SwiftUI
+
+/// Server-shaped projection of `loads.getById` — the CORRECTED wire
+/// contract proven in DL133/DL126/DL091:
+///   • top-level `id` is a String (server emits `String(load.id)`);
+///     decoding as Int throws typeMismatch and blanks the whole screen.
+///   • `pickupLocation`/`deliveryLocation` are nested {city,state}
+///     objects (server sends "" — not nil — when a piece is missing).
+///   • `driver`/`catalyst`/`shipper` are PARTY objects with a numeric
+///     party id plus name / initials / companyName / mcNumber / dotNumber.
+private struct ESDChatLoadCtx: Decodable, Hashable {
+    let id: String?
+    let loadNumber: String?
+    let pickupLocation: ESDLoc?
+    let deliveryLocation: ESDLoc?
+    let rate: String?
+    let distance: Double?
+    let cargoType: String?
+    let equipmentType: String?
+    let transportMode: String?
+    let driver: ESDParty?
+    let catalyst: ESDParty?
+    let shipper: ESDParty?
+    struct ESDLoc: Decodable, Hashable {
+        let city: String?
+        let state: String?
+    }
+    struct ESDParty: Decodable, Hashable {
+        let id: Int?
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+        let dotNumber: String?
+    }
+}
 
 struct eSangDispatchChat: View {
     @Environment(\.palette) private var palette
@@ -21,7 +75,11 @@ struct eSangDispatchChat: View {
 
     @Environment(\.driverOpenMessages) private var openMessages
     @StateObject private var lifecycle = TripLifecycleStore()
-    @State private var activeLoad: Load?
+    @State private var activeLoad: ESDChatLoadCtx?
+    @State private var hos: HOSStatus?
+    @State private var lane: RatesAPI.LaneComparison?
+    @State private var transcript: [MessagingMessage] = []
+    @State private var transcriptLoading: Bool = true
     @State private var draft: String = ""
     @State private var showCounterSheet: Bool = false
     @State private var counterAmount: String = ""
@@ -39,57 +97,63 @@ struct eSangDispatchChat: View {
     let register: Register
     init(register: Register = .afternoon) { self.register = register }
 
-    private var ctx: LifecycleProductContext {
-        LifecycleProductContext(load: activeLoad, role: session.user?.role)
+    // MARK: - Live display helpers (honest "—" fallback)
+
+    /// "Curtis Bay, MD → York, PA" — composed from the nested
+    /// pickup/delivery {city,state}; em-dash when an endpoint is blank.
+    private var laneDisplay: String {
+        let o = [activeLoad?.pickupLocation?.city, activeLoad?.pickupLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        let d = [activeLoad?.deliveryLocation?.city, activeLoad?.deliveryLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        guard !o.isEmpty || !d.isEmpty else { return "—" }
+        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
     }
 
-    private let fallbackClock      = "09:34"
-    private let fallbackBriefHash  = "X1"
-    private let fallbackResetClock = "RES RESET 6/11/14"
-    private let fallbackLoadHash   = "LOAD EUSO-004640"
-    private let fallbackExpiresIn  = "EXPIRES 09:47"
-
-    private var brief: String {
-        let n = ctx.beatCommodityDescriptor
-        return "Morning, Michael Eusorone. Reset returned at 09:30. I pulled one tender in your lane, Univar Curtis Bay to Yara York, \(n.contains("NH3") ? "NH3, " : "")150 mi, $1,420. Weather is 42°F scattered showers along I-83. Want the breakdown?"
+    /// "150 mi" — em-dash when distance is missing/zero.
+    private var distanceDisplay: String {
+        guard let d = activeLoad?.distance, d > 0 else { return "—" }
+        return "\(Int(d.rounded())) mi"
     }
 
-    private var driverReply: String {
-        "Yeah, how does the rate compare and is tractor good to go?"
+    /// "$1,420" — em-dash when rate is missing/invalid.
+    private var rateDisplay: String {
+        guard let r = activeLoad?.rate, let n = Double(r), n > 0 else { return "—" }
+        let v = n.rounded()
+        return v < 1000 ? "$\(Int(v))" : "$\(Int(v).formatted(.number))"
     }
 
-    private var dispatchReply: String {
-        switch ctx.product {
-        case .hazmatTanker, .vesselTanker:
-            return "$9.46/mi net, +$0.42 over lane avg the last 14 days. Tractor passed Saturday's post-trip, MC-331 domes were purged, urea at 78%. DOT inspection sticker expires May 14."
-        case .reefer:
-            return "$9.46/mi net, +$0.42 over lane avg. Reefer pulled-down to set-point, fuel at 64%, thermograph clean. DOT inspection clean."
-        case .flatbed:
-            return "$9.46/mi net, +$0.42 over lane avg. Tarps + 12 straps + 2 chains staged, WLL within spec. DOT inspection clean."
-        case .container, .railIntermodal, .vesselContainer:
-            return "$9.46/mi net, +$0.42 over lane avg. Chassis pre-trip clean, twistlocks oiled, EDI 322 armed. DOT inspection clean."
-        case .railBulk, .vesselBulk:
-            return "$9.46/mi net, +$0.42 over lane avg. Grounding kit checked, hatches sealed, AAR waybill ready."
-        case .dryVan:
-            return "$9.46/mi net, +$0.42 over lane avg. Trailer swept dry, seal staged, pallet jack on board. DOT inspection clean."
-        }
+    /// Load reference for the status chip — real loadNumber, else "—".
+    private var loadHashDisplay: String { activeLoad?.loadNumber ?? "—" }
+
+    /// HOS reset clock from `hos.getStatus` — the next break-due ISO
+    /// drives the "RESET" chip; em-dash when no live HOS status.
+    private var resetClockDisplay: String {
+        guard let due = hos?.nextBreakDue,
+              let date = ISO8601DateFormatter().date(from: due) else { return "—" }
+        let f = DateFormatter(); f.dateFormat = "M/d HH:mm"
+        return "RESET \(f.string(from: date))"
     }
 
-    private var prepReply: String {
-        switch ctx.product {
-        case .hazmatTanker, .vesselTanker:
-            return "I queued the pre-trip DVIR and pre-loaded the ERG 125 card for UN1005. No surprise. I'll hold the tender 13 more minutes."
-        case .reefer:
-            return "Pre-trip DVIR is queued and the temp trace export is waiting. I'll hold the tender 13 more minutes."
-        case .flatbed:
-            return "Pre-trip DVIR queued + securement sheet pre-filled. I'll hold the tender 13 more minutes."
-        case .container, .railIntermodal, .vesselContainer:
-            return "Pre-trip DVIR queued + EDI 322 + VGM staged. I'll hold the tender 13 more minutes."
-        case .railBulk, .vesselBulk:
-            return "Pre-trip DVIR queued + AAR waybill loaded. I'll hold the tender 13 more minutes."
-        case .dryVan:
-            return "Pre-trip DVIR queued + BOL packet on tablet. I'll hold the tender 13 more minutes."
-        }
+    /// "DRIVE 7h 22m" — live drive-remaining from hos.getStatus.
+    private var driveRemainingDisplay: String {
+        guard let s = hos else { return "—" }
+        return "DRIVE \(s.drivingRemainingDisplay)"
+    }
+
+    /// Live RPM-vs-lane-avg sentence from rates.compareLaneRate, or "—".
+    private var rpmComparisonDisplay: String? {
+        guard let c = lane, c.marketAvgRPM > 0 else { return nil }
+        let delta = c.yourRPM - c.marketAvgRPM
+        let sign = delta >= 0 ? "+" : "−"
+        return String(format: "$%.2f/mi · %@$%.2f vs lane avg",
+                      c.yourRPM, sign, abs(delta))
+    }
+
+    /// Driver greeting name from the session — never a hardcoded persona.
+    private var greetingName: String {
+        let f = session.user?.firstName ?? ""
+        return f.isEmpty ? "driver" : f
     }
 
     var body: some View {
@@ -99,10 +163,8 @@ struct eSangDispatchChat: View {
                 VStack(alignment: .leading, spacing: Space.s4) {
                     statusRow
                     dayDivider
-                    esangBubble(text: brief, time: "09:31")
-                    driverBubble(text: driverReply, time: "09:31")
-                    esangBubble(text: dispatchReply, time: "09:32", attachment: AnyView(routePreviewPill))
-                    esangBubble(text: prepReply, time: "09:33")
+                    loadFactsBubble
+                    transcriptSection
                     Color.clear.frame(height: 8)
                 }
                 .padding(.horizontal, 14)
@@ -224,7 +286,7 @@ struct eSangDispatchChat: View {
             onBack: { navBack?() },
             accessory: {
                 LoadModeBadge(modeRaw: activeLoad?.transportMode,
-                              multiVehicleCount: activeLoad?.multiVehicleCount,
+                              multiVehicleCount: nil,
                               compact: true)
             },
             overflow: {
@@ -255,29 +317,76 @@ struct eSangDispatchChat: View {
 
     private var statusRow: some View {
         ChatStatusRow {
-            ChatStatusChip(label: fallbackResetClock, color: Brand.success, live: true)
-            ChatStatusChip(label: fallbackLoadHash, color: palette.textSecondary)
-            ChatStatusChip(label: fallbackExpiresIn, color: Brand.warning)
+            ChatStatusChip(label: resetClockDisplay, color: Brand.success, live: true)
+            ChatStatusChip(label: loadHashDisplay, color: palette.textSecondary)
+            ChatStatusChip(label: driveRemainingDisplay, color: Brand.warning)
         }
     }
 
     private var dayDivider: some View { ChatDayDivider() }
 
-    private func esangBubble(text: String, time: String, attachment: AnyView? = nil) -> some View {
+    /// The one ESANG bubble that DOES have a live source: the load
+    /// facts ESANG is "watching" for this tender. Lane / distance /
+    /// rate from `loads.getById`, RPM vs lane avg from
+    /// `rates.compareLaneRate`, drive-remaining from `hos.getStatus`.
+    /// Every value is real or em-dash — no commodity, customer, price
+    /// or weather is invented.
+    private var loadFactsBubble: some View {
+        esangBubble(
+            text: "Morning, \(greetingName). Here's the tender I'm watching in your lane: \(laneDisplay) · \(distanceDisplay) · \(rateDisplay). Drive remaining \(hos?.drivingRemainingDisplay ?? "—").",
+            time: nil,
+            attachment: AnyView(routePreviewPill)
+        )
+    }
+
+    /// The live conversation. When the messaging thread for this load
+    /// has messages, render them as bubbles. When it's empty — the
+    /// ESANG canned dialogue has no live backing source — show an
+    /// honest empty / loading state rather than a scripted exchange.
+    @ViewBuilder private var transcriptSection: some View {
+        if !transcript.isEmpty {
+            ForEach(transcript) { m in
+                if m.isOwn == true {
+                    driverBubble(text: m.content, time: timeLabel(m.timestamp))
+                } else {
+                    esangBubble(text: m.content, time: timeLabel(m.timestamp))
+                }
+            }
+        } else if transcriptLoading {
+            HStack {
+                Spacer()
+                ProgressView()
+                    .controlSize(.regular)
+                    .padding(.vertical, 24)
+                Spacer()
+            }
+        } else {
+            EusoEmptyState(
+                systemImage: "bubble.left.and.bubble.right",
+                title: "No messages yet",
+                subtitle: "Start the conversation below — your dispatch thread for this tender shows up here the moment a message lands."
+            )
+        }
+    }
+
+    private func esangBubble(text: String, time: String?, attachment: AnyView? = nil) -> some View {
         ChatBubbleReceived(avatar: .esang, text: text, time: time) {
             if let attachment { attachment }
         }
     }
 
-    private func driverBubble(text: String, time: String) -> some View {
+    private func driverBubble(text: String, time: String?) -> some View {
         ChatBubbleSent(text: text, time: time)
     }
 
+    /// Route preview pill — real lane + distance from the load; the
+    /// RPM comparison line surfaces only when rates.compareLaneRate
+    /// returned a real lane average.
     private var routePreviewPill: some View {
         ChatInlineCard(icon: "map.fill",
-                       title: "Route preview · I-695 → I-83 N",
-                       subtitle: "156 MI · 2:01 EFA · BAY 4 · PEAK 73°F",
-                       badge: "OPEN")
+                       title: laneDisplay == "—" ? "Route preview" : "Route · \(laneDisplay)",
+                       subtitle: rpmComparisonDisplay ?? "\(distanceDisplay) · \(rateDisplay)",
+                       badge: activeLoad == nil ? nil : "OPEN")
     }
 
     /// Live "ESANG is watching X" presence pill — centered, above the
@@ -326,10 +435,10 @@ struct eSangDispatchChat: View {
         // side to status='accepted' AND binds the driver. Without
         // it the lifecycle transition runs but the marketplace
         // doesn't know who took the tender (same fix as 052).
-        if let load = activeLoad {
+        if let id = activeLoad?.id, !id.isEmpty {
             do {
                 _ = try await EusoTripAPI.shared.drivers
-                    .acceptLoad(loadId: String(load.id))
+                    .acceptLoad(loadId: id)
             } catch {
                 actionToast = "Accept failed: \(error.localizedDescription)"
                 try? await Task.sleep(nanoseconds: 1_400_000_000)
@@ -378,7 +487,7 @@ struct eSangDispatchChat: View {
 
     private func submitCounter() async {
         guard !counterInflight else { return }
-        guard let load = activeLoad else { return }
+        guard let id = activeLoad?.id, !id.isEmpty else { return }
         guard let amount = Double(counterAmount), amount > 0 else {
             actionToast = "Enter a valid rate"
             try? await Task.sleep(nanoseconds: 1_400_000_000)
@@ -389,7 +498,7 @@ struct eSangDispatchChat: View {
         defer { counterInflight = false }
         do {
             _ = try await EusoTripAPI.shared.drivers.counterOffer(
-                loadId: String(load.id),
+                loadId: id,
                 amount: amount,
                 conditions: counterNote.isEmpty ? nil : counterNote
             )
@@ -480,6 +589,22 @@ struct eSangDispatchChat: View {
             .capitalized
     }
 
+    /// "09:31" — formats a message ISO timestamp for the bubble; nil
+    /// (no time row) when the server didn't send one.
+    private func timeLabel(_ iso: String?) -> String? {
+        guard let iso else { return nil }
+        let parsers: [ISO8601DateFormatter] = {
+            let withFrac = ISO8601DateFormatter()
+            withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+            return [withFrac, plain]
+        }()
+        guard let date = parsers.lazy.compactMap({ $0.date(from: iso) }).first else { return nil }
+        let f = DateFormatter(); f.dateFormat = "HH:mm"
+        return f.string(from: date)
+    }
+
     private func sendDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, !sendInflight else { return }
@@ -496,16 +621,19 @@ struct eSangDispatchChat: View {
             // router treats `loadId` as a stable conversation key
             // for dispatch chat threads. If the load isn't hydrated
             // yet, fall back to the messaging inbox.
-            guard let load = activeLoad else {
+            guard let id = activeLoad?.id, !id.isEmpty else {
                 openMessages?(nil)
                 return
             }
             do {
                 _ = try await EusoTripAPI.shared.messaging.sendMessage(
-                    conversationId: String(load.id),
+                    conversationId: id,
                     content: pendingText,
                     type: "text"
                 )
+                // Re-pull the thread so the just-sent message renders
+                // from the live source rather than an optimistic stub.
+                await loadTranscript(conversationId: id)
             } catch {
                 Task { @MainActor in
                     actionToast = "Send failed: \(error.localizedDescription)"
@@ -520,8 +648,52 @@ struct eSangDispatchChat: View {
     private func hydrateLiveTrip() async {
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
-        guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
-        activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+
+        // HOS reset / drive-remaining are independent of any specific
+        // load — pull regardless so the chips render even on an empty board.
+        hos = try? await EusoTripAPI.shared.hos.getStatus()
+
+        guard !lifecycle.loadId.isEmpty else {
+            transcriptLoading = false
+            return
+        }
+
+        // Load facts — CORRECTED loads.getById shape (id:String? + nested loc).
+        struct In: Encodable { let id: String }
+        activeLoad = try? await EusoTripAPI.shared.query(
+            "loads.getById", input: In(id: lifecycle.loadId))
+
+        // Lane-avg RPM (rates.compareLaneRate) — only when we have the
+        // real origin/dest states + rate + distance to ask with.
+        await loadLaneComparison()
+
+        // Real message thread for this tender, keyed by load id.
+        await loadTranscript(conversationId: lifecycle.loadId)
+    }
+
+    private func loadLaneComparison() async {
+        guard let load = activeLoad,
+              let oState = load.pickupLocation?.state, !oState.isEmpty,
+              let dState = load.deliveryLocation?.state, !dState.isEmpty,
+              let rate = Double(load.rate ?? ""), rate > 0,
+              let distance = load.distance, distance > 0 else { return }
+        lane = try? await EusoTripAPI.shared.rates.compareLaneRate(
+            originState: oState,
+            destState: dState,
+            rate: rate,
+            distance: distance,
+            cargoType: load.cargoType,
+            transportMode: load.transportMode ?? "truck"
+        )
+    }
+
+    private func loadTranscript(conversationId: String) async {
+        transcriptLoading = true
+        defer { transcriptLoading = false }
+        if let rows = try? await EusoTripAPI.shared.messaging.getMessages(
+            conversationId: conversationId, limit: 50) {
+            transcript = rows
+        }
     }
 }
 
@@ -548,8 +720,12 @@ private func driverNavTrailing_053() -> [NavSlot] {
 }
 
 #Preview("053 · ESANG Dispatch Chat · Dark") {
-    eSangDispatchChatScreen(theme: Theme.dark).preferredColorScheme(.dark)
+    eSangDispatchChatScreen(theme: Theme.dark)
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.dark)
 }
 #Preview("053 · ESANG Dispatch Chat · Light") {
-    eSangDispatchChatScreen(theme: Theme.light).preferredColorScheme(.light)
+    eSangDispatchChatScreen(theme: Theme.light)
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.light)
 }
