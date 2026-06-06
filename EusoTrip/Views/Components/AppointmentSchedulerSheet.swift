@@ -315,7 +315,7 @@ public struct AppointmentSchedulerSheet: View {
                     .foregroundStyle(.primary)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(a.type?.capitalized ?? "Appointment").font(.callout.weight(.semibold))
-                    Text("Dock \(a.dockNumber ?? "—") · \(timeOf(a.scheduledAt))")
+                    Text("Dock \(a.dockNumber ?? "-") · \(timeOf(a.scheduledAt))")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -419,7 +419,7 @@ public struct AppointmentSchedulerSheet: View {
     }
 
     private func timeOf(_ iso: String?) -> String {
-        guard let iso else { return "—" }
+        guard let iso else { return "-" }
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         guard let d = f.date(from: iso) else { return iso }

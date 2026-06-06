@@ -153,11 +153,11 @@ private struct RailLiveTrackingBody: View {
     @State private var loadError: String? = nil
 
     private var originLabel: String {
-        guard let y = detail?.originYard else { return "—" }
+        guard let y = detail?.originYard else { return "-" }
         return [y.code, y.city].compactMap { $0 }.joined(separator: " · ")
     }
     private var destLabel: String {
-        guard let y = detail?.destinationYard else { return "—" }
+        guard let y = detail?.destinationYard else { return "-" }
         return [y.code, y.city].compactMap { $0 }.joined(separator: " · ")
     }
     private var currentPositionLabel: String {
@@ -238,7 +238,6 @@ private struct RailLiveTrackingBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Image(systemName: "tram.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("RAIL ENGINEER · LIVE TRACKING")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
@@ -317,9 +316,9 @@ private struct RailLiveTrackingBody: View {
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
-            let speedVal = liveData?.speed.map { "\(Int($0)) mph" } ?? "— mph"
-            let etaVal   = liveData?.eta ?? "—"
-            let dwellVal = liveData?.dwellRisk ?? "—"
+            let speedVal = liveData?.speed.map { "\(Int($0)) mph" } ?? "- mph"
+            let etaVal   = liveData?.eta ?? "-"
+            let dwellVal = liveData?.dwellRisk ?? "-"
             let dwellColor: Color = {
                 switch dwellVal.lowercased() {
                 case "low":  return Brand.success
@@ -329,7 +328,7 @@ private struct RailLiveTrackingBody: View {
             }()
             MetricTile(label: "SPEED", value: speedVal)
             MetricTile(label: "ETA DEST", value: etaVal, gradientNumeral: true)
-            MetricTile(label: "DWELL RISK", value: dwellVal, accent: dwellVal == "—" ? nil : dwellColor)
+            MetricTile(label: "DWELL RISK", value: dwellVal, accent: dwellVal == "-" ? nil : dwellColor)
         }
     }
 
@@ -543,14 +542,29 @@ private struct RouteArc560: View {
                     .frame(width: 11, height: 11)
                     .position(dest)
 
-                // Live position — breathing halo + filled dot, on the real point.
+                // Live position — breathing halo + canonical rail BOXCAR model.
+                // The car-position marker is the EusoTrip Animation Design
+                // System boxcar (Resources/Animations/Equipment/02_Rail/
+                // ..._rail_boxcar_anim.svg), rendered through the in-house
+                // native SVG engine and ridden along the route arc at the real
+                // live fraction. Replaces the plain gradient dot with the
+                // founder-approved equipment lockup so the live vehicle reads
+                // as a real rail car. The ambient halo still breathes beneath.
                 Circle().fill(LinearGradient.diagonal)
                     .opacity(breathing ? 0.30 : 0.16)
                     .frame(width: breathing ? 26 : 20, height: breathing ? 26 : 20)
                     .position(livePoint)
-                Circle().fill(LinearGradient.diagonal)
-                    .frame(width: 12, height: 12)
-                    .position(livePoint)
+                Group {
+                    if let boxcarSVG = EquipmentAnimationCache.shared.svg(for: .railBoxcar) {
+                        NativeSVGView(svgString: boxcarSVG)
+                            .frame(width: 58, height: 24)
+                    } else {
+                        // Fallback to the gradient dot if the model can't load.
+                        Circle().fill(LinearGradient.diagonal)
+                            .frame(width: 12, height: 12)
+                    }
+                }
+                .position(livePoint)
             }
         }
         .onAppear { settle(); startLoops() }

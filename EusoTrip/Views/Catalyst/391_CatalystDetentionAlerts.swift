@@ -388,7 +388,7 @@ private struct DetentionAlertsBody_391: View {
             disputeAck = "Dispute filed · \(worst.facilityName)"
             await reload()
         } else {
-            disputeAck = "Couldn’t file dispute — try again"
+            disputeAck = "Couldn’t file dispute - try again"
         }
     }
 
@@ -412,7 +412,7 @@ private struct DetentionAlertsBody_391: View {
     }
 
     private func formatCurrency_391(_ value: Double) -> String {
-        guard value > 0 else { return "—" }
+        guard value > 0 else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = "USD"

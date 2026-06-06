@@ -116,7 +116,7 @@ private struct OutboundBidsBody: View {
         let total = stats?.totalCount30d ?? 0
         let margin = stats?.avgMargin ?? 0
         return HStack(spacing: Space.s2) {
-            kpi("LIVE BIDS", "\(live)", leading > 0 ? "\(leading) leading · contested" : "—", .blue)
+            kpi("LIVE BIDS", "\(live)", leading > 0 ? "\(leading) leading · contested" : "-", .blue)
             kpi("WIN RATE 30D", "\(winRate)%", "\(won) of \(total) awarded", .green)
             kpi("AVG MARGIN", (margin >= 0 ? "+" : "") + "$\(Int(margin))", "vs target rate", margin >= 0 ? .green : .red)
         }
@@ -184,7 +184,7 @@ private struct OutboundBidsBody: View {
                     .background(Capsule().fill(statusColor.opacity(0.18)))
                     .foregroundStyle(statusColor)
                 }
-                Text("\(b.pickupCity ?? "—") \(b.pickupState ?? "") → \(b.destCity ?? "—") \(b.destState ?? "") · \(Int(b.distance ?? 0)) mi")
+                Text("\(b.pickupCity ?? "-") \(b.pickupState ?? "") → \(b.destCity ?? "-") \(b.destState ?? "") · \(Int(b.distance ?? 0)) mi")
                     .font(EType.body.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
                 let parts: [String] = [

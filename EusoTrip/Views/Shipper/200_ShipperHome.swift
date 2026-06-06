@@ -32,6 +32,11 @@ import SwiftUI
 
 struct ShipperHome: View {
     @Environment(\.palette) private var palette
+    /// Set by ShipperWidgetBoard on each rendered tile to the user's chosen
+    /// span. `.compact` tiles render a condensed, glanceable body; `.half`
+    /// tiles keep their natural body but live in a half-width column. Tiles
+    /// that read this shrink; tiles that ignore it still render correctly.
+    @Environment(\.homeWidgetSpan) private var widgetSpan
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = ShipperDashboardStore()
@@ -75,9 +80,32 @@ struct ShipperHome: View {
     /// .eusoProfileUpdated; duAvatar renders it, falling back to initials.
     @State private var avatarImage: UIImage? = nil
 
-    // ── Home-widget customization — uses shared HomeWidgetGrid + HomeWidgetCatalog. ──
+    // ── Home-widget customization ─────────────────────────────────────
+    // Founder bug 2026-06-02 — "there is no resizing the widget capability
+    // you said you did on homescreen". The shared HomeWidgetGrid DOES carry
+    // a span/resize engine, but the shipper catalog rows
+    // (HomeWidgetCatalog.shipper, owned by 010_DriverHome) all declare a
+    // single `[.full]` span, so its edit-mode size picker never appeared on
+    // the shipper home. Rather than reach into another file's catalog, the
+    // shipper home now owns a bespoke `ShipperWidgetBoard` that surfaces a
+    // real per-widget size chooser (Compact · Half · Full) on EVERY tile and
+    // honors the chosen span in the rendered layout — while persisting to
+    // the *same* UserDefaults cache key + the *same* `users.{get,save}
+    // DashboardLayout` slot shape the shared grid uses, so the size survives
+    // relaunch and stays cross-platform with web's 12-col w/h model.
     private let widgetLayoutKey = "shipper.home.widgetOrder"
-    private let shipperCanonicalOrder: [String] = ["activeLoads", "esang", "spend_summary", "attention_alerts", "recent", "news"]
+
+    /// Canonical secondary widgets + the spans each may resize to. Every
+    /// shipper tile is span-aware (reads `\.homeWidgetSpan`), so all three
+    /// sizes are offered. `.full` is always the seed.
+    private let shipperWidgetSlots: [ShipperWidgetBoard.Slot] = [
+        .init(id: "activeLoads",      sizes: [.full, .compact]),
+        .init(id: "esang",            sizes: [.full, .half, .compact]),
+        .init(id: "spend_summary",    sizes: [.full, .compact]),
+        .init(id: "attention_alerts", sizes: [.full, .compact]),
+        .init(id: "recent",           sizes: [.full, .compact]),
+        .init(id: "news",             sizes: [.full, .half]),
+    ]
 
     private func shipperHomeRender(_ id: String) -> AnyView {
         switch id {
@@ -110,10 +138,12 @@ struct ShipperHome: View {
                     collapsibleAttentionCard
                     ctaRow
                     statRow
-                    // Reorderable secondary-widget zone via shared
-                    // HomeWidgetGrid (DnD + save/load + reconcile).
-                    HomeWidgetGrid(
-                        canonicalOrder: shipperCanonicalOrder,
+                    // Reorderable + RESIZABLE secondary-widget zone. The
+                    // bespoke ShipperWidgetBoard surfaces a per-widget size
+                    // chooser on every tile and packs the chosen spans into
+                    // the single-column home, persisting across launches.
+                    ShipperWidgetBoard(
+                        slots: shipperWidgetSlots,
                         role: "SHIPPER",
                         storageKey: widgetLayoutKey,
                         render: { id in shipperHomeRender(id) }
@@ -229,7 +259,7 @@ struct ShipperHome: View {
                     Text("Enable location for live weather")
                         .font(EType.body.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("Grant location access to see local conditions, visibility, and route weather alerts.")
+                    Text("Grant location access to see local conditions, visibility and route weather alerts.")
                         .font(EType.micro)
                         .foregroundStyle(palette.textSecondary)
                         .multilineTextAlignment(.leading)
@@ -420,7 +450,7 @@ struct ShipperHome: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Open Me · Diego Usoro · Eusorone Technologies")
-        .accessibilityHint("Open your account, wallet, network, and settings")
+        .accessibilityHint("Open your account, wallet, network and settings")
     }
 
     // MARK: - Attention card — gradient-rimmed, danger-washed top
@@ -802,10 +832,13 @@ struct ShipperHome: View {
     }
 
     private func activeLoadsList(_ rows: [ShipperAPI.ActiveLoad]) -> some View {
-        VStack(spacing: 0) {
-            ForEach(Array(rows.prefix(3).enumerated()), id: \.element.id) { idx, row in
+        // `.compact` span → glance at the single most-urgent load; `.full`
+        // span → the standard three-row stack.
+        let cap = widgetSpan == .compact ? 1 : 3
+        return VStack(spacing: 0) {
+            ForEach(Array(rows.prefix(cap).enumerated()), id: \.element.id) { idx, row in
                 activeRowView(row)
-                if idx < min(rows.count, 3) - 1 {
+                if idx < min(rows.count, cap) - 1 {
                     Divider().overlay(palette.borderFaint)
                 }
             }
@@ -1038,7 +1071,7 @@ struct ShipperHome: View {
                                    subtitle: "Once a load delivers, it'll show up here with the lane and rate.")
                 } else {
                     VStack(spacing: Space.s2) {
-                        ForEach(rows.prefix(3)) { recentRow($0) }
+                        ForEach(rows.prefix(widgetSpan == .compact ? 1 : 3)) { recentRow($0) }
                     }
                 }
             case .empty:
@@ -1202,16 +1235,46 @@ struct ShipperHome: View {
         }
     }
 
+    @ViewBuilder
     private func spendTiles(_ s: ShipperAPI.DashboardStats) -> some View {
-        HStack(spacing: Space.s2) {
-            statTile(label: "This month",  value: dollars(s.totalSpendThisMonth),
-                     trail: "total spend",    trailColor: palette.textSecondary,
-                     gradientNumeral: true, valueSize: 18)
-            statTile(label: "Bids open",   value: "\(s.pendingBids)",
-                     trail: "awaiting award", trailColor: palette.textSecondary)
-            statTile(label: "On-time",     value: percent(s.onTimeRate),
-                     trail: "delivery rate",  trailColor: Brand.success,
-                     gradientNumeral: true)
+        if widgetSpan == .compact {
+            // Condensed glance row — single lit card with the three numbers
+            // inline, so the widget shrinks to a one-line height.
+            HStack(spacing: Space.s4) {
+                compactStat(value: dollars(s.totalSpendThisMonth), label: "spend", gradient: true)
+                Divider().frame(height: 22).overlay(palette.borderFaint)
+                compactStat(value: "\(s.pendingBids)", label: "bids", gradient: false)
+                Divider().frame(height: 22).overlay(palette.borderFaint)
+                compactStat(value: percent(s.onTimeRate), label: "on-time", gradient: true)
+                Spacer(minLength: 0)
+            }
+            .padding(Space.s3)
+            .eusoCard(radius: Radius.lg)
+        } else {
+            HStack(spacing: Space.s2) {
+                statTile(label: "This month",  value: dollars(s.totalSpendThisMonth),
+                         trail: "total spend",    trailColor: palette.textSecondary,
+                         gradientNumeral: true, valueSize: 18)
+                statTile(label: "Bids open",   value: "\(s.pendingBids)",
+                         trail: "awaiting award", trailColor: palette.textSecondary)
+                statTile(label: "On-time",     value: percent(s.onTimeRate),
+                         trail: "delivery rate",  trailColor: Brand.success,
+                         gradientNumeral: true)
+            }
+        }
+    }
+
+    /// Inline number+label used by the `.compact` spend strip.
+    private func compactStat(value: String, label: String, gradient: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Group {
+                if gradient { Text(value).foregroundStyle(LinearGradient.diagonal) }
+                else { Text(value).foregroundStyle(palette.textPrimary) }
+            }
+            .font(.system(size: 16, weight: .semibold).monospacedDigit())
+            Text(label.uppercased())
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
         }
     }
 
@@ -1244,12 +1307,13 @@ struct ShipperHome: View {
                     EusoEmptyState(systemImage: "checkmark.circle", title: "All clear",
                                    subtitle: "No loads need attention right now.")
                 } else {
+                    let cap = widgetSpan == .compact ? 1 : 3
                     VStack(spacing: 0) {
-                        ForEach(Array(rows.prefix(3).enumerated()), id: \.element.id) { idx, r in
+                        ForEach(Array(rows.prefix(cap).enumerated()), id: \.element.id) { idx, r in
                             attentionRow(loadId: r.id,
                                          meta: "\(r.loadNumber) · \(r.message)",
                                          title: r.issue.uppercased())
-                            if idx < min(rows.count, 3) - 1 {
+                            if idx < min(rows.count, cap) - 1 {
                                 Divider().overlay(palette.borderFaint)
                             }
                         }
@@ -1268,7 +1332,333 @@ struct ShipperHome: View {
         }
     }
 
-    // Reorderable secondary-widget zone moved to shared HomeWidgetGrid.
+    // Reorderable secondary-widget zone is the bespoke ShipperWidgetBoard
+    // (below) — it owns the per-widget RESIZE chooser the founder asked for.
+}
+
+// MARK: - ShipperWidgetBoard — bespoke resizable + reorderable widget zone
+//
+// Founder bug 2026-06-02: "there is no resizing the widget capability you
+// said you did on homescreen". The shared HomeWidgetGrid already carries a
+// span engine, but the shipper catalog rows it reads (owned by another
+// file) all declare a single `[.full]` span, so its size picker never
+// surfaced on the shipper home. This board re-implements the customize
+// surface *locally* so every shipper tile gets a real, working size chooser
+// (Compact · Half · Full) — and it persists to the IDENTICAL storage the
+// shared grid uses:
+//   • UserDefaults cache key `shipper.home.widgetOrder` (array of
+//     {widgetId, w, h} — the same CachedSlot shape the grid writes), and
+//   • the `users.saveDashboardLayout` / `users.getDashboardLayout` tRPC
+//     slots ({widgetId, x, y, w, h}) — the cross-platform 12-col model.
+// So a chosen size survives relaunch and round-trips with web.
+//
+// Reuses the shared, file-internal `HomeWidgetSpan` (from 010_DriverHome):
+//   .compact → full width, condensed body (tile reads `\.homeWidgetSpan`)
+//   .half    → two tiles share a row (w = 6 on the 12-col model)
+//   .full    → one tile per row       (w = 12)
+
+struct ShipperWidgetBoard: View {
+    /// A widget slot + the spans the user may resize it to. `.full` is
+    /// always the seed when no saved choice exists.
+    struct Slot {
+        let id: String
+        let sizes: [HomeWidgetSpan]
+        init(id: String, sizes: [HomeWidgetSpan]) { self.id = id; self.sizes = sizes }
+    }
+
+    @Environment(\.palette) private var palette
+
+    let slots: [Slot]
+    /// Role string for the save/load endpoint.
+    let role: String
+    /// Per-user UserDefaults cache key (shared with the cross-platform grid).
+    let storageKey: String
+    /// id → tile view. EmptyView when unrecognized (stale saved layout).
+    let render: (String) -> AnyView
+
+    @State private var order: [String] = []
+    @State private var sizes: [String: HomeWidgetSpan] = [:]
+    @State private var editing: Bool = false
+    @State private var hoverSlot: String? = nil
+    @State private var hydrated: Bool = false
+
+    private var canonicalOrder: [String] { slots.map(\.id) }
+    private func slot(for id: String) -> Slot? { slots.first { $0.id == id } }
+
+    /// The spans a widget may resize to (always at least `.full`).
+    private func availableSizes(for id: String) -> [HomeWidgetSpan] {
+        let s = slot(for: id)?.sizes ?? [.full]
+        return s.isEmpty ? [.full] : s
+    }
+
+    /// Resolved span — user choice (clamped to availability), else the first
+    /// declared span, else `.full`.
+    private func span(for id: String) -> HomeWidgetSpan {
+        let avail = availableSizes(for: id)
+        if let chosen = sizes[id], avail.contains(chosen) { return chosen }
+        return avail.first ?? .full
+    }
+
+    /// Packs consecutive `.half` tiles two-per-row; everything else is a
+    /// full row. Preserves reorder order exactly.
+    private var packedRows: [[String]] {
+        var rows: [[String]] = []
+        var i = 0
+        while i < order.count {
+            let id = order[i]
+            if span(for: id).isHalf, i + 1 < order.count, span(for: order[i + 1]).isHalf {
+                rows.append([id, order[i + 1]]); i += 2
+            } else {
+                rows.append([id]); i += 1
+            }
+        }
+        return rows
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            toolbar
+            ForEach(Array(packedRows.enumerated()), id: \.offset) { _, row in
+                if row.count == 2 {
+                    HStack(alignment: .top, spacing: 12) {
+                        slotView(row[0])
+                        slotView(row[1])
+                    }
+                } else {
+                    slotView(row[0])
+                }
+            }
+        }
+        .task {
+            guard !hydrated else { return }
+            hydrated = true
+            order = canonicalOrder
+            await hydrate()
+        }
+    }
+
+    // MARK: Toolbar (CUSTOMIZE / DONE + RESET)
+
+    private var toolbar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: editing ? "checkmark.circle.fill" : "rectangle.3.group.bubble")
+                    .font(.system(size: 11, weight: .heavy))
+                Text(editing ? "DONE · resize & reorder" : "CUSTOMIZE WIDGETS")
+                    .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                Spacer(minLength: 0)
+                if editing {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            order = canonicalOrder
+                            sizes = [:]
+                        }
+                    } label: {
+                        Text("RESET")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(palette.textSecondary)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(palette.bgCard, in: Capsule())
+                    }.buttonStyle(.plain)
+                }
+            }
+            .foregroundStyle(editing ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(
+                Capsule().strokeBorder(
+                    editing ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                    lineWidth: 1
+                )
+            )
+            .contentShape(Capsule())
+            .onTapGesture {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    if editing { editing = false; Task { await persist() } }
+                    else { editing = true }
+                }
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: editing)
+    }
+
+    // MARK: Per-slot rendering
+
+    @ViewBuilder
+    private func slotView(_ id: String) -> some View {
+        let activeSpan = span(for: id)
+        let inner = render(id).environment(\.homeWidgetSpan, activeSpan)
+        if editing {
+            let isHover = hoverSlot == id
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.top, 10)
+                inner
+            }
+            .overlay(alignment: .topTrailing) { resizeChip(for: id, active: activeSpan) }
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(
+                        isHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                        lineWidth: isHover ? 2 : 1
+                    )
+                    .animation(.easeOut(duration: 0.12), value: hoverSlot)
+            )
+            .draggable(id) {
+                Text(id)
+                    .font(.system(size: 13, weight: .heavy))
+                    .padding(10)
+                    .background(palette.bgCard, in: Capsule())
+                    .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
+            }
+            .dropDestination(for: String.self) { droppedIds, _ in
+                guard let dropped = droppedIds.first,
+                      dropped != id,
+                      let fromIdx = order.firstIndex(of: dropped),
+                      let toIdx = order.firstIndex(of: id)
+                else { return false }
+                withAnimation(.easeOut(duration: 0.18)) {
+                    let item = order.remove(at: fromIdx)
+                    order.insert(item, at: min(toIdx, order.count))
+                }
+                return true
+            } isTargeted: { hovering in
+                hoverSlot = hovering ? id : (hoverSlot == id ? nil : hoverSlot)
+            }
+        } else {
+            inner
+        }
+    }
+
+    /// The bespoke size chooser shown on every tile in edit mode. Tapping
+    /// cycles Compact → Half → Full (only across the spans this widget
+    /// allows); long-press opens the explicit Menu picker. Both paths write
+    /// the same `sizes[id]` the layout persists.
+    @ViewBuilder
+    private func resizeChip(for id: String, active: HomeWidgetSpan) -> some View {
+        let avail = availableSizes(for: id)
+        Menu {
+            Picker("Size", selection: sizeBinding(for: id)) {
+                ForEach(avail, id: \.self) { sp in
+                    Label(sp.menuLabel, systemImage: sp.menuIcon).tag(sp)
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: active.menuIcon)
+                    .font(.system(size: 8, weight: .heavy))
+                Text(active.menuLabel.uppercased())
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 7, weight: .heavy))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(LinearGradient.diagonal)
+            .clipShape(Capsule())
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .padding(6)
+        .accessibilityLabel("Resize \(id) widget. Current size \(active.menuLabel).")
+    }
+
+    /// Two-way binding for a widget's span — animates the repack and
+    /// persists immediately so the size survives even if the user leaves
+    /// without tapping DONE.
+    private func sizeBinding(for id: String) -> Binding<HomeWidgetSpan> {
+        Binding(
+            get: { span(for: id) },
+            set: { newSpan in
+                withAnimation(.easeOut(duration: 0.2)) { sizes[id] = newSpan }
+                cacheLocally()
+                Task { await persist() }
+            }
+        )
+    }
+
+    // MARK: Persistence (shared shape with the cross-platform grid)
+
+    private struct CachedSlot: Codable { let widgetId: String; let w: Int; let h: Int }
+
+    private func hydrate() async {
+        // Local cache first (new {widgetId,w,h} format, legacy [String] order).
+        if let data = UserDefaults.standard.data(forKey: storageKey) {
+            if let cached = try? JSONDecoder().decode([CachedSlot].self, from: data), !cached.isEmpty {
+                applySlots(cached.map { ($0.widgetId, $0.w, $0.h) })
+            } else if let legacy = try? JSONDecoder().decode([String].self, from: data), !legacy.isEmpty {
+                order = reconcile(legacy)
+            }
+        }
+        struct In: Encodable { let role: String }
+        struct ServerSlot: Decodable { let widgetId: String; let w: Int?; let h: Int? }
+        struct Out: Decodable { let layout: [ServerSlot]?; let updatedAt: String? }
+        do {
+            let r: Out = try await EusoTripAPI.shared.query("users.getDashboardLayout", input: In(role: role))
+            if let server = r.layout, !server.isEmpty {
+                let resolved = server.map { ($0.widgetId, $0.w ?? 12, $0.h ?? 8) }
+                await MainActor.run { applySlots(resolved) }
+                cacheLocally()
+            }
+        } catch { /* offline / unauth — local cache or canonical default holds */ }
+    }
+
+    /// Maps saved (id + w/h) slots back into `order` + `sizes`, clamping each
+    /// w/h to a span this widget actually offers.
+    private func applySlots(_ slots: [(id: String, w: Int, h: Int)]) {
+        order = reconcile(slots.map { $0.id })
+        var resolved: [String: HomeWidgetSpan] = [:]
+        for s in slots where order.contains(s.id) {
+            let candidate = HomeWidgetSpan.from(w: s.w, h: s.h)
+            let avail = availableSizes(for: s.id)
+            resolved[s.id] = avail.contains(candidate) ? candidate : (avail.first ?? .full)
+        }
+        sizes = resolved
+    }
+
+    private func cacheLocally() {
+        let rows = order.map { id -> CachedSlot in
+            let g = span(for: id).grid
+            return CachedSlot(widgetId: id, w: g.w, h: g.h)
+        }
+        if let data = try? JSONEncoder().encode(rows) {
+            UserDefaults.standard.set(data, forKey: storageKey)
+        }
+    }
+
+    private func persist() async {
+        cacheLocally()
+        struct Slot: Encodable { let widgetId: String; let x: Int; let y: Int; let w: Int; let h: Int }
+        struct In: Encodable { let role: String; let layout: [Slot] }
+        struct Out: Decodable { let success: Bool? }
+        var payload: [Slot] = []
+        var cursorX = 0, rowY = 0
+        for id in order {
+            let g = span(for: id).grid
+            if cursorX + g.w > 12 { cursorX = 0; rowY += 1 }
+            payload.append(Slot(widgetId: id, x: cursorX, y: rowY, w: g.w, h: g.h))
+            cursorX += g.w
+            if cursorX >= 12 { cursorX = 0; rowY += 1 }
+        }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "users.saveDashboardLayout",
+                input: In(role: role, layout: payload)
+            )
+        } catch { /* server unreachable — local cache holds */ }
+    }
+
+    /// Preserves saved order, drops unknown ids, appends newly-shipped slots.
+    private func reconcile(_ saved: [String]) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for s in saved where !seen.contains(s) && canonicalOrder.contains(s) {
+            out.append(s); seen.insert(s)
+        }
+        for s in canonicalOrder where !seen.contains(s) { out.append(s) }
+        return out
+    }
 }
 
 // MARK: - Notification names (canonical CTA hooks for the Shipper Home)

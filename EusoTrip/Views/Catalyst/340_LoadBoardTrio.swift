@@ -230,7 +230,7 @@ private struct MatchedLoadsBody: View {
                             .foregroundStyle(LinearGradient.diagonal)
                     }
                 }
-                Text("\(l.pickupCity ?? "—"), \(l.pickupState ?? "—") → \(l.destCity ?? "—"), \(l.destState ?? "—")")
+                Text("\(l.pickupCity ?? "-"), \(l.pickupState ?? "-") → \(l.destCity ?? "-"), \(l.destState ?? "-")")
                     .font(.caption).foregroundStyle(palette.textSecondary)
                 HStack {
                     if let c = l.cargoType {
@@ -268,7 +268,7 @@ private struct MatchedLoadsBody: View {
         do {
             let _: Out = try await EusoTripAPI.shared.mutation("dispatchRole.acceptLoad", input: In(loadId: id))
             await MainActor.run {
-                acceptAck = "Accepted load \(id) — status flipped to ACCEPTED."
+                acceptAck = "Accepted load \(id). Status flipped to ACCEPTED."
             }
             await loadAll()
         } catch let err {
@@ -348,7 +348,7 @@ private struct FindLoadsBody: View {
         if loading {
             LifecycleCard { Text("Loading marketplace…").font(EType.caption).foregroundStyle(palette.textSecondary) }
         } else if loads.isEmpty {
-            EusoEmptyState(systemImage: "tray", title: "Marketplace is quiet", subtitle: "Check back — new loads post throughout the day.")
+            EusoEmptyState(systemImage: "tray", title: "Marketplace is quiet", subtitle: "Check back. New loads post throughout the day.")
         } else {
             ForEach(loads) { l in
                 LifecycleCard {
@@ -358,7 +358,7 @@ private struct FindLoadsBody: View {
                             Spacer()
                             if let r = l.rate { Text("$\(r)").font(.body.monospacedDigit().weight(.semibold)) }
                         }
-                        Text("\(l.pickupCity ?? "—"), \(l.pickupState ?? "—") → \(l.destCity ?? "—"), \(l.destState ?? "—")").font(.caption).foregroundStyle(palette.textSecondary)
+                        Text("\(l.pickupCity ?? "-"), \(l.pickupState ?? "-") → \(l.destCity ?? "-"), \(l.destState ?? "-")").font(.caption).foregroundStyle(palette.textSecondary)
                         if let c = l.cargoType { Text(c.uppercased()).font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textTertiary) }
                     }
                 }
@@ -448,9 +448,9 @@ private struct AssignedLoadsBody: View {
                         HStack {
                             Text(l.loadNumber ?? l.id).font(EType.body.weight(.bold))
                             Spacer()
-                            Text((l.status ?? "—").uppercased()).font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textTertiary)
+                            Text((l.status ?? "-").uppercased()).font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textTertiary)
                         }
-                        Text("\(l.pickupCity ?? "—"), \(l.pickupState ?? "—") → \(l.destCity ?? "—"), \(l.destState ?? "—")").font(.caption).foregroundStyle(palette.textSecondary)
+                        Text("\(l.pickupCity ?? "-"), \(l.pickupState ?? "-") → \(l.destCity ?? "-"), \(l.destState ?? "-")").font(.caption).foregroundStyle(palette.textSecondary)
                         if let r = l.rate { Text("$\(r)").font(.body.monospacedDigit().weight(.semibold)) }
                     }
                 }

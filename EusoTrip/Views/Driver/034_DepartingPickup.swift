@@ -40,19 +40,19 @@ struct DepartingPickup: View {
     // `navigation.calculateRoute`, `hos.getStatus`, and
     // `vehicle.getFuelLevel`. Until those resolve, em-dashes only —
     // no fabricated origin/destination/ETA rendered in production.
-    private let fallbackClock        = "—"
-    private let fallbackLoadID       = "—"
-    private let fallbackOriginTag    = "—"
-    private let fallbackDestTag      = "—"
-    private let fallbackDestName     = "—"
+    private let fallbackClock        = "-"
+    private let fallbackLoadID       = "-"
+    private let fallbackOriginTag    = "-"
+    private let fallbackDestTag      = "-"
+    private let fallbackDestName     = "-"
     private let fallbackDestSub      = "Awaiting route"
-    private let fallbackDistance     = "—"
-    private let fallbackEta          = "—"
-    private let fallbackViaRoute     = "—"
-    private let fallbackFirstLegSub  = "—"
-    private let fallbackHos          = "—"
-    private let fallbackFuel         = "—"
-    private let fallbackBayLight     = "—"
+    private let fallbackDistance     = "-"
+    private let fallbackEta          = "-"
+    private let fallbackViaRoute     = "-"
+    private let fallbackFirstLegSub  = "-"
+    private let fallbackHos          = "-"
+    private let fallbackFuel         = "-"
+    private let fallbackBayLight     = "-"
 
     var body: some View {
         ScrollView(showsIndicators: false) {

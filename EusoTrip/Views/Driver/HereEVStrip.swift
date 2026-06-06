@@ -134,7 +134,7 @@ struct HereEVStrip: View {
     }
 
     private func connectorChip(_ c: HereChargingConnector) -> some View {
-        let label = (c.connectorType?.name ?? "—")
+        let label = (c.connectorType?.name ?? "-")
             .uppercased()
         return Text(label)
             .font(.system(size: 8, weight: .heavy)).tracking(0.4)

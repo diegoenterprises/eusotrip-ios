@@ -14,7 +14,7 @@
 //  scenario literals — the wireframe ships "Michael Eusorone /
 //  Eusotrans LLC / Houston→Dallas / $1,900" to illustrate the
 //  moment; production substitutes whichever profile + loads the
-//  bound user owns and shows "—" while data resolves.
+//  bound user owns and shows "-" while data resolves.
 //
 //  tRPC procs consumed (all real, verified against
 //  frontend/server/routers/catalysts.ts):
@@ -194,17 +194,17 @@ private struct CHBody: View {
 
     private var displayName: String {
         if let name = session.user?.name, !name.isEmpty { return name }
-        return "—"
+        return "-"
     }
-    private var displayCompany: String { profile?.companyName ?? "—" }
+    private var displayCompany: String { profile?.companyName ?? "-" }
     private var displayDot: String {
-        let d = profile?.dotNumber ?? "—"
+        let d = profile?.dotNumber ?? "-"
         let m = profile?.mcNumber
         if let m, !m.isEmpty { return "USDOT \(d) · MC-\(m)" }
         return "USDOT \(d)"
     }
     private var displayFleet: String {
-        guard let n = profile?.fleetSize else { return "— truck" }
+        guard let n = profile?.fleetSize else { return "- truck" }
         return "\(n) truck\(n == 1 ? "" : "s")"
     }
 
@@ -297,10 +297,10 @@ private struct CHBody: View {
     // MARK: KPIs from getDashboardStats
 
     private var kpiGrid: some View {
-        let active = stats?.activeMatches.map(String.init) ?? "—"
-        let matched = stats?.matchedThisWeek.map(String.init) ?? "—"
-        let onTime = stats?.onTimeRate.map { String(format: "%.0f%%", $0 * 100) } ?? "—"
-        let gmv = stats?.gmvThisWeek.map { Self.currency($0) } ?? "—"
+        let active = stats?.activeMatches.map(String.init) ?? "-"
+        let matched = stats?.matchedThisWeek.map(String.init) ?? "-"
+        let onTime = stats?.onTimeRate.map { String(format: "%.0f%%", $0 * 100) } ?? "-"
+        let gmv = stats?.gmvThisWeek.map { Self.currency($0) } ?? "-"
         let kpis: [(label: String, value: String, sub: String, tint: Color)] = [
             ("ACTIVE",    active,  "matches running",   .blue),
             ("MATCHED",   matched, "this week",         .green),
@@ -340,7 +340,7 @@ private struct CHBody: View {
                 loadCard(l, role: .active)
             } else {
                 LifecycleCard {
-                    Text("No active haul — pick one from the tender queue below.")
+                    Text("No active haul. Pick one from the tender queue below.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
             }
@@ -360,7 +360,7 @@ private struct CHBody: View {
             .padding(.horizontal, 2)
             if availableLoads.isEmpty {
                 LifecycleCard {
-                    Text("No pending tenders — pull to refresh.")
+                    Text("No pending tenders. Pull to refresh.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
             } else {
@@ -407,7 +407,7 @@ private struct CHBody: View {
                     l.rate.map { Self.currency($0) },
                     l.unNumber.map { "UN\($0)" },
                 ].compactMap { $0 }.filter { !$0.isEmpty }
-                Text(metaParts.isEmpty ? "—" : metaParts.joined(separator: " · "))
+                Text(metaParts.isEmpty ? "-" : metaParts.joined(separator: " · "))
                     .font(.caption2)
                     .foregroundStyle(palette.textSecondary)
                 if role == .tender {
@@ -429,8 +429,8 @@ private struct CHBody: View {
     private func laneFor(_ l: CHLoad) -> String {
         let p = [l.pickupLocation?.city, l.pickupLocation?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         let d = [l.deliveryLocation?.city, l.deliveryLocation?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
-        if p.isEmpty && d.isEmpty { return "—" }
-        return "\(p.isEmpty ? "—" : p) → \(d.isEmpty ? "—" : d)"
+        if p.isEmpty && d.isEmpty { return "-" }
+        return "\(p.isEmpty ? "-" : p) → \(d.isEmpty ? "-" : d)"
     }
 
     private func acceptTenderButton(_ l: CHLoad) -> some View {
@@ -500,7 +500,7 @@ private struct CHBody: View {
                 "catalysts.submitBid",
                 input: In(loadId: String(l.id), amount: amount, notes: nil)
             )
-            let bidId = resp.bidId ?? "—"
+            let bidId = resp.bidId ?? "-"
             bidAck = "Tender accepted · bid \(bidId) submitted at \(Self.currency(amount)) for \(l.loadNumber ?? "LD-\(l.id)")."
             await refresh()
         } catch let e {

@@ -175,9 +175,6 @@ private struct VesselContainerTimelineBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text(liveContainerNumber)
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -289,7 +286,7 @@ private struct VesselContainerTimelineBody: View {
             } else if displayNodes.isEmpty {
                 EusoEmptyState(systemImage: "point.topleft.down.curvedto.point.bottomright.up",
                                title: "No events recorded",
-                               subtitle: "Gate, load, and AIS events for this container will appear here.")
+                               subtitle: "Gate, load and AIS events for this container will appear here.")
             } else {
                 VerticalEventTimeline(nodes: displayNodes)
                     .padding(Space.s4)
@@ -324,7 +321,7 @@ private struct VesselContainerTimelineBody: View {
                 title: prettyEventType(m.eventType),
                 sub: m.location?.description
                     ?? geoString(m.location)
-                    ?? "—",
+                    ?? "-",
                 state: isLast ? .current : .done
             )
         }
@@ -352,7 +349,7 @@ private struct VesselContainerTimelineBody: View {
     }
 
     private func prettyTimestamp(_ raw: String?) -> String {
-        guard let raw, !raw.isEmpty else { return "—" }
+        guard let raw, !raw.isEmpty else { return "-" }
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date = iso.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
@@ -377,7 +374,7 @@ private struct VesselContainerTimelineBody: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient.primary)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     .opacity(addingEvent ? 0.6 : 1)
                 }
                 .buttonStyle(.plain)
@@ -389,8 +386,8 @@ private struct VesselContainerTimelineBody: View {
                         .foregroundStyle(palette.textPrimary)
                         .frame(width: 132, height: 48)
                         .background(Color(hex: 0x232932))
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
-                        .clipShape(Capsule())
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }

@@ -223,7 +223,7 @@ struct ShipperBids: View {
 
     private var laneSubLine: String {
         if let l = selectedLoad {
-            let cargo = l.cargoSummary ?? l.cargoType ?? "—"
+            let cargo = l.cargoSummary ?? l.cargoType ?? "-"
             return "\(l.origin) → \(l.destination) · \(cargo) · ranked composite"
         }
         return "Pick a load to see its bid stack"
@@ -318,7 +318,7 @@ struct ShipperBids: View {
         HStack(spacing: 6) {
             Image(systemName: "shippingbox.fill")
                 .font(.system(size: 10, weight: .heavy))
-            Text(load.loadNumber.isEmpty ? "—" : load.loadNumber)
+            Text(load.loadNumber.isEmpty ? "-" : load.loadNumber)
                 .font(.system(size: 10, weight: .heavy)).tracking(0.6)
         }
         .foregroundStyle(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textSecondary))
@@ -353,7 +353,7 @@ struct ShipperBids: View {
                     Text("TARGET")
                         .font(EType.micro).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
-                    Text(load.rate > 0 ? dollars(load.rate) : "—")
+                    Text(load.rate > 0 ? dollars(load.rate) : "-")
                         .font(.system(size: 22, weight: .bold).monospacedDigit())
                         .foregroundStyle(LinearGradient.diagonal)
                 }
@@ -380,7 +380,7 @@ struct ShipperBids: View {
         if let c = load.cargoType, !c.isEmpty { parts.append(c) }
         if let w = load.weightDisplay, !w.isEmpty { parts.append(w) }
         if !load.eta.isEmpty { parts.append("ETA \(load.eta)") }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func lifecycleStageIndex(for load: ShipperAPI.ActiveLoad) -> Int {
@@ -541,13 +541,13 @@ struct ShipperBids: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.78)
                     HStack(spacing: 0) {
-                        Text(b.amount > 0 ? dollars(b.amount) : "—")
+                        Text(b.amount > 0 ? dollars(b.amount) : "-")
                             .font(.system(size: 13, weight: .bold).monospacedDigit())
                             .foregroundStyle(isTopBid
                                              ? AnyShapeStyle(LinearGradient.diagonal)
                                              : AnyShapeStyle(palette.textPrimary))
                             .frame(width: 70, alignment: .leading)
-                        Text(b.transitTime.isEmpty ? "—" : b.transitTime)
+                        Text(b.transitTime.isEmpty ? "-" : b.transitTime)
                             .font(.system(size: 11, weight: .semibold).monospacedDigit())
                             .foregroundStyle(palette.textPrimary)
                             .frame(width: 80, alignment: .leading)
@@ -570,7 +570,7 @@ struct ShipperBids: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             (isTopBid ? "Top bid: " : "") +
-            "\(displayName(for: b)), \(credentialsLine(for: b)), bid \(b.amount > 0 ? dollars(b.amount) : "—"), grade \(gradeLetter(for: b))"
+            "\(displayName(for: b)), \(credentialsLine(for: b)), bid \(b.amount > 0 ? dollars(b.amount) : "-"), grade \(gradeLetter(for: b))"
         )
     }
 
@@ -592,7 +592,7 @@ struct ShipperBids: View {
 
     private func monogram(for b: ShipperAPI.Bid) -> String {
         let n = displayName(for: b)
-        if n == "—" { return "??" }
+        if n == "-" { return "??" }
         let parts = n.split(separator: " ").prefix(2).map(String.init)
         let chars = parts.compactMap { $0.first }.map(String.init)
         let m = chars.joined().uppercased()
@@ -618,7 +618,7 @@ struct ShipperBids: View {
         if s >= 0.80 { return "B" }
         if s >= 0.70 { return "C" }
         if s > 0     { return "D" }
-        return b.recommended ? "★" : "—"
+        return b.recommended ? "★" : "-"
     }
 
     private func gradeTier(for b: ShipperAPI.Bid) -> GradeTier {
@@ -686,7 +686,7 @@ struct ShipperBids: View {
 
     @ViewBuilder
     private func acceptCTA(rank: Int, amount: Double, isSettling: Bool) -> some View {
-        let amountDisplay = amount > 0 ? dollars(amount) : "—"
+        let amountDisplay = amount > 0 ? dollars(amount) : "-"
         if isSettling {
             ProgressView().progressViewStyle(.circular).tint(palette.textPrimary)
                 .frame(width: 74, height: 40)
@@ -737,7 +737,7 @@ struct ShipperBids: View {
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(Capsule().fill(LinearGradient.primary))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
             .disabled(rankedBids.isEmpty)
@@ -751,7 +751,7 @@ struct ShipperBids: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
-                    .overlay(Capsule().strokeBorder(palette.textPrimary.opacity(0.10), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.textPrimary.opacity(0.10), lineWidth: 1))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Counter all bids")
@@ -813,14 +813,14 @@ struct ShipperBids: View {
     private func bidDetailSummary(_ bid: ShipperAPI.Bid) -> some View {
         VStack(spacing: Space.s2) {
             bidDetailRow(label: "Bid amount",
-                         value: bid.amount > 0 ? dollars(bid.amount) : "—",
+                         value: bid.amount > 0 ? dollars(bid.amount) : "-",
                          isHero: true)
             bidDetailRow(label: "Transit time",
-                         value: bid.transitTime.isEmpty ? "—" : bid.transitTime)
+                         value: bid.transitTime.isEmpty ? "-" : bid.transitTime)
             bidDetailRow(label: "DOT",
-                         value: bid.dotNumber.isEmpty ? "—" : bid.dotNumber)
+                         value: bid.dotNumber.isEmpty ? "-" : bid.dotNumber)
             bidDetailRow(label: "Safety score",
-                         value: bid.safetyScore > 0 ? safetyScoreFormat(bid.safetyScore) : "—")
+                         value: bid.safetyScore > 0 ? safetyScoreFormat(bid.safetyScore) : "-")
             bidDetailRow(label: "Grade",
                          value: gradeLetter(for: bid))
             bidDetailRow(label: "Submitted",
@@ -933,7 +933,7 @@ struct ShipperBids: View {
                         Text(displayName(for: bid))
                             .font(.system(size: 22, weight: .heavy))
                             .foregroundStyle(palette.textPrimary)
-                        Text("Optional — give the catalyst a reason. Empty is fine.")
+                        Text("Optional - give the catalyst a reason. Empty is fine.")
                             .font(EType.caption)
                             .foregroundStyle(palette.textSecondary)
                             .lineLimit(2)
@@ -1031,7 +1031,7 @@ struct ShipperBids: View {
                                 // (non-optional) — server emits empty string
                                 // when catalyst is unknown. Em-dash for empty
                                 // so the row doesn't render a blank cell.
-                                Text(b.catalystName.isEmpty ? "—" : b.catalystName)
+                                Text(b.catalystName.isEmpty ? "-" : b.catalystName)
                                     .font(EType.caption)
                                     .foregroundStyle(palette.textPrimary)
                                 if let err = counterAllErrors[b.id] {
@@ -1077,7 +1077,7 @@ struct ShipperBids: View {
                     }
                     .disabled(!canSubmitCounterAll)
                 } footer: {
-                    Text("Each bidder receives an individual counter-offer round. They can accept, reject, or counter back.")
+                    Text("Each bidder receives an individual counter-offer round. They can accept, reject or counter back.")
                         .font(EType.caption)
                 }
             }
@@ -1166,7 +1166,7 @@ struct ShipperBids: View {
             try? await Task.sleep(nanoseconds: 600_000_000)
             showCounterAllSheet = false
         } else {
-            mutationError = "\(counterAllErrors.count) counter\(counterAllErrors.count == 1 ? "" : "s") failed — see rows above."
+            mutationError = "\(counterAllErrors.count) counter\(counterAllErrors.count == 1 ? "" : "s") failed. See rows above."
         }
     }
 
@@ -1268,8 +1268,8 @@ struct ShipperBids: View {
 
     private func displayName(for bid: ShipperAPI.Bid) -> String {
         let trimmed = bid.catalystName.trimmingCharacters(in: .whitespaces)
-        if trimmed.isEmpty { return "—" }
-        if trimmed == "Catalyst" { return "—" }
+        if trimmed.isEmpty { return "-" }
+        if trimmed == "Catalyst" { return "-" }
         return trimmed
     }
 
@@ -1278,7 +1278,7 @@ struct ShipperBids: View {
         if !bid.dotNumber.isEmpty { parts.append("USDOT \(bid.dotNumber)") }
         if bid.safetyScore > 0 { parts.append(safetyScoreFormat(bid.safetyScore)) }
         if bid.recommended { parts.append("recommended") }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func onTimeLine(for bid: ShipperAPI.Bid) -> String {
@@ -1299,7 +1299,7 @@ struct ShipperBids: View {
         f.numberStyle = .decimal
         f.maximumFractionDigits = 1
         f.minimumFractionDigits = 1
-        return (f.string(from: NSNumber(value: value)) ?? "—") + " safety"
+        return (f.string(from: NSNumber(value: value)) ?? "-") + " safety"
     }
 
     private func dollars(_ value: Double) -> String {
@@ -1311,7 +1311,7 @@ struct ShipperBids: View {
     }
 
     private func submittedAbsolute(_ iso: String) -> String {
-        guard !iso.isEmpty else { return "—" }
+        guard !iso.isEmpty else { return "-" }
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var d = f.date(from: iso)

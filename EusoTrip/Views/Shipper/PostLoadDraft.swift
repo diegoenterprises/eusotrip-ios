@@ -322,7 +322,7 @@ final class PostLoadDraft: ObservableObject {
             case .missingOrigin:       return "Origin is required."
             case .missingDestination:  return "Destination is required."
             case .missingPickup:       return "Pickup date is required."
-            case .hazmatFieldsRequired: return "Hazmat loads require UN, class, and proper shipping name."
+            case .hazmatFieldsRequired: return "Hazmat loads require UN, class and proper shipping name."
             case .reeferTempRequired:  return "Reefer loads require a setpoint range."
             }
         }

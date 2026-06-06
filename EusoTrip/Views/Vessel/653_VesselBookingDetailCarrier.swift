@@ -203,10 +203,10 @@ private struct VesselBookingDetailCarrierBody: View {
             HStack {
                 Text(detail?.bookingNumber ?? "VB-…").font(.system(size: 26, weight: .heavy)).monospaced().foregroundStyle(palette.textPrimary)
                 Spacer()
-                StatusPill(text: (detail?.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased(), kind: .info)
+                StatusPill(text: (detail?.status ?? "-").replacingOccurrences(of: "_", with: " ").uppercased(), kind: .info)
             }
             if let d = detail {
-                Text("\(d.origin ?? "—") → \(d.destination ?? "—") · \(d.vesselName ?? "—") voy \(d.voyageNumber ?? "—") · \(d.teuCount ?? 0) FEU")
+                Text("\(d.origin ?? "-") → \(d.destination ?? "-") · \(d.vesselName ?? "-") voy \(d.voyageNumber ?? "-") · \(d.teuCount ?? 0) FEU")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
         }
@@ -216,8 +216,8 @@ private struct VesselBookingDetailCarrierBody: View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("VOYAGE · TRANS-PACIFIC EASTBOUND").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-                Text(d.origin ?? "—").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Text("\(d.destination ?? "—") · ETA \(d.estimatedArrival ?? "—")").font(EType.body).foregroundStyle(palette.textSecondary)
+                Text(d.origin ?? "-").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Text("\(d.destination ?? "-") · ETA \(d.estimatedArrival ?? "-")").font(EType.body).foregroundStyle(palette.textSecondary)
             }
         }
     }
@@ -245,13 +245,13 @@ private struct VesselBookingDetailCarrierBody: View {
     private func containerRoster(_ d: VesselShipmentDetail653) -> some View {
         let containers = d.containers ?? []
         return VStack(alignment: .leading, spacing: Space.s2) {
-            Text("CONTAINERS · \(d.teuCount ?? containers.count) FEU ON VOY \(d.voyageNumber ?? "—")")
+            Text("CONTAINERS · \(d.teuCount ?? containers.count) FEU ON VOY \(d.voyageNumber ?? "-")")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard {
                 VStack(spacing: Space.s2) {
                     ForEach(containers) { c in
                         HStack {
-                            Text("\(c.containerNumber ?? "—")\(c.containerType.map { " · \($0)" } ?? "")")
+                            Text("\(c.containerNumber ?? "-")\(c.containerType.map { " · \($0)" } ?? "")")
                                 .font(.system(size: 12, weight: .medium)).monospaced().foregroundStyle(palette.textPrimary)
                             Spacer()
                             if c.imdgClass != nil {
@@ -284,7 +284,7 @@ private struct VesselBookingDetailCarrierBody: View {
                             .foregroundStyle(charge > 0 ? Brand.warning : Brand.success)
                     }
                     ProgressView(value: Double(accrued), total: Double(max(free, 1))).tint(LinearGradient.primary)
-                    Text("On water — meter starts on discharge + gate-out at destination port")
+                    Text("On water - meter starts on discharge + gate-out at destination port")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
             }

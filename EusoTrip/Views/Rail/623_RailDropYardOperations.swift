@@ -97,7 +97,6 @@ private struct AssignResult: Decodable {
 
 private struct RailDropYardOperationsBody: View {
     @Environment(\.palette) private var palette
-    @Environment(\.dismiss) private var dismiss
 
     @State private var trailers: [DropYardTrailer] = []
     @State private var summary: DropYardSummary? = nil
@@ -208,7 +207,7 @@ private struct RailDropYardOperationsBody: View {
         }
     }
 
-    // MARK: - Top bar (eyebrow + back + title + subtitle + filter chips)
+    // MARK: - Top bar (eyebrow + title + subtitle + filter chips)
 
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -223,14 +222,8 @@ private struct RailDropYardOperationsBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
 
-            // Back chevron + title + overflow
+            // Title + overflow (back chevron painted by the surface overlay)
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
-                }
-                .buttonStyle(.plain)
                 Text("Drop yard")
                     .font(.system(size: 28, weight: .bold))
                     .tracking(-0.4)
@@ -248,7 +241,6 @@ private struct RailDropYardOperationsBody: View {
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 2)
-                .padding(.leading, 24)
 
             // Filter chips
             filterChips
@@ -427,7 +419,7 @@ private struct RailDropYardOperationsBody: View {
     // MARK: - Row classification helpers
 
     private func slotTitle(_ t: DropYardTrailer) -> String {
-        let slot = t.spotId ?? "—"
+        let slot = t.spotId ?? "-"
         let equip = equipmentLabel(t)
         return "Slot \(slot) · \(equip)"
     }
@@ -485,7 +477,7 @@ private struct RailDropYardOperationsBody: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 48)
                 .background(LinearGradient.primary)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 .opacity(assigning ? 0.6 : 1.0)
             }
             .buttonStyle(.plain)
@@ -501,8 +493,8 @@ private struct RailDropYardOperationsBody: View {
                     .padding(.horizontal, Space.s5)
                     .frame(height: 48)
                     .background(Color(hex: 0x232932))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
             }
             .buttonStyle(.plain)
         }
@@ -689,7 +681,7 @@ private struct ChassisSheet: View {
                 }
             }
             Spacer()
-            Text((c.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased())
+            Text((c.status ?? "-").replacingOccurrences(of: "_", with: " ").uppercased())
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(color)
                 .padding(.horizontal, 8).padding(.vertical, 3)

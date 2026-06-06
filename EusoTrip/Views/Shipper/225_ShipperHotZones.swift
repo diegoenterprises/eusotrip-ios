@@ -250,6 +250,14 @@ struct ShipperHotZones: View {
                     .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s3)
 
+                // Demand heatmap — load-to-truck intensity per metro, the
+                // exact same visual the web `/hot-zones` page renders.
+                // Built off the live feed's `liveRatio` so it never shows
+                // a placeholder when zones exist (honest empty otherwise).
+                heatmapSection(f)
+                    .padding(.horizontal, Space.s3)
+                    .padding(.top, Space.s4)
+
                 equipmentChipRow
                     .padding(.top, Space.s4)
 
@@ -305,7 +313,7 @@ struct ShipperHotZones: View {
     private func kpiSummaryStrip(_ f: HotZonesFeedResult) -> some View {
         let avgPulse: String = {
             let changes = f.zones.compactMap { $0.rateChangePercent }
-            guard !changes.isEmpty else { return "—" }
+            guard !changes.isEmpty else { return "-" }
             let avg = changes.reduce(0, +) / Double(changes.count)
             return String(format: "%+.1f%%", avg)
         }()
@@ -328,7 +336,7 @@ struct ShipperHotZones: View {
             kpiCell(label: "COLD METROS",
                     value: "\(cold)",
                     valueStyle: cold > 0 ? .success : .neutral,
-                    trail: cold > 0 ? "post here" : "—",
+                    trail: cold > 0 ? "post here" : "-",
                     trailColor: cold > 0 ? Brand.success : palette.textSecondary)
         }
         .padding(.horizontal, Space.s4)
@@ -340,6 +348,59 @@ struct ShipperHotZones: View {
                 .strokeBorder(palette.borderFaint)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    // MARK: Demand heatmap (HeatCellMatrix · load-to-truck by metro)
+
+    /// Renders the canonical demand heatmap from the live rate feed. Each
+    /// hot metro becomes a cell whose intensity is its load-to-truck
+    /// ratio (`liveRatio`) — ≥3.0 reads HOT, ≥1.4 WARM, else SOFT, the
+    /// same cut-points the 544 dispatcher demand map uses. Equipment-
+    /// filtered zones drive the cells so the heatmap re-densifies when
+    /// the shipper narrows to Tanker/Reefer/etc. No fake fill: when the
+    /// filtered set is empty we surface an honest empty state.
+    @ViewBuilder
+    private func heatmapSection(_ f: HotZonesFeedResult) -> some View {
+        let cells = heatCells(f)
+        if cells.isEmpty {
+            EmptyView()
+        } else {
+            HeatCellMatrix(
+                title: "Demand heatmap",
+                eyebrow: "Load-to-truck intensity · live by metro",
+                cells: cells,
+                columns: 4,
+                thresholds: HeatCellThresholds(
+                    warmAt: 1.4, hotAt: 3.0,
+                    minIntensity: 0.0, maxIntensity: 4.0
+                ),
+                onSelect: { cell in
+                    // Tapping a heat cell drills into the same in-app
+                    // city detail the tiles use. `detail` carries the
+                    // "City, ST" label the detail sheet accepts.
+                    if let label = cell.detail {
+                        pendingDetailCity = HotZoneCityRef(city: label)
+                    }
+                }
+            )
+        }
+    }
+
+    /// Maps the (equipment-filtered) live zones onto `HeatCell`s. Intensity
+    /// is the live load-to-truck ratio; the value text shows it as "N.N×"
+    /// and the unit caption notes the live load count so a hot cell still
+    /// reads at a glance.
+    private func heatCells(_ f: HotZonesFeedResult) -> [HeatCell] {
+        filteredZones(f).prefix(12).map { z in
+            HeatCell(
+                id: z.zoneId,
+                label: z.state,
+                valueText: String(format: "%.1f×", z.liveRatio),
+                unitText: "\(z.liveLoads) loads",
+                intensity: z.liveRatio,
+                detail: "\(z.zoneName), \(z.state)"
+            )
+        }
     }
 
     private enum ValueStyle { case gradient, danger, success, neutral }
@@ -481,7 +542,7 @@ struct ShipperHotZones: View {
             default:         return Brand.info
             }
         }()
-        let pulse = z.rateChangePercent.map { String(format: "%+.1f%%", $0) } ?? "—"
+        let pulse = z.rateChangePercent.map { String(format: "%+.1f%%", $0) } ?? "-"
         let pulseColor: Color = {
             guard let p = z.rateChangePercent else { return palette.textPrimary }
             return p >= 0 ? Brand.danger : Brand.success
@@ -507,7 +568,7 @@ struct ShipperHotZones: View {
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text(z.topEquipment.first?.replacingOccurrences(of: "_", with: " ").capitalized ?? "—")
+                    Text(z.topEquipment.first?.replacingOccurrences(of: "_", with: " ").capitalized ?? "-")
                         .font(EType.micro).tracking(0.5)
                         .foregroundStyle(palette.textTertiary)
                         .lineLimit(1)
@@ -578,7 +639,7 @@ struct ShipperHotZones: View {
     }
 
     private func coldTile(_ c: ColdZoneEntry) -> some View {
-        let pulse = c.liveSurge.map { String(format: "%+.1f", ($0 - 1.0) * 100.0) + "%" } ?? "—"
+        let pulse = c.liveSurge.map { String(format: "%+.1f", ($0 - 1.0) * 100.0) + "%" } ?? "-"
         return Button {
             let metro = c.name ?? c.state ?? ""
             let label = c.state.map { "\(metro), \($0)" } ?? metro

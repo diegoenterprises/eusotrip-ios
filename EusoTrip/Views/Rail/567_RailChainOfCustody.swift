@@ -199,12 +199,12 @@ private struct RailChainOfCustodyBody: View {
     }
 
     private var lastBlockAgo: String {
-        blocks.last?.timestamp.map { "last block \($0)" } ?? "—"
+        blocks.last?.timestamp.map { "last block \($0)" } ?? "-"
     }
     private var consistLabel: String { verification?.consistInfo ?? "\(blocks.count > 0 ? blocks.count : 0)-block trail" }
 
     private func truncatedHash(_ hash: String?) -> String {
-        guard let h = hash, h.count > 10 else { return hash ?? "—" }
+        guard let h = hash, h.count > 10 else { return hash ?? "-" }
         let start = String(h.prefix(6))
         let end   = String(h.suffix(4))
         return "\(start)…\(end)"
@@ -375,7 +375,7 @@ private struct RailChainOfCustodyBody: View {
 
     private func blockRow(_ block: CustodyBlock567, index: Int, isLatest: Bool) -> some View {
         let chipColor: Color = isLatest ? Brand.blue : Self.chainPurple
-        let title = (block.eventType ?? "—").uppercased()
+        let title = (block.eventType ?? "-").uppercased()
             + (block.eventData.map { " · \($0)" } ?? "")
         let hashStr  = truncatedHash(block.blockHash)
         let prevStr  = truncatedHash(block.previousBlockHash)
@@ -436,8 +436,8 @@ private struct RailChainOfCustodyBody: View {
                 }
                 .frame(width: 116, height: 48)
                 .background(palette.bgCard)
-                .overlay(Capsule().strokeBorder(palette.borderFaint))
-                .clipShape(Capsule())
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

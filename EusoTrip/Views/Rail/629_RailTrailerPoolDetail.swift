@@ -184,15 +184,11 @@ private struct RailTrailerPoolDetailBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .top) {
+                // Back affordance is owned by the surface RoleNavBackOverlay
+                // (pops one level via .eusoRoleNavBack). No in-screen chevron
+                // here — it would reset to the Shipments tab root AND
+                // double-draw against the overlay.
                 HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                    Button {
-                        RailEngineerNavDispatcher.handle("Shipments")
-                    } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(palette.textPrimary)
-                    }
-                    .buttonStyle(.plain)
                     Text("Trailer pool")
                         .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                         .foregroundStyle(palette.textPrimary)

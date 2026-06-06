@@ -172,7 +172,7 @@ struct TheHaulCrates: View {
         EusoEmptyState(
             systemImage: "shippingbox.and.arrow.backward",
             title: "No crates yet",
-            subtitle: "Finish missions, extend streaks, or place in a seasonal tournament to earn a crate. Drops are committed server-side — what shows up here is exactly what you'll open."
+            subtitle: "Finish missions, extend streaks or place in a seasonal tournament to earn a crate. Drops are committed server-side, what shows up here is exactly what you'll open."
         )
     }
 
@@ -414,7 +414,7 @@ struct TheHaulCrates: View {
             VStack(alignment: .leading, spacing: Space.s2) {
                 conceptBullet(
                     systemImage: "checkmark.seal",
-                    text: "Clear missions, extend streaks, hit tier thresholds — each drops the matching rarity."
+                    text: "Clear missions, extend streaks, hit tier thresholds. Each drops the matching rarity."
                 )
                 conceptBullet(
                     systemImage: "gift",

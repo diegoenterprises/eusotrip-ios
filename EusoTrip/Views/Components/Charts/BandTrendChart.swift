@@ -185,9 +185,11 @@ public struct BandTrendChart: View {
     /// Two-way binding to the scrubbed sample index (nil = not scrubbing).
     @Binding public var selection: Int?
     /// Fired whenever the scrub index changes (including to nil on release
-    /// if `clearOnRelease` is true).
+    /// only when `clearOnRelease` is set; by default the cursor holds).
     public var onScrub: ((Int?) -> Void)?
-    /// When true the cursor clears on finger-up; when false it sticks.
+    /// When true the cursor clears on finger-up; when false (the default) it
+    /// HOLDS on the touched sample so the readout stays until the next scrub
+    /// (matches the BespokeChartKit cursor pattern in `TrendSparkline`).
     public let clearOnRelease: Bool
 
     @Environment(\.palette) private var palette
@@ -195,6 +197,12 @@ public struct BandTrendChart: View {
 
     @State private var pulse: CGFloat = 0
     @State private var appeared = false
+    /// 2026-06-03 — internal scrub selection. The cursor was a silent no-op
+    /// because `selection` defaults to `.constant(nil)` and every non-preview
+    /// call site used that default, so `selection = i` wrote into a constant.
+    /// This local state drives the cursor self-contained; a real host binding
+    /// still wins when present (for screens that echo into a KPI strip).
+    @State private var localSelected: Int? = nil
 
     public init(
         series: [BandTrendSeries],
@@ -209,7 +217,7 @@ public struct BandTrendChart: View {
         valueFormat: @escaping (Double) -> String = { String(format: "%.1f", $0) },
         selection: Binding<Int?> = .constant(nil),
         onScrub: ((Int?) -> Void)? = nil,
-        clearOnRelease: Bool = true
+        clearOnRelease: Bool = false
     ) {
         self.series = series
         self.guides = guides
@@ -249,6 +257,7 @@ public struct BandTrendChart: View {
         .background(cardBackground)
         .overlay(cardRim)
         .clipShape(RoundedRectangle(cornerRadius: cardRadius, style: .continuous))
+        .sensoryFeedback(.selection, trigger: effectiveSelected)   // haptic tick per scrubbed sample
         .onAppear { startPulse() }
         .animation(.easeInOut(duration: 0.55), value: series)
     }
@@ -315,13 +324,19 @@ public struct BandTrendChart: View {
                 updateSelection(i)
             }
             .onEnded { _ in
+                // 2026-06-03 — HOLD the cursor on the touched sample by
+                // default (no snap-back). A host that opts into
+                // `clearOnRelease` still gets the finger-up clear.
                 if clearOnRelease { updateSelection(nil) }
             }
     }
 
     private func updateSelection(_ i: Int?) {
-        guard i != selection else { return }
-        withAnimation(.easeOut(duration: 0.12)) { selection = i }
+        guard i != effectiveSelected else { return }
+        withAnimation(.easeOut(duration: 0.12)) {
+            localSelected = i                       // drives the cursor self-contained
+            if selection != i { selection = i }     // mirror to host binding when present
+        }
         onScrub?(i)
     }
 
@@ -363,6 +378,7 @@ public struct BandTrendChart: View {
         let x = min(rawX, plot.maxX - cardWidth) >= plot.minX
             ? min(rawX, plot.maxX - cardWidth)
             : anchorX - cardWidth - 10
+        let status = bandStatus(at: index)
         return VStack(alignment: .leading, spacing: 3) {
             ForEach(rows, id: \.0) { row in
                 HStack(spacing: 5) {
@@ -376,6 +392,19 @@ public struct BandTrendChart: View {
                         .foregroundStyle(palette.textPrimary)
                 }
             }
+            // Which band the scrubbed sample sits in (in-band vs. above /
+            // below the FSMA/CII safe window). Hidden when no band is set.
+            if let status {
+                Divider().overlay(palette.borderFaint)
+                HStack(spacing: 5) {
+                    Circle().fill(status.tint).frame(width: 5, height: 5)
+                    Text(status.label)
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(status.tint)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+            }
         }
         .padding(.horizontal, 8).padding(.vertical, 6)
         .frame(width: cardWidth, alignment: .leading)
@@ -387,11 +416,12 @@ public struct BandTrendChart: View {
                         .strokeBorder(palette.borderSoft, lineWidth: 1)
                 )
         )
-        .position(x: max(plot.minX, x) + cardWidth / 2, y: plot.minY + 4 + cardHeight(rows.count) / 2)
+        .position(x: max(plot.minX, x) + cardWidth / 2,
+                  y: plot.minY + 4 + cardHeight(rows.count, hasStatus: status != nil) / 2)
     }
 
-    private func cardHeight(_ rowCount: Int) -> CGFloat {
-        CGFloat(rowCount) * 14 + 12
+    private func cardHeight(_ rowCount: Int, hasStatus: Bool) -> CGFloat {
+        CGFloat(rowCount) * 14 + 12 + (hasStatus ? 18 : 0)
     }
 
     // MARK: Legend
@@ -423,7 +453,7 @@ public struct BandTrendChart: View {
     }
 
     private func lastValueString(for s: BandTrendSeries) -> String {
-        guard let last = s.points.last else { return "—" }
+        guard let last = s.points.last else { return "-" }
         return valueFormat(last.y)
     }
 
@@ -697,8 +727,12 @@ public struct BandTrendChart: View {
         series.first(where: { !$0.points.isEmpty })?.points.map(\.id) ?? []
     }
 
+    /// The index the cursor displays: a real host binding wins; otherwise the
+    /// internal scrub state. Nil = nothing scrubbed yet.
+    private var effectiveSelected: Int? { selection ?? localSelected }
+
     private var clampedSelection: Int? {
-        guard let sel = selection else { return nil }
+        guard let sel = effectiveSelected else { return nil }
         return indexAxis.contains(sel) ? sel : nil
     }
 
@@ -726,6 +760,32 @@ public struct BandTrendChart: View {
         series.compactMap { s in
             guard let p = s.points.first(where: { $0.id == index }) else { return nil }
             return (s.name, valueFormat(p.y), s.tint)
+        }
+    }
+
+    /// Which band the scrubbed sample sits in. Read against the most
+    /// emphasized trace at the index (a `.rising` excursion trace if present,
+    /// else the lead series) so the status reflects the value the operator
+    /// most cares about. Nil when no safe band is configured.
+    private func bandStatus(at index: Int) -> (label: String, tint: Color)? {
+        guard let band else { return nil }
+        // Prefer a rising/excursion trace; otherwise the first series with
+        // a sample at this index.
+        let ranked = series.sorted { lhs, rhs in
+            (lhs.emphasis == .rising ? 0 : 1) < (rhs.emphasis == .rising ? 0 : 1)
+        }
+        guard let value = ranked
+            .lazy
+            .compactMap({ $0.points.first(where: { $0.id == index })?.y })
+            .first
+        else { return nil }
+
+        if value > band.high {
+            return ("Above band · over \(valueFormat(band.high))", Brand.danger)
+        } else if value < band.low {
+            return ("Below band · under \(valueFormat(band.low))", Brand.success)
+        } else {
+            return ("In band · \(valueFormat(band.low))–\(valueFormat(band.high))", bandTint)
         }
     }
 

@@ -229,7 +229,7 @@ private struct BulkUploadShellBody: View {
         LifecycleCard {
             LifecycleSection(label: "ROLE", icon: "person.crop.circle")
             LifecycleRow(label: "Active role", value: roleLabel)
-            LifecycleRow(label: "Account",     value: session.user?.email ?? "—")
+            LifecycleRow(label: "Account",     value: session.user?.email ?? "-")
         }
     }
 
@@ -326,7 +326,7 @@ private struct BulkUploadShellBody: View {
                         .background(palette.tintNeutral).clipShape(Capsule())
                 }.buttonStyle(.plain).disabled(rawCsv.isEmpty)
             }
-            Text(aiParseEnabled ? "OR PASTE ANY TABULAR DATA — ESANG INFERS COLUMNS" : "OR PASTE CSV / JSON").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary).padding(.top, 6)
+            Text(aiParseEnabled ? "OR PASTE ANY TABULAR DATA - ESANG INFERS COLUMNS" : "OR PASTE CSV / JSON").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary).padding(.top, 6)
             TextEditor(text: $rawCsv)
                 .font(.system(.caption, design: .monospaced))
                 .frame(minHeight: 120, maxHeight: 280)
@@ -356,9 +356,9 @@ private struct BulkUploadShellBody: View {
             LifecycleRow(label: "ID",        value: job.id)
             LifecycleRow(label: "Entity",     value: dashIfEmpty(job.entityType))
             LifecycleRow(label: "Status",     value: job.status.uppercased())
-            LifecycleRow(label: "Total",      value: job.total.map { "\($0)" } ?? "—")
-            LifecycleRow(label: "Processed",  value: job.processed.map { "\($0)" } ?? "—")
-            LifecycleRow(label: "Errors",     value: job.errors.map { "\($0)" } ?? "—")
+            LifecycleRow(label: "Total",      value: job.total.map { "\($0)" } ?? "-")
+            LifecycleRow(label: "Processed",  value: job.processed.map { "\($0)" } ?? "-")
+            LifecycleRow(label: "Errors",     value: job.errors.map { "\($0)" } ?? "-")
             LifecycleRow(label: "Submitted",  value: humanISO(job.createdAt))
         }
     }
@@ -391,7 +391,7 @@ private struct BulkUploadShellBody: View {
 
     private var roleLabel: String {
         let r = (session.user?.role ?? "").uppercased()
-        return r.isEmpty ? "—" : r.replacingOccurrences(of: "_", with: " ").capitalized
+        return r.isEmpty ? "-" : r.replacingOccurrences(of: "_", with: " ").capitalized
     }
 
     private func iconFor(_ status: String) -> String {

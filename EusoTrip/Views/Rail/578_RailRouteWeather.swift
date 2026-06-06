@@ -370,7 +370,7 @@ private struct RailRouteWeatherBody: View {
     private func alertRow(_ alert: WeatherAlert578) -> some View {
         let (chipColor, chipIcon) = alertChipInfo(alert.eventType ?? "")
         let (pillLabel, pillColor) = severityPillInfo(alert.severity ?? "")
-        let title = alert.headline.map { String($0.prefix(48)) } ?? (alert.eventType ?? "—")
+        let title = alert.headline.map { String($0.prefix(48)) } ?? (alert.eventType ?? "-")
         let stateSub = statesLabel(alert.states)
         let timeSub  = alert.onsetAt.map { " · \($0.prefix(16))" } ?? ""
         let sub = stateSub + timeSub
@@ -430,7 +430,7 @@ private struct RailRouteWeatherBody: View {
     }
 
     private func statesLabel(_ states: [String]?) -> String {
-        guard let s = states, !s.isEmpty else { return "—" }
+        guard let s = states, !s.isEmpty else { return "-" }
         return s.prefix(3).joined(separator: ", ")
     }
 
@@ -469,8 +469,8 @@ private struct RailRouteWeatherBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

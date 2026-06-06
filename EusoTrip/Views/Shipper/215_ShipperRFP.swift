@@ -25,7 +25,7 @@
 //
 //  Backend gaps surfaced (logged in audit log, no fake data):
 //    EUSO-2116 — no rolled-up "$ saved YTD" metric on the API surface.
-//                Awarded YTD KPI cell trail paints "—" until backend
+//                Awarded YTD KPI cell trail paints "-" until backend
 //                ships `rfpManager.getStats` returning the YTD sum of
 //                (targetRate − awardedRate) per awarded lane.
 //    EUSO-2117 — no per-RFP low/high bid range on the list envelope.
@@ -162,7 +162,7 @@ final class ShipperRFPStore: ObservableObject {
             let res = try await api.rfp.publishRFP(rfpId: rfpId)
             await refresh()
             flashToast(res.success
-                       ? "Published — \(res.distributedTo) carriers notified"
+                       ? "Published - \(res.distributedTo) carriers notified"
                        : "Publish failed")
             return res.success
         } catch {
@@ -290,7 +290,7 @@ struct ShipperRFP: View {
             let bids = rfps.reduce(0) { $0 + $1.responsesReceived }
             return "\(active) ACTIVE · \(bids) BIDS"
         }
-        return "—"
+        return "-"
     }
 
     private var counterAccessibility: String {
@@ -395,7 +395,7 @@ struct ShipperRFP: View {
             kpiCell(label: "TOTAL BIDS", value: "\(totalBids)", gradient: false, delta: nil, deltaColor: .clear, valueColor: nil)
             divider
             // EUSO-2116 — backend doesn't ship `$ saved` aggregate yet.
-            kpiCell(label: "AWARDED YTD", value: "\(awardedYtd)", gradient: false, delta: "—", deltaColor: palette.textTertiary, valueColor: Brand.success)
+            kpiCell(label: "AWARDED YTD", value: "\(awardedYtd)", gradient: false, delta: "-", deltaColor: palette.textTertiary, valueColor: Brand.success)
         }
         .padding(.vertical, Space.s4)
         .frame(maxWidth: .infinity)
@@ -626,9 +626,9 @@ struct ShipperRFP: View {
                         statCell(value: "\(rfp.responsesReceived)", unit: "bids", color: palette.textPrimary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         // EUSO-2117 — low/high bid range pending.
-                        statCell(value: "—", unit: "low", color: palette.textPrimary)
+                        statCell(value: "-", unit: "low", color: palette.textPrimary)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                        statCell(value: "—", unit: "high", color: palette.textPrimary)
+                        statCell(value: "-", unit: "high", color: palette.textPrimary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .padding(.top, Space.s2 + 2)
@@ -834,7 +834,7 @@ struct ShipperRFP: View {
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 48)
-                .background(Capsule().fill(LinearGradient.primary))
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Create a new RFP")
@@ -885,8 +885,8 @@ struct ShipperRFP: View {
         return HStack(spacing: Space.s2) {
             statTile(label: "DEADLINE",   value: shortDate(rfp.responseDeadline))
             statTile(label: "CONTRACT",   value: shortDate(rfp.contractStartDate))
-            statTile(label: "MIN SAFETY", value: req?.minSafetyScore.map { "\($0)%" } ?? "—", tint: Brand.success)
-            statTile(label: "MIN ON-TIME", value: req?.minOnTimeRate.map { "\($0)%" } ?? "—", tint: Brand.info)
+            statTile(label: "MIN SAFETY", value: req?.minSafetyScore.map { "\($0)%" } ?? "-", tint: Brand.success)
+            statTile(label: "MIN ON-TIME", value: req?.minOnTimeRate.map { "\($0)%" } ?? "-", tint: Brand.info)
         }
     }
 
@@ -1305,7 +1305,7 @@ struct ShipperRFP: View {
             Text("No active RFPs")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text("Create your first lane RFP and distribute it to your carrier panel — bids land here for review and award.")
+            Text("Create your first lane RFP and distribute it to your carrier panel. Bids land here for review and award.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
@@ -1434,7 +1434,7 @@ struct ShipperRFP: View {
     // MARK: Helpers
 
     private func shortDate(_ iso: String?) -> String {
-        guard let s = iso, !s.isEmpty else { return "—" }
+        guard let s = iso, !s.isEmpty else { return "-" }
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let date = f.date(from: s) ?? ISO8601DateFormatter().date(from: s)
@@ -1749,7 +1749,7 @@ struct NewRFPComposerSheet: View {
             .frame(maxWidth: .infinity).padding(.vertical, 12)
             .foregroundStyle(.white)
             .background(LinearGradient.diagonal)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(submitting || origin.isEmpty || destination.isEmpty || monthlyVolume.isEmpty)

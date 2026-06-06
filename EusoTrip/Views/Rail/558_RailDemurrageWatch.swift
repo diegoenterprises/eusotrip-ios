@@ -177,7 +177,7 @@ private struct RailDemurrageWatchBody: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(watch?.breachedCount ?? 0) car\(watch?.breachedCount == 1 ? "" : "s") past free time")
                     .font(.system(size: 14, weight: .heavy)).foregroundStyle(Brand.danger)
-                Text("Charges accruing — request early release or contest with carrier")
+                Text("Charges accruing. Request early release or contest with carrier")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
             Spacer()
@@ -212,7 +212,7 @@ private struct RailDemurrageWatchBody: View {
             CarAccrualRing558(fraction: frac, color: color, breached: r == .breached)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text("\(c.loadId ?? "—") · \(c.carNumber ?? "—")")
+                    Text("\(c.loadId ?? "-") · \(c.carNumber ?? "-")")
                         .font(.system(size: 12, weight: .bold)).monospaced().foregroundStyle(palette.textPrimary)
                     if c.hazmatUn != nil {
                         Text("HAZMAT")
@@ -221,7 +221,7 @@ private struct RailDemurrageWatchBody: View {
                             .background(Capsule().fill(Brand.warning.opacity(0.16)))
                     }
                 }
-                Text("\(c.carType ?? "—") · \(c.freeTimeHours ?? 48)h free · \(c.accruedHours ?? 0)h accrued · \(c.location ?? "—")")
+                Text("\(c.carType ?? "-") · \(c.freeTimeHours ?? 48)h free · \(c.accruedHours ?? 0)h accrued · \(c.location ?? "-")")
                     .font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(1)
             }
             Spacer()

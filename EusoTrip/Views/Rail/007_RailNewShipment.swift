@@ -100,7 +100,6 @@ private struct CreateResult007: Decodable {
 
 struct RailNewShipment_007: View {
     @Environment(\.palette) private var palette
-    @Environment(\.dismiss) private var dismiss
 
     // Selections (seed defaults match the SVG example; pickers + endpoints mutate).
     @State private var origin: RailYard007? = nil
@@ -136,11 +135,11 @@ struct RailNewShipment_007: View {
     // MARK: Derived display
 
     private func dash(_ s: String?) -> String {
-        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "—" }
+        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "-" }
         return s
     }
     private func money(_ v: Double?) -> String {
-        guard let v else { return "—" }
+        guard let v else { return "-" }
         return "$" + Self.grouped(Int(v.rounded()))
     }
     private static func grouped(_ n: Int) -> String {
@@ -160,8 +159,8 @@ struct RailNewShipment_007: View {
     }
     private var laneCaption: String {
         let ref = createdRef ?? "RAIL DRAFT"
-        let miles = compare?.distanceMiles.map { "~\(Self.grouped(Int($0.rounded()))) mi" } ?? "— mi"
-        let line = dash(tariff?.railroad).uppercased() == "—" ? "BNSF single-line" : "\(dash(tariff?.railroad)) single-line"
+        let miles = compare?.distanceMiles.map { "~\(Self.grouped(Int($0.rounded()))) mi" } ?? "- mi"
+        let line = dash(tariff?.railroad).uppercased() == "-" ? "BNSF single-line" : "\(dash(tariff?.railroad)) single-line"
         return "\(ref) · \(line) · \(miles)"
     }
 
@@ -206,11 +205,6 @@ struct RailNewShipment_007: View {
                     .foregroundStyle(createdRef == nil ? palette.textTertiary : Brand.success)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Button { dismiss() } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
-                }
                 Text("New rail shipment")
                     .font(.system(size: 28, weight: .bold)).kerning(-0.5)
                     .foregroundStyle(palette.textPrimary)
@@ -483,7 +477,7 @@ struct RailNewShipment_007: View {
                         .foregroundStyle(.white)
                 }
                 .frame(maxWidth: .infinity).frame(height: 48)
-                .background(Capsule().fill(LinearGradient.primary))
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
                 .opacity(canRequest ? 1 : 0.5)
             }
             .disabled(!canRequest || requesting || createdRef != nil)
@@ -497,9 +491,9 @@ struct RailNewShipment_007: View {
                 }
                 .frame(width: 132, height: 48)
                 .background(
-                    Capsule()
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .fill(Color(hex: 0x232932))   // verbatim SVG secondary fill
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
                 )
                 .opacity(canCompare ? 1 : 0.5)
             }

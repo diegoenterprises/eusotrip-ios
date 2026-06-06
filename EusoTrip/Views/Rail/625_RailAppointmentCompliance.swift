@@ -163,10 +163,6 @@ private struct RailAppointmentComplianceBody: View {
     private var titleBlock: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             // Back chevron polyline.
-            Image(systemName: "chevron.left")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
-                .padding(.top, 6)
 
             Text("Appt compliance")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
@@ -467,7 +463,7 @@ private struct RailAppointmentComplianceBody: View {
                     .frame(maxWidth: .infinity, minHeight: 48)
             }
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .buttonStyle(.plain)
 
             Button {
@@ -479,8 +475,8 @@ private struct RailAppointmentComplianceBody: View {
                     .frame(width: 148, height: 48)
             }
             .background(Color(hex: 0x232932))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.10)))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .buttonStyle(.plain)
         }
     }

@@ -276,7 +276,7 @@ struct ShipperCargoInsurance: View {
 
     private var subtitle: String {
         let cov = headlineCoverageText
-        if cov == "—" { return "\(shipperName) · cargo all-risk · annual" }
+        if cov == "-" { return "\(shipperName) · cargo all-risk · annual" }
         return "\(shipperName) · \(cov) all-risk · annual"
     }
 
@@ -319,7 +319,7 @@ struct ShipperCargoInsurance: View {
     private func kpiStrip(_ s: InsuranceSummary) -> some View {
         HStack(spacing: Space.s2) {
             kpiCell(label: "ANNUAL PREMIUM",
-                    value: s.annualPremium.map(grouped) ?? "—",
+                    value: s.annualPremium.map(grouped) ?? "-",
                     accent: nil)
             kpiCell(label: "ACTIVE · EXPIRING",
                     value: "\(s.active ?? 0)",
@@ -380,7 +380,7 @@ struct ShipperCargoInsurance: View {
                     .font(.system(size: 16)).foregroundStyle(LinearGradient.diagonal))
             VStack(alignment: .leading, spacing: 3) {
                 Text(prettyType(p.policyType)).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Text("\(p.providerName ?? "—") · \(p.policyNumber)")
+                Text("\(p.providerName ?? "-") · \(p.policyNumber)")
                     .font(EType.caption.monospaced()).foregroundStyle(palette.textSecondary).lineLimit(1)
                 Text(policySubline(p)).font(EType.micro).foregroundStyle(palette.textTertiary).lineLimit(1)
             }
@@ -403,7 +403,7 @@ struct ShipperCargoInsurance: View {
         } else if st == "active" {
             badgeText("ACTIVE", Brand.success)
         } else {
-            badgeText((p.status ?? "—").uppercased(), palette.textTertiary)
+            badgeText((p.status ?? "-").uppercased(), palette.textTertiary)
         }
     }
 
@@ -471,14 +471,14 @@ struct ShipperCargoInsurance: View {
             Button { coiSheet = true } label: {
                 Text("Request COI").font(EType.bodyStrong).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
-                    .background(Capsule().fill(LinearGradient.diagonal))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.diagonal))
             }.buttonStyle(.plain)
 
             Button { quoteSheet = true } label: {
                 Text("New quote").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                     .frame(width: 124).padding(.vertical, Space.s3)
-                    .background(Capsule().fill(palette.bgCard))
-                    .overlay(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
             }.buttonStyle(.plain)
         }
     }
@@ -548,7 +548,7 @@ struct ShipperCargoInsurance: View {
             .max()
         if let cargo, cargo > 0 { return compact(cargo) }
         if let tc = store.state.value?.summary.totalCoverage, tc > 0 { return compact(tc) }
-        return "—"
+        return "-"
     }
 
     private var aggregateText: String {
@@ -557,7 +557,7 @@ struct ShipperCargoInsurance: View {
             .filter { $0.policyType.contains("cargo") }
             .compactMap { money($0.aggregateLimit) }
             .max()
-        return agg.map(compact) ?? "—"
+        return agg.map(compact) ?? "-"
     }
 
     // MARK: States
@@ -781,7 +781,7 @@ private struct PerLoadQuoteSheet: View {
                         Text(loading ? "Pricing…" : "Get quote").font(EType.bodyStrong).foregroundStyle(.white)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
-                    .background(Capsule().fill(canQuote ? AnyShapeStyle(LinearGradient.diagonal)
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(canQuote ? AnyShapeStyle(LinearGradient.diagonal)
                                                         : AnyShapeStyle(palette.textTertiary.opacity(0.4))))
                 }.buttonStyle(.plain).disabled(!canQuote || loading)
 
@@ -795,8 +795,8 @@ private struct PerLoadQuoteSheet: View {
                     } label: {
                         Text("Use this quote").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                             .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
-                            .background(Capsule().fill(palette.bgCard))
-                            .overlay(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
+                            .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
                     }.buttonStyle(.plain)
                 }
             }
@@ -921,7 +921,7 @@ private struct RequestCOISheet: View {
                         Text(loading ? "Requesting…" : "Request COI").font(EType.bodyStrong).foregroundStyle(.white)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
-                    .background(Capsule().fill(canSubmit ? AnyShapeStyle(LinearGradient.diagonal)
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(canSubmit ? AnyShapeStyle(LinearGradient.diagonal)
                                                          : AnyShapeStyle(palette.textTertiary.opacity(0.4))))
                 }.buttonStyle(.plain).disabled(!canSubmit || loading)
             }

@@ -389,7 +389,7 @@ struct MeTax: View {
                 .font(EType.micro)
                 .tracking(1.3)
                 .foregroundStyle(palette.textTertiary)
-            Text("Estimated tax and quarterly figures are server-computed from your paid settlements using the current self-employed tax rate. They're guidance, not advice — consult your accountant before filing. The 1099-NEC becomes available on or after Jan 31 once Eusorone generates your record.")
+            Text("Estimated tax and quarterly figures are server-computed from your paid settlements using the current self-employed tax rate. They're guidance, not advice, consult your accountant before filing. The 1099-NEC becomes available on or after Jan 31 once Eusorone generates your record.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -440,7 +440,7 @@ struct MeTax: View {
     }
 
     private func shortDate(_ iso: String?) -> String {
-        guard let iso, !iso.isEmpty else { return "—" }
+        guard let iso, !iso.isEmpty else { return "-" }
         let fmt = ISO8601DateFormatter()
         fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         if let d = fmt.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) {

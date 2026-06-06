@@ -29,7 +29,11 @@ struct eSangDispatchChat: View {
     @State private var counterInflight: Bool = false
     @State private var sendInflight: Bool = false
     @State private var actionToast: String? = nil
-    @FocusState private var draftFieldFocused: Bool
+    @State private var showDocClassifier: Bool = false
+    /// Real Speech.framework voice-to-text — the same controller the
+    /// Shipper coach sheet drives. Bound live to the composer while
+    /// recording so the text you SEE is the text ESANG receives.
+    @StateObject private var voice = eSangVoiceInputController()
 
     enum Register { case night, afternoon }
     let register: Register
@@ -47,34 +51,34 @@ struct eSangDispatchChat: View {
 
     private var brief: String {
         let n = ctx.beatCommodityDescriptor
-        return "Morning, Michael Eusorone. Reset returned at 09:30. I pulled one tender in your lane — Univar Curtis Bay to Yara York, \(n.contains("NH3") ? "NH3, " : "")150 mi, $1,420. Weather is 42°F scattered showers along I-83. Want the breakdown?"
+        return "Morning, Michael Eusorone. Reset returned at 09:30. I pulled one tender in your lane, Univar Curtis Bay to Yara York, \(n.contains("NH3") ? "NH3, " : "")150 mi, $1,420. Weather is 42°F scattered showers along I-83. Want the breakdown?"
     }
 
     private var driverReply: String {
-        "Yeah — how does the rate compare and is tractor good to go?"
+        "Yeah, how does the rate compare and is tractor good to go?"
     }
 
     private var dispatchReply: String {
         switch ctx.product {
         case .hazmatTanker, .vesselTanker:
-            return "$9.46/mi net — +$0.42 over lane avg the last 14 days. Tractor passed Saturday's post-trip, MC-331 domes were purged, urea at 78%. DOT inspection sticker expires May 14."
+            return "$9.46/mi net, +$0.42 over lane avg the last 14 days. Tractor passed Saturday's post-trip, MC-331 domes were purged, urea at 78%. DOT inspection sticker expires May 14."
         case .reefer:
-            return "$9.46/mi net — +$0.42 over lane avg. Reefer pulled-down to set-point, fuel at 64%, thermograph clean. DOT inspection clean."
+            return "$9.46/mi net, +$0.42 over lane avg. Reefer pulled-down to set-point, fuel at 64%, thermograph clean. DOT inspection clean."
         case .flatbed:
-            return "$9.46/mi net — +$0.42 over lane avg. Tarps + 12 straps + 2 chains staged, WLL within spec. DOT inspection clean."
+            return "$9.46/mi net, +$0.42 over lane avg. Tarps + 12 straps + 2 chains staged, WLL within spec. DOT inspection clean."
         case .container, .railIntermodal, .vesselContainer:
-            return "$9.46/mi net — +$0.42 over lane avg. Chassis pre-trip clean, twistlocks oiled, EDI 322 armed. DOT inspection clean."
+            return "$9.46/mi net, +$0.42 over lane avg. Chassis pre-trip clean, twistlocks oiled, EDI 322 armed. DOT inspection clean."
         case .railBulk, .vesselBulk:
-            return "$9.46/mi net — +$0.42 over lane avg. Grounding kit checked, hatches sealed, AAR waybill ready."
+            return "$9.46/mi net, +$0.42 over lane avg. Grounding kit checked, hatches sealed, AAR waybill ready."
         case .dryVan:
-            return "$9.46/mi net — +$0.42 over lane avg. Trailer swept dry, seal staged, pallet jack on board. DOT inspection clean."
+            return "$9.46/mi net, +$0.42 over lane avg. Trailer swept dry, seal staged, pallet jack on board. DOT inspection clean."
         }
     }
 
     private var prepReply: String {
         switch ctx.product {
         case .hazmatTanker, .vesselTanker:
-            return "I queued the pre-trip DVIR and pre-loaded the ERG 125 card for UN1005. No surprise — I'll hold the tender 13 more minutes."
+            return "I queued the pre-trip DVIR and pre-loaded the ERG 125 card for UN1005. No surprise. I'll hold the tender 13 more minutes."
         case .reefer:
             return "Pre-trip DVIR is queued and the temp trace export is waiting. I'll hold the tender 13 more minutes."
         case .flatbed:
@@ -94,23 +98,43 @@ struct eSangDispatchChat: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Space.s4) {
                     statusRow
+                    dayDivider
                     esangBubble(text: brief, time: "09:31")
                     driverBubble(text: driverReply, time: "09:31")
                     esangBubble(text: dispatchReply, time: "09:32", attachment: AnyView(routePreviewPill))
                     esangBubble(text: prepReply, time: "09:33")
-                    Color.clear.frame(height: 60)
+                    Color.clear.frame(height: 8)
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 8)
             }
+            watchingPill
             quickReplies
             inputBar
         }
         .task { await hydrateLiveTrip() }
+        .onAppear {
+            // Hand the real transcript back into the composer. Append so a
+            // dictation can extend a half-typed message rather than clobber it.
+            voice.onFinalTranscript = { transcript in
+                let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                draft = trimmed.isEmpty ? transcript : "\(trimmed) \(transcript)"
+            }
+        }
+        .onDisappear { voice.cancel() }
         .sheet(isPresented: $showCounterSheet) {
             counterComposerSheet
                 .environment(\.palette, palette)
                 .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showDocClassifier) {
+            DocumentClassifierSheet(
+                mode: .prefillWizard,
+                callerContext: "esang dispatch chat",
+                onApplySingle: { doc in attachClassifiedDoc(doc) },
+                onDispatchBatch: { _ in }
+            )
+            .environment(\.palette, palette)
         }
         .overlay(alignment: .bottom) {
             if let msg = actionToast {
@@ -193,203 +217,104 @@ struct eSangDispatchChat: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Button { navBack?() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 36, height: 36)
-                    .background(palette.bgCard)
-                    .overlay(Circle().strokeBorder(palette.borderFaint))
-                    .clipShape(Circle())
-            }
-            HStack(spacing: 6) {
-                ZStack {
-                    Circle().fill(LinearGradient.diagonal).frame(width: 30, height: 30)
-                    Image(systemName: "sparkles").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-                }
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 4) {
-                        Text("ESANG")
-                            .font(EType.bodyStrong)
-                            .foregroundStyle(palette.textPrimary)
-                        Text(fallbackBriefHash)
-                            .font(.system(size: 9, weight: .heavy))
-                            .foregroundStyle(LinearGradient.diagonal)
-                            .padding(.horizontal, 4).padding(.vertical, 1)
-                            .overlay(Capsule().stroke(LinearGradient.diagonal.opacity(0.5), lineWidth: 1))
-                        LoadModeBadge(modeRaw: activeLoad?.transportMode,
-                                      multiVehicleCount: activeLoad?.multiVehicleCount,
-                                      compact: true)
+        ChatHeaderESang(
+            breadcrumb: "DRIVER · ESANG DISPATCH",
+            statusText: "ONLINE · DISPATCH LINKED",
+            online: true,
+            onBack: { navBack?() },
+            accessory: {
+                LoadModeBadge(modeRaw: activeLoad?.transportMode,
+                              multiVehicleCount: activeLoad?.multiVehicleCount,
+                              compact: true)
+            },
+            overflow: {
+                // Mirrors the real quick actions so nothing is dead.
+                Menu {
+                    Button { Task { await acceptTender() } } label: {
+                        Label("Accept tender", systemImage: "checkmark.circle")
                     }
-                    Text("MORNING BRIEF · JUST NOW")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(palette.textTertiary)
+                    Button { counterOffer() } label: {
+                        Label("Counter offer", systemImage: "arrow.left.arrow.right")
+                    }
+                    Button { showRadar() } label: {
+                        Label("Show radar", systemImage: "dot.radiowaves.left.and.right")
+                    }
+                    Button { showDocClassifier = true } label: {
+                        Label("Attach document", systemImage: "paperclip")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(palette.textSecondary)
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
                 }
             }
-            Spacer(minLength: 0)
-            Text(fallbackClock)
-                .font(EType.mono(.caption)).fontWeight(.semibold)
-                .foregroundStyle(palette.textPrimary)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, Space.s3)
+        )
     }
 
     private var statusRow: some View {
-        HStack(spacing: 6) {
-            statusChip(label: fallbackResetClock, color: Brand.success)
-            statusChip(label: "LOAD EUSO-004640", color: palette.textSecondary)
-            statusChip(label: fallbackExpiresIn, color: Brand.warning)
-            Spacer()
+        ChatStatusRow {
+            ChatStatusChip(label: fallbackResetClock, color: Brand.success, live: true)
+            ChatStatusChip(label: fallbackLoadHash, color: palette.textSecondary)
+            ChatStatusChip(label: fallbackExpiresIn, color: Brand.warning)
         }
     }
 
-    private func statusChip(label: String, color: Color) -> some View {
-        Text(label)
-            .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-            .foregroundStyle(color)
-            .padding(.horizontal, 6).padding(.vertical, 3)
-            .overlay(Capsule().stroke(color.opacity(0.5), lineWidth: 1))
-    }
+    private var dayDivider: some View { ChatDayDivider() }
 
     private func esangBubble(text: String, time: String, attachment: AnyView? = nil) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            ZStack {
-                Circle().fill(LinearGradient.diagonal).frame(width: 28, height: 28)
-                Image(systemName: "sparkles").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                Text(text)
-                    .font(EType.body)
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(Space.s3)
-                    .background(palette.bgCard)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                if let attachment {
-                    attachment
-                }
-                Text(time)
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            Spacer(minLength: 36)
+        ChatBubbleReceived(avatar: .esang, text: text, time: time) {
+            if let attachment { attachment }
         }
     }
 
     private func driverBubble(text: String, time: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Spacer(minLength: 36)
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(text)
-                    .font(EType.body)
-                    .foregroundStyle(.white)
-                    .padding(Space.s3)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                Text(time)
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(palette.textTertiary)
-            }
-        }
+        ChatBubbleSent(text: text, time: time)
     }
 
     private var routePreviewPill: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "map.fill")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(LinearGradient.diagonal)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Route preview · I-695 → I-83 N")
-                    .font(EType.caption.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                Text("156 MI · 2:01 EFA · BAY 4 · PEAK 73°F")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            Spacer()
-            Text("OPEN")
-                .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(LinearGradient.diagonal)
-        }
-        .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        ChatInlineCard(icon: "map.fill",
+                       title: "Route preview · I-695 → I-83 N",
+                       subtitle: "156 MI · 2:01 EFA · BAY 4 · PEAK 73°F",
+                       badge: "OPEN")
+    }
+
+    /// Live "ESANG is watching X" presence pill — centered, above the
+    /// quick-reply rail, matching the AFTER frame.
+    private var watchingPill: some View {
+        ChatPresencePill(text: "ESANG monitoring this tender · live")
+            .padding(.bottom, Space.s2)
     }
 
     private var quickReplies: some View {
-        HStack(spacing: Space.s2) {
-            quickChip("Accept tender", isPrimary: true) { Task { await acceptTender() } }
-            quickChip("Show radar") { showRadar() }
-            quickChip("Counter offer") { counterOffer() }
-            Spacer()
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Space.s2) {
+                ChatQuickChip(label: "Accept tender", highlighted: true) { Task { await acceptTender() } }
+                ChatQuickChip(label: "Show radar") { showRadar() }
+                ChatQuickChip(label: "Counter offer") { counterOffer() }
+            }
+            .padding(.horizontal, 14)
         }
-        .padding(.horizontal, 14)
         .padding(.bottom, Space.s2)
     }
 
-    private func quickChip(_ label: String, isPrimary: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(label)
-                .font(EType.caption.weight(.semibold))
-                .foregroundStyle(isPrimary ? .white : palette.textPrimary)
-                .padding(.horizontal, Space.s3)
-                .padding(.vertical, 8)
-                .background(isPrimary ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard))
-                .overlay(
-                    Capsule()
-                        .stroke(isPrimary ? Color.clear : palette.borderSoft, lineWidth: 1)
-                )
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-    }
-
     private var inputBar: some View {
-        HStack(spacing: 8) {
-            HStack {
-                TextField("Ask ESANG…", text: $draft)
-                    .font(EType.body)
-                    .foregroundStyle(palette.textPrimary)
-                    .submitLabel(.send)
-                    .focused($draftFieldFocused)
-                    .onSubmit { sendDraft() }
-                Spacer()
-                Button { tapMic() } label: {
-                    Image(systemName: "mic.fill")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(palette.textSecondary)
-                }
+        ChatComposer(
+            draft: $draft,
+            voice: voice,
+            placeholder: "Ask ESANG…",
+            showUpload: true,
+            showVoice: true,
+            sending: sendInflight,
+            onUpload: { showDocClassifier = true },
+            onSend: { sendDraft() },
+            onToggleVoice: {
+                MeAction.fire("053.voice-toggled",
+                              userInfo: ["loadId": lifecycle.loadId,
+                                         "recording": !voice.isRecording])
             }
-            .padding(.horizontal, Space.s3)
-            .padding(.vertical, 10)
-            .background(palette.bgCard)
-            .overlay(
-                Capsule().stroke(palette.borderFaint, lineWidth: 1)
-            )
-            .clipShape(Capsule())
-
-            Button { sendDraft() } label: {
-                ZStack {
-                    Circle()
-                        .fill(LinearGradient.diagonal)
-                        .frame(width: 40, height: 40)
-                        .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-            }
-            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }
+        )
         .padding(.horizontal, 14)
         .padding(.bottom, Space.s3)
     }
@@ -479,15 +404,80 @@ struct eSangDispatchChat: View {
         actionToast = nil
     }
 
-    private func tapMic() {
-        // Mic tap → focus the text input + open the keyboard. Voice
-        // dictation is then available via the iOS keyboard's mic
-        // button — real today, no SFSpeechRecognizer dependency.
-        // When DictationBroker ships (per feedback_watch_voice
-        // doctrine) the focus state can route through it instead.
-        MeAction.fire("053.mic-tapped",
-                      userInfo: ["loadId": lifecycle.loadId])
-        draftFieldFocused = true
+    /// A document was classified by the vision spine. Insert an
+    /// honest, concise reference line into the chat input so the
+    /// driver (and ESANG, once the message lands) knows exactly what
+    /// the document is — never a type the classifier didn't return.
+    private func attachClassifiedDoc(_ doc: ClassifiedDocument) {
+        let confidencePct = Int((doc.confidence * 100).rounded())
+        // Low confidence or no real type → don't assert a label.
+        let unconfident = doc.classifiedType.isEmpty
+            || doc.classifiedType.lowercased() == "unknown"
+            || doc.confidence < 0.6
+
+        let line: String
+        if unconfident {
+            line = "📎 Document attached. Couldn't confidently identify it, please confirm what it is."
+        } else {
+            let label = humanDocType(doc.classifiedType)
+            var s = "📎 \(label) (\(confidencePct)%)"
+            // Append a couple of key extracted fields when present so
+            // ESANG gets the salient details, not just a type name.
+            let keyFields = doc.fields
+                .filter { !$0.value.trimmingCharacters(in: .whitespaces).isEmpty }
+                .sorted { $0.key < $1.key }
+                .prefix(3)
+                .map { "\(humanFieldKey($0.key)): \($0.value)" }
+            if !keyFields.isEmpty {
+                s += " - " + keyFields.joined(separator: ", ")
+            } else if !doc.summary.isEmpty {
+                s += " - " + doc.summary
+            }
+            line = s
+        }
+
+        // Surface any classifier warnings honestly on their own line.
+        let warningLine = doc.warnings.isEmpty
+            ? ""
+            : "\n⚠ " + doc.warnings.prefix(2).joined(separator: "; ")
+
+        let insertion = line + warningLine
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = trimmed.isEmpty ? insertion : "\(draft)\n\(insertion)"
+
+        MeAction.fire("053.doc-classified",
+                      userInfo: ["loadId": lifecycle.loadId,
+                                 "type": doc.classifiedType,
+                                 "confidence": doc.confidence])
+    }
+
+    /// Local human-readable mapping for the doc types most likely to
+    /// surface in dispatch chat (BOL / POD / rate con / credentials).
+    /// Falls back to a de-snaked title for anything else.
+    private func humanDocType(_ raw: String) -> String {
+        switch raw {
+        case "bill_of_lading": return "Bill of Lading"
+        case "rate_confirmation": return "Rate Confirmation"
+        case "proof_of_delivery": return "Proof of Delivery"
+        case "load_tender": return "Load Tender"
+        case "run_ticket": return "Run Ticket"
+        case "weight_ticket", "scale_ticket": return "Weight Ticket"
+        case "us_cdl": return "CDL"
+        case "us_medical_card": return "Medical Card"
+        case "us_coi", "ca_coi": return "Insurance Certificate"
+        case "lumper_receipt": return "Lumper Receipt"
+        case "fuel_receipt": return "Fuel Receipt"
+        default:
+            return raw.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
+    private func humanFieldKey(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "([a-z])([A-Z])", with: "$1 $2",
+                                  options: .regularExpression)
+            .capitalized
     }
 
     private func sendDraft() {

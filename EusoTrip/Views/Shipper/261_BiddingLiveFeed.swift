@@ -146,7 +146,7 @@ private struct BiddingBody: View {
         case .empty:
             LifecycleCard {
                 LifecycleSection(label: "LIVE BID FEED", icon: "hand.raised")
-                Text("No bids yet — carriers will surface offers as they come in.")
+                Text("No bids yet. Carriers will surface offers as they come in.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }

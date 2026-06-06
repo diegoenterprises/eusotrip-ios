@@ -149,7 +149,7 @@ private extension AxisStatus {
         case .dueSoon:  return "DUE SOON"
         case .missing:  return "ACTION REQ"
         case .current:  return "ACTIVE"
-        case .unknown:  return "—"
+        case .unknown:  return "-"
         }
     }
 }
@@ -268,7 +268,7 @@ private struct CatalystDriverCompliance: View {
     }
 
     private var subtitleLine: String {
-        let name = resolvedDriverName.isEmpty ? "—" : resolvedDriverName
+        let name = resolvedDriverName.isEmpty ? "-" : resolvedDriverName
         return "Eusotrans LLC · \(name) · 49 CFR §391/§395/§382 · per-driver scanline"
     }
 
@@ -371,8 +371,8 @@ private struct CatalystDriverCompliance: View {
     }
 
     private var identityMetaLine: String {
-        let cdl = complianceRow?.cdlNumber.isEmpty == false ? "CDL \(complianceRow!.cdlNumber)" : "CDL —"
-        let safety = complianceRow.map { "safety \($0.safetyScore)/100" } ?? "safety —"
+        let cdl = complianceRow?.cdlNumber.isEmpty == false ? "CDL \(complianceRow!.cdlNumber)" : "CDL -"
+        let safety = complianceRow.map { "safety \($0.safetyScore)/100" } ?? "safety -"
         return "\(cdl) · \(safety)"
     }
 
@@ -382,21 +382,21 @@ private struct CatalystDriverCompliance: View {
         HStack(spacing: 0) {
             kpiCell(
                 eyebrow: "DQ SCORE",
-                value: dqOverview.map { "\($0.complianceScore)%" } ?? "—",
+                value: dqOverview.map { "\($0.complianceScore)%" } ?? "-",
                 meta: dqMetaLabel,
                 emphasis: .gradient
             )
             kpiDivider
             kpiCell(
                 eyebrow: "BASIC",
-                value: complianceRow.map { "\($0.safetyScore)/100" } ?? "—",
+                value: complianceRow.map { "\($0.safetyScore)/100" } ?? "-",
                 meta: basicMetaLabel,
                 emphasis: basicEmphasis
             )
             kpiDivider
             kpiCell(
                 eyebrow: "ROADSIDE",
-                value: perfMetrics.map { String(format: "%.0f%%", $0.inspectionPassRate) } ?? "—",
+                value: perfMetrics.map { String(format: "%.0f%%", $0.inspectionPassRate) } ?? "-",
                 meta: "pass rate",
                 emphasis: .gradient
             )
@@ -466,7 +466,7 @@ private struct CatalystDriverCompliance: View {
     }
 
     private var dqMetaLabel: String {
-        guard let o = dqOverview else { return "—" }
+        guard let o = dqOverview else { return "-" }
         let total = o.documents.total
         return "\(o.documents.valid)/\(total) docs valid"
     }
@@ -604,18 +604,18 @@ private struct CatalystDriverCompliance: View {
             // Carrier-level CSA isn't yet wired iOS-side; compose from
             // safetyScore and overall comp status.
             guard let row = complianceRow else {
-                return (.unknown, "—", "Not yet wired · check 317 carrier compliance home")
+                return (.unknown, "-", "Not yet wired · check 317 carrier compliance home")
             }
             let s = row.safetyScore
             switch row.status {
             case "compliant" where s >= 90: return (.clean, "\(s)/100", "0 violations · clean BASIC")
             case "compliant":                return (.clean, "\(s)/100", "below threshold · clean BASIC")
-            case "expiring":                 return (.dueSoon, "\(s)/100", "review window — recheck in 30d")
+            case "expiring":                 return (.dueSoon, "\(s)/100", "review window · recheck in 30d")
             default:                          return (.missing, "\(s)/100", "out of compliance · escalate")
             }
         case .hosPart395:
             guard let m = perfMetrics else {
-                return (.unknown, "—", "Not yet wired · run 320 scorecard to populate")
+                return (.unknown, "-", "Not yet wired · run 320 scorecard to populate")
             }
             let pct = Int(m.hosCompliance.rounded())
             if pct >= 95 { return (.clean, "\(pct)%", "no §395 violations in window") }
@@ -623,7 +623,7 @@ private struct CatalystDriverCompliance: View {
             return (.missing, "\(pct)%", "§395 violations · audit ELD")
         case .mcsapRoadside:
             guard let m = perfMetrics else {
-                return (.unknown, "—", "no roadside inspections in window")
+                return (.unknown, "-", "no roadside inspections in window")
             }
             let pct = Int(m.inspectionPassRate.rounded())
             if pct >= 95 { return (.clean, "\(pct)%", "MCSAP pass · clean record") }
@@ -644,7 +644,7 @@ private struct CatalystDriverCompliance: View {
             if let row = complianceRow, !row.medicalExpiry.isEmpty {
                 return (.clean, "exp \(row.medicalExpiry)", "valid through \(row.medicalExpiry)")
             }
-            return (.unknown, "—", "no medical card on file · upload to DQ vault")
+            return (.unknown, "-", "no medical card on file · upload to DQ vault")
         case .controlledSubstancesPart382:
             if hasValidDocument(typeContains: "drug") {
                 return (.clean, "OK", "test on file · pre-employment cleared")

@@ -47,7 +47,7 @@ struct ConnectDropHose: View {
     /// data — sentinel parity with 043_DisconnectConfirmed.
     private var connectHeadline: String {
         let medium = ctx.isHazmat ? "drop hose" : "next trailer"
-        let cityState = activeLoad?.deliveryLocation?.cityState ?? "—"
+        let cityState = activeLoad?.deliveryLocation?.cityState ?? "-"
         return "Connecting \(medium) · \(cityState)"
     }
 
@@ -270,7 +270,7 @@ struct ConnectDropHose: View {
                             .foregroundStyle(Brand.danger)
                     }
                 }
-                Text("\"Ring is on three turns — give it a snug, no torquing.\"")
+                Text("\"Ring is on three turns, give it a snug, no torquing.\"")
                     .font(EType.body)
                     .foregroundStyle(palette.textPrimary)
                     .italic()

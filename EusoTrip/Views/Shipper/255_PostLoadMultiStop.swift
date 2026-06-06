@@ -58,7 +58,7 @@ private struct MultiStopBody: View {
                             .frame(width: 24, height: 24).background(LinearGradient.diagonal).clipShape(Circle())
                         VStack(alignment: .leading, spacing: 2) {
                             Text(draft.stops[i].address).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                            Text(draft.stops[i].contactName.isEmpty ? "—" : draft.stops[i].contactName)
+                            Text(draft.stops[i].contactName.isEmpty ? "-" : draft.stops[i].contactName)
                                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                         }
                         Spacer(minLength: 0)

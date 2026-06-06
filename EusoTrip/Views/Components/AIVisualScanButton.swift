@@ -206,7 +206,7 @@ public struct AIVisualScanButton: View {
         procPath: "visualIntelligence.inspectDVIR",
         context: ["inspectionPoint": "brakes"]
     ) { result in
-        print("scan result:", result.summary ?? "—")
+        print("scan result:", result.summary ?? "-")
     }
     .padding(16)
     .preferredColorScheme(.dark)

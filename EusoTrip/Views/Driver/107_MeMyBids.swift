@@ -360,7 +360,7 @@ struct MeMyBidsView: View {
     }
 
     private func amountLabel(_ raw: String?) -> String {
-        guard let r = raw, let v = Double(r) else { return "$—" }
+        guard let r = raw, let v = Double(r) else { return "$-" }
         if v >= 1000 { return String(format: "$%.0f", v) }
         return String(format: "$%.2f", v)
     }

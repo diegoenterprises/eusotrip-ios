@@ -131,10 +131,6 @@ private struct RailClaimsListBody: View {
 
     private var titleRow: some View {
         HStack(alignment: .top, spacing: Space.s2) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
-                .padding(.top, 6)
             Text("Claims list")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
@@ -528,7 +524,7 @@ private struct RailClaimsListBody: View {
     /// rather than fabricate a dollar value. (Amount lives on getClaimById /
     /// the dashboard totalValue aggregate, both flagged PORT-GAP for the row.)
     private func amountString(_ claim: FreightClaimsAPI.Claim) -> String {
-        "—"
+        "-"
     }
 
     // MARK: - Loader

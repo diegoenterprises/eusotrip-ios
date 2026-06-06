@@ -76,7 +76,7 @@ struct ShipperWatchComplication: View {
         persona:          "Eusorone Technologies",
         lane:             "Kansas City MO → Omaha NE · MC-331 NH₃",
         stageIndex:       4,
-        stageKicker:      "Stage 5 — In transit · advanced 38m ago",
+        stageKicker:      "Stage 5 · In transit · advanced 38m ago",
         relativeAgo:      "38m ago",
         liveLabel:        "LIVE · UN1005 ESCORT · 4H 36M",
         carrierGrade:     "A",

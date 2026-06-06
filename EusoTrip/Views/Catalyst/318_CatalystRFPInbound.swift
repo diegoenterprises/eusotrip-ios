@@ -186,7 +186,7 @@ private struct RFPInboundBody: View {
                     .foregroundStyle(statusColor)
                 }
                 HStack {
-                    Text("\(r.pickupCity ?? "—") \(r.pickupState ?? "") → \(r.destCity ?? "—") \(r.destState ?? "")")
+                    Text("\(r.pickupCity ?? "-") \(r.pickupState ?? "") → \(r.destCity ?? "-") \(r.destState ?? "")")
                         .font(EType.body.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
                     if r.recurring == true {

@@ -95,7 +95,7 @@ private struct PODBody: View {
             Text("POD receipt · ready").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             let pal = pod?.palletsReceived ?? 0
             let exp = pod?.palletsExpected ?? 0
-            let temp = pod?.temperatureF.map { String(format: "%.0f°F", $0) } ?? "—"
+            let temp = pod?.temperatureF.map { String(format: "%.0f°F", $0) } ?? "-"
             Text("\(pal)/\(exp) RECONCILED · \(temp) SEAL-FINAL · QUEUED")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textSecondary)
         }
@@ -163,7 +163,7 @@ private struct PODBody: View {
         return LazyVGrid(columns: cols, spacing: 8) {
             kpi("PALLETS", "\(pal)/\(exp)", "RECEIVED · seal", .green)
             kpi("POD CERT", "QUEUED", "awaiting DU", .orange)
-            kpi("TEMP", pod?.temperatureF.map { String(format: "%.0f°F", $0) } ?? "—", "SEAL · final", .blue)
+            kpi("TEMP", pod?.temperatureF.map { String(format: "%.0f°F", $0) } ?? "-", "SEAL · final", .blue)
             kpi("PAYABLE", (pod?.payableStatus ?? "ARM-ON-TAP").uppercased(), "NET-30", .green)
         }
     }

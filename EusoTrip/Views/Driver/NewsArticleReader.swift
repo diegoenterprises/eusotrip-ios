@@ -1295,7 +1295,7 @@ private struct GeminiTranslatedArticleReader: View {
             Text("Translating into \(target.displayName)…")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
-            Text("Powered by ESANG · Gemini. Works on any connection — no language pack download.")
+            Text("Powered by ESANG · Gemini. Works on any connection, no language pack download.")
                 .font(EType.micro)
                 .foregroundStyle(palette.textTertiary)
                 .lineSpacing(3)

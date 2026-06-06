@@ -70,7 +70,7 @@ private struct ThreadListBody: View {
                 Text("SHIPPER · MESSAGES · INBOX").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Messages").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("Conversations with dispatch, carriers, brokers, and load participants.")
+            Text("Conversations with dispatch, carriers, brokers and load participants.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
@@ -80,34 +80,67 @@ private struct ThreadListBody: View {
         if loading { LifecycleCard { Text("Loading threads…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
         else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
         else if rows.isEmpty {
-            EusoEmptyState(systemImage: "message", title: "No conversations", subtitle: "Start a chat with a carrier, dispatcher, or eSang from a load detail.")
+            EusoEmptyState(systemImage: "message", title: "No conversations", subtitle: "Start a chat with a carrier, dispatcher or eSang from a load detail.")
         } else {
             ForEach(rows) { c in
                 Button {
                     NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "311", "conversationId": c.id])
                 } label: {
                     LifecycleCard {
-                        HStack {
-                            Image(systemName: c.kind == "esang_ai" ? "sparkles" : "person.2.fill")
-                                .foregroundStyle(LinearGradient.diagonal)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(dashIfEmpty(c.title)).font(EType.bodyStrong).foregroundStyle(palette.textPrimary).lineLimit(1)
-                                Text(dashIfEmpty(c.lastMessage)).font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(1)
-                            }
-                            Spacer(minLength: 0)
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text(humanISO(c.lastMessageAt, format: "HH:mm")).font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
-                                if let n = c.unreadCount, n > 0 {
-                                    Text("\(n)").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
-                                        .padding(.horizontal, 6).padding(.vertical, 2)
-                                        .background(LinearGradient.diagonal).clipShape(Capsule())
-                                }
-                            }
-                        }
+                        row(c)
                     }
                 }.buttonStyle(.plain)
             }
         }
+    }
+
+    /// Single inbox row — shared chat-kit avatar leading the title, preview,
+    /// timestamp + unread badge. ESANG AI threads get the gradient orb; peer
+    /// threads get a tinted initials disc derived from the conversation title.
+    @ViewBuilder
+    private func row(_ c: Conversation) -> some View {
+        HStack(spacing: 10) {
+            ChatAvatar(kind: avatarKind(for: c), size: 38)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(dashIfEmpty(c.title)).font(EType.bodyStrong).foregroundStyle(palette.textPrimary).lineLimit(1)
+                Text(dashIfEmpty(c.lastMessage)).font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(humanISO(c.lastMessageAt, format: "HH:mm")).font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                if let n = c.unreadCount, n > 0 {
+                    Text("\(n)").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
+                        .frame(minWidth: 18)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(LinearGradient.diagonal).clipShape(Capsule())
+                }
+            }
+        }
+    }
+
+    /// Maps a conversation to its chat-kit avatar: the ESANG orb for the AI
+    /// thread, otherwise an initials disc tinted by the title so peers stay
+    /// visually distinct down the list.
+    private func avatarKind(for c: Conversation) -> ChatAvatarKind {
+        if c.kind == "esang_ai" { return .esang }
+        return .person(initials: initials(c.title), tint: tint(for: c.title ?? c.id))
+    }
+
+    /// Up to two uppercased initials from the conversation title; falls back
+    /// to a person glyph stand-in ("•") when there's nothing to derive from.
+    private func initials(_ title: String?) -> String {
+        let words = (title ?? "")
+            .split(whereSeparator: { $0 == " " || $0 == "·" || $0 == "-" })
+            .prefix(2)
+        let letters = words.compactMap { $0.first.map(String.init) }.joined()
+        return letters.isEmpty ? "•" : letters.uppercased()
+    }
+
+    /// Deterministic tint per thread so a given peer keeps the same color.
+    private func tint(for seed: String) -> Color {
+        let tints: [Color] = [Brand.magenta, Brand.success, Brand.warning]
+        let idx = abs(seed.hashValue) % tints.count
+        return tints[idx]
     }
 
     private func load() async {

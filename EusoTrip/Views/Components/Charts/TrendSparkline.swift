@@ -110,6 +110,12 @@ public struct TrendSparkline: View {
     /// Identity that re-keys the draw animation whenever the underlying series
     /// is replaced (live poll, equipment filter, etc.).
     @State private var seriesKey: Int = 0
+    /// 2026-06-03 — internal scrub selection. The cursor was "stuck" because
+    /// `selectedIndex` defaults to `.constant(nil)` and EVERY call site (0 pass
+    /// a binding) used that default, so `selectedIndex = idx` was a silent
+    /// no-op. This local state drives the cursor self-contained; a real host
+    /// binding still wins when present (for tiles that echo into a big numeral).
+    @State private var localSelected: Int? = nil
 
     // MARK: Designated init
 
@@ -197,6 +203,10 @@ public struct TrendSparkline: View {
         }
         return LinearGradient(colors: [top, bottom], startPoint: .top, endPoint: .bottom)
     }
+
+    /// The index the cursor displays: a real host binding wins; otherwise the
+    /// internal scrub state. Nil = nothing scrubbed yet (show the last-point dot).
+    private var effectiveSelected: Int? { selectedIndex ?? localSelected }
 
     /// Solid accent used for the last-point dot ring glow + scrub marker.
     private var accentColor: Color {
@@ -307,15 +317,18 @@ public struct TrendSparkline: View {
                             style: StrokeStyle(lineWidth: lineWidth,
                                                lineCap: .round,
                                                lineJoin: .round))
-                if showLastDot, drawProgress > 0.98 { lastDot(in: size) }
+                // Last-point dot only while nothing is scrubbed; once the user
+                // touches, the inspector dot replaces it (no double dot).
+                if showLastDot, effectiveSelected == nil, drawProgress > 0.98 { lastDot(in: size) }
                 scrubOverlay(in: size)
             }
             .contentShape(Rectangle())
             .gesture(scrubGesture(in: size))
         }
         .frame(minHeight: 28)
+        .sensoryFeedback(.selection, trigger: effectiveSelected)   // haptic tick per sample
         .animation(reduceMotion ? nil : .easeOut(duration: 0.55), value: seriesKey)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: selectedIndex)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: effectiveSelected)
         .onAppear { runDrawAnimation() }
         .onChange(of: points) { _, _ in
             seriesKey &+= 1
@@ -360,7 +373,7 @@ public struct TrendSparkline: View {
 
     @ViewBuilder
     private func scrubOverlay(in size: CGSize) -> some View {
-        if let idx = selectedIndex, points.indices.contains(idx) {
+        if let idx = effectiveSelected, points.indices.contains(idx) {
             let p = position(of: idx, in: size)
             // vertical guide
             Path { path in
@@ -400,12 +413,13 @@ public struct TrendSparkline: View {
             .onChanged { g in
                 guard !points.isEmpty else { return }
                 let idx = nearestIndex(toX: g.location.x, in: size)
-                if selectedIndex != idx { selectedIndex = idx }
+                if localSelected != idx { localSelected = idx }   // drives the cursor self-contained
+                if selectedIndex != idx { selectedIndex = idx }   // mirror to host binding when present
                 onScrub(points[idx])
             }
             .onEnded { _ in
-                selectedIndex = nil
-                onScrub(nil)
+                // 2026-06-03 — HOLD the cursor on the touched sample (no
+                // snap-back). The readout stays until the user scrubs again.
             }
     }
 

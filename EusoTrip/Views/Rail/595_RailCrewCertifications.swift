@@ -10,7 +10,7 @@
 //  Wired to railShipments.getRailCrew (roster) + railShipments.getCrossBorderCrewCerts
 //  (per-country cert requirements). See PORT-GAP note in `load()` — the backend
 //  has no endpoint returning per-crew × per-cert STATUS + expiry, so matrix cells
-//  render real NA ("—") until that field exists. No fabricated expiry values.
+//  render real NA ("-") until that field exists. No fabricated expiry values.
 //
 
 import SwiftUI
@@ -69,7 +69,7 @@ private enum CertCellState {
     case expiring(String)   // e.g. "24d"
     case expired            // "exp"
     case missing            // "none"
-    case na                 // "—"
+    case na                 // "-"
 }
 
 // MARK: - Body
@@ -298,7 +298,7 @@ private struct RailCrewCertificationsBody: View {
         case .expiring(let v): label = v;      color = Brand.warning; tinted = true
         case .expired:         label = "exp";  color = Brand.danger;  tinted = true
         case .missing:         label = "none"; color = Brand.danger;  tinted = true
-        case .na:              label = "—";    color = palette.textTertiary; tinted = false
+        case .na:              label = "-";    color = palette.textTertiary; tinted = false
         }
         return Text(label)
             .font(.system(size: 10, weight: tinted ? .bold : .regular))
@@ -481,7 +481,7 @@ private struct RailCrewCertificationsBody: View {
             // PORT-GAP: railShipments.getRailCrewCerts — no endpoint returns
             // per-crew × per-cert (ENG/COND/HAZ/MX) STATUS + expiry. getRailCrew
             // is roster-only; getCrossBorderCrewCerts is requirement-templates.
-            // Matrix cells render real NA ("—") until that field ships.
+            // Matrix cells render real NA ("-") until that field ships.
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

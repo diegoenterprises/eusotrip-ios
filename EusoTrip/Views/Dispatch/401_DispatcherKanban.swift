@@ -451,7 +451,7 @@ private struct DispatcherKanbanBody: View {
                     }
                     .frame(maxWidth: .infinity, minHeight: 36)
                     .background(LinearGradient.primary)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(shifting != nil || lane.nextStatus == nil)
@@ -462,8 +462,8 @@ private struct DispatcherKanbanBody: View {
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textPrimary)
                         .frame(width: 110, height: 36)
                         .background(palette.bgCard)
-                        .clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(palette.borderSoft))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
                 }
                 .buttonStyle(.plain)
             }
@@ -536,8 +536,8 @@ private struct DispatcherKanbanBody: View {
     }
 
     private func laneText(_ l: KanbanLoad) -> String {
-        let o = (l.originCity ?? "—")
-        let d = (l.destinationCity ?? "—")
+        let o = (l.originCity ?? "-")
+        let d = (l.destinationCity ?? "-")
         return "\(o) → \(d)"
     }
 
@@ -555,18 +555,18 @@ private struct DispatcherKanbanBody: View {
         }
         if let un = l.hazmatClass, !un.isEmpty { parts.append(un) }
         if let w = l.weight, w > 0 { parts.append("\(Int(w / 1000))k") }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func shortId(_ ln: String) -> String { "LD…\(String(ln.uppercased().suffix(4)))" }
 
     private func usd(_ v: Double?) -> String {
-        guard let v else { return "—" }
+        guard let v else { return "-" }
         return "$\(Int(v).formatted())"
     }
 
     private func initials(_ name: String?) -> String {
-        guard let name, !name.isEmpty else { return "—" }
+        guard let name, !name.isEmpty else { return "-" }
         let parts = name.split(separator: " ")
         let first = parts.first?.first.map(String.init) ?? ""
         let last = parts.dropFirst().first?.first.map(String.init) ?? ""

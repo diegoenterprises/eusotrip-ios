@@ -117,7 +117,7 @@ private struct BackhaulBody: View {
             }
             Text(title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             if let l = load {
-                Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "—") → \(l.destCity ?? "—")")
+                Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-")")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
         }
@@ -216,7 +216,7 @@ private struct BackhaulBody: View {
                 actionAck = "Backhaul tender accepted · LD-\(resp.loadId ?? loadId) locked · DVIR opens 60m before pickup."
                 await loadCtx()
             } else {
-                actionError = "Accept returned no success flag — reload and try again."
+                actionError = "Accept returned no success flag, reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "Accept failed: \(err)"
@@ -237,7 +237,7 @@ private struct BackhaulBody: View {
                 actionAck = "Backhaul tender declined · returned to Aurora's pool."
                 await loadCtx()
             } else {
-                actionError = "Decline returned no success flag — reload and try again."
+                actionError = "Decline returned no success flag, reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "Decline failed: \(err)"
@@ -299,7 +299,7 @@ private struct DVIRBody: View {
                                         : "Section \(sectionsCompleted) · acked")
                 .font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             if let l = load {
-                Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "—") → \(l.destCity ?? "—")")
+                Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-")")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
         }
@@ -358,7 +358,7 @@ private struct DVIRBody: View {
     }
 
     private var kpiGrid: some View {
-        let payout = load?.rate ?? "—"
+        let payout = load?.rate ?? "-"
         let kpis: [BHKpi] = [
             .init(label: "PAYOUT", value: "$\(payout)", subtitle: "NET-30 LOCKED", color: .green),
             .init(label: "RPM",    value: "$5.38",     subtitle: "\(Int(load?.distance ?? 372)) mi LOCKED", color: .blue),
@@ -388,7 +388,7 @@ private struct DVIRBody: View {
             case 3: return "Sections 1-3 cleared. Continue to lights + reflectors (S4)."
             case 4: return "Lights/reflectors logged. Tires + wheels (S5) next."
             case 5: return "Tires + wheels passed. Coupling devices (S6) next."
-            case 6: return "Coupling cleared. Cargo securement (S7) next — 50% midpoint."
+            case 6: return "Coupling cleared. Cargo securement (S7) next, 50% midpoint."
             case 7: return "50% midpoint passed. Cab interior + brakes (S8) up next."
             default: return "Continue walk-around per §392."
             }
@@ -411,7 +411,7 @@ private struct DVIRBody: View {
         case 5: return "11h 06m"
         case 6: return "10h 04m"
         case 7: return "9h 02m"
-        default: return "—"
+        default: return "-"
         }
     }
 

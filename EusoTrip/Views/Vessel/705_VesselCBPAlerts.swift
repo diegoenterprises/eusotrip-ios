@@ -155,10 +155,6 @@ private struct VesselCBPAlertsBody: View {
 
             // Back-chevron + title block + US IMPORT / Eusorone right-rail.
             HStack(alignment: .top, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(.top, 6)
 
                 Text("CBP Alerts")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
@@ -489,7 +485,7 @@ private struct VesselCBPAlertsBody: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient.primary)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -501,8 +497,8 @@ private struct VesselCBPAlertsBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 132, height: 48)
                     .background(palette.bgCardSoft)
-                    .overlay(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

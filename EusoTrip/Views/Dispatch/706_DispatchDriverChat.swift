@@ -87,52 +87,138 @@ private struct ChatBody: View {
         else if convs.isEmpty {
             EusoEmptyState(systemImage: "message", title: "No active threads", subtitle: "Start one by tapping a driver below.")
         } else {
-            LifecycleCard {
-                LifecycleSection(label: "ACTIVE THREADS", icon: "tray.full")
-                ForEach(convs) { c in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(c.title ?? "Conversation").font(EType.bodyStrong).foregroundStyle(palette.textPrimary).lineLimit(1)
-                            Text(c.lastMessage ?? "—").font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(1)
-                        }
-                        Spacer(minLength: 0)
-                        if let u = c.unreadCount, u > 0 {
-                            Text("\(u)").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Brand.danger).clipShape(Capsule())
-                        }
-                        Text(humanISO(c.lastMessageAt, format: "MMM d")).font(EType.caption).foregroundStyle(palette.textTertiary)
+            VStack(alignment: .leading, spacing: Space.s3) {
+                sectionHeader(label: "ACTIVE THREADS", icon: "tray.full")
+                VStack(spacing: 0) {
+                    ForEach(Array(convs.enumerated()), id: \.element.id) { idx, c in
+                        threadRow(c)
+                        if idx < convs.count - 1 { rowDivider }
                     }
-                    .padding(.vertical, 4)
+                }
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+        }
+    }
+
+    private func threadRow(_ c: Conversation) -> some View {
+        let title = c.title ?? "Conversation"
+        let unread = (c.unreadCount ?? 0) > 0
+        return HStack(spacing: 10) {
+            ChatAvatar(kind: .person(initials: initials(from: title), tint: Brand.magenta), size: 38)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Text(c.lastMessage ?? "-")
+                    .font(EType.caption)
+                    .foregroundStyle(unread ? palette.textPrimary : palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(humanISO(c.lastMessageAt, format: "MMM d"))
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                if let u = c.unreadCount, u > 0 {
+                    Text("\(u)")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(minWidth: 16)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(LinearGradient.diagonal)
+                        .clipShape(Capsule())
                 }
             }
         }
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, 10)
     }
 
     @ViewBuilder
     private var driversSection: some View {
         if !drivers.isEmpty {
-            LifecycleCard {
-                LifecycleSection(label: "MESSAGE A DRIVER", icon: "person.3")
-                ForEach(drivers) { d in
-                    Button {
-                        composeFor = d; composeText = ""
-                        pushDetail?("Message \(d.name)") { AnyView(composeSheet(for: d)) }
-                    } label: {
-                        HStack {
-                            Image(systemName: "person.fill").foregroundStyle(LinearGradient.diagonal)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(d.name).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                                Text("\(d.status.uppercased()) · \(dashIfEmpty(d.load))").font(EType.caption).foregroundStyle(palette.textSecondary)
-                            }
-                            Spacer(minLength: 0)
-                            Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
-                        }
-                        .padding(.vertical, 6)
-                    }.buttonStyle(.plain)
+            VStack(alignment: .leading, spacing: Space.s3) {
+                sectionHeader(label: "MESSAGE A DRIVER", icon: "person.3")
+                VStack(spacing: 0) {
+                    ForEach(Array(drivers.enumerated()), id: \.element.id) { idx, d in
+                        Button {
+                            composeFor = d; composeText = ""
+                            pushDetail?("Message \(d.name)") { AnyView(composeSheet(for: d)) }
+                        } label: {
+                            driverRow(d)
+                        }.buttonStyle(.plain)
+                        if idx < drivers.count - 1 { rowDivider }
+                    }
                 }
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
         }
+    }
+
+    private func driverRow(_ d: DriverPick) -> some View {
+        HStack(spacing: 10) {
+            ChatAvatar(kind: .person(initials: initials(from: d.name), tint: Brand.magenta),
+                       size: 38,
+                       online: d.status.lowercased().contains("online")
+                            || d.status.lowercased().contains("active")
+                            || d.status.lowercased().contains("driving"))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(d.name)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Text("\(d.status.uppercased()) · \(dashIfEmpty(d.load))")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+    }
+
+    /// Shared section header — small gradient icon + tracked label, matching
+    /// the kit's typography (replaces the old LifecycleSection chrome).
+    private func sectionHeader(label: String, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text(label)
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                .foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    private var rowDivider: some View {
+        palette.borderFaint.frame(height: 1).padding(.leading, Space.s3 + 38 + 10)
+    }
+
+    /// Up-to-two-letter initials for the row avatar (e.g. "Mike Usoro" → "MU").
+    private func initials(from name: String) -> String {
+        let parts = name
+            .split(separator: " ")
+            .map(String.init)
+            .filter { !$0.isEmpty }
+        let letters = parts.prefix(2).compactMap { $0.first }
+        let result = String(letters).uppercased()
+        return result.isEmpty ? "?" : result
     }
 
     private func composeSheet(for d: DriverPick) -> some View {

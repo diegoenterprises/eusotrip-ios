@@ -27,7 +27,7 @@ import VisionKit
 
 /// Convenience accessor for one scanned field's display string.
 extension CredentialScannerAPI.ScannedField {
-    var displayString: String { value?.stringValue ?? "—" }
+    var displayString: String { value?.stringValue ?? "-" }
     var asStringArray: [String]? { value?.arrayValue }
     /// Confidence below 0.85 is highlighted as "needs review" so the
     /// host form can prompt the user to double-check.
@@ -164,9 +164,9 @@ struct CredentialScanCard: View {
         .foregroundStyle(filled ? .white : palette.textPrimary)
         .background(filled ? AnyView(LinearGradient.diagonal) : AnyView(palette.bgCardSoft))
         .overlay(filled ? AnyView(EmptyView()) : AnyView(
-            Capsule().strokeBorder(palette.borderSoft)
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft)
         ))
-        .clipShape(Capsule())
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     @ViewBuilder

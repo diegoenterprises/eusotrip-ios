@@ -233,7 +233,7 @@ private struct VesselEmissionsCIIBody: View {
                         .fill(LinearGradient.diagonal)
                         .frame(width: 64, height: 64)
                     VStack(spacing: 1) {
-                        Text(grade?.rawValue ?? "—")
+                        Text(grade?.rawValue ?? "-")
                             .font(.system(size: 34, weight: .bold))
                             .foregroundStyle(.white)
                         Text("GRADE")
@@ -247,7 +247,7 @@ private struct VesselEmissionsCIIBody: View {
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(Color(hex: 0x6E7681))
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text(attained.map { String(format: "%.1f", $0) } ?? "—")
+                        Text(attained.map { String(format: "%.1f", $0) } ?? "-")
                             .font(.system(size: 30, weight: .bold))
                             .foregroundStyle(palette.textPrimary)
                             .monospacedDigit()
@@ -262,7 +262,7 @@ private struct VesselEmissionsCIIBody: View {
                     Text("REQUIRED")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(Color(hex: 0x6E7681))
-                    Text(required.map { String(format: "%.1f", $0) } ?? "—")
+                    Text(required.map { String(format: "%.1f", $0) } ?? "-")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
                         .monospacedDigit()
@@ -366,7 +366,7 @@ private struct VesselEmissionsCIIBody: View {
                                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                                     .fill((CIIGrade.from(q.grade) ?? .c).color)
                                     .frame(width: 20, height: h)
-                                Text(q.quarter ?? "—")
+                                Text(q.quarter ?? "-")
                                     .font(.system(size: 8))
                                     .foregroundStyle(Color(hex: 0x6E7681))
                             }
@@ -437,7 +437,7 @@ private struct VesselEmissionsCIIBody: View {
         let glyph = grade?.glyphColor ?? Color(hex: 0xFFA726)
         let chip = grade?.color ?? Color(hex: 0xFFB100)
         let lane: String = {
-            let o = v.origin ?? "—"; let d = v.destination ?? "—"
+            let o = v.origin ?? "-"; let d = v.destination ?? "-"
             return "\(o) → \(d)"
         }()
         let meta: String = {
@@ -467,11 +467,11 @@ private struct VesselEmissionsCIIBody: View {
             }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 4) {
-                Text(v.attainedAER.map { String(format: "%.1f", $0) } ?? "—")
+                Text(v.attainedAER.map { String(format: "%.1f", $0) } ?? "-")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .monospacedDigit()
-                Text(grade?.rawValue ?? "—")
+                Text(grade?.rawValue ?? "-")
                     .font(.system(size: 10, weight: .heavy))
                     .foregroundStyle(glyph)
                     .frame(width: 36, height: 20)
@@ -504,7 +504,7 @@ private struct VesselEmissionsCIIBody: View {
                     .frame(maxWidth: .infinity, minHeight: 48)
             }
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .buttonStyle(.plain)
 
             Button { } label: {
@@ -514,8 +514,8 @@ private struct VesselEmissionsCIIBody: View {
                     .frame(width: 148, height: 48)
             }
             .background(Color(hex: 0x232932))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.12)))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.12)))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .buttonStyle(.plain)
         }
     }

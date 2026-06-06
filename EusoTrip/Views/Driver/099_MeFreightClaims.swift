@@ -235,7 +235,7 @@ struct MeFreightClaims: View {
                 EusoEmptyState(
                     systemImage: "shippingbox",
                     title: "No claims filed",
-                    subtitle: "If something gets damaged, short, or contaminated on your next load, file it here so safety + billing can pull POD photos + start recovery."
+                    subtitle: "If something gets damaged, short or contaminated on your next load, file it here so safety + billing can pull POD photos + start recovery."
                 )
             } else {
                 ForEach(store.claims, id: \.stableId) { c in
@@ -328,7 +328,7 @@ struct MeFreightClaims: View {
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
-            Text("Accident? Breakdown? Mechanical? That flow lives in Zeun — DVIR, roadside, provider dispatch all route through there.")
+            Text("Accident? Breakdown? Mechanical? That flow lives in Zeun. DVIR, roadside, provider dispatch all route through there.")
                 .font(EType.micro)
                 .foregroundStyle(palette.textTertiary.opacity(0.85))
                 .multilineTextAlignment(.center)
@@ -453,7 +453,7 @@ private struct FileClaimSheet: View {
             dismiss()
         } catch {
             submitError = (error as? LocalizedError)?.errorDescription
-                ?? "Couldn't file claim — try again in a moment."
+                ?? "Couldn't file claim, try again in a moment."
         }
     }
 }

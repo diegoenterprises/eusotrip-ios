@@ -290,7 +290,7 @@ struct ShipperBOLs: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(b.bolNumber ?? "—")
+                        Text(b.bolNumber ?? "-")
                             .font(.system(size: 13, weight: .heavy, design: .monospaced))
                             .foregroundStyle(palette.textPrimary).lineLimit(1)
                         statusPill(style.label, color: style.color)
@@ -517,7 +517,7 @@ private struct ShipperBOLGeneratePicker: View {
                                 Text("No loads yet")
                                     .font(EType.bodyStrong)
                                     .foregroundStyle(palette.textPrimary)
-                                Text("Post a load first — then generate a BOL from it.")
+                                Text("Post a load first, then generate a BOL from it.")
                                     .font(EType.caption)
                                     .foregroundStyle(palette.textSecondary)
                             }
@@ -553,8 +553,8 @@ private struct ShipperBOLGeneratePicker: View {
                 .padding(.vertical, 13)
                 .foregroundStyle(palette.textPrimary)
                 .background(palette.bgCard)
-                .overlay(Capsule().strokeBorder(LinearGradient.diagonal, lineWidth: 1))
-                .clipShape(Capsule())
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 14)

@@ -33,7 +33,7 @@ enum RailEngineerNavRoute {
         "home":       "Rail550",
         "shipments":  "Rail551",
         "compliance": "Rail552",
-        "me":         "Rail550",
+        "me":         "Rail556",
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

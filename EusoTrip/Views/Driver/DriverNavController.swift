@@ -1260,7 +1260,7 @@ struct DriverMessagingSheet: View {
                 EusoEmptyState(
                     systemImage: "bubble.left.and.bubble.right",
                     title: "No conversations yet",
-                    subtitle: "When dispatch, brokers, or shippers message you, threads show up here.",
+                    subtitle: "When dispatch, brokers or shippers message you, threads show up here.",
                     comingSoon: false
                 )
                 .padding(Space.s5)
@@ -1302,7 +1302,7 @@ struct DriverMessagingSheet: View {
                     LazyVStack(alignment: .leading, spacing: Space.s2) {
                         ForEach(messages, id: \.id) { m in
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(m.senderName ?? "—").font(EType.caption).foregroundStyle(palette.textTertiary)
+                                Text(m.senderName ?? "-").font(EType.caption).foregroundStyle(palette.textTertiary)
                                 Text(m.content).font(EType.body).foregroundStyle(palette.textPrimary)
                             }
                             .padding(Space.s3)
@@ -1423,7 +1423,7 @@ struct DriverDocumentDrawerSheet: View {
                             systemImage: "doc.text",
                             title: "No documents yet",
                             subtitle: loadId == nil
-                                ? "No active load — documents surface here once a tender is accepted."
+                                ? "No active load, documents surface here once a tender is accepted."
                                 : "Documents for this load haven't been attached yet.",
                             comingSoon: false
                         )
@@ -1538,7 +1538,7 @@ struct DriverTripLogSheet: View {
                             EusoEmptyState(
                                 systemImage: "clock.arrow.circlepath",
                                 title: "No events yet",
-                                subtitle: "Pickup, drop, and HOS transitions log here as they fire. Your current phase is shown above.",
+                                subtitle: "Pickup, drop and HOS transitions log here as they fire. Your current phase is shown above.",
                                 comingSoon: false
                             )
                         }
@@ -1610,7 +1610,7 @@ struct DriverPhotoUploadSheet: View {
                             Image(systemName: imageData == nil ? "camera.fill" : "checkmark.circle.fill")
                                 .font(.system(size: 36))
                                 .foregroundStyle(LinearGradient.diagonal)
-                            Text(imageData == nil ? "Choose photo" : "Photo selected — tap to change")
+                            Text(imageData == nil ? "Choose photo" : "Photo selected - tap to change")
                                 .font(EType.body).foregroundStyle(palette.textPrimary)
                         }
                         .frame(maxWidth: .infinity, minHeight: 160)
@@ -1799,8 +1799,8 @@ struct DriverReportIssueSheet: View {
         let payload = """
         [EXCEPTION] \(selectedReason)
         Context: \(contextRaw)
-        Load: \(loadId ?? "—")
-        Notes: \(notes.isEmpty ? "—" : notes)
+        Load: \(loadId ?? "-")
+        Notes: \(notes.isEmpty ? "-" : notes)
         """
         do {
             // Create an exception-tagged conversation (server-side the

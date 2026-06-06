@@ -229,7 +229,7 @@ private struct EusoTicketBolBody: View {
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(load?.loadNumber ?? "—")
+                Text(load?.loadNumber ?? "-")
                     .font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                 Text(routeMetaLine)
@@ -259,7 +259,7 @@ private struct EusoTicketBolBody: View {
     }
 
     private var routeMetaLine: String {
-        guard let l = load else { return "—" }
+        guard let l = load else { return "-" }
         let lane = l.laneDisplay
         let un = l.unNumber.map { "UN\($0)" } ?? ""
         let rate = l.rateDisplay
@@ -366,7 +366,7 @@ private struct EusoTicketBolBody: View {
         // Honest empty state — no driver/carrier matched yet on this load.
         return EusoTicketParty(
             name: "Pending carrier",
-            monogram: "—",
+            monogram: "-",
             meta: "no driver assigned",
             avatarStyle: .dark
         )
@@ -409,9 +409,9 @@ private struct EusoTicketBolBody: View {
         // footer. The §12 Eusotrans canonical values surface only
         // when the counterparty IS Eusotrans.
         EusoTicketFooter(
-            usdot: "USDOT — pending",
-            mc: "MC — pending",
-            irp: "IRP —",
+            usdot: "USDOT - pending",
+            mc: "MC - pending",
+            irp: "IRP -",
             boc3: "BOC-3 pending",
             safetyTag: "FMCSA SAFER reference at dispatch"
         )

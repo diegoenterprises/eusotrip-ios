@@ -38,7 +38,7 @@ private struct HomeEmptyBody: View {
         VStack(spacing: 12) {
             Image(systemName: "shippingbox.fill").font(.system(size: 56, weight: .heavy)).foregroundStyle(.white)
             Text("No loads yet").font(.system(size: 22, weight: .heavy)).foregroundStyle(.white)
-            Text("Post your first load — carriers will start bidding within minutes.").font(EType.body).foregroundStyle(.white.opacity(0.92)).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            Text("Post your first load. Carriers will start bidding within minutes.").font(EType.body).foregroundStyle(.white.opacity(0.92)).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             Button {
                 NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "250"])
             } label: {

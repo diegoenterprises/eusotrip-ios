@@ -127,7 +127,6 @@ private struct RailShipmentDetailCarrierBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Image(systemName: "tram.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("RAIL ENGINEER · SHIPMENT DETAIL")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
@@ -136,10 +135,10 @@ private struct RailShipmentDetailCarrierBody: View {
             HStack {
                 Text(detail?.loadId ?? "RS-…").font(.system(size: 26, weight: .heavy)).monospaced().foregroundStyle(palette.textPrimary)
                 Spacer()
-                StatusPill(text: (detail?.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased(), kind: .info)
+                StatusPill(text: (detail?.status ?? "-").replacingOccurrences(of: "_", with: " ").uppercased(), kind: .info)
             }
             if let d = detail {
-                Text("\(d.origin ?? "—") → \(d.destination ?? "—") · intermodal · \(d.carsCount ?? cars.count) cars · \(d.carrierName ?? "—")")
+                Text("\(d.origin ?? "-") → \(d.destination ?? "-") · intermodal · \(d.carsCount ?? cars.count) cars · \(d.carrierName ?? "-")")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
         }
@@ -149,8 +148,8 @@ private struct RailShipmentDetailCarrierBody: View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("ROUTE · NS CRESCENT CORRIDOR").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-                Text(d.origin ?? "—").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Text("\(d.destination ?? "—") · ETA \(d.estimatedArrival ?? "—")").font(EType.body).foregroundStyle(palette.textSecondary)
+                Text(d.origin ?? "-").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Text("\(d.destination ?? "-") · ETA \(d.estimatedArrival ?? "-")").font(EType.body).foregroundStyle(palette.textSecondary)
             }
         }
     }
@@ -177,13 +176,13 @@ private struct RailShipmentDetailCarrierBody: View {
 
     private var carRoster: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("CARS · \(cars.count) IN CONSIST \(detail?.consistNumber ?? "—")")
+            Text("CARS · \(cars.count) IN CONSIST \(detail?.consistNumber ?? "-")")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard {
                 VStack(spacing: Space.s2) {
                     ForEach(cars) { c in
                         HStack {
-                            Text("\(c.carNumber ?? "—")\(c.carType.map { " · \($0)" } ?? "")")
+                            Text("\(c.carNumber ?? "-")\(c.carType.map { " · \($0)" } ?? "")")
                                 .font(.system(size: 12, weight: .medium)).monospaced().foregroundStyle(palette.textPrimary)
                             Spacer()
                             if c.hazmatUn != nil {
@@ -214,7 +213,7 @@ private struct RailShipmentDetailCarrierBody: View {
                             .foregroundStyle(charge > 0 ? Brand.warning : Brand.success)
                     }
                     ProgressView(value: Double(accrued), total: Double(max(free, 1))).tint(LinearGradient.primary)
-                    Text("In transit — meter starts on yard placement at destination")
+                    Text("In transit. Meter starts on yard placement at destination")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
             }

@@ -126,7 +126,6 @@ private struct RailFacilityStatusBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Image(systemName: "building.2").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("RAIL ENGINEER · FACILITY STATUS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
@@ -158,7 +157,7 @@ private struct RailFacilityStatusBody: View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    let label = status?.statusLabel ?? "—"
+                    let label = status?.statusLabel ?? "-"
                     Text(label.uppercased())
                         .font(.system(size: 11, weight: .bold)).tracking(0.5)
                         .foregroundStyle(statusColor)
@@ -175,7 +174,7 @@ private struct RailFacilityStatusBody: View {
                 }
                 HStack(alignment: .bottom) {
                     VStack(alignment: .leading, spacing: 2) {
-                        let ci = status?.congestionIndex.map { String(format: "%.2f", $0) } ?? "—"
+                        let ci = status?.congestionIndex.map { String(format: "%.2f", $0) } ?? "-"
                         Text(ci)
                             .font(.system(size: 34, weight: .bold)).monospacedDigit()
                             .foregroundStyle(LinearGradient.diagonal)
@@ -200,9 +199,9 @@ private struct RailFacilityStatusBody: View {
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
-            let dwell = status?.avgDwellHours.map { "\(Int($0))h" } ?? "—"
-            let queue = status?.gateQueueMinutes.map { "\($0)m" } ?? "—"
-            let lift  = status?.liftCapacityPct.map { "\(Int($0))%" } ?? "—"
+            let dwell = status?.avgDwellHours.map { "\(Int($0))h" } ?? "-"
+            let queue = status?.gateQueueMinutes.map { "\($0)m" } ?? "-"
+            let lift  = status?.liftCapacityPct.map { "\(Int($0))%" } ?? "-"
             MetricTile(label: "AVG DWELL", value: dwell)
             MetricTile(label: "GATE QUEUE", value: queue)
             MetricTile(label: "LIFT CAP", value: lift, gradientNumeral: true)
@@ -224,7 +223,7 @@ private struct RailFacilityStatusBody: View {
                         glyph: "arrow.up.to.line", tintColor: Brand.info,
                         title: "Outbound lift capacity",
                         sub: "crane availability · classIRailroadService",
-                        value: status?.liftCapacityPct.map { "\(Int($0))%" } ?? "—",
+                        value: status?.liftCapacityPct.map { "\(Int($0))%" } ?? "-",
                         badge: nil, badgeColor: nil
                     )
                     Divider().padding(.leading, 56)
@@ -242,7 +241,7 @@ private struct RailFacilityStatusBody: View {
                         glyph: "calendar", tintColor: Brand.info,
                         title: "Next gate appointment",
                         sub: "next open slot · gate 3",
-                        value: status?.nextGateSlot ?? "—",
+                        value: status?.nextGateSlot ?? "-",
                         badge: nil, badgeColor: nil
                     )
                 }

@@ -39,7 +39,7 @@ enum EscortNavRoute {
         "home":        "600",
         "assignments": "601",
         "corridor":    "602",
-        "me":          "600",
+        "me":          "620",
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

@@ -63,7 +63,7 @@ private struct EarningsBody: View {
     private func hero(_ s: CarrierEarningsSummary) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("MTD REVENUE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(.white.opacity(0.85))
-            Text(usd(s.mtdRevenue) == "—" ? "$0" : usd(s.mtdRevenue)).font(.system(size: 32, weight: .heavy)).foregroundStyle(.white).monospacedDigit()
+            Text(usd(s.mtdRevenue) == "-" ? "$0" : usd(s.mtdRevenue)).font(.system(size: 32, weight: .heavy)).foregroundStyle(.white).monospacedDigit()
             HStack(spacing: 8) {
                 Text("YTD \(usd(s.ytdRevenue))").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
                 Text("PAID LAST WK \(usd(s.paidLastWeek))").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())

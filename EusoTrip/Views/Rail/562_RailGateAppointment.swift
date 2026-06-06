@@ -122,7 +122,6 @@ private struct RailGateAppointmentBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Image(systemName: "calendar.badge.plus").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("RAIL ENGINEER · GATE APPOINTMENT")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
@@ -149,7 +148,7 @@ private struct RailGateAppointmentBody: View {
                         .foregroundStyle(Brand.info)
                 }
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Shipment \(shipmentId.isEmpty ? "—" : shipmentId)")
+                    Text("Shipment \(shipmentId.isEmpty ? "-" : shipmentId)")
                         .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                     Text("Facility \(facilityId) · container gate-in")
                         .font(.system(size: 11, design: .monospaced))
@@ -298,7 +297,7 @@ private struct RailGateAppointmentBody: View {
                 Text(conf.confirmationNumber ?? "CONF-\(conf.id)")
                     .font(.system(size: 22, weight: .heavy, design: .monospaced))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Slot \(selectedTime ?? "—") · \(displayDate)")
+                Text("Slot \(selectedTime ?? "-") · \(displayDate)")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                 Text("Gate pass issued · valid 4 h from slot time")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)

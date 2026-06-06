@@ -424,7 +424,7 @@ private struct CatalystVettingBody: View {
 
     private func dashIfEmpty(_ s: String?) -> String {
         let trimmed = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "—" : trimmed
+        return trimmed.isEmpty ? "-" : trimmed
     }
 
     private func shortDate(_ iso: String) -> String {

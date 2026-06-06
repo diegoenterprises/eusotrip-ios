@@ -37,10 +37,10 @@ struct DisconnectAndVerify: View {
     // (eusotrip-killers ledger-hygiene pass). Live readings come from
     // `tankMonitor.getDisconnectSnapshot` once the bay-ops sensor stack
     // ships — until then, em-dashes only.
-    private let fallbackClock = "—"
-    private let fallbackPressure = "—"
-    private let fallbackVapor    = "—"
-    private let fallbackBond     = "—"
+    private let fallbackClock = "-"
+    private let fallbackPressure = "-"
+    private let fallbackVapor    = "-"
+    private let fallbackBond     = "-"
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -268,7 +268,7 @@ struct DisconnectAndVerify: View {
                             .foregroundStyle(Brand.danger)
                     }
                 }
-                Text("\"Two more turns and she's clear — keep your face out of the gap.\"")
+                Text("\"Two more turns and she's clear, keep your face out of the gap.\"")
                     .font(EType.body)
                     .foregroundStyle(palette.textPrimary)
                     .italic()

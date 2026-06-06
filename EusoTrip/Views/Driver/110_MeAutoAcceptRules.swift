@@ -311,7 +311,7 @@ struct MeAutoAcceptRulesView: View {
             Image(systemName: "checkmark.seal").font(.system(size: 28, weight: .heavy))
                 .foregroundStyle(palette.textTertiary)
             Text("No rules yet").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-            Text("Tap New to create your first rule. Set thresholds for rate / per-mile / safety / insurance — bids matching all criteria auto-accept.")
+            Text("Tap New to create your first rule. Set thresholds for rate / per-mile / safety / insurance. Bids matching all criteria auto-accept.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
             Button {
@@ -455,7 +455,7 @@ private struct CreateRuleSheet: View {
                 Text(creating ? "Creating…" : "Create rule").font(.system(size: 14, weight: .heavy))
             }
             .frame(maxWidth: .infinity).padding(.vertical, 13)
-            .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+            .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(creating || name.trimmingCharacters(in: .whitespaces).isEmpty)

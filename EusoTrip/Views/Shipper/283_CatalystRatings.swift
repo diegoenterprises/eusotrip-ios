@@ -52,7 +52,7 @@ private struct CatalystRatingsBody: View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: "COMPOSITE SCORE", icon: "chart.bar.fill")
             LifecycleRow(label: "On-time",   value: "\(r.onTimeRate)%")
-            LifecycleRow(label: "Completion", value: r.totalLoads > 0 ? "\(Int(Double(r.delivered) / Double(r.totalLoads) * 100))%" : "—")
+            LifecycleRow(label: "Completion", value: r.totalLoads > 0 ? "\(Int(Double(r.delivered) / Double(r.totalLoads) * 100))%" : "-")
             LifecycleRow(label: "Loads",     value: "\(r.totalLoads)")
             Text("Composite = on-time × 0.5 + completion × 0.3 + log₁₀(loads+1)/log₁₀(50) × 0.2")
                 .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)

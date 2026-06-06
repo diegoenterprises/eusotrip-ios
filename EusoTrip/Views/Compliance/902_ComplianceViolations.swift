@@ -251,7 +251,7 @@ private struct ViolationsBody: View {
                 }
                 LifecycleRow(label: "Driver",   value: dashIfEmpty(v.driver))
                 LifecycleRow(label: "Date",     value: dashIfEmpty(v.date))
-                LifecycleRow(label: "Status",   value: (v.status ?? "—").uppercased())
+                LifecycleRow(label: "Status",   value: (v.status ?? "-").uppercased())
                 if columnId == "open" {
                     Button { Task { await resolve(v.id) } } label: {
                         HStack(spacing: 6) {

@@ -139,7 +139,7 @@ private struct RailCargoClaimBody: View {
     }
 
     private var deadlineLabel: String {
-        guard let d = deadlineDate else { return "—" }
+        guard let d = deadlineDate else { return "-" }
         let f = DateFormatter(); f.dateFormat = "MMM d yyyy"
         return f.string(from: d)
     }
@@ -152,7 +152,7 @@ private struct RailCargoClaimBody: View {
     private var claimNumber: String { claim?.claimNumber ?? claimId }
 
     private func money(_ v: Double?) -> String {
-        guard let v else { return "—" }
+        guard let v else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
@@ -213,9 +213,6 @@ private struct RailCargoClaimBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .center, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Cargo claim")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -536,7 +533,7 @@ private struct RailCargoClaimBody: View {
                 Text("ESANG")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
-                Text("File before the Carmack window closes — \(daysLeft)d left.")
+                Text("File before the Carmack window closes - \(daysLeft)d left.")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                 Text("Attach the BOL discrepancy note to lift recovery to $9,200.")

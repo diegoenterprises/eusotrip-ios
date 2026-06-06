@@ -377,7 +377,7 @@ struct CatalystRoadsideDataQ: View {
     private func inspectionRow(_ row: RoadsideInspectionRow) -> some View {
         HStack(alignment: .center, spacing: Space.s2) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(row.dateLabel.isEmpty ? "—" : row.dateLabel) · \(typeLabel(row.type))")
+                Text("\(row.dateLabel.isEmpty ? "-" : row.dateLabel) · \(typeLabel(row.type))")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Text(subLine(row))
@@ -392,7 +392,7 @@ struct CatalystRoadsideDataQ: View {
 
     /// "{location} · {OOS|N viol|0 OOS}" — verbatim grammar to the SVG sub-row.
     private func subLine(_ row: RoadsideInspectionRow) -> String {
-        let loc = row.location.isEmpty ? "—" : row.location
+        let loc = row.location.isEmpty ? "-" : row.location
         let tail: String
         if row.oosViolation { tail = "OOS" }
         else if row.defectsFound > 0 { tail = "\(row.defectsFound) viol" }
@@ -788,7 +788,7 @@ private struct FileDataQSheet: View {
             )
             draft = d
             if !d.available {
-                actionError = "AI assist is unavailable right now — you can still file your own statement."
+                actionError = "AI assist is unavailable right now. You can still file your own statement."
             }
         } catch {
             actionError = "AI assist failed: \(error.localizedDescription)"
@@ -875,7 +875,7 @@ private struct CarrierPolicySheet: View {
                         coverageUnknown
                     } else {
                         statRow("Coverage limit", money(p.coverageLimitCents))
-                        statRow("Preferred provider", p.preferredProviderName ?? "—")
+                        statRow("Preferred provider", p.preferredProviderName ?? "-")
                         if let u = p.updatedAt, !u.isEmpty {
                             statRow("Updated", u)
                         }

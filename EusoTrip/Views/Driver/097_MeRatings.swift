@@ -109,7 +109,7 @@ struct MeRatings: View {
                 .font(EType.micro)
                 .tracking(1.3)
                 .foregroundStyle(palette.textTertiary)
-            Text(count > 0 ? String(format: "%.1f", rating) : "—")
+            Text(count > 0 ? String(format: "%.1f", rating) : "-")
                 .font(.system(size: 48, weight: .heavy, design: .rounded))
                 .foregroundStyle(LinearGradient.diagonal)
                 .monospacedDigit()

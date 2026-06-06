@@ -211,9 +211,6 @@ private struct RailDutyHTSEstimateBody: View {
 
     private var titleRow: some View {
         HStack(alignment: .center, spacing: Space.s3) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(palette.textPrimary)
             Text("Duty estimate")
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
@@ -467,7 +464,7 @@ private struct RailDutyHTSEstimateBody: View {
                     .frame(maxWidth: .infinity, minHeight: 48)
             }
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .buttonStyle(.plain)
 
             Button(action: {}) {
@@ -477,7 +474,7 @@ private struct RailDutyHTSEstimateBody: View {
                     .frame(width: 140, height: 48)
             }
             .background(palette.bgCardSoft)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .buttonStyle(.plain)
         }
     }

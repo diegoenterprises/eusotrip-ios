@@ -165,8 +165,10 @@ public final class HereAddOnsModel: ObservableObject {
 
     public init() {}
 
-    /// Internal accumulator each fetcher returns.
-    struct AddOnFetch {
+    /// Internal accumulator each fetcher returns. `Sendable` (all members are
+    /// Sendable value types) so the now-`nonisolated` off-actor fetchers can
+    /// hand it back to the `@MainActor load()` across the actor boundary.
+    struct AddOnFetch: Sendable {
         var markers: [HereMarker] = []
         var polygons: [HerePolygon] = []
         var details: [HereAddOnDetail] = []
@@ -256,7 +258,10 @@ public final class HereAddOnsModel: ObservableObject {
 
     // MARK: - Per-add-on fetchers (all fail soft → empty AddOnFetch)
 
-    private static func fetchFuel(_ coord: CLLocationCoordinate2D, _ radius: Int) async -> AddOnFetch {
+    // nonisolated: the station/price build loop runs off the main actor; the
+    // client (`HereFuelPricesClient`) is not main-actor isolated, so its
+    // `nearby` request suspends off-actor for the network I/O.
+    nonisolated private static func fetchFuel(_ coord: CLLocationCoordinate2D, _ radius: Int) async -> AddOnFetch {
         var out = AddOnFetch()
         do {
             let stations = try await HereFuelPricesClient.shared.nearby(center: coord, radiusMeters: radius)
@@ -283,7 +288,7 @@ public final class HereAddOnsModel: ObservableObject {
         return out
     }
 
-    private static func fetchEV(_ coord: CLLocationCoordinate2D) async -> AddOnFetch {
+    nonisolated private static func fetchEV(_ coord: CLLocationCoordinate2D) async -> AddOnFetch {
         var out = AddOnFetch()
         do {
             let items = try await HereEVClient.shared.chargingStations(near: coord, limit: 30)
@@ -311,7 +316,7 @@ public final class HereAddOnsModel: ObservableObject {
         return out
     }
 
-    private static func fetchWeather(_ coord: CLLocationCoordinate2D) async -> AddOnFetch {
+    nonisolated private static func fetchWeather(_ coord: CLLocationCoordinate2D) async -> AddOnFetch {
         var out = AddOnFetch()
         do {
             let place = try await HereWeatherClient.shared.report(at: coord, products: [.observation])
@@ -332,7 +337,7 @@ public final class HereAddOnsModel: ObservableObject {
         return out
     }
 
-    private static func fetchTraffic(_ coord: CLLocationCoordinate2D) async -> AddOnFetch {
+    nonisolated private static func fetchTraffic(_ coord: CLLocationCoordinate2D) async -> AddOnFetch {
         var out = AddOnFetch()
         do {
             let incidents = try await HereTrafficClient.shared.incidents(near: coord)
@@ -354,7 +359,7 @@ public final class HereAddOnsModel: ObservableObject {
         return out
     }
 
-    private static func fetchParking(_ coord: CLLocationCoordinate2D) async -> AddOnFetch {
+    nonisolated private static func fetchParking(_ coord: CLLocationCoordinate2D) async -> AddOnFetch {
         var out = AddOnFetch()
         do {
             let items = try await HereParkingClient.shared.parkingNearby(center: coord, limit: 30)
@@ -375,7 +380,7 @@ public final class HereAddOnsModel: ObservableObject {
         return out
     }
 
-    private static func fetchCameras(_ coord: CLLocationCoordinate2D) async -> AddOnFetch {
+    nonisolated private static func fetchCameras(_ coord: CLLocationCoordinate2D) async -> AddOnFetch {
         var out = AddOnFetch()
         do {
             let items = try await HereSafetyCamerasClient.shared.camerasNearby(center: coord, limit: 40)
@@ -399,18 +404,32 @@ public final class HereAddOnsModel: ObservableObject {
         return out
     }
 
-    // @MainActor: hereMaps.* lives on the main-actor EusoTripAPI.
-    @MainActor
-    private static func fetchDiscover(
+    // `hereMaps.*` lives on the main-actor EusoTripAPI, so the network CALL
+    // hops to the main actor — but only for the suspending request. This
+    // fetcher is `nonisolated` so the marker/detail-building loop (pure CPU)
+    // runs OFF the main actor and never blocks the UI during a GPS-driven
+    // fan-out. The returned `[Place]` is a Sendable value type, safe to hand
+    // back across the actor boundary.
+    nonisolated private static func fetchDiscover(
         _ center: HereLatLng, _ query: String, _ kind: HereMarker.Kind
     ) async -> AddOnFetch {
         var out = AddOnFetch()
         do {
-            let places = try await EusoTripAPI.shared.hereMaps.discoverNearby(
-                query: query,
-                at: .init(lat: center.lat, lng: center.lng),
-                radiusMeters: 60_000
-            )
+            // RATE-LIMIT GATE: this branch of the fan-out hits HERE via our
+            // backend proxy (`hereMaps.discoverNearby`) rather than a gated
+            // client, so pace it explicitly through the shared limiter so
+            // the 10-call fan-out stays a paced trickle, not a simultaneous
+            // burst. `withSlot` acquires + always releases.
+            // `discoverNearby` is a main-actor async method; awaiting it from
+            // this nonisolated context hops to the main actor only to ISSUE the
+            // request, then suspends (releasing the actor) for the network I/O.
+            let places = try await HereRateLimiter.shared.withSlot {
+                try await EusoTripAPI.shared.hereMaps.discoverNearby(
+                    query: query,
+                    at: .init(lat: center.lat, lng: center.lng),
+                    radiusMeters: 60_000
+                )
+            }
             for place in places {
                 guard let lat = place.lat, let lng = place.lng else { continue }
                 let id = "\(kind.rawValue):\(place.id)"
@@ -433,12 +452,17 @@ public final class HereAddOnsModel: ObservableObject {
         return out
     }
 
-    @MainActor
-    private static func fetchAdZones(_ center: HereLatLng, _ route: [HereLatLng]) async -> AddOnFetch {
+    // nonisolated: the polygon/centroid build loop runs off the main actor;
+    // only the `adZonesInBbox` request hops onto it (then suspends for I/O).
+    nonisolated private static func fetchAdZones(_ center: HereLatLng, _ route: [HereLatLng]) async -> AddOnFetch {
         var out = AddOnFetch()
         do {
             let bbox = Self.boundingBox(center: center, route: route)
-            let zones = try await EusoTripAPI.shared.hereMaps.adZonesInBbox(bbox)
+            // RATE-LIMIT GATE: backend-proxied HERE call — pace it through the
+            // shared limiter so the fan-out doesn't fire it simultaneously.
+            let zones = try await HereRateLimiter.shared.withSlot {
+                try await EusoTripAPI.shared.hereMaps.adZonesInBbox(bbox)
+            }
             for z in zones {
                 guard let poly = z.polygon, poly.count > 2 else { continue }
                 let ring = poly.map { HereLatLng($0.lat, $0.lng) }
@@ -466,11 +490,15 @@ public final class HereAddOnsModel: ObservableObject {
 
     // ISA — intelligent speed assist. Not a pin (it's a point attribute);
     // surfaced as a ticker chip showing the posted limit at the anchor.
-    @MainActor
-    private static func fetchISA(_ center: HereLatLng) async -> AddOnFetch {
+    // nonisolated: only the `isaForPoint` request touches the main actor.
+    nonisolated private static func fetchISA(_ center: HereLatLng) async -> AddOnFetch {
         var out = AddOnFetch()
         do {
-            let isa = try await EusoTripAPI.shared.hereMaps.isaForPoint(lat: center.lat, lng: center.lng)
+            // RATE-LIMIT GATE: backend-proxied HERE call — pace it through the
+            // shared limiter so the fan-out doesn't fire it simultaneously.
+            let isa = try await HereRateLimiter.shared.withSlot {
+                try await EusoTripAPI.shared.hereMaps.isaForPoint(lat: center.lat, lng: center.lng)
+            }
             guard let kph = isa.speedLimitKph else { return out }
             let unit = (isa.speedUnit ?? "kph").lowercased()
             let text: String
@@ -486,7 +514,8 @@ public final class HereAddOnsModel: ObservableObject {
     }
 
     /// BBox over the route when present, else a ~0.45° box around center.
-    private static func boundingBox(center: HereLatLng, route: [HereLatLng]) -> HereMapsAPI.BBox {
+    /// nonisolated: pure math, called by the off-actor `fetchAdZones`.
+    nonisolated private static func boundingBox(center: HereLatLng, route: [HereLatLng]) -> HereMapsAPI.BBox {
         let pts = route.isEmpty ? [center] : route
         var north = -90.0, south = 90.0, east = -180.0, west = 180.0
         for p in pts {
@@ -602,13 +631,35 @@ public struct HereLiveMapView: View {
         }
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: selectedDetail)
         .task(id: reloadKey) {
+            // DEBOUNCE: the HERE add-on fan-out is 10 concurrent REST calls.
+            // A live GPS feed pushes a new `center` on every fix, and even with
+            // the grid-snap below a moving driver crosses cells steadily — so
+            // we settle for a beat before firing. `.task(id:)` cancels the
+            // prior task the instant the key flips, so this sleep is a no-op
+            // burst-collapser: only the LAST key in a 350 ms window survives to
+            // issue the fan-out. A cancelled sleep throws → we bail silently.
+            do { try await Task.sleep(nanoseconds: 350_000_000) } catch { return }
+            guard !Task.isCancelled else { return }
             await model.load(center: center, route: route, enabled: addOns, missionPins: missionPins)
         }
     }
 
-    /// Re-fetch when the anchor, zoom, add-ons, or pin counts change.
+    /// Grid cell (degrees) the live anchor is snapped to before keying the
+    /// add-on fan-out. ~0.02° ≈ 2 km at mid-latitudes — far finer than the
+    /// 40 km fetch radius, so the surfaced pins stay accurate, but coarse
+    /// enough that sub-meter GPS jitter (and even a block of city driving)
+    /// resolves to the SAME key and does NOT re-issue the 10-call fan-out.
+    private static let reloadGridCell: Double = 0.02
+
+    /// Re-fetch when the (grid-snapped) anchor, add-ons, or pin counts change.
+    /// Snapping the center to `reloadGridCell` means a jittering GPS fix that
+    /// moves a few meters keeps the SAME key (no re-fetch); only crossing a
+    /// cell boundary — or a real add-on/route/pin change — re-keys.
     private var reloadKey: String {
-        "\(center.lat),\(center.lng)|\(addOns.rawValue)|\(route.count)|\(missionPins.count)|\(firstPerson)"
+        let cell = Self.reloadGridCell
+        let snapLat = (center.lat / cell).rounded() * cell
+        let snapLng = (center.lng / cell).rounded() * cell
+        return "\(String(format: "%.3f", snapLat)),\(String(format: "%.3f", snapLng))|\(addOns.rawValue)|\(route.count)|\(missionPins.count)|\(firstPerson)"
     }
 
     /// Process caller base layers: assign ids to any marker missing one so

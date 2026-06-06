@@ -260,7 +260,7 @@ private struct DemurrageBody: View {
                         .background(Capsule().fill(columnTint(columnId).opacity(0.18)))
                         .foregroundStyle(columnTint(columnId))
                 }
-                LifecycleRow(label: "Hours",   value: r.hoursDetained.map { String(format: "%.1f", $0) } ?? "—")
+                LifecycleRow(label: "Hours",   value: r.hoursDetained.map { String(format: "%.1f", $0) } ?? "-")
                 LifecycleRow(label: "Rate",    value: usd(r.rate))
                 LifecycleRow(label: "Amount",  value: usd(r.amount))
                 if columnId == "pending" {

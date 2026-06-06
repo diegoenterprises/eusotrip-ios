@@ -124,10 +124,6 @@ private struct RailCrossBorderDGRegsBody: View {
             // Back chevron + title block, with right-aligned carrier meta.
             HStack(alignment: .top, spacing: Space.s3) {
                 HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
-                        .padding(.top, 6)
                     Text("DG regulations")
                         .font(.system(size: 28, weight: .bold))
                         .tracking(-0.4)
@@ -326,7 +322,7 @@ private struct RailCrossBorderDGRegsBody: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(code) · \(reg.regulationName ?? "—")")
+                Text("\(code) · \(reg.regulationName ?? "-")")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Text(subLine(for: code, reg: reg))
@@ -358,7 +354,7 @@ private struct RailCrossBorderDGRegsBody: View {
         case "US": return "Class 3"
         case "CA": return "ERAP"
         case "MX": return "Tarjeta"
-        default:   return "—"
+        default:   return "-"
         }
     }
 
@@ -366,7 +362,7 @@ private struct RailCrossBorderDGRegsBody: View {
     // sourced from the live regime payload (falls back to the wireframe
     // copy if the server omits keyRules).
     private func subLine(for code: String, reg: RailDGRegulation) -> String {
-        let authority = reg.authority ?? "—"
+        let authority = reg.authority ?? "-"
         let rules = reg.keyRules ?? []
         switch code {
         case "US":
@@ -421,7 +417,7 @@ private struct RailCrossBorderDGRegsBody: View {
                     .frame(maxWidth: .infinity, minHeight: 48)
             }
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .buttonStyle(.plain)
 
             Button(action: {}) {
@@ -431,8 +427,8 @@ private struct RailCrossBorderDGRegsBody: View {
                     .frame(width: 148, height: 48)
             }
             .background(Color(hex: 0x232932))
-            .overlay(Capsule().strokeBorder(palette.borderSoft, lineWidth: 1))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .buttonStyle(.plain)
         }
     }

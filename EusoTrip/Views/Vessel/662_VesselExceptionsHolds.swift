@@ -24,7 +24,7 @@
 //  per row therefore cannot be computed honestly from the current contract. Where a
 //  field is absent we render the honest derived state (blocking/review from CBP severity
 //  + actionRequired; $ exposure from getVesselDemurrage where it overlaps) and leave the
-//  urgency math as a real "—" rather than fabricating it. See PORT-GAP notes inline.
+//  urgency math as a real "-" rather than fabricating it. See PORT-GAP notes inline.
 //
 //  RBAC vesselProcedure. transportMode=vessel · US CBP ACE + ISF 10+2; CA CBSA ACI /
 //  MX VUCEM holds resolve in the same rows by entry country. WRITE: clearing a hold is
@@ -159,9 +159,6 @@ private struct VesselExceptionsHoldsBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Exceptions")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -190,7 +187,7 @@ private struct VesselExceptionsHoldsBody: View {
     /// demurrage accrual rollup (getVesselDemurrage). The SVG's "$1,140 next
     /// penalty 6h" depends on the per-hold minutesToPenalty/exposureUSD STUB the
     /// server does not return, so we surface the real demurrage exposure and a
-    /// "—" for next-penalty rather than inventing the countdown.
+    /// "-" for next-penalty rather than inventing the countdown.
     private var dollarsAtRisk: Double? {
         guard let d = demurrage else { return nil }
         return (d.demurrageUsd ?? 0) + (d.detentionUsd ?? 0)
@@ -229,7 +226,7 @@ private struct VesselExceptionsHoldsBody: View {
                                 .foregroundStyle(Brand.warning)
                         } else {
                             // PORT-GAP: getVesselDemurrage returned no exposure — no fabricated $.
-                            Text("—")
+                            Text("-")
                                 .font(.system(size: 20, weight: .bold))
                                 .foregroundStyle(palette.textTertiary)
                         }
@@ -250,7 +247,7 @@ private struct VesselExceptionsHoldsBody: View {
 
     private var nextPenaltyLabel: String {
         if let last = entry?.lastUpdated, !last.isEmpty { return "updated \(last)" }
-        return "next penalty —"
+        return "next penalty -"
     }
 
     private var segmentedBar: some View {
@@ -306,7 +303,7 @@ private struct VesselExceptionsHoldsBody: View {
                 EusoEmptyState(
                     systemImage: "checkmark.shield.fill",
                     title: "No active holds",
-                    subtitle: "CBP exam, PGA, and demurrage holds for \(bookingRef) appear here the moment Descartes ABI flags one."
+                    subtitle: "CBP exam, PGA and demurrage holds for \(bookingRef) appear here the moment Descartes ABI flags one."
                 )
             } else {
                 VStack(spacing: 0) {
@@ -436,7 +433,7 @@ private struct VesselExceptionsHoldsBody: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient.primary)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -449,8 +446,8 @@ private struct VesselExceptionsHoldsBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCardSoft)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

@@ -71,7 +71,7 @@ private struct SettlementBody: View {
             LifecycleSection(label: "BREAKDOWN", icon: "list.bullet")
             LifecycleRow(label: "Line haul",      value: usd(live.load.rate))
             LifecycleRow(label: "Accessorials",   value: usd0(live.accessorialTotal))
-            LifecycleRow(label: "Distance",       value: live.load.distance.map { "\(Int($0)) mi" } ?? "—")
+            LifecycleRow(label: "Distance",       value: live.load.distance.map { "\(Int($0)) mi" } ?? "-")
         }
     }
 

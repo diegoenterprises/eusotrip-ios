@@ -403,7 +403,16 @@ struct HomeWidgetGrid: View {
                 Spacer(minLength: 0)
                 if editing {
                     Button {
-                        withAnimation(.easeOut(duration: 0.18)) { order = canonicalOrder; sizes = [:] }
+                        withAnimation(.easeOut(duration: 0.18)) {
+                            order = canonicalOrder
+                            sizes = [:]
+                            // RESET means "give me back the default
+                            // layout" — that includes clearing every
+                            // record of widgets the user previously
+                            // removed so they don't get filtered out
+                            // on the next hydrate.
+                            Self.saveRemovedSet([], storageKey: storageKey)
+                        }
                     } label: {
                         Text("RESET")
                             .font(.system(size: 9, weight: .heavy)).tracking(0.6)
@@ -470,6 +479,10 @@ struct HomeWidgetGrid: View {
                         withAnimation(.easeOut(duration: 0.18)) {
                             order.removeAll { $0 == id }
                             sizes[id] = nil
+                            // Record the removal so reconcile() won't
+                            // auto-restore this widget after the user
+                            // navigates away and back.
+                            markRemoved(id)
                         }
                     } label: {
                         Image(systemName: "minus.circle.fill")
@@ -585,6 +598,11 @@ struct HomeWidgetGrid: View {
                                     Button {
                                         withAnimation(.easeOut(duration: 0.18)) {
                                             order.append(id)
+                                            // User explicitly re-added —
+                                            // clear the removed flag so
+                                            // reconcile() treats this as
+                                            // a normal restore.
+                                            clearRemoved(id)
                                         }
                                         if addableWidgets.count <= 1 { showAddSheet = false }
                                     } label: {
@@ -719,10 +737,55 @@ struct HomeWidgetGrid: View {
         for s in saved where !seen.contains(s) && canonicalOrder.contains(s) {
             out.append(s); seen.insert(s)
         }
-        for s in canonicalOrder where !seen.contains(s) {
+        // Append newly-shipped widgets that the user has NEVER seen — but
+        // skip anything in `removedWidgetIds` so a widget the user
+        // explicitly tapped "−" on doesn't reappear after they navigate
+        // to another tab and return (founder bug 2026-05-31).
+        let removed = Self.loadRemovedSet(storageKey: storageKey)
+        for s in canonicalOrder where !seen.contains(s) && !removed.contains(s) {
             out.append(s)
         }
         return out
+    }
+
+    // MARK: - Removed-widgets persistence
+    //
+    // The "auto-append newly-shipped widget" behaviour above couldn't tell
+    // a widget that was newly added to `canonicalOrder` after a save from
+    // a widget the user explicitly removed. The set below disambiguates:
+    // tapping "−" on a tile adds the id here, tapping "+" in the add
+    // sheet removes it. Persisted under a sibling key so the existing
+    // layout cache format is untouched and old installs migrate cleanly.
+
+    private static func removedKey(_ storageKey: String) -> String {
+        "\(storageKey).removed"
+    }
+
+    fileprivate static func loadRemovedSet(storageKey: String) -> Set<String> {
+        guard let data = UserDefaults.standard.data(forKey: removedKey(storageKey)),
+              let arr = try? JSONDecoder().decode([String].self, from: data)
+        else { return [] }
+        return Set(arr)
+    }
+
+    fileprivate static func saveRemovedSet(_ set: Set<String>, storageKey: String) {
+        if let data = try? JSONEncoder().encode(Array(set)) {
+            UserDefaults.standard.set(data, forKey: removedKey(storageKey))
+        }
+    }
+
+    /// Mark a widget as user-removed so reconcile() won't re-add it.
+    fileprivate func markRemoved(_ id: String) {
+        var s = Self.loadRemovedSet(storageKey: storageKey)
+        s.insert(id)
+        Self.saveRemovedSet(s, storageKey: storageKey)
+    }
+
+    /// Clear a widget's removed flag when the user re-adds it via "+".
+    fileprivate func clearRemoved(_ id: String) {
+        var s = Self.loadRemovedSet(storageKey: storageKey)
+        s.remove(id)
+        Self.saveRemovedSet(s, storageKey: storageKey)
     }
 }
 
@@ -988,16 +1051,21 @@ struct DriverHome: View {
                         origin: vm.originCity,
                         destination: vm.destCity,
                         miles: 0,
-                        equipment: "—",
+                        equipment: "-",
                         rate: 0,
                         rpm: 0,
                         pickupWindow: vm.pickupStatusPill,
                         broker: "Dispatch",
                         hazmat: false,
-                        weight: "—",
+                        weight: "-",
                         hotScore: 0,
                         originLat: 39.8283, originLng: -98.5795,
-                        destLat: 39.8283, destLng: -98.5795
+                        destLat: 39.8283, destLng: -98.5795,
+                        // Summary-only fallback — the VM doesn't surface a
+                        // mode here; default truck so mode-aware surfaces
+                        // read correctly until getById hydrates the row.
+                        transportMode: "truck",
+                        equipmentRaw: nil
                     )
                 )
                 .environment(\.palette, palette)
@@ -1010,6 +1078,13 @@ struct DriverHome: View {
         .sheet(isPresented: $showHosSheet) {
             HosDutyStatus(register: .afternoon)
                 .environment(\.palette, palette)
+                // Presented as a SHEET here — the 019 top-bar chevron must
+                // resolve to the sheet's own `dismiss()`, not the Home
+                // lifecycle's `\.driverNavBack` (→ `trip.stepBack()`).
+                // Null that env on the sheet content so the chevron's
+                // `navBack?()` is a no-op and only `dismiss()` fires; the
+                // sheet closes cleanly with no hidden trip-phase rewind.
+                .environment(\.driverNavBack, nil)
                 .eusoSheetX()
         }
         // EusoWallet — full DriverWalletPane surface with settlements,
@@ -1247,7 +1322,7 @@ struct DriverHome: View {
                     Text("Enable location for live weather")
                         .font(EType.body.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("Grant location access to see local conditions, visibility, and route weather alerts.")
+                    Text("Grant location access to see local conditions, visibility and route weather alerts.")
                         .font(EType.micro)
                         .foregroundStyle(palette.textSecondary)
                         .multilineTextAlignment(.leading)
@@ -1307,7 +1382,7 @@ struct DriverHome: View {
                     Circle()
                         .fill(palette.textTertiary.opacity(0.5))
                         .frame(width: 5, height: 5)
-                    Text("Quiet on your lane — we'll let you know the moment tenders land.")
+                    Text("Quiet on your lane. We'll let you know the moment tenders land.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .lineLimit(2)
@@ -1418,7 +1493,7 @@ struct DriverHome: View {
                 HStack {
                     HStack(spacing: Space.s2) {
                         StatusPill(text: vm.pickupStatusPill, kind: .info)
-                        if vm.cargoWeightPill != "—" {
+                        if vm.cargoWeightPill != "-" {
                             StatusPill(text: vm.cargoWeightPill, kind: .neutral)
                         }
                         // 2026-05-17 — Driver Home active-load mode
@@ -1594,7 +1669,7 @@ struct DriverHome: View {
                             Text("No recent activity yet")
                                 .font(EType.bodyStrong)
                                 .foregroundStyle(palette.textPrimary)
-                            Text("Assignments, duty changes, and payouts will show up here.")
+                            Text("Assignments, duty changes and payouts will show up here.")
                                 .font(EType.caption)
                                 .foregroundStyle(palette.textSecondary)
                                 .lineLimit(2)
@@ -2070,9 +2145,10 @@ struct NextDeliveryWidget: View {
                 Image(systemName: "mappin.circle.fill")
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("NEXT DELIVERY")
+                Text("NEXT \((TransportMode(rawValue: summary?.transportMode ?? "truck") ?? .truck).deliveryNoun)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
                 Spacer(minLength: 0)
                 if let s = summary {
                     Text(s.status.uppercased())
@@ -2198,7 +2274,7 @@ private struct HosTile: View {
     var label: String = "HOS DRIVE LEFT"
     @Environment(\.palette) var palette
 
-    /// Parse "7h 22m" → (hours, minutes). Falls back gracefully on "—" / bad input.
+    /// Parse "7h 22m" → (hours, minutes). Falls back gracefully on "-" / bad input.
     private var parts: (hours: String, minutes: String)? {
         let s = value.replacingOccurrences(of: " ", with: "")
         guard let hIdx = s.firstIndex(of: "h") else { return nil }
@@ -2310,7 +2386,7 @@ struct MileageTrackerWidget: View {
                     .lineLimit(2)
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(monthlyMiles.map { fmt($0) } ?? "—")
+                    Text(monthlyMiles.map { fmt($0) } ?? "-")
                         .font(.system(size: 36, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
                         .monospacedDigit()
@@ -2667,7 +2743,7 @@ struct VehicleHealthWidget: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(palette.textSecondary)
                 } else {
-                    Text("Telematics pending — ELD sync not yet active.")
+                    Text("Telematics pending, ELD sync not yet active.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .padding(.top, 2)
@@ -3093,14 +3169,14 @@ struct CurrentRouteWidget: View {
                     .font(.system(size: 13, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                 HStack(alignment: .center, spacing: 4) {
-                    Text(l.pickupLocation?.cityState ?? "—")
+                    Text(l.pickupLocation?.cityState ?? "-")
                         .font(.system(size: 15, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
                     Image(systemName: "arrow.right")
                         .font(.system(size: 11, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text(l.deliveryLocation?.cityState ?? "—")
+                    Text(l.deliveryLocation?.cityState ?? "-")
                         .font(.system(size: 15, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
@@ -3110,14 +3186,14 @@ struct CurrentRouteWidget: View {
                     Image(systemName: "road.lanes")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(palette.textTertiary)
-                    Text(l.distanceValue > 0 ? "\(Int(l.distanceValue)) mi" : "— mi")
+                    Text(l.distanceValue > 0 ? "\(Int(l.distanceValue)) mi" : "- mi")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(palette.textSecondary)
                     Spacer(minLength: 0)
                     Image(systemName: "calendar")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(palette.textTertiary)
-                    Text(l.pickupDate ?? "—")
+                    Text(l.pickupDate ?? "-")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(palette.textTertiary)
                 }

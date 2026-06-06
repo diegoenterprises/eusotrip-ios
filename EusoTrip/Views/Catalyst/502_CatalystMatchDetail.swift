@@ -44,7 +44,7 @@
 //      backend stub gap has a neutral empty state on the client
 //      (no fake data)."
 //    • Empty / blank server fields surface as em-dash sentinels
-//      ("—") — every nullable column on a fresh match (no pickup
+//      ("-") — every nullable column on a fresh match (no pickup
 //      date scheduled, no rate posted, no agent attached) renders
 //      as a neutral em-dash, never a fabricated value.
 //    • Preview hint passthrough (loadNumber / lane / startedAt /
@@ -160,8 +160,8 @@ struct CatalystMatchDetail: View {
 
     private var header: some View {
         let live: LoadsAPI.LoadDetail? = detailStore.state.value ?? nil
-        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "—"
-        let lane: String = live?.laneDisplay ?? previewLane ?? "—"
+        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "-"
+        let lane: String = live?.laneDisplay ?? previewLane ?? "-"
         let status = live?.status ?? ""
 
         return VStack(alignment: .leading, spacing: Space.s2) {
@@ -232,6 +232,7 @@ struct CatalystMatchDetail: View {
     @ViewBuilder
     private func detailCards(for detail: LoadsAPI.LoadDetail) -> some View {
         metricsRow(detail)
+        routeMapCard(detail)
         scheduleCard(detail)
         cargoCard(detail)
         spectraMatchCard(detail)
@@ -268,7 +269,7 @@ struct CatalystMatchDetail: View {
     /// identically across the Catalyst track. Em-dash when the row
     /// hint is missing or zero (no carrier scored yet).
     private func bestFitDisplay() -> String {
-        guard let v = previewBestFitScore, v > 0 else { return "—" }
+        guard let v = previewBestFitScore, v > 0 else { return "-" }
         let clamped = min(max(v, 0), 1)
         let pct = Int((clamped * 100).rounded())
         return "\(pct)%"
@@ -279,7 +280,7 @@ struct CatalystMatchDetail: View {
     /// The 501 row always passes this hint through, so the cold-open
     /// path is rare in practice.
     private func candidatesDisplay() -> String {
-        guard let n = previewCandidateCount else { return "—" }
+        guard let n = previewCandidateCount else { return "-" }
         return "\(n) " + (n == 1 ? "candidate" : "candidates")
     }
 
@@ -319,13 +320,118 @@ struct CatalystMatchDetail: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
+    // MARK: - Route preview (in-house HERE)
+    //
+    // Origin → destination route-preview on the OMV vector renderer
+    // (HereLiveMapView, `.shipperTracking` watcher add-ons — weather +
+    // traffic + ad-zones, no driver gamification fan-out). Coords bind
+    // ONLY to the REAL `pickupLocation.lat/.lng` + `deliveryLocation
+    // .lat/.lng` the same `loads.getById` envelope carries (the
+    // `LoadCityState.lat/lng` slots the server self-heals via HERE
+    // geocode, EusoTripAPI.swift:1219-1220 / loads.ts self-heal
+    // 175-206). Identical lane-resolution to the sibling
+    // 305_CatalystLoadDetail.routeMapCard — same store, same proc,
+    // same fields.
+    //
+    // Driver 013 coord gate (`laneCoords` → nil on any zero/nil
+    // endpoint): when this match's load has only city names and no
+    // geocoded fix, honest-skip to a neutral "Route loading…"
+    // placeholder. Never geocode a place name client-side; never
+    // frame on null island.
+    @ViewBuilder
+    private func routeMapCard(_ l: LoadsAPI.LoadDetail) -> some View {
+        if let coords = laneCoords(l) {
+            let midLat = (coords.pickupLat + coords.deliveryLat) / 2
+            let midLng = (coords.pickupLng + coords.deliveryLng) / 2
+            HereLiveMapView(
+                center: .init(midLat, midLng),
+                zoom: 6,
+                route: [
+                    .init(coords.pickupLat, coords.pickupLng),
+                    .init(coords.deliveryLat, coords.deliveryLng)
+                ],
+                baseLayers: [
+                    .route(
+                        polyline: [
+                            .init(coords.pickupLat, coords.pickupLng),
+                            .init(coords.deliveryLat, coords.deliveryLng)
+                        ],
+                        colorHex: "#1473FF"
+                    ),
+                    .markers([
+                        .init(at: .init(coords.pickupLat, coords.pickupLng),
+                              kind: .pickup, label: coords.originTitle),
+                        .init(at: .init(coords.deliveryLat, coords.deliveryLng),
+                              kind: .delivery, label: coords.destinationTitle)
+                    ])
+                ],
+                addOns: .shipperTracking
+            )
+            .frame(height: 200)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .accessibilityLabel("Match route preview, \(coords.originTitle) to \(coords.destinationTitle)")
+        } else {
+            // Coord gate (Driver 013 pattern): no real fix on one or
+            // both endpoints yet (match load carries only city names) —
+            // neutral placeholder, never a demo route, never a
+            // client-side geocode of the city string.
+            Rectangle()
+                .fill(palette.bgCard)
+                .frame(height: 200)
+                .overlay(
+                    VStack(spacing: 6) {
+                        Image(systemName: "map")
+                            .font(.system(size: 18, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                        Text("Route loading…")
+                            .font(.system(size: 11, weight: .heavy))
+                            .tracking(0.8)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+        }
+    }
+
+    /// Resolves the match load's REAL pickup → delivery coordinates off
+    /// the `loads.getById` envelope (`pickupLocation.lat/.lng` +
+    /// `deliveryLocation.lat/.lng`). Returns nil (→ honest-skip) when
+    /// either endpoint hasn't been geocoded yet — the exact gate
+    /// 305_CatalystLoadDetail.laneCoords uses (non-nil + non-zero on
+    /// both lat/lng). No fabrication, no place-name geocoding.
+    private func laneCoords(_ l: LoadsAPI.LoadDetail)
+        -> (pickupLat: Double, pickupLng: Double,
+            deliveryLat: Double, deliveryLng: Double,
+            originTitle: String, destinationTitle: String)? {
+        guard let p = l.pickupLocation,
+              let d = l.deliveryLocation,
+              let pLat = p.lat, let pLng = p.lng,
+              let dLat = d.lat, let dLng = d.lng,
+              !(pLat == 0 && pLng == 0),
+              !(dLat == 0 && dLng == 0) else { return nil }
+        let origin = p.cityState.isEmpty ? "Origin" : p.cityState
+        let dest = d.cityState.isEmpty ? "Dest" : d.cityState
+        return (pLat, pLng, dLat, dLng, origin, dest)
+    }
+
     /// Pickup / delivery / bidding-ends. Em-dash on missing columns
     /// so a fresh match doesn't show synthetic dates.
     private func scheduleCard(_ d: LoadsAPI.LoadDetail) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
+        let mode = TransportMode(rawValue: d.transportMode ?? "truck") ?? .truck
+        return VStack(alignment: .leading, spacing: Space.s2) {
             sectionHeader("SCHEDULE", icon: "calendar")
-            scheduleRow(label: "Pickup",       value: humanDate(d.pickupDate))
-            scheduleRow(label: "Delivery",     value: humanDate(d.deliveryDate))
+            scheduleRow(label: TransportLexicon.short(.originWindow, mode: mode, equipmentRaw: d.equipmentType),
+                        value: humanDate(d.pickupDate))
+            scheduleRow(label: TransportLexicon.short(.destinationWindow, mode: mode, equipmentRaw: d.equipmentType),
+                        value: humanDate(d.deliveryDate))
             if d.biddingEnds != nil {
                 scheduleRow(label: "Bidding ends", value: humanDate(d.biddingEnds))
             }
@@ -386,10 +492,10 @@ struct CatalystMatchDetail: View {
             if let ws = d.worldscalePct, !ws.isEmpty, let n = Double(ws), n > 0 {
                 scheduleRow(label: "Worldscale", value: "WS \(Int(n.rounded()))")
             }
-            if let w = d.weightDisplay as String?, w != "—" {
+            if let w = d.weightDisplay as String?, w != "-" {
                 scheduleRow(label: "Weight", value: w)
             }
-            if let dist = d.distanceDisplay as String?, dist != "—" {
+            if let dist = d.distanceDisplay as String?, dist != "-" {
                 scheduleRow(label: "Distance", value: dist)
             }
             if let hz = d.hazmatClass, !hz.isEmpty {
@@ -482,7 +588,7 @@ struct CatalystMatchDetail: View {
         if score >= 0.6 {
             return ("MODERATE FIT", "exclamationmark.circle.fill")
         }
-        return ("LOW FIT — CONSIDER OVERRIDE", "arrow.triangle.swap")
+        return ("LOW FIT - CONSIDER OVERRIDE", "arrow.triangle.swap")
     }
 
     /// Candidates card — placeholder card that honestly communicates
@@ -517,7 +623,7 @@ struct CatalystMatchDetail: View {
                         .lineLimit(1)
                 }
             }
-            Text("Per-candidate scoring rubric, agent breakdown, and fit-score history will appear here once `catalysts.getMatchCandidates` ships server-side.")
+            Text("Per-candidate scoring rubric, agent breakdown and fit-score history will appear here once `catalysts.getMatchCandidates` ships server-side.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -534,7 +640,7 @@ struct CatalystMatchDetail: View {
 
     /// Notes block — only renders when the load actually carries
     /// special-instructions text from the server. Drafts with no
-    /// notes get the section omitted entirely (no "—" filler).
+    /// notes get the section omitted entirely (no "-" filler).
     @ViewBuilder
     private func notesCard(_ d: LoadsAPI.LoadDetail) -> some View {
         if let notes = d.notes, !notes.isEmpty {
@@ -580,7 +686,7 @@ struct CatalystMatchDetail: View {
                             .font(.system(size: 12, weight: .heavy))
                             .foregroundStyle(LinearGradient.diagonal)
                     }
-                    Text("Open the full Load Detail surface to assign or reassign a carrier (manual override), update status, send to eSang, or message the driver. Manual override pulls the match out of SpectraMatch.")
+                    Text("Open the full Load Detail surface to assign or reassign a carrier (manual override), update status, send to eSang or message the driver. Manual override pulls the match out of SpectraMatch.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -716,7 +822,7 @@ struct CatalystMatchDetail: View {
     /// Em-dash on empty/nil so a draft cargoType missing from the row
     /// surfaces as a neutral cell.
     private func humanCargoType(_ raw: String?) -> String {
-        guard let r = raw, !r.isEmpty else { return "—" }
+        guard let r = raw, !r.isEmpty else { return "-" }
         switch r.lowercased() {
         case "general":      return "General freight"
         case "hazmat":       return "Hazmat"
@@ -735,7 +841,7 @@ struct CatalystMatchDetail: View {
     /// when nil / empty / unparseable so missing dates always look
     /// like a deliberate sentinel.
     private func humanDate(_ iso: String?) -> String {
-        guard let iso = iso, !iso.isEmpty else { return "—" }
+        guard let iso = iso, !iso.isEmpty else { return "-" }
         let isoFmt = ISO8601DateFormatter()
         isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var date = isoFmt.date(from: iso)
@@ -850,8 +956,8 @@ private func catalystNavTrailing_502() -> [NavSlot] {
     CatalystMatchDetailScreen(
         theme: Theme.dark,
         matchId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewStartedAt: nil,
         previewCandidateCount: nil,
         previewBestFitScore: nil,
@@ -865,8 +971,8 @@ private func catalystNavTrailing_502() -> [NavSlot] {
     CatalystMatchDetailScreen(
         theme: Theme.light,
         matchId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewStartedAt: nil,
         previewCandidateCount: nil,
         previewBestFitScore: nil,

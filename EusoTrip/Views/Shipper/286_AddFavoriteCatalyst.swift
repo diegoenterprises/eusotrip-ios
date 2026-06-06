@@ -88,7 +88,7 @@ private struct AddFavoriteBody: View {
         success = nil; actionError = nil
         do {
             let r = try await EusoTripAPI.shared.shipper.addFavoriteCatalyst(catalystId: id)
-            success = "Favorite recorded — \(r.catalystId)"
+            success = "Favorite recorded - \(r.catalystId)"
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

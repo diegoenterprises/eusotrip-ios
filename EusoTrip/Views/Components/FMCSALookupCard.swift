@@ -88,7 +88,7 @@ struct FMCSALookupCard: View {
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("One number, 30+ fields auto-filled")
                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Text("We pull legal name, addresses, fleet size, authority, hazmat, and insurance straight from FMCSA QCMobile.")
+                Text("We pull legal name, addresses, fleet size, authority, hazmat and insurance straight from FMCSA QCMobile.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -155,7 +155,7 @@ struct FMCSALookupCard: View {
             .padding(.horizontal, 14).padding(.vertical, 10)
             .foregroundStyle(.white)
             .background(canVerify ? AnyView(LinearGradient.diagonal) : AnyView(Color.gray.opacity(0.4)))
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(!canVerify || phase == .loading)
@@ -339,7 +339,7 @@ struct FMCSALookupCard: View {
             Image(systemName: "questionmark.circle")
                 .font(.system(size: 11, weight: .heavy))
                 .foregroundStyle(palette.textTertiary)
-            Text("No SAFER record for that number — you can still enter the rest manually.")
+            Text("No SAFER record for that number. You can still enter the rest manually.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

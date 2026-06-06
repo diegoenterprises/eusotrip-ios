@@ -158,15 +158,15 @@ struct ParentVsPerVehicleSettlementToggle: View {
     private var recommendationReason: String {
         let carriers = Set(shipment.vehicles.map(\.carrierId))
         if carriers.count == 1 {
-            return "Single carrier on all vehicles — unified invoice simplifies settlement."
+            return "Single carrier on all vehicles. Unified invoice simplifies settlement."
         }
         if shipment.isCrossBorder {
-            return "Cross-border shipment — per-vehicle keeps each leg in its origin currency."
+            return "Cross-border shipment. Per-vehicle keeps each leg in its origin currency."
         }
         if shipment.isProjectCargo {
-            return "Project cargo (\(shipment.vehicles.count) vehicles) — per-vehicle preserves carrier-level accounting."
+            return "Project cargo (\(shipment.vehicles.count) vehicles). Per-vehicle preserves carrier-level accounting."
         }
-        return "Multiple carriers — per-vehicle settlement preserves carrier-level accounting."
+        return "Multiple carriers. Per-vehicle settlement preserves carrier-level accounting."
     }
 }
 
@@ -556,13 +556,13 @@ private struct DisclosureCallouts: View {
                 .foregroundStyle(LinearGradient.diagonal)
             VStack(alignment: .leading, spacing: 3) {
                 if mode == .parentRollup {
-                    bullet("One HaulPay broker invoice — single line of credit risk.")
+                    bullet("One HaulPay broker invoice, single line of credit risk.")
                     bullet("Broker handles internal carrier payouts via Stripe Connect.")
                     bullet("Parent ceiling protects against runaway aggregation.")
                     bullet("One audit-chain entry for the parent invoice.")
                     bullet("Triumph Factor-of-Record runs once for the parent.")
                 } else {
-                    bullet("\(parentFee.vehicleBreakdown.count) HaulPay carrier invoices — one per vehicle.")
+                    bullet("\(parentFee.vehicleBreakdown.count) HaulPay carrier invoices, one per vehicle.")
                     bullet("Each carrier paid independently via EusoWallet ACH.")
                     bullet("Each invoice is hash-chained at the per-vehicle layer.")
                     bullet("Triumph FoR runs per child invoice.")

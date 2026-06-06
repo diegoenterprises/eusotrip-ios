@@ -57,10 +57,53 @@
 
 import SwiftUI
 
+// MARK: - Facility-locator data model
+//
+// Real coordinates for the home's facility-locator map come from
+// `yardManagement.getYardLocations` → `locations[].lat/lng`, which the
+// server projects VERBATIM from `facilities.latitude/longitude` and
+// `terminals.latitude/longitude` (yardManagement.ts:274,297,316-317,
+// 328-329 — `Number(f.lat) || 0`). This is the SAME router the role
+// already calls (`yardManagement.moveTrailer` fires from 702), so it is
+// in-scope here. The iOS `terminals.*` envelopes carry NO lat/lng, so
+// this is the only real coordinate path for the Terminal role — and it
+// was not yet wired into any iOS Terminal store. Mirrors the canonical
+// `YardLocation628` consumer (Rail 628_RailYardMap).
+
+/// One terminal facility / yard from `yardManagement.getYardLocations`.
+/// `lat`/`lng` are the REAL facility/terminal coordinates the server
+/// projects; `0,0` is the server's missing-coordinate sentinel and is
+/// null-island-gated out before any pin is drawn.
+private struct TerminalYardLocation700: Decodable, Identifiable, Hashable {
+    let id: String
+    let name: String?
+    let address: String?
+    let type: String?
+    let capacity: Int?
+    let dockDoors: Int?
+    let status: String?
+    let lat: Double?
+    let lng: Double?
+}
+
+/// `getYardLocations` envelope. Server: `{ locations, total }`.
+private struct TerminalYardLocations700: Decodable {
+    let locations: [TerminalYardLocation700]?
+    let total: Int?
+}
+
+/// Tiny string-backed error so the facility-locator card can route a
+/// fetch failure through the shared `inlineError` retry surface.
+private struct TerminalYardLoadError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 // MARK: - Screen root
 
 struct TerminalHome: View {
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = TerminalHomeDashboardStore()
@@ -84,6 +127,20 @@ struct TerminalHome: View {
     /// (700 home → 701 gate-queue detail → 702 yard-map detail).
     @State private var yardMapOpen: Bool = false
 
+    // ── Facility-locator map state ──
+    //
+    // The highest-value missing map in the Terminal role: a geographic
+    // overview of the operator's own yards/docks pinned on the in-house
+    // HERE map. Fed by `yardManagement.getYardLocations` (real
+    // facility/terminal lat/lng). Honest seam: until rows carry real
+    // coordinates the card renders an "awaiting yard coordinates" empty
+    // state — never a fabricated pin. Tapping a pin opens the existing
+    // 702 yard-map drill-in.
+    @State private var yardLocations: [TerminalYardLocation700] = []
+    @State private var yardLocationsLoading: Bool = true
+    @State private var yardLocationsError: String? = nil
+    @State private var selectedYardId: String? = nil
+
     // ── Home-widget customization — uses shared HomeWidgetGrid. ──
     private let widgetLayoutKey = "terminal.home.widgetOrder"
     private let terminalCanonicalOrder: [String] = ["activeMovements", "throughput_summary", "terminal_alerts", "recent", "news"]
@@ -104,6 +161,7 @@ struct TerminalHome: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 kpiStrip
+                facilityLocatorCard
                 attentionStrip
                 HomeWidgetGrid(
                     canonicalOrder: terminalCanonicalOrder,
@@ -146,7 +204,29 @@ struct TerminalHome: View {
         async let b: Void = alerts.refresh()
         async let c: Void = movements.refresh()
         async let d: Void = recent.refresh()
-        _ = await (a, b, c, d)
+        async let e: Void = reloadYardLocations()
+        _ = await (a, b, c, d, e)
+    }
+
+    /// Load the operator's facilities/yards (with real lat/lng) from
+    /// `yardManagement.getYardLocations`. No fabrication: on any failure
+    /// the card surfaces an honest error/retry state. Same router the
+    /// role already calls from 702.
+    private func reloadYardLocations() async {
+        yardLocationsLoading = true
+        yardLocationsError = nil
+        struct LocsIn: Encodable { let status: String }
+        do {
+            let envelope: TerminalYardLocations700 = try await EusoTripAPI.shared.query(
+                "yardManagement.getYardLocations", input: LocsIn(status: "active"))
+            let list = envelope.locations ?? []
+            self.yardLocations = list
+            if selectedYardId == nil { selectedYardId = mappableYards.first?.id }
+        } catch {
+            self.yardLocationsError =
+                (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        yardLocationsLoading = false
     }
 
     // MARK: - Header
@@ -353,19 +433,157 @@ struct TerminalHome: View {
         .eusoCard(radius: Radius.lg)
     }
 
-    /// Format dwell hours as a one-decimal label. Returns "—" for
+    /// Format dwell hours as a one-decimal label. Returns "-" for
     /// zero so the empty case never renders as "0.0 hr".
     private func dwell(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         return String(format: "%.1f hr", v)
     }
 
     /// Format a utilization ratio (0.0…1.0) as a percentage rounded
-    /// to whole digits. Returns "—" for zero so the empty case
+    /// to whole digits. Returns "-" for zero so the empty case
     /// never renders as "0%".
     private func utilization(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         return "\(Int((v * 100).rounded()))%"
+    }
+
+    // MARK: - Facility-locator map
+    //
+    // A geographic overview of the operator's own yards/docks pinned on
+    // the in-house HERE map (`BespokeMapCanvas`). Each real yard footprint
+    // is a translucent `.adZones` polygon (mirrors Driver 022 DockAssigned
+    // `yardLayoutPolygons -> .adZones` + Rail 628), with a pin per yard.
+    // Tapping a pin opens the existing 702 yard-map drill-in. Terminal is a
+    // flat ops board → standard register (tilt: 0, style: .auto).
+
+    /// Yards with REAL server-projected coordinates (lat/lng ≠ 0,0).
+    /// Null-island guard — never render a fabricated pin.
+    private var mappableYards: [TerminalYardLocation700] {
+        yardLocations.filter { y in
+            guard let la = y.lat, let lo = y.lng else { return false }
+            return !(la == 0 && lo == 0)
+        }
+    }
+
+    @ViewBuilder
+    private var facilityLocatorCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 6) {
+                Image(systemName: "map.fill")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("FACILITY LOCATOR")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                if !mappableYards.isEmpty {
+                    Text("\(mappableYards.count) yard\(mappableYards.count == 1 ? "" : "s")")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+
+            if yardLocationsLoading {
+                facilityLocatorSkeleton
+            } else if let err = yardLocationsError {
+                inlineError(TerminalYardLoadError(message: err)) {
+                    Task { await reloadYardLocations() }
+                }
+            } else if mappableYards.isEmpty {
+                // Honest seam — the proc returned no geocoded yards yet.
+                // No fabricated pins; the map lights up the moment a
+                // facility/terminal row carries real lat/lng.
+                EusoEmptyState(
+                    systemImage: "mappin.slash",
+                    title: "Awaiting yard coordinates",
+                    subtitle: "Your facilities will appear on the map here as soon as their geographic coordinates are on file. Tap a yard pin to open its gate queue and yard."
+                )
+            } else {
+                facilityLocatorMap
+            }
+        }
+    }
+
+    private var facilityLocatorMap: some View {
+        let yards = mappableYards
+        return BespokeMapCanvas(
+            center: yardMapCenter,
+            zoom: yardMapZoom,
+            interactive: true,
+            tilt: 0,
+            isDark: colorScheme == .dark,
+            layers: [
+                .adZones(yards.map(yardFootprint(for:))),
+                .markers(yards.map { y in
+                    HereMarker(
+                        at: HereLatLng(y.lat ?? 0, y.lng ?? 0),
+                        kind: .pickup,
+                        label: y.name.flatMap { $0.isEmpty ? nil : $0 } ?? "Yard",
+                        id: y.id)
+                })
+            ],
+            onSelectMarker: { yardId in
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    selectedYardId = yardId
+                }
+                // Drill into the tapped yard's full yard-map / gate surface.
+                yardMapOpen = true
+            }
+        )
+        .frame(height: 220)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+    }
+
+    private var facilityLocatorSkeleton: some View {
+        RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+            .fill(palette.bgCardSoft)
+            .frame(height: 220)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                    .strokeBorder(palette.borderFaint)
+            )
+    }
+
+    /// Camera center = centroid of the real yard coordinates (no fabrication).
+    /// The CONUS fallback (39.5, -98.35) is the only acceptable coordinate
+    /// literal and is never reached while `mappableYards` is non-empty.
+    private var yardMapCenter: HereLatLng {
+        let yards = mappableYards
+        guard !yards.isEmpty else { return HereLatLng(39.5, -98.35) }
+        let lat = yards.reduce(0.0) { $0 + ($1.lat ?? 0) } / Double(yards.count)
+        let lng = yards.reduce(0.0) { $0 + ($1.lng ?? 0) } / Double(yards.count)
+        return HereLatLng(lat, lng)
+    }
+
+    /// Tight framing for a single yard; wider when the network spans out.
+    private var yardMapZoom: Int { mappableYards.count <= 1 ? 13 : 8 }
+
+    /// Honest ~250 m footprint box around each yard's real coordinate — the
+    /// server projects a point, not a GeoJSON ring, so we draw a square
+    /// footprint around the true location. Mirrors the `.adZones` contract
+    /// used by Driver 022's `yardLayoutPolygons` + Rail 628.
+    private func yardFootprint(for y: TerminalYardLocation700) -> HerePolygon {
+        let lat = y.lat ?? 0
+        let lng = y.lng ?? 0
+        let dLat = 0.0022
+        let dLng = 0.0022 / max(cos(lat * .pi / 180), 0.2)
+        let ring = [
+            HereLatLng(lat + dLat, lng - dLng),
+            HereLatLng(lat + dLat, lng + dLng),
+            HereLatLng(lat - dLat, lng + dLng),
+            HereLatLng(lat - dLat, lng - dLng),
+        ]
+        let isSelected = (selectedYardId ?? mappableYards.first?.id) == y.id
+        return HerePolygon(
+            ring: ring,
+            fillHex: "#1473FF",
+            opacity: isSelected ? 0.30 : 0.16,
+            label: y.name.flatMap { $0.isEmpty ? nil : $0 })
     }
 
     // MARK: - Attention strip

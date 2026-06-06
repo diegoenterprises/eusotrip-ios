@@ -139,9 +139,6 @@ private struct RailDetentionTrackingBody: View {
     private var headerBlock: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .center, spacing: 12) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Detention charges")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -431,7 +428,7 @@ private struct RailDetentionTrackingBody: View {
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .background(LinearGradient.primary)
                 .opacity(invoicing ? 0.6 : 1.0)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(invoicing)
@@ -444,8 +441,8 @@ private struct RailDetentionTrackingBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgSecondary)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }
@@ -498,7 +495,7 @@ private struct RailDetentionTrackingBody: View {
         // pick a claim from the disputes/active list before invoicing. Surface
         // that honestly instead of POSTing a fabricated id.
         guard dash != nil else { return }
-        invoiceMsg = "Select an approved claim to invoice — open Disputes to pick one."
+        invoiceMsg = "Select an approved claim to invoice. Open Disputes to pick one."
         disputeMsg = nil
     }
 

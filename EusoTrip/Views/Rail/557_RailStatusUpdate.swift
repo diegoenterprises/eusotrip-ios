@@ -47,7 +47,7 @@ private struct RailStatusUpdateBody: View {
     private let options: [RailStatusOption] = [
         RailStatusOption(value: "at_interchange", title: "At interchange", note: "NS Inman handoff · records yard + timestamp", danger: false),
         RailStatusOption(value: "in_yard",        title: "In yard (spotted)", note: "starts demurrage free-time meter", danger: false),
-        RailStatusOption(value: "exception_hold", title: "Hold — exception", note: "flags control tower · requires note", danger: true)
+        RailStatusOption(value: "exception_hold", title: "Hold - exception", note: "flags control tower · requires note", danger: true)
     ]
 
     var body: some View {
@@ -68,7 +68,6 @@ private struct RailStatusUpdateBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("RAIL ENGINEER · UPDATE STATUS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }

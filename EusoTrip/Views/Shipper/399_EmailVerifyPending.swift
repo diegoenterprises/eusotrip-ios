@@ -34,7 +34,7 @@ private struct EmailVerifyBody: View {
                 Button { Task { await checkVerified() } } label: {
                     HStack(spacing: 6) {
                         if checking { ProgressView().tint(.white) }
-                        Text(checking ? "Checking…" : "I've verified — continue").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                        Text(checking ? "Checking…" : "I've verified - continue").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                     }
                     .padding(.horizontal, 22).padding(.vertical, 12)
                     .background(LinearGradient.diagonal)

@@ -170,7 +170,7 @@ private struct HelpArticleReaderSheet: View {
                         Text("Full article body not available yet.")
                             .font(EType.body)
                             .foregroundStyle(palette.textPrimary)
-                        Text("Email support@eusotrip.com or tap Escalate to dispatch from the previous screen — a human responds the same business day.")
+                        Text("Email support@eusotrip.com or tap Escalate to dispatch from the previous screen. A human responds the same business day.")
                             .font(EType.caption)
                             .foregroundStyle(palette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)

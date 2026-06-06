@@ -23,6 +23,25 @@
 //  `.lightDriver` (light). Everything else is a flat shipper / catalyst board →
 //  `.dark` / `.light`.
 //
+//  PERFORMANCE MODEL (2026-06-05 freeze/crash fix)
+//  ───────────────────────────────────────────────
+//  The whole scene's screen-space geometry is precomputed ONCE into a cached
+//  `RenderModel` whenever (layers, base viewport, register) change — keyed by a
+//  cheap hash. The per-frame `Canvas` draw closure then just rasterizes that
+//  already-projected geometry; it NEVER re-projects continents, re-flattens the
+//  route, or re-runs Catmull-Rom smoothing. Concretely the precompute:
+//    • projects + caches the continent basemap rings (culled to the viewport),
+//    • simplifies the route polyline (Douglas–Peucker to ~canvas pixel res,
+//      hard-capped) BEFORE Catmull-Rom smoothing, so a 2000-pt HERE route never
+//      spawns 2000 Bézier segments,
+//    • culls markers + labels to the visible bounds (+ margin) with a HARD CAP,
+//    • caches the route gradient endpoints, endpoint pins, heatmap blobs, and
+//      ad-zone polygons in screen space.
+//  Live pan/zoom (`liveDrag` / `liveZoom`) apply a CHEAP affine to the cached
+//  base scene inside the draw closure — they do NOT rebuild the model. Only when
+//  a gesture COMMITS (onEnded → panOffset/zoomDelta) does the model recompute,
+//  exactly once.
+//
 //  Draw order (matches the SVG ground truth):
 //    1. background  (linear vertical gradient, or radial cosmos)
 //    2. faint grid  (straight authored lines at fixed spacing — no warp)
@@ -35,6 +54,9 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Style hint
 
@@ -119,21 +141,38 @@ public struct BespokeMapCanvas: View {
     @State private var zoomDelta: Double = 0
     @State private var liveZoom: Double = 0
 
+    // Precomputed scene — the projected, simplified, culled geometry that the
+    // per-frame draw closure rasterizes. Rebuilt ONLY when the cache key flips
+    // (layers / committed camera / register / size change), never per frame.
+    @State private var model: RenderModel = .empty
+    @State private var modelKey: Int = .min
+
     public var body: some View {
         GeometryReader { geo in
             let size = geo.size
             let style = resolvedStyle
-            let viewport = makeViewport(size: size)
+            // The committed (non-gesture) viewport. Live pan/zoom is folded in
+            // at DRAW time as a cheap affine — NOT by re-fitting here.
+            let baseViewport = makeBaseViewport(size: size)
+            let key = Self.cacheKey(layers: layers, viewport: baseViewport, isOcean: Self.isOcean(style))
 
             ZStack {
                 Canvas { context, canvasSize in
-                    Self.paint(
-                        context: &context,
-                        size: canvasSize,
-                        style: style,
-                        viewport: viewport,
-                        layers: layers
-                    )
+                    // Apply the live-gesture affine (pan + pinch) about the
+                    // canvas center to the cached base scene. Committed pan/zoom
+                    // is already baked into `baseViewport`/`model`; only the
+                    // in-flight delta is applied here so a drag/pinch costs one
+                    // matrix concat, not a full re-projection.
+                    if liveDrag != .zero || liveZoom != 0 {
+                        let s = pow(2.0, liveZoom)
+                        let cx = canvasSize.width / 2
+                        let cy = canvasSize.height / 2
+                        context.translateBy(x: liveDrag.width, y: liveDrag.height)
+                        context.translateBy(x: cx, y: cy)
+                        context.scaleBy(x: CGFloat(s), y: CGFloat(s))
+                        context.translateBy(x: -cx, y: -cy)
+                    }
+                    Self.paint(context: &context, size: canvasSize, model: model)
                 }
                 .background(Color.clear)
             }
@@ -144,9 +183,35 @@ public struct BespokeMapCanvas: View {
             .clipShape(Rectangle())
             .gesture(interactive ? combinedGesture(size: size) : nil)
             .onTapGesture { location in
-                handleTap(at: location, viewport: viewport)
+                handleTap(at: location, viewport: baseViewport)
+            }
+            // Build the cached scene once per key change. `onChange(of:key)`
+            // fires on first appearance too (initial key != sentinel) and on
+            // every layers/camera/register/size flip — but NOT per frame.
+            .onAppear {
+                rebuildIfNeeded(key: key, size: size, style: style, viewport: baseViewport)
+            }
+            .onChange(of: key) { newKey in
+                rebuildIfNeeded(key: newKey, size: size, style: style, viewport: baseViewport)
             }
         }
+        // 2026-06-03 — intrinsic minimum height so no parent can collapse the
+        // engine to zero size (the frame.zero blank-map trap) for ANY caller.
+        .frame(minHeight: 160)
+    }
+
+    /// Recompute the cached `RenderModel` when (and only when) the cache key
+    /// changes. Pure + value-typed inputs; the heavy projection / simplify /
+    /// cull pass runs here, off the per-frame path.
+    private func rebuildIfNeeded(
+        key: Int,
+        size: CGSize,
+        style: BespokeMapStyle,
+        viewport: BespokeMapViewport
+    ) {
+        guard key != modelKey else { return }
+        modelKey = key
+        model = RenderModel.build(size: size, style: style, viewport: viewport, layers: layers)
     }
 
     // MARK: Style resolution
@@ -167,11 +232,19 @@ public struct BespokeMapCanvas: View {
         return BespokeMapStyle.standard(isDark: isDark)
     }
 
+    /// The ocean register is uniquely identified by its hollow port-pin ring.
+    static func isOcean(_ style: BespokeMapStyle) -> Bool {
+        style.originMarker.ringStroke != nil
+    }
+
     // MARK: Viewport
 
-    /// Fit to the route when one exists (so the whole lane is framed), else use
-    /// the fixed center + zoom camera. Live pan/zoom from gestures is folded in.
-    private func makeViewport(size: CGSize) -> BespokeMapViewport {
+    /// The COMMITTED camera (no in-flight gesture delta). Fit to the route when
+    /// one exists (so the whole lane is framed), else the fixed center + zoom
+    /// camera, with any COMMITTED pan/zoom folded in. Live pan/zoom is applied
+    /// later as a cheap draw-time affine, so this is recomputed only when the
+    /// committed camera actually moves — not on every gesture frame.
+    private func makeBaseViewport(size: CGSize) -> BespokeMapViewport {
         let routeCoords = Self.allRouteCoords(layers)
         let base: BespokeMapViewport
         if !routeCoords.isEmpty {
@@ -180,21 +253,35 @@ public struct BespokeMapCanvas: View {
             base = BespokeMapViewport(center: center, zoom: zoom, size: size)
         }
 
-        let effZoom = base.zoom + zoomDelta + liveZoom
-        // Re-center for the accumulated pan (drag) offset, in points.
-        let totalPan = CGSize(width: panOffset.width + liveDrag.width,
-                              height: panOffset.height + liveDrag.height)
-        if totalPan == .zero && effZoom == base.zoom {
+        let effZoom = base.zoom + zoomDelta
+        if panOffset == .zero && effZoom == base.zoom {
             return base
         }
-        // Apply zoom first (about center), then pan by converting the panned
-        // screen-center back to a geo coordinate.
+        // Apply committed zoom first (about center), then committed pan by
+        // converting the panned screen-center back to a geo coordinate.
         let zoomed = BespokeMapViewport(center: base.center, fractionalZoom: effZoom, size: size)
-        guard totalPan != .zero else { return zoomed }
-        let centerPt = CGPoint(x: size.width / 2 - totalPan.width,
-                               y: size.height / 2 - totalPan.height)
+        guard panOffset != .zero else { return zoomed }
+        let centerPt = CGPoint(x: size.width / 2 - panOffset.width,
+                               y: size.height / 2 - panOffset.height)
         let newCenter = zoomed.coordinate(centerPt)
         return BespokeMapViewport(center: newCenter, fractionalZoom: effZoom, size: size)
+    }
+
+    /// A cheap, collision-resistant cache key over the inputs that change the
+    /// projected scene: the layer data, the committed viewport, and whether the
+    /// ocean register is active. Hashes the viewport's center/zoom/size so a new
+    /// camera invalidates the cache; hashes `layers` (Hashable) so new route /
+    /// marker data does too.
+    static func cacheKey(layers: [HereMapLayer], viewport: BespokeMapViewport, isOcean: Bool) -> Int {
+        var h = Hasher()
+        h.combine(layers)
+        h.combine(viewport.center.lat)
+        h.combine(viewport.center.lng)
+        h.combine(viewport.zoom)
+        h.combine(viewport.size.width)
+        h.combine(viewport.size.height)
+        h.combine(isOcean)
+        return h.finalize()
     }
 
     // MARK: Gestures
@@ -293,78 +380,353 @@ public struct BespokeMapCanvas: View {
     }
 }
 
+// MARK: - Precomputed render model
+
+extension BespokeMapCanvas {
+
+    /// The fully projected, simplified, culled scene the per-frame draw closure
+    /// rasterizes. Built ONCE per cache-key change (`RenderModel.build`), never
+    /// per frame. Everything here is already in SCREEN space for the committed
+    /// (base) viewport; live pan/zoom is applied as a draw-time affine.
+    struct RenderModel {
+        // Chrome (background / grid / silhouettes) is re-emitted from the
+        // captured style each draw — it is cheap (a handful of strokes / fills)
+        // and must track the canvas rect, so we keep the style + flags only.
+        var size: CGSize = .zero
+        var style: BespokeMapStyle = .standard(isDark: false)
+        var isOcean: Bool = false
+        var isDriverGrid: Bool = false
+
+        // Basemap — projected continent rings (screen space), pre-culled to the
+        // viewport, with their derived land + coast colors.
+        var basemapRings: [[CGPoint]] = []
+        var landColor: Color = .clear
+        var coastColor: Color = .clear
+
+        // Heatmap blobs (screen-space centers + weights), pre-culled.
+        var heatBlobs: [(center: CGPoint, weight: Double)] = []
+
+        // Ad-zone polygons (screen space) + their fill.
+        var adZones: [(pts: [CGPoint], fill: Color, opacity: Double)] = []
+
+        // Route — already-simplified + Catmull-Rom-smoothed Paths in screen
+        // space, plus the FIXED map-space gradient direction.
+        var routeActivePath: Path = Path()
+        var routePendingPath: Path = Path()
+        var routeGradStart: CGPoint = .zero
+        var routeGradEnd: CGPoint = .zero
+        var breadcrumbDots: [CGPoint] = []
+        var hasRoute: Bool = false
+
+        // Endpoint pins (origin / dest) — screen-space anchors.
+        var endpoints: [(at: CGPoint, marker: BespokeMapStyle.EndpointMarker)] = []
+
+        // Generic markers (truck/ping/pickup/delivery/branded) — culled + capped.
+        var markers: [(at: CGPoint, kind: HereMarker.Kind)] = []
+
+        // Label pills — anchor + text (measured lazily in-draw with a cache).
+        var labels: [(anchor: CGPoint, text: String)] = []
+
+        // Scale pill payload (driver registers only).
+        var scalePillText: String? = nil
+
+        static let empty = RenderModel()
+
+        /// The heavy precompute. Pure + deterministic given its value inputs.
+        /// Projects continents, simplifies + smooths the route, culls + caps
+        /// markers / labels, and resolves the scale pill text — once.
+        static func build(
+            size: CGSize,
+            style: BespokeMapStyle,
+            viewport: BespokeMapViewport,
+            layers: [HereMapLayer]
+        ) -> RenderModel {
+            var m = RenderModel()
+            m.size = size
+            m.style = style
+            m.isOcean = BespokeMapCanvas.isOcean(style)
+            m.isDriverGrid = style.ping != nil
+            let rect = CGRect(origin: .zero, size: size)
+
+            // ── 1b — basemap (skipped on the open-water ocean register) ──
+            if !m.isOcean {
+                let isDarkRegister = BespokeMapCanvas.gridIsLight(style.grid.color)
+                if isDarkRegister {
+                    let a = style.ping != nil ? 0.10 : 0.16
+                    m.landColor = Color.white.opacity(a)
+                    m.coastColor = Color.white.opacity(a + 0.14)
+                } else {
+                    m.landColor = Color.black.opacity(0.05)
+                    m.coastColor = Color.black.opacity(0.12)
+                }
+                let cullRect = rect.insetBy(dx: -160, dy: -160)
+                for ring in BespokeMapBasemap.continents {
+                    guard ring.count > 2 else { continue }
+                    let pts = ring.map { viewport.screenPoint(HereLatLng($0.lat, $0.lng)) }
+                    let bb = BespokeMapCanvas.boundingBox(pts)
+                    guard bb.intersects(cullRect) else { continue }
+                    m.basemapRings.append(pts)
+                }
+            }
+
+            // ── 4a — heatmap (cull off-screen blobs) ──
+            let heatCull = rect.insetBy(dx: -120, dy: -120)
+            for layer in layers {
+                if case .heatmap(let pts) = layer {
+                    for p in pts {
+                        let c = viewport.screenPoint(p)
+                        guard heatCull.contains(c) else { continue }
+                        m.heatBlobs.append((c, p.weight ?? 1.0))
+                    }
+                }
+            }
+
+            // ── 4b — ad-zones ──
+            for layer in layers {
+                if case .adZones(let polys) = layer {
+                    for poly in polys {
+                        guard poly.ring.count > 2 else { continue }
+                        let pts = poly.ring.map { viewport.screenPoint($0) }
+                        m.adZones.append((pts, Color(hex: poly.fillHex), poly.opacity))
+                    }
+                }
+            }
+
+            // ── 4c — route (simplify → smooth, once) ──
+            let liveCoord = BespokeMapCanvas.liveMarkerCoord(layers)
+            for layer in layers {
+                if case .route(let poly, _) = layer, poly.count >= 2 {
+                    m.buildRoute(poly: poly, style: style, viewport: viewport, liveCoord: liveCoord)
+                    // Endpoints derived from route geometry.
+                    m.endpoints.append((viewport.screenPoint(poly.first!), style.originMarker))
+                    m.endpoints.append((viewport.screenPoint(poly.last!), style.destMarker))
+                }
+            }
+
+            // ── 4e — generic markers (CULL to visible bounds + HARD CAP) ──
+            let markerCull = rect.insetBy(dx: -BespokeMapCanvas.markerCullMargin,
+                                          dy: -BespokeMapCanvas.markerCullMargin)
+            var painted = 0
+            outer: for layer in layers {
+                switch layer {
+                case .markers(let ms), .missionPins(let ms):
+                    for mk in ms {
+                        if painted >= BespokeMapCanvas.maxVisibleMarkers { break outer }
+                        let c = viewport.screenPoint(mk.at)
+                        guard markerCull.contains(c) else { continue }
+                        m.markers.append((c, mk.kind))
+                        painted += 1
+                    }
+                default: break
+                }
+            }
+
+            // ── 5 — label pills (CULL + HARD CAP; dedupe by rounded coord) ──
+            var labelled = Set<String>()
+            var labelCount = 0
+            let labelCull = rect.insetBy(dx: -BespokeMapCanvas.labelCullMargin,
+                                         dy: -BespokeMapCanvas.labelCullMargin)
+            labels: for layer in layers {
+                switch layer {
+                case .markers(let ms), .missionPins(let ms):
+                    for mk in ms {
+                        guard let label = mk.label, !label.isEmpty else { continue }
+                        if labelCount >= BespokeMapCanvas.maxVisibleLabels { break labels }
+                        let anchor = viewport.screenPoint(mk.at)
+                        labelled.insert(BespokeMapCanvas.coordKey(mk.at))
+                        guard labelCull.contains(anchor) else { continue }
+                        m.labels.append((anchor, label))
+                        labelCount += 1
+                    }
+                default: break
+                }
+            }
+            // Endpoint coordinate fallback (only when unlabelled).
+            for layer in layers {
+                if case .route(let poly, _) = layer, let first = poly.first, let last = poly.last {
+                    if labelCount < BespokeMapCanvas.maxVisibleLabels,
+                       !labelled.contains(BespokeMapCanvas.coordKey(first)) {
+                        let a = viewport.screenPoint(first)
+                        if labelCull.contains(a) {
+                            m.labels.append((a, BespokeMapCanvas.coordText(first)))
+                            labelCount += 1
+                        }
+                    }
+                    if labelCount < BespokeMapCanvas.maxVisibleLabels,
+                       !labelled.contains(BespokeMapCanvas.coordKey(last)) {
+                        let a = viewport.screenPoint(last)
+                        if labelCull.contains(a) {
+                            m.labels.append((a, BespokeMapCanvas.coordText(last)))
+                            labelCount += 1
+                        }
+                    }
+                }
+            }
+
+            // ── 5b — scale pill (driver registers only) ──
+            if style.pill.scalePillEnabled {
+                let barPoints: CGFloat = 64
+                let meters = viewport.metersPerPoint * Double(barPoints)
+                let miles = meters / 1609.344
+                let nice = BespokeMapCanvas.niceScale(miles)
+                m.scalePillText = "\(BespokeMapCanvas.trimmed(nice)) MI"
+            }
+
+            return m
+        }
+
+        /// Build the simplified + smoothed active / pending route Paths in
+        /// screen space, plus the fixed map-space gradient direction and the
+        /// light-register breadcrumb dots. Mutates `self`.
+        mutating func buildRoute(
+            poly: [HereLatLng],
+            style: BespokeMapStyle,
+            viewport: BespokeMapViewport,
+            liveCoord: HereLatLng?
+        ) {
+            guard poly.count >= 2 else { return }
+            // Project once.
+            let projected = poly.map { viewport.screenPoint($0) }
+
+            // FIX 2 — simplify (Douglas–Peucker) to ~the canvas pixel
+            // resolution BEFORE Catmull-Rom smoothing, so a 2000-pt HERE route
+            // never spawns 2000 Bézier segments. We keep index correspondence
+            // for the live-split by simplifying the screen polyline and
+            // re-finding the split on the simplified set.
+            let tolerance: CGFloat = 1.5   // ~1.5pt ≈ on-screen pixel resolution
+            let simplified = BespokeMapCanvas.simplify(projected,
+                                                       tolerance: tolerance,
+                                                       cap: BespokeMapCanvas.maxRoutePoints)
+            guard simplified.count >= 2 else {
+                // Degenerate: a straight 2-point line, split at midpoint.
+                routeActivePath = BespokeMapCanvas.smoothPath(simplified)
+                routePendingPath = Path()
+                hasRoute = true
+                let bb = BespokeMapCanvas.boundingBox(simplified)
+                routeGradStart = CGPoint(x: bb.minX, y: bb.maxY)
+                routeGradEnd = CGPoint(x: bb.maxX, y: bb.minY)
+                return
+            }
+
+            // Split index — geodesic nearest to the live puck, else the
+            // authored 0.62 fraction. Resolve on the GEO polyline for the live
+            // case, then map that fraction onto the simplified screen polyline.
+            let splitIndex: Int
+            if let live = liveCoord {
+                let geoIdx = BespokeMapCanvas.nearestVertexIndex(in: poly, to: live)
+                let frac = poly.count > 1 ? Double(geoIdx) / Double(poly.count - 1) : 0.62
+                splitIndex = Swift.max(1, Swift.min(simplified.count - 1,
+                                                    Int(Double(simplified.count - 1) * frac)))
+            } else {
+                splitIndex = Swift.max(1, Swift.min(simplified.count - 1,
+                                                    Int(Double(simplified.count - 1) * 0.62)))
+            }
+
+            let activePts = Array(simplified.prefix(splitIndex + 1))
+            let pendingPts = Array(simplified.suffix(from: splitIndex))
+
+            // FIXED map-space gradient direction (bottom-leading → top-trailing)
+            // over the FULL route bounds, for BOTH active + pending.
+            let bounds = BespokeMapCanvas.boundingBox(simplified)
+            routeGradStart = CGPoint(x: bounds.minX, y: bounds.maxY)
+            routeGradEnd = CGPoint(x: bounds.maxX, y: bounds.minY)
+
+            routeActivePath = BespokeMapCanvas.smoothPath(activePts)
+            routePendingPath = BespokeMapCanvas.smoothPath(pendingPts)
+            hasRoute = true
+
+            // Light-register breadcrumbs along the traveled portion.
+            if style.ping == nil, style.truckMarker?.glyphColor == Color(hex: 0x0D1117) {
+                for (offset, pt) in activePts.enumerated() where offset % 2 == 0 {
+                    breadcrumbDots.append(pt)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Tuning constants
+
+extension BespokeMapCanvas {
+    /// Hard cap on simplified route vertices fed into Catmull-Rom. A 2000-pt
+    /// HERE route collapses to at most this many Bézier segments.
+    static let maxRoutePoints = 400
+    /// Hard cap on visible pins drawn per frame.
+    static let maxVisibleMarkers = 150
+    /// Hard cap on label pills drawn per frame.
+    static let maxVisibleLabels = 40
+    /// Off-screen margin (points) added to the visible-bounds cull for markers.
+    static let markerCullMargin: CGFloat = 40
+    /// Off-screen margin (points) added to the visible-bounds cull for labels.
+    static let labelCullMargin: CGFloat = 120
+}
+
 // MARK: - Canvas painting (static so no closures capture self)
 
 extension BespokeMapCanvas {
 
     /// The full draw pipeline. Static + value-typed so the `Canvas` closure
-    /// holds nothing referential (guardrail: no `func` declared inside the
-    /// Canvas closure — everything routes through these methods).
+    /// holds nothing referential. Consumes the PRECOMPUTED `RenderModel` — it
+    /// only re-emits cheap chrome (background / grid / silhouettes) and
+    /// rasterizes already-projected geometry. No projection, no simplify, no
+    /// smoothing happens here.
     static func paint(
         context: inout GraphicsContext,
         size: CGSize,
-        style: BespokeMapStyle,
-        viewport: BespokeMapViewport,
-        layers: [HereMapLayer]
+        model: RenderModel
     ) {
         let rect = CGRect(origin: .zero, size: size)
+        let style = model.style
 
         // 1 — background
         paintBackground(&context, rect: rect, bg: style.background)
 
-        // 2 — faint grid (straight authored lines at fixed spacing — no warp).
-        //     Ocean (003) = 3 horizontal latitude lines only (no longitude columns).
-        let isOcean = style.originMarker.ringStroke != nil   // unique to the .ocean port pin
-        paintGrid(&context, rect: rect, grid: style.grid, isDriver: style.ping != nil, isOcean: isOcean)
-
-        // 3 — abstract silhouettes. Ocean = two vertical edge coast hints.
-        paintSilhouettes(&context, rect: rect, silhouettes: style.silhouettes, isOcean: isOcean)
-
-        // 4 — per-layer content, in the canonical z-order.
-        // heatmap (under) → adZones → route → endpoints → markers.
-        for layer in layers {
-            if case .heatmap(let pts) = layer {
-                paintHeatmap(&context, rect: rect, points: pts, viewport: viewport)
-            }
-        }
-        for layer in layers {
-            if case .adZones(let polys) = layer {
-                paintAdZones(&context, polys: polys, viewport: viewport)
-            }
-        }
-        // The live position fraction: where the truck/AIS puck sits along the
-        // route. The ocean register splits solid(traveled)→dashed(remaining) at
-        // THIS fraction (the live AIS position), not the authored 0.62.
-        let liveCoord = Self.liveMarkerCoord(layers)
-        for layer in layers {
-            if case .route(let poly, _) = layer {
-                paintRoute(&context, poly: poly, style: style, viewport: viewport, liveCoord: liveCoord)
-            }
-        }
-        // Endpoint markers come from the route geometry; pins from marker layers.
-        for layer in layers {
-            if case .route(let poly, _) = layer, poly.count >= 2 {
-                paintEndpoint(&context, at: poly.first!, marker: style.originMarker, viewport: viewport)
-                paintEndpoint(&context, at: poly.last!, marker: style.destMarker, viewport: viewport)
-            }
-        }
-        for layer in layers {
-            switch layer {
-            case .markers(let ms), .missionPins(let ms):
-                for m in ms {
-                    paintMarker(&context, marker: m, style: style, viewport: viewport)
-                }
-            default: break
-            }
+        // 1b — basemap (pre-projected rings).
+        if !model.isOcean {
+            paintBasemap(&context, model: model)
         }
 
-        // 5 — callout pills: authored marker labels (+ a computed scale pill on
-        // the driver registers). Endpoints fall back to coords only when no
-        // authored label exists for them.
-        paintLabelPills(&context, layers: layers, style: style, viewport: viewport)
-        if style.pill.scalePillEnabled {
-            paintScalePill(&context, rect: rect, style: style, viewport: viewport)
+        // 2 — faint grid.
+        paintGrid(&context, rect: rect, grid: style.grid, isDriver: model.isDriverGrid, isOcean: model.isOcean)
+
+        // 3 — abstract silhouettes.
+        paintSilhouettes(&context, rect: rect, silhouettes: style.silhouettes, isOcean: model.isOcean)
+
+        // 4a — heatmap.
+        for blob in model.heatBlobs {
+            paintHeatBlob(&context, center: blob.center, weight: blob.weight, maxWeight: heatMaxWeight(model))
         }
+        // 4b — ad-zones.
+        for z in model.adZones {
+            paintAdZone(&context, pts: z.pts, fill: z.fill, opacity: z.opacity)
+        }
+        // 4c — route (pre-smoothed paths).
+        if model.hasRoute {
+            paintRoutePaths(&context, model: model)
+        }
+        // 4d — endpoints.
+        for ep in model.endpoints {
+            paintEndpoint(&context, at: ep.at, marker: ep.marker)
+        }
+        // 4e — generic markers (culled + capped).
+        for mk in model.markers {
+            paintMarker(&context, at: mk.at, kind: mk.kind, style: style)
+        }
+
+        // 5 — callout pills (culled + capped) + scale pill.
+        for label in model.labels {
+            paintPill(&context, anchor: label.anchor, text: label.text, style: style, above: true)
+        }
+        if let scale = model.scalePillText {
+            paintScalePill(&context, rect: rect, text: scale, style: style)
+        }
+    }
+
+    /// Normalized heatmap denominator from the model's blobs.
+    static func heatMaxWeight(_ model: RenderModel) -> Double {
+        var maxW = 0.0
+        for b in model.heatBlobs { maxW = Swift.max(maxW, b.weight) }
+        return maxW > 0 ? maxW : 1.0
     }
 
     // MARK: 1 — Background
@@ -402,6 +764,41 @@ extension BespokeMapCanvas {
                 )
             )
         }
+    }
+
+    // MARK: 1b — Abstract land basemap (PRE-projected continental coastlines)
+
+    /// Rasterize the pre-projected + pre-culled continent rings the model
+    /// computed. No projection happens here — `RenderModel.build` already
+    /// projected through the committed viewport and culled off-screen rings.
+    static func paintBasemap(_ context: inout GraphicsContext, model: RenderModel) {
+        for pts in model.basemapRings {
+            guard pts.count > 2 else { continue }
+            var path = Path()
+            path.move(to: pts[0])
+            for p in pts.dropFirst() { path.addLine(to: p) }
+            path.closeSubpath()
+            context.fill(path, with: .color(model.landColor))
+            context.stroke(
+                path,
+                with: .color(model.coastColor),
+                style: StrokeStyle(lineWidth: 0.9, lineCap: .round, lineJoin: .round)
+            )
+        }
+    }
+
+    /// Whether a register's grid color is white-tinted (⇒ a dark-backdrop
+    /// register). Resolved via the platform color components; falls back to
+    /// `false` (light register) when components are unavailable.
+    static func gridIsLight(_ color: Color) -> Bool {
+        #if canImport(UIKit)
+        var white: CGFloat = 0
+        var alpha: CGFloat = 0
+        if UIColor(color).getWhite(&white, alpha: &alpha) {
+            return white > 0.5
+        }
+        #endif
+        return false
     }
 
     // MARK: 2 — Grid (straight authored lines at fixed spacing)
@@ -510,113 +907,68 @@ extension BespokeMapCanvas {
 
     // MARK: 4a — Heatmap (weighted soft radial blobs)
 
-    static func paintHeatmap(
+    static func paintHeatBlob(
         _ context: inout GraphicsContext,
-        rect: CGRect,
-        points: [HereLatLng],
-        viewport: BespokeMapViewport
+        center: CGPoint,
+        weight rawWeight: Double,
+        maxWeight: Double
     ) {
-        guard !points.isEmpty else { return }
-        // Normalize weights so the hottest point reads ~1.0.
-        let maxWeight = points.reduce(into: 0.0) { acc, p in
-            acc = Swift.max(acc, p.weight ?? 1.0)
-        }
-        let denom = maxWeight > 0 ? maxWeight : 1.0
-
-        // Soft additive blobs — warm sweep from brand blue → magenta → hot.
-        for p in points {
-            let center = viewport.screenPoint(p)
-            guard rect.insetBy(dx: -120, dy: -120).contains(center) else { continue }
-            let weight = (p.weight ?? 1.0) / denom
-            let radius = CGFloat(28 + 46 * weight)
-            let coreOpacity = 0.10 + 0.34 * weight
-            let blob = Path(ellipseIn: CGRect(
-                x: center.x - radius, y: center.y - radius,
-                width: radius * 2, height: radius * 2))
-            let g = Gradient(stops: [
-                Gradient.Stop(color: Brand.magenta.opacity(coreOpacity), location: 0.0),
-                Gradient.Stop(color: Brand.blue.opacity(coreOpacity * 0.7), location: 0.45),
-                Gradient.Stop(color: Brand.blue.opacity(0.0), location: 1.0)
-            ])
-            context.fill(
-                blob,
-                with: .radialGradient(g, center: center, startRadius: 0, endRadius: radius)
-            )
-        }
+        let weight = rawWeight / maxWeight
+        let radius = CGFloat(28 + 46 * weight)
+        let coreOpacity = 0.10 + 0.34 * weight
+        let blob = Path(ellipseIn: CGRect(
+            x: center.x - radius, y: center.y - radius,
+            width: radius * 2, height: radius * 2))
+        let g = Gradient(stops: [
+            Gradient.Stop(color: Brand.magenta.opacity(coreOpacity), location: 0.0),
+            Gradient.Stop(color: Brand.blue.opacity(coreOpacity * 0.7), location: 0.45),
+            Gradient.Stop(color: Brand.blue.opacity(0.0), location: 1.0)
+        ])
+        context.fill(
+            blob,
+            with: .radialGradient(g, center: center, startRadius: 0, endRadius: radius)
+        )
     }
 
     // MARK: 4b — Ad-zone polygons (filled)
 
-    static func paintAdZones(
+    static func paintAdZone(
         _ context: inout GraphicsContext,
-        polys: [HerePolygon],
-        viewport: BespokeMapViewport
+        pts: [CGPoint],
+        fill: Color,
+        opacity: Double
     ) {
-        for poly in polys {
-            guard poly.ring.count > 2 else { continue }
-            var path = Path()
-            let pts = poly.ring.map { viewport.screenPoint($0) }
-            path.move(to: pts[0])
-            for pt in pts.dropFirst() { path.addLine(to: pt) }
-            path.closeSubpath()
-            let fill = Color(hex: poly.fillHex)
-            context.fill(path, with: .color(fill.opacity(poly.opacity)))
-            context.stroke(path, with: .color(fill.opacity(Swift.min(1.0, poly.opacity + 0.35))), lineWidth: 1.4)
-        }
+        guard pts.count > 2 else { return }
+        var path = Path()
+        path.move(to: pts[0])
+        for pt in pts.dropFirst() { path.addLine(to: pt) }
+        path.closeSubpath()
+        context.fill(path, with: .color(fill.opacity(opacity)))
+        context.stroke(path, with: .color(fill.opacity(Swift.min(1.0, opacity + 0.35))), lineWidth: 1.4)
     }
 
     // MARK: 4c — Route (solid traveled + dashed remaining; NO glow underlay)
 
-    static func paintRoute(
-        _ context: inout GraphicsContext,
-        poly: [HereLatLng],
-        style: BespokeMapStyle,
-        viewport: BespokeMapViewport,
-        liveCoord: HereLatLng? = nil
-    ) {
-        guard poly.count >= 2 else { return }
-        let pts = poly.map { viewport.screenPoint($0) }
-
-        // Split the polyline at the LIVE position when a live puck exists:
-        // first segment = traveled (solid), rest = remaining (dashed). The
-        // split vertex is the polyline point closest (geodesically) to the
-        // live AIS coordinate, so the solid/dashed seam tracks the real vessel.
-        // With no live puck we fall back to the SVG's authored 0.62 split.
-        let splitIndex: Int
-        if let live = liveCoord {
-            splitIndex = Swift.max(1, Swift.min(pts.count - 1, Self.nearestVertexIndex(in: poly, to: live)))
-        } else {
-            let splitFraction = 0.62
-            splitIndex = Swift.max(1, Swift.min(pts.count - 1, Int(Double(pts.count - 1) * splitFraction)))
-        }
-
-        let activePts = Array(pts.prefix(splitIndex + 1))
-        let pendingPts = Array(pts.suffix(from: splitIndex))
-
-        // VERBATIM: NO route glow underlay (the SVGs have none — only the ping
-        // pulse glows). The bounding box drives a FIXED map-space gradient
-        // direction (bottom-leading → top-trailing) for BOTH active and pending
-        // — NOT a first→last polyline mapping.
-        let bounds = Self.boundingBox(pts)
-        let gradStart = CGPoint(x: bounds.minX, y: bounds.maxY)  // .bottomLeading
-        let gradEnd = CGPoint(x: bounds.maxX, y: bounds.minY)    // .topTrailing
+    /// Stroke the PRE-smoothed active + pending route Paths from the model.
+    /// No simplify / smoothing here — that ran once in `RenderModel.build`.
+    static func paintRoutePaths(_ context: inout GraphicsContext, model: RenderModel) {
+        let style = model.style
+        let gradStart = model.routeGradStart
+        let gradEnd = model.routeGradEnd
 
         // Active — iridescent gradient, solid, round caps.
-        let activePath = Self.smoothPath(activePts)
         let routeGradient = GraphicsContext.Shading.linearGradient(
             Gradient(colors: style.routeActive.stops),
             startPoint: gradStart,
             endPoint: gradEnd
         )
         context.stroke(
-            activePath,
+            model.routeActivePath,
             with: routeGradient,
             style: StrokeStyle(lineWidth: style.routeActive.width, lineCap: .round, lineJoin: .round)
         )
 
         // Pending — dashed, gradient (if present) else flat color, round caps.
-        // Same FIXED map-space gradient direction as active.
-        let pendingPath = Self.smoothPath(pendingPts)
         let pendingShading: GraphicsContext.Shading
         if let stops = style.routePending.stops, !stops.isEmpty {
             pendingShading = .linearGradient(
@@ -628,7 +980,7 @@ extension BespokeMapCanvas {
             pendingShading = .color(style.routePending.color)
         }
         context.stroke(
-            pendingPath,
+            model.routePendingPath,
             with: pendingShading,
             style: StrokeStyle(
                 lineWidth: style.routePending.width,
@@ -638,18 +990,14 @@ extension BespokeMapCanvas {
             )
         )
 
-        // Light decoration: breadcrumbs sprinkled along the traveled portion
-        // (standard light register only — gated by the absence of a ping puck
-        // and the presence of a single faint silhouette).
-        if style.ping == nil, style.truckMarker?.glyphColor == Color(hex: 0x0D1117) {
-            for pt in activePts.enumerated().compactMap({ $0.offset % 2 == 0 ? $0.element : nil }) {
-                let dot = Path(ellipseIn: CGRect(
-                    x: pt.x - BespokeMapStyle.lightBreadcrumbRadius,
-                    y: pt.y - BespokeMapStyle.lightBreadcrumbRadius,
-                    width: BespokeMapStyle.lightBreadcrumbRadius * 2,
-                    height: BespokeMapStyle.lightBreadcrumbRadius * 2))
-                context.fill(dot, with: .color(BespokeMapStyle.lightBreadcrumbColor))
-            }
+        // Light decoration: breadcrumbs sprinkled along the traveled portion.
+        for pt in model.breadcrumbDots {
+            let dot = Path(ellipseIn: CGRect(
+                x: pt.x - BespokeMapStyle.lightBreadcrumbRadius,
+                y: pt.y - BespokeMapStyle.lightBreadcrumbRadius,
+                width: BespokeMapStyle.lightBreadcrumbRadius * 2,
+                height: BespokeMapStyle.lightBreadcrumbRadius * 2))
+            context.fill(dot, with: .color(BespokeMapStyle.lightBreadcrumbColor))
         }
     }
 
@@ -687,18 +1035,78 @@ extension BespokeMapCanvas {
         return path
     }
 
+    /// FIX 2 — Douglas–Peucker polyline simplification on SCREEN points to a
+    /// pixel-scale `tolerance`, then a hard `cap` (uniform stride decimation if
+    /// the simplified set still exceeds the cap). Endpoints are always kept, so
+    /// the route's origin / destination never drift. Returns the input verbatim
+    /// when it already has ≤ 2 points.
+    static func simplify(_ pts: [CGPoint], tolerance: CGFloat, cap: Int) -> [CGPoint] {
+        guard pts.count > 2 else { return pts }
+        // Mark which indices to keep.
+        var keep = [Bool](repeating: false, count: pts.count)
+        keep[0] = true
+        keep[pts.count - 1] = true
+        // Iterative DP (explicit stack — no recursion blowup on long routes).
+        var stack: [(Int, Int)] = [(0, pts.count - 1)]
+        let tol2 = tolerance * tolerance
+        while let (lo, hi) = stack.popLast() {
+            guard hi > lo + 1 else { continue }
+            let a = pts[lo], b = pts[hi]
+            var maxD2: CGFloat = -1
+            var idx = lo
+            for i in (lo + 1)..<hi {
+                let d2 = perpendicularDistanceSquared(pts[i], a, b)
+                if d2 > maxD2 { maxD2 = d2; idx = i }
+            }
+            if maxD2 > tol2 {
+                keep[idx] = true
+                stack.append((lo, idx))
+                stack.append((idx, hi))
+            }
+        }
+        var out: [CGPoint] = []
+        out.reserveCapacity(pts.count)
+        for (i, p) in pts.enumerated() where keep[i] { out.append(p) }
+
+        // Hard cap — uniform stride decimation keeping first + last.
+        if out.count > cap {
+            var capped: [CGPoint] = []
+            capped.reserveCapacity(cap)
+            let stride = Double(out.count - 1) / Double(cap - 1)
+            for i in 0..<cap {
+                let j = Swift.min(out.count - 1, Int((Double(i) * stride).rounded()))
+                capped.append(out[j])
+            }
+            // Guarantee the true endpoints survive rounding.
+            capped[0] = out[0]
+            capped[cap - 1] = out[out.count - 1]
+            return capped
+        }
+        return out
+    }
+
+    /// Squared perpendicular distance from point `p` to the segment `a–b`
+    /// (treated as an infinite line; degenerate `a==b` falls back to |p−a|²).
+    static func perpendicularDistanceSquared(_ p: CGPoint, _ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let len2 = dx * dx + dy * dy
+        guard len2 > 1e-9 else {
+            let ex = p.x - a.x, ey = p.y - a.y
+            return ex * ex + ey * ey
+        }
+        let num = (p.x - a.x) * dy - (p.y - a.y) * dx
+        return (num * num) / len2
+    }
+
     // MARK: 4d — Endpoint markers (concentric origin / dest, or glass dest pill)
 
     static func paintEndpoint(
         _ context: inout GraphicsContext,
-        at coord: HereLatLng,
-        marker: BespokeMapStyle.EndpointMarker,
-        viewport: BespokeMapViewport
+        at c: CGPoint,
+        marker: BespokeMapStyle.EndpointMarker
     ) {
         // VERBATIM: omitted endpoints paint NOTHING (cosmos / lightDriver origin).
         if marker.omitted { return }
-
-        let c = viewport.screenPoint(coord)
 
         // VERBATIM: a glass-pill + rounded-diamond destination glyph replaces the
         // concentric circles entirely when present (cosmos / lightDriver dest).
@@ -781,12 +1189,11 @@ extension BespokeMapCanvas {
 
     static func paintMarker(
         _ context: inout GraphicsContext,
-        marker: HereMarker,
-        style: BespokeMapStyle,
-        viewport: BespokeMapViewport
+        at c: CGPoint,
+        kind: HereMarker.Kind,
+        style: BespokeMapStyle
     ) {
-        let c = viewport.screenPoint(marker.at)
-        switch marker.kind {
+        switch kind {
         case .truck:
             // Exactly ONE puck per register: truck on standard, ping on driver.
             if let truck = style.truckMarker {
@@ -795,13 +1202,13 @@ extension BespokeMapCanvas {
                 paintPing(&context, at: c, ping: ping)
             }
         case .pickup:
-            paintEndpoint(&context, at: marker.at, marker: style.originMarker, viewport: viewport)
+            paintEndpoint(&context, at: c, marker: style.originMarker)
         case .delivery:
-            paintEndpoint(&context, at: marker.at, marker: style.destMarker, viewport: viewport)
+            paintEndpoint(&context, at: c, marker: style.destMarker)
         default:
             // Branded teardrop-equivalent: a filled disc in the kind's hue with
             // a white core, matching the HERE marker color palette.
-            let hex = HereMarkerStyle.color(marker.kind)
+            let hex = HereMarkerStyle.color(kind)
             let tint = Color(hex: hex)
             let r: CGFloat = 7
             let disc = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
@@ -927,51 +1334,15 @@ extension BespokeMapCanvas {
 
     // MARK: 5 — Callout pills (authored labels + computed scale pill)
 
-    /// Paint a pill for every marker that carries an authored `label`, plus a
-    /// coordinate-fallback pill on each route endpoint that has no labelled
-    /// marker. Authored labels are preferred; coords are the LAST resort.
-    static func paintLabelPills(
-        _ context: inout GraphicsContext,
-        layers: [HereMapLayer],
-        style: BespokeMapStyle,
-        viewport: BespokeMapViewport
-    ) {
-        var labelled = Set<String>()   // keyed by rounded coord → dedupe endpoints
-
-        for layer in layers {
-            switch layer {
-            case .markers(let ms), .missionPins(let ms):
-                for m in ms {
-                    guard let label = m.label, !label.isEmpty else { continue }
-                    paintPill(&context, at: m.at, text: label, style: style, viewport: viewport, above: true)
-                    labelled.insert(Self.coordKey(m.at))
-                }
-            default: break
-            }
-        }
-
-        // Endpoint fallback: only when the endpoint has no labelled marker.
-        for layer in layers {
-            if case .route(let poly, _) = layer, let first = poly.first, let last = poly.last {
-                if !labelled.contains(Self.coordKey(first)) {
-                    paintPill(&context, at: first, text: Self.coordText(first), style: style, viewport: viewport, above: true)
-                }
-                if !labelled.contains(Self.coordKey(last)) {
-                    paintPill(&context, at: last, text: Self.coordText(last), style: style, viewport: viewport, above: true)
-                }
-            }
-        }
-    }
-
+    /// Paint a single authored / coordinate label pill at a pre-projected
+    /// `anchor`. `Text` resolution + measure happen here (few, capped labels).
     static func paintPill(
         _ context: inout GraphicsContext,
-        at coord: HereLatLng,
+        anchor: CGPoint,
         text: String,
         style: BespokeMapStyle,
-        viewport: BespokeMapViewport,
         above: Bool
     ) {
-        let anchor = viewport.screenPoint(coord)
         // Resolve the label text (mono for coordinate readouts, body otherwise).
         let isCoord = text.contains(",") && text.allSatisfy { $0.isNumber || $0 == "." || $0 == "-" || $0 == "," || $0 == " " }
         var resolved = context.resolve(
@@ -1002,21 +1373,15 @@ extension BespokeMapCanvas {
             width: textSize.width, height: textSize.height))
     }
 
-    /// A computed "N MI" scale pill (driver registers only), bottom-leading,
-    /// derived from the viewport's meters-per-point ground resolution.
+    /// A computed "N MI" scale pill (driver registers only), bottom-leading.
+    /// The mileage was resolved once in `RenderModel.build`; here we only lay
+    /// out + draw the pill.
     static func paintScalePill(
         _ context: inout GraphicsContext,
         rect: CGRect,
-        style: BespokeMapStyle,
-        viewport: BespokeMapViewport
+        text: String,
+        style: BespokeMapStyle
     ) {
-        // A 64pt scale bar → real-world miles, rounded to a clean magnitude.
-        let barPoints: CGFloat = 64
-        let meters = viewport.metersPerPoint * Double(barPoints)
-        let miles = meters / 1609.344
-        let nice = Self.niceScale(miles)
-        let text = "\(Self.trimmed(nice)) MI"
-
         var resolved = context.resolve(
             Text(text)
                 .font(.system(size: style.pill.monoTextSize, weight: .semibold, design: .monospaced))

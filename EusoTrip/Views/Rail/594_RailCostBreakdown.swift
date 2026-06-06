@@ -179,9 +179,6 @@ private struct RailCostBreakdownBody: View {
 
     private var backRow: some View {
         HStack(spacing: 8) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
             Text("Shipment")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(palette.textPrimary)
@@ -498,7 +495,7 @@ private struct RailCostBreakdownBody: View {
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, minHeight: 48)
                         .background(LinearGradient.primary)
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .opacity(exporting ? 0.6 : 1.0)
@@ -512,8 +509,8 @@ private struct RailCostBreakdownBody: View {
                         .foregroundStyle(palette.textPrimary)
                         .frame(width: 148, height: 48)
                         .background(palette.bgCard)
-                        .overlay(Capsule().strokeBorder(palette.borderSoft))
-                        .clipShape(Capsule())
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }

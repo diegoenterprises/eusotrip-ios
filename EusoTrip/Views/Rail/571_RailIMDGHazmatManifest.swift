@@ -223,9 +223,9 @@ private struct RailIMDGHazmatManifestBody: View {
 
     // MARK: Derived
 
-    private var unLabel: String    { compliance?.unNumber ?? placard?.unNumber ?? "—" }
-    private var classLabel: String { compliance?.imdgClass ?? placard?.imdgClass ?? "—" }
-    private var pgLabel: String    { compliance?.packingGroup ?? placard?.packingGroup ?? "—" }
+    private var unLabel: String    { compliance?.unNumber ?? placard?.unNumber ?? "-" }
+    private var classLabel: String { compliance?.imdgClass ?? placard?.imdgClass ?? "-" }
+    private var pgLabel: String    { compliance?.packingGroup ?? placard?.packingGroup ?? "-" }
 
     private func statusColor(_ s: String?) -> Color {
         switch (s ?? "").lowercased() {
@@ -316,7 +316,7 @@ private struct RailIMDGHazmatManifestBody: View {
                     Text(compliance?.commodityName ?? "Dangerous goods")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(palette.textSecondary)
-                    Text(compliance?.route ?? "—")
+                    Text(compliance?.route ?? "-")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -325,7 +325,7 @@ private struct RailIMDGHazmatManifestBody: View {
                     Text("VOLUME")
                         .font(.system(size: 10, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
-                    Text(compliance?.volume ?? "—")
+                    Text(compliance?.volume ?? "-")
                         .font(.system(size: 22, weight: .heavy)).monospacedDigit()
                         .foregroundStyle(palette.textPrimary)
                     Text(compliance?.vehicleType ?? "tank car")
@@ -441,8 +441,8 @@ private struct RailIMDGHazmatManifestBody: View {
                     .foregroundStyle(Brand.danger)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(Brand.danger.opacity(0.40)))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.40)))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }
@@ -486,8 +486,8 @@ private struct RailIMDGHazmatManifestBody: View {
             }()
             let icon: String = (s.status ?? "").lowercased() == "clear" ? "checkmark.diamond.fill" : "exclamationmark.triangle.fill"
             result.append(ManifestRow571(
-                id: idx, title: s.checkName ?? "—", sub: s.detail ?? "—",
-                status: s.status ?? "clear", result: s.result ?? "—",
+                id: idx, title: s.checkName ?? "-", sub: s.detail ?? "-",
+                status: s.status ?? "clear", result: s.result ?? "-",
                 chipColor: color, chipIcon: icon))
             idx += 1
         }
@@ -495,11 +495,11 @@ private struct RailIMDGHazmatManifestBody: View {
             let isERG = (c.name ?? "").uppercased().contains("ERG") || c.ergGuide != nil
             let color: Color = isERG ? Brand.rail : Brand.info
             let icon  = isERG ? "book.fill" : "phone.fill"
-            let sub   = c.contact ?? c.description ?? "—"
-            let resultLabel = isERG ? (c.ergGuide.map { "G\($0)" } ?? "—") : (c.availability ?? "24/7")
+            let sub   = c.contact ?? c.description ?? "-"
+            let resultLabel = isERG ? (c.ergGuide.map { "G\($0)" } ?? "-") : (c.availability ?? "24/7")
             let status = isERG ? "ref" : "active"
             let r = ManifestRow571(
-                id: idx, title: c.name ?? "—", sub: sub,
+                id: idx, title: c.name ?? "-", sub: sub,
                 status: status, result: resultLabel,
                 chipColor: color, chipIcon: icon)
             result.append(r)

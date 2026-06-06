@@ -180,12 +180,12 @@ private struct VesselCarrierTenderWorkflowBody: View {
                 .font(.system(size: 16, weight: .bold))
                 .foregroundStyle(palette.textPrimary)
                 .padding(.top, Space.s3)
-            Text("\(detail?.serviceName ?? "—") · \(teu) FEU dry · CY/CY")
+            Text("\(detail?.serviceName ?? "-") · \(teu) FEU dry · CY/CY")
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, Space.s3)
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Text(target.map { rateString($0) } ?? "—")
+                Text(target.map { rateString($0) } ?? "-")
                     .font(.system(size: 26, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
@@ -198,7 +198,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
                 .fill(Color.white.opacity(0.08))
                 .frame(height: 1)
                 .padding(.top, Space.s3)
-            Text("\(detail?.bookingNumber ?? "—") · \(detail?.shipperOfRecord ?? "—") · quote to lock slot")
+            Text("\(detail?.bookingNumber ?? "-") · \(detail?.shipperOfRecord ?? "-") · quote to lock slot")
                 .font(.system(size: 10, weight: .regular))
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, Space.s3)
@@ -226,9 +226,9 @@ private struct VesselCarrierTenderWorkflowBody: View {
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
-            kpiTile(label: "PENDING",  value: "—", caption: "awaiting quote", accent: Brand.warning)
-            kpiTile(label: "WIN RATE", value: "—", caption: "trailing 30d",   gradient: true)
-            kpiTile(label: "AVG REPLY", value: "—", caption: "to quote")
+            kpiTile(label: "PENDING",  value: "-", caption: "awaiting quote", accent: Brand.warning)
+            kpiTile(label: "WIN RATE", value: "-", caption: "trailing 30d",   gradient: true)
+            kpiTile(label: "AVG REPLY", value: "-", caption: "to quote")
         }
     }
 
@@ -284,7 +284,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
         let isOpen = isVoyageOpen(voyage)
         return HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("\(voyage.vesselName ?? "—") · voy \(voyage.voyageNumber ?? "—")")
+                Text("\(voyage.vesselName ?? "-") · voy \(voyage.voyageNumber ?? "-")")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Text(scheduleLine(voyage))
@@ -326,8 +326,8 @@ private struct VesselCarrierTenderWorkflowBody: View {
             }
             .buttonStyle(.plain)
             .background(palette.bgCard)
-            .overlay(Capsule().strokeBorder(Brand.danger.opacity(0.5), lineWidth: 1))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.5), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .opacity(declining ? 0.6 : 1.0)
             .disabled(declining || submitting)
 
@@ -339,7 +339,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
             }
             .buttonStyle(.plain)
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .opacity(submitting ? 0.6 : 1.0)
             .disabled(submitting || declining)
         }
@@ -362,13 +362,13 @@ private struct VesselCarrierTenderWorkflowBody: View {
         if let o = detail?.originPort, let d = detail?.destinationPort {
             let oCode = o.unlocode ?? o.code ?? ""
             let dCode = d.unlocode ?? d.code ?? ""
-            let oName = o.name ?? detail?.origin ?? "—"
-            let dName = d.name ?? detail?.destination ?? "—"
+            let oName = o.name ?? detail?.origin ?? "-"
+            let dName = d.name ?? detail?.destination ?? "-"
             let lhs = oCode.isEmpty ? oName : "\(oName) \(oCode)"
             let rhs = dCode.isEmpty ? dName : "\(dName) \(dCode)"
             return "\(lhs) → \(rhs)"
         }
-        return "\(detail?.origin ?? "—") → \(detail?.destination ?? "—")"
+        return "\(detail?.origin ?? "-") → \(detail?.destination ?? "-")"
     }
 
     private var deadlineLabel: String {
@@ -392,7 +392,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
         else if !isVoyageOpen(v) { parts.append("cutoff passed") }
         if let t = v.transitDays { parts.append("\(t)d transit") }
         if !isVoyageOpen(v), let q = v.lastQuotedRate { parts.append("last-quoted \(rateString(q))") }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func shortDate(_ iso: String) -> String {
@@ -459,7 +459,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
         // Quote the shipper's target / FEU at per-TEU rate type. No fabricated
         // amount — if the detail has no target rate we cannot quote.
         guard let amount = detail?.targetRate else {
-            actionError = "No target rate on this booking request — cannot submit a quote."
+            actionError = "No target rate on this booking request, cannot submit a quote."
             submitting = false
             return
         }
@@ -485,7 +485,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
         // transitions a booking the carrier OWNS — it does not model a
         // carrier declining an inbound tender request. Surface the gap
         // honestly rather than firing a wrong mutation.
-        actionError = "Decline is not yet wired — vesselShipments has no declineTender procedure. See portGaps."
+        actionError = "Decline is not yet wired, vesselShipments has no declineTender procedure. See portGaps."
         declining = false
     }
 }

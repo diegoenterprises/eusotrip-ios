@@ -117,34 +117,34 @@ private struct RailTariffRateLookupBody: View {
     private var routingCount: Int  { routings.count }
 
     private var rateLabel: String {
-        baseRate > 0 ? String(format: "$%.0f", baseRate) : "—"
+        baseRate > 0 ? String(format: "$%.0f", baseRate) : "-"
     }
     private var rateMileLabel: String {
         if let r = tariff?.rateMileUsd { return String(format: "$%.2f", r) }
         if baseRate > 0, let mi = tariff?.routeMiles, mi > 0 {
             return String(format: "$%.2f", baseRate / Double(mi))
         }
-        return "—"
+        return "-"
     }
     private var transitLabel: String {
         if let t = tariff?.transitDays { return String(format: "%.1fd", t) }
-        return "—"
+        return "-"
     }
     private var routeMilesLabel: String {
-        tariff?.routeMiles.map { "\($0)" } ?? "—"
+        tariff?.routeMiles.map { "\($0)" } ?? "-"
     }
-    private var routeLabel: String  { tariff?.routeLabel ?? "—" }
+    private var routeLabel: String  { tariff?.routeLabel ?? "-" }
     private var ruleTypeLabel: String { tariff?.ruleType ?? "RULE 11" }
     private var quoteLabel: String {
         totalQuote > 0 ? String(format: "Quote · $%.0f", totalQuote) : "Get quote"
     }
 
     private var freeDaysLabel: String {
-        demurrage.first?.freeDays.map { "\($0) free day\($0 == 1 ? "" : "s") at ramp" } ?? "—"
+        demurrage.first?.freeDays.map { "\($0) free day\($0 == 1 ? "" : "s") at ramp" } ?? "-"
     }
     private var dailyRateLabel: String {
         if let d = demurrage.first?.dailyRateUsd { return String(format: "$%.0f/car-day after", d) }
-        return "—"
+        return "-"
     }
     private var demurrageEquipLabel: String {
         let cnt = demurrage.first?.equipmentCount ?? carCount
@@ -262,7 +262,7 @@ private struct RailTariffRateLookupBody: View {
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
             MetricTile(label: "RATE/MILE",  value: rateMileLabel,           gradientNumeral: baseRate > 0)
-            MetricTile(label: "ROUTINGS",   value: routingCount > 0 ? "\(routingCount)" : "—")
+            MetricTile(label: "ROUTINGS",   value: routingCount > 0 ? "\(routingCount)" : "-")
             MetricTile(label: "TRANSIT",    value: transitLabel)
         }
     }
@@ -309,7 +309,7 @@ private struct RailTariffRateLookupBody: View {
         let interchanges = routing.interchangeCount.map { "\($0) interchange\($0 == 1 ? "" : "s")" } ?? "direct"
         let miles = routing.miles.map { " · \($0) mi" } ?? ""
         let sub = interchanges + miles
-        let rateStr = routing.rate.map { String(format: "$%.0f", $0) } ?? "—"
+        let rateStr = routing.rate.map { String(format: "$%.0f", $0) } ?? "-"
 
         return HStack(spacing: 12) {
             ZStack {
@@ -359,7 +359,7 @@ private struct RailTariffRateLookupBody: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }
-            Text(freeDaysLabel + (dailyRateLabel != "—" ? " · \(dailyRateLabel)" : ""))
+            Text(freeDaysLabel + (dailyRateLabel != "-" ? " · \(dailyRateLabel)" : ""))
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
             Text(demurrageEquipLabel)
@@ -387,8 +387,8 @@ private struct RailTariffRateLookupBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

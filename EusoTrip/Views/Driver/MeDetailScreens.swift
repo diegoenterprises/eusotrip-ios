@@ -309,7 +309,7 @@ struct MeTaxView: View {
                     Text("Your YTD gross populates as settlements clear.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 case .error:
-                    Text("—")
+                    Text("-")
                         .font(.system(size: 42, weight: .bold))
                         .foregroundStyle(palette.textSecondary)
                     Text("Couldn't reach earnings service.")
@@ -447,7 +447,7 @@ struct MeDvirView: View {
                         .foregroundStyle(palette.textTertiary)
                     Spacer()
                 }
-                Text("—")
+                Text("-")
                     .font(.system(size: 42, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("Streak surfaces once your pre + post trip logs start landing.")
@@ -485,13 +485,13 @@ struct MeDvirView: View {
                                 Text((e.reportType ?? "DVIR").capitalized)
                                     .font(EType.bodyStrong)
                                     .foregroundStyle(palette.textPrimary)
-                                Text(e.reportDate ?? "—")
+                                Text(e.reportDate ?? "-")
                                     .font(EType.caption)
                                     .foregroundStyle(palette.textSecondary)
                             }
                             Spacer()
                             StatusPill(
-                                text: (e.overallCondition ?? "—").capitalized,
+                                text: (e.overallCondition ?? "-").capitalized,
                                 kind: (e.defectsFound ?? 0) > 0 ? .warning : .success
                             )
                         }
@@ -624,9 +624,9 @@ struct MeAvailabilityView: View {
     /// subtitle renders honest em-dashes rather than fabricating
     /// the driver's home city or schedule. Doctrine: 0% mock data.
     private var homeBaseResetSubtitle: String {
-        let homeCity = "—"        // AuthUser.homeBaseCity not yet on the wire.
-        let resetWindow = "—"     // availabilityRouter.weeklyGrid not yet on the wire.
-        let restartDay = "—"      // HOS-derived; awaits backend.
+        let homeCity = "-"        // AuthUser.homeBaseCity not yet on the wire.
+        let resetWindow = "-"     // availabilityRouter.weeklyGrid not yet on the wire.
+        let restartDay = "-"      // HOS-derived; awaits backend.
         return "Home-base \(homeCity) · \(resetWindow) reset window then restart \(restartDay) morning"
     }
 
@@ -742,7 +742,7 @@ struct MeAvailabilityView: View {
                                             grid[d][h] = grid[d][h].next
                                         }
                                     }
-                                    .accessibilityLabel("\(days[d].full) \(h):00 — \(accessibilityLabel(for: grid[d][h]))")
+                                    .accessibilityLabel("\(days[d].full) \(h):00 - \(accessibilityLabel(for: grid[d][h]))")
                                     .accessibilityHint("Tap to cycle duty state")
                             }
                         }
@@ -795,7 +795,7 @@ struct MeAvailabilityView: View {
                             grid[selectedDay][h] = grid[selectedDay][h].next
                         }
                     }
-                    .accessibilityLabel("\(days[selectedDay].full) \(h):00 — \(accessibilityLabel(for: grid[selectedDay][h]))")
+                    .accessibilityLabel("\(days[selectedDay].full) \(h):00 - \(accessibilityLabel(for: grid[selectedDay][h]))")
                     .accessibilityHint("Tap to cycle duty state")
                 }
             }
@@ -1234,7 +1234,7 @@ struct MeMissionsView: View {
             EusoEmptyState(
                 systemImage: "flag.checkered",
                 title: "No missions yet",
-                subtitle: "Weekly + monthly tracks unlock here as you drive — first mission lands with your next delivery.",
+                subtitle: "Weekly + monthly tracks unlock here as you drive, first mission lands with your next delivery.",
                 comingSoon: false
             )
             .task { await missionsStore.refresh() }
@@ -1242,7 +1242,7 @@ struct MeMissionsView: View {
             EusoEmptyState(
                 systemImage: "flag.checkered",
                 title: "Couldn't load missions",
-                subtitle: "Pull to refresh — the mission service will be back momentarily."
+                subtitle: "Pull to refresh, the mission service will be back momentarily."
             )
             .task { await missionsStore.refresh() }
         case .loaded(let missions):
@@ -1431,7 +1431,7 @@ struct MeBadgesView: View {
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                         .multilineTextAlignment(.center)
-                    Text("Loads delivered, safety streaks, and MPG wins all unlock here. Light one up — the rest follow.")
+                    Text("Loads delivered, safety streaks and MPG wins all unlock here. Light one up, the rest follow.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .multilineTextAlignment(.center)
@@ -1532,7 +1532,7 @@ struct MeReferralsView: View {
             EusoEmptyState(
                 systemImage: "person.2",
                 title: "No referrals yet",
-                subtitle: "Invite drivers via the Share tile on your profile — their activations will post here.",
+                subtitle: "Invite drivers via the Share tile on your profile, their activations will post here.",
                 comingSoon: false
             )
             .task { await referralsStore.refresh() }
@@ -1573,11 +1573,26 @@ struct MeReferralsView: View {
 
 // MARK: - 8. Zeun (fleet mechanics)
 
-/// Identifiable wrapper for the breakdown-detail sheet binding. iOS
-/// `.sheet(item:)` requires an Identifiable; the bare Int reportId
-/// can't conform, so we wrap it.
-private struct ZeunDetailRoute: Identifiable, Equatable {
-    let id: Int
+/// Single presentation channel for every Zeun rollup sheet. Driving all
+/// four destinations through one `.sheet(item:)` on the body's stable
+/// root keeps the presenter from collapsing — stacking four separate
+/// `.sheet` modifiers on an inner card of an implicit `TupleView` caused
+/// the inner presentation to bounce straight back to Home (tester bug:
+/// "Report breakdown" / "Find a repair shop" dismissed instantly).
+private enum ZeunSheet: Identifiable, Equatable {
+    case reporter
+    case partDiagnosis
+    case providers
+    case detail(Int)
+
+    var id: String {
+        switch self {
+        case .reporter:        return "reporter"
+        case .partDiagnosis:   return "partDiagnosis"
+        case .providers:       return "providers"
+        case .detail(let rid): return "detail-\(rid)"
+        }
+    }
 }
 
 struct MeZeunView: View {
@@ -1595,12 +1610,20 @@ struct MeZeunView: View {
     /// Sheets the Zeun rollup launches into. Each closes the 12-feature
     /// gap report from the comparison agent (reportBreakdown UI,
     /// provider directory, breakdown drill-in, maintenance scheduler).
-    @State private var showReporter: Bool = false
-    @State private var showProviders: Bool = false
-    @State private var showPartDiagnosis: Bool = false
-    @State private var openReportId: Int? = nil
+    /// All four route through one `ZeunSheet` so a single `.sheet(item:)`
+    /// on the body's root drives them (see the bounce-to-Home note above).
+    @State private var activeSheet: ZeunSheet? = nil
 
     var body: some View {
+        // Single stable root for every Zeun card. The container hosts us
+        // in a `ScrollView { VStack(spacing: Space.s4) }`, so this inner
+        // VStack uses the SAME spacing — the layout is unchanged, but the
+        // cards now share one parent. That stability is what lets a single
+        // `.sheet(item:)` present reliably; four `.sheet` modifiers stacked
+        // on an inner card of the old implicit TupleView collapsed the
+        // presentation and bounced "Report breakdown" / "Find a repair
+        // shop" straight back to Home.
+        VStack(alignment: .leading, spacing: Space.s4) {
         // Canonical wiring: `zeunMechanics.getMyBreakdowns` (MCP-verified
         // at frontend/server/routers/zeunMechanics.ts:402). Returns the
         // driver's open + resolved breakdown reports. Empty = "no
@@ -1624,7 +1647,7 @@ struct MeZeunView: View {
                     Text("No mechanical issues reported. Tap Report issue on the Vehicle card if something changes.")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 case .error:
-                    Text("—")
+                    Text("-")
                         .font(.system(size: 42, weight: .bold))
                         .foregroundStyle(palette.textSecondary)
                     Text("Couldn't reach Zeun service. Retry.")
@@ -1638,7 +1661,7 @@ struct MeZeunView: View {
                             // Tap-to-drill — opens the full breakdown
                             // detail with diagnosis, status timeline,
                             // and the status-update mutation.
-                            Button { openReportId = r.id } label: {
+                            Button { activeSheet = .detail(r.id) } label: {
                                 HStack {
                                     Text(r.issueCategory.capitalized)
                                         .font(EType.bodyStrong)
@@ -1674,11 +1697,11 @@ struct MeZeunView: View {
                     .foregroundStyle(palette.textTertiary)
                 CTAButton(title: "Report breakdown") {
                     MeAction.fire("zeun.report-breakdown")
-                    showReporter = true
+                    activeSheet = .reporter
                 }
                 Button {
                     MeAction.fire("zeun.diagnose-part")
-                    showPartDiagnosis = true
+                    activeSheet = .partDiagnosis
                 } label: {
                     HStack {
                         Image(systemName: "sparkles.tv.fill")
@@ -1699,7 +1722,7 @@ struct MeZeunView: View {
                 .buttonStyle(.plain)
                 Button {
                     MeAction.fire("zeun.find-provider")
-                    showProviders = true
+                    activeSheet = .providers
                 } label: {
                     HStack {
                         Image(systemName: "wrench.and.screwdriver.fill")
@@ -1719,21 +1742,6 @@ struct MeZeunView: View {
                 }
                 .buttonStyle(.plain)
             }
-        }
-        .sheet(isPresented: $showReporter) {
-            ZeunBreakdownReporter().eusoSheet()
-        }
-        .sheet(isPresented: $showPartDiagnosis) {
-            ZeunPartDiagnosisScreen().eusoSheet()
-        }
-        .sheet(isPresented: $showProviders) {
-            ZeunProviderNetwork().eusoSheet()
-        }
-        .sheet(item: Binding(
-            get: { openReportId.map { ZeunDetailRoute(id: $0) } },
-            set: { openReportId = $0?.id }
-        )) { route in
-            ZeunBreakdownDetail(reportId: route.id).eusoSheet()
         }
 
         // Inspection (DVIR) section — live from `InspectionsHistoryStore`.
@@ -1789,13 +1797,13 @@ struct MeZeunView: View {
                                 Text((e.reportType ?? "DVIR").capitalized)
                                     .font(EType.bodyStrong)
                                     .foregroundStyle(palette.textPrimary)
-                                Text(e.reportDate ?? "—")
+                                Text(e.reportDate ?? "-")
                                     .font(EType.caption)
                                     .foregroundStyle(palette.textSecondary)
                             }
                             Spacer()
                             StatusPill(
-                                text: (e.overallCondition ?? "—").capitalized,
+                                text: (e.overallCondition ?? "-").capitalized,
                                 kind: (e.defectsFound ?? 0) > 0 ? .warning : .success
                             )
                         }
@@ -1810,6 +1818,25 @@ struct MeZeunView: View {
             }
         }
         .task { await historyStore.refresh() }
+        }
+        // ─── Single presenter for all four Zeun sheets, anchored to the
+        // stable root above. `ZeunBreakdownReporter` posts to
+        // `zeunMechanics.reportBreakdown`; `ZeunProviderNetwork`
+        // (ZeunMechanicsScreens.swift:514) opens the repair-shop directory;
+        // `ZeunPartDiagnosisScreen` runs the photo diagnosis; the
+        // `.detail` case drills into one breakdown report.
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .reporter:
+                ZeunBreakdownReporter().eusoSheet()
+            case .partDiagnosis:
+                ZeunPartDiagnosisScreen().eusoSheet()
+            case .providers:
+                ZeunProviderNetwork().eusoSheet()
+            case .detail(let reportId):
+                ZeunBreakdownDetail(reportId: reportId).eusoSheet()
+            }
+        }
     }
 }
 
@@ -1862,21 +1889,21 @@ struct MeEldView: View {
     }
 
     private var driveRemainingDisplay: String {
-        store.status.map { HOSStatus.formatHours($0.drivingRemaining) } ?? "—"
+        store.status.map { HOSStatus.formatHours($0.drivingRemaining) } ?? "-"
     }
 
     private var shiftRemainingDisplay: String {
-        store.status.map { HOSStatus.formatHours($0.onDutyRemaining) } ?? "—"
+        store.status.map { HOSStatus.formatHours($0.onDutyRemaining) } ?? "-"
     }
 
     private var cycleRemainingDisplay: String {
-        store.status.map { HOSStatus.formatHours($0.cycleRemaining) } ?? "—"
+        store.status.map { HOSStatus.formatHours($0.cycleRemaining) } ?? "-"
     }
 
     /// 30-min break tile — "Complete" when not approaching, otherwise
     /// the countdown minutes or "Due now".
     private var breakTileValue: String {
-        guard let status = store.status else { return "—" }
+        guard let status = store.status else { return "-" }
         if status.breakRequired { return "Due now" }
         if let mins = store.minutesUntilBreak, mins < 30 {
             return "\(mins)m"
@@ -1885,13 +1912,13 @@ struct MeEldView: View {
     }
 
     private var milesTodayDisplay: String {
-        guard let miles = store.today?.milesDriven else { return "—" }
+        guard let miles = store.today?.milesDriven else { return "-" }
         return String(format: "%.0f", miles)
     }
 
     /// Project shift-end clock from onDutyRemaining.
     private var shiftEndsDisplay: String {
-        guard let status = store.status, status.onDutyRemaining > 0 else { return "—" }
+        guard let status = store.status, status.onDutyRemaining > 0 else { return "-" }
         let target = Date().addingTimeInterval(status.onDutyRemaining * 3600)
         return MeEldView.shiftEndFormatter.string(from: target)
     }
@@ -1958,7 +1985,7 @@ struct MeEldView: View {
                         .animation(.spring(.smooth), value: store.status?.drivingRemaining)
                         .foregroundStyle(LinearGradient.diagonal)
                         .redacted(reason: store.status == nil ? .placeholder : [])
-                    Text(shiftEndsDisplay == "—"
+                    Text(shiftEndsDisplay == "-"
                          ? "Drive time remaining"
                          : "Drive time remaining · shift ends \(shiftEndsDisplay)")
                         .font(EType.caption)
@@ -2055,7 +2082,7 @@ struct MeEldView: View {
                 Text(entry.duty.shortLabel + " · " + dutyLongLabel(entry.duty))
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text(entry.locationDescription ?? entry.remark ?? "—")
+                Text(entry.locationDescription ?? entry.remark ?? "-")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -2095,7 +2122,7 @@ struct MeEldView: View {
             if m == 0 { return "\(h)h" }
             return "\(h)h \(String(format: "%02d", m))m"
         }
-        if entry.endDate == nil { return "—" }
+        if entry.endDate == nil { return "-" }
         return ""
     }
 
@@ -2187,11 +2214,11 @@ struct MeEldView: View {
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
                 if store.violations.isEmpty {
-                    Text("No HoS exceedance, certification gaps, or unassigned segments in the last 30 days.")
+                    Text("No HoS exceedance, certification gaps or unassigned segments in the last 30 days.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 } else if let first = store.violations.first {
-                    Text(first.message ?? first.type ?? "HOS violation flagged — open 019 for details")
+                    Text(first.message ?? first.type ?? "HOS violation flagged - open 019 for details")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -2360,7 +2387,7 @@ struct MeFleetView: View {
             EusoEmptyState(
                 systemImage: "truck.box",
                 title: "No vehicle assigned",
-                subtitle: "Dispatch will assign a tractor and trailer — once they do you'll see them here with health, fuel, and maintenance.",
+                subtitle: "Dispatch will assign a tractor and trailer. Once they do you'll see them here with health, fuel and maintenance.",
                 comingSoon: false
             )
             .task { await vehiclesStore.refresh() }
@@ -2537,7 +2564,7 @@ private struct HaulLeaderboardTab: View {
             EusoEmptyState(
                 systemImage: "trophy",
                 title: "Couldn't load leaderboard",
-                subtitle: "Pull to refresh — the Haul service will be back momentarily."
+                subtitle: "Pull to refresh, the Haul service will be back momentarily."
             )
             .task { await leaderboardStore.refresh() }
         case .loaded(let rows):
@@ -2612,13 +2639,16 @@ private struct HaulLeaderboardTab: View {
 
 // MARK: - Haul · Lobby tab (moderated driver chat)
 //
-// Global multi-role chat room — drivers, dispatch, and fleet owners
-// all read and post here. Wired to the real `messages.getMessages`
-// / `messages.sendMessage` procs via `PulseLobbyStore` against the
-// `driver-lobby` conversation id (same contract as the web app's
-// TheHaul page). No local @State message seed. Every message that
-// renders came from the server. Every outgoing message round-trips
-// through `messaging.sendMessage` and refreshes the feed.
+// "The Haul" GLOBAL chat room — drivers, dispatch, and fleet owners all
+// read and post here. Wired to the gamification router that backs the
+// web TheHaul page: reads through `gamification.getLobbyMessages` (via
+// `PulseLobbyStore`) and posts through `gamification.postLobbyMessage`.
+// This replaced the company `messaging.getLobby` / `sendLobbyMessage`
+// wiring, which needed a companyId + a pre-existing "The Lobby"
+// conversation and surfaced as "Invalid conversation ID" with a dead
+// send. No local @State message seed — every message that renders came
+// from the server, and every outgoing message round-trips through the
+// moderated `postLobbyMessage` mutation and refreshes the feed.
 //
 // Role color is derived from the message sender's server-returned
 // `senderName` + role hints; absent a role hint we render the
@@ -2659,8 +2689,6 @@ struct HaulLobbyTab: View {
     @State private var draft: String = ""
     @State private var isPosting: Bool = false
     @State private var postError: String?
-
-    private static let lobbyConversationId = "driver-lobby"
 
     private var liveMessages: [MessagingMessage] {
         store.items
@@ -2735,7 +2763,7 @@ struct HaulLobbyTab: View {
                 EusoEmptyState(
                     systemImage: "exclamationmark.triangle",
                     title: "Lobby offline",
-                    subtitle: "Pull to refresh — the Haul service will be back momentarily."
+                    subtitle: "Pull to refresh, the Haul service will be back momentarily."
                 )
             case .loaded:
                 VStack(spacing: Space.s3) {
@@ -2802,26 +2830,33 @@ struct HaulLobbyTab: View {
         postError = nil
         isPosting = true
         defer { isPosting = false }
-        // The lobby uses a dedicated `messaging.sendLobbyMessage`
-        // procedure that resolves the caller → company → "The Lobby"
-        // conversation server-side. The previous implementation called
-        // the canonical `messages.sendMessage` with conversationId
-        // = "driver-lobby" (a string token), which the server's
-        // parseInt rejected with "Invalid conversation ID" — so every
-        // lobby post failed silently. The dedicated endpoint takes
-        // just `{text}` and handles routing internally.
-        struct In: Encodable { let text: String }
-        struct Out: Decodable { let messageId: Int; let conversationId: Int }
+        // The Haul lobby is the global driver chat backed by the
+        // gamification router — `gamification.postLobbyMessage` (input
+        // `{ message }`, MCP-verified at
+        // frontend/server/routers/gamification.ts:1363). The previous
+        // implementation posted to the company `messaging.sendLobbyMessage`
+        // (conversationId = "driver-lobby" string token), which the
+        // server's parseInt rejected with "Invalid conversation ID" — so
+        // every lobby post failed silently. The gamification endpoint also
+        // runs content moderation and can return `{ success: false, error }`
+        // on a 200 response (muted / blocked / rate-limited), which we
+        // surface to the composer rather than treating as a clean send.
+        struct In: Encodable { let message: String }
+        struct Out: Decodable { let success: Bool; let error: String? }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
-                "messaging.sendLobbyMessage",
-                input: In(text: trimmed)
+            let out: Out = try await EusoTripAPI.shared.mutation(
+                "gamification.postLobbyMessage",
+                input: In(message: trimmed)
             )
-            draft = ""
-            await store.refresh()
+            if out.success {
+                draft = ""
+                await store.refresh()
+            } else {
+                postError = out.error ?? "Message couldn't be posted."
+            }
         } catch {
             postError = (error as? LocalizedError)?.errorDescription
-                ?? "Couldn't post — try again in a moment."
+                ?? "Couldn't post, try again in a moment."
         }
     }
 
@@ -2979,7 +3014,7 @@ private struct HaulMissionsTab: View {
                     EusoEmptyState(
                         systemImage: "flag.checkered",
                         title: "No missions right now",
-                        subtitle: "New missions post automatically as you run loads — AI generates them on top of the weekly drop.",
+                        subtitle: "New missions post automatically as you run loads, AI generates them on top of the weekly drop.",
                         comingSoon: false
                     )
                 }
@@ -3078,7 +3113,7 @@ private struct HaulMissionsTab: View {
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, Space.s2)
-                    .background(Capsule().fill(LinearGradient.diagonal))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.diagonal))
                 }
                 .buttonStyle(.plain)
                 .disabled(mutatingId == m.id)
@@ -3186,6 +3221,10 @@ private struct HaulRewardsTab: View {
     @State private var isLoading: Bool = false
     @State private var lastError: String?
     @State private var redeemingId: String?
+    // 2026-06-02 — WAVE-0 orphan recovery: the bespoke 067 Redemption
+    // Shop (TheHaulRedemptionShopView) was built but never reachable.
+    // Surfaced here behind the points header's "Shop" button.
+    @State private var showShop: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
@@ -3214,6 +3253,9 @@ private struct HaulRewardsTab: View {
             }
         }
         .task { await refresh() }
+        .sheet(isPresented: $showShop) {
+            NavigationStack { TheHaulRedemptionShopView() }
+        }
     }
 
     private var pointsHeader: some View {
@@ -3229,9 +3271,18 @@ private struct HaulRewardsTab: View {
                     .monospacedDigit()
             }
             Spacer()
-            Image(systemName: "sparkles")
-                .font(.system(size: 22, weight: .semibold))
+            Button { showShop = true } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "bag")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Shop")
+                        .font(EType.caption)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                }
                 .foregroundStyle(LinearGradient.diagonal)
+            }
+            .buttonStyle(.plain)
         }
         .padding(Space.s3)
         .background(
@@ -3334,7 +3385,7 @@ private struct HaulRewardsTab: View {
             await refresh()
         } catch {
             lastError = (error as? LocalizedError)?.errorDescription
-                ?? "Couldn't redeem — try again in a moment."
+                ?? "Couldn't redeem, try again in a moment."
         }
     }
 }
@@ -3865,7 +3916,7 @@ struct MeSettingsView: View {
         pulseLastSync = bridge.lastSuccessfulSyncAt
         // 2.5s inline toast.
         withAnimation {
-            pulseResyncToast = pushed ? "Pulse re-synced" : "Nothing to sync — sign in first"
+            pulseResyncToast = pushed ? "Pulse re-synced" : "Nothing to sync - sign in first"
         }
         try? await Task.sleep(nanoseconds: 2_500_000_000)
         withAnimation {
@@ -3928,7 +3979,7 @@ struct MePulseView: View {
             // `boot()` fires / session restored from keychain), fire a
             // fallback republish now so the wrist has fresh auth and
             // the "Last auth sync" row actually populates instead of
-            // sitting on "—" forever. The bridge returns false when
+            // sitting on "-" forever. The bridge returns false when
             // there's nothing to send, so unsigned-in sessions are
             // safe.
             if session.phase == .signedIn {
@@ -3993,7 +4044,7 @@ struct MePulseView: View {
                 Divider().overlay(palette.borderFaint)
                 row(icon: "clock.arrow.2.circlepath",
                     title: "Last auth sync",
-                    value: lastMirrorAt.map(Self.relative) ?? "—",
+                    value: lastMirrorAt.map(Self.relative) ?? "-",
                     tint: palette.textSecondary)
             }
         }
@@ -4169,10 +4220,10 @@ final class DriverCarrierStore: ObservableObject {
             let userMsg: String = {
                 let desc = error.localizedDescription.lowercased()
                 if desc.contains("forbidden") || desc.contains("403") {
-                    return "Carrier service is gated for your role. The fix is deployed at server commit 522752e9 — check the Azure App Service has the latest deploy."
+                    return "Carrier service is gated for your role. The fix is deployed at server commit 522752e9, check the Azure App Service has the latest deploy."
                 }
                 if desc.contains("unauthorized") || desc.contains("401") {
-                    return "Couldn't reach carrier service — sign-in session expired."
+                    return "Couldn't reach carrier service, sign-in session expired."
                 }
                 return "Couldn't reach carrier service."
             }()
@@ -4218,7 +4269,7 @@ struct MeCarrierView: View {
                 EusoEmptyState(
                     systemImage: "building.2",
                     title: "No carrier linked",
-                    subtitle: "Once your dispatcher attaches you to a motor carrier, their DOT, MC, insurance, and compliance signals show up here."
+                    subtitle: "Once your dispatcher attaches you to a motor carrier, their DOT, MC, insurance and compliance signals show up here."
                 )
                 CTAButton(title: "Attach to a carrier") {
                     MeAction.fire("carrier.attach-request")
@@ -4305,7 +4356,7 @@ struct MeCarrierView: View {
                         .background(palette.bgCardSoft)
                         .clipShape(Circle())
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(c.name ?? "—")
+                        Text(c.name ?? "-")
                             .font(EType.h2)
                             .foregroundStyle(palette.textPrimary)
                             .lineLimit(1)
@@ -4318,13 +4369,13 @@ struct MeCarrierView: View {
                     }
                     Spacer(minLength: 0)
                     StatusPill(
-                        text: (c.complianceStatus ?? "—").capitalized,
+                        text: (c.complianceStatus ?? "-").capitalized,
                         kind: complianceKind(c.complianceStatus)
                     )
                 }
                 HStack(spacing: Space.s3) {
-                    MetricTile(label: "DOT", value: c.dotNumber ?? "—")
-                    MetricTile(label: "MC",  value: c.mcNumber ?? "—")
+                    MetricTile(label: "DOT", value: c.dotNumber ?? "-")
+                    MetricTile(label: "MC",  value: c.mcNumber ?? "-")
                 }
                 if let cat = c.companyCategory {
                     Text(cat.replacingOccurrences(of: "_", with: " ").capitalized)
@@ -4388,7 +4439,7 @@ struct MeCarrierView: View {
                                value: daysLabel(c.twicDaysRemaining))
                 }
                 if anyExpiringSoon(c) {
-                    Text("A red or amber window means dispatch has a cert about to lapse — flag it before it gates your next load.")
+                    Text("A red or amber window means dispatch has a cert about to lapse, flag it before it gates your next load.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -4406,7 +4457,7 @@ struct MeCarrierView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(palette.textSecondary)
                     .frame(width: 22)
-                Text(value ?? "—")
+                Text(value ?? "-")
                     .font(EType.body)
                     .foregroundStyle(value == nil ? palette.textTertiary : palette.textPrimary)
                     .lineLimit(1)
@@ -4434,7 +4485,7 @@ struct MeCarrierView: View {
     }
 
     private func initial(_ name: String?) -> String {
-        guard let first = name?.first else { return "—" }
+        guard let first = name?.first else { return "-" }
         return String(first).uppercased()
     }
 
@@ -4449,7 +4500,7 @@ struct MeCarrierView: View {
     }
 
     private func daysLabel(_ d: Int?) -> String {
-        guard let d else { return "—" }
+        guard let d else { return "-" }
         if d <= 0 { return "Lapsed" }
         if d == 1 { return "1 day" }
         return "\(d) days"

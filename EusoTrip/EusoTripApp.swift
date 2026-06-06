@@ -32,6 +32,11 @@ struct EusoTripApp: App {
     init() {
         #if canImport(UIKit)
         UIScrollView.appearance().keyboardDismissMode = .interactive
+        // Tap-anywhere-outside-the-keyboard dismissal (founder bug
+        // 2026-05-31). Idempotent; runs once per process; recognizer
+        // uses cancelsTouchesInView=false and skips taps on TextField/
+        // TextView so no button/row/input behavior breaks.
+        EusoKeyboardDismissBridge.shared.install()
         #endif
     }
 
@@ -311,3 +316,91 @@ extension Notification.Name {
     /// re-poll, and the toast layer should celebrate the win.
     static let eusoBidAwarded = Notification.Name("eusoBidAwarded")
 }
+
+// MARK: - Tap-outside-to-dismiss keyboard bridge
+//
+// Founder bug 2026-05-31: the keyboard would activate (text fields,
+// search bars, sign-in forms) and the only way to dismiss was the
+// `keyboardDismissMode = .interactive` swipe-down on a scroll view.
+// Users expected the iOS-standard pattern: TAP anywhere off the
+// focused field to dismiss it.
+//
+// Implementation: install a `UITapGestureRecognizer` on every UIWindow
+// the moment it becomes key. The recognizer:
+//   • cancelsTouchesInView = false → every button/row/link still
+//     receives the tap; the recognizer only piggybacks for dismissal.
+//   • delaysTouchesBegan   = false → no extra latency.
+//   • shouldReceive(touch:) declines → taps on UITextField/UITextView
+//     are passed through so the text field continues to own focus.
+//   • shouldRecognizeSimultaneously → runs alongside SwiftUI / UIKit
+//     gestures rather than competing with them.
+//
+// Apply via `EusoKeyboardDismissBridge.shared.install()` from
+// `EusoTripApp.init()`. Idempotent — second/third installs are no-ops.
+
+#if canImport(UIKit)
+@MainActor
+final class EusoKeyboardDismissBridge: NSObject {
+    static let shared = EusoKeyboardDismissBridge()
+
+    private var installed = false
+
+    private override init() { super.init() }
+
+    func install() {
+        guard !installed else { return }
+        installed = true
+        for scene in UIApplication.shared.connectedScenes {
+            guard let ws = scene as? UIWindowScene else { continue }
+            for window in ws.windows { attach(to: window) }
+        }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey(_:)),
+            name: UIWindow.didBecomeKeyNotification,
+            object: nil
+        )
+    }
+
+    @objc private func windowDidBecomeKey(_ note: Notification) {
+        guard let window = note.object as? UIWindow else { return }
+        attach(to: window)
+    }
+
+    private func attach(to window: UIWindow) {
+        let existing = window.gestureRecognizers?.contains { $0 is _EusoKeyboardDismissTap } ?? false
+        if existing { return }
+        let tap = _EusoKeyboardDismissTap(target: self, action: #selector(handleTap(_:)))
+        tap.cancelsTouchesInView = false
+        tap.delaysTouchesBegan   = false
+        tap.delegate = self
+        window.addGestureRecognizer(tap)
+    }
+
+    @objc private func handleTap(_ recognizer: UIGestureRecognizer) {
+        guard let window = recognizer.view as? UIWindow else { return }
+        window.endEditing(true)
+    }
+}
+
+extension EusoKeyboardDismissBridge: UIGestureRecognizerDelegate {
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+        true
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldReceive touch: UITouch) -> Bool {
+        var view: UIView? = touch.view
+        while let current = view {
+            if current is UITextField || current is UITextView {
+                return false
+            }
+            view = current.superview
+        }
+        return true
+    }
+}
+
+private final class _EusoKeyboardDismissTap: UITapGestureRecognizer {}
+#endif

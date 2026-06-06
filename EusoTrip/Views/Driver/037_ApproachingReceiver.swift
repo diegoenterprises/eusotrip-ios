@@ -40,18 +40,18 @@ struct ApproachingReceiver: View {
     private let fallbackMiles       = "4.2"
     private let fallbackMinutes     = "7 min"
     private let fallbackArriveBy    = "21:14"
-    private let fallbackRecipName   = "—"
+    private let fallbackRecipName   = "-"
     private let fallbackRecipAddr   = "7600 W ROOSEVELT HWY · YORK PA 17407"
     private let fallbackGate        = "B-2"
     private let fallbackBay         = "Dock 3"
     private let fallbackContact     = "Reg Hammond"
     private let fallbackPhone       = "+1 (717) 854-2010"
-    private let fallbackeSangNote   = "ESANG — EARLIER TONIGHT · FIT FOR 21:11 · WEATHER HOLD CLEARED · AMMONIA SENSORS WARM"
+    private let fallbackeSangNote   = "ESANG · EARLIER TONIGHT · FIT FOR 21:11 · WEATHER HOLD CLEARED · AMMONIA SENSORS WARM"
 
     private var receiverTitle: String {
         if let loc = activeLoad?.deliveryLocation, !loc.cityState.isEmpty {
             let brand = loc.address.isEmpty ? loc.cityState : loc.address
-            return "\(brand) — \(loc.cityState)"
+            return "\(brand) - \(loc.cityState)"
         }
         return fallbackRecipName
     }
@@ -131,10 +131,10 @@ struct ApproachingReceiver: View {
     private var receiverCityLine: String {
         // 116th firing M2 retrofit (2026-04-26): replaced fixture
         // fallback "Yara York" with the canonical em-dash sentinel.
-        // The screen now renders an honest "—" when the active trip
+        // The screen now renders an honest "-" when the active trip
         // hasn't hydrated yet, never a fabricated city. Doctrine:
         // 0% mock data — sentinel parity with 018/024/038/051/055.
-        activeLoad?.deliveryLocation?.cityState ?? "—"
+        activeLoad?.deliveryLocation?.cityState ?? "-"
     }
 
     private var heroCard: some View {

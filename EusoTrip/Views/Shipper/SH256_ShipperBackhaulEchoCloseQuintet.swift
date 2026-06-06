@@ -20,7 +20,7 @@
 //                                     signature chain, payable status)
 //
 //  Every dock / pallet / BOL / HOS / POD field renders from the fetched
-//  load + POD record, or an honest em-dash "—" where no live source
+//  load + POD record, or an honest em-dash "-" where no live source
 //  exists. No fabricated bay / pallet / BOL literals. Bottom nav frozen
 //  (Shipper: Home / Loads / ESANG / Me).
 //
@@ -126,7 +126,7 @@ private struct ShipperBackhaulEchoCloseBody: View {
     @State private var load: SCLoadCtx?
     @State private var pod: SCPodCtx?
 
-    private static let dash = "—"
+    private static let dash = "-"
 
     // ── Derived live values (em-dash where no live source) ──────────
     private var loadLabel: String { load?.loadNumber ?? (load?.id.map { "LD-\($0)" } ?? Self.dash) }
@@ -148,8 +148,8 @@ private struct ShipperBackhaulEchoCloseBody: View {
     private func palletsFraction(_ rcv: Int?, _ exp: Int?) -> String {
         switch (rcv, exp) {
         case let (r?, e?): return "\(r)/\(e)"
-        case let (nil, e?): return "—/\(e)"
-        case let (r?, nil): return "\(r)/—"
+        case let (nil, e?): return "-/\(e)"
+        case let (r?, nil): return "\(r)/-"
         default: return Self.dash
         }
     }
@@ -230,29 +230,29 @@ private struct ShipperBackhaulEchoCloseBody: View {
             case .dockedLoading:
                 return [
                     ("CARRIER", carrierLabel,                "backhaul",                .blue),
-                    ("PALLETS", pallets,                      exp == nil ? "—" : "loading", .blue),
-                    ("SEAL",    sealLabel,                    pod?.sealNumber == nil ? "—" : "live", .blue),
+                    ("PALLETS", pallets,                      exp == nil ? "-" : "loading", .blue),
+                    ("SEAL",    sealLabel,                    pod?.sealNumber == nil ? "-" : "live", .blue),
                     ("LEDGER",  "SEALED",                     "your chain · closed",     .green),
                 ]
             case .bolPreSign:
                 return [
-                    ("BOL",     pod == nil ? Self.dash : "DRAFT", pod == nil ? "—" : "pre-sign", .blue),
-                    ("PALLETS", palletsLoaded,                exp == nil ? "—" : "LOADED",   .green),
-                    ("SEAL",    sealLabel,                    pod?.sealNumber == nil ? "—" : "applied", .blue),
+                    ("BOL",     pod == nil ? Self.dash : "DRAFT", pod == nil ? "-" : "pre-sign", .blue),
+                    ("PALLETS", palletsLoaded,                exp == nil ? "-" : "LOADED",   .green),
+                    ("SEAL",    sealLabel,                    pod?.sealNumber == nil ? "-" : "applied", .blue),
                     ("LEDGER",  "SEALED",                     "your chain · closed",     .green),
                 ]
             case .bolSigned:
                 let bolSigned = pod?.signedByDriver == true
                 return [
-                    ("BOL",     bolSigned ? "SIGNED" : Self.dash, bolSigned ? "verified" : "—", bolSigned ? .green : .blue),
-                    ("PALLETS", pallets,                      exp == nil ? "—" : "in transit", bolSigned ? .green : .blue),
-                    ("SEAL",    sealLabel,                    pod?.sealNumber == nil ? "—" : "intact", .blue),
+                    ("BOL",     bolSigned ? "SIGNED" : Self.dash, bolSigned ? "verified" : "-", bolSigned ? .green : .blue),
+                    ("PALLETS", pallets,                      exp == nil ? "-" : "in transit", bolSigned ? .green : .blue),
+                    ("SEAL",    sealLabel,                    pod?.sealNumber == nil ? "-" : "intact", .blue),
                     ("LEDGER",  "SEALED",                     "your chain · closed",     .green),
                 ]
             case .paperwork:
                 let filed = pod != nil
                 return [
-                    ("PACKET",  filed ? "FILED" : Self.dash,  filed ? "POD watch" : "—",     filed ? .green : .blue),
+                    ("PACKET",  filed ? "FILED" : Self.dash,  filed ? "POD watch" : "-",     filed ? .green : .blue),
                     ("POD",     podArchived ? "ARCHIVED" : "WATCH", podArchived ? "co-signed" : "armed", podArchived ? .green : .blue),
                     ("QUARTET", "4/4",                        "sealed · §354",           .green),
                     ("LEDGER",  "SEALED",                     "your chain · closed",     .green),
@@ -260,7 +260,7 @@ private struct ShipperBackhaulEchoCloseBody: View {
             case .closedSeal:
                 return [
                     ("POD",     podArchived ? "ARCHIVED" : Self.dash, podCertLabel, podArchived ? .green : .blue),
-                    ("PAYABLE", payableLabel,                 pod?.payableStatus == nil ? "—" : "NET-30", payableLabel == Self.dash ? .blue : .green),
+                    ("PAYABLE", payableLabel,                 pod?.payableStatus == nil ? "-" : "NET-30", payableLabel == Self.dash ? .blue : .green),
                     ("QUARTET", "4/4",                        "chain sealed",            .green),
                     ("LEDGER",  "SEALED",                     "\(loadLabel) closed",     .green),
                 ]

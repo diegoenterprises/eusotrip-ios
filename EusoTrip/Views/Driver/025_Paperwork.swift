@@ -48,34 +48,40 @@ struct Paperwork: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
+    /// Transport mode of the active load (truck fallback) — drives the
+    /// mode-aware close-out document + charge labels (BOL/Detention).
+    private var resolvedMode: TransportMode {
+        TransportMode(rawValue: activeLoad?.transportMode ?? "truck") ?? .truck
+    }
+
     // MARK: - Figma fallback
     private let fallbackDoor       = "12"
     private let fallbackTotal      = 26
-    private let fallbackTrailer    = "—"
-    private let fallbackBolNumber  = "—"
-    private let fallbackShipperN   = "—"
-    private let fallbackShipperA   = "—"
-    private let fallbackConsignN   = "—"
-    private let fallbackConsignA   = "—"
+    private let fallbackTrailer    = "-"
+    private let fallbackBolNumber  = "-"
+    private let fallbackShipperN   = "-"
+    private let fallbackShipperA   = "-"
+    private let fallbackConsignN   = "-"
+    private let fallbackConsignA   = "-"
     // M2 doctrine (110th→111th hygiene firing): seal IDs are PII and must
     // hydrate from the live Load. Em-dash sentinels render until activeLoad
-    // surfaces the assigned seal pair; sealFactValue collapses the row to "—"
+    // surfaces the assigned seal pair; sealFactValue collapses the row to "-"
     // when either side is unhydrated rather than fabricating an identifier.
     // Same fix pattern landed on 018_ActiveEnrouteLoaded.swift:75 (fallbackSealID).
-    private let fallbackSealBefore = "—"
-    private let fallbackSealAfter  = "—"
+    private let fallbackSealBefore = "-"
+    private let fallbackSealAfter  = "-"
     private var sealFactValue: String {
-        (fallbackSealBefore == "—" || fallbackSealAfter == "—")
-            ? "—"
+        (fallbackSealBefore == "-" || fallbackSealAfter == "-")
+            ? "-"
             : "\(fallbackSealBefore) → \(fallbackSealAfter) intact"
     }
-    private let fallbackSignedBy   = "—"
+    private let fallbackSignedBy   = "-"
     private let fallbackStart      = "00:33"
     private let fallbackEnd        = "07:03"
     private let fallbackDoorTime   = "6h 30m"
-    private let fallbackDetCharge  = "—"
+    private let fallbackDetCharge  = "-"
     private let fallbackDetDetail  = "$60/hr past 2h · 4h 30m past 2h free · billed to shipper"
-    private let fallbackBreakInfo  = "10-hour break starts now. Park in row C of the overflow lot — 14 open slots as of 06:55. Next load brief unlocks at 17:03."
+    private let fallbackBreakInfo  = "10-hour break starts now. Park in row C of the overflow lot, 14 open slots as of 06:55. Next load brief unlocks at 17:03."
 
     // MARK: - Body
 
@@ -138,9 +144,10 @@ struct Paperwork: View {
                     Text("LOAD CLOSED")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(Brand.success)
-                    Text("· DETENTION BILLED")
+                    Text("· \(TransportLexicon.short(.detention, mode: resolvedMode).uppercased()) BILLED")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
                     // 2026-05-17 — Mode chip on paperwork close-out
                     // header. POD / BOL / mate's-receipt close-out
                     // differs by mode; the chip surfaces which legal
@@ -179,9 +186,10 @@ struct Paperwork: View {
     private var bolCard: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack(alignment: .firstTextBaseline) {
-                Text("BILL OF LADING · SIGNED")
+                Text("\(TransportLexicon.short(.billOfLading, mode: resolvedMode).uppercased()) · SIGNED")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
                 Spacer(minLength: 0)
                 Text("BOL #\(fallbackBolNumber)")
                     .font(EType.mono(.micro)).tracking(0.4)
@@ -209,7 +217,7 @@ struct Paperwork: View {
                 factRow(
                     label: "SEAL BEFORE → AFTER",
                     value: sealFactValue,
-                    affirm: sealFactValue != "—"
+                    affirm: sealFactValue != "-"
                 )
                 divider
                 factRow(label: "SIGNED BY", value: fallbackSignedBy, affirm: false)
@@ -272,7 +280,7 @@ struct Paperwork: View {
             metric(label: "START",      value: fallbackStart,      color: palette.textPrimary)
             metric(label: "END",        value: fallbackEnd,        color: palette.textPrimary)
             metric(label: "DOOR TIME",  value: fallbackDoorTime,   color: palette.textPrimary)
-            metric(label: "DETENTION $", value: fallbackDetCharge, color: Brand.warning, caption: fallbackDetDetail)
+            metric(label: "\(TransportLexicon.short(.detention, mode: resolvedMode).uppercased()) $", value: fallbackDetCharge, color: Brand.warning, caption: fallbackDetDetail)
         }
     }
 
@@ -409,7 +417,7 @@ struct Paperwork: View {
 
             HStack(spacing: Space.s3) {
                 Button { showBol = true } label: {
-                    Text("View BOL")
+                    Text("View \(TransportLexicon.short(.billOfLading, mode: resolvedMode))")
                         .font(EType.body.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
                         .frame(maxWidth: .infinity, minHeight: 52)

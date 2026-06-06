@@ -38,7 +38,7 @@
 //      explanatory subtitle. Per §13 doctrine: "every backend stub
 //      gap has a neutral empty state on the client (no fake data)."
 //    • Empty / blank server fields surface as em-dash sentinels
-//      ("—") — every nullable column on a fresh tender (no pickup
+//      ("-") — every nullable column on a fresh tender (no pickup
 //      date scheduled, no rate posted) renders as a neutral em-dash,
 //      never a fabricated value.
 //    • Preview hint passthrough (loadNumber / lane / posted /
@@ -51,6 +51,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - Screen body
 
@@ -98,8 +99,8 @@ struct BrokerTenderDetail: View {
 
     private var header: some View {
         let live: LoadsAPI.LoadDetail? = detailStore.state.value ?? nil
-        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "—"
-        let lane: String = live?.laneDisplay ?? previewLane ?? "—"
+        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "-"
+        let lane: String = live?.laneDisplay ?? previewLane ?? "-"
         let status = live?.status ?? ""
 
         return VStack(alignment: .leading, spacing: Space.s2) {
@@ -167,6 +168,7 @@ struct BrokerTenderDetail: View {
 
     @ViewBuilder
     private func detailCards(for detail: LoadsAPI.LoadDetail) -> some View {
+        laneCard(detail)
         metricsRow(detail)
         scheduleCard(detail)
         cargoCard(detail)
@@ -361,7 +363,7 @@ struct BrokerTenderDetail: View {
     /// always passes this hint through, so the cold-open path is
     /// rare in practice.
     private func responsesDisplay() -> String {
-        guard let n = previewRespondingCarriers else { return "—" }
+        guard let n = previewRespondingCarriers else { return "-" }
         return "\(n) " + (n == 1 ? "carrier" : "carriers")
     }
 
@@ -401,13 +403,127 @@ struct BrokerTenderDetail: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
+    // MARK: - Lane hero map
+    //
+    // The canonical hero for a load/route detail surface — an
+    // origin→destination lane on the in-house HERE basemap. Matches
+    // the Shipper 205 (`heroMap`/`laneForMap`) and Carrier 302 idiom:
+    // the broker's single deep-dive on a tendered load opens onto its
+    // lane. Renders `HereLiveMapView` in the flat board register
+    // (`.shipperTracking` add-ons: weather + traffic + ad-zones — no
+    // driver-only gamification pins) since the broker is a tracking
+    // role, not a first-person driver.
+    //
+    // Real data: coordinates come ONLY from
+    //   `detail.pickupLocation.lat/.lng` and
+    //   `detail.deliveryLocation.lat/.lng`
+    // (LoadsAPI.LoadCityState — the same loads.getById fields 205
+    // reads; the server self-heals/geocodes these on read). When
+    // either endpoint hasn't been geocoded yet (lat/lng nil or 0,0
+    // null-island), the card renders an honest "Route geocoding…"
+    // empty state — never a fabricated route — and lights up on the
+    // next read once the rows populate. No hardcoded coordinates.
+    @ViewBuilder
+    private func laneCard(_ d: LoadsAPI.LoadDetail) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionHeader("LANE", icon: "map")
+            ZStack {
+                if let lane = laneForMap(d) {
+                    HereLiveMapView(
+                        center: .init(
+                            (lane.pickup.latitude + lane.delivery.latitude) / 2,
+                            (lane.pickup.longitude + lane.delivery.longitude) / 2
+                        ),
+                        zoom: 6,
+                        route: [.init(lane.pickup), .init(lane.delivery)],
+                        baseLayers: [
+                            .route(
+                                polyline: [.init(lane.pickup), .init(lane.delivery)],
+                                colorHex: "#1473FF"
+                            ),
+                            .markers([
+                                .init(at: .init(lane.pickup),   kind: .pickup,   label: lane.originTitle),
+                                .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
+                            ])
+                        ],
+                        addOns: .shipperTracking
+                    )
+                } else {
+                    // SEAM: no geocoded coords on the tender yet. Honest
+                    // "awaiting data" state — no fabricated points. Lights
+                    // up automatically once loads.getById's self-heal
+                    // backfills pickup/delivery lat/lng on the next read.
+                    Rectangle()
+                        .fill(palette.bgCardSoft)
+                        .overlay(
+                            VStack(spacing: 6) {
+                                Image(systemName: "map")
+                                    .font(.system(size: 18, weight: .heavy))
+                                    .foregroundStyle(palette.textTertiary)
+                                Text("Route geocoding…")
+                                    .font(.system(size: 11, weight: .heavy)).tracking(0.8)
+                                    .foregroundStyle(palette.textTertiary)
+                            }
+                        )
+                }
+            }
+            .frame(height: 180)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .accessibilityLabel("Lane map, \(originLabel(d)) to \(destinationLabel(d))")
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Composes a `HereMapView.Lane` from the tender's pickup + delivery
+    /// coordinates (`detail.pickupLocation.lat/.lng`,
+    /// `detail.deliveryLocation.lat/.lng`). Returns nil — never a
+    /// fabricated lane — when either endpoint hasn't been geocoded yet
+    /// (lat/lng nil or a 0,0 null-island sentinel). The server's
+    /// loads.getById self-heal backfills these on the next read.
+    private func laneForMap(_ d: LoadsAPI.LoadDetail) -> HereMapView.Lane? {
+        guard let p = d.pickupLocation,
+              let dl = d.deliveryLocation,
+              let pLat = p.lat, let pLng = p.lng,
+              let dLat = dl.lat, let dLng = dl.lng,
+              pLat != 0, pLng != 0, dLat != 0, dLng != 0 else { return nil }
+        return HereMapView.Lane(
+            id: "tender_\(d.id)",
+            originTitle: originLabel(d),
+            destinationTitle: destinationLabel(d),
+            pickup: CLLocationCoordinate2D(latitude: pLat, longitude: pLng),
+            delivery: CLLocationCoordinate2D(latitude: dLat, longitude: dLng)
+        )
+    }
+
+    private func originLabel(_ d: LoadsAPI.LoadDetail) -> String {
+        let city = d.pickupLocation?.city ?? ""
+        return city.isEmpty ? "ORIGIN" : city.uppercased()
+    }
+
+    private func destinationLabel(_ d: LoadsAPI.LoadDetail) -> String {
+        let city = d.deliveryLocation?.city ?? ""
+        return city.isEmpty ? "DESTINATION" : city.uppercased()
+    }
+
     /// Pickup / delivery / bidding-ends. Em-dash on missing columns
     /// so a fresh tender doesn't show synthetic dates.
     private func scheduleCard(_ d: LoadsAPI.LoadDetail) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
+        let mode = TransportMode(rawValue: d.transportMode ?? "truck") ?? .truck
+        return VStack(alignment: .leading, spacing: Space.s2) {
             sectionHeader("SCHEDULE", icon: "calendar")
-            scheduleRow(label: "Pickup",       value: humanDate(d.pickupDate))
-            scheduleRow(label: "Delivery",     value: humanDate(d.deliveryDate))
+            scheduleRow(label: TransportLexicon.short(.originWindow,      mode: mode, equipmentRaw: d.equipmentType), value: humanDate(d.pickupDate))
+            scheduleRow(label: TransportLexicon.short(.destinationWindow, mode: mode, equipmentRaw: d.equipmentType), value: humanDate(d.deliveryDate))
             if d.biddingEnds != nil {
                 scheduleRow(label: "Bidding ends", value: humanDate(d.biddingEnds))
             }
@@ -471,10 +587,10 @@ struct BrokerTenderDetail: View {
             if let ws = d.worldscalePct, !ws.isEmpty, let n = Double(ws), n > 0 {
                 scheduleRow(label: "Worldscale", value: "WS \(Int(n.rounded()))")
             }
-            if let w = d.weightDisplay as String?, w != "—" {
+            if let w = d.weightDisplay as String?, w != "-" {
                 scheduleRow(label: "Weight", value: w)
             }
-            if let dist = d.distanceDisplay as String?, dist != "—" {
+            if let dist = d.distanceDisplay as String?, dist != "-" {
                 scheduleRow(label: "Distance", value: dist)
             }
             if let hz = d.hazmatClass, !hz.isEmpty {
@@ -535,7 +651,7 @@ struct BrokerTenderDetail: View {
                     .padding(.top, 2)
                 }
             } else {
-                scheduleRow(label: "Market range", value: "—")
+                scheduleRow(label: "Market range", value: "-")
             }
             if let cur = d.currency, !cur.isEmpty, cur.uppercased() != "USD" {
                 scheduleRow(label: "Currency", value: cur.uppercased())
@@ -594,7 +710,7 @@ struct BrokerTenderDetail: View {
                         .lineLimit(1)
                 }
             }
-            Text("Carrier shortlist with bid history, fit-score, and award affordances will appear here once `brokers.getTenderResponses` ships server-side.")
+            Text("Carrier shortlist with bid history, fit-score and award affordances will appear here once `brokers.getTenderResponses` ships server-side.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -611,7 +727,7 @@ struct BrokerTenderDetail: View {
 
     /// Notes block — only renders when the load actually carries
     /// special-instructions text from the server. Drafts with no
-    /// notes get the section omitted entirely (no "—" filler).
+    /// notes get the section omitted entirely (no "-" filler).
     @ViewBuilder
     private func notesCard(_ d: LoadsAPI.LoadDetail) -> some View {
         if let notes = d.notes, !notes.isEmpty {
@@ -759,7 +875,7 @@ struct BrokerTenderDetail: View {
     /// Em-dash on empty/nil so a draft cargoType missing from the row
     /// surfaces as a neutral cell.
     private func humanCargoType(_ raw: String?) -> String {
-        guard let r = raw, !r.isEmpty else { return "—" }
+        guard let r = raw, !r.isEmpty else { return "-" }
         switch r.lowercased() {
         case "general":      return "General freight"
         case "hazmat":       return "Hazmat"
@@ -778,7 +894,7 @@ struct BrokerTenderDetail: View {
     /// when nil / empty / unparseable so missing dates always look
     /// like a deliberate sentinel.
     private func humanDate(_ iso: String?) -> String {
-        guard let iso = iso, !iso.isEmpty else { return "—" }
+        guard let iso = iso, !iso.isEmpty else { return "-" }
         let isoFmt = ISO8601DateFormatter()
         isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var date = isoFmt.date(from: iso)
@@ -893,8 +1009,8 @@ private func brokerNavTrailing_402() -> [NavSlot] {
     BrokerTenderDetailScreen(
         theme: Theme.dark,
         tenderId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewPostedAt: nil,
         previewRespondingCarriers: nil,
         previewTargetRate: nil,
@@ -908,8 +1024,8 @@ private func brokerNavTrailing_402() -> [NavSlot] {
     BrokerTenderDetailScreen(
         theme: Theme.light,
         tenderId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewPostedAt: nil,
         previewRespondingCarriers: nil,
         previewTargetRate: nil,

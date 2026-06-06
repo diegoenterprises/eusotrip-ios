@@ -130,7 +130,7 @@ public struct USMCAFilingAssistantSheet: View {
                     .tracking(0.8)
             }
             .foregroundStyle(.secondary)
-            Text("Fill in the cert + lane + commodity. ESANG parses, validates, and tells you the next filing step — out loud.")
+            Text("Fill in the cert + lane + commodity. ESANG parses, validates and tells you the next filing step, out loud.")
                 .font(.callout)
                 .foregroundStyle(.primary)
         }
@@ -189,7 +189,7 @@ public struct USMCAFilingAssistantSheet: View {
             Text("ORIGINATING CRITERION (OPTIONAL)").font(.caption2.weight(.bold)).tracking(0.8).foregroundStyle(.secondary)
             Picker("", selection: $originatingCriterion) {
                 ForEach(criteria, id: \.self) { c in
-                    Text(c.isEmpty ? "—" : c).tag(c)
+                    Text(c.isEmpty ? "-" : c).tag(c)
                 }
             }
             .pickerStyle(.segmented)

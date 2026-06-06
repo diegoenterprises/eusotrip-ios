@@ -69,7 +69,7 @@ private enum DataQsReason: String, CaseIterable, Identifiable {
         case .notResponsible:
             return "Carrier / driver was not responsible for this event (e.g. misattributed to the wrong carrier at roadside)."
         case .documentationErr:
-            return "Supporting documentation exists that wasn't reviewed — this filing submits it."
+            return "Supporting documentation exists that wasn't reviewed. This filing submits it."
         case .other:
             return "Another reason not covered above. Explain in detail below."
         }
@@ -168,7 +168,7 @@ struct MeDataQsFiler: View {
         isDrafting = true
         defer { Task { @MainActor in self.isDrafting = false } }
         let driverFacts = explanation.trimmingCharacters(in: .whitespacesAndNewlines)
-        let carrierFacts = "\(v.title) — \(v.subtitle). Severity: \(v.severity)."
+        let carrierFacts = "\(v.title), \(v.subtitle). Severity: \(v.severity)."
         do {
             let draft = try await EusoTripAPI.shared.dataqs.aiDraft(
                 .init(
@@ -384,7 +384,7 @@ struct MeDataQsFiler: View {
                     RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(palette.borderFaint, lineWidth: 1)
                 )
-            Text("Be specific. FMCSA reviewers look for concrete facts — dates, location, ELD record id, names. Vague narratives usually result in denial.")
+            Text("Be specific. FMCSA reviewers look for concrete facts, dates, location, ELD record id, names. Vague narratives usually result in denial.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -738,7 +738,7 @@ struct MeDataQsFiler: View {
             submittedResult = result
             flashToast("Challenge filed")
         } catch {
-            flashToast("Couldn't submit — try again")
+            flashToast("Couldn't submit - try again")
         }
     }
 
@@ -820,7 +820,7 @@ struct MeDataQsFiler: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("FMCSA reviewers pull the original inspection record, the carrier's state-issuer report, and any attached documents. Typical decision window is 60 days. Your carrier's compliance officer is notified and can add supporting materials if needed. You'll see the status land here and in Violations Manager as soon as FMCSA responds.")
+            Text("FMCSA reviewers pull the original inspection record, the carrier's state-issuer report and any attached documents. Typical decision window is 60 days. Your carrier's compliance officer is notified and can add supporting materials if needed. You'll see the status land here and in Violations Manager as soon as FMCSA responds.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

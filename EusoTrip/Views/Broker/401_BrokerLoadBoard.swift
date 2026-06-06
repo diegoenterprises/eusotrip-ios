@@ -120,7 +120,7 @@ private struct LoadBoardBody: View {
                                 Text(col.rawValue.uppercased())
                                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                             }
-                            Text(count.map { "\($0)" } ?? "—")
+                            Text(count.map { "\($0)" } ?? "-")
                                 .font(.system(size: 13, weight: .heavy)).monospacedDigit()
                         }
                         .foregroundStyle(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textSecondary))
@@ -211,9 +211,9 @@ private struct LoadBoardBody: View {
                             LifecycleRow(label: "Lane",        value: dashIfEmpty(ld.lane))
                             LifecycleRow(label: "Cargo",       value: dashIfEmpty(ld.cargoType))
                             LifecycleRow(label: "Rate",        value: usd(ld.postedRate))
-                            LifecycleRow(label: "Mileage",     value: ld.mileage.map { "\($0) mi" } ?? "—")
+                            LifecycleRow(label: "Mileage",     value: ld.mileage.map { "\($0) mi" } ?? "-")
                             LifecycleRow(label: "Est. margin", value: usd(ld.estimatedMargin))
-                            LifecycleRow(label: "Pickup",      value: humanISO(ld.pickupISO))
+                            LifecycleRow(label: TransportLexicon.short(.originWindow, mode: TransportMode(rawValue: ld.transportMode ?? "truck") ?? .truck), value: humanISO(ld.pickupISO))
                         }
                     }.buttonStyle(.plain)
                 }
@@ -237,7 +237,7 @@ private struct LoadBoardBody: View {
                 ForEach(tendered, id: \.id) { t in
                     LifecycleCard(accentGradient: t.respondingCarriers > 0) {
                         LifecycleSection(label: t.loadNumber.uppercased(), icon: "paperplane.fill")
-                        LifecycleRow(label: "Shipper",    value: t.shipper.isEmpty ? "—" : t.shipper)
+                        LifecycleRow(label: "Shipper",    value: t.shipper.isEmpty ? "-" : t.shipper)
                         LifecycleRow(label: "Lane",       value: "\(t.origin) → \(t.destination)")
                         LifecycleRow(label: "Target",     value: usd(t.targetRate))
                         LifecycleRow(label: "Responding", value: "\(t.respondingCarriers) carrier\(t.respondingCarriers == 1 ? "" : "s")")

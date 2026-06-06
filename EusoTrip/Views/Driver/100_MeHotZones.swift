@@ -63,6 +63,7 @@ struct MeHotZones: View {
                 header
                 marketPulse
                 heatMap
+                demandMatrix
                 equipmentPicker
                 criticalSection
                 allZonesSection
@@ -126,6 +127,42 @@ struct MeHotZones: View {
                 Capsule().fill(LinearGradient.diagonal)
             )
             .padding(Space.s3)
+        }
+    }
+
+    // MARK: Demand matrix (HeatCellMatrix · load-to-truck by metro)
+
+    /// Grid heatmap of load-to-truck intensity per metro — the same
+    /// demand visual the web `/hot-zones` page renders, built from the
+    /// live `getRateFeed` zones (`liveRatio`). Renders reliably even when
+    /// the HERE basemap can't paint (JS key unprovisioned), so the driver
+    /// always sees the demand heat. Tapping a cell opens the zone detail.
+    @ViewBuilder
+    private var demandMatrix: some View {
+        let cells: [HeatCell] = store.zones.prefix(12).map { z in
+            HeatCell(
+                id: z.zoneId,
+                label: z.state,
+                valueText: String(format: "%.1f×", z.liveRatio),
+                unitText: "\(z.liveLoads) loads",
+                intensity: z.liveRatio,
+                detail: z.zoneId
+            )
+        }
+        if !cells.isEmpty {
+            HeatCellMatrix(
+                title: "Demand heatmap",
+                eyebrow: "Load-to-truck intensity · live by metro",
+                cells: cells,
+                columns: 4,
+                thresholds: HeatCellThresholds(
+                    warmAt: 1.4, hotAt: 3.0,
+                    minIntensity: 0.0, maxIntensity: 4.0
+                ),
+                onSelect: { cell in
+                    selectedZone = store.zones.first { $0.zoneId == cell.detail }
+                }
+            )
         }
     }
 
@@ -290,7 +327,7 @@ struct MeHotZones: View {
                 EusoEmptyState(
                     systemImage: "flame",
                     title: "Market is calm",
-                    subtitle: "No critical zones right now — load-to-truck ratios are in balance nationally."
+                    subtitle: "No critical zones right now, load-to-truck ratios are in balance nationally."
                 )
             }
         }
@@ -523,7 +560,7 @@ struct MeHotZones: View {
     // MARK: Footer
 
     private var footer: some View {
-        Text("Data refreshes from the market-intel feed every 5 minutes. L:T = load-to-truck ratio. Ratios > 2.8 signal critical imbalance — reposition carefully.")
+        Text("Data refreshes from the market-intel feed every 5 minutes. L:T = load-to-truck ratio. Ratios > 2.8 signal critical imbalance, reposition carefully.")
             .font(EType.caption)
             .foregroundStyle(palette.textTertiary)
             .multilineTextAlignment(.center)

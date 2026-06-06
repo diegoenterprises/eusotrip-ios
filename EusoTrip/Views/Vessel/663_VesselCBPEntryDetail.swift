@@ -155,9 +155,6 @@ private struct VesselCBPEntryDetailBody: View {
         VStack(alignment: .leading, spacing: 6) {
             // Eyebrow row: sparkle eyebrow + mono caption ("19 CFR · ACE").
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("✦ VESSEL OPERATOR · CBP ENTRY")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
@@ -352,7 +349,7 @@ private struct VesselCBPEntryDetailBody: View {
         // "CBP exam hold — CET" style: agency + hold type.
         let agency = hold.agency ?? "CBP"
         let type = hold.holdType ?? "exam hold"
-        return "\(agency) exam hold — \(type)"
+        return "\(agency) exam hold - \(type)"
     }
     private func holdMeta(_ hold: CBPHold663) -> String {
         // "CBP · PGA referral · UN1830 Cl.8" — agency + reason.

@@ -67,8 +67,8 @@ struct PickupLoading: View {
 
     // MARK: - Figma-verbatim fallback (matches the 2026-04-24 frame).
     private let fallbackClock        = "09:14 CDT"
-    private let fallbackBayLine      = "—"
-    private let fallbackLoadID       = "—"
+    private let fallbackBayLine      = "-"
+    private let fallbackLoadID       = "-"
     private let fallbackCommod       = "Anhydrous Ammonia"
     private let fallbackUN           = "UN1005"
     private let fallbackPressure     = 132
@@ -387,7 +387,7 @@ struct PickupLoading: View {
                 Text("ESANG · WATCHDOG")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Rate steady at \(fallbackRateGpm) gpm, pressure \(fallbackPressure) psi — well under \(fallbackPressureLim). I'm listening for pressure spikes. Ground is solid at \(String(format: "%.1f", fallbackGroundOhm)) Ω.")
+                Text("Rate steady at \(fallbackRateGpm) gpm, pressure \(fallbackPressure) psi, well under \(fallbackPressureLim). I'm listening for pressure spikes. Ground is solid at \(String(format: "%.1f", fallbackGroundOhm)) Ω.")
                     .font(EType.body)
                     .foregroundStyle(palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -519,7 +519,7 @@ struct PickupLoading: View {
                     )
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
-            .accessibilityLabel("Emergency stop — halt transfer")
+            .accessibilityLabel("Emergency stop - halt transfer")
 
             CTAButton(title: "View BOL preview") { showBolPreview = true }
             .accessibilityLabel("Preview bill of lading before signing")

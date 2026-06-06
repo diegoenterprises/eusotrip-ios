@@ -217,8 +217,35 @@ private enum DockStatus {
         case .unloading: return "UNLOADING"
         case .completed: return "DONE"
         case .cancelled: return "CANCELLED"
-        case .unknown:   return "—"
+        case .unknown:   return "-"
         }
+    }
+
+    /// Mode-aware status label. The dock-handling phases (loading /
+    /// unloading) speak the row's transport-mode vocabulary
+    /// (RAMPING / STOWING · DERAMPING / DISCHARGING) when an `equipment`
+    /// hint is present; all other phases reuse the neutral `label`. The
+    /// appointment row carries no `transportMode`, only `equipment`, so we
+    /// derive the base mode the same way the lifecycle surfaces do.
+    func label(equipmentRaw: String?) -> String {
+        switch self {
+        case .loading:   return Self.mode(equipmentRaw).loadingVerb
+        case .unloading: return Self.mode(equipmentRaw).unloadingVerb
+        default:         return label
+        }
+    }
+
+    private static func mode(_ equipmentRaw: String?) -> TransportMode {
+        let e = (equipmentRaw ?? "").lowercased()
+        if e.contains("rail") || e.contains("tofc") || e.contains("cofc")
+            || e.contains("boxcar") || e.contains("hopper") || e.contains("gondola")
+            || e.contains("centerbeam") || e.contains("autorack") || e.contains("flatcar")
+            || e.contains("well car") { return .rail }
+        if e.contains("vessel") || e.contains("container ship") || e.contains("vlcc")
+            || e.contains("bulk carrier") || e.contains("ro/ro") || e.contains("roro")
+            || e.contains("lng") || e.contains("iso tank") { return .vessel }
+        if e.contains("barge") { return .barge }
+        return .truck
     }
 
     var tint: Color {
@@ -295,7 +322,7 @@ struct ShipperDockAppointments: View {
     private var topPill: some View {
         let today = store.summary?.today ?? store.summary?.todayTotal
         let loading = store.rows.filter { DockStatus($0.status) == .loading || DockStatus($0.status) == .unloading }.count
-        let todayStr = today.map(String.init) ?? "—"
+        let todayStr = today.map(String.init) ?? "-"
         return Text("\(todayStr) TODAY · \(loading) LOADING")
             .font(EType.mono(.micro))
             .tracking(0.4)
@@ -313,7 +340,7 @@ struct ShipperDockAppointments: View {
         let loading = store.rows.filter {
             let st = DockStatus($0.status); return st == .loading || st == .unloading
         }.count
-        // NEXT = first scheduled block's local HH:mm after now, else "—".
+        // NEXT = first scheduled block's local HH:mm after now, else "-".
         let next = nextScheduledTime()
         return VStack(alignment: .leading, spacing: Space.s3) {
             Text("DOCK SCHEDULE · HOUSTON TERMINAL · TODAY")
@@ -321,10 +348,10 @@ struct ShipperDockAppointments: View {
                 .tracking(0.5)
                 .foregroundStyle(palette.textTertiary)
             HStack(spacing: 0) {
-                statCell("TODAY", s?.today.map(String.init) ?? "—", palette.textPrimary)
+                statCell("TODAY", s?.today.map(String.init) ?? "-", palette.textPrimary)
                 statCell("LOADING", String(loading), Brand.warning)
-                statCell("DONE", done.map(String.init) ?? "—", palette.textSecondary)
-                statCell("NEXT", next ?? "—", Brand.info)
+                statCell("DONE", done.map(String.init) ?? "-", palette.textSecondary)
+                statCell("NEXT", next ?? "-", Brand.info)
             }
         }
         .padding(Space.s4)
@@ -403,7 +430,7 @@ struct ShipperDockAppointments: View {
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                     Spacer()
-                    Text(st.label)
+                    Text(st.label(equipmentRaw: row.equipment))
                         .font(EType.micro)
                         .tracking(0.5)
                         .foregroundStyle(st.tint)
@@ -537,7 +564,7 @@ struct ShipperDockAppointments: View {
     }
 
     private func referenceLine(_ row: DockAppointmentRow) -> String {
-        row.loadNumber ?? (row.loadId.map { "LOAD-\($0)" } ?? "—")
+        row.loadNumber ?? (row.loadId.map { "LOAD-\($0)" } ?? "-")
     }
 
     private func detailLine(_ row: DockAppointmentRow) -> String {

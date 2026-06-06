@@ -739,7 +739,7 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
             .frame(maxWidth: .infinity)
             .frame(height: 48)
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .opacity(actionInFlight ? 0.6 : 1.0)
         }
         .buttonStyle(.plain)
@@ -857,7 +857,7 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
                 "vehicles.refineCompositeGoal",
                 input: RefineIn(vehicleId: vehicleId, axisId: axisId, stretchTarget: 0.95))
             if ack.success == false {
-                actionError = "Couldn't refine the 0.95 stretch goal — try again."
+                actionError = "Couldn't refine the 0.95 stretch goal - try again."
             }
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -875,7 +875,7 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
                 "vehicles.pinScorecardAxis",
                 input: PinIn(vehicleId: vehicleId, axisId: axis?.axisId ?? axisId))
             if ack.success == false {
-                actionError = "Couldn't pin the axis — try again."
+                actionError = "Couldn't pin the axis - try again."
             }
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

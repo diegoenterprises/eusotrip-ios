@@ -118,7 +118,7 @@ private struct ShipperEusoTicketRunTicketBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Spacer(minLength: 0)
-            Text(load?.loadNumber ?? "—")
+            Text(load?.loadNumber ?? "-")
                 .font(.system(size: 9, weight: .heavy, design: .monospaced))
                 .tracking(1.0).foregroundStyle(palette.textTertiary).lineLimit(1)
         }
@@ -180,7 +180,7 @@ private struct ShipperEusoTicketRunTicketBody: View {
             let meta = cp.companyId.map { "companyId \($0) · \(cp.role)" } ?? cp.role
             return EusoTicketParty(name: name, monogram: monogram(for: name), meta: meta, avatarStyle: .dark)
         }
-        return EusoTicketParty(name: "Pending carrier", monogram: "—", meta: "no driver assigned", avatarStyle: .dark)
+        return EusoTicketParty(name: "Pending carrier", monogram: "-", meta: "no driver assigned", avatarStyle: .dark)
     }
 
     private var signatureForCanvas: EusoTicketCanvas.SignatureReceipt? {
@@ -213,7 +213,7 @@ private struct ShipperEusoTicketRunTicketBody: View {
     }
 
     private var footerForCanvas: EusoTicketFooter {
-        EusoTicketFooter(usdot: "USDOT — pending", mc: "MC — pending", irp: "IRP —", boc3: "BOC-3 pending", safetyTag: "FMCSA SAFER reference at dispatch")
+        EusoTicketFooter(usdot: "USDOT - pending", mc: "MC - pending", irp: "IRP -", boc3: "BOC-3 pending", safetyTag: "FMCSA SAFER reference at dispatch")
     }
 
     // MARK: - Helpers

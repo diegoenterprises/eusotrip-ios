@@ -198,9 +198,6 @@ private struct VesselCrewRestHoursBody: View {
 
     private var titleRow: some View {
         HStack(alignment: .center) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
             Text("Crew rest")
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
@@ -226,7 +223,7 @@ private struct VesselCrewRestHoursBody: View {
                             .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                             .foregroundStyle(palette.textTertiary)
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(loading ? "—" : "\(withinMin)/\(aboard)")
+                            Text(loading ? "-" : "\(withinMin)/\(aboard)")
                                 .font(.system(size: 30, weight: .bold))
                                 .foregroundStyle(LinearGradient.diagonal)
                                 .monospacedDigit()
@@ -319,7 +316,7 @@ private struct VesselCrewRestHoursBody: View {
                         title: aboard == 0 ? "No crew aboard" : "No rest-hours log yet",
                         subtitle: aboard == 0
                             ? "Vessel crew roster will appear here."
-                            : "\(aboard) crew aboard. MLC 2006 work/rest-hours have not been logged for this watch — log rest to populate the 24h roster."
+                            : "\(aboard) crew aboard. MLC 2006 work/rest-hours have not been logged for this watch. Log rest to populate the 24h roster."
                     )
                     .padding(.vertical, Space.s3)
                 } else {
@@ -392,7 +389,7 @@ private struct VesselCrewRestHoursBody: View {
             }
         }()
         let title = [row.rank ?? roleLabel(row.role), row.station].compactMap { $0 }.joined(separator: " · ")
-        let restTotal = row.restHours24h.map { String(format: "%.1fh", $0) } ?? "—"
+        let restTotal = row.restHours24h.map { String(format: "%.1fh", $0) } ?? "-"
 
         return VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .top, spacing: Space.s3) {

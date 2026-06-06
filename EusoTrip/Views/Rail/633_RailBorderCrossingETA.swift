@@ -56,6 +56,11 @@ private struct InterchangePoint633: Decodable, Identifiable {
     let customsOffice: String?
     let hazmatAllowed: Bool?
     let notes: String?
+    // Real border-node coordinate carried verbatim by the server
+    // RailInterchangePoint contract (crossBorderRail.ts:13 — every catalog
+    // row has a genuine lat/lng; e.g. Laredo/Nuevo Laredo = 27.501,-99.508).
+    let lat: Double?
+    let lng: Double?
 }
 
 private struct CrossingFactor633: Decodable, Identifiable {
@@ -73,6 +78,7 @@ private struct CrossingEstimate633: Decodable {
 
 private struct RailBorderCrossingETABody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
     let carCount: Int
     let hasHazmat: Bool
     let railroad: String
@@ -96,6 +102,7 @@ private struct RailBorderCrossingETABody: View {
                     errorCard(err)
                 } else {
                     heroCard
+                    if let node = crossingNode { crossingMap(node) }
                     kpiStrip
                     factorsCard
                     recommendationStrip
@@ -138,7 +145,7 @@ private struct RailBorderCrossingETABody: View {
     }
 
     private var routeLabel: String {
-        guard let p = point else { return "—" }
+        guard let p = point else { return "-" }
         let a = p.stateProvinceA ?? ""
         let name = p.name ?? p.id
         // "Laredo/Nuevo Laredo" → "N. Laredo to Laredo"
@@ -148,7 +155,7 @@ private struct RailBorderCrossingETABody: View {
     }
 
     private var interchangeMark: String {
-        guard let p = point else { return "—" }
+        guard let p = point else { return "-" }
         let a = (p.railroadsA?.first) ?? ""
         let b = (p.railroadsB?.first) ?? ""
         if !a.isEmpty && !b.isEmpty { return "\(a) / \(b)" }
@@ -173,10 +180,6 @@ private struct RailBorderCrossingETABody: View {
                     .font(EType.mono(.micro)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
             }
-            Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .bold))
-                .foregroundStyle(palette.textPrimary)
-                .padding(.top, Space.s3)
             HStack(alignment: .top) {
                 Text("Border crossing ETA")
                     .font(.system(size: 28, weight: .bold))
@@ -213,7 +216,7 @@ private struct RailBorderCrossingETABody: View {
                 }
                 HStack(alignment: .top, spacing: Space.s4) {
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(estimate.map { hm($0.estimatedHours) } ?? "—")
+                        Text(estimate.map { hm($0.estimatedHours) } ?? "-")
                             .font(.system(size: 30, weight: .bold))
                             .monospacedDigit()
                             .foregroundStyle(LinearGradient.diagonal)
@@ -258,12 +261,64 @@ private struct RailBorderCrossingETABody: View {
     private var statusKind: StatusPill.Kind { hasPreClearance ? .success : .warning }
     private var statusColor: Color { hasPreClearance ? Brand.success : Brand.warning }
 
+    // MARK: - Crossing-node map (in-house HERE · BespokeMapCanvas .standard)
+
+    /// The real border-node coordinate for the chosen interchange, gated
+    /// against the null-island (0,0) trap (cheat-sheet §6). The server only
+    /// models the single crossing node — there is no approach-route polyline
+    /// or origin yard in the contract — so we render an honest single-marker
+    /// crossing pin at its genuine lat/lng, never a fabricated corridor.
+    private var crossingNode: HereLatLng? {
+        guard let lat = point?.lat, let lng = point?.lng,
+              !(lat == 0 && lng == 0) else { return nil }
+        return HereLatLng(lat, lng)
+    }
+
+    /// Bespoke crossing-node card: flat shipper/board register (tilt 0 ⇒
+    /// .standard) — RAIL has no dedicated map style. Drops the interchange
+    /// glyph on the real border node, labeled with the live route + railroad
+    /// interchange mark. Wrapped to the screen's Radius.lg + borderFaint card
+    /// grammar so it reads as a section of this layout, not a generic block.
+    @ViewBuilder
+    private func crossingMap(_ node: HereLatLng) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack {
+                Text("INTERCHANGE NODE · USMCA")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text(provenanceLine)
+                    .font(EType.mono(.caption)).tracking(0.4)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+            BespokeMapCanvas(
+                center: node,
+                zoom: 9,
+                tilt: 0,
+                isDark: colorScheme == .dark,
+                layers: [
+                    .markers([
+                        HereMarker(at: node, kind: .stop,
+                                   label: routeLabel, id: point?.id)
+                    ])
+                ]
+            )
+            .frame(height: 200)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+        }
+    }
+
     // MARK: - KPI strip (3 cells · cell-1 eusoDiagonal)
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
             kpiCell(label: "ETA",
-                    value: estimate.map { hmTight($0.estimatedHours) } ?? "—",
+                    value: estimate.map { hmTight($0.estimatedHours) } ?? "-",
                     filled: true, valueColor: .white)
             kpiCell(label: "CARS",
                     value: "\(carCount)",
@@ -280,12 +335,12 @@ private struct RailBorderCrossingETABody: View {
         hasPreClearance ? palette.textTertiary : Brand.success
     }
     private var preclearanceLabel: String {
-        guard let est = estimate else { return "—" }
+        guard let est = estimate else { return "-" }
         if hasPreClearance { return "filed" }
         let savable = est.breakdown
             .filter { $0.step.lowercased().contains("customs") }
             .reduce(into: 0.0) { acc, f in acc += f.hours }
-        return savable > 0 ? hmTight(savable) : "—"
+        return savable > 0 ? hmTight(savable) : "-"
     }
 
     @ViewBuilder
@@ -487,7 +542,7 @@ private struct RailBorderCrossingETABody: View {
 
     private var provenanceLine: String {
         let mark = interchangeMark
-        let office = point?.customsOffice ?? "—"
+        let office = point?.customsOffice ?? "-"
         return "\(mark) · \(office)"
     }
 

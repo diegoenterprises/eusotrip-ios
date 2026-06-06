@@ -74,7 +74,7 @@ private enum CarrierLoadsFilter: String, CaseIterable, Identifiable {
 /// can render both ActiveLoad and RecentLoad uniformly. We never
 /// fabricate data for missing fields — `driver` / `eta` /
 /// `counterparty` collapse to nil for recent-load rows so the UI
-/// elides those subtitle chips entirely (no "TBD" / "—" filler).
+/// elides those subtitle chips entirely (no "TBD" / "-" filler).
 private struct CarrierLoadRow: Identifiable, Hashable {
     let id: String
     let loadNumber: String
@@ -505,7 +505,7 @@ struct CarrierLoads: View {
         EusoEmptyState(
             systemImage: "magnifyingglass",
             title: "No matches",
-            subtitle: "Try a different load number, origin, destination, driver, or broker."
+            subtitle: "Try a different load number, origin, destination, driver or broker."
         )
     }
 

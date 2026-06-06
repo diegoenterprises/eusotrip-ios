@@ -113,7 +113,7 @@ private struct ShipperLoadRow: Identifiable, Hashable {
             .replacingOccurrences(of: " → ", with: " → ")
         // Mono meta line per wireframe canon:
         //   `LD-260427-XXXXXXXXXX · MC-306 · 50k lb · 239 mi`
-        // Composed defensively — drop empty parts, no "—" filler.
+        // Composed defensively — drop empty parts, no "-" filler.
         let parts = [
             m.loadNumber,
             m.product.isEmpty ? m.equipment : m.product,
@@ -171,9 +171,35 @@ struct ShipperLoads: View {
     /// twice (cycle once, sheet on the second to expose the full
     /// list rather than guessing).
     @State private var showSortSheet: Bool = false
+    /// SMART back affordance. nil when My Loads is shown as the root
+    /// bottom-nav tab (no back button — it IS a tab). Set to the
+    /// origin screen id (e.g. "212" Control Tower) when the user was
+    /// routed INTO My Loads from a Me-section surface (Control Tower
+    /// → "View all" exceptions). When non-nil, a BespokeBackBar paints
+    /// above the screen and its chevron navigates straight back to that
+    /// origin — not just to home. The origin id rides in the
+    /// `.eusoShipperNavSwap` userInfo as `backTo`; the bottom-nav tab
+    /// path posts NO `backTo`, so the bar stays hidden there.
+    /// Founder 2026-06-02: a driver routed into Loads from Control Tower
+    /// with no way back "will irritate a truck driver to the max."
+    @State private var backTarget: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            if let target = backTarget {
+                BespokeBackBar(title: nil) {
+                    // Navigate straight back to the origin (Control Tower),
+                    // not to home. A plain `.eusoShipperNavBack` can't help
+                    // here — landing on 201 (a bottom-nav tab root) collapses
+                    // the surface stack to a single entry, so there is
+                    // nothing to pop. Re-swapping to the origin screen id
+                    // re-renders it WITH its own surface back chevron.
+                    NotificationCenter.default.post(
+                        name: .eusoShipperNavSwap, object: nil,
+                        userInfo: ["screenId": target]
+                    )
+                }
+            }
             topBar
             IridescentHairline()
                 .padding(.horizontal, Space.s5)
@@ -189,6 +215,25 @@ struct ShipperLoads: View {
             }
         }
         .task { await refreshAll() }
+        // SMART back: read + clear the pushed-from-origin context the
+        // instant this view mounts. The `.eusoShipperNavSwap` post that
+        // routed us here is delivered to the surface receiver BEFORE 201
+        // mounts (the surface mutates `screenStack`, which re-renders and
+        // THEN mounts 201) — so an `.onReceive` here would miss it. The
+        // origin id is parked in `ShipperLoadsNavContext` by the caller
+        // (Control Tower "View all") and consumed exactly once here. Same
+        // race-free hand-off pattern the Broker surface uses
+        // (`BrokerNavContext`).
+        .onAppear {
+            // Consume both halves unconditionally so neither can leak into
+            // the next mount. Origin nil ⇒ entered as a tab ⇒ no back bar.
+            let origin = ShipperLoadsNavContext.consumePushOrigin()
+            let prefill = ShipperLoadsNavContext.consumeQuery()
+            if let origin {
+                backTarget = origin
+                if let prefill, !prefill.isEmpty { query = prefill }
+            }
+        }
         .refreshable { await refreshAll() }
         // RealtimeService → live updates from any load on the
         // shipper's roster (carrier accept, driver assign, status
@@ -221,6 +266,13 @@ struct ShipperLoads: View {
             if let q = note.userInfo?["query"] as? String, !q.isEmpty {
                 query = q
             }
+            // SMART back: a `backTo` origin in the swap payload means the
+            // user was pushed INTO My Loads from a Me-section surface
+            // (Control Tower "View all" exceptions) — paint the back bar
+            // and aim it at that origin. The bottom-nav "Loads" tap posts
+            // NO `backTo`, so we clear it and stay back-button-free as a
+            // root tab should.
+            backTarget = note.userInfo?["backTo"] as? String
         }
         .confirmationDialog("Sort loads", isPresented: $showSortSheet, titleVisibility: .visible) {
             ForEach(ShipperLoadsSort.allCases, id: \.self) { option in
@@ -646,7 +698,7 @@ struct ShipperLoads: View {
         EusoEmptyState(
             systemImage: "magnifyingglass",
             title: "No matches",
-            subtitle: "Try a different load number, origin, or destination."
+            subtitle: "Try a different load number, origin or destination."
         )
         .padding(Space.s4)
     }
@@ -703,6 +755,48 @@ struct ShipperLoads: View {
 extension Notification.Name {
     /// Fired by the SORT button on 201 → opens the sort/filter sheet.
     static let eusoShipperLoadSort = Notification.Name("eusoShipperLoadSort")
+}
+
+// MARK: - SMART back hand-off context (race-free)
+
+/// One-shot hand-off from a Me-section surface that PUSHES the user into
+/// My Loads (201) — e.g. Control Tower "View all" exceptions. The
+/// `.eusoShipperNavSwap` post that triggers the route is delivered to the
+/// ShipperSurface receiver BEFORE 201 mounts (the surface mutates
+/// `screenStack`, which re-renders and only THEN mounts 201), so an
+/// `.onReceive` on 201 would miss the payload. The caller parks the
+/// origin screen id (+ optional search prefill) here just before posting
+/// the swap; 201 consumes it once on `.onAppear` and paints a
+/// BespokeBackBar aimed back at that origin.
+///
+/// Tab taps (bottom-nav "Loads") DON'T set this, so 201 stays correctly
+/// back-button-free as a root tab. Mirrors `BrokerNavContext`'s race-free
+/// drill-down hand-off (RoleSurfaceRouter).
+enum ShipperLoadsNavContext {
+    /// Origin screen id to return to (e.g. "212" Control Tower). nil when
+    /// 201 is entered as the bottom-nav tab.
+    private static var pushOrigin: String?
+    /// Optional search prefill to apply on landing (e.g. "exception").
+    private static var prefillQuery: String?
+
+    /// Park the hand-off. Call immediately BEFORE posting the
+    /// `.eusoShipperNavSwap` that routes to 201.
+    static func setPush(origin: String, query: String? = nil) {
+        pushOrigin = origin
+        prefillQuery = query
+    }
+
+    /// Read + clear the origin (one-shot). Returns nil for tab entry.
+    static func consumePushOrigin() -> String? {
+        defer { pushOrigin = nil }
+        return pushOrigin
+    }
+
+    /// Read + clear the prefill query (one-shot).
+    static func consumeQuery() -> String? {
+        defer { prefillQuery = nil }
+        return prefillQuery
+    }
 }
 
 // MARK: - Sort options surfaced by the SORT button's confirmation dialog

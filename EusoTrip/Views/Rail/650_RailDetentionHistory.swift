@@ -58,7 +58,6 @@ private struct DetentionCycle: Identifiable {
 
 private struct RailDetentionHistoryBody: View {
     @Environment(\.palette) private var palette
-    @Environment(\.dismiss) private var dismiss
 
     @State private var dashboard: DetentionAPI.Dashboard? = nil
     @State private var events: [DetentionAPI.HistoryEvent] = []
@@ -130,7 +129,7 @@ private struct RailDetentionHistoryBody: View {
         if let d = ISO8601DateFormatter().date(from: raw) { return fmt.string(from: d) }
         // Best-effort "yyyy-MM-dd…" prefix → "yyyy-MM"
         if raw.count >= 7 { return String(raw.prefix(7)) }
-        return "—"
+        return "-"
     }
 
     var body: some View {
@@ -177,18 +176,10 @@ private struct RailDetentionHistoryBody: View {
         }
     }
 
-    // MARK: - Title row (back-chevron + 28/-0.4 title + BNSF / 90-day window)
+    // MARK: - Title row (28/-0.4 title + BNSF / 90-day window) — back via surface overlay
 
     private var titleRow: some View {
         HStack(alignment: .top, spacing: Space.s2) {
-            Button(action: { dismiss() }) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
-
             Text("Detention history")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)

@@ -249,7 +249,7 @@ struct ListingTrustExplainSheet: View {
     /// driver actually understands.
     private func humanize(_ signal: String) -> String {
         if signal.hasPrefix("USER_REPORT:") {
-            return "Reported by another user — \(signal.replacingOccurrences(of: "USER_REPORT:", with: "").lowercased().replacingOccurrences(of: "_", with: " "))."
+            return "Reported by another user, \(signal.replacingOccurrences(of: "USER_REPORT:", with: "").lowercased().replacingOccurrences(of: "_", with: " "))."
         }
         if signal.hasPrefix("ADMIN_") {
             return "Admin override applied."

@@ -192,7 +192,7 @@ private struct LedgerBody: View {
 
     private func entryCard(_ e: LedgerEntry) -> some View {
         let net = Double(e.netAmount ?? "0") ?? 0
-        let status = (e.status ?? "—").uppercased()
+        let status = (e.status ?? "-").uppercased()
         let color: Color = {
             switch status.lowercased() {
             case "due", "pending":   return .green
@@ -229,7 +229,7 @@ private struct LedgerBody: View {
     }
 
     private func initialsFor(_ name: String?) -> String {
-        guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return "—" }
+        guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return "-" }
         let parts = name.split(separator: " ").map(String.init)
         let first = parts.first?.first.map(String.init) ?? ""
         let last = parts.count > 1 ? (parts.last?.first.map(String.init) ?? "") : ""

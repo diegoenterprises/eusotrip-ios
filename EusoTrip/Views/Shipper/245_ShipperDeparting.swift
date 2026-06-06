@@ -97,7 +97,7 @@ final class ShipperDepartingStore: ObservableObject {
     /// tower write as a named stub.
     func trackLive(driverId: Int?) async {
         guard let driverId else {
-            actionError = "No carrier assigned yet — nothing to track."
+            actionError = "No carrier assigned yet - nothing to track."
             return
         }
         trackingInFlight = true
@@ -650,7 +650,7 @@ struct ShipperDeparting: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background(LinearGradient.primary)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(store.trackingInFlight)
@@ -662,8 +662,8 @@ struct ShipperDeparting: View {
                     .foregroundStyle(LinearGradient.primary)
                     .frame(width: 144, height: 44)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

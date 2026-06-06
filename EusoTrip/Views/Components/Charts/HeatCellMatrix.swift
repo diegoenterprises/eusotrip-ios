@@ -153,6 +153,13 @@ public struct HeatCellMatrix: View {
     /// Cell currently under the drag finger — drives a live highlight before
     /// the gesture ends and commits the selection.
     @State private var scrubbingID: String?
+    /// 2026-06-03 — internal scrub selection. The cursor was "stuck" because
+    /// `selection` defaults to `.constant(nil)` and EVERY call site (0 pass a
+    /// binding) used that default, so `commit`'s `selection = cell.id` was a
+    /// silent no-op — the touched cell never held its highlight. This local
+    /// state drives the selected-cell highlight self-contained; a real host
+    /// binding still wins when present (for hosts that drive/echo selection).
+    @State private var localSelected: String? = nil
     /// Re-keys the selection haptic.
     @State private var selectionTick: Int = 0
 
@@ -182,6 +189,10 @@ public struct HeatCellMatrix: View {
         self.onSelect = onSelect
     }
 
+    /// The cell the highlight displays: a real host binding wins; otherwise the
+    /// internal scrub selection. Nil = nothing touched yet (no selected cell).
+    private var effectiveSelected: String? { selection ?? localSelected }
+
     // MARK: Body
 
     public var body: some View {
@@ -193,7 +204,7 @@ public struct HeatCellMatrix: View {
         }
         .padding(Space.s4)
         .background(cardSurface)
-        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: selection)
+        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: effectiveSelected)
         .animation(.easeOut(duration: 0.25), value: cells)
         .sensoryFeedback(.selection, trigger: selectionTick)
     }
@@ -228,12 +239,12 @@ public struct HeatCellMatrix: View {
 
     @ViewBuilder
     private var summaryRow: some View {
-        if let top = hottestCell {
+        if let top = readoutCell {
             HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                 Text(top.label)
                     .font(EType.h2)
                     .foregroundStyle(palette.textPrimary)
-                Text("hottest")
+                Text(readoutCaption)
                     .font(EType.body)
                     .foregroundStyle(palette.textSecondary)
                 Spacer(minLength: Space.s2)
@@ -242,6 +253,21 @@ public struct HeatCellMatrix: View {
                     .foregroundStyle(color(for: bandFor(top)))
             }
         }
+    }
+
+    /// The cell the summary reads out: the touched/selected cell when present,
+    /// otherwise the hottest cell (the original default). This turns the summary
+    /// row into the live scrub readout without adding any new chrome.
+    private var readoutCell: HeatCell? {
+        if let id = effectiveSelected,
+           let hit = cells.first(where: { $0.id == id }) {
+            return hit
+        }
+        return hottestCell
+    }
+
+    private var readoutCaption: String {
+        effectiveSelected == nil ? "hottest" : "selected"
     }
 
     // MARK: Grid
@@ -260,10 +286,14 @@ public struct HeatCellMatrix: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .coordinateSpace(name: Self.space)
         .onPreferenceChange(HeatCellFrameKeyHCM.self) { frames in
             scrubFrames = frames
         }
+        // Whole-plot hit target so the drag scrubs across inter-cell gaps too
+        // (the per-cell hit-test inside `cellID(at:)` resolves which cell).
+        .contentShape(Rectangle())
         .gesture(scrubGesture)
     }
 
@@ -285,7 +315,7 @@ public struct HeatCellMatrix: View {
     private func cellTile(_ cell: HeatCell) -> some View {
         let band = bandFor(cell)
         let washOpacity = washOpacity(for: cell, band: band)
-        let isSelected = selection == cell.id
+        let isSelected = effectiveSelected == cell.id
         let isScrubbing = scrubbingID == cell.id
         let active = isSelected || isScrubbing
         let textColor = textColor(for: band, washOpacity: washOpacity)
@@ -364,18 +394,19 @@ public struct HeatCellMatrix: View {
     // MARK: - Selection plumbing
 
     private func commit(_ cell: HeatCell) {
-        if selection != cell.id {
-            selection = cell.id
-            selectionTick &+= 1
-            onSelect(cell)
-        }
+        guard effectiveSelected != cell.id else { return }
+        if localSelected != cell.id { localSelected = cell.id } // drives the highlight self-contained
+        if selection != cell.id { selection = cell.id }         // mirror to host binding when present
+        selectionTick &+= 1
+        onSelect(cell)
     }
 
-    /// Drag-to-scrub: highlight the cell under the finger, and commit it when
-    /// the finger lifts. Cell frames are resolved against the named coordinate
-    /// space so the hit-test stays correct as the grid reflows.
+    /// Drag-to-scrub: snap to the cell under the finger and HOLD it. Cell frames
+    /// are resolved against the named coordinate space so the hit-test stays
+    /// correct as the grid reflows. `minimumDistance: 0` so a plain tap inside
+    /// the plot scrubs too (the per-cell `onTapGesture` still commits on lift).
     private var scrubGesture: some Gesture {
-        DragGesture(minimumDistance: 6, coordinateSpace: .named(Self.space))
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
             .onChanged { value in
                 if let hit = cellID(at: value.location) {
                     if scrubbingID != hit { scrubbingID = hit; selectionTick &+= 1 }
@@ -386,6 +417,9 @@ public struct HeatCellMatrix: View {
                    let cell = orderedCells.first(where: { $0.id == hit }) {
                     commit(cell)
                 }
+                // 2026-06-03 — HOLD the selection on the touched cell (no
+                // snap-back). The committed cell keeps its ring; only the
+                // transient scrub-highlight is cleared.
                 scrubbingID = nil
             }
     }

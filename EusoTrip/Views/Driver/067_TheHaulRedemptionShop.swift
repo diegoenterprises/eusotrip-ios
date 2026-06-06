@@ -70,7 +70,7 @@ public struct TheHaulRedemptionShopView: View {
                 Spacer(minLength: 0)
                 pointsBadge
             }
-            Text("Spend your Haul miles on perks, gear, and time off.")
+            Text("Spend your Haul miles on perks, gear and time off.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
         }
@@ -196,7 +196,7 @@ public struct TheHaulRedemptionShopView: View {
                                             colors: [.cyan, .green],
                                             startPoint: .leading, endPoint: .trailing)))
                 .foregroundStyle(isInCart ? Color.green : Color.white)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(!item.inStock)

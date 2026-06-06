@@ -35,6 +35,13 @@ struct DriverConversationView: View {
 
     let thread: InboxThread
 
+    // ──────────── Voice-to-text ────────────
+    //
+    // Real Speech.framework dictation, same controller the ESANG coach +
+    // 053 dispatch chat drive. Bound live into the composer field while
+    // recording so the text the driver SEES is the text that ships.
+    @StateObject private var voice = eSangVoiceInputController()
+
     // ──────────── Transcript state ────────────
 
     @State private var messages: [ChatMessage] = []
@@ -50,6 +57,57 @@ struct DriverConversationView: View {
     @State private var pendingImage: Data? = nil
     @State private var showAttachMenu: Bool = false
     @State private var showTransferSheet: Bool = false
+
+    // ──────────── Attachment document-intelligence state ────────────
+    //
+    // Before the picked photo ships via `uploadAttachment`, we run it
+    // through the homegrown document-intelligence vision spine
+    // (`documentRouter.classifyAndRoute`) so the capture point KNOWS
+    // what the attachment is (BOL / POD / manifest / damage photo / …)
+    // instead of pushing a raw image. The detected type is surfaced on
+    // the pending-attachment chip so the driver — and the recipient,
+    // since the type rides along as the caption — sees an honest label.
+    //
+    // `attachmentScan` holds the classifier verdict for the photo the
+    // driver is about to send. `attachmentScanning` flips while the
+    // round-trip is in flight so the chip can show a spinner rather than
+    // a stale/empty label. Both reset when the photo is cleared or sent.
+    @State private var attachmentScan: AttachmentClassification? = nil
+    @State private var attachmentScanning: Bool = false
+
+    /// Normalized classifier verdict for a pending photo attachment.
+    /// Mirrors the load-bearing fields of `DocumentRouterAPI.ClassifyResponse`
+    /// the chip renders — kept local so the view owns its own display state.
+    private struct AttachmentClassification: Equatable {
+        let type: String          // raw `classifiedType` (e.g. "bill_of_lading", "unknown")
+        let confidence: Double    // 0…1
+        let summary: String
+        let warnings: [String]
+
+        /// Low-confidence / unrecognized docs must read honestly — never
+        /// claim a type the classifier isn't sure of.
+        var isConfident: Bool { type != "unknown" && !type.isEmpty && confidence >= 0.6 }
+
+        /// Human-facing label for the chip. Covers the common driver
+        /// message attachments (BOL / POD / manifest / damage) and falls
+        /// back to a title-cased version of any other classifier type.
+        var humanType: String {
+            switch type {
+            case "bill_of_lading":            return "Bill of Lading"
+            case "proof_of_delivery":         return "Proof of Delivery"
+            case "manifest", "cargo_manifest": return "Manifest"
+            case "damage_report", "damage_photo", "cargo_damage": return "Damage Photo"
+            case "rate_confirmation":         return "Rate Confirmation"
+            case "load_tender":               return "Load Tender"
+            case "weight_ticket", "scale_ticket": return "Weight Ticket"
+            case "run_ticket":                return "Run Ticket"
+            case "lumper_receipt":            return "Lumper Receipt"
+            case "dvir", "inspection_report": return "Inspection Report"
+            default:
+                return type.replacingOccurrences(of: "_", with: " ").capitalized
+            }
+        }
+    }
 
     // ──────────── Backend + realtime state ────────────
 
@@ -91,8 +149,8 @@ struct DriverConversationView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // `header` (ChatHeaderPerson) draws its own bottom hairline.
             header
-            IridescentHairline()
             if let err = lastErrorMessage {
                 errorBanner(err)
             }
@@ -125,6 +183,14 @@ struct DriverConversationView: View {
                 }
             }
             realtimeObserver = token
+
+            // Hand the finalized dictation transcript back into the draft.
+            // Append so a dictation can extend a half-typed message rather
+            // than clobber it.
+            voice.onFinalTranscript = { transcript in
+                let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                draft = trimmed.isEmpty ? transcript : "\(trimmed) \(transcript)"
+            }
         }
         .onDisappear {
             if let realtimeObserver {
@@ -133,14 +199,22 @@ struct DriverConversationView: View {
             realtimeObserver = nil
             RealtimeService.shared.leaveConversation(thread.id)
             UnreadMessageStore.shared.didCloseConversation(thread.id)
+            voice.cancel()
         }
         // Incoming PhotosPicker selection → load the raw image data so we
-        // can both preview it inline + ship it on send.
+        // can both preview it inline + ship it on send. Alongside, run the
+        // photo through the document-intelligence vision spine so we KNOW
+        // what the attachment is (BOL / POD / manifest / damage) before it
+        // uploads — the verdict surfaces on the pending chip.
         .onChange(of: pickedPhoto) { _, newValue in
             Task {
                 if let item = newValue,
                    let data = try? await item.loadTransferable(type: Data.self) {
-                    await MainActor.run { pendingImage = data }
+                    await MainActor.run {
+                        pendingImage = data
+                        attachmentScan = nil
+                    }
+                    await classifyPendingAttachment(data)
                 }
             }
         }
@@ -210,48 +284,36 @@ struct DriverConversationView: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: Space.s3) {
-            // Avatar
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(palette.tintNeutral)
-                Text(initials)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
+        // Shared person-thread header — counterpart identity + presence +
+        // a trailing close control (this surface is presented as a sheet
+        // and as a nav push; `dismiss()` resolves correctly for both, and
+        // the nav-push case also keeps its own toolbar back button).
+        ChatHeaderPerson(
+            name: thread.title,
+            subtitle: thread.subtitle.uppercased(),
+            initials: initials,
+            tint: Brand.magenta,
+            online: false,
+            onBack: { dismiss() },
+            overflow: {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(width: 32, height: 32)
+                        .background(palette.bgCardSoft)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                                .strokeBorder(palette.borderFaint)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close conversation")
             }
-            .frame(width: 40, height: 40)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(thread.title)
-                    .font(.system(size: 18, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                Text(thread.subtitle)
-                    .font(EType.micro).tracking(0.5)
-                    .foregroundStyle(palette.textSecondary)
-            }
-
-            Spacer()
-
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 32, height: 32)
-                    .background(palette.bgCardSoft)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close conversation")
-        }
-        .padding(.horizontal, Space.s5)
-        .padding(.top, Space.s4)
-        .padding(.bottom, Space.s3)
+        )
     }
 
     // MARK: Transcript
@@ -270,6 +332,13 @@ struct DriverConversationView: View {
                 } else {
                     VStack(alignment: .leading, spacing: Space.s3) {
                         ForEach(messages) { m in
+                            // Day separator above the first message of each
+                            // calendar day so a thread that spans days reads
+                            // chronologically (matches the 053 TODAY divider).
+                            if shouldShowDayDivider(before: m) {
+                                ChatDayDivider(label: dayLabel(for: m.time))
+                                    .padding(.vertical, Space.s2)
+                            }
                             bubble(m).id(m.id)
                         }
                     }
@@ -328,7 +397,7 @@ struct DriverConversationView: View {
             Text("No messages yet")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
-            Text("Say hi to \(thread.title.components(separatedBy: " ").first ?? "them") below — they'll get a push the moment it lands.")
+            Text("Say hi to \(thread.title.components(separatedBy: " ").first ?? "them") below. They'll get a push the moment it lands.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
@@ -339,28 +408,12 @@ struct DriverConversationView: View {
 
     @ViewBuilder
     private func bubble(_ m: ChatMessage) -> some View {
-        HStack(alignment: .bottom, spacing: Space.s2) {
-            if m.from == .me { Spacer(minLength: 40) }
-            VStack(alignment: m.from == .me ? .trailing : .leading, spacing: 4) {
-                bubbleBody(m)
-                    .frame(maxWidth: 280, alignment: m.from == .me ? .trailing : .leading)
-                HStack(spacing: 4) {
-                    Text(m.time, format: .dateTime.hour().minute())
-                        .font(EType.micro)
-                        .foregroundStyle(palette.textTertiary)
-                    if m.from == .me {
-                        Image(systemName: m.read ? "checkmark.circle.fill" : "checkmark")
-                            .font(.system(size: 10, weight: .semibold))
-                            // Doctrine §2.1: brand accent on "read" state must be the
-                            // gradient, not a flat Brand.info tint. §2.3: ternary shape-style
-                            // branches wrapped in AnyShapeStyle so SwiftUI compiles on iOS 17.
-                            .foregroundStyle(m.read
-                                             ? AnyShapeStyle(LinearGradient.diagonal)
-                                             : AnyShapeStyle(palette.textTertiary))
-                    }
-                }
+        Group {
+            if m.from == .me {
+                sentBubble(m)
+            } else {
+                receivedBubble(m)
             }
-            if m.from == .other { Spacer(minLength: 40) }
         }
         // Long-press menu on outbound bubbles → "Unsend" (destructive)
         // + "Copy" for both sides when the message is plain text. We
@@ -383,6 +436,170 @@ struct DriverConversationView: View {
                 }
             }
         }
+    }
+
+    /// Short clock label (e.g. "09:34") for the timestamp shown inside /
+    /// beneath each bubble.
+    private func clock(_ date: Date) -> String {
+        date.formatted(.dateTime.hour().minute())
+    }
+
+    // MARK: Day dividers
+
+    /// True when `m` is the first message of a new calendar day (or the very
+    /// first message in the transcript) — i.e. a `ChatDayDivider` should be
+    /// rendered above it.
+    private func shouldShowDayDivider(before m: ChatMessage) -> Bool {
+        guard let idx = messages.firstIndex(where: { $0.id == m.id }) else { return false }
+        if idx == 0 { return true }
+        let prev = messages[idx - 1]
+        return !Calendar.current.isDate(prev.time, inSameDayAs: m.time)
+    }
+
+    /// "TODAY" / "YESTERDAY" / a short date label for the divider sitting
+    /// above the first message of a day.
+    private func dayLabel(for date: Date) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(date) { return "TODAY" }
+        if cal.isDateInYesterday(date) { return "YESTERDAY" }
+        return date.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())
+            .uppercased()
+    }
+
+    // MARK: Received bubble (peer)
+    //
+    // Rendered through the shared `ChatBubbleReceived` so the look matches
+    // the 053 reference: a person-initials avatar, an optional sender name
+    // (group threads only), the message text, the timestamp INSIDE the
+    // card, and an attachment slot that carries the image / transfer card /
+    // unsent placeholder. No read receipt on inbound messages.
+    @ViewBuilder
+    private func receivedBubble(_ m: ChatMessage) -> some View {
+        ChatBubbleReceived(
+            avatar: .person(initials: initials, tint: Brand.magenta),
+            senderName: senderName(for: m),
+            text: bubbleText(m),
+            time: clock(m.time)
+        ) {
+            bubbleAttachment(m, outbound: false)
+        }
+    }
+
+    // MARK: Sent bubble (me)
+    //
+    // Plain text routes through the shared `ChatBubbleSent` gradient bubble;
+    // attachments / transfers / unsent keep their bespoke shells (re-skinned
+    // consistently). In every case we append the timestamp + read-receipt
+    // row beneath, preserving the double-check "read" glyph.
+    @ViewBuilder
+    private func sentBubble(_ m: ChatMessage) -> some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 36)
+            VStack(alignment: .trailing, spacing: 4) {
+                if m.unsent || m.transfer != nil || m.imageData != nil || m.imageURL != nil {
+                    // Non-text outbound content keeps its bespoke shell.
+                    bubbleBody(m)
+                        .frame(maxWidth: 280, alignment: .trailing)
+                } else {
+                    // Plain text → shared gradient sent bubble (no inner time;
+                    // we render the time + receipt together just below).
+                    ChatBubbleSent(text: m.text)
+                }
+                HStack(spacing: 4) {
+                    Text(clock(m.time))
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(palette.textTertiary)
+                    // Doctrine §2.1: brand accent on "read" state must be the
+                    // gradient, not a flat Brand.info tint. §2.3: ternary
+                    // shape-style branches wrapped in AnyShapeStyle so
+                    // SwiftUI compiles on iOS 17.
+                    Image(systemName: m.read ? "checkmark.circle.fill" : "checkmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(m.read
+                                         ? AnyShapeStyle(LinearGradient.diagonal)
+                                         : AnyShapeStyle(palette.textTertiary))
+                }
+            }
+        }
+    }
+
+    /// Group threads show the sender's name above an inbound bubble;
+    /// 1:1 threads don't. `InboxThread` carries no per-message sender, so
+    /// we suppress the name unless the subtitle marks this as a group.
+    private func senderName(for m: ChatMessage) -> String? {
+        guard m.from == .other else { return nil }
+        let isGroup = thread.subtitle.lowercased().contains("group")
+            || thread.title.lowercased().contains("group")
+        return isGroup ? thread.title : nil
+    }
+
+    /// Text the bubble body should render. Image / transfer rows carry an
+    /// empty caption string by design (see `toChat`), so the kit bubble's
+    /// own text line collapses and the attachment slot owns the content.
+    private func bubbleText(_ m: ChatMessage) -> String {
+        if m.unsent { return "" }
+        if m.transfer != nil { return "" }
+        if m.imageData != nil || m.imageURL != nil { return m.text }
+        return m.text
+    }
+
+    /// Attachment slot for the shared received bubble — carries the unsent
+    /// placeholder, the transfer card, or the image (local blob or remote
+    /// AsyncImage). Empty for plain text.
+    @ViewBuilder
+    private func bubbleAttachment(_ m: ChatMessage, outbound: Bool) -> some View {
+        if m.unsent {
+            Text("Message unsent")
+                .font(EType.body)
+                .italic()
+                .foregroundStyle(palette.textTertiary)
+        } else if let payload = m.transfer {
+            transferCard(payload, outbound: outbound)
+        } else if let data = m.imageData, let ui = uiImage(from: data) {
+            attachmentImage {
+                Image(uiImage: ui).resizable().scaledToFill()
+            }
+        } else if let urlStr = m.imageURL, let url = URL(string: urlStr) {
+            attachmentImage {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        RoundedRectangle(cornerRadius: Radius.md)
+                            .fill(palette.tintNeutral)
+                            .overlay(ProgressView().controlSize(.small))
+                    case .success(let img):
+                        img.resizable().scaledToFill()
+                    case .failure:
+                        RoundedRectangle(cornerRadius: Radius.md)
+                            .fill(palette.tintNeutral)
+                            .overlay(
+                                Image(systemName: "photo")
+                                    .foregroundStyle(palette.textTertiary)
+                            )
+                    @unknown default:
+                        Color.clear
+                    }
+                }
+            }
+        } else {
+            EmptyView()
+        }
+    }
+
+    /// Bare clipped image used inside a bubble's attachment slot. Caption
+    /// (if any) is rendered by the bubble's own text line, so this shell is
+    /// just the framed, bordered image.
+    @ViewBuilder
+    private func attachmentImage<Content: View>(
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        content()
+            .frame(maxWidth: 240, maxHeight: 320)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint)
+            )
     }
 
     @ViewBuilder
@@ -589,18 +806,28 @@ struct DriverConversationView: View {
                     .scaledToFill()
                     .frame(width: 56, height: 56)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Attached photo")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textPrimary)
+                VStack(alignment: .leading, spacing: 3) {
+                    // Detected-document chip — the document-intelligence
+                    // verdict for the photo about to be sent.
+                    attachmentTypeChip
                     Text("Tap send to share with \(thread.title.components(separatedBy: " ").first ?? "them").")
                         .font(EType.micro)
                         .foregroundStyle(palette.textSecondary)
+                    // Surface the classifier's first warning honestly so
+                    // the driver can fix a bad capture before sending.
+                    if let warning = attachmentScan?.warnings.first, !warning.isEmpty {
+                        Text("⚠ \(warning)")
+                            .font(EType.micro)
+                            .foregroundStyle(Brand.warning)
+                            .lineLimit(2)
+                    }
                 }
                 Spacer()
                 Button {
                     pendingImage = nil
                     pickedPhoto = nil
+                    attachmentScan = nil
+                    attachmentScanning = false
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 18))
@@ -616,10 +843,69 @@ struct DriverConversationView: View {
         }
     }
 
+    /// The detected-document chip on the pending-attachment strip. Renders
+    /// one of three honest states:
+    ///   • scanning      → spinner + "Identifying document…"
+    ///   • confident hit → the gradient type pill + confidence %
+    ///   • low/unknown   → neutral "Couldn't confidently identify" so we
+    ///                     never claim a type the classifier isn't sure of.
+    @ViewBuilder
+    private var attachmentTypeChip: some View {
+        if attachmentScanning {
+            HStack(spacing: Space.s2) {
+                ProgressView().controlSize(.mini).tint(palette.textSecondary)
+                Text("Identifying document…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+        } else if let scan = attachmentScan, scan.isConfident {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(scan.humanType.uppercased())
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textPrimary)
+                Text("\(Int((scan.confidence * 100).rounded()))%")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(scan.confidence >= 0.85 ? Brand.success : Brand.warning)
+                    .padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(
+                        Capsule().fill((scan.confidence >= 0.85 ? Brand.success : Brand.warning).opacity(0.14))
+                    )
+            }
+        } else if attachmentScan != nil {
+            // Ran, but low confidence or "unknown" — stay neutral and honest.
+            HStack(spacing: Space.s2) {
+                Image(systemName: "questionmark.circle")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                Text("Couldn't confidently identify - please confirm")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+            }
+        } else {
+            // Classification didn't run (e.g. errored or not yet started).
+            Text("Attached photo")
+                .font(EType.caption)
+                .foregroundStyle(palette.textPrimary)
+        }
+    }
+
     // MARK: Composer
+    //
+    // Restyled to the shared chat kit's capsule language (matching the 053
+    // composer) while KEEPING this surface's richer affordances that the
+    // stock `ChatComposer` doesn't carry: the `+` attach menu, the one-tap
+    // PhotosPicker, and the optional EusoWallet P2P transfer button. Voice-
+    // to-text is added via the shared `eSangVoiceInputController`: an
+    // in-field mic toggle (the field binds live to `voice.transcript` while
+    // recording) plus the prominent SFSpeech voice button — none of the
+    // existing photo / transfer / send wiring is removed.
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: Space.s2) {
+        HStack(alignment: .bottom, spacing: 8) {
             // `+` attach menu. PhotosPicker wraps the photo option so the
             // picker owns its own presentation; the send-money option pops
             // a confirmation sheet.
@@ -641,16 +927,7 @@ struct DriverConversationView: View {
                     }
                 }
             } label: {
-                Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 40, height: 40)
-                    .background(palette.bgCardSoft)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                composerIconChrome("plus", tint: palette.textPrimary)
             }
             .accessibilityLabel("Attach")
 
@@ -660,16 +937,7 @@ struct DriverConversationView: View {
             PhotosPicker(selection: $pickedPhoto,
                          matching: .images,
                          photoLibrary: .shared()) {
-                Image(systemName: "photo")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 40, height: 40)
-                    .background(palette.bgCardSoft)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                composerIconChrome("photo", tint: palette.textPrimary, size: 16)
             }
             .accessibilityLabel("Add photo")
 
@@ -677,58 +945,93 @@ struct DriverConversationView: View {
                 Button {
                     showTransferSheet = true
                 } label: {
-                    Image(systemName: "dollarsign")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Brand.success)
-                        .frame(width: 40, height: 40)
-                        .background(palette.bgCardSoft)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                .strokeBorder(Brand.success.opacity(0.35))
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    composerIconChrome("dollarsign", tint: Brand.success, size: 16,
+                                       border: Brand.success.opacity(0.35))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Send money via EusoWallet")
             }
 
-            TextField("Message \(thread.title.components(separatedBy: " ").first ?? "")…",
-                      text: $draft, axis: .vertical)
-                .lineLimit(1...4)
-                .focused($composerFocused)
-                .font(EType.body)
-                .foregroundStyle(palette.textPrimary)
-                .padding(.horizontal, Space.s3)
-                .padding(.vertical, 10)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(palette.bgCard)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderFaint)
-                )
+            // Capsule text-field pill with an in-field dictation toggle. The
+            // field binds live to the voice transcript while recording so
+            // the text the driver SEES is what ships.
+            HStack(spacing: 8) {
+                TextField("Message \(thread.title.components(separatedBy: " ").first ?? "")…",
+                          text: voice.isRecording ? $voice.transcript : $draft,
+                          axis: .vertical)
+                    .lineLimit(1...4)
+                    .focused($composerFocused)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .disabled(voice.isRecording)
+                    .submitLabel(.send)
+                    .onSubmit { sendComposed() }
+
+                Button {
+                    MeAction.fire("driver-conversation.voice-toggled",
+                                  userInfo: ["conversationId": thread.id,
+                                             "recording": !voice.isRecording])
+                    voice.toggle()
+                } label: {
+                    Image(systemName: voice.isRecording ? "waveform" : "mic.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(voice.isRecording ? Brand.magenta : palette.textSecondary)
+                        .symbolEffect(.variableColor.iterative.hideInactiveLayers,
+                                      options: .repeating, isActive: voice.isRecording)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(voice.isRecording ? "Stop dictation" : "Dictate")
+            }
+            .padding(.horizontal, Space.s3)
+            .padding(.vertical, 10)
+            .background(palette.bgCard)
+            .overlay(
+                Capsule().strokeBorder(
+                    voice.isRecording ? Brand.magenta.opacity(0.55) : palette.borderFaint,
+                    lineWidth: 1)
+            )
+            .clipShape(Capsule())
+
+            // Prominent SFSpeech voice button (shared component).
+            eSangVoiceInputButton(controller: voice)
 
             Button {
                 sendComposed()
             } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 40, height: 40)
-                    .background(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .fill(LinearGradient.diagonal)
-                    )
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient.diagonal)
+                        .frame(width: 40, height: 40)
+                        .opacity(canSend ? 1 : 0.55)
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                }
             }
             .buttonStyle(.plain)
             .disabled(!canSend)
-            .opacity(canSend ? 1 : 0.55)
             .accessibilityLabel("Send")
         }
         .padding(.horizontal, Space.s5)
         .padding(.bottom, Space.s4 + Device.safeBottom)
         .padding(.top, Space.s2)
+    }
+
+    /// Shared rounded chrome for the composer's leading icon buttons (attach
+    /// `+`, photo, transfer `$`) so they stay visually consistent with the
+    /// kit's pill language.
+    @ViewBuilder
+    private func composerIconChrome(_ systemName: String,
+                                    tint: Color,
+                                    size: CGFloat = 18,
+                                    border: Color? = nil) -> some View {
+        Image(systemName: systemName)
+            .font(.system(size: size, weight: .bold))
+            .foregroundStyle(tint)
+            .frame(width: 40, height: 40)
+            .background(palette.bgCardSoft)
+            .overlay(Circle().strokeBorder(border ?? palette.borderFaint))
+            .clipShape(Circle())
     }
 
     private var canSend: Bool {
@@ -762,8 +1065,50 @@ struct DriverConversationView: View {
             lastErrorMessage = "Please sign in to view this conversation."
             didLoad = true
         } catch {
-            lastErrorMessage = "Couldn't load messages — \(error.localizedDescription)"
+            lastErrorMessage = "Couldn't load messages - \(error.localizedDescription)"
             didLoad = true
+        }
+    }
+
+    /// Run the picked photo through the document-intelligence vision spine
+    /// so the capture point KNOWS what's attached (BOL / POD / manifest /
+    /// damage) before it uploads. Best-effort + non-blocking: if the
+    /// classifier errors or times out we silently fall back to a plain
+    /// "Attached photo" chip and the existing `uploadAttachment` path is
+    /// completely unaffected — we never gate the send on the verdict.
+    @MainActor
+    private func classifyPendingAttachment(_ data: Data) async {
+        attachmentScanning = true
+        defer { attachmentScanning = false }
+
+        // Compress + detect mime so the vision payload stays small and we
+        // hand the classifier the right content type (PNG vs JPEG).
+        let mime: DocumentRouterAPI.MimeType = isPNG(data) ? .png : .jpeg
+        let payload = compressedAttachment(data, mime: mime)
+        let base64 = payload.base64EncodedString()
+
+        do {
+            let resp = try await EusoTripAPI.shared.documentRouter.classifyAndRoute(
+                documentBase64: base64,
+                mimeType: mime,
+                callerContext: "driver message attachment"
+            )
+            // Only keep the verdict if it's still the photo on deck — the
+            // driver may have swapped or cleared it mid-flight.
+            guard pendingImage != nil else { return }
+            attachmentScan = AttachmentClassification(
+                type: resp.classifiedType,
+                confidence: resp.confidence,
+                summary: resp.summary,
+                warnings: resp.warnings
+            )
+        } catch {
+            // Honest fallback: surface nothing fabricated. The chip shows a
+            // plain "Attached photo" and the upload proceeds untouched. We
+            // log the real error so it isn't swallowed silently.
+            let detail = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            print("[DriverConversationView] attachment classify failed: \(detail)")
+            attachmentScan = nil
         }
     }
 
@@ -775,6 +1120,13 @@ struct DriverConversationView: View {
         let image = pendingImage
         guard !text.isEmpty || image != nil else { return }
         if isSending { return }
+
+        // Snapshot the document-intelligence verdict for this attachment so
+        // the send path can carry an honest "Detected: <type>" caption to
+        // the recipient when the driver didn't type one. Only the confident
+        // verdict rides along — low-confidence/unknown is never labelled.
+        let scan = (image != nil) ? attachmentScan : nil
+        let detectedLabel: String? = (scan?.isConfident == true) ? scan?.humanType : nil
 
         let localId = UUID()
         let optimistic = ChatMessage(
@@ -790,6 +1142,8 @@ struct DriverConversationView: View {
         draft = ""
         pendingImage = nil
         pickedPhoto = nil
+        attachmentScan = nil
+        attachmentScanning = false
         composerFocused = false
 
         isSending = true
@@ -810,12 +1164,21 @@ struct DriverConversationView: View {
                     )
                     stampServerId(result.messageId, onLocalId: anchor)
 
-                    // If the driver also typed a caption, send it as a
-                    // follow-up text row so the transcript has both.
-                    if !text.isEmpty {
+                    // Caption follow-up. Priority: the driver's typed
+                    // caption wins; otherwise, if the vision spine
+                    // confidently identified the document, ship that honest
+                    // label so the recipient knows it's a BOL/POD/manifest/
+                    // damage photo rather than an anonymous image. We never
+                    // synthesize a label the classifier wasn't sure of.
+                    let caption: String? = {
+                        if !text.isEmpty { return text }
+                        if let label = detectedLabel { return "Detected: \(label)" }
+                        return nil
+                    }()
+                    if let caption {
                         _ = try await EusoTripAPI.shared.messaging.sendMessage(
                             conversationId: thread.id,
-                            content: text,
+                            content: caption,
                             type: "text"
                         )
                     }
@@ -832,10 +1195,14 @@ struct DriverConversationView: View {
             } catch {
                 // Roll the optimistic bubble back and surface the error.
                 messages.removeAll { $0.id == anchor }
-                lastErrorMessage = "Send failed — \(error.localizedDescription)"
-                // Put the draft back so the driver can retry.
+                lastErrorMessage = "Send failed - \(error.localizedDescription)"
+                // Put the draft + attachment (and its detected verdict) back
+                // so the driver can retry without re-picking or re-scanning.
                 if !text.isEmpty { draft = text }
-                if let img = image { pendingImage = img }
+                if let img = image {
+                    pendingImage = img
+                    attachmentScan = scan
+                }
             }
         }
     }
@@ -888,7 +1255,7 @@ struct DriverConversationView: View {
                 )
                 messages[idx] = updated
             }
-            lastErrorMessage = "Transfer failed — \(error.localizedDescription)"
+            lastErrorMessage = "Transfer failed - \(error.localizedDescription)"
         }
     }
 
@@ -928,7 +1295,7 @@ struct DriverConversationView: View {
     private func performUnsend(_ message: ChatMessage) async {
         pendingUnsend = nil
         guard let serverId = message.serverId else {
-            lastErrorMessage = "Can't unsend — message still sending."
+            lastErrorMessage = "Can't unsend, message still sending."
             return
         }
         guard let idx = messages.firstIndex(where: { $0.id == message.id }) else { return }
@@ -948,7 +1315,7 @@ struct DriverConversationView: View {
                     messages[currentIdx] = original
                 }
             }
-            lastErrorMessage = "Couldn't unsend — \(error.localizedDescription)"
+            lastErrorMessage = "Couldn't unsend - \(error.localizedDescription)"
         }
     }
 
@@ -1029,6 +1396,28 @@ struct DriverConversationView: View {
         return UIImage(data: data)
         #else
         return nil
+        #endif
+    }
+
+    /// PNG magic-number sniff so we hand the classifier the right mime.
+    /// Everything else (JPEG, HEIC, …) is normalized to JPEG on the way out.
+    private func isPNG(_ data: Data) -> Bool {
+        data.count > 4 && data[0] == 0x89 && data[1] == 0x50 && data[2] == 0x4E && data[3] == 0x47
+    }
+
+    /// Keep the vision payload small (~<900KB). PNGs pass through; anything
+    /// else is JPEG-recompressed down the quality ladder. Mirrors the
+    /// compression used by the canonical classifier surfaces.
+    private func compressedAttachment(_ data: Data, mime: DocumentRouterAPI.MimeType) -> Data {
+        if mime == .png || data.count <= 900_000 { return data }
+        #if canImport(UIKit)
+        guard let img = UIImage(data: data) else { return data }
+        for q in [CGFloat(0.85), 0.75, 0.65, 0.55, 0.45] {
+            if let d = img.jpegData(compressionQuality: q), d.count <= 900_000 { return d }
+        }
+        return img.jpegData(compressionQuality: 0.45) ?? data
+        #else
+        return data
         #endif
     }
 }
@@ -1245,7 +1634,7 @@ struct ChatMoneyTransferSheet: View {
         glyph: "person.crop.square",
         title: "Marco (team partner)",
         subtitle: "Team driver · owner-op",
-        preview: "Thx for covering the fuel in Tyler — I'll settle tonight.",
+        preview: "Thx for covering the fuel in Tyler. I'll settle tonight.",
         time: "42m",
         unread: 1,
         allowsTransfer: true

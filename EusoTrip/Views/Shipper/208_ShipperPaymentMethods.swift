@@ -505,7 +505,7 @@ struct ShipperPaymentMethods: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Add new payment method")
-        .accessibilityHint("Opens the credential-ingest flow for card, ACH bank account, or wire transfer.")
+        .accessibilityHint("Opens the credential-ingest flow for card, ACH bank account or wire transfer.")
     }
 
     // MARK: - Auto-pay rules card
@@ -600,7 +600,7 @@ struct ShipperPaymentMethods: View {
             Text("No methods yet")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
-            Text("Link a bank through Plaid for ACH funding, or attach a card via Stripe. Credentials live at Stripe and Plaid — never on EusoTrip's servers.")
+            Text("Link a bank through Plaid for ACH funding, or attach a card via Stripe. Credentials live at Stripe and Plaid, never on EusoTrip's servers.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -644,7 +644,7 @@ struct ShipperPaymentMethods: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("EusoTrip never stores your bank or card credentials — they live at Stripe and Plaid, both independently certified. Your default method funds load checkout when you accept a carrier bid; ACH banks generally clear in 1–3 business days, cards clear instantly.")
+            Text("EusoTrip never stores your bank or card credentials. They live at Stripe and Plaid, both independently certified. Your default method funds load checkout when you accept a carrier bid; ACH banks generally clear in 1–3 business days, cards clear instantly.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

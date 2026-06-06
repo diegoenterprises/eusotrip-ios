@@ -152,7 +152,7 @@ private struct DriverEusoTicketRendererBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Spacer(minLength: 0)
-            Text(load?.loadNumber ?? "—")
+            Text(load?.loadNumber ?? "-")
                 .font(.system(size: 9, weight: .heavy, design: .monospaced))
                 .tracking(1.0).foregroundStyle(palette.textTertiary).lineLimit(1)
         }
@@ -258,7 +258,7 @@ private struct DriverEusoTicketRendererBody: View {
                 avatarStyle: .gradient
             )
         }
-        return EusoTicketParty(name: "Pending shipper", monogram: "—", meta: "no shipper on file", avatarStyle: .gradient)
+        return EusoTicketParty(name: "Pending shipper", monogram: "-", meta: "no shipper on file", avatarStyle: .gradient)
     }
 
     private var carrierParty: EusoTicketParty {
@@ -269,8 +269,8 @@ private struct DriverEusoTicketRendererBody: View {
         // an honest "self / 1099" descriptor instead of a fake name.
         if let c = carrierInfo {
             let name = c.legalName ?? c.name ?? "Carrier"
-            let dot = c.dotNumber.map { "USDOT \($0)" } ?? "USDOT —"
-            let mc = c.mcNumber.map { "MC-\($0)" } ?? "MC —"
+            let dot = c.dotNumber.map { "USDOT \($0)" } ?? "USDOT -"
+            let mc = c.mcNumber.map { "MC-\($0)" } ?? "MC -"
             return EusoTicketParty(
                 name: name,
                 monogram: monogram(for: name),
@@ -324,18 +324,18 @@ private struct DriverEusoTicketRendererBody: View {
     private var footerForCanvas: EusoTicketFooter {
         if let c = carrierInfo {
             return EusoTicketFooter(
-                usdot: c.dotNumber.map { "USDOT \($0)" } ?? "USDOT —",
-                mc: c.mcNumber.map { "MC-\($0)" } ?? "MC —",
-                irp: "IRP \(c.state ?? "—")",
+                usdot: c.dotNumber.map { "USDOT \($0)" } ?? "USDOT -",
+                mc: c.mcNumber.map { "MC-\($0)" } ?? "MC -",
+                irp: "IRP \(c.state ?? "-")",
                 boc3: "BOC-3 active",
                 safetyTag: "FMCSA SAFER \(c.complianceStatus ?? "reference")"
             )
         }
         return EusoTicketFooter(
-            usdot: "USDOT — pending",
-            mc: "MC — pending",
-            irp: "IRP —",
-            boc3: "BOC-3 —",
+            usdot: "USDOT - pending",
+            mc: "MC - pending",
+            irp: "IRP -",
+            boc3: "BOC-3 -",
             safetyTag: "Carrier company not on file"
         )
     }

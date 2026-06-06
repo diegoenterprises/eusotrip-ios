@@ -217,7 +217,7 @@ private struct CatalystDriverScorecard: View {
                         .frame(maxWidth: .infinity)
                         .frame(height: 44)
                         .background(LinearGradient.diagonal)
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                         .padding(.horizontal, 20)
                     }
 
@@ -245,13 +245,13 @@ private struct CatalystDriverScorecard: View {
                         .frame(height: 44)
                         .background(palette.bgCard)
                         .overlay(
-                            Capsule().strokeBorder(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(
                                 LinearGradient(colors: [Brand.blue.opacity(0.5), Brand.magenta.opacity(0.5)],
                                                startPoint: .leading, endPoint: .trailing),
                                 lineWidth: 1
                             )
                         )
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                         .padding(.horizontal, 20)
                     }
                     .buttonStyle(.plain)
@@ -305,7 +305,7 @@ private struct CatalystDriverScorecard: View {
     }
 
     private var rosterCounterLabel: String {
-        guard let s = scorecard else { return "—" }
+        guard let s = scorecard else { return "-" }
         return "\(s.metrics.totalLoads) LOADS · 1 DRIVER"
     }
 
@@ -483,7 +483,7 @@ private struct CatalystDriverScorecard: View {
 
     private func trendLabel(_ trend: DriversAPI.PerformanceTrend) -> String {
         if trend.change == 0 {
-            return "vs prior \(period.rawValue) — flat"
+            return "vs prior \(period.rawValue) - flat"
         }
         let sign = trend.change > 0 ? "+" : ""
         return "\(sign)\(String(format: "%.1f", trend.change)) pts vs prior"

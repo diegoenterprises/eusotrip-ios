@@ -134,6 +134,9 @@ private struct CatalystLoadDetail: View {
     @State private var driverPickerLoading: Bool = false
     @State private var availableDrivers: [CatalystAPI.FleetDriver] = []
     @State private var driverAssignError: String? = nil
+    /// RIOS §12 — set true when a load party fails a HARD sanctions gate.
+    /// Blocks the carrier's lifecycle-advance CTA until resolved.
+    @State private var gateLocked: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -148,11 +151,17 @@ private struct CatalystLoadDetail: View {
                     errorBanner(err)
                 } else if let l = load {
                     routeInfoStrip(l)
+                    routeMapCard(l)
                     lifecycleCard(l)
                     moneyAndReceivableCard(l)
                     assignmentCard(l)
                     shipperOfRecordCard(l)
                     documentsRow(l)
+                    // RIOS §11/§12 — screen every load party before the carrier
+                    // advances/dispatches; gateLocked disables the CTA below.
+                    if let lid = Int(loadId) {
+                        ComplianceGatesStrip(loadId: lid, role: "carrier", gateLocked: $gateLocked)
+                    }
                     bottomCTAs(l)
                 } else {
                     emptyLoadState
@@ -238,7 +247,7 @@ private struct CatalystLoadDetail: View {
     }
 
     private var loadIdLabel: String {
-        load?.loadNumber ?? "—"
+        load?.loadNumber ?? "-"
     }
 
     private var titleRow: some View {
@@ -274,8 +283,8 @@ private struct CatalystLoadDetail: View {
 
     private var routeTitle: String {
         guard let l = load else { return "Loading…" }
-        let from = l.pickupLocation?.cityState ?? "—"
-        let to = l.deliveryLocation?.cityState ?? "—"
+        let from = l.pickupLocation?.cityState ?? "-"
+        let to = l.deliveryLocation?.cityState ?? "-"
         return "\(from) → \(to)"
     }
 
@@ -326,12 +335,106 @@ private struct CatalystLoadDetail: View {
     }
 
     private func etaLabel(_ l: LoadsAPI.LoadDetail) -> String {
-        guard let iso = l.estimatedDeliveryDate ?? l.deliveryDate else { return "—" }
-        return formatTime(iso) ?? "—"
+        guard let iso = l.estimatedDeliveryDate ?? l.deliveryDate else { return "-" }
+        return formatTime(iso) ?? "-"
     }
 
     private func distanceLabel(_ l: LoadsAPI.LoadDetail) -> String {
         return l.distanceDisplay
+    }
+
+    // MARK: - Route map (in-house HERE)
+    //
+    // Mirrors the canonical LoadDetailSheet:490 + the §11 sibling
+    // 205_ShipperLoadDetail hero embed: the OMV vector renderer
+    // (HereLiveMapView) with the pickup/delivery pins + a route
+    // connector on the vector basemap, and the carrier-side situational
+    // add-ons (.shipperTracking = weather + traffic + sponsored
+    // ad-zones; no driver-only gamification fan-out). Coords bind ONLY
+    // to the REAL `pickupLocation.lat/.lng` + `deliveryLocation.lat/.lng`
+    // the server self-heals onto `loads.getById` — never a fabricated
+    // lane. When either endpoint hasn't been geocoded yet (Driver 013
+    // coord-gate: any zero/nil), honest-skip to a neutral "Route
+    // loading…" placeholder so the map never frames on null island.
+
+    @ViewBuilder
+    private func routeMapCard(_ l: LoadsAPI.LoadDetail) -> some View {
+        if let coords = laneCoords(l) {
+            let midLat = (coords.pickupLat + coords.deliveryLat) / 2
+            let midLng = (coords.pickupLng + coords.deliveryLng) / 2
+            HereLiveMapView(
+                center: .init(midLat, midLng),
+                zoom: 6,
+                route: [
+                    .init(coords.pickupLat, coords.pickupLng),
+                    .init(coords.deliveryLat, coords.deliveryLng)
+                ],
+                baseLayers: [
+                    .route(
+                        polyline: [
+                            .init(coords.pickupLat, coords.pickupLng),
+                            .init(coords.deliveryLat, coords.deliveryLng)
+                        ],
+                        colorHex: "#1473FF"
+                    ),
+                    .markers([
+                        .init(at: .init(coords.pickupLat, coords.pickupLng),
+                              kind: .pickup, label: coords.originTitle),
+                        .init(at: .init(coords.deliveryLat, coords.deliveryLng),
+                              kind: .delivery, label: coords.destinationTitle)
+                    ])
+                ],
+                addOns: .shipperTracking
+            )
+            .frame(height: 200)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+        } else {
+            // Coord gate (Driver 013 pattern): no real fix on one or both
+            // endpoints yet — neutral placeholder, never a demo route.
+            Rectangle()
+                .fill(palette.bgCard)
+                .frame(height: 200)
+                .overlay(
+                    VStack(spacing: 6) {
+                        Image(systemName: "map")
+                            .font(.system(size: 18, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                        Text("Route loading…")
+                            .font(.system(size: 11, weight: .heavy))
+                            .tracking(0.8)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+        }
+    }
+
+    /// Resolves the load's REAL pickup → delivery coordinates off the
+    /// `loads.getById` envelope. Returns nil (→ honest-skip) when either
+    /// endpoint hasn't been geocoded yet — mirrors the §11 sibling
+    /// 205_ShipperLoadDetail `laneForMap` gate (non-nil + non-zero on
+    /// both lat/lng).
+    private func laneCoords(_ l: LoadsAPI.LoadDetail)
+        -> (pickupLat: Double, pickupLng: Double,
+            deliveryLat: Double, deliveryLng: Double,
+            originTitle: String, destinationTitle: String)? {
+        guard let p = l.pickupLocation,
+              let d = l.deliveryLocation,
+              let pLat = p.lat, let pLng = p.lng,
+              let dLat = d.lat, let dLng = d.lng,
+              !(pLat == 0 && pLng == 0),
+              !(dLat == 0 && dLng == 0) else { return nil }
+        let origin = p.cityState.isEmpty ? "Origin" : p.cityState
+        let dest = d.cityState.isEmpty ? "Dest" : d.cityState
+        return (pLat, pLng, dLat, dLng, origin, dest)
     }
 
     // MARK: - 8-stage lifecycle strip
@@ -582,7 +685,7 @@ private struct CatalystLoadDetail: View {
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            Text(progressPercent(l).map { "\($0)%" } ?? "—")
+            Text(progressPercent(l).map { "\($0)%" } ?? "-")
                 .font(.system(size: 18, weight: .bold))
                 .monospacedDigit()
                 .foregroundStyle(palette.textPrimary)
@@ -842,9 +945,10 @@ private struct CatalystLoadDetail: View {
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             HStack(spacing: 8) {
-                docTile(label: "BOL", icon: "doc.text", status: bolStatus(l), action: "openBOL")
+                let docMode = TransportMode(rawValue: l.transportMode ?? "truck") ?? .truck
+                docTile(label: TransportLexicon.short(.billOfLading, mode: docMode, equipmentRaw: l.equipmentType), icon: "doc.text", status: bolStatus(l), action: "openBOL")
                 docTile(label: "Rate-con", icon: "checkmark.seal", status: rateconStatus(l), action: "openRatecon")
-                docTile(label: "POD photo", icon: "photo", status: podStatus(l), action: "openPOD")
+                docTile(label: TransportLexicon.short(.proofOfDelivery, mode: docMode, equipmentRaw: l.equipmentType), icon: "photo", status: podStatus(l), action: "openPOD")
             }
         }
     }
@@ -909,16 +1013,16 @@ private struct CatalystLoadDetail: View {
             Button {
                 showStatusPicker = true
             } label: {
-                Text(statusUpdating ? "Updating…" : "Update status")
+                Text(gateLocked ? "Resolve compliance gate" : (statusUpdating ? "Updating…" : "Update status"))
                     .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 40)
-                    .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
+                    .background(gateLocked ? AnyShapeStyle(Color.secondary.opacity(0.5)) : AnyShapeStyle(LinearGradient.diagonal))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
-            .disabled(statusUpdating)
+            .disabled(statusUpdating || gateLocked)
 
             Button {
                 // Route to the existing ESANG dispatch chat surface for
@@ -936,9 +1040,9 @@ private struct CatalystLoadDetail: View {
                     .frame(width: 148, height: 40)
                     .background(palette.bgCard)
                     .overlay(
-                        Capsule().strokeBorder(palette.borderFaint, lineWidth: 1)
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1)
                     )
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

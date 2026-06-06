@@ -338,7 +338,7 @@ struct RatingPromptView: View {
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textTertiary)
             }
-            TextField("What stood out — good or bad?",
+            TextField("What stood out - good or bad?",
                       text: $comment,
                       axis: .vertical)
                 .lineLimit(3, reservesSpace: true)

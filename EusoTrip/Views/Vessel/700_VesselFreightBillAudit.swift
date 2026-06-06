@@ -141,11 +141,11 @@ private struct VesselFreightBillAuditBody: View {
         if let f = expenses.first?.facilityName, !f.isEmpty {
             return "\(f) · drayage"
         }
-        return "—"
+        return "-"
     }
 
     private var billRef: String {
-        settlement?.bookingNumber ?? "—"
+        settlement?.bookingNumber ?? "-"
     }
 
     /// Findings list built from the real expense rows. Each row's amount is
@@ -242,11 +242,7 @@ private struct VesselFreightBillAuditBody: View {
     }
 
     private var backChevron: some View {
-        Image(systemName: "chevron.left")
-            .font(.system(size: 17, weight: .semibold))
-            .foregroundStyle(palette.textPrimary)
-            .padding(.horizontal, Space.s5)
-            .padding(.top, Space.s3)
+        EmptyView()   // 2026-06-03 — decorative back chevron removed; the role surface overlay supplies the single working back
     }
 
     // MARK: - Title + exceptions pill

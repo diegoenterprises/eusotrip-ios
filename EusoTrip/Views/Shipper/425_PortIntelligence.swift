@@ -70,9 +70,9 @@ private struct PortIntelBody: View {
                 LifecycleCard {
                     LifecycleSection(label: p.name.uppercased(), icon: "ferry")
                     LifecycleRow(label: "Country",     value: dashIfEmpty(p.country))
-                    LifecycleRow(label: "Utilization", value: p.utilizationPct.map { "\($0)%" } ?? "—")
-                    LifecycleRow(label: "Avg dwell",   value: p.avgDwellHours.map { String(format: "%.1f hr", $0) } ?? "—")
-                    LifecycleRow(label: "Accepts",     value: (p.acceptedProducts ?? []).joined(separator: ", ").isEmpty ? "—" : (p.acceptedProducts ?? []).joined(separator: ", "))
+                    LifecycleRow(label: "Utilization", value: p.utilizationPct.map { "\($0)%" } ?? "-")
+                    LifecycleRow(label: "Avg dwell",   value: p.avgDwellHours.map { String(format: "%.1f hr", $0) } ?? "-")
+                    LifecycleRow(label: "Accepts",     value: (p.acceptedProducts ?? []).joined(separator: ", ").isEmpty ? "-" : (p.acceptedProducts ?? []).joined(separator: ", "))
                 }
             }
         }

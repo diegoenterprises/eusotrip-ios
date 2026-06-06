@@ -39,15 +39,15 @@ struct DepartingReceiver: View {
     }
 
     private let fallbackClock      = "22:04"
-    private let fallbackFacility   = "—"
+    private let fallbackFacility   = "-"
     private let fallbackDockNote   = "Clear of dock · 0.3 mi past gate"
     private let fallbackRouteLabel = "On PA-295 southbound · gate arm closed behind · custody receipt sealed"
-    private let fallbackElapsed    = "—"
-    private let fallbackBolHash    = "—"
-    private let fallbackHomeYard   = "—"
-    private let fallbackHomeMiles  = "—"
+    private let fallbackElapsed    = "-"
+    private let fallbackBolHash    = "-"
+    private let fallbackHomeYard   = "-"
+    private let fallbackHomeMiles  = "-"
     private let fallbackHomeEta    = ""
-    private let fallbackHomeNote   = "HOS window has 2h 48m left — covers the run clean. No fuel stop needed. 10-hr reset starts on arrival."
+    private let fallbackHomeNote   = "HOS window has 2h 48m left, covers the run clean. No fuel stop needed. 10-hr reset starts on arrival."
 
     var body: some View {
         ScrollView(showsIndicators: false) {

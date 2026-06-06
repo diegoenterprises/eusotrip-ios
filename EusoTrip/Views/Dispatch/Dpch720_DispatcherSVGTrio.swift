@@ -122,7 +122,7 @@ private struct TenderQueueBody: View {
             }
         } message: {
             if let t = counterFor {
-                Text("Counter \(t.loadNumber ?? "LD-\(t.id)") · current $\(t.rate ?? "—")")
+                Text("Counter \(t.loadNumber ?? "LD-\(t.id)") · current $\(t.rate ?? "-")")
             } else {
                 Text("Enter your counter rate")
             }
@@ -166,7 +166,7 @@ private struct TenderQueueBody: View {
     private var tripDropZones: some View {
         HStack(spacing: Space.s2) {
             tripTile(id: "accept",  label: "ACCEPT",  hint: "Take the tender + fire compliance gates", icon: "checkmark.seal.fill", tint: Brand.success)
-            tripTile(id: "decline", label: "DECLINE", hint: "Pass — shipper sees decline + can re-tender", icon: "xmark.octagon.fill",   tint: Brand.danger)
+            tripTile(id: "decline", label: "DECLINE", hint: "Pass, shipper sees decline + can re-tender", icon: "xmark.octagon.fill",   tint: Brand.danger)
         }
     }
 
@@ -214,7 +214,7 @@ private struct TenderQueueBody: View {
     private func tenderCard(_ t: PendingTender) -> some View {
         let isExpiringSoon = expiresWithin(t.expiresAt, hours: 1)
         let expiryLabel: String = {
-            guard let exp = t.expiresAt, let d = ISO8601DateFormatter().date(from: exp) else { return "—" }
+            guard let exp = t.expiresAt, let d = ISO8601DateFormatter().date(from: exp) else { return "-" }
             let mins = max(0, Int(d.timeIntervalSinceNow / 60))
             if mins < 60 { return "EXPIRES \(mins)m" }
             return "EXPIRES \(mins / 60)h \(mins % 60)m"
@@ -244,15 +244,15 @@ private struct TenderQueueBody: View {
                             .foregroundStyle(palette.textTertiary)
                     }
                 }
-                Text("\(t.pickupCity ?? "—"), \(t.pickupState ?? "—") → \(t.destCity ?? "—"), \(t.destState ?? "—")")
+                Text("\(t.pickupCity ?? "-"), \(t.pickupState ?? "-") → \(t.destCity ?? "-"), \(t.destState ?? "-")")
                     .font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
-                Text("\(t.trailerType ?? "—") · \(t.cargoType ?? "—") · \(t.weight ?? "—")")
+                Text("\(t.trailerType ?? "-") · \(t.cargoType ?? "-") · \(t.weight ?? "-")")
                     .font(.caption).foregroundStyle(palette.textSecondary)
                 if let s = t.shipperName {
                     Text("Shipper: \(s)").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 HStack(spacing: 10) {
-                    Text("$\(t.rate ?? "—")")
+                    Text("$\(t.rate ?? "-")")
                         .font(.title3.weight(.heavy).monospacedDigit())
                         .foregroundStyle(palette.textPrimary)
                     Spacer()
@@ -409,10 +409,10 @@ struct DispatcherCommsHubScreen: View {
     var body: some View {
         Shell(theme: theme) { CommsHubBody() } nav: {
             BottomNav(
-                leading: [NavSlot(label: "Home",    systemImage: "house",            isCurrent: false),
-                          NavSlot(label: "Drivers", systemImage: "person.3.fill",    isCurrent: false)],
-                trailing: [NavSlot(label: "Loads", systemImage: "shippingbox.fill",  isCurrent: false),
-                           NavSlot(label: "Me",    systemImage: "person",            isCurrent: true)],
+                leading: [NavSlot(label: "Home",  systemImage: "house",                      isCurrent: false),
+                          NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill",   isCurrent: false)],
+                trailing: [NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: true),
+                           NavSlot(label: "Me",    systemImage: "person",                    isCurrent: false)],
                 orbState: .idle
             )
         }
@@ -571,7 +571,7 @@ private struct CommsHubBody: View {
     }
 
     private func timeAgo(_ iso: String?) -> String {
-        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let mins = max(0, Int(Date().timeIntervalSince(d) / 60))
         if mins < 1 { return "just now" }
         if mins < 60 { return "\(mins) min" }
@@ -715,7 +715,7 @@ private struct BOLBody: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(r.field.uppercased()).font(.system(size: 10, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
-                            Text("\(r.tendered ?? "—") → \(r.uploaded ?? "—")")
+                            Text("\(r.tendered ?? "-") → \(r.uploaded ?? "-")")
                                 .font(.caption.monospaced()).foregroundStyle(palette.textPrimary)
                         }
                         Spacer()

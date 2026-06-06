@@ -56,7 +56,7 @@ private struct TenderCountdownBody: View {
                 }
             }
             Text("Tender expires soon").font(.system(size: 17, weight: .heavy)).foregroundStyle(.white)
-            Text("Accept, counter, or reject before the timer hits zero. After expiry the load re-enters bidding.").font(EType.caption).foregroundStyle(.white.opacity(0.85)).multilineTextAlignment(.center).padding(.horizontal, 14)
+            Text("Accept, counter or reject before the timer hits zero. After expiry the load re-enters bidding.").font(EType.caption).foregroundStyle(.white.opacity(0.85)).multilineTextAlignment(.center).padding(.horizontal, 14)
         }
         .padding(Space.s4)
         .frame(maxWidth: .infinity)

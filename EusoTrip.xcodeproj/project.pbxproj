@@ -7,6 +7,19 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		D2RIOSBLD110000000000000 /* 1100_IDVLivenessSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110000000000000 /* 1100_IDVLivenessSheet.swift */; };
+		D2RIOSBLD110100000000000 /* 1101_TaxIDValidationSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110100000000000 /* 1101_TaxIDValidationSheet.swift */; };
+		D2RIOSBLD110200000000000 /* 1102_OperatingAuthoritySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110200000000000 /* 1102_OperatingAuthoritySheet.swift */; };
+		D2RIOSBLD110300000000000 /* 1103_InsuranceCOIViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110300000000000 /* 1103_InsuranceCOIViewer.swift */; };
+		D2RIOSBLD110400000000000 /* 1104_ClearinghouseQuerySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110400000000000 /* 1104_ClearinghouseQuerySheet.swift */; };
+		D2RIOSBLD110500000000000 /* 1105_MaritimeCertSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110500000000000 /* 1105_MaritimeCertSheet.swift */; };
+		D2RIOSBLD110600000000000 /* 1106_RailCertSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110600000000000 /* 1106_RailCertSheet.swift */; };
+		D2RIOSBLD110700000000000 /* 1107_UIIAStatusSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110700000000000 /* 1107_UIIAStatusSheet.swift */; };
+		D2RIOSBLD110800000000000 /* 1108_TrustedTraderSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110800000000000 /* 1108_TrustedTraderSheet.swift */; };
+		D2RIOSBLD110900000000000 /* 1109_VerticalEndorsementSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF110900000000000 /* 1109_VerticalEndorsementSheet.swift */; };
+		D2RIOSBLD111000000000000 /* 1110_StepUpAuthSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF111000000000000 /* 1110_StepUpAuthSheet.swift */; };
+		D2RIOSBLD111100000000000 /* 1111_OnboardingWizard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF111100000000000 /* 1111_OnboardingWizard.swift */; };
+		D2RIOSBLD111200000000000 /* 1112_ComplianceGatesStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2RIOSREF111200000000000 /* 1112_ComplianceGatesStrip.swift */; };
 		A1000000000000000000AABA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000AAB9 /* Assets.xcassets */; };
 		A1000000000000000000AABD /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000AABC /* Preview Assets.xcassets */; };
 		A104A92790FBBAD8E412C5F3 /* AppRoot.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F5325921E558CD8ED37DBF /* AppRoot.swift */; };
@@ -34,6 +47,7 @@
 		BMAPPROJBUILD1 /* BespokeMapProjection.swift in Sources */ = {isa = PBXBuildFile; fileRef = BMAPPROJFREF1 /* BespokeMapProjection.swift */; };
 		BMAPSTYLBUILD1 /* BespokeMapStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BMAPSTYLFREF1 /* BespokeMapStyle.swift */; };
 		BMAPCNVSBUILD1 /* BespokeMapCanvas.swift in Sources */ = {isa = PBXBuildFile; fileRef = BMAPCNVSFREF1 /* BespokeMapCanvas.swift */; };
+		BMAPBASEBUILD1 /* BespokeMapBasemap.swift in Sources */ = {isa = PBXBuildFile; fileRef = BMAPBASEFREF1 /* BespokeMapBasemap.swift */; };
 		A12E1A1C0010CE0FF1000017 /* EusoAddressField.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */; };
 		A12E1A1C0010CE0FF1000019 /* EusoHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001A /* EusoHeader.swift */; };
 		A12E1A1C0010CE0FF100001B /* EusoBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100001C /* EusoBadge.swift */; };
@@ -81,6 +95,7 @@
 		A1D061193673EC398AB67E44 /* 017_PickupBolSigning.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F1968282989372CA735A10 /* 017_PickupBolSigning.swift */; };
 		A1D4E2D6D079F0A6924FACD1 /* 002_CreateAccount.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1A4741520D5DE7A968DABA8 /* 002_CreateAccount.swift */; };
 		A1DMC0001000000000000001 /* HereBearerFetch.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DMC0001000000000000002 /* HereBearerFetch.swift */; };
+		A1RLIM0001000000000000A1 /* HereRateLimiter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1RLIM0001000000000000A2 /* HereRateLimiter.swift */; };
 		A1DMC0001000000000000003 /* HereFuelPricesClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DMC0001000000000000004 /* HereFuelPricesClient.swift */; };
 		A1DMC0001000000000000005 /* HereWeatherClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DMC0001000000000000006 /* HereWeatherClient.swift */; };
 		A1DMC0001000000000000007 /* HereTrafficClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1DMC0001000000000000008 /* HereTrafficClient.swift */; };
@@ -700,6 +715,7 @@
 		FE410000000000000000009B /* 009_VesselTenderWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000009F /* 009_VesselTenderWorkflow.swift */; };
 		FE410000000000000000112B /* 112_DriverClosed.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000112F /* 112_DriverClosed.swift */; };
 		FE410000000000000000161B /* 161_DriverGatePass.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000161F /* 161_DriverGatePass.swift */; };
+		FE410000000000000000162B /* 162_DriverWellnessFatigue.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000162F /* 162_DriverWellnessFatigue.swift */; };
 		FE410000000000000000297B /* 297_ShipperCargoInsurance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */; };
 		FE410000000000000000298B /* 298_ShipperDetentionExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */; };
 		FE410000000000000000533B /* 533_DispatcherAIDispatchAssist.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */; };
@@ -861,6 +877,65 @@
 		LBTR20260521000001 /* 340_LoadBoardTrio.swift in Sources */ = {isa = PBXBuildFile; fileRef = LBTR20260521000002 /* 340_LoadBoardTrio.swift */; };
 		LCGCSTORE0010CE0FF1A1B2C3 /* LifecycleGeocodeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = LCGCSTORE0010CE0FF1A1B2C4 /* LifecycleGeocodeStore.swift */; };
 		LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LMBD2026051700000012A1 /* LoadModeBadge.swift */; };
+		TLEX2026060300000011A1 /* TransportLexicon.swift in Sources */ = {isa = PBXBuildFile; fileRef = TLEX2026060300000012A1 /* TransportLexicon.swift */; };
+		CHKT2026060300000011A1 /* ESangChatKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = CHKT2026060300000012A1 /* ESangChatKit.swift */; };
+		DP022026060300000011A1 /* 402_DispatcherProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = DP022026060300000012A1 /* 402_DispatcherProfile.swift */; };
+		RS082026060300000011A1 /* 008_RailShipperTenderWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = RS082026060300000012A1 /* 008_RailShipperTenderWorkflow.swift */; };
+		VD042026060300000011A1 /* 004_VesselDemurrageDetention.swift in Sources */ = {isa = PBXBuildFile; fileRef = VD042026060300000012A1 /* 004_VesselDemurrageDetention.swift */; };
+		EQRC2026060300000011A1 /* EquipmentRequirementsCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQRC2026060300000012A1 /* EquipmentRequirementsCatalog.swift */; };
+		CP9M2026060200000011A1 /* 903_ComplianceMe.swift in Sources */ = {isa = PBXBuildFile; fileRef = CP9M2026060200000012A1 /* 903_ComplianceMe.swift */; };
+		AD8M2026060200000011A1 /* 804_AdminMe.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD8M2026060200000012A1 /* 804_AdminMe.swift */; };
+		TM7M2026060200000011A1 /* 703_TerminalMe.swift in Sources */ = {isa = PBXBuildFile; fileRef = TM7M2026060200000012A1 /* 703_TerminalMe.swift */; };
+		ES6M2026060200000011A1 /* 620_EscortMeHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES6M2026060200000012A1 /* 620_EscortMeHome.swift */; };
+		BR4B2026060200000011A1 /* 404B_BrokerMe.swift in Sources */ = {isa = PBXBuildFile; fileRef = BR4B2026060200000012A1 /* 404B_BrokerMe.swift */; };
+		R6722026060200000011A1 /* 672_RailLayoverTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = R6722026060200000012A1 /* 672_RailLayoverTracking.swift */; };
+		R6392026060200000011A1 /* 639_RailYardDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = R6392026060200000012A1 /* 639_RailYardDirectory.swift */; };
+		R6732026060200000011A1 /* 673_RailIntermodalDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = R6732026060200000012A1 /* 673_RailIntermodalDashboard.swift */; };
+		V7082026060200000011A1 /* 708_VesselShipmentCO2.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7082026060200000012A1 /* 708_VesselShipmentCO2.swift */; };
+		V6702026060200000011A1 /* 670_VesselBunkerPrices.swift in Sources */ = {isa = PBXBuildFile; fileRef = V6702026060200000012A1 /* 670_VesselBunkerPrices.swift */; };
+		V8122026060200000011A1 /* 812_VesselClaimTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8122026060200000012A1 /* 812_VesselClaimTemplates.swift */; };
+		V8112026060200000011A1 /* 811_VesselClaimsAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8112026060200000012A1 /* 811_VesselClaimsAnalytics.swift */; };
+		V8102026060200000011A1 /* 810_VesselDisputeMediation.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8102026060200000012A1 /* 810_VesselDisputeMediation.swift */; };
+		V7842026060200000011A1 /* 784_VesselDetentionTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7842026060200000012A1 /* 784_VesselDetentionTracking.swift */; };
+		V6962026060200000011A1 /* 696_VesselSettlementBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = V6962026060200000012A1 /* 696_VesselSettlementBatch.swift */; };
+		V6742026060200000011A1 /* 674_VesselCostBreakdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = V6742026060200000012A1 /* 674_VesselCostBreakdown.swift */; };
+		V6612026060200000011A1 /* 661_VesselPortCalls.swift in Sources */ = {isa = PBXBuildFile; fileRef = V6612026060200000012A1 /* 661_VesselPortCalls.swift */; };
+		V6602026060200000011A1 /* 660_VesselLivePosition.swift in Sources */ = {isa = PBXBuildFile; fileRef = V6602026060200000012A1 /* 660_VesselLivePosition.swift */; };
+		V8092026060200000011A1 /* 809_VesselDisputeResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8092026060200000012A1 /* 809_VesselDisputeResolution.swift */; };
+		V8052026060200000011A1 /* 805_VesselLossPrevention.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8052026060200000012A1 /* 805_VesselLossPrevention.swift */; };
+		V8042026060200000011A1 /* 804_VesselOverchargeRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8042026060200000012A1 /* 804_VesselOverchargeRecovery.swift */; };
+		V8022026060200000011A1 /* 802_VesselClaimPayments.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8022026060200000012A1 /* 802_VesselClaimPayments.swift */; };
+		V6892026060200000011A1 /* 689_VesselNetworkDisruption.swift in Sources */ = {isa = PBXBuildFile; fileRef = V6892026060200000012A1 /* 689_VesselNetworkDisruption.swift */; };
+		V7352026060200000011A1 /* 735_VesselDemurrageAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7352026060200000012A1 /* 735_VesselDemurrageAlerts.swift */; };
+		V8212026060200000011A1 /* 821_VesselReeferAlertConsole.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8212026060200000012A1 /* 821_VesselReeferAlertConsole.swift */; };
+		V8202026060200000011A1 /* 820_VesselReeferPreCool.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8202026060200000012A1 /* 820_VesselReeferPreCool.swift */; };
+		C3762026060200000011A1 /* 376_CatalystAtDeliveryFleetTrackCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3762026060200000012A1 /* 376_CatalystAtDeliveryFleetTrackCelM04.swift */; };
+		C3752026060200000011A1 /* 375_CatalystInTransitFleetTrackCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3752026060200000012A1 /* 375_CatalystInTransitFleetTrackCelM04.swift */; };
+		C3742026060200000011A1 /* 374_CatalystPickupOnSiteEchoCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3742026060200000012A1 /* 374_CatalystPickupOnSiteEchoCelM04.swift */; };
+		C3732026060200000011A1 /* 373_CatalystAwardedCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3732026060200000012A1 /* 373_CatalystAwardedCelM04.swift */; };
+		R6712026060200000011A1 /* 671_RailClaimTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = R6712026060200000012A1 /* 671_RailClaimTemplates.swift */; };
+		R6702026060200000011A1 /* 670_RailShortageClaims.swift in Sources */ = {isa = PBXBuildFile; fileRef = R6702026060200000012A1 /* 670_RailShortageClaims.swift */; };
+		R6692026060200000011A1 /* 669_RailOverchargeRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = R6692026060200000012A1 /* 669_RailOverchargeRecovery.swift */; };
+		R6562026060200000011A1 /* 656_RailClaimPayments.swift in Sources */ = {isa = PBXBuildFile; fileRef = R6562026060200000012A1 /* 656_RailClaimPayments.swift */; };
+		V8162026060200000011A1 /* 816_VesselTopShippers.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8162026060200000012A1 /* 816_VesselTopShippers.swift */; };
+		V7822026060200000011A1 /* 782_VesselDwellAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7822026060200000012A1 /* 782_VesselDwellAnalysis.swift */; };
+		V7702026060200000011A1 /* 770_VesselETAPrediction.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7702026060200000012A1 /* 770_VesselETAPrediction.swift */; };
+		V7892026060200000011A1 /* 789_VesselCustomsStatusUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7892026060200000012A1 /* 789_VesselCustomsStatusUpdate.swift */; };
+		V8142026060200000011A1 /* 814_VesselCustomsEntryFiling.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8142026060200000012A1 /* 814_VesselCustomsEntryFiling.swift */; };
+		V0062026060200000011A1 /* 006_VesselCustomsISF.swift in Sources */ = {isa = PBXBuildFile; fileRef = V0062026060200000012A1 /* 006_VesselCustomsISF.swift */; };
+		V7322026060200000011A1 /* 732_VesselCargoClaim.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7322026060200000012A1 /* 732_VesselCargoClaim.swift */; };
+		V8082026060200000011A1 /* 808_VesselClaimWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8082026060200000012A1 /* 808_VesselClaimWorkflow.swift */; };
+		V8012026060200000011A1 /* 801_VesselClaimsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8012026060200000012A1 /* 801_VesselClaimsList.swift */; };
+		V8002026060200000011A1 /* 800_VesselClaimsDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8002026060200000012A1 /* 800_VesselClaimsDashboard.swift */; };
+		V7092026060200000011A1 /* 709_VesselBidBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7092026060200000012A1 /* 709_VesselBidBoard.swift */; };
+		V7922026060200000011A1 /* 792_VesselDemurrageCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7922026060200000012A1 /* 792_VesselDemurrageCalculator.swift */; };
+		V7722026060200000011A1 /* 772_VesselDemurrageAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7722026060200000012A1 /* 772_VesselDemurrageAnalytics.swift */; };
+		V7372026060200000011A1 /* 737_VesselDrayageOrders.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7372026060200000012A1 /* 737_VesselDrayageOrders.swift */; };
+		V7062026060200000011A1 /* 706_VesselRebookingSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7062026060200000012A1 /* 706_VesselRebookingSuggestions.swift */; };
+		V6692026060200000011A1 /* 669_VesselBookingAmendment.swift in Sources */ = {isa = PBXBuildFile; fileRef = V6692026060200000012A1 /* 669_VesselBookingAmendment.swift */; };
+		VDC82026060200000011A1 /* 815_VesselDemurrageChargeApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = VDC82026060200000012A1 /* 815_VesselDemurrageChargeApproval.swift */; };
+		VDL72026060200000011A1 /* 757_VesselDetentionLetters.swift in Sources */ = {isa = PBXBuildFile; fileRef = VDL72026060200000012A1 /* 757_VesselDetentionLetters.swift */; };
+		RCI62026060200000011A1 /* 606_RailCargoInsurance.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCI62026060200000012A1 /* 606_RailCargoInsurance.swift */; };
 		LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */; };
 		MMCO2026051700000011A1 /* MultiModalCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = MMCO2026051700000012A1 /* MultiModalCore.swift */; };
 		MSGS00010CE0FF10000011A1 /* MessagesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */; };
@@ -944,6 +1019,19 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D2RIOSREF110000000000000 /* 1100_IDVLivenessSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1100_IDVLivenessSheet.swift; path = EusoTrip/Views/Compliance/1100_IDVLivenessSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110100000000000 /* 1101_TaxIDValidationSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1101_TaxIDValidationSheet.swift; path = EusoTrip/Views/Compliance/1101_TaxIDValidationSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110200000000000 /* 1102_OperatingAuthoritySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1102_OperatingAuthoritySheet.swift; path = EusoTrip/Views/Compliance/1102_OperatingAuthoritySheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110300000000000 /* 1103_InsuranceCOIViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1103_InsuranceCOIViewer.swift; path = EusoTrip/Views/Compliance/1103_InsuranceCOIViewer.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110400000000000 /* 1104_ClearinghouseQuerySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1104_ClearinghouseQuerySheet.swift; path = EusoTrip/Views/Compliance/1104_ClearinghouseQuerySheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110500000000000 /* 1105_MaritimeCertSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1105_MaritimeCertSheet.swift; path = EusoTrip/Views/Compliance/1105_MaritimeCertSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110600000000000 /* 1106_RailCertSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1106_RailCertSheet.swift; path = EusoTrip/Views/Compliance/1106_RailCertSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110700000000000 /* 1107_UIIAStatusSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1107_UIIAStatusSheet.swift; path = EusoTrip/Views/Compliance/1107_UIIAStatusSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110800000000000 /* 1108_TrustedTraderSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1108_TrustedTraderSheet.swift; path = EusoTrip/Views/Compliance/1108_TrustedTraderSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF110900000000000 /* 1109_VerticalEndorsementSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1109_VerticalEndorsementSheet.swift; path = EusoTrip/Views/Compliance/1109_VerticalEndorsementSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF111000000000000 /* 1110_StepUpAuthSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1110_StepUpAuthSheet.swift; path = EusoTrip/Views/Compliance/1110_StepUpAuthSheet.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF111100000000000 /* 1111_OnboardingWizard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1111_OnboardingWizard.swift; path = EusoTrip/Views/Compliance/1111_OnboardingWizard.swift; sourceTree = SOURCE_ROOT; };
+		D2RIOSREF111200000000000 /* 1112_ComplianceGatesStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 1112_ComplianceGatesStrip.swift; path = EusoTrip/Views/Compliance/1112_ComplianceGatesStrip.swift; sourceTree = SOURCE_ROOT; };
 		A1000000000000000000AAB1 /* EusoTrip.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EusoTrip.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000000000000000000AAB9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000000000000000000AABC /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
@@ -973,6 +1061,7 @@
 		BMAPPROJFREF1 /* BespokeMapProjection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Map/BespokeMapProjection.swift; sourceTree = "<group>"; };
 		BMAPSTYLFREF1 /* BespokeMapStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Map/BespokeMapStyle.swift; sourceTree = "<group>"; };
 		BMAPCNVSFREF1 /* BespokeMapCanvas.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Map/BespokeMapCanvas.swift; sourceTree = "<group>"; };
+		BMAPBASEFREF1 /* BespokeMapBasemap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Map/BespokeMapBasemap.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000015 /* EusoTrip.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = EusoTrip.xcconfig; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000016 /* HEREAuthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HEREAuthService.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000018 /* EusoAddressField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EusoAddressField.swift; sourceTree = "<group>"; };
@@ -1015,6 +1104,7 @@
 		A1D507CFE4BE8224D0EF83E2 /* ForgotPasswordViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgotPasswordViewModel.swift; sourceTree = "<group>"; };
 		A1D98E53AF24D307F0593138 /* RegistrationViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegistrationViewModel.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000002 /* HereBearerFetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereBearerFetch.swift; sourceTree = "<group>"; };
+		A1RLIM0001000000000000A2 /* HereRateLimiter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereRateLimiter.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000004 /* HereFuelPricesClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereFuelPricesClient.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000006 /* HereWeatherClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereWeatherClient.swift; sourceTree = "<group>"; };
 		A1DMC0001000000000000008 /* HereTrafficClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereTrafficClient.swift; sourceTree = "<group>"; };
@@ -1640,6 +1730,7 @@
 		FE410000000000000000009F /* 009_VesselTenderWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 009_VesselTenderWorkflow.swift; path = EusoTrip/Views/Vessel/009_VesselTenderWorkflow.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000112F /* 112_DriverClosed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 112_DriverClosed.swift; path = EusoTrip/Views/Driver/112_DriverClosed.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000161F /* 161_DriverGatePass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 161_DriverGatePass.swift; path = EusoTrip/Views/Driver/161_DriverGatePass.swift; sourceTree = SOURCE_ROOT; };
+		FE410000000000000000162F /* 162_DriverWellnessFatigue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 162_DriverWellnessFatigue.swift; path = EusoTrip/Views/Driver/162_DriverWellnessFatigue.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 297_ShipperCargoInsurance.swift; path = EusoTrip/Views/Shipper/297_ShipperCargoInsurance.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 298_ShipperDetentionExposure.swift; path = EusoTrip/Views/Shipper/298_ShipperDetentionExposure.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 533_DispatcherAIDispatchAssist.swift; path = EusoTrip/Views/Dispatch/533_DispatcherAIDispatchAssist.swift; sourceTree = SOURCE_ROOT; };
@@ -1803,6 +1894,65 @@
 		LBTR20260521000002 /* 340_LoadBoardTrio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 340_LoadBoardTrio.swift; path = EusoTrip/Views/Catalyst/340_LoadBoardTrio.swift; sourceTree = SOURCE_ROOT; };
 		LCGCSTORE0010CE0FF1A1B2C4 /* LifecycleGeocodeStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifecycleGeocodeStore.swift; sourceTree = "<group>"; };
 		LMBD2026051700000012A1 /* LoadModeBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadModeBadge.swift; sourceTree = "<group>"; };
+		TLEX2026060300000012A1 /* TransportLexicon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TransportLexicon.swift; path = EusoTrip/Models/Multimodal/TransportLexicon.swift; sourceTree = SOURCE_ROOT; };
+		CHKT2026060300000012A1 /* ESangChatKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ESangChatKit.swift; path = EusoTrip/Views/Components/Chat/ESangChatKit.swift; sourceTree = SOURCE_ROOT; };
+		DP022026060300000012A1 /* 402_DispatcherProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 402_DispatcherProfile.swift; path = EusoTrip/Views/Dispatch/402_DispatcherProfile.swift; sourceTree = SOURCE_ROOT; };
+		RS082026060300000012A1 /* 008_RailShipperTenderWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 008_RailShipperTenderWorkflow.swift; path = EusoTrip/Views/Rail/008_RailShipperTenderWorkflow.swift; sourceTree = SOURCE_ROOT; };
+		VD042026060300000012A1 /* 004_VesselDemurrageDetention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 004_VesselDemurrageDetention.swift; path = EusoTrip/Views/Vessel/004_VesselDemurrageDetention.swift; sourceTree = SOURCE_ROOT; };
+		EQRC2026060300000012A1 /* EquipmentRequirementsCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EquipmentRequirementsCatalog.swift; path = EusoTrip/Models/EquipmentRequirementsCatalog.swift; sourceTree = SOURCE_ROOT; };
+		CP9M2026060200000012A1 /* 903_ComplianceMe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 903_ComplianceMe.swift; path = EusoTrip/Views/Compliance/903_ComplianceMe.swift; sourceTree = SOURCE_ROOT; };
+		AD8M2026060200000012A1 /* 804_AdminMe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 804_AdminMe.swift; path = EusoTrip/Views/Admin/804_AdminMe.swift; sourceTree = SOURCE_ROOT; };
+		TM7M2026060200000012A1 /* 703_TerminalMe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 703_TerminalMe.swift; path = EusoTrip/Views/Terminal/703_TerminalMe.swift; sourceTree = SOURCE_ROOT; };
+		ES6M2026060200000012A1 /* 620_EscortMeHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 620_EscortMeHome.swift; path = EusoTrip/Views/Escort/620_EscortMeHome.swift; sourceTree = SOURCE_ROOT; };
+		BR4B2026060200000012A1 /* 404B_BrokerMe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 404B_BrokerMe.swift; path = EusoTrip/Views/Broker/404B_BrokerMe.swift; sourceTree = SOURCE_ROOT; };
+		R6722026060200000012A1 /* 672_RailLayoverTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 672_RailLayoverTracking.swift; path = EusoTrip/Views/Rail/672_RailLayoverTracking.swift; sourceTree = SOURCE_ROOT; };
+		R6392026060200000012A1 /* 639_RailYardDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 639_RailYardDirectory.swift; path = EusoTrip/Views/Rail/639_RailYardDirectory.swift; sourceTree = SOURCE_ROOT; };
+		R6732026060200000012A1 /* 673_RailIntermodalDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 673_RailIntermodalDashboard.swift; path = EusoTrip/Views/Rail/673_RailIntermodalDashboard.swift; sourceTree = SOURCE_ROOT; };
+		V7082026060200000012A1 /* 708_VesselShipmentCO2.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 708_VesselShipmentCO2.swift; path = EusoTrip/Views/Vessel/708_VesselShipmentCO2.swift; sourceTree = SOURCE_ROOT; };
+		V6702026060200000012A1 /* 670_VesselBunkerPrices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 670_VesselBunkerPrices.swift; path = EusoTrip/Views/Vessel/670_VesselBunkerPrices.swift; sourceTree = SOURCE_ROOT; };
+		V8122026060200000012A1 /* 812_VesselClaimTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 812_VesselClaimTemplates.swift; path = EusoTrip/Views/Vessel/812_VesselClaimTemplates.swift; sourceTree = SOURCE_ROOT; };
+		V8112026060200000012A1 /* 811_VesselClaimsAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 811_VesselClaimsAnalytics.swift; path = EusoTrip/Views/Vessel/811_VesselClaimsAnalytics.swift; sourceTree = SOURCE_ROOT; };
+		V8102026060200000012A1 /* 810_VesselDisputeMediation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 810_VesselDisputeMediation.swift; path = EusoTrip/Views/Vessel/810_VesselDisputeMediation.swift; sourceTree = SOURCE_ROOT; };
+		V7842026060200000012A1 /* 784_VesselDetentionTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 784_VesselDetentionTracking.swift; path = EusoTrip/Views/Vessel/784_VesselDetentionTracking.swift; sourceTree = SOURCE_ROOT; };
+		V6962026060200000012A1 /* 696_VesselSettlementBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 696_VesselSettlementBatch.swift; path = EusoTrip/Views/Vessel/696_VesselSettlementBatch.swift; sourceTree = SOURCE_ROOT; };
+		V6742026060200000012A1 /* 674_VesselCostBreakdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 674_VesselCostBreakdown.swift; path = EusoTrip/Views/Vessel/674_VesselCostBreakdown.swift; sourceTree = SOURCE_ROOT; };
+		V6612026060200000012A1 /* 661_VesselPortCalls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 661_VesselPortCalls.swift; path = EusoTrip/Views/Vessel/661_VesselPortCalls.swift; sourceTree = SOURCE_ROOT; };
+		V6602026060200000012A1 /* 660_VesselLivePosition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 660_VesselLivePosition.swift; path = EusoTrip/Views/Vessel/660_VesselLivePosition.swift; sourceTree = SOURCE_ROOT; };
+		V8092026060200000012A1 /* 809_VesselDisputeResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 809_VesselDisputeResolution.swift; path = EusoTrip/Views/Vessel/809_VesselDisputeResolution.swift; sourceTree = SOURCE_ROOT; };
+		V8052026060200000012A1 /* 805_VesselLossPrevention.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 805_VesselLossPrevention.swift; path = EusoTrip/Views/Vessel/805_VesselLossPrevention.swift; sourceTree = SOURCE_ROOT; };
+		V8042026060200000012A1 /* 804_VesselOverchargeRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 804_VesselOverchargeRecovery.swift; path = EusoTrip/Views/Vessel/804_VesselOverchargeRecovery.swift; sourceTree = SOURCE_ROOT; };
+		V8022026060200000012A1 /* 802_VesselClaimPayments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 802_VesselClaimPayments.swift; path = EusoTrip/Views/Vessel/802_VesselClaimPayments.swift; sourceTree = SOURCE_ROOT; };
+		V6892026060200000012A1 /* 689_VesselNetworkDisruption.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 689_VesselNetworkDisruption.swift; path = EusoTrip/Views/Vessel/689_VesselNetworkDisruption.swift; sourceTree = SOURCE_ROOT; };
+		V7352026060200000012A1 /* 735_VesselDemurrageAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 735_VesselDemurrageAlerts.swift; path = EusoTrip/Views/Vessel/735_VesselDemurrageAlerts.swift; sourceTree = SOURCE_ROOT; };
+		V8212026060200000012A1 /* 821_VesselReeferAlertConsole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 821_VesselReeferAlertConsole.swift; path = EusoTrip/Views/Vessel/821_VesselReeferAlertConsole.swift; sourceTree = SOURCE_ROOT; };
+		V8202026060200000012A1 /* 820_VesselReeferPreCool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 820_VesselReeferPreCool.swift; path = EusoTrip/Views/Vessel/820_VesselReeferPreCool.swift; sourceTree = SOURCE_ROOT; };
+		C3762026060200000012A1 /* 376_CatalystAtDeliveryFleetTrackCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 376_CatalystAtDeliveryFleetTrackCelM04.swift; path = EusoTrip/Views/Catalyst/376_CatalystAtDeliveryFleetTrackCelM04.swift; sourceTree = SOURCE_ROOT; };
+		C3752026060200000012A1 /* 375_CatalystInTransitFleetTrackCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 375_CatalystInTransitFleetTrackCelM04.swift; path = EusoTrip/Views/Catalyst/375_CatalystInTransitFleetTrackCelM04.swift; sourceTree = SOURCE_ROOT; };
+		C3742026060200000012A1 /* 374_CatalystPickupOnSiteEchoCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 374_CatalystPickupOnSiteEchoCelM04.swift; path = EusoTrip/Views/Catalyst/374_CatalystPickupOnSiteEchoCelM04.swift; sourceTree = SOURCE_ROOT; };
+		C3732026060200000012A1 /* 373_CatalystAwardedCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 373_CatalystAwardedCelM04.swift; path = EusoTrip/Views/Catalyst/373_CatalystAwardedCelM04.swift; sourceTree = SOURCE_ROOT; };
+		R6712026060200000012A1 /* 671_RailClaimTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 671_RailClaimTemplates.swift; path = EusoTrip/Views/Rail/671_RailClaimTemplates.swift; sourceTree = SOURCE_ROOT; };
+		R6702026060200000012A1 /* 670_RailShortageClaims.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 670_RailShortageClaims.swift; path = EusoTrip/Views/Rail/670_RailShortageClaims.swift; sourceTree = SOURCE_ROOT; };
+		R6692026060200000012A1 /* 669_RailOverchargeRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 669_RailOverchargeRecovery.swift; path = EusoTrip/Views/Rail/669_RailOverchargeRecovery.swift; sourceTree = SOURCE_ROOT; };
+		R6562026060200000012A1 /* 656_RailClaimPayments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 656_RailClaimPayments.swift; path = EusoTrip/Views/Rail/656_RailClaimPayments.swift; sourceTree = SOURCE_ROOT; };
+		V8162026060200000012A1 /* 816_VesselTopShippers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 816_VesselTopShippers.swift; path = EusoTrip/Views/Vessel/816_VesselTopShippers.swift; sourceTree = SOURCE_ROOT; };
+		V7822026060200000012A1 /* 782_VesselDwellAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 782_VesselDwellAnalysis.swift; path = EusoTrip/Views/Vessel/782_VesselDwellAnalysis.swift; sourceTree = SOURCE_ROOT; };
+		V7702026060200000012A1 /* 770_VesselETAPrediction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 770_VesselETAPrediction.swift; path = EusoTrip/Views/Vessel/770_VesselETAPrediction.swift; sourceTree = SOURCE_ROOT; };
+		V7892026060200000012A1 /* 789_VesselCustomsStatusUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 789_VesselCustomsStatusUpdate.swift; path = EusoTrip/Views/Vessel/789_VesselCustomsStatusUpdate.swift; sourceTree = SOURCE_ROOT; };
+		V8142026060200000012A1 /* 814_VesselCustomsEntryFiling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 814_VesselCustomsEntryFiling.swift; path = EusoTrip/Views/Vessel/814_VesselCustomsEntryFiling.swift; sourceTree = SOURCE_ROOT; };
+		V0062026060200000012A1 /* 006_VesselCustomsISF.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 006_VesselCustomsISF.swift; path = EusoTrip/Views/Vessel/006_VesselCustomsISF.swift; sourceTree = SOURCE_ROOT; };
+		V7322026060200000012A1 /* 732_VesselCargoClaim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 732_VesselCargoClaim.swift; path = EusoTrip/Views/Vessel/732_VesselCargoClaim.swift; sourceTree = SOURCE_ROOT; };
+		V8082026060200000012A1 /* 808_VesselClaimWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 808_VesselClaimWorkflow.swift; path = EusoTrip/Views/Vessel/808_VesselClaimWorkflow.swift; sourceTree = SOURCE_ROOT; };
+		V8012026060200000012A1 /* 801_VesselClaimsList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 801_VesselClaimsList.swift; path = EusoTrip/Views/Vessel/801_VesselClaimsList.swift; sourceTree = SOURCE_ROOT; };
+		V8002026060200000012A1 /* 800_VesselClaimsDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 800_VesselClaimsDashboard.swift; path = EusoTrip/Views/Vessel/800_VesselClaimsDashboard.swift; sourceTree = SOURCE_ROOT; };
+		V7092026060200000012A1 /* 709_VesselBidBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 709_VesselBidBoard.swift; path = EusoTrip/Views/Vessel/709_VesselBidBoard.swift; sourceTree = SOURCE_ROOT; };
+		V7922026060200000012A1 /* 792_VesselDemurrageCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 792_VesselDemurrageCalculator.swift; path = EusoTrip/Views/Vessel/792_VesselDemurrageCalculator.swift; sourceTree = SOURCE_ROOT; };
+		V7722026060200000012A1 /* 772_VesselDemurrageAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 772_VesselDemurrageAnalytics.swift; path = EusoTrip/Views/Vessel/772_VesselDemurrageAnalytics.swift; sourceTree = SOURCE_ROOT; };
+		V7372026060200000012A1 /* 737_VesselDrayageOrders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 737_VesselDrayageOrders.swift; path = EusoTrip/Views/Vessel/737_VesselDrayageOrders.swift; sourceTree = SOURCE_ROOT; };
+		V7062026060200000012A1 /* 706_VesselRebookingSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 706_VesselRebookingSuggestions.swift; path = EusoTrip/Views/Vessel/706_VesselRebookingSuggestions.swift; sourceTree = SOURCE_ROOT; };
+		V6692026060200000012A1 /* 669_VesselBookingAmendment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 669_VesselBookingAmendment.swift; path = EusoTrip/Views/Vessel/669_VesselBookingAmendment.swift; sourceTree = SOURCE_ROOT; };
+		VDC82026060200000012A1 /* 815_VesselDemurrageChargeApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 815_VesselDemurrageChargeApproval.swift; path = EusoTrip/Views/Vessel/815_VesselDemurrageChargeApproval.swift; sourceTree = SOURCE_ROOT; };
+		VDL72026060200000012A1 /* 757_VesselDetentionLetters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 757_VesselDetentionLetters.swift; path = EusoTrip/Views/Vessel/757_VesselDetentionLetters.swift; sourceTree = SOURCE_ROOT; };
+		RCI62026060200000012A1 /* 606_RailCargoInsurance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 606_RailCargoInsurance.swift; path = EusoTrip/Views/Rail/606_RailCargoInsurance.swift; sourceTree = SOURCE_ROOT; };
 		LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingTrustBadge.swift; sourceTree = "<group>"; };
 		MMCO2026051700000012A1 /* MultiModalCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MultiModalCore.swift; path = EusoTrip/Models/Multimodal/MultiModalCore.swift; sourceTree = SOURCE_ROOT; };
 		MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagesScreen.swift; sourceTree = "<group>"; };
@@ -2283,6 +2433,19 @@
 				D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */,
 				D2DSP1300000000000ACDS /* Dpch713_DispatchMe.swift */,
 				D2CMP0000000000000ACDS /* 900_ComplianceOfficerHome.swift */,
+				D2RIOSREF110000000000000 /* 1100_IDVLivenessSheet.swift */,
+				D2RIOSREF110100000000000 /* 1101_TaxIDValidationSheet.swift */,
+				D2RIOSREF110200000000000 /* 1102_OperatingAuthoritySheet.swift */,
+				D2RIOSREF110300000000000 /* 1103_InsuranceCOIViewer.swift */,
+				D2RIOSREF110400000000000 /* 1104_ClearinghouseQuerySheet.swift */,
+				D2RIOSREF110500000000000 /* 1105_MaritimeCertSheet.swift */,
+				D2RIOSREF110600000000000 /* 1106_RailCertSheet.swift */,
+				D2RIOSREF110700000000000 /* 1107_UIIAStatusSheet.swift */,
+				D2RIOSREF110800000000000 /* 1108_TrustedTraderSheet.swift */,
+				D2RIOSREF110900000000000 /* 1109_VerticalEndorsementSheet.swift */,
+				D2RIOSREF111000000000000 /* 1110_StepUpAuthSheet.swift */,
+				D2RIOSREF111100000000000 /* 1111_OnboardingWizard.swift */,
+				D2RIOSREF111200000000000 /* 1112_ComplianceGatesStrip.swift */,
 				D2CMP0100000000000ACDS /* 901_ComplianceExpiringDocs.swift */,
 				D2CMP0200000000000ACDS /* 902_ComplianceViolations.swift */,
 				D2CMPNAV0000000000ACDS /* ComplianceNavController.swift */,
@@ -2473,6 +2636,7 @@
 				E1D1ED0411111111111111AA /* ELDIntegrationView.swift */,
 				FE410000000000000000112F /* 112_DriverClosed.swift */,
 				FE410000000000000000161F /* 161_DriverGatePass.swift */,
+				FE410000000000000000162F /* 162_DriverWellnessFatigue.swift */,
 				FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */,
 				FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */,
 				FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */,
@@ -2620,6 +2784,7 @@
 				A1DMC000100000000000000E /* HereSafetyCamerasClient.swift */,
 				A1DMC0001000000000000010 /* HereTrafficAnalyticsClient.swift */,
 				A1DMC0001000000000000023 /* HereWeatherAdapter.swift */,
+				A1RLIM0001000000000000A2 /* HereRateLimiter.swift */,
 			);
 			path = HereMaps;
 			sourceTree = "<group>";
@@ -2641,9 +2806,69 @@
 				BMAPPROJFREF1 /* BespokeMapProjection.swift */,
 				BMAPSTYLFREF1 /* BespokeMapStyle.swift */,
 				BMAPCNVSFREF1 /* BespokeMapCanvas.swift */,
+				BMAPBASEFREF1 /* BespokeMapBasemap.swift */,
 				HAFD00010CE0FF10000012A1 /* HereAddressField.swift */,
 				LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */,
 				LMBD2026051700000012A1 /* LoadModeBadge.swift */,
+				TLEX2026060300000012A1 /* TransportLexicon.swift */,
+				CHKT2026060300000012A1 /* ESangChatKit.swift */,
+				DP022026060300000012A1 /* 402_DispatcherProfile.swift */,
+				RS082026060300000012A1 /* 008_RailShipperTenderWorkflow.swift */,
+				VD042026060300000012A1 /* 004_VesselDemurrageDetention.swift */,
+				EQRC2026060300000012A1 /* EquipmentRequirementsCatalog.swift */,
+				CP9M2026060200000012A1 /* 903_ComplianceMe.swift */,
+				AD8M2026060200000012A1 /* 804_AdminMe.swift */,
+				TM7M2026060200000012A1 /* 703_TerminalMe.swift */,
+				ES6M2026060200000012A1 /* 620_EscortMeHome.swift */,
+				BR4B2026060200000012A1 /* 404B_BrokerMe.swift */,
+				R6722026060200000012A1 /* 672_RailLayoverTracking.swift */,
+				R6392026060200000012A1 /* 639_RailYardDirectory.swift */,
+				R6732026060200000012A1 /* 673_RailIntermodalDashboard.swift */,
+				V7082026060200000012A1 /* 708_VesselShipmentCO2.swift */,
+				V6702026060200000012A1 /* 670_VesselBunkerPrices.swift */,
+				V8122026060200000012A1 /* 812_VesselClaimTemplates.swift */,
+				V8112026060200000012A1 /* 811_VesselClaimsAnalytics.swift */,
+				V8102026060200000012A1 /* 810_VesselDisputeMediation.swift */,
+				V7842026060200000012A1 /* 784_VesselDetentionTracking.swift */,
+				V6962026060200000012A1 /* 696_VesselSettlementBatch.swift */,
+				V6742026060200000012A1 /* 674_VesselCostBreakdown.swift */,
+				V6612026060200000012A1 /* 661_VesselPortCalls.swift */,
+				V6602026060200000012A1 /* 660_VesselLivePosition.swift */,
+				V8092026060200000012A1 /* 809_VesselDisputeResolution.swift */,
+				V8052026060200000012A1 /* 805_VesselLossPrevention.swift */,
+				V8042026060200000012A1 /* 804_VesselOverchargeRecovery.swift */,
+				V8022026060200000012A1 /* 802_VesselClaimPayments.swift */,
+				V6892026060200000012A1 /* 689_VesselNetworkDisruption.swift */,
+				V7352026060200000012A1 /* 735_VesselDemurrageAlerts.swift */,
+				V8212026060200000012A1 /* 821_VesselReeferAlertConsole.swift */,
+				V8202026060200000012A1 /* 820_VesselReeferPreCool.swift */,
+				C3762026060200000012A1 /* 376_CatalystAtDeliveryFleetTrackCelM04.swift */,
+				C3752026060200000012A1 /* 375_CatalystInTransitFleetTrackCelM04.swift */,
+				C3742026060200000012A1 /* 374_CatalystPickupOnSiteEchoCelM04.swift */,
+				C3732026060200000012A1 /* 373_CatalystAwardedCelM04.swift */,
+				R6712026060200000012A1 /* 671_RailClaimTemplates.swift */,
+				R6702026060200000012A1 /* 670_RailShortageClaims.swift */,
+				R6692026060200000012A1 /* 669_RailOverchargeRecovery.swift */,
+				R6562026060200000012A1 /* 656_RailClaimPayments.swift */,
+				V8162026060200000012A1 /* 816_VesselTopShippers.swift */,
+				V7822026060200000012A1 /* 782_VesselDwellAnalysis.swift */,
+				V7702026060200000012A1 /* 770_VesselETAPrediction.swift */,
+				V7892026060200000012A1 /* 789_VesselCustomsStatusUpdate.swift */,
+				V8142026060200000012A1 /* 814_VesselCustomsEntryFiling.swift */,
+				V0062026060200000012A1 /* 006_VesselCustomsISF.swift */,
+				V7322026060200000012A1 /* 732_VesselCargoClaim.swift */,
+				V8082026060200000012A1 /* 808_VesselClaimWorkflow.swift */,
+				V8012026060200000012A1 /* 801_VesselClaimsList.swift */,
+				V8002026060200000012A1 /* 800_VesselClaimsDashboard.swift */,
+				V7092026060200000012A1 /* 709_VesselBidBoard.swift */,
+				V7922026060200000012A1 /* 792_VesselDemurrageCalculator.swift */,
+				V7722026060200000012A1 /* 772_VesselDemurrageAnalytics.swift */,
+				V7372026060200000012A1 /* 737_VesselDrayageOrders.swift */,
+				V7062026060200000012A1 /* 706_VesselRebookingSuggestions.swift */,
+				V6692026060200000012A1 /* 669_VesselBookingAmendment.swift */,
+				VDC82026060200000012A1 /* 815_VesselDemurrageChargeApproval.swift */,
+				VDL72026060200000012A1 /* 757_VesselDetentionLetters.swift */,
+				RCI62026060200000012A1 /* 606_RailCargoInsurance.swift */,
 				PKMV2026051900000012A1 /* PasskeysManagementView.swift */,
 				AABT2026051900000012A1 /* AppleAuthButtons.swift */,
 				AAPR2026051900000012A1 /* AppleAuthProvider.swift */,
@@ -3166,7 +3391,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Auto-bump CFBundleVersion. Uses git commit count as the floor,\n# but raises to BUILD_FLOOR when the count regresses below the\n# highest build number already accepted on TestFlight (otherwise\n# a squash/rebase that drops the commit count produces an\n# upload that Apple rejects with `non-monotonic build number`).\n# 2026-05-06: floor raised to 230 after the count fell from 209\n# (TestFlight 209 was the HereMapView crash that this fix supersedes).\n# 2026-05-16: floor raised to 258 ahead of the Post-a-Load Step-2\n# ship (animation badges deduped + dark-mode SVGs + cargo/equip\n# auto-snap + permit type + HERE routing fix). Avoids any chance\n# of non-monotonic-build-number rejection if 257 was uploaded.\n# 2026-05-17: floor raised to 259 — 258 archive was superseded by\n# the HERE Routing v8 namespace correction (vehicle[trailerType]\n# instead of vehicle[type], drop emissionType=epa). 258 was the\n# CFBundleVersion mismatch fix archive; 259 carries the real\n# routing fix.\n# 2026-05-17: floor raised to 260 — 259 crashed on-device with\n# EXC_BREAKPOINT (SIGTRAP) brk 1 at HereRoutingClient.swift:142.\n# Root cause: URLComponents.percentEncodedQuery setter fatalErrors\n# when handed a string containing raw `[` `]` (RFC 3986 reserved).\n# 260 reverted to URLComponents.queryItems (proven path) — bracket\n# encoding to %5B/%5D is fine; HERE accepts both forms.\n# 2026-05-17: floor raised to 261 — 260 still shows \\\"Malformed\n# request · Error while parsing\\\" because `return=notices` is in\n# the v8 returnFields default but `notices` is NOT a valid v8\n# return value (only polyline, actions, instructions, summary,\n# travelSummary, mlDuration, turnByTurnActions, elevation,\n# routeHandle, passthrough, incidents, tolls, spans). 261 drops\n# `notices` from the returnFields default.\n# 2026-05-20: floor raised to 296 — 295 was the cache-killing\n# archive (URLCache.shared cleared + Cache-Control no-cache\n# headers + selectable error banner with Copy details button)\n# shipped to diagnose persistent \\\"Failed query\\\" on Load Detail\n# load_1077. 296 is the next bump for whatever lands next.\n# 2026-05-20: floor raised to 297 — adds Catalyst Requirements card\n# to Step 3 PRICING (min FMCSA safety score slider + 6 CDL endorsement\n# chips: H/N/X/T/P/S), wired into composeSubmissionNotes() so the\n# catalyst dispatcher sees them at dispatch time. Also fixes iOS 17\n# deprecation warnings in 313 ESANG Voice (AVAudioApplication\n# .requestRecordPermission + .allowBluetoothHFP).\n# 2026-05-20: floor raised to 298 — T-001 PARITY FOUNDATION DROP:\n# lands the 7 canonical Swift files from _PARITY_AUDIT_2026-05-20/\n# (Vertical, TrailerCode, LoadStateFSM, EquipmentEquivalency,\n# DocumentRequirements → Models/; FeeMultiplierEngine,\n# AnimationBindingMap → Services/). Compile-only — no behavior wired\n# yet. Tickets T-002 through T-036 will consume these enums from\n# each downstream surface (wizard / FSM / driver / dispatch /\n# settlement / animations / compliance). After T-036 the type\n# system enforces the canonical 12-vertical × 23-trailer inventory.\n# 2026-05-20: floor raised to 299 — T-001 through T-036 parity drop\n# complete. 36 of 36 tickets locked across 8 phases: P0 foundation\n# drop (7 canonical Swift files into Models/ + Services/) · P1 wizard\n# lock-in (mode + country pickers, TrailerCode/Vertical chips, hazmat\n# + reefer triggers, FeeMultiplierEngine, DocumentRequirements,\n# confirmation gate, ePOD lock) · P2 agreement wizard (Vertical +\n# TrailerCode + DocumentRequirements + Ed25519 signing via\n# ShipperSigningKey) · P3 FSM overlay (Vehicle.overlayStates, driver\n# overlay gate, dispatch overlay chips) · P4 driver/catalyst/broker\n# (trailer-keyed DVIR templates, equipment-specific POD, loading\n# metrics builder, endorsement filter, livestock 28-hr HOS, convoy\n# composer, FeeBreakdown rate sheet) · P5 settlement + compliance\n# (CommissionEngine delegation, EpodLockEngine, 5 per-vertical\n# compliance routers under Services/Compliance/) · P6 animation\n# bundling (66 Loading/Unloading SVGs + AnimationBindingMap +\n# 6 missing trailer types added to EquipmentKind) · P7 cross-track\n# (mode-switch auto-snap, RailYardLookup, VesselClassRecommender,\n# rail+vessel identifier UI) · P8 driver-mode UI (atPickupLabel et al,\n# rail waybill / vessel BL POD). Foundation lock-in complete —\n# every iOS surface that references vertical/trailer/FSM-state/\n# overlay/endorsement reads through a canonical enum; typo = compile\n# error; drift impossible at the type-system level.\n# 2026-05-20: floor raised to 300 — 299 archive shipped but Apple\n# validator surfaced 4 yellow warnings post-archive (ShipperSigningKey\n# var→let + dead-code removal · OverlayGate Sendable conformance\n# cascade). Foundation overlay enums (Hazmat / Reefer / Livestock /\n# HeavyHaul / CrossBorder / AvHandoff / Rail / Vessel) + Vertical +\n# LoadState + LoadStateBucket + CompositeLoadState + ComplianceOverlay\n# all gained Sendable. Swift 6 strict-concurrency clean.\nset -e\nBUILD_FLOOR=301\nINFO_PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"$INFO_PLIST\" ]; then\n  echo \"[auto-bump] Info.plist not found at $INFO_PLIST — skipping\"\n  exit 0\nfi\ncd \"$SRCROOT\" || exit 0\nif ! command -v git >/dev/null 2>&1; then\n  echo \"[auto-bump] git not on PATH — using floor $BUILD_FLOOR\"\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD_FLOOR\" \"$INFO_PLIST\"\n  exit 0\nfi\nGIT_COUNT=$(git rev-list HEAD --count 2>/dev/null || echo \"0\")\nif [ -z \"$GIT_COUNT\" ] || [ \"$GIT_COUNT\" -le 0 ]; then\n  GIT_COUNT=0\nfi\nif [ \"$GIT_COUNT\" -gt \"$BUILD_FLOOR\" ]; then\n  BUILD=$GIT_COUNT\nelse\n  BUILD=$BUILD_FLOOR\nfi\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD\" \"$INFO_PLIST\"\necho \"[auto-bump] CFBundleVersion → $BUILD (git=$GIT_COUNT, floor=$BUILD_FLOOR)\"\n\n# Apple App Store Connect requires every embedded app extension\n# (widgets + watch app) to carry the SAME CFBundleVersion as the\n# containing parent app. Without the loop below, Apple's validator\n# rejects the upload with: \\\"The CFBundleVersion of an app extension\n# ('257') must match that of its containing parent app ('258')\\\".\n# This script runs LAST in the main-app build phases, after both\n# Embed App Extensions + Embed Watch Content have copied the .appex\n# and embedded .app payloads into PlugIns/ and Watch/ — so the\n# embedded plists exist at this point and we just overwrite them.\nAPP_BUNDLE=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\nfor EMBEDDED_PLIST in \"$APP_BUNDLE/PlugIns/\"*.appex/Info.plist \"$APP_BUNDLE/Watch/\"*.app/Info.plist; do\n  [ -f \"$EMBEDDED_PLIST\" ] || continue\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD\" \"$EMBEDDED_PLIST\" 2>/dev/null \\\n    && echo \"[auto-bump]   ↳ ${EMBEDDED_PLIST#$APP_BUNDLE/} → $BUILD\"\ndone\n";
+			shellScript = "# Auto-bump CFBundleVersion. Uses git commit count as the floor,\n# but raises to BUILD_FLOOR when the count regresses below the\n# highest build number already accepted on TestFlight (otherwise\n# a squash/rebase that drops the commit count produces an\n# upload that Apple rejects with `non-monotonic build number`).\n# 2026-05-06: floor raised to 230 after the count fell from 209\n# (TestFlight 209 was the HereMapView crash that this fix supersedes).\n# 2026-05-16: floor raised to 258 ahead of the Post-a-Load Step-2\n# ship (animation badges deduped + dark-mode SVGs + cargo/equip\n# auto-snap + permit type + HERE routing fix). Avoids any chance\n# of non-monotonic-build-number rejection if 257 was uploaded.\n# 2026-05-17: floor raised to 259 — 258 archive was superseded by\n# the HERE Routing v8 namespace correction (vehicle[trailerType]\n# instead of vehicle[type], drop emissionType=epa). 258 was the\n# CFBundleVersion mismatch fix archive; 259 carries the real\n# routing fix.\n# 2026-05-17: floor raised to 260 — 259 crashed on-device with\n# EXC_BREAKPOINT (SIGTRAP) brk 1 at HereRoutingClient.swift:142.\n# Root cause: URLComponents.percentEncodedQuery setter fatalErrors\n# when handed a string containing raw `[` `]` (RFC 3986 reserved).\n# 260 reverted to URLComponents.queryItems (proven path) — bracket\n# encoding to %5B/%5D is fine; HERE accepts both forms.\n# 2026-05-17: floor raised to 261 — 260 still shows \\\"Malformed\n# request · Error while parsing\\\" because `return=notices` is in\n# the v8 returnFields default but `notices` is NOT a valid v8\n# return value (only polyline, actions, instructions, summary,\n# travelSummary, mlDuration, turnByTurnActions, elevation,\n# routeHandle, passthrough, incidents, tolls, spans). 261 drops\n# `notices` from the returnFields default.\n# 2026-05-20: floor raised to 296 — 295 was the cache-killing\n# archive (URLCache.shared cleared + Cache-Control no-cache\n# headers + selectable error banner with Copy details button)\n# shipped to diagnose persistent \\\"Failed query\\\" on Load Detail\n# load_1077. 296 is the next bump for whatever lands next.\n# 2026-05-20: floor raised to 297 — adds Catalyst Requirements card\n# to Step 3 PRICING (min FMCSA safety score slider + 6 CDL endorsement\n# chips: H/N/X/T/P/S), wired into composeSubmissionNotes() so the\n# catalyst dispatcher sees them at dispatch time. Also fixes iOS 17\n# deprecation warnings in 313 ESANG Voice (AVAudioApplication\n# .requestRecordPermission + .allowBluetoothHFP).\n# 2026-05-20: floor raised to 298 — T-001 PARITY FOUNDATION DROP:\n# lands the 7 canonical Swift files from _PARITY_AUDIT_2026-05-20/\n# (Vertical, TrailerCode, LoadStateFSM, EquipmentEquivalency,\n# DocumentRequirements → Models/; FeeMultiplierEngine,\n# AnimationBindingMap → Services/). Compile-only — no behavior wired\n# yet. Tickets T-002 through T-036 will consume these enums from\n# each downstream surface (wizard / FSM / driver / dispatch /\n# settlement / animations / compliance). After T-036 the type\n# system enforces the canonical 12-vertical × 23-trailer inventory.\n# 2026-05-20: floor raised to 299 — T-001 through T-036 parity drop\n# complete. 36 of 36 tickets locked across 8 phases: P0 foundation\n# drop (7 canonical Swift files into Models/ + Services/) · P1 wizard\n# lock-in (mode + country pickers, TrailerCode/Vertical chips, hazmat\n# + reefer triggers, FeeMultiplierEngine, DocumentRequirements,\n# confirmation gate, ePOD lock) · P2 agreement wizard (Vertical +\n# TrailerCode + DocumentRequirements + Ed25519 signing via\n# ShipperSigningKey) · P3 FSM overlay (Vehicle.overlayStates, driver\n# overlay gate, dispatch overlay chips) · P4 driver/catalyst/broker\n# (trailer-keyed DVIR templates, equipment-specific POD, loading\n# metrics builder, endorsement filter, livestock 28-hr HOS, convoy\n# composer, FeeBreakdown rate sheet) · P5 settlement + compliance\n# (CommissionEngine delegation, EpodLockEngine, 5 per-vertical\n# compliance routers under Services/Compliance/) · P6 animation\n# bundling (66 Loading/Unloading SVGs + AnimationBindingMap +\n# 6 missing trailer types added to EquipmentKind) · P7 cross-track\n# (mode-switch auto-snap, RailYardLookup, VesselClassRecommender,\n# rail+vessel identifier UI) · P8 driver-mode UI (atPickupLabel et al,\n# rail waybill / vessel BL POD). Foundation lock-in complete —\n# every iOS surface that references vertical/trailer/FSM-state/\n# overlay/endorsement reads through a canonical enum; typo = compile\n# error; drift impossible at the type-system level.\n# 2026-05-20: floor raised to 300 — 299 archive shipped but Apple\n# validator surfaced 4 yellow warnings post-archive (ShipperSigningKey\n# var→let + dead-code removal · OverlayGate Sendable conformance\n# cascade). Foundation overlay enums (Hazmat / Reefer / Livestock /\n# HeavyHaul / CrossBorder / AvHandoff / Rail / Vessel) + Vertical +\n# LoadState + LoadStateBucket + CompositeLoadState + ComplianceOverlay\n# all gained Sendable. Swift 6 strict-concurrency clean.\nset -e\n# 2026-06-01: floor raised to 701 — TestFlight had builds up through ~605\n# already used (git commit count 602 under-shot; manual archive bump shipped\n# build 700). 701 keeps the next git-count archive monotonic above 700.\nBUILD_FLOOR=704\nINFO_PLIST=\"${TARGET_BUILD_DIR}/${INFOPLIST_PATH}\"\nif [ ! -f \"$INFO_PLIST\" ]; then\n  echo \"[auto-bump] Info.plist not found at $INFO_PLIST — skipping\"\n  exit 0\nfi\ncd \"$SRCROOT\" || exit 0\nif ! command -v git >/dev/null 2>&1; then\n  echo \"[auto-bump] git not on PATH — using floor $BUILD_FLOOR\"\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD_FLOOR\" \"$INFO_PLIST\"\n  exit 0\nfi\nGIT_COUNT=$(git rev-list HEAD --count 2>/dev/null || echo \"0\")\nif [ -z \"$GIT_COUNT\" ] || [ \"$GIT_COUNT\" -le 0 ]; then\n  GIT_COUNT=0\nfi\nif [ \"$GIT_COUNT\" -gt \"$BUILD_FLOOR\" ]; then\n  BUILD=$GIT_COUNT\nelse\n  BUILD=$BUILD_FLOOR\nfi\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD\" \"$INFO_PLIST\"\necho \"[auto-bump] CFBundleVersion → $BUILD (git=$GIT_COUNT, floor=$BUILD_FLOOR)\"\n\n# Apple App Store Connect requires every embedded app extension\n# (widgets + watch app) to carry the SAME CFBundleVersion as the\n# containing parent app. Without the loop below, Apple's validator\n# rejects the upload with: \\\"The CFBundleVersion of an app extension\n# ('257') must match that of its containing parent app ('258')\\\".\n# This script runs LAST in the main-app build phases, after both\n# Embed App Extensions + Embed Watch Content have copied the .appex\n# and embedded .app payloads into PlugIns/ and Watch/ — so the\n# embedded plists exist at this point and we just overwrite them.\nAPP_BUNDLE=\"${TARGET_BUILD_DIR}/${WRAPPER_NAME}\"\nfor EMBEDDED_PLIST in \"$APP_BUNDLE/PlugIns/\"*.appex/Info.plist \"$APP_BUNDLE/Watch/\"*.app/Info.plist; do\n  [ -f \"$EMBEDDED_PLIST\" ] || continue\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD\" \"$EMBEDDED_PLIST\" 2>/dev/null \\\n    && echo \"[auto-bump]   ↳ ${EMBEDDED_PLIST#$APP_BUNDLE/} → $BUILD\"\ndone\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -3183,6 +3408,7 @@
 				FE410000000000000000009B /* 009_VesselTenderWorkflow.swift in Sources */,
 				FE410000000000000000112B /* 112_DriverClosed.swift in Sources */,
 				FE410000000000000000161B /* 161_DriverGatePass.swift in Sources */,
+				FE410000000000000000162B /* 162_DriverWellnessFatigue.swift in Sources */,
 				FE410000000000000000297B /* 297_ShipperCargoInsurance.swift in Sources */,
 				FE410000000000000000298B /* 298_ShipperDetentionExposure.swift in Sources */,
 				FE410000000000000000533B /* 533_DispatcherAIDispatchAssist.swift in Sources */,
@@ -3395,9 +3621,69 @@
 				BMAPPROJBUILD1 /* BespokeMapProjection.swift in Sources */,
 				BMAPSTYLBUILD1 /* BespokeMapStyle.swift in Sources */,
 				BMAPCNVSBUILD1 /* BespokeMapCanvas.swift in Sources */,
+				BMAPBASEBUILD1 /* BespokeMapBasemap.swift in Sources */,
 				HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */,
 				LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */,
 				LMBD2026051700000011A1 /* LoadModeBadge.swift in Sources */,
+				TLEX2026060300000011A1 /* TransportLexicon.swift in Sources */,
+				CHKT2026060300000011A1 /* ESangChatKit.swift in Sources */,
+				DP022026060300000011A1 /* 402_DispatcherProfile.swift in Sources */,
+				RS082026060300000011A1 /* 008_RailShipperTenderWorkflow.swift in Sources */,
+				VD042026060300000011A1 /* 004_VesselDemurrageDetention.swift in Sources */,
+				EQRC2026060300000011A1 /* EquipmentRequirementsCatalog.swift in Sources */,
+				CP9M2026060200000011A1 /* 903_ComplianceMe.swift in Sources */,
+				AD8M2026060200000011A1 /* 804_AdminMe.swift in Sources */,
+				TM7M2026060200000011A1 /* 703_TerminalMe.swift in Sources */,
+				ES6M2026060200000011A1 /* 620_EscortMeHome.swift in Sources */,
+				BR4B2026060200000011A1 /* 404B_BrokerMe.swift in Sources */,
+				R6722026060200000011A1 /* 672_RailLayoverTracking.swift in Sources */,
+				R6392026060200000011A1 /* 639_RailYardDirectory.swift in Sources */,
+				R6732026060200000011A1 /* 673_RailIntermodalDashboard.swift in Sources */,
+				V7082026060200000011A1 /* 708_VesselShipmentCO2.swift in Sources */,
+				V6702026060200000011A1 /* 670_VesselBunkerPrices.swift in Sources */,
+				V8122026060200000011A1 /* 812_VesselClaimTemplates.swift in Sources */,
+				V8112026060200000011A1 /* 811_VesselClaimsAnalytics.swift in Sources */,
+				V8102026060200000011A1 /* 810_VesselDisputeMediation.swift in Sources */,
+				V7842026060200000011A1 /* 784_VesselDetentionTracking.swift in Sources */,
+				V6962026060200000011A1 /* 696_VesselSettlementBatch.swift in Sources */,
+				V6742026060200000011A1 /* 674_VesselCostBreakdown.swift in Sources */,
+				V6612026060200000011A1 /* 661_VesselPortCalls.swift in Sources */,
+				V6602026060200000011A1 /* 660_VesselLivePosition.swift in Sources */,
+				V8092026060200000011A1 /* 809_VesselDisputeResolution.swift in Sources */,
+				V8052026060200000011A1 /* 805_VesselLossPrevention.swift in Sources */,
+				V8042026060200000011A1 /* 804_VesselOverchargeRecovery.swift in Sources */,
+				V8022026060200000011A1 /* 802_VesselClaimPayments.swift in Sources */,
+				V6892026060200000011A1 /* 689_VesselNetworkDisruption.swift in Sources */,
+				V7352026060200000011A1 /* 735_VesselDemurrageAlerts.swift in Sources */,
+				V8212026060200000011A1 /* 821_VesselReeferAlertConsole.swift in Sources */,
+				V8202026060200000011A1 /* 820_VesselReeferPreCool.swift in Sources */,
+				C3762026060200000011A1 /* 376_CatalystAtDeliveryFleetTrackCelM04.swift in Sources */,
+				C3752026060200000011A1 /* 375_CatalystInTransitFleetTrackCelM04.swift in Sources */,
+				C3742026060200000011A1 /* 374_CatalystPickupOnSiteEchoCelM04.swift in Sources */,
+				C3732026060200000011A1 /* 373_CatalystAwardedCelM04.swift in Sources */,
+				R6712026060200000011A1 /* 671_RailClaimTemplates.swift in Sources */,
+				R6702026060200000011A1 /* 670_RailShortageClaims.swift in Sources */,
+				R6692026060200000011A1 /* 669_RailOverchargeRecovery.swift in Sources */,
+				R6562026060200000011A1 /* 656_RailClaimPayments.swift in Sources */,
+				V8162026060200000011A1 /* 816_VesselTopShippers.swift in Sources */,
+				V7822026060200000011A1 /* 782_VesselDwellAnalysis.swift in Sources */,
+				V7702026060200000011A1 /* 770_VesselETAPrediction.swift in Sources */,
+				V7892026060200000011A1 /* 789_VesselCustomsStatusUpdate.swift in Sources */,
+				V8142026060200000011A1 /* 814_VesselCustomsEntryFiling.swift in Sources */,
+				V0062026060200000011A1 /* 006_VesselCustomsISF.swift in Sources */,
+				V7322026060200000011A1 /* 732_VesselCargoClaim.swift in Sources */,
+				V8082026060200000011A1 /* 808_VesselClaimWorkflow.swift in Sources */,
+				V8012026060200000011A1 /* 801_VesselClaimsList.swift in Sources */,
+				V8002026060200000011A1 /* 800_VesselClaimsDashboard.swift in Sources */,
+				V7092026060200000011A1 /* 709_VesselBidBoard.swift in Sources */,
+				V7922026060200000011A1 /* 792_VesselDemurrageCalculator.swift in Sources */,
+				V7722026060200000011A1 /* 772_VesselDemurrageAnalytics.swift in Sources */,
+				V7372026060200000011A1 /* 737_VesselDrayageOrders.swift in Sources */,
+				V7062026060200000011A1 /* 706_VesselRebookingSuggestions.swift in Sources */,
+				V6692026060200000011A1 /* 669_VesselBookingAmendment.swift in Sources */,
+				VDC82026060200000011A1 /* 815_VesselDemurrageChargeApproval.swift in Sources */,
+				VDL72026060200000011A1 /* 757_VesselDetentionLetters.swift in Sources */,
+				RCI62026060200000011A1 /* 606_RailCargoInsurance.swift in Sources */,
 				PKMV2026051900000011A1 /* PasskeysManagementView.swift in Sources */,
 				AABT2026051900000011A1 /* AppleAuthButtons.swift in Sources */,
 				AAPR2026051900000011A1 /* AppleAuthProvider.swift in Sources */,
@@ -3462,6 +3748,7 @@
 				MSGS00010CE0FF10000011A1 /* MessagesScreen.swift in Sources */,
 				A12E1A1C0010CE0FF1000021 /* HEREAuthService.swift in Sources */,
 				A1DMC0001000000000000001 /* HereBearerFetch.swift in Sources */,
+				A1RLIM0001000000000000A1 /* HereRateLimiter.swift in Sources */,
 				A1DMC0001000000000000003 /* HereFuelPricesClient.swift in Sources */,
 				A1DMC0001000000000000005 /* HereWeatherClient.swift in Sources */,
 				A1DMC0001000000000000007 /* HereTrafficClient.swift in Sources */,
@@ -3824,6 +4111,19 @@
 				D2DSP1200000000000ABDS /* 712_DispatchReportsHub.swift in Sources */,
 				D2DSP1300000000000ABDS /* Dpch713_DispatchMe.swift in Sources */,
 				D2CMP0000000000000ABDS /* 900_ComplianceOfficerHome.swift in Sources */,
+				D2RIOSBLD110000000000000 /* 1100_IDVLivenessSheet.swift in Sources */,
+				D2RIOSBLD110100000000000 /* 1101_TaxIDValidationSheet.swift in Sources */,
+				D2RIOSBLD110200000000000 /* 1102_OperatingAuthoritySheet.swift in Sources */,
+				D2RIOSBLD110300000000000 /* 1103_InsuranceCOIViewer.swift in Sources */,
+				D2RIOSBLD110400000000000 /* 1104_ClearinghouseQuerySheet.swift in Sources */,
+				D2RIOSBLD110500000000000 /* 1105_MaritimeCertSheet.swift in Sources */,
+				D2RIOSBLD110600000000000 /* 1106_RailCertSheet.swift in Sources */,
+				D2RIOSBLD110700000000000 /* 1107_UIIAStatusSheet.swift in Sources */,
+				D2RIOSBLD110800000000000 /* 1108_TrustedTraderSheet.swift in Sources */,
+				D2RIOSBLD110900000000000 /* 1109_VerticalEndorsementSheet.swift in Sources */,
+				D2RIOSBLD111000000000000 /* 1110_StepUpAuthSheet.swift in Sources */,
+				D2RIOSBLD111100000000000 /* 1111_OnboardingWizard.swift in Sources */,
+				D2RIOSBLD111200000000000 /* 1112_ComplianceGatesStrip.swift in Sources */,
 				D2CMP0100000000000ABDS /* 901_ComplianceExpiringDocs.swift in Sources */,
 				D2CMP0200000000000ABDS /* 902_ComplianceViolations.swift in Sources */,
 				D2CMPNAV0000000000ABDS /* ComplianceNavController.swift in Sources */,

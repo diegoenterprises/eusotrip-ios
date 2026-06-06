@@ -427,7 +427,7 @@ struct MeIncidentReportFiler: View {
                 text: $location,
                 lat: $locationLat,
                 lng: $locationLng,
-                placeholder: "City, state, mile marker, or lat,lng"
+                placeholder: "City, state, mile marker or lat,lng"
             )
         }
     }
@@ -605,7 +605,7 @@ struct MeIncidentReportFiler: View {
                 }
             }
         } catch {
-            flashToast("Couldn't file — try again")
+            flashToast("Couldn't file - try again")
         }
     }
 
@@ -697,7 +697,7 @@ struct MeIncidentReportFiler: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("Near-miss reports improve the carrier's CSA percentile over time — they're the leading indicator the FMCSA Safety Measurement System respects. Accurate, timely reporting protects you, your carrier, and everyone you share the road with.")
+            Text("Near-miss reports improve the carrier's CSA percentile over time. They're the leading indicator the FMCSA Safety Measurement System respects. Accurate, timely reporting protects you, your carrier and everyone you share the road with.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

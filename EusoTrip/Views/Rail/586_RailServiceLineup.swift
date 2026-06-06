@@ -327,7 +327,7 @@ private struct RailServiceLineupBody: View {
                     : .future
                 return LineupCall586(
                     id: "live-\(idx)",
-                    station: c.yardName ?? "—",
+                    station: c.yardName ?? "-",
                     detail: c.detail ?? "",
                     timeLabel: c.timeLabel ?? "",
                     state: state,
@@ -370,7 +370,7 @@ private struct RailServiceLineupBody: View {
                 } else {
                     if let err = loadError {
                         LifecycleCard(accentWarning: true) {
-                            Text("Live lineup unavailable — \(err). Showing scheduled rotation.")
+                            Text("Live lineup unavailable - \(err). Showing scheduled rotation.")
                                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                         }
                     }
@@ -538,7 +538,7 @@ private struct RailServiceLineupBody: View {
                     Text("ESANG AI")
                         .font(.system(size: 9, weight: .black)).kerning(1.0)
                         .foregroundStyle(LinearGradient.primary)
-                    Text("Hold 4 min at Barstow to take the Cajon meet —")
+                    Text("Hold 4 min at Barstow to take the Cajon meet.")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(palette.textPrimary)
                     Text("avoids a 35-min wait at MP 56, protects the CHI ETA.")

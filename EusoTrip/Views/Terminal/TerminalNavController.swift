@@ -37,7 +37,7 @@ enum TerminalNavRoute {
         "home":      "700",
         "movements": "701",
         "yard":      "702",
-        "me":        "700",
+        "me":        "703",
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

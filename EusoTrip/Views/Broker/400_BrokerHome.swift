@@ -279,8 +279,8 @@ struct BrokerHome: View {
 
     private var subhead: String {
         if let outer = dashboard.state.value, let s = outer {
-            let active = s.activeLoads.map { "\($0) active load\($0 == 1 ? "" : "s")" } ?? "— active loads"
-            let pending = s.pendingMatches.map { "\($0) pending match\($0 == 1 ? "" : "es")" } ?? "— pending matches"
+            let active = s.activeLoads.map { "\($0) active load\($0 == 1 ? "" : "s")" } ?? "- active loads"
+            let pending = s.pendingMatches.map { "\($0) pending match\($0 == 1 ? "" : "es")" } ?? "- pending matches"
             return "\(active) · \(pending)"
         }
         return "Loading brokerage fabric…"
@@ -370,14 +370,14 @@ struct BrokerHome: View {
     /// Honest em-dash when the proc omits a numeric field — never a
     /// fabricated zero or placeholder.
     private func count(_ v: Int?) -> String {
-        guard let v = v else { return "—" }
+        guard let v = v else { return "-" }
         return "\(v)"
     }
 
     /// Currency rendering that em-dashes a nil server field rather than
     /// printing "$0" for "unknown".
     private func dollarsOpt(_ v: Double?) -> String {
-        guard let v = v else { return "—" }
+        guard let v = v else { return "-" }
         return dollars(v)
     }
 
@@ -701,7 +701,7 @@ struct BrokerHome: View {
     /// Renders the load-to-catalyst ratio as "3.2×", em-dashing when the
     /// proc omits it.
     private func ratio(_ v: Double?) -> String {
-        guard let v = v else { return "—" }
+        guard let v = v else { return "-" }
         return String(format: "%.1f×", v)
     }
 

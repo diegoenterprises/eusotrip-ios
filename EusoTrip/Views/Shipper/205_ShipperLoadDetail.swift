@@ -59,6 +59,9 @@ struct ShipperLoadDetail: View {
     /// the user sees a real action sheet instead of a button that
     /// silently posts a notification no one consumed.
     @State private var showActionMenu: Bool = false
+    /// RIOS §12 — set true when any load party fails a HARD sanctions gate
+    /// (surfaced by ComplianceGatesStrip). Informational on the shipper side.
+    @State private var gateLocked: Bool = false
 
     /// In-app cancel-load sheet (no web fallback). Opened when the
     /// user picks "Cancel load" in the kebab menu. The sheet collects
@@ -145,6 +148,11 @@ struct ShipperLoadDetail: View {
                     nrcCardIfHazmat7
                     documentsRow
                     contentExtras
+                    // RIOS §11/§12 — sanctions screening of every load party
+                    // (shipper/carrier/driver) before transact.
+                    if let lid = Int(loadId) {
+                        ComplianceGatesStrip(loadId: lid, role: "shipper", gateLocked: $gateLocked)
+                    }
                     ctaRow
                     Color.clear.frame(height: 96)
                 }
@@ -196,7 +204,7 @@ struct ShipperLoadDetail: View {
             // inline iOS surface to approve / reject without web
             // continuation.
             if isLoadPODPending {
-                Button("Review POD") {
+                Button("Review \(TransportLexicon.short(.proofOfDelivery, mode: loadMode, equipmentRaw: loadEquipmentRaw))") {
                     podError = nil
                     podRejectReason = ""
                     showPODReview = true
@@ -335,9 +343,10 @@ struct ShipperLoadDetail: View {
                 }
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 1) {
-                        Text("REVIEW POD")
+                        Text("REVIEW \(TransportLexicon.short(.proofOfDelivery, mode: loadMode, equipmentRaw: loadEquipmentRaw).uppercased())")
                             .font(EType.micro).tracking(1.0)
                             .foregroundStyle(LinearGradient.diagonal)
+                            .lineLimit(1).minimumScaleFactor(0.7)
                         Text(displayLoadId)
                             .font(EType.mono(.micro)).tracking(0.3)
                             .foregroundStyle(palette.textSecondary)
@@ -370,10 +379,10 @@ struct ShipperLoadDetail: View {
 
     private var podHeaderCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(podPacket?.receiverName ?? "—")
+            Text(podPacket?.receiverName ?? "-")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text("Submitted \(podPacket?.submittedAt ?? "—")")
+            Text("Submitted \(podPacket?.submittedAt ?? "-")")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
             if podLoading {
@@ -392,9 +401,10 @@ struct ShipperLoadDetail: View {
 
     private var podPhotoCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("BOL PHOTO")
+            Text("\(TransportLexicon.short(.billOfLading, mode: loadMode, equipmentRaw: loadEquipmentRaw).uppercased()) PHOTO")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                 .foregroundStyle(LinearGradient.diagonal)
+                .lineLimit(1).minimumScaleFactor(0.7)
             if let img = decodeBase64Image(podPacket?.photoBase64) {
                 Image(uiImage: img)
                     .resizable()
@@ -505,7 +515,7 @@ struct ShipperLoadDetail: View {
                 .disabled(!canRejectPOD)
 
                 CTAButton(
-                    title: podDecisionInFlight ? "Approving…" : "Approve POD",
+                    title: podDecisionInFlight ? "Approving…" : "Approve \(TransportLexicon.short(.proofOfDelivery, mode: loadMode, equipmentRaw: loadEquipmentRaw))",
                     action: { Task { await approvePOD() } },
                     isLoading: podDecisionInFlight
                 )
@@ -696,7 +706,7 @@ struct ShipperLoadDetail: View {
                 Text(displayLoadId)
                     .font(EType.title)
                     .foregroundStyle(palette.textPrimary)
-                Text("Update rate, instructions, or a dispatch note. Pickup / delivery edits route through Reroute. Carrier sees changes the moment you save.")
+                Text("Update rate, instructions or a dispatch note. Pickup / delivery edits route through Reroute. Carrier sees changes the moment you save.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -934,6 +944,18 @@ struct ShipperLoadDetail: View {
         detailStore.state.value ?? nil
     }
 
+    /// Mode-aware terminology resolver for this load. Drives the
+    /// document/label lexicon so a vessel load reads "Ocean Bill of
+    /// Lading" and a rail load reads its native term instead of the
+    /// hardcoded truck "BOL".
+    private var loadMode: TransportMode {
+        TransportMode(rawValue: liveDetail?.transportMode ?? "truck") ?? .truck
+    }
+
+    private var loadEquipmentRaw: String? {
+        liveDetail?.equipmentType
+    }
+
     // MARK: - TopBar
 
     private var topBar: some View {
@@ -1001,7 +1023,7 @@ struct ShipperLoadDetail: View {
     private var laneTitle: String {
         if let d = liveDetail {
             let lane = d.laneDisplay
-            if lane != "—" {
+            if lane != "-" {
                 // Compact city names for the title bar.
                 let parts = lane.split(separator: " → ").map { String($0) }
                 if parts.count == 2 {
@@ -1166,10 +1188,10 @@ struct ShipperLoadDetail: View {
         if let d = liveDetail, let eta = d.estimatedDeliveryDate ?? d.deliveryDate, !eta.isEmpty {
             return "ETA \(formatTime(eta))"
         }
-        return "ETA —"
+        return "ETA -"
     }
     private var progressMilesLine: String {
-        guard let d = liveDetail, let dist = d.distance, dist > 0 else { return "— mi" }
+        guard let d = liveDetail, let dist = d.distance, dist > 0 else { return "- mi" }
         let total = Int(dist.rounded())
         let driven = Int((Double(total) * Double(progressPct) / 100.0).rounded())
         return "\(driven) / \(total) mi"
@@ -1349,7 +1371,7 @@ struct ShipperLoadDetail: View {
             parts.append("\(Int(dist.rounded())) mi")
         }
         if d.hazmatClass != nil { parts.append("escort optional") }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func pill(text: String, tint: Color, label: Color) -> some View {
@@ -1434,21 +1456,21 @@ struct ShipperLoadDetail: View {
         if let id = d.catalystId {
             return "Catalyst #\(id)"
         }
-        return "Catalyst — pending"
+        return "Catalyst - pending"
     }
 
     private func carrierMetaLine(for d: LoadsAPI.LoadDetail) -> String {
         var parts: [String] = []
         if let id = d.catalystId { parts.append("ID \(id)") }
         if let equip = d.equipmentType { parts.append(equip) }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func carrierDriverLine(for d: LoadsAPI.LoadDetail) -> String {
         if let id = d.driverId {
             return "Driver #\(id) · CDL pending lookup"
         }
-        return "Driver — awaiting assignment"
+        return "Driver - awaiting assignment"
     }
 
     // MARK: - Documents row
@@ -1460,7 +1482,7 @@ struct ShipperLoadDetail: View {
                 .foregroundStyle(palette.textTertiary)
             HStack(spacing: Space.s2) {
                 docTile(icon: "doc.text",
-                        title: "BOL",
+                        title: TransportLexicon.short(.billOfLading, mode: loadMode, equipmentRaw: loadEquipmentRaw),
                         state: bolStateText,
                         stateColor: bolStateColor,
                         iconStyle: .gradient)
@@ -1479,13 +1501,13 @@ struct ShipperLoadDetail: View {
     }
 
     private var bolStateText: String {
-        guard let d = liveDetail else { return "—" }
+        guard let d = liveDetail else { return "-" }
         switch d.status.lowercased() {
         case "posted", "bidding": return "draft"
         case "awarded", "assigned", "pickup": return "draft"
         case "in_transit", "in transit", "delivery", "delivering": return "issued"
         case "paperwork", "closed", "delivered", "complete": return "signed"
-        default: return "—"
+        default: return "-"
         }
     }
     private var bolStateColor: Color {
@@ -1496,7 +1518,7 @@ struct ShipperLoadDetail: View {
         }
     }
     private var rateconStateText: String {
-        guard let d = liveDetail else { return "—" }
+        guard let d = liveDetail else { return "-" }
         return ["awarded", "assigned", "pickup", "in_transit", "in transit", "delivery", "delivering", "paperwork", "closed", "delivered", "complete"]
             .contains(d.status.lowercased()) ? "signed" : "draft"
     }
@@ -1517,6 +1539,8 @@ struct ShipperLoadDetail: View {
             Text(title)
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Text(state)
                 .font(EType.caption)
                 .foregroundStyle(stateColor)
@@ -1712,7 +1736,7 @@ struct ShipperLoadDetail: View {
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             } else if count == 0 {
-                Text("No bids yet — carriers will surface offers here as they come in.")
+                Text("No bids yet. Carriers will surface offers here as they come in.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1840,7 +1864,7 @@ struct ShipperLoadDetail: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(Capsule().fill(LinearGradient.primary))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open live map view")
@@ -1854,8 +1878,8 @@ struct ShipperLoadDetail: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Ask eSang about this load")
@@ -1877,7 +1901,7 @@ struct ShipperLoadDetail: View {
     }
 
     private func humanCargoType(_ raw: String?) -> String {
-        guard let r = raw, !r.isEmpty else { return "—" }
+        guard let r = raw, !r.isEmpty else { return "-" }
         switch r.lowercased() {
         case "general":      return "General freight"
         case "hazmat":       return "Hazmat"
@@ -1892,7 +1916,7 @@ struct ShipperLoadDetail: View {
     }
 
     private func humanDate(_ iso: String?) -> String {
-        guard let iso = iso, !iso.isEmpty else { return "—" }
+        guard let iso = iso, !iso.isEmpty else { return "-" }
         let isoFmt = ISO8601DateFormatter()
         isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var date = isoFmt.date(from: iso)
@@ -1961,7 +1985,7 @@ struct ShipperLoadDetail: View {
             print("[ShipperLoadDetail] DecodingError on loads.getById: \(decode)")
             switch decode {
             case .keyNotFound(let key, _):
-                return "Server response is missing key \"\(key.stringValue)\" — the deploy target's loads.getById response is older than this build."
+                return "Server response is missing key \"\(key.stringValue)\". The deploy target's loads.getById response is older than this build."
             case .typeMismatch(let type, let ctx):
                 return "Server returned \(type) where iOS expected something else (path: \(ctx.codingPath.map { $0.stringValue }.joined(separator: "."))). Server response shape doesn't match."
             case .valueNotFound(let type, let ctx):
@@ -1977,7 +2001,7 @@ struct ShipperLoadDetail: View {
         let lower = raw.lowercased()
         // True MySQL schema-drift signal only.
         if lower.contains("unknown column") || lower.contains("er_bad_field") {
-            return "Server-side schema is out of sync — missing column on `loads`. Apply the latest migrations on the deploy target."
+            return "Server-side schema is out of sync, missing column on `loads`. Apply the latest migrations on the deploy target."
         }
         if lower.contains("network") || lower.contains("offline")
             || lower.contains("could not connect") {
@@ -2097,7 +2121,7 @@ struct ShipperLoadDetail: View {
                         .font(EType.title)
                         .foregroundStyle(palette.textPrimary)
                     if let carrier = r.carrierName {
-                        Text("\(carrier) · USDOT \(r.carrierDot ?? "—") · MC \(r.carrierMc ?? "—")")
+                        Text("\(carrier) · USDOT \(r.carrierDot ?? "-") · MC \(r.carrierMc ?? "-")")
                             .font(EType.mono(.micro)).tracking(0.3)
                             .foregroundStyle(palette.textTertiary)
                     }
@@ -2129,7 +2153,7 @@ struct ShipperLoadDetail: View {
     }
 
     private func hosPrimary(_ r: LoadsAPI.DriverReadiness) -> String {
-        guard let h = r.hosDrivingRemainingHours else { return "—" }
+        guard let h = r.hosDrivingRemainingHours else { return "-" }
         return String(format: "%.1fh", h)
     }
 
@@ -2143,7 +2167,7 @@ struct ShipperLoadDetail: View {
     }
 
     private func daysLabel(_ days: Int?) -> String {
-        guard let d = days else { return "—" }
+        guard let d = days else { return "-" }
         if d <= 0 { return "LAPSED" }
         return "\(d)d"
     }

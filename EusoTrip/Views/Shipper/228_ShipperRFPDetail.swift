@@ -165,7 +165,7 @@ struct ShipperRFPDetail: View {
             let hours = hoursLeft(rfp.responseDeadline) ?? 0
             return "\(bids.count) BIDS · \(hours)h LEFT"
         }
-        return "—"
+        return "-"
     }
 
     private var counterColor: Color {
@@ -488,17 +488,17 @@ struct ShipperRFPDetail: View {
             kpiCellView(label: "BIDS", value: "\(bids.count)", style: .gradient, sub: "")
             kpiDivider
             kpiCellView(label: "LOW",
-                        value: low > 0 ? "$\(formatNumber(low))" : "—",
+                        value: low > 0 ? "$\(formatNumber(low))" : "-",
                         style: .primary,
                         sub: lowestBidder(bids))
             kpiDivider
             kpiCellView(label: "HIGH",
-                        value: high > 0 ? "$\(formatNumber(high))" : "—",
+                        value: high > 0 ? "$\(formatNumber(high))" : "-",
                         style: .primary,
                         sub: highestBidder(bids))
             kpiDivider
             kpiCellView(label: "GAP",
-                        value: gap > 0 ? "$\(formatNumber(gap))" : "—",
+                        value: gap > 0 ? "$\(formatNumber(gap))" : "-",
                         style: gap > 0 ? .warn : .primary,
                         sub: gap > 0 ? String(format: "%.0f%% spread", gapPct) : "")
         }
@@ -641,7 +641,7 @@ struct ShipperRFPDetail: View {
     }
 
     private func scoreBadge(_ row: BidRanked) -> some View {
-        let scoreText = row.scorecard.map { "\($0.overallScore)" } ?? "—"
+        let scoreText = row.scorecard.map { "\($0.overallScore)" } ?? "-"
         let isTop = row.rank == 1
         return ZStack {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -701,10 +701,10 @@ struct ShipperRFPDetail: View {
 
     private func bidStatRow(_ row: BidRanked) -> some View {
         let firstLane = row.bid.laneBids.first
-        let rate = firstLane.map { "$\(formatNumber($0.bidRate))" } ?? "—"
-        let transit = firstLane?.transitDays.map { "\($0)d" } ?? "—"
-        let onTime = row.bid.onTimeRate.map { "\($0)%" } ?? "—"
-        let cap = firstLane?.capacityPerWeek.map { "\($0)/wk" } ?? "—"
+        let rate = firstLane.map { "$\(formatNumber($0.bidRate))" } ?? "-"
+        let transit = firstLane?.transitDays.map { "\($0)d" } ?? "-"
+        let onTime = row.bid.onTimeRate.map { "\($0)%" } ?? "-"
+        let cap = firstLane?.capacityPerWeek.map { "\($0)/wk" } ?? "-"
         return HStack(alignment: .firstTextBaseline, spacing: 0) {
             statCell(value: rate, unit: "rate", color: palette.textPrimary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -737,9 +737,9 @@ struct ShipperRFPDetail: View {
     // MARK: Compact bid row (4th row)
 
     private func compactBidRowView(_ row: BidRanked) -> some View {
-        let score = row.scorecard.map { "\($0.overallScore)" } ?? "—"
+        let score = row.scorecard.map { "\($0.overallScore)" } ?? "-"
         let firstLane = row.bid.laneBids.first
-        let rate = firstLane.map { "$\(formatNumber($0.bidRate))" } ?? "—"
+        let rate = firstLane.map { "$\(formatNumber($0.bidRate))" } ?? "-"
         let transit = firstLane?.transitDays.map { "\($0)d transit" } ?? ""
         let onTime = row.bid.onTimeRate.map { "\($0)% on-time" } ?? ""
         let parts = [rate, transit, onTime].filter { !$0.isEmpty }

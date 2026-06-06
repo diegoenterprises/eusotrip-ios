@@ -39,10 +39,10 @@ private struct SavedReport: Decodable, Identifiable, Hashable {
 /// `ReportsAPI` method so the row can be tap-driven without a
 /// switch-statement at every call site.
 private enum QuickExportTile: String, CaseIterable, Identifiable {
-    case spendByLane     = "Spend by lane — CSV"
-    case catalystPayable = "Catalyst payable — CSV"
-    case hazmatAudit     = "Hazmat audit — CSV"
-    case co2             = "CO₂ statement (GLEC v3.0) — CSV"
+    case spendByLane     = "Spend by lane - CSV"
+    case catalystPayable = "Catalyst payable - CSV"
+    case hazmatAudit     = "Hazmat audit - CSV"
+    case co2             = "CO₂ statement (GLEC v3.0) - CSV"
 
     var id: String { rawValue }
 

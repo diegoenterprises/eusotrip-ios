@@ -93,7 +93,7 @@ private struct RailDieselFuelIndexBody: View {
     // MARK: Derived
 
     private var heroPriceLabel: String {
-        index?.nationalAverage.map { String(format: "$%.2f", $0) } ?? "—"
+        index?.nationalAverage.map { String(format: "$%.2f", $0) } ?? "-"
     }
     /// Hi / lo across the live 8-week series when present.
     private var hiLoLabel: String {
@@ -155,9 +155,6 @@ private struct RailDieselFuelIndexBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: 8) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Pricing")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -393,7 +390,7 @@ private struct RailDieselFuelIndexBody: View {
     private func paddRow(_ row: PaddRow) -> some View {
         let glyphTint: Color = row.carb ? Brand.success : Brand.hazmat
         let chipColor: Color = row.wowUp ? Brand.warning : Brand.success
-        let priceStr: String = row.price.map { String(format: "$%.2f", $0) } ?? "—"
+        let priceStr: String = row.price.map { String(format: "$%.2f", $0) } ?? "-"
         return HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -448,8 +445,8 @@ private struct RailDieselFuelIndexBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

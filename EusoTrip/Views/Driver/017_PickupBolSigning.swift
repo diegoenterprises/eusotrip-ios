@@ -74,6 +74,12 @@ struct PickupBolSigning: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
+    /// Transport mode of the active load (truck fallback) — drives
+    /// mode-aware document terminology (BOL vs Ocean B/L vs Waybill).
+    private var resolvedMode: TransportMode {
+        TransportMode(rawValue: activeLoad?.transportMode ?? "truck") ?? .truck
+    }
+
     // MARK: - Production-clean placeholders.
     //
     // Updated 2026-04-24 (eusotrip-killers ledger-hygiene pass) — every
@@ -87,26 +93,26 @@ struct PickupBolSigning: View {
     // Doctrine: 0% mock data. Dynamic ready pages with 0 data, plugged
     // into backend. No fake shipper / consignee / load id / driver name
     // ever rendered in production.
-    private let fallbackClock      = "—"
-    private let fallbackLoadID     = "—"
+    private let fallbackClock      = "-"
+    private let fallbackLoadID     = "-"
     private let fallbackBayLine    = "AWAITING BAY ASSIGNMENT"
-    private let fallbackShipDate   = "—"
-    private let fallbackBolNumber  = "—"
+    private let fallbackShipDate   = "-"
+    private let fallbackBolNumber  = "-"
     private let fallbackPerLine    = "PER 49 CFR 172.202"
-    private let fallbackShipperN   = "—"
-    private let fallbackShipperA   = "—"
-    private let fallbackConsignN   = "—"
-    private let fallbackConsignA   = "—"
-    private let fallbackCommod     = "—"
-    private let fallbackUN         = "—"
-    private let fallbackHazClass   = "—"
-    private let fallbackNetGal     = "—"
-    private let fallbackNetWeight  = "—"
-    private let fallbackPlacards   = "—"
+    private let fallbackShipperN   = "-"
+    private let fallbackShipperA   = "-"
+    private let fallbackConsignN   = "-"
+    private let fallbackConsignA   = "-"
+    private let fallbackCommod     = "-"
+    private let fallbackUN         = "-"
+    private let fallbackHazClass   = "-"
+    private let fallbackNetGal     = "-"
+    private let fallbackNetWeight  = "-"
+    private let fallbackPlacards   = "-"
     private let fallbackEmergency  = "CHEMTREC · 424-424-9300"
-    private let fallbackShipperRep = "—"
-    private let fallbackDriver     = "—"
-    private let fallbackRepSigned  = "—"
+    private let fallbackShipperRep = "-"
+    private let fallbackDriver     = "-"
+    private let fallbackRepSigned  = "-"
 
     // MARK: - Derived UI strings
 
@@ -189,7 +195,7 @@ struct PickupBolSigning: View {
         } else if !lifecycle.loadId.isEmpty {
             bolNumber = lifecycle.loadId
         } else {
-            pdfError = "No load is hydrated yet — try again in a moment."
+            pdfError = "No load is hydrated yet, try again in a moment."
             return
         }
         do {
@@ -274,7 +280,7 @@ struct PickupBolSigning: View {
             }
 
             // Title
-            Text("Straight Bill of Lading — Non-negotiable")
+            Text(TransportLexicon.term(.billOfLading, mode: resolvedMode))
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(palette.textPrimary)
 
@@ -400,7 +406,7 @@ struct PickupBolSigning: View {
                 Text("ESANG · BOL-VALIDATOR")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Weights match the Koch scale ticket within 0.2%. Placards photographed, ERG 125 attached. Shipper rep signed at 09:58 — you're cleared to co-sign.")
+                Text("Weights match the Koch scale ticket within 0.2%. Placards photographed, ERG 125 attached. Shipper rep signed at 09:58. You're cleared to co-sign.")
                     .font(EType.body)
                     .foregroundStyle(palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -117,7 +117,7 @@ private struct VesselBunkerFSCBody: View {
                         // Soft, non-blocking — the reference ladder + proof index
                         // still render so the surface is never stranded.
                         LifecycleCard(accentDanger: true) {
-                            Text("Live VLSFO index unavailable — showing reference index. \(err)")
+                            Text("Live VLSFO index unavailable. Showing reference index. \(err)")
                                 .font(EType.caption).foregroundStyle(Brand.warning)
                         }
                     }
@@ -159,7 +159,7 @@ private struct VesselBunkerFSCBody: View {
             MetricTile(label: "FSC BRACKET", value: pctString(surchargePct), accent: Brand.info)
             MetricTile(
                 label: "24H",
-                value: changePct == nil ? "—" : String(format: "%+.1f%%", changePct!),
+                value: changePct == nil ? "-" : String(format: "%+.1f%%", changePct!),
                 accent: (changePct ?? 0) >= 0 ? Brand.warning : Brand.success
             )
         }
@@ -207,7 +207,7 @@ private struct VesselBunkerFSCBody: View {
     }
 
     private var bracketRangeLabel: String {
-        guard let s = activeStep else { return "—" }
+        guard let s = activeStep else { return "-" }
         return "\(Int(s.indexFrom))–\(Int(s.indexTo)) $/MT"
     }
 

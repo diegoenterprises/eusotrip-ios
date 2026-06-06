@@ -52,7 +52,7 @@
 //      Backend-miss = thrown error -> rollback -> retry banner.
 //    • Every nullable column (`category`, `assignee`, `openedAt`)
 //      renders as a neutral em-dash sentinel — never a fabricated
-//      string. Numeric tiles fall back to "—" when the rollup is
+//      string. Numeric tiles fall back to "-" when the rollup is
 //      .empty so the strip never reads as "0%/0s/0/0".
 //
 //  Wired into `ContentView.ScreenRegistry` as id="801".
@@ -242,7 +242,7 @@ struct AdminControlTower: View {
             style = AnyShapeStyle(Brand.danger.opacity(0.18))
             fg = Brand.danger
         default:
-            label = "VENDORS · —"
+            label = "VENDORS · -"
             style = AnyShapeStyle(palette.tintNeutral)
             fg = palette.textSecondary
         }
@@ -257,7 +257,7 @@ struct AdminControlTower: View {
     // MARK: - KPI strip
     //
     // Six tiles in a 3-column grid. Numeric tiles use the rollup
-    // when `.loaded`, "—" when `.empty` or `.error`. The strip is
+    // when `.loaded`, "-" when `.empty` or `.error`. The strip is
     // visible in every state (it's the operator's anchor); content
     // gracefully falls back, never mock-fills.
 
@@ -267,34 +267,34 @@ struct AdminControlTower: View {
             HStack(spacing: Space.s2) {
                 kpiTile(
                     label: "ACTIVE",
-                    value: s.map { "\($0.activeExceptionsCount)" } ?? "—",
+                    value: s.map { "\($0.activeExceptionsCount)" } ?? "-",
                     accent: .gradient
                 )
                 kpiTile(
                     label: "BREACHED",
-                    value: s.map { "\($0.breachedSLAExceptionsCount)" } ?? "—",
+                    value: s.map { "\($0.breachedSLAExceptionsCount)" } ?? "-",
                     accent: (s?.breachedSLAExceptionsCount ?? 0) > 0 ? .danger : .neutral
                 )
                 kpiTile(
                     label: "HEALTH",
-                    value: s.map { healthFmt($0.systemHealthScore) } ?? "—",
+                    value: s.map { healthFmt($0.systemHealthScore) } ?? "-",
                     accent: healthAccent(s?.systemHealthScore)
                 )
             }
             HStack(spacing: Space.s2) {
                 kpiTile(
                     label: "API SLO 24H",
-                    value: s.map { pctFmt($0.apiSLO24h) } ?? "—",
+                    value: s.map { pctFmt($0.apiSLO24h) } ?? "-",
                     accent: .neutral
                 )
                 kpiTile(
                     label: "QUEUE LAG",
-                    value: s.map { lagFmt($0.queueLagSeconds) } ?? "—",
+                    value: s.map { lagFmt($0.queueLagSeconds) } ?? "-",
                     accent: (s?.queueLagSeconds ?? 0) > 30 ? .warning : .neutral
                 )
                 kpiTile(
                     label: "ERR · 1H",
-                    value: s.map { pctFmt($0.errorRate1h) } ?? "—",
+                    value: s.map { pctFmt($0.errorRate1h) } ?? "-",
                     accent: (s?.errorRate1h ?? 0) > 0.01 ? .danger : .neutral
                 )
             }
@@ -392,7 +392,7 @@ struct AdminControlTower: View {
                 systemImage: "checkmark.shield",
                 title: filter == .all ? "Nothing on the board" : "No \(filter.label.lowercased()) exceptions",
                 subtitle: filter == .all
-                    ? "Platform is quiet — no active exceptions on the operator's plate. The control tower watches every alert source in real time and surfaces them here as they open."
+                    ? "Platform is quiet. No active exceptions on the operator's plate. The control tower watches every alert source in real time and surfaces them here as they open."
                     : "Try a wider severity filter, or pull to refresh."
             )
         case .error(let err):
@@ -415,11 +415,11 @@ struct AdminControlTower: View {
                 // Top: headline + SLA chip.
                 HStack(alignment: .top, spacing: Space.s3) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(row.headline.isEmpty ? "—" : row.headline)
+                        Text(row.headline.isEmpty ? "-" : row.headline)
                             .font(EType.bodyStrong)
                             .foregroundStyle(palette.textPrimary)
                             .lineLimit(2)
-                        Text(row.scope.isEmpty ? "—" : row.scope)
+                        Text(row.scope.isEmpty ? "-" : row.scope)
                             .font(.system(size: 10, weight: .heavy)).tracking(0.4)
                             .foregroundStyle(palette.textTertiary)
                             .lineLimit(1)
@@ -433,14 +433,14 @@ struct AdminControlTower: View {
                     Image(systemName: categoryIcon(row.category))
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(palette.textTertiary)
-                    Text(row.category.isEmpty ? "—" : row.category.uppercased())
+                    Text(row.category.isEmpty ? "-" : row.category.uppercased())
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                     Text("·").foregroundStyle(palette.textTertiary)
                     Image(systemName: "person.crop.circle")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(palette.textTertiary)
-                    Text(row.assignee.isEmpty ? "—" : row.assignee)
+                    Text(row.assignee.isEmpty ? "-" : row.assignee)
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1)
@@ -448,7 +448,7 @@ struct AdminControlTower: View {
                     Image(systemName: "clock")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(palette.textTertiary)
-                    Text(row.openedAt.isEmpty ? "—" : row.openedAt)
+                    Text(row.openedAt.isEmpty ? "-" : row.openedAt)
                         .font(EType.mono(.micro)).tracking(0.3)
                         .foregroundStyle(palette.textTertiary)
                     Spacer()
@@ -555,7 +555,7 @@ struct AdminControlTower: View {
             fg = .white
         default:
             label = raw.isEmpty
-                ? "—"
+                ? "-"
                 : raw.replacingOccurrences(of: "_", with: " ").uppercased()
             style = AnyShapeStyle(palette.tintNeutral)
             fg = palette.textSecondary

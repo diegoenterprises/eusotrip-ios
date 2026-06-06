@@ -421,13 +421,13 @@ struct DriverVehicleCard: View {
                 .foregroundColor(palette.textTertiary)
         case .empty:
             Text(maintenanceStore.assetId == nil
-                 ? "No tractor assigned — maintenance will appear once dispatch pairs you with a unit."
+                 ? "No tractor assigned, maintenance will appear once dispatch pairs you with a unit."
                  : "No upcoming maintenance tasks for this tractor.")
                 .font(EType.caption)
                 .foregroundColor(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         case .error(let err):
-            Text("Maintenance unavailable — \(err.localizedDescription)")
+            Text("Maintenance unavailable - \(err.localizedDescription)")
                 .font(EType.caption)
                 .foregroundColor(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -566,7 +566,7 @@ struct DriverVehicleCard: View {
         EusoEmptyState(
             systemImage: "truck.box",
             title: "No assigned vehicle yet",
-            subtitle: "Once dispatch pairs you with a tractor and trailer, the unit details, plate, odometer, and maintenance schedule show up here.",
+            subtitle: "Once dispatch pairs you with a tractor and trailer, the unit details, plate, odometer and maintenance schedule show up here.",
             cta: (label: "Refresh", action: {
                 Task { await fleetStore.refresh() }
             })
@@ -635,7 +635,7 @@ struct DriverVehicleCard: View {
     }
 
     private func odometerString(_ miles: Int?) -> String {
-        guard let miles else { return "—" }
+        guard let miles else { return "-" }
         let fmt = NumberFormatter()
         fmt.numberStyle = .decimal
         fmt.maximumFractionDigits = 0
@@ -644,14 +644,14 @@ struct DriverVehicleCard: View {
 
     private func plateString(_ plate: String?) -> String {
         guard let plate, !plate.trimmingCharacters(in: .whitespaces).isEmpty else {
-            return "—"
+            return "-"
         }
         return plate
     }
 
     private func homeBaseString(_ homeBase: String?) -> String {
         guard let base = homeBase, !base.trimmingCharacters(in: .whitespaces).isEmpty else {
-            return "—"
+            return "-"
         }
         return base
     }
@@ -700,7 +700,7 @@ struct DriverVehicleCard: View {
         if parts.isEmpty, let notes = item.notes, !notes.isEmpty {
             parts.append(notes)
         }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func severityIsCritical(_ severity: String) -> Bool {

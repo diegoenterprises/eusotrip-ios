@@ -258,7 +258,7 @@ struct ZeunBreakdownReporter: View {
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Toggle(isOn: $store.canDrive) {
-                    Text(store.canDrive ? "Yes — I can move under power" : "No — I'm stranded")
+                    Text(store.canDrive ? "Yes - I can move under power" : "No - I'm stranded")
                         .font(EType.body)
                         .foregroundStyle(palette.textPrimary)
                 }
@@ -419,10 +419,10 @@ struct ZeunBreakdownReporter: View {
                                 .foregroundStyle(LinearGradient.diagonal)
                                 .frame(width: 22)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(p.name ?? "—")
+                                Text(p.name ?? "-")
                                     .font(EType.bodyStrong)
                                     .foregroundStyle(palette.textPrimary)
-                                Text("\(p.distance ?? "—") mi · \(p.type ?? "—")")
+                                Text("\(p.distance ?? "-") mi · \(p.type ?? "-")")
                                     .font(EType.caption)
                                     .foregroundStyle(palette.textSecondary)
                             }
@@ -571,7 +571,7 @@ struct ZeunProviderNetwork: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(palette.textSecondary)
-                TextField("Shop name, city, or service…", text: $store.query)
+                TextField("Shop name, city or service…", text: $store.query)
                     .submitLabel(.search)
                     .onSubmit { Task { await store.refresh() } }
                 if !store.query.isEmpty {
@@ -644,7 +644,7 @@ struct ZeunProviderNetwork: View {
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(palette.bgCardSoft))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(p.name ?? "—")
+                    Text(p.name ?? "-")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
@@ -776,7 +776,7 @@ struct ZeunProviderDetail: View {
     private func identityCard(_ d: ZeunMechanicsAPI.ProviderDetail) -> some View {
         ActiveCard {
             VStack(alignment: .leading, spacing: 4) {
-                Text(d.name ?? "—")
+                Text(d.name ?? "-")
                     .font(EType.h2)
                     .foregroundStyle(palette.textPrimary)
                 if let chain = d.chainName {
@@ -998,13 +998,13 @@ struct ZeunBreakdownDetail: View {
     private func summaryCard(_ d: ZeunMechanicsAPI.BreakdownDetail) -> some View {
         ActiveCard {
             VStack(alignment: .leading, spacing: 4) {
-                Text((d.issueCategory ?? "—").replacingOccurrences(of: "_", with: " ").capitalized)
+                Text((d.issueCategory ?? "-").replacingOccurrences(of: "_", with: " ").capitalized)
                     .font(EType.h2)
                     .foregroundStyle(palette.textPrimary)
                 HStack {
-                    StatusPill(text: d.severity ?? "—",
+                    StatusPill(text: d.severity ?? "-",
                                kind: severityPillKind(d.severity))
-                    StatusPill(text: (d.status ?? "—").replacingOccurrences(of: "_", with: " ").capitalized,
+                    StatusPill(text: (d.status ?? "-").replacingOccurrences(of: "_", with: " ").capitalized,
                                kind: .info)
                     if let canDrive = d.canDrive {
                         StatusPill(text: canDrive ? "Driveable" : "Stranded",
@@ -1030,7 +1030,7 @@ struct ZeunBreakdownDetail: View {
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 if let primary = diag.primaryDiagnosis {
-                    Text(primary.issue ?? "—")
+                    Text(primary.issue ?? "-")
                         .font(EType.bodyStrong)
                     if let p = primary.probability {
                         Text("Confidence \(Int((p * 100).rounded()))%")
@@ -1164,7 +1164,7 @@ struct ZeunMaintenanceTracker: View {
                                 ForEach(history) { h in
                                     HStack {
                                         VStack(alignment: .leading, spacing: 1) {
-                                            Text(h.serviceType ?? "—")
+                                            Text(h.serviceType ?? "-")
                                                 .font(EType.bodyStrong)
                                             Text("\((h.serviceDate ?? "").prefix(10)) · \(h.odometerAtService ?? 0) mi")
                                                 .font(EType.caption)
@@ -1219,7 +1219,7 @@ struct ZeunMaintenanceTracker: View {
                 ForEach(items) { item in
                     HStack {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text((item.serviceType ?? "—").replacingOccurrences(of: "_", with: " ").capitalized)
+                            Text((item.serviceType ?? "-").replacingOccurrences(of: "_", with: " ").capitalized)
                                 .font(EType.bodyStrong)
                                 .foregroundStyle(palette.textPrimary)
                             if let due = item.dueOdometer {
@@ -1270,6 +1270,15 @@ final class ZeunPartDiagnosisStore: ObservableObject {
     @Published private(set) var result: ZeunMechanicsAPI.PartDiagnosis? = nil
     @Published var lastError: String? = nil
 
+    // Document-intelligence spine — the capture point classifies the photo
+    // (component/defect context) via the homegrown vision router ALONGSIDE
+    // the diagnosePart upload, so the user sees what was actually detected
+    // before they commit to a diagnosis. HONEST: renders only the real
+    // classifier result; low confidence / "unknown" surfaces a neutral
+    // "couldn't confidently identify" state, never a fabricated type.
+    @Published private(set) var isClassifying: Bool = false
+    @Published private(set) var classification: DocumentRouterAPI.ClassifyResponse? = nil
+
     var hasPhoto: Bool { photoBase64 != nil }
 
     /// PhotosPicker → Data → JPEG ≤ 900KB → base64. Mirrors the exact
@@ -1278,6 +1287,7 @@ final class ZeunPartDiagnosisStore: ObservableObject {
     func loadPhoto(_ item: PhotosPickerItem) async {
         lastError = nil
         result = nil
+        classification = nil
         guard let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty else {
             lastError = "Couldn't read that photo. Try another."
             pickerItem = nil
@@ -1295,8 +1305,36 @@ final class ZeunPartDiagnosisStore: ObservableObject {
                 quality -= 0.1
             }
         }
-        photoBase64 = jpeg.base64EncodedString()
+        let base64 = jpeg.base64EncodedString()
+        photoBase64 = base64
         pickerItem = nil
+
+        // Fire the document-intelligence read on the same JPEG payload.
+        // Independent of diagnosePart — surfaces the detected component/
+        // defect context so the user knows exactly what was captured.
+        await classify(base64)
+    }
+
+    /// Runs the captured photo through the homegrown vision router to
+    /// classify the component/defect context. Best-effort: a classifier
+    /// miss never blocks the diagnosis flow (it just leaves the context
+    /// card hidden). HONEST: stores the raw `ClassifyResponse`; the view
+    /// decides whether the confidence is high enough to assert a type.
+    func classify(_ base64: String) async {
+        isClassifying = true
+        defer { isClassifying = false }
+        do {
+            classification = try await EusoTripAPI.shared.documentRouter.classifyAndRoute(
+                documentBase64: base64,
+                mimeType: .jpeg,
+                callerContext: "mechanic inspection defect"
+            )
+        } catch let e {
+            // Classification is auxiliary — surface the failure quietly in
+            // the context card rather than blocking the primary diagnosis.
+            classification = nil
+            lastError = "Couldn't identify the document: \((e as? LocalizedError)?.errorDescription ?? e.localizedDescription)"
+        }
     }
 
     func diagnose() async {
@@ -1397,7 +1435,7 @@ struct ZeunPartDiagnosisScreen: View {
                         .font(EType.micro).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                 }
-                Text("Snap or pick a clear photo of the part. ESANG reads visible faults, wear, and damage.")
+                Text("Snap or pick a clear photo of the part. ESANG reads visible faults, wear and damage.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1415,9 +1453,146 @@ struct ZeunPartDiagnosisScreen: View {
                         )
                 }
 
+                detectionStrip
+
                 capturePhotoPicker
             }
         }
+    }
+
+    /// Document-intelligence read of the captured photo. Surfaces the
+    /// detected component/defect context (classifiedType + confidence +
+    /// summary + key extractedFields + warnings) ALONGSIDE the diagnosePart
+    /// upload, so the driver sees exactly what the spine read before they
+    /// commit. HONEST: low confidence or "unknown" → a neutral "couldn't
+    /// confidently identify" line, never an asserted type.
+    @ViewBuilder
+    private var detectionStrip: some View {
+        if store.isClassifying {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("ESANG is reading the photo…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else if let c = store.classification {
+            let confident = c.confidence >= 0.55 && c.classifiedType.lowercased() != "unknown"
+            let pct = Int((max(0, min(1, c.confidence)) * 100).rounded())
+            VStack(alignment: .leading, spacing: Space.s2) {
+                HStack(spacing: 6) {
+                    Image(systemName: confident ? "doc.viewfinder.fill" : "questionmark.circle.fill")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(confident ? AnyShapeStyle(LinearGradient.diagonal)
+                                                   : AnyShapeStyle(palette.textTertiary))
+                    Text(confident ? "DETECTED" : "UNCONFIRMED")
+                        .font(EType.micro).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer()
+                    StatusPill(text: "\(pct)%", kind: confident ? .success : .neutral)
+                }
+
+                if confident {
+                    Text(humanizeType(c.classifiedType))
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Couldn't confidently identify this photo, please confirm the component below before diagnosing.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if !c.summary.isEmpty {
+                    Text(c.summary)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // Key extracted fields — rendered verbatim from the spine.
+                let fields = orderedFields(c.extractedFields)
+                if !fields.isEmpty {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(fields, id: \.0) { key, value in
+                            HStack(alignment: .top, spacing: 6) {
+                                Text(humanizeKey(key))
+                                    .font(EType.micro)
+                                    .foregroundStyle(palette.textTertiary)
+                                Spacer(minLength: Space.s2)
+                                Text(value)
+                                    .font(EType.micro)
+                                    .foregroundStyle(palette.textSecondary)
+                                    .multilineTextAlignment(.trailing)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+
+                // Classifier warnings — surfaced verbatim, never hidden.
+                ForEach(c.warnings, id: \.self) { w in
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Brand.warning)
+                        Text(w)
+                            .font(EType.micro)
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .padding(Space.s3)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.bgCardSoft)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint)
+            )
+        }
+    }
+
+    /// "engine_part" / "brake-chamber" / "BOL" → "Engine Part" / etc.
+    private func humanizeType(_ raw: String) -> String {
+        let cleaned = raw
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        guard !cleaned.isEmpty else { return raw }
+        return cleaned
+            .split(separator: " ")
+            .map { $0.count <= 3 ? $0.uppercased() : $0.capitalized }
+            .joined(separator: " ")
+    }
+
+    /// camelCase / snake_case field key → readable label.
+    private func humanizeKey(_ raw: String) -> String {
+        var spaced = ""
+        for ch in raw.replacingOccurrences(of: "_", with: " ") {
+            if ch.isUppercase, let last = spaced.last, last != " " { spaced.append(" ") }
+            spaced.append(ch)
+        }
+        return spaced
+            .split(separator: " ")
+            .map { $0.capitalized }
+            .joined(separator: " ")
+    }
+
+    /// Stable, non-null field list capped so the strip stays scannable.
+    private func orderedFields(_ fields: [String: DocumentRouterAPI.FieldValue]) -> [(String, String)] {
+        fields
+            .compactMap { key, value -> (String, String)? in
+                guard let s = value.asString, !s.isEmpty else { return nil }
+                return (key, s)
+            }
+            .sorted { $0.0 < $1.0 }
+            .prefix(6)
+            .map { ($0.0, $0.1) }
     }
 
     /// Capture-photo picker. `store.hasPhoto` is read in this @MainActor view
@@ -1436,7 +1611,7 @@ struct ZeunPartDiagnosisScreen: View {
             .padding(.vertical, 11)
             .foregroundStyle(.white)
             .background(LinearGradient.diagonal)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(store.isDiagnosing)
@@ -1448,13 +1623,13 @@ struct ZeunPartDiagnosisScreen: View {
                 Text("CONTEXT (optional)")
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
-                TextField("Equipment type — e.g. Class 8 tractor, reefer trailer", text: $store.equipmentType)
+                TextField("Equipment type, e.g. Class 8 tractor, reefer trailer", text: $store.equipmentType)
                     .textFieldStyle(.roundedBorder)
                     .disabled(store.isDiagnosing)
-                TextField("Part name — e.g. brake chamber, serpentine belt", text: $store.partName)
+                TextField("Part name, e.g. brake chamber, serpentine belt", text: $store.partName)
                     .textFieldStyle(.roundedBorder)
                     .disabled(store.isDiagnosing)
-                Text("Both optional — they sharpen the read but ESANG diagnoses from the photo regardless.")
+                Text("Both optional. They sharpen the read but ESANG diagnoses from the photo regardless.")
                     .font(EType.micro)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -1504,7 +1679,7 @@ struct ZeunPartDiagnosisScreen: View {
             EusoEmptyState(
                 systemImage: "checkmark.shield.fill",
                 title: "No faults detected",
-                subtitle: "ESANG couldn't see any visible damage, wear, or fault in this photo. Re-shoot from another angle if you suspect an issue."
+                subtitle: "ESANG couldn't see any visible damage, wear or fault in this photo. Re-shoot from another angle if you suspect an issue."
             )
             .padding(.top, Space.s2)
         } else {

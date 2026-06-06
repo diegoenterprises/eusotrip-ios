@@ -35,7 +35,7 @@
 //                stage from `status` (pending → AUDIT, approved →
 //                APPROVED, completed/paid → CLEARED, disputed →
 //                AUDIT with warn paint). Per-stage timestamps paint
-//                "—" pending the envelope extension.
+//                "-" pending the envelope extension.
 //    EUSO-2143 — Settlement-attached documents (BOL · POD · rate-con)
 //                not on the envelope. Documents strip paints honest
 //                placeholder chips citing the backend gap.
@@ -85,7 +85,7 @@ private func deriveLifecycle(status: String?) -> [LifecycleStage] {
         else if i == activeIdx {
             state = (s == "disputed") ? .warn : .active
         } else { state = .upcoming }
-        out.append(LifecycleStage(label: label, timestamp: "—", state: state))
+        out.append(LifecycleStage(label: label, timestamp: "-", state: state))
     }
     return out
 }
@@ -273,7 +273,7 @@ struct ShipperSettlementDetail: View {
         if case .loaded(let s) = store.phase {
             return SettlementStatusStyle.from(s.status).pillLegend
         }
-        return "—"
+        return "-"
     }
 
     // MARK: Back chevron + breadcrumb
@@ -299,8 +299,20 @@ struct ShipperSettlementDetail: View {
     }
 
     private func tapBack() {
+        // Back-button reconciliation 2026-06-02: this screen is only ever
+        // rendered as a ShipperSurface registry screen (pushed at depth > 1
+        // via the `shipper/settlements/:id` → "227" deep-link and the
+        // settlement-detail row tap), never inside a `.sheet`/NavigationStack.
+        // So `@Environment(\.dismiss)` had nothing to dismiss — `dismiss()`
+        // was a silent no-op and, with "227" in `screensWithOwnBack`
+        // suppressing the surface chevron, the user was fully stranded.
+        // Pop the actual surface stack so this `backChevronRow` returns the
+        // user to wherever they came from (Settlements / Me hub / deep-link
+        // origin). `dismiss()` is retained as a harmless no-op for any future
+        // modal caller.
+        NotificationCenter.default.post(name: .eusoShipperNavBack, object: nil)
         dismiss()
-        // observability post — telemetry only; real effect is `dismiss()` above
+        // observability post — telemetry only; nav effect is the navBack above
         NotificationCenter.default.post(
             name: .eusoShipperSettlementBack,
             object: nil,
@@ -820,7 +832,7 @@ struct ShipperSettlementDetail: View {
                             .minimumScaleFactor(0.78)
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 13)
-                    .foregroundStyle(.white).background(LinearGradient.primary).clipShape(Capsule())
+                    .foregroundStyle(.white).background(LinearGradient.primary).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(store.working)
@@ -845,8 +857,8 @@ struct ShipperSettlementDetail: View {
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 11)
                     .foregroundStyle(Brand.danger).background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(Brand.danger.opacity(0.6)))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.6)))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }.buttonStyle(.plain)
             }
             // Phase 18 closure: shipper rates the driver after the
@@ -866,8 +878,8 @@ struct ShipperSettlementDetail: View {
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 11)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.5)))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(LinearGradient.diagonal.opacity(0.5)))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }.buttonStyle(.plain)
             }
             if let e = store.lastError {
@@ -930,7 +942,7 @@ struct ShipperSettlementDetail: View {
                         Text("Submit dispute").font(.system(size: 14, weight: .heavy))
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 13)
-                    .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+                    .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(disputeReason.trimmingCharacters(in: .whitespaces).count < 5)

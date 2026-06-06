@@ -148,7 +148,7 @@ private struct VesselCrewCertificationsBody: View {
             Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
                 .overlay(Image(systemName: "person.fill").font(.system(size: 13)).foregroundStyle(.white))
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(m.role ?? "Crew") · \(m.crewId ?? "—")").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Text("\(m.role ?? "Crew") · \(m.crewId ?? "-")").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                 Text(status.days.map { "STCW cert · expires in \($0) days" } ?? "STCW cert · valid")
                     .font(.system(size: 11)).monospaced().foregroundStyle(palette.textSecondary)
             }

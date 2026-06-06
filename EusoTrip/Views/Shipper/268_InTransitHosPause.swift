@@ -21,6 +21,23 @@ private struct HosPauseBody: View {
     @Environment(\.palette) private var palette
     let live: ShipperAPI.LifecycleSnapshot
 
+    /// The snapshot carries no `transportMode` column — only `equipmentType`.
+    /// Derive the base mode from the equipment keyword (same rail*/vessel*
+    /// convention the LifecycleScaffold uses) so mode-dependent labels speak
+    /// the load's language; default to truck.
+    private var loadMode: TransportMode {
+        let e = (live.load.equipmentType ?? "").lowercased()
+        if e.contains("rail") || e.contains("tofc") || e.contains("cofc")
+            || e.contains("boxcar") || e.contains("hopper") || e.contains("gondola")
+            || e.contains("centerbeam") || e.contains("autorack") || e.contains("flatcar")
+            || e.contains("well car") { return .rail }
+        if e.contains("vessel") || e.contains("container ship") || e.contains("vlcc")
+            || e.contains("bulk carrier") || e.contains("ro/ro") || e.contains("roro")
+            || e.contains("lng") || e.contains("iso tank") { return .vessel }
+        if e.contains("barge") { return .barge }
+        return .truck
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             driverCard
@@ -83,7 +100,7 @@ private struct HosPauseBody: View {
         LifecycleCard {
             LifecycleSection(label: "SCHEDULE IMPACT", icon: "clock.arrow.2.circlepath")
             LifecycleRow(label: "Original ETA", value: humanISO(live.load.estimatedDeliveryDate))
-            LifecycleRow(label: "Delivery window", value: humanISO(live.load.deliveryDate))
+            LifecycleRow(label: TransportLexicon.short(.destinationWindow, mode: loadMode, equipmentRaw: live.load.equipmentType), value: humanISO(live.load.deliveryDate))
             LifecycleRow(label: "Equipment",     value: dashIfEmpty(live.load.equipmentType))
         }
     }

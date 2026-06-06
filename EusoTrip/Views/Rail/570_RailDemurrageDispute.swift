@@ -80,24 +80,24 @@ private struct RailDemurrageDisputeBody: View {
 
     // MARK: Derived
 
-    private var accruedLabel: String  { charge?.accruedUsd.map { "$\(Int($0))" } ?? dashboard?.totalAccruedUsd.map { "$\(Int($0))" } ?? "—" }
+    private var accruedLabel: String  { charge?.accruedUsd.map { "$\(Int($0))" } ?? dashboard?.totalAccruedUsd.map { "$\(Int($0))" } ?? "-" }
     private var contestedLabel: String {
         let amt = charge?.contestedUsd ?? attributions.filter { contestDisp($0.disposition) }.compactMap { $0.amountUsd }.reduce(0, +)
-        return amt > 0 ? "$\(Int(amt))" : "—"
+        return amt > 0 ? "$\(Int(amt))" : "-"
     }
     private var contestedAmount: Double {
         charge?.contestedUsd ?? attributions.filter { contestDisp($0.disposition) }.compactMap { $0.amountUsd }.reduce(0, +)
     }
-    private var winRateLabel: String { dashboard?.winRatePct.map { "\(Int($0))%" } ?? "—" }
-    private var disputeIdCaption: String { charge?.id ?? "DEM-—" }
+    private var winRateLabel: String { dashboard?.winRatePct.map { "\(Int($0))%" } ?? "-" }
+    private var disputeIdCaption: String { charge?.id ?? "DEM--" }
 
     private func contestDisp(_ d: String?) -> Bool { (d ?? "").lowercased() == "contest" }
 
     private var chargeContextSub: String {
         let days = charge?.daysAccrued ?? 0
         let rate = charge?.dailyRateUsd.map { "@$\(Int($0))" } ?? ""
-        let container = charge?.containerNumber ?? "—"
-        let shipper = charge?.shipper ?? "—"
+        let container = charge?.containerNumber ?? "-"
+        let shipper = charge?.shipper ?? "-"
         return "\(container) · \(shipper)\(days > 0 || !rate.isEmpty ? " · \(days) days \(rate)" : "")"
     }
 
@@ -165,7 +165,7 @@ private struct RailDemurrageDisputeBody: View {
                     .foregroundStyle(Brand.warning)
                     .padding(.horizontal, 12).padding(.vertical, 4)
                     .background(Capsule().fill(Brand.warning.opacity(0.16)))
-                Text(charge?.facilityName ?? "—")
+                Text(charge?.facilityName ?? "-")
                     .font(.system(size: 10, weight: .heavy)).kerning(0.6)
                     .foregroundStyle(palette.textPrimary)
                     .padding(.horizontal, 12).padding(.vertical, 4)
@@ -298,9 +298,9 @@ private struct RailDemurrageDisputeBody: View {
         let chipColor  = reasonChipColor(reason, disposition: disp)
         let pillColor  = dispositionChipColor(disp)
         let label      = attr.reasonLabel ?? reason.replacingOccurrences(of: "_", with: " ").capitalized
-        let daysStr    = attr.days.map { $0 == Double(Int($0)) ? "\(Int($0)) day\(Int($0) == 1 ? "" : "s")" : "\($0) days" } ?? "—"
-        let attribStr  = attr.attribution ?? "—"
-        let amountStr  = attr.amountUsd.map { $0 == 0 ? "$0" : "$\(Int($0))" } ?? "—"
+        let daysStr    = attr.days.map { $0 == Double(Int($0)) ? "\(Int($0)) day\(Int($0) == 1 ? "" : "s")" : "\($0) days" } ?? "-"
+        let attribStr  = attr.attribution ?? "-"
+        let amountStr  = attr.amountUsd.map { $0 == 0 ? "$0" : "$\(Int($0))" } ?? "-"
 
         return HStack(spacing: 12) {
             ZStack {
@@ -347,8 +347,8 @@ private struct RailDemurrageDisputeBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

@@ -218,7 +218,7 @@ struct DriverLoadDocUploadView: View {
                 .foregroundStyle(palette.textPrimary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
-            Text("Snap the printed paperwork — BOL, rate-con, insurance, customs — and we'll attach it to the load envelope so the shipper sees it instantly. ESANG OCR auto-flags any defects on the same upload.")
+            Text("Snap the printed paperwork, BOL, rate-con, insurance, customs, and we'll attach it to the load envelope so the shipper sees it instantly. ESANG OCR auto-flags any defects on the same upload.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -298,7 +298,7 @@ struct DriverLoadDocUploadView: View {
         if confidence != nil && !manualOverride {
             return "Auto-detected from your capture. Tap a chip to override."
         }
-        if manualOverride { return "You set this type — we'll upload as you chose." }
+        if manualOverride { return "You set this type. We'll upload as you chose." }
         return "Pick the document type, or just snap it and we'll detect it."
     }
 
@@ -614,7 +614,7 @@ struct DriverLoadDocUploadView: View {
             classifiedSummary = nil
             classifiedType = nil
             confidence = nil
-            self.error = "Auto-detect couldn't read this doc — pick the type below and upload as usual."
+            self.error = "Auto-detect couldn't read this doc, pick the type below and upload as usual."
         }
     }
 

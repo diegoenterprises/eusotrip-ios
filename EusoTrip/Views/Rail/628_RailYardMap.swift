@@ -78,6 +78,9 @@ private struct YardMap628: Decodable {
 
 /// One yard location / zone. Server: yardManagement.getYardLocations →
 /// locations[]. `occupied` is real-time-tracked (currently 0 server-side).
+/// `lat`/`lng` are the REAL facility/terminal coordinates the server
+/// projects (yardManagement.ts:274,297,316-317,328-329 — facilities/
+/// terminals.latitude/longitude); we map them onto the in-house map.
 private struct YardLocation628: Decodable, Identifiable, Hashable {
     let id: String
     let name: String?
@@ -87,6 +90,8 @@ private struct YardLocation628: Decodable, Identifiable, Hashable {
     let occupied: Int?
     let dockDoors: Int?
     let status: String?
+    let lat: Double?
+    let lng: Double?
 }
 
 /// getYardLocations envelope. Server: { locations, total }.
@@ -142,6 +147,7 @@ private enum SpotStatus: String {
 
 private struct RailYardMapBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var session: EusoTripSession
 
     @State private var locations: [YardLocation628] = []
@@ -172,6 +178,7 @@ private struct RailYardMapBody: View {
                             Text(err).font(EType.caption).foregroundStyle(Brand.danger)
                         }
                     } else {
+                        yardMapCard
                         trackGridCard
                         zonesSection
                         zonesCard
@@ -209,9 +216,6 @@ private struct RailYardMapBody: View {
             }
             // Title row: back chevron · "Yard map" · three-dot menu.
             HStack(alignment: .center, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Yard map")
                     .font(.system(size: 28, weight: .bold))
                     .tracking(-0.4)
@@ -272,6 +276,113 @@ private struct RailYardMapBody: View {
                         .strokeBorder(palette.borderFaint))
             }
         }
+    }
+
+    // MARK: - Yard map card (in-house BespokeMapCanvas · .adZones footprints)
+
+    /// Yards with REAL coordinates the server projected (lat/lng ≠ 0,0).
+    /// Null-island guard per cheat-sheet §6 — never render a fabricated pin.
+    private var mappableZones: [YardLocation628] {
+        locations.filter { loc in
+            guard let la = loc.lat, let lo = loc.lng else { return false }
+            return !(la == 0 && lo == 0)
+        }
+    }
+
+    /// The yard map: each real yard footprint as a translucent `.adZones`
+    /// polygon (mirrors Driver 022 DockAssigned `yardLayoutPolygons ->
+    /// .adZones`) plus a pickup pin per zone, tappable to select it. RAIL
+    /// has no dedicated register — standard board (tilt: 0, style: .auto).
+    @ViewBuilder
+    private var yardMapCard: some View {
+        let zones = mappableZones
+        if zones.isEmpty {
+            EmptyView()
+        } else {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("YARD MAP · LIVE")
+                        .font(EType.micro).tracking(1.0)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer(minLength: 8)
+                    Text("\(zones.count) yard\(zones.count == 1 ? "" : "s")")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(.bottom, Space.s3)
+
+                BespokeMapCanvas(
+                    center: mapCenter,
+                    zoom: mapZoom,
+                    interactive: true,
+                    tilt: 0,
+                    isDark: colorScheme == .dark,
+                    layers: [
+                        .adZones(zones.map(yardFootprint(for:))),
+                        .markers(zones.map { loc in
+                            HereMarker(
+                                at: HereLatLng(loc.lat ?? 0, loc.lng ?? 0),
+                                kind: .pickup,
+                                label: loc.name.flatMap { $0.isEmpty ? nil : $0 } ?? "Yard",
+                                id: loc.id)
+                        })
+                    ],
+                    onSelectMarker: { zoneId in
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            selectedLocationId = zoneId
+                        }
+                        Task { await reloadGrid() }
+                    }
+                )
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+            }
+            .padding(Space.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+        }
+    }
+
+    /// Camera center = centroid of the real yard coordinates (no fabrication).
+    private var mapCenter: HereLatLng {
+        let zones = mappableZones
+        guard !zones.isEmpty else { return HereLatLng(39.5, -98.35) }
+        let lat = zones.reduce(0.0) { $0 + ($1.lat ?? 0) } / Double(zones.count)
+        let lng = zones.reduce(0.0) { $0 + ($1.lng ?? 0) } / Double(zones.count)
+        return HereLatLng(lat, lng)
+    }
+
+    /// Tighter framing for a single yard; wider when several yards span out.
+    private var mapZoom: Int { mappableZones.count <= 1 ? 14 : 9 }
+
+    /// Build a small square footprint ring (~250 m) centered on the yard's
+    /// real coordinate — the server projects a point, not a GeoJSON ring,
+    /// so we draw an honest footprint box around the true location (the
+    /// selected yard reads brighter). Mirrors the `.adZones` contract used
+    /// by Driver 022's `yardLayoutPolygons`.
+    private func yardFootprint(for loc: YardLocation628) -> HerePolygon {
+        let lat = loc.lat ?? 0
+        let lng = loc.lng ?? 0
+        // ~0.0022° lat ≈ 250 m; scale lng by cos(lat) so the box stays square.
+        let dLat = 0.0022
+        let dLng = 0.0022 / max(cos(lat * .pi / 180), 0.2)
+        let ring = [
+            HereLatLng(lat + dLat, lng - dLng),
+            HereLatLng(lat + dLat, lng + dLng),
+            HereLatLng(lat - dLat, lng + dLng),
+            HereLatLng(lat - dLat, lng - dLng),
+        ]
+        let isSelected = (selectedLocationId ?? locations.first?.id) == loc.id
+        return HerePolygon(
+            ring: ring,
+            fillHex: "#1473FF",
+            opacity: isSelected ? 0.30 : 0.16,
+            label: loc.name.flatMap { $0.isEmpty ? nil : $0 })
     }
 
     // MARK: - Track grid card (live MapCanvas hero)
@@ -469,7 +580,7 @@ private struct RailYardMapBody: View {
                 // Trailing: occupancy pill + tabular slots-used.
                 VStack(alignment: .trailing, spacing: Space.s1) {
                     occupancyPill(pctInt: pctInt, occupied: occ, capacity: cap, accent: accent)
-                    Text(cap > 0 ? "\(occ)/\(cap)" : "—")
+                    Text(cap > 0 ? "\(occ)/\(cap)" : "-")
                         .font(.system(size: 14, weight: .bold, design: .default))
                         .monospacedDigit()
                         .foregroundStyle(palette.textPrimary)
@@ -492,7 +603,7 @@ private struct RailYardMapBody: View {
         let label: String
         let color: Color
         if capacity <= 0 {
-            label = "—"; color = palette.textTertiary
+            label = "-"; color = palette.textTertiary
         } else if pctInt < 30 {
             label = "OPEN"; color = Brand.rail
         } else {

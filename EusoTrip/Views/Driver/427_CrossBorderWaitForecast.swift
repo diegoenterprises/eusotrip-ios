@@ -244,7 +244,7 @@ public struct CrossBorderShippingView: View {
     private var sourceLine: some View {
         Text(live
              ? "Live CBP Border Wait Times API · refreshed \(cacheAgeSeconds)s ago"
-             : "CBP API unavailable — directory average wait shown")
+             : "CBP API unavailable - directory average wait shown")
             .font(.caption2)
             .foregroundStyle(.tertiary)
             .padding(.top, 2)

@@ -380,7 +380,7 @@ struct TheHaulMissions: View {
     }
 
     private func progressCaption(current: Double, target: Double, unit: String?) -> String {
-        guard target > 0 else { return unit?.isEmpty == false ? unit! : "—" }
+        guard target > 0 else { return unit?.isEmpty == false ? unit! : "-" }
         let u = unit?.isEmpty == false ? " \(unit!)" : ""
         // Print as integer when both sides are clean integers.
         if current.rounded() == current && target.rounded() == target {
@@ -505,7 +505,7 @@ struct TheHaulMissions: View {
             HStack(spacing: Space.s2) {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundColor(palette.danger)
-                Text("Couldn't load — \(err.localizedDescription)")
+                Text("Couldn't load - \(err.localizedDescription)")
                     .font(EType.caption)
                     .foregroundColor(palette.textSecondary)
                     .lineLimit(2)
@@ -583,7 +583,7 @@ struct TheHaulMissions: View {
             showToast(err, isError: true)
         } else {
             let reward = row.projection.rewardLabel ?? "Reward credited"
-            showToast("Claimed — \(reward)", isError: false)
+            showToast("Claimed - \(reward)", isError: false)
             openMissionId = nil
         }
     }
@@ -827,7 +827,7 @@ private struct MissionDetailSheet: View {
                 Text("Keep going")
                     .font(EType.bodyStrong)
                     .foregroundColor(palette.textPrimary)
-                Text("Progress updates as you complete qualifying loads, safety checks, or streaks.")
+                Text("Progress updates as you complete qualifying loads, safety checks or streaks.")
                     .font(EType.caption)
                     .foregroundColor(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -839,7 +839,7 @@ private struct MissionDetailSheet: View {
     }
 
     private func progressCaption(current: Double, target: Double, unit: String?) -> String {
-        guard target > 0 else { return unit?.isEmpty == false ? unit! : "—" }
+        guard target > 0 else { return unit?.isEmpty == false ? unit! : "-" }
         let u = unit?.isEmpty == false ? " \(unit!)" : ""
         if current.rounded() == current && target.rounded() == target {
             return "\(Int(current)) of \(Int(target))\(u)"

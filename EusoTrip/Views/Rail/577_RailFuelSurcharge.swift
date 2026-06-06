@@ -153,11 +153,11 @@ private struct RailFuelSurchargeBody: View {
     // MARK: Derived
 
     private var captionLabel: String {
-        let wk = diesel?.weekLabel ?? "WK —"
+        let wk = diesel?.weekLabel ?? "WK -"
         return "\(wk) · EIA INDEX"
     }
     private var priceLabel: String {
-        diesel?.pricePerGallon.map { String(format: "$%.3f", $0) } ?? "—"
+        diesel?.pricePerGallon.map { String(format: "$%.3f", $0) } ?? "-"
     }
     private var wowLabel: String {
         guard let d = diesel?.wowDeltaCents else { return "" }
@@ -166,14 +166,14 @@ private struct RailFuelSurchargeBody: View {
     }
     private var wowPositive: Bool { (diesel?.wowDeltaCents ?? 0) >= 0 }
     private var fscRateLabel: String {
-        diesel?.fscRate.map { String(format: "%.1f%%", $0) } ?? "—"
+        diesel?.fscRate.map { String(format: "%.1f%%", $0) } ?? "-"
     }
     private var updatedLabel: String {
-        "currentDieselIndex · updated \(diesel?.updatedDay ?? "—")"
+        "currentDieselIndex · updated \(diesel?.updatedDay ?? "-")"
     }
-    private var appliedMtdLabel: String { tracking?.appliedMtdUsd.map { "$\(Int($0))" } ?? "—" }
-    private var perMileLabel: String    { tracking?.perMileUsd.map { String(format: "$%.2f", $0) } ?? "—" }
-    private var laneCountLabel: String  { tracking?.laneCount.map { "\($0)" } ?? "—" }
+    private var appliedMtdLabel: String { tracking?.appliedMtdUsd.map { "$\(Int($0))" } ?? "-" }
+    private var perMileLabel: String    { tracking?.perMileUsd.map { String(format: "$%.2f", $0) } ?? "-" }
+    private var laneCountLabel: String  { tracking?.laneCount.map { "\($0)" } ?? "-" }
 
     private func bandColor(_ n: Int) -> Color {
         switch n {
@@ -339,10 +339,10 @@ private struct RailFuelSurchargeBody: View {
         let isActive = band.isActive ?? false
         let n        = band.bandNumber ?? 1
         let color    = bandColor(n)
-        let pct      = band.surchargePercent.map { String(format: "%.1f%%", $0) } ?? "—"
+        let pct      = band.surchargePercent.map { String(format: "%.1f%%", $0) } ?? "-"
         let rangeStr: String = {
-            let lo = band.minPriceGal.map { String(format: "$%.2f", $0) } ?? "—"
-            let hi = band.maxPriceGal.map { String(format: "$%.2f", $0) } ?? "—"
+            let lo = band.minPriceGal.map { String(format: "$%.2f", $0) } ?? "-"
+            let hi = band.maxPriceGal.map { String(format: "$%.2f", $0) } ?? "-"
             var s = "\(lo) – \(hi) / gal"
             if isActive, let idx = diesel?.pricePerGallon {
                 s += " · index $\(String(format: "%.3f", idx))"
@@ -410,8 +410,8 @@ private struct RailFuelSurchargeBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

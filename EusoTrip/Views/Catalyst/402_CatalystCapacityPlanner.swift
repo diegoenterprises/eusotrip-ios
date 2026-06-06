@@ -398,7 +398,7 @@ private struct CapacityBody_402: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(Capsule().fill(LinearGradient.primary))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
             Button {
@@ -410,8 +410,8 @@ private struct CapacityBody_402: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 144, height: 48)
-                    .background(Capsule().fill(palette.bgCard))
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
             }
             .buttonStyle(.plain)
         }

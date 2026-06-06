@@ -33,27 +33,61 @@ enum HereBearerFetch {
     /// the cached token is invalidated and the fetch is retried
     /// exactly once. Non-2xx responses after retry surface as
     /// `HereMapsError.http(statusCode, body)`.
+    ///
+    /// RATE-LIMIT GATE (2026-06-02, HERE-confirmed 429 root cause):
+    /// every round-trip is paced through `HereRateLimiter.shared`, and
+    /// an HTTP 429 triggers the shared deterministic backoff + cooldown
+    /// before a small number of retries. After the backoff budget is
+    /// spent the 429 surfaces so the caller can serve last-good cached
+    /// data instead of hammering HERE. This is the primary chokepoint:
+    /// the bulk of the add-on fan-out (EV / weather / parking / traffic
+    /// / safety cameras) flows through here, so gating it here paces
+    /// most of the app's HERE traffic in one place.
     static func data(for url: URL, session: URLSession = .shared) async throws -> Data {
-        func attempt() async throws -> (Data, HTTPURLResponse) {
-            let token = try await HereMapsConfig.requireBearerToken()
-            var req = URLRequest(url: url)
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-            let (data, resp) = try await session.data(for: req)
-            guard let http = resp as? HTTPURLResponse else {
-                throw HereMapsError.providerError("No HTTP response")
-            }
-            return (data, http)
-        }
+        // Per-attempt Retry-After captured from the most recent 429 so
+        // the limiter's backoff can honour HERE's requested wait. Boxed
+        // in an actor-isolated closure capture isn't needed — the
+        // limiter calls `retryAfterFor` synchronously on its own actor
+        // between awaits, so a simple reference type guarded by the
+        // single-flight nature of `runData` is safe.
+        let lastRetryAfter = RetryAfterBox()
 
-        var (data, http) = try await attempt()
-        if http.statusCode == 401 {
-            await HEREAuthService.shared.invalidate()
-            (data, http) = try await attempt()
+        return try await HereRateLimiter.shared.runData(
+            retryAfterFor: { _ in lastRetryAfter.seconds }
+        ) {
+            func attempt() async throws -> (Data, HTTPURLResponse) {
+                let token = try await HereMapsConfig.requireBearerToken()
+                var req = URLRequest(url: url)
+                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+                let (data, resp) = try await session.data(for: req)
+                guard let http = resp as? HTTPURLResponse else {
+                    throw HereMapsError.providerError("No HTTP response")
+                }
+                return (data, http)
+            }
+
+            var (data, http) = try await attempt()
+            if http.statusCode == 401 {
+                await HEREAuthService.shared.invalidate()
+                (data, http) = try await attempt()
+            }
+            guard (200..<300).contains(http.statusCode) else {
+                if http.statusCode == 429 {
+                    lastRetryAfter.seconds = HereRateLimiter.retryAfterSeconds(from: http)
+                }
+                let body = String(data: data, encoding: .utf8) ?? ""
+                throw HereMapsError.http(http.statusCode, body)
+            }
+            return data
         }
-        guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8) ?? ""
-            throw HereMapsError.http(http.statusCode, body)
-        }
-        return data
     }
+}
+
+/// Tiny reference box used to carry the most recent 429 `Retry-After`
+/// out of a single gated fetch attempt and into the limiter's backoff
+/// hook. Confined to one `runData` call (which serializes its own
+/// retries), so no cross-task contention; `@unchecked Sendable` is the
+/// honest annotation for that confinement.
+private final class RetryAfterBox: @unchecked Sendable {
+    var seconds: TimeInterval?
 }

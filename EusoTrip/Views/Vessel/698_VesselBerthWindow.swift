@@ -141,9 +141,6 @@ private struct VesselBerthWindowBody: View {
 
     private var titleRow: some View {
         HStack(alignment: .center) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
             Text("Berth window")
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
@@ -631,7 +628,7 @@ private struct VesselBerthWindowBody: View {
                   let sa = Self.parse(a), let sd = Self.parse(d), sd > sa else { return nil }
             return sd.timeIntervalSince(sa)
         }
-        guard !turns.isEmpty else { return "—" }
+        guard !turns.isEmpty else { return "-" }
         let avgH = (turns.reduce(0, +) / Double(turns.count)) / 3600
         return String(format: "%.1fh", avgH)
     }

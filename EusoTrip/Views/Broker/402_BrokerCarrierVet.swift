@@ -112,7 +112,7 @@ private struct CarrierVetBody: View {
                     Text("Ask ESANG to vet a carrier")
                         .font(EType.body.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("Any DOT — FMCSA + your scorecard + a guarded verdict with citations.")
+                    Text("Any DOT - FMCSA + your scorecard + a guarded verdict with citations.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -170,9 +170,9 @@ private struct CarrierVetBody: View {
             LifecycleRow(label: "USDOT",            value: dashIfEmpty(c.dotNumber))
             LifecycleRow(label: "MC",               value: dashIfEmpty(c.mcNumber))
             LifecycleRow(label: "Safety",           value: dashIfEmpty(c.safetyRating))
-            LifecycleRow(label: "Highway score",    value: c.highwayScore.map { String(format: "%.2f", $0) } ?? "—")
-            LifecycleRow(label: "RMIS",             value: c.rmisOnboarded == true ? "Onboarded" : "—")
-            LifecycleRow(label: "Insurance",        value: c.insuranceFiling == true ? "Filed" : "—")
+            LifecycleRow(label: "Highway score",    value: c.highwayScore.map { String(format: "%.2f", $0) } ?? "-")
+            LifecycleRow(label: "RMIS",             value: c.rmisOnboarded == true ? "Onboarded" : "-")
+            LifecycleRow(label: "Insurance",        value: c.insuranceFiling == true ? "Filed" : "-")
             LifecycleRow(label: "OOS",              value: "\(c.oosViolations ?? 0)")
             verdictRow(state)
         }
@@ -221,9 +221,9 @@ private struct CarrierVetBody: View {
             }
             .padding(.top, 4)
         } else if let e = state?.error {
-            LifecycleRow(label: "Verdict", value: "— (\(e))")
+            LifecycleRow(label: "Verdict", value: "- (\(e))")
         } else {
-            LifecycleRow(label: "Verdict", value: "—")
+            LifecycleRow(label: "Verdict", value: "-")
         }
     }
 
@@ -281,7 +281,7 @@ private struct CarrierVetBody: View {
 
     private func dashIfEmpty(_ s: String?) -> String {
         let trimmed = (s ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "—" : trimmed
+        return trimmed.isEmpty ? "-" : trimmed
     }
 
     private func verdictLabel(_ v: CarrierVetVerdict) -> String {

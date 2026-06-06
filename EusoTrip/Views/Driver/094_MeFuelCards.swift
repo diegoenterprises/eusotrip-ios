@@ -23,7 +23,7 @@
 //      type + daily / monthly / total spent are all server-
 //      provided.
 //    • No fabricated utilization bars. When the server ships a
-//      zero limit the row collapses the bar and surfaces "—" so
+//      zero limit the row collapses the bar and surfaces "-" so
 //      the driver never sees a fake "35% of $0."
 //
 //  Doctrine refs:

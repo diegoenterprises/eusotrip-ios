@@ -236,3 +236,31 @@ You are in pre-mortem mode. Read production code, identify fragility and implici
 **Output file:** `# Pre-Mortem Report` → **Scope** / **Date** → **Summary** (fragility posture, dominant themes, systemic vs independent) → **Post-Mortems** (numbered) → **Themes and Recommendations** (cross-cutting structural fixes that address multiple fragilities at once).
 
 **Critical rules:** read before writing; be specific (real functions/vars/paths); be plausible (articulate the motivation); don't fix the code (write the report, suggest hardening, implement only if asked); separate actual bugs (flag immediately); ask when uncertain whether a pattern is truly fragile.
+
+
+---
+
+## THE-OATH AUDIT EXTENSION 2026-06-02 (binding · LIVE SUPER-INTELLIGENCE — audit that every screen is ALIVE)
+
+the-oath now audits the LIVE SUPER-INTELLIGENCE doctrine (founder directive 2026-06-02, full text in the
+canonical SKILL.md + `_DESIGN_FOUNDATION_CONTRACT.md`). Every screen that shows a route, position, ETA,
+geofence, clock, or recommendation must be fed by the four-system fusion — HERE Maps API, device geolocation,
+the customer's geofence, and ESang AI — reconciled on one live tick, with OUR animated equipment
+(`EquipmentAnimation`) as any vehicle, never a one-off drawing or a raster.
+
+**A fire FAILS the screen and stages a fix when it finds any of:**
+1. A static/dead hero where motion + live data are warranted (a frozen map, a hand-drawn truck, an embedded PNG).
+2. A vehicle drawn one-off instead of via the canonical `EquipmentAnimation` component / `EquipmentKind`.
+3. No `LIVE SUPER-INTELLIGENCE FUSION` clause in the `<desc>` when the screen shows route / position / ETA /
+   geofence / recommendation — and/or a Swift port with no live stream binding (hard-coded ETA/position/plan).
+4. A maps/route/ETA surface NOT grounded in `hereMaps.*` (route:89 · evaluateFences:177 · trafficFlow:211 ·
+   roadAlertsAlongRoute:229 · isaAlongPolyline:241), a position surface not grounded in `tracking.*`
+   (getVehicleLocation:169 · getRealtimePositions:715 · getGeofenceEvents:439), or a recommendation surface not
+   grounded in `esangCoach.forScreen`:264 / `esangAIv2.chat`:66.
+5. A degraded-state gap: a frozen ETA/position presented as live on provider downtime instead of an explicit
+   "rough estimate (degraded)".
+
+Surface each as a real gap with the proposed TS shape (e.g. `loads.geofenceEvent` for the exact-timestamp
+geofence-exit write). Exemplar to grade against: `01 Driver/034 Departing Pickup` (triplet, 2026-06-02).
+
+— logged for the-oath · founder directive Mike "Diego" Usoro · 2026-06-02.

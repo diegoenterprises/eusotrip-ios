@@ -207,7 +207,7 @@ struct ShipperApplePayWallet: View {
                     .font(.system(size: 14, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("Post a load and accept a carrier's bid — we'll mint a signed .pkpass for your gate scanner the moment the load goes in-transit.")
+            Text("Post a load and accept a carrier's bid. We'll mint a signed .pkpass for your gate scanner the moment the load goes in-transit.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
@@ -292,6 +292,7 @@ struct ShipperApplePayWallet: View {
         passes = snap.passes.map { row in
             WalletPass(
                 id: row.id,
+                loadId: row.loadId,
                 tilePrefix: row.tilePrefix,
                 lane: row.lane,
                 spec: row.spec,
@@ -348,6 +349,7 @@ struct ShipperApplePayWallet: View {
             issuerLine: "EUSORONE TECHNOLOGIES",
             title: "Pickup Credential",
             loadId: row.id,
+            apiLoadId: String(row.loadId),
             lane: row.lane,
             eta: etaText,
             equipment: equipmentLine.isEmpty ? "Equipment pending" : equipmentLine,
@@ -518,7 +520,7 @@ struct ShipperApplePayWallet: View {
                         VStack(alignment: .trailing, spacing: 6) {
                             EusoQRView(
                                 kind: .loadCredential(
-                                    loadId: activePass.loadId,
+                                    loadId: activePass.apiLoadId,
                                     mode: .credential
                                 ),
                                 role: .shipper,
@@ -558,7 +560,7 @@ struct ShipperApplePayWallet: View {
                         GradientCapsuleCTA(label: activePass.ctaLabel, width: 140)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Add the active pickup credential to Apple Wallet — installs a .pkpass bundle bound to \(activePass.loadId).")
+                    .accessibilityLabel("Add the active pickup credential to Apple Wallet. Installs a .pkpass bundle bound to \(activePass.loadId).")
                 }
                 .padding(.horizontal, 20)
                 // SVG carrier band sits at y=178 within the 220h card;
@@ -719,7 +721,7 @@ struct ShipperApplePayWallet: View {
             userInfo: [
                 "source": "239_ShipperApplePayWallet",
                 "passId": pass.id,
-                "loadId": pass.loadId,
+                "loadId": pass.apiLoadId,
                 "carrierLine": pass.carrierLine,
             ]
         )
@@ -728,7 +730,8 @@ struct ShipperApplePayWallet: View {
         //   PKAddPassesViewController present
         // chain, plus a graceful fallback to the inline QR + 5-digit
         // shortCode card when the .pkpass signing pipeline is offline.
-        let loadId = pass.loadId
+        // MUST be the numeric apiLoadId — the server parseInt()s it.
+        let loadId = pass.apiLoadId
         Task {
             let result = await EusoWalletPassService.shared.addPass(forLoadId: loadId)
             await MainActor.run { applyPassResult(result) }
@@ -742,15 +745,15 @@ struct ShipperApplePayWallet: View {
             userInfo: [
                 "source": "239_ShipperApplePayWallet",
                 "passId": pass.id,
-                "loadId": pass.id,
+                "loadId": String(pass.loadId),
                 "isActivePass": pass.id == activePassId,
                 "shipperCompanyId": 1
             ]
         )
         // Tapping any pass row in the list also routes to the same
         // PassKit flow — every pass should add to Apple Wallet, not
-        // open Safari.
-        let loadId = pass.id
+        // open Safari. Numeric loadId — server parseInt()s it.
+        let loadId = String(pass.loadId)
         Task {
             let result = await EusoWalletPassService.shared.addPass(forLoadId: loadId)
             await MainActor.run { applyPassResult(result) }
@@ -770,7 +773,7 @@ struct ShipperApplePayWallet: View {
             passBannerText = "Pass added to Apple Wallet"
         case .signingUnavailable(let qrPayload, let shortCode):
             passBannerKind = .info
-            passBannerText = "Wallet signing offline — show the in-app QR + code \(shortCode) at the gate."
+            passBannerText = "Wallet signing offline - show the in-app QR + code \(shortCode) at the gate."
             inlineQrPayload = qrPayload
             inlineShortCode = shortCode
         case .failure(let message):
@@ -865,7 +868,14 @@ private struct ActiveWalletPass {
     let id:          String
     let issuerLine:  String
     let title:       String
+    /// Display load id — the "LD-1039" string shown in the card's
+    /// LOAD ID field. Human-facing only.
     let loadId:      String
+    /// Numeric DB load id (as a String) — what the server actually
+    /// keys on. `createPickupCredential` does `parseInt(loadId)`, so
+    /// sending the display "LD-1039" yields NaN → "Invalid loadId".
+    /// Every API + QR call must use THIS, never `loadId`.
+    let apiLoadId:   String
     let lane:        String
     let eta:         String
     let equipment:   String
@@ -913,7 +923,8 @@ private enum WalletPassStatus {
 }
 
 private struct WalletPass: Identifiable {
-    let id:            String
+    let id:            String       // "LD-1039" display id
+    let loadId:        Int          // numeric DB id for API calls
     let tilePrefix:    String
     let lane:          String
     let spec:          String
@@ -1028,7 +1039,7 @@ private struct GradientPassHeader: View {
         }
         .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(issuerLine) — \(title) — Apple Pay")
+        .accessibilityLabel("\(issuerLine) - \(title) - Apple Pay")
     }
 }
 

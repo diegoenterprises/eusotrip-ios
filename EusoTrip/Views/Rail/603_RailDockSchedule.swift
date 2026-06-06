@@ -201,7 +201,7 @@ private struct RailDockScheduleBody: View {
     }
 
     private func timeLabel(_ isoString: String?) -> String {
-        guard let s = isoString, let d = Self.iso.date(from: s) else { return "—:—" }
+        guard let s = isoString, let d = Self.iso.date(from: s) else { return "-:-" }
         let fmt = DateFormatter()
         fmt.dateFormat = "HH:mm"
         return fmt.string(from: d)
@@ -263,7 +263,7 @@ private struct RailDockScheduleBody: View {
     /// Door number ("Door 4") from a "D4"-style id.
     private func doorTitle(_ row: DockAppointment603) -> String {
         let raw = (row.dockId ?? "").replacingOccurrences(of: "D", with: "")
-        let num = raw.isEmpty ? "—" : raw
+        let num = raw.isEmpty ? "-" : raw
         return "Door \(num) · \(directionLabel(row))"
     }
 
@@ -271,7 +271,7 @@ private struct RailDockScheduleBody: View {
     private func subLine(_ row: DockAppointment603) -> String {
         let carrier = row.carrierName ?? (row.carrierId.map { String($0.prefix(16)) } ?? "Carrier")
         let equip = row.type?.lowercased() == "outbound" ? "dry van" : "intermodal"
-        let container = row.trailerNumber ?? "—"
+        let container = row.trailerNumber ?? "-"
         return "\(carrier) · \(equip) · \(container)"
     }
 
@@ -342,9 +342,6 @@ private struct RailDockScheduleBody: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 HStack(spacing: 10) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
                     Text("Dock schedule")
                         .font(.system(size: 28, weight: .bold))
                         .kerning(-0.4)
@@ -532,8 +529,8 @@ private struct RailDockScheduleBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCardSoft)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }
@@ -589,7 +586,7 @@ private struct RailDockScheduleBody: View {
             ?? (schedule?.docks?.first?.dockId)
 
         guard let dockId = targetDock else {
-            bookMessage = "Couldn’t book — no doors available at this terminal."
+            bookMessage = "Couldn’t book. No doors available at this terminal."
             return
         }
 
@@ -609,11 +606,11 @@ private struct RailDockScheduleBody: View {
                 bookMessage = "Booked \(out.dockId ?? dockId) · \(timeLabel(out.scheduledStart ?? input.scheduledStart))"
                 await load()
             } else {
-                bookMessage = "Couldn’t book the appointment — the terminal rejected the slot."
+                bookMessage = "Couldn’t book the appointment. The terminal rejected the slot."
             }
         } catch {
             let msg = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
-            bookMessage = "Couldn’t book — \(msg)"
+            bookMessage = "Couldn’t book - \(msg)"
         }
     }
 }

@@ -23,30 +23,30 @@ import SwiftUI
 // MARK: - Em-dash sentinels (no fabricated values per Cohort B doctrine)
 
 @inlinable
-func dashIfEmpty(_ s: String?) -> String { (s?.isEmpty == false ? s! : "—") }
+func dashIfEmpty(_ s: String?) -> String { (s?.isEmpty == false ? s! : "-") }
 
 @inlinable
 func dashIfNil<T: Numeric>(_ n: T?) -> String {
-    guard let v = n else { return "—" }
+    guard let v = n else { return "-" }
     return "\(v)"
 }
 
 @inlinable
 func usd(_ amount: Double?) -> String {
-    guard let v = amount, v > 0 else { return "—" }
+    guard let v = amount, v > 0 else { return "-" }
     let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = "USD"; f.maximumFractionDigits = 0
     return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
 }
 
 @inlinable
 func usd0(_ amount: Double?) -> String {
-    guard let v = amount, v > 0 else { return "—" }
+    guard let v = amount, v > 0 else { return "-" }
     return "$\(Int(v))"
 }
 
 @inlinable
 func humanISO(_ iso: String?, format: String = "MMM d · HH:mm") -> String {
-    guard let iso = iso, !iso.isEmpty else { return "—" }
+    guard let iso = iso, !iso.isEmpty else { return "-" }
     let isoFmt = ISO8601DateFormatter()
     isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     var date = isoFmt.date(from: iso)
@@ -62,7 +62,7 @@ func humanISO(_ iso: String?, format: String = "MMM d · HH:mm") -> String {
 
 @inlinable
 func relativeETA(from iso: String?) -> String {
-    guard let iso = iso, !iso.isEmpty else { return "—" }
+    guard let iso = iso, !iso.isEmpty else { return "-" }
     let isoFmt = ISO8601DateFormatter()
     isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     var date = isoFmt.date(from: iso)
@@ -90,9 +90,9 @@ func laneDisplay(_ snap: ShipperAPI.LifecycleSnapshot) -> String {
     let d = snap.delivery
     let from = [p?.city, p?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
     let to   = [d?.city, d?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
-    if from.isEmpty && to.isEmpty { return "—" }
-    if from.isEmpty { return "— → \(to)" }
-    if to.isEmpty { return "\(from) → —" }
+    if from.isEmpty && to.isEmpty { return "-" }
+    if from.isEmpty { return "- → \(to)" }
+    if to.isEmpty { return "\(from) → -" }
     return "\(from) → \(to)"
 }
 

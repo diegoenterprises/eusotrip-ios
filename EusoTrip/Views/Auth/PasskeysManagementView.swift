@@ -83,7 +83,7 @@ struct PasskeysManagementView: View {
                 Text("FACE ID · WEBAUTHN").font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(LinearGradient.diagonal)
             }
-            Text("Sign in with this device — no password.")
+            Text("Sign in with this device, no password.")
                 .font(.system(size: 18, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
             Text("Passkeys are stored in the Secure Enclave and sync across your Apple devices via iCloud Keychain. We never see the private key.")
@@ -256,7 +256,7 @@ struct PasskeysManagementView: View {
             .frame(maxWidth: .infinity).padding(.vertical, 13)
             .foregroundStyle(.white)
             .background(LinearGradient.diagonal)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(registering)

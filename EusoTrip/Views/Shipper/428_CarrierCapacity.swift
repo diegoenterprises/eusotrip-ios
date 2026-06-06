@@ -59,8 +59,8 @@ private struct CapacityBody: View {
                 LifecycleCard {
                     LifecycleSection(label: c.name.uppercased(), icon: "truck.box")
                     LifecycleRow(label: "Available trucks", value: "\(c.availableTrucks)")
-                    LifecycleRow(label: "Utilization",       value: c.utilizationPct.map { "\($0)%" } ?? "—")
-                    LifecycleRow(label: "Lanes",             value: (c.lanesCovered ?? []).joined(separator: ", ").isEmpty ? "—" : (c.lanesCovered ?? []).joined(separator: ", "))
+                    LifecycleRow(label: "Utilization",       value: c.utilizationPct.map { "\($0)%" } ?? "-")
+                    LifecycleRow(label: "Lanes",             value: (c.lanesCovered ?? []).joined(separator: ", ").isEmpty ? "-" : (c.lanesCovered ?? []).joined(separator: ", "))
                 }
             }
         }

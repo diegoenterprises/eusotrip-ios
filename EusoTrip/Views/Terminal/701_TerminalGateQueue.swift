@@ -41,7 +41,7 @@
 //      to its idle label and the inline error surfaces — local state
 //      never lies about the commit landing.
 //    • Empty / blank server fields surface as em-dash sentinels
-//      ("—") — every nullable column on a fresh queue row (no priority
+//      ("-") — every nullable column on a fresh queue row (no priority
 //      hint, no hazmat class, no appointment window) renders as a
 //      neutral em-dash, never a fabricated value.
 //
@@ -191,10 +191,10 @@ struct TerminalGateQueue: View {
             // Top: load number + lane + priority chip
             HStack(alignment: .top, spacing: Space.s3) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(row.loadNumber.isEmpty ? "—" : row.loadNumber)
+                    Text(row.loadNumber.isEmpty ? "-" : row.loadNumber)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Text("\(row.origin.isEmpty ? "—" : row.origin) → \(row.destination.isEmpty ? "—" : row.destination)")
+                    Text("\(row.origin.isEmpty ? "-" : row.origin) → \(row.destination.isEmpty ? "-" : row.destination)")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1)
@@ -398,9 +398,9 @@ struct TerminalGateQueue: View {
     }
 
     /// Format dwell hours as a one-decimal "12.4 hr" label. Returns
-    /// "—" for zero so the empty case never renders as "0.0 hr".
+    /// "-" for zero so the empty case never renders as "0.0 hr".
     private func dwell(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         return String(format: "%.1f hr", v)
     }
 
@@ -442,10 +442,10 @@ private struct AssignDockInputSheet: View {
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
                 }
-                Text(row.loadNumber.isEmpty ? "—" : row.loadNumber)
+                Text(row.loadNumber.isEmpty ? "-" : row.loadNumber)
                     .font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
-                Text("\(row.origin.isEmpty ? "—" : row.origin) → \(row.destination.isEmpty ? "—" : row.destination)")
+                Text("\(row.origin.isEmpty ? "-" : row.origin) → \(row.destination.isEmpty ? "-" : row.destination)")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)

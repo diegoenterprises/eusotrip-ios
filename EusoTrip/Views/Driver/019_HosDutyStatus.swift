@@ -33,6 +33,13 @@ import SwiftUI
 struct HosDutyStatus: View {
     @Environment(\.palette) var palette
     @Environment(\.dismiss) private var dismiss
+    /// Home-tab lifecycle back. `019` is the `.hosBreak` phase screen on
+    /// the Home tab; this env closure (injected app-wide on the driver
+    /// surface) walks `trip.phase` back along the happy path — the same
+    /// mechanism every other lifecycle top bar (018, 020, …) uses. The
+    /// screen previously called only `dismiss()`, which is a dead no-op
+    /// in BOTH the home-lifecycle and the pushed-Me contexts.
+    @Environment(\.driverNavBack) private var navBack
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var session: EusoTripSession
     @StateObject private var store = HOSLiveStore()
@@ -152,9 +159,9 @@ struct HosDutyStatus: View {
     }
 
     /// 30-min break resume clock, projected forward from nextBreakDue if
-    /// we're inside the break, otherwise "—".
+    /// we're inside the break, otherwise "-".
     private var resumeAt: String {
-        guard let status = store.status else { return "—" }
+        guard let status = store.status else { return "-" }
         if status.breakRequired,
            let iso = status.nextBreakDue,
            let date = ISO8601DateFormatter().date(from: iso) {
@@ -165,7 +172,7 @@ struct HosDutyStatus: View {
            let date = ISO8601DateFormatter().date(from: iso) {
             return "at " + HosDutyStatus.clockFormatter.string(from: date).uppercased()
         }
-        return "—"
+        return "-"
     }
 
     private var beforeNextBreak: String {
@@ -313,6 +320,21 @@ struct HosDutyStatus: View {
     private var topBar: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
             Button {
+                // `019` lives in two contexts with two different back
+                // mechanisms; fire both so exactly one resolves and the
+                // other is a harmless no-op:
+                //   • Home tab (`.hosBreak` phase) → `navBack` walks the
+                //     trip phase back along the happy path. The pushed-Me
+                //     surface is unmounted here, so the post below no-ops.
+                //   • Me → Compliance & Safety → HOS dashboard (pushed leaf
+                //     in `DriverMeSurface`) → `.eusoDriverMeNavBack` pops
+                //     the Me stack back to the Compliance hub.
+                // `019` is listed in `DriverMeSurface.driverScreensWithOwnBack`
+                // so the surface does NOT overlay a second chevron on top of
+                // this one (no double-back). `dismiss()` retained as a
+                // fallback for any sheet / preview presentation.
+                navBack?()
+                NotificationCenter.default.post(name: .eusoDriverMeNavBack, object: nil)
                 dismiss()
             } label: {
                 Image(systemName: "chevron.left")
@@ -794,7 +816,7 @@ struct HosDutyStatus: View {
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textTertiary)
             }
-            Text("Self-certified record — \(store.today?.certified == true ? "certified" : "uncertified")")
+            Text("Self-certified record, \(store.today?.certified == true ? "certified" : "uncertified")")
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textTertiary)
         }

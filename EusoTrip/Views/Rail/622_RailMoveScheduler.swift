@@ -147,9 +147,6 @@ private struct RailMoveSchedulerBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .center, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Move scheduler")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -393,7 +390,7 @@ private struct RailMoveSchedulerBody: View {
                 Text(moveLabel(row))
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text(idLine(row, suffix: service.map { "service \($0) min" } ?? "service —"))
+                Text(idLine(row, suffix: service.map { "service \($0) min" } ?? "service -"))
                     .font(EType.mono(.caption)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                 ZStack(alignment: .leading) {
@@ -463,8 +460,8 @@ private struct RailMoveSchedulerBody: View {
                 }
                 .frame(width: 148, height: 48)
                 .background(palette.bgCard)
-                .overlay(Capsule().strokeBorder(palette.borderSoft))
-                .clipShape(Capsule())
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(isAssigning || nextUp == nil)

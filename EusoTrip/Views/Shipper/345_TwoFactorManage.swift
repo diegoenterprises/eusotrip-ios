@@ -161,7 +161,7 @@ private struct TwoFactorBody: View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 6) {
                 Text("METHODS").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                methodChip(icon: "qrcode", label: "TOTP authenticator app", desc: "Google Authenticator · Authy · 1Password — 6-digit code refreshes every 30s.")
+                methodChip(icon: "qrcode", label: "TOTP authenticator app", desc: "Google Authenticator · Authy · 1Password, 6-digit code refreshes every 30s.")
                 methodChip(icon: "lock.rectangle.stack", label: "Backup codes", desc: "Single-use 10-digit codes for when you lose your phone.")
             }
         }
@@ -211,7 +211,7 @@ private struct TwoFactorBody: View {
                 LifecycleSection(label: "BACKUP CODES", icon: "lock.rectangle.stack")
                 LifecycleRow(label: "Remaining", value: "\(n)")
                 if n < 3 {
-                    Text("⚠ Low — regenerate before you run out.")
+                    Text("⚠ Low - regenerate before you run out.")
                         .font(EType.caption).foregroundStyle(Brand.warning)
                 }
                 Button {
@@ -238,7 +238,7 @@ private struct TwoFactorBody: View {
                 Text("WHY THIS MATTERS")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
-                Text("Catalyst dispatch, EusoWallet settlements, and EusoTicket BOL signing all gate on your account. 2FA prevents account takeover even when a password leaks.")
+                Text("Catalyst dispatch, EusoWallet settlements and EusoTicket BOL signing all gate on your account. 2FA prevents account takeover even when a password leaks.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -248,7 +248,7 @@ private struct TwoFactorBody: View {
 
     private func methodsLabel(_ raw: [String]?) -> String {
         let m = raw ?? []
-        if m.isEmpty { return "—" }
+        if m.isEmpty { return "-" }
         return m.map { $0.uppercased() }.joined(separator: " · ")
     }
 
@@ -258,7 +258,7 @@ private struct TwoFactorBody: View {
             return "Sign in again to manage 2FA"
         }
         if lower.contains("network") || lower.contains("offline") {
-            return "Auth service offline — try again"
+            return "Auth service offline - try again"
         }
         return "Couldn't load 2FA status"
     }
@@ -459,7 +459,7 @@ private struct TfaEnrollSheet: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 12)
                 .foregroundStyle(.white)
                 .background(LinearGradient.diagonal)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(verifying || verifyCode.count != 6)
@@ -510,7 +510,7 @@ private struct BackupCodesSheet: View {
                     Text("Backup codes")
                         .font(.system(size: 22, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
-                    Text("Save these somewhere safe — each one is single-use and grants account access if you lose your phone.")
+                    Text("Save these somewhere safe. Each one is single-use and grants account access if you lose your phone.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

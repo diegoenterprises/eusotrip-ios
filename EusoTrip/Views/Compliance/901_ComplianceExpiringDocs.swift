@@ -77,7 +77,7 @@ private struct ExpiringBody: View {
                     LifecycleSection(label: (d.type ?? "DOCUMENT").uppercased(), icon: "doc.text.fill")
                     LifecycleRow(label: "Driver",      value: dashIfEmpty(d.driver))
                     LifecycleRow(label: "Expires",     value: dashIfEmpty(d.expiresAt))
-                    LifecycleRow(label: "Days left",   value: d.daysRemaining.map { "\($0)" } ?? "—")
+                    LifecycleRow(label: "Days left",   value: d.daysRemaining.map { "\($0)" } ?? "-")
                 }
             }
         }

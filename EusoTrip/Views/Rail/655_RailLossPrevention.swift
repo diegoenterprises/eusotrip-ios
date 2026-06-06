@@ -164,9 +164,6 @@ private struct RailLossPreventionBody: View {
     private var titleBlock: some View {
         HStack(alignment: .top) {
             HStack(alignment: .center, spacing: Space.s2) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Loss prevention")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)

@@ -163,9 +163,9 @@ private struct CELM04Body: View {
 
     // MARK: - Dynamic display helpers
 
-    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var carrierCodeDisplay: String {
-        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "—"
+        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
     }
     private var laneDisplay: String? {
         guard let p = load?.pickupCity, let d = load?.destCity else { return nil }
@@ -187,9 +187,9 @@ private struct CELM04Body: View {
     }
 
     private func citationPill(_ c: CEConfig) -> some View {
-        let driverIni = load?.driver?.initials ?? "—"
-        let dispIni   = load?.catalyst?.initials ?? "—"
-        let shipIni   = load?.shipper?.initials ?? "—"
+        let driverIni = load?.driver?.initials ?? "-"
+        let dispIni   = load?.catalyst?.initials ?? "-"
+        let shipIni   = load?.shipper?.initials ?? "-"
         return LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(c.citation)
@@ -199,7 +199,7 @@ private struct CELM04Body: View {
                     .font(EType.caption.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("\(loadNumberDisplay) · \(laneDisplay ?? "—") · \(c.chainNote) · \(driverIni) driver · \(dispIni) ops · \(shipIni) shipper")
+                Text("\(loadNumberDisplay) · \(laneDisplay ?? "-") · \(c.chainNote) · \(driverIni) driver · \(dispIni) ops · \(shipIni) shipper")
                     .font(.caption2)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -231,12 +231,12 @@ private struct CELM04Body: View {
     }
 
     private var identityRow: some View {
-        let dispIni    = load?.catalyst?.initials ?? "—"
-        let dispName   = load?.catalyst?.name ?? "—"
-        let carrierFull = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "—"
-        let mc         = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "—"
-        let driverName = load?.driver?.name ?? "—"
-        let shipperName = load?.shipper?.name ?? "—"
+        let dispIni    = load?.catalyst?.initials ?? "-"
+        let dispName   = load?.catalyst?.name ?? "-"
+        let carrierFull = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
+        let mc         = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "-"
+        let driverName = load?.driver?.name ?? "-"
+        let shipperName = load?.shipper?.name ?? "-"
         return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
@@ -259,9 +259,9 @@ private struct CELM04Body: View {
     private func kpiGrid(_ c: CEConfig) -> some View {
         let payout = Self.payoutDisplay(load?.rate)
         let dist = Self.distanceDisplay(load?.distance)
-        let lane = laneDisplay ?? "—"
-        let equip = load?.equipmentType ?? "—"
-        let driverIni = load?.driver?.initials ?? "—"
+        let lane = laneDisplay ?? "-"
+        let equip = load?.equipmentType ?? "-"
+        let driverIni = load?.driver?.initials ?? "-"
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .assignedReceipt:
@@ -313,7 +313,7 @@ private struct CELM04Body: View {
             case .s3: return "Tires & wheels logged. Coupling devices (S4) next."
             case .s4: return "Coupling devices cleared. Windshield + wipers (S5) next."
             case .s5: return "Windshield & wipers ack'd. Steering + linkage (S6) next."
-            case .s6: return "Steering & linkage logged — 43% done. Suspension (S7) up next at midpoint."
+            case .s6: return "Steering & linkage logged, 43% done. Suspension (S7) up next at midpoint."
             }
         }()
         return LifecycleCard {
@@ -330,16 +330,16 @@ private struct CELM04Body: View {
     }
 
     /// Format the load's rate (decimal string from server) as a
-    /// payout display. Falls back to "—" when missing/invalid.
+    /// payout display. Falls back to "-" when missing/invalid.
     private static func payoutDisplay(_ rate: String?) -> String {
-        guard let r = rate, let n = Double(r), n > 0 else { return "—" }
+        guard let r = rate, let n = Double(r), n > 0 else { return "-" }
         let v = n.rounded()
         return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
     }
 
-    /// Format the load's distance in miles. Falls back to "—".
+    /// Format the load's distance in miles. Falls back to "-".
     private static func distanceDisplay(_ d: Double?) -> String {
-        guard let d, d > 0 else { return "—" }
+        guard let d, d > 0 else { return "-" }
         return "\(Int(d.rounded())) mi"
     }
 }

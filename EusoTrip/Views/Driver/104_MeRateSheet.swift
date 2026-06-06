@@ -197,7 +197,7 @@ final class RateSheetStore: ObservableObject {
                 self.lastError = nil
             } catch {
                 if !(error is CancellationError) {
-                    self.lastError = "Couldn't calculate — try again."
+                    self.lastError = "Couldn't calculate, try again."
                 }
             }
         }
@@ -370,7 +370,7 @@ struct MeRateSheet: View {
                     let resp = try await EusoTripAPI.shared.documentRouter.classifyAndRoute(
                         documentBase64: base64,
                         mimeType: routerMime,
-                        callerContext: "driver Schedule A rate sheet — extract lanes, rates, weight bands, effective + expiration dates"
+                        callerContext: "driver Schedule A rate sheet - extract lanes, rates, weight bands, effective + expiration dates"
                     )
                     extracted = Self.parseRateTable(from: resp)
                 } catch {
@@ -828,7 +828,7 @@ struct MeRateSheet: View {
 
                 // Lanes
                 if t.lanes.isEmpty {
-                    Text("No lanes parsed — the document stored, but its rate table wasn't machine-readable. Open it in Sheets once your carrier publishes a structured version.")
+                    Text("No lanes parsed, the document stored, but its rate table wasn't machine-readable. Open it in Sheets once your carrier publishes a structured version.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -951,7 +951,7 @@ struct MeRateSheet: View {
                 }
                 Spacer()
                 StatusPill(
-                    text: (s.status ?? "—").capitalized,
+                    text: (s.status ?? "-").capitalized,
                     kind: pillKind(s.status)
                 )
                 if store.selectedSheetId == s.id {
@@ -1041,7 +1041,7 @@ struct MeRateSheet: View {
                     .foregroundStyle(palette.textSecondary)
             }
             Spacer()
-            StatusPill(text: (r.status ?? "—").capitalized,
+            StatusPill(text: (r.status ?? "-").capitalized,
                        kind: pillKind(r.status))
         }
         .padding(Space.s3)

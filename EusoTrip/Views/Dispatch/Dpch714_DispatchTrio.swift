@@ -155,7 +155,7 @@ private struct CommandCenterBody: View {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(d.name ?? "Driver").font(EType.body.weight(.semibold))
-                            Text("\(d.currentCity ?? "—"), \(d.currentState ?? "—")").font(.caption).foregroundStyle(palette.textSecondary)
+                            Text("\(d.currentCity ?? "-"), \(d.currentState ?? "-")").font(.caption).foregroundStyle(palette.textSecondary)
                         }
                         Spacer()
                         if let h = d.hosRemainingMin {
@@ -178,7 +178,7 @@ private struct CommandCenterBody: View {
                             Spacer()
                             Text((l.status ?? "").uppercased()).font(.caption2.weight(.bold)).tracking(0.6).foregroundStyle(palette.textSecondary)
                         }
-                        Text("\(l.pickupCity ?? "—"), \(l.pickupState ?? "—") → \(l.destCity ?? "—"), \(l.destState ?? "—")").font(.caption).foregroundStyle(palette.textSecondary)
+                        Text("\(l.pickupCity ?? "-"), \(l.pickupState ?? "-") → \(l.destCity ?? "-"), \(l.destState ?? "-")").font(.caption).foregroundStyle(palette.textSecondary)
                         if let r = l.rate { Text("$\(r)").font(.caption.monospacedDigit().weight(.semibold)) }
                     }
                 }
@@ -267,10 +267,10 @@ private struct FleetMapBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 if let s = stats { statsRow(s) }
-                if loading { LifecycleCard { Text("Loading fleet…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
-                else if positions.isEmpty {
-                    EusoEmptyState(systemImage: "map", title: "No fleet positions", subtitle: "Drivers will appear here once their ELD reports.")
-                } else {
+                fleetMap
+                if loading {
+                    LifecycleCard { Text("Loading fleet…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+                } else if !positions.isEmpty {
                     fleetList
                 }
                 Color.clear.frame(height: 96)
@@ -279,6 +279,92 @@ private struct FleetMapBody: View {
         }
         .task { await loadAll() }
         .refreshable { await loadAll() }
+    }
+
+    // MARK: Live fleet map (in-house HERE basemap · real driver GPS pucks)
+
+    /// A fleet position's REAL live fix, coord-gated. Sourced from the
+    /// `location.tracking.getFleetMap` proc, which joins the latest
+    /// `gps_tracking` row per `vehicleId` and returns `positions[].{latitude,
+    /// longitude}`. nil when either coord is absent or it resolves to null
+    /// island — so a puck only ever draws on a real fix (no fabricated coords).
+    private func fix(_ p: FleetPosition) -> HereLatLng? {
+        guard let lat = p.latitude, let lng = p.longitude,
+              !(lat == 0 && lng == 0) else { return nil }
+        return HereLatLng(lat, lng)
+    }
+
+    /// Truck pucks for every real fix. id = the driver/position id so a tap on
+    /// the canonical board routes back to that driver (HereLiveMapView marks
+    /// id-carrying base pins actionable → `onSelectMarker`).
+    private var truckMarkers: [HereMarker] {
+        positions.compactMap { p in
+            guard let f = fix(p) else { return nil }
+            return HereMarker(
+                at: f,
+                kind: .truck,
+                label: p.driverName ?? "Driver \(p.driverId ?? p.id)",
+                id: p.driverId ?? p.id
+            )
+        }
+    }
+
+    /// Camera center = the first real fix; CONUS sentinel when the board is
+    /// still awaiting its first gps_tracking heartbeat (never null island).
+    private var mapCenter: HereLatLng {
+        truckMarkers.first?.at ?? HereLatLng(39.5, -98.35)
+    }
+
+    @ViewBuilder
+    private var fleetMap: some View {
+        if !truckMarkers.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("LIVE FLEET MAP · HERE basemap · gps_tracking heartbeat")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                HereLiveMapView(
+                    center: mapCenter,
+                    zoom: 4,
+                    baseLayers: [.markers(truckMarkers)],
+                    addOns: .shipperTracking
+                )
+                .frame(height: 240)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+                .accessibilityLabel("Live fleet map, \(truckMarkers.count) drivers reporting")
+            }
+        } else if !loading {
+            // Coord gate — no parseable live fix on the board yet. Honest
+            // placeholder so the map never frames on null island. Lights up the
+            // instant a gps_tracking heartbeat lands for any fleet vehicle.
+            HStack(spacing: 12) {
+                Image(systemName: "map")
+                    .font(.system(size: 20, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No fleet positions")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Awaiting a gps_tracking heartbeat from a fleet driver")
+                        .font(.system(size: 10))
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
     }
 
     private var header: some View {
@@ -301,20 +387,22 @@ private struct FleetMapBody: View {
     }
 
     private var fleetList: some View {
-        VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("FLEET ROSTER").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
             ForEach(positions) { p in
                 LifecycleCard {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Image(systemName: statusIcon(p.status)).foregroundStyle(statusColor(p.status))
+                    HStack(spacing: 8) {
+                        Image(systemName: statusIcon(p.status)).foregroundStyle(statusColor(p.status))
+                        VStack(alignment: .leading, spacing: 2) {
                             Text(p.driverName ?? "Driver \(p.driverId ?? p.id)").font(EType.body.weight(.semibold))
-                            Spacer()
-                            if let s = p.speedMph { Text("\(Int(s)) mph").font(.caption.monospacedDigit()) }
+                            Text((p.status ?? "—").replacingOccurrences(of: "_", with: " ").capitalized)
+                                .font(.caption2).foregroundStyle(palette.textTertiary)
                         }
-                        if let lat = p.latitude, let lng = p.longitude {
-                            Text(String(format: "%.4f, %.4f", lat, lng))
-                                .font(.caption.monospacedDigit())
-                                .foregroundStyle(palette.textSecondary)
+                        Spacer()
+                        if fix(p) == nil {
+                            Text("NO FIX").font(.caption2.weight(.bold)).tracking(0.4).foregroundStyle(palette.textTertiary)
+                        } else if let s = p.speedMph {
+                            Text("\(Int(s)) mph").font(.caption.monospacedDigit())
                         }
                     }
                 }
@@ -499,7 +587,7 @@ private struct PerformanceBody: View {
                                 Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                             }
                         }
-                        Text(h.route ?? "—").font(.caption).foregroundStyle(palette.textSecondary)
+                        Text(h.route ?? "-").font(.caption).foregroundStyle(palette.textSecondary)
                         HStack {
                             if let r = h.rating { Label(String(format: "%.1f", r), systemImage: "star.fill").font(.caption2).foregroundStyle(.yellow) }
                             Spacer()

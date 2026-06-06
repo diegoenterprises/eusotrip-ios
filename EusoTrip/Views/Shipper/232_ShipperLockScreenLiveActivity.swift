@@ -109,7 +109,7 @@ struct ShipperLockScreenLiveActivity: View {
         equipmentLine: "MC-331 anhydrous-ammonia · UN1005 escort active",
         driverLine: "Driver Michael Eusorone · 280 ft drift cleared 12m ago",
         stageIndex: 4,
-        stageKicker: "Stage 5 — In transit · advanced 38m ago",
+        stageKicker: "Stage 5 · In transit · advanced 38m ago",
         relativeAgo: "38m ago",
         liveLabel: "LIVE · IN TRANSIT · STAGE 5/8",
         eta: StatValue(value: "14:18", sub: "in 4h 36m", highlighted: false),

@@ -48,7 +48,7 @@ struct DisconnectConfirmed: View {
     /// active trip's `deliveryLocation`. Doctrine: 0% mock data —
     /// no fabricated brand or dock in the production UI.
     private var disconnectHeadline: String {
-        let cityState = activeLoad?.deliveryLocation?.cityState ?? "—"
+        let cityState = activeLoad?.deliveryLocation?.cityState ?? "-"
         return "Disconnect confirmed · \(cityState)"
     }
 

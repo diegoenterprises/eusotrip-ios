@@ -59,7 +59,7 @@ private struct MyTerminalsBody: View {
                 LifecycleCard(accentGradient: t.rackAccessGranted == true) {
                     LifecycleSection(label: t.name.uppercased(), icon: "building.2")
                     LifecycleRow(label: "Address",      value: dashIfEmpty(t.address))
-                    LifecycleRow(label: "Products",     value: (t.products ?? []).joined(separator: ", ").isEmpty ? "—" : (t.products ?? []).joined(separator: ", "))
+                    LifecycleRow(label: "Products",     value: (t.products ?? []).joined(separator: ", ").isEmpty ? "-" : (t.products ?? []).joined(separator: ", "))
                     LifecycleRow(label: "Rack access",  value: t.rackAccessGranted == true ? "Granted" : "Pending")
                     LifecycleRow(label: "Partnership",  value: dashIfEmpty(t.partnershipStatus?.uppercased()))
                 }

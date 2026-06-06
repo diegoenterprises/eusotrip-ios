@@ -22,6 +22,23 @@ private struct AtReceiverBody: View {
     let live: ShipperAPI.LifecycleSnapshot
     let loadId: String
 
+    /// The snapshot carries no `transportMode` column — only `equipmentType`.
+    /// Derive the base mode from the equipment keyword (same rail*/vessel*
+    /// convention the LifecycleScaffold uses) so mode-dependent labels speak
+    /// the load's language; default to truck.
+    private var loadMode: TransportMode {
+        let e = (live.load.equipmentType ?? "").lowercased()
+        if e.contains("rail") || e.contains("tofc") || e.contains("cofc")
+            || e.contains("boxcar") || e.contains("hopper") || e.contains("gondola")
+            || e.contains("centerbeam") || e.contains("autorack") || e.contains("flatcar")
+            || e.contains("well car") { return .rail }
+        if e.contains("vessel") || e.contains("container ship") || e.contains("vlcc")
+            || e.contains("bulk carrier") || e.contains("ro/ro") || e.contains("roro")
+            || e.contains("lng") || e.contains("iso tank") { return .vessel }
+        if e.contains("barge") { return .barge }
+        return .truck
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             arrivalCard
@@ -51,14 +68,14 @@ private struct AtReceiverBody: View {
 
     private var podCard: some View {
         LifecycleCard(accentGradient: true) {
-            LifecycleSection(label: "POD", icon: "doc.text.viewfinder")
+            LifecycleSection(label: TransportLexicon.short(.proofOfDelivery, mode: loadMode, equipmentRaw: live.load.equipmentType), icon: "doc.text.viewfinder")
             Text("Receiver must sign POD before driver leaves the dock. Counter-signature is automatic on receipt.")
                 .font(EType.body).foregroundStyle(palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
                 NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "300", "loadId": loadId, "doc": "pod"])
             } label: {
-                Text("Open POD viewer")
+                Text("Open \(TransportLexicon.short(.proofOfDelivery, mode: loadMode, equipmentRaw: live.load.equipmentType)) viewer")
                     .font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(LinearGradient.diagonal).clipShape(Capsule())

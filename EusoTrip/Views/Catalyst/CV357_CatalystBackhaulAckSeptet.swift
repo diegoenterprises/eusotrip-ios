@@ -263,8 +263,8 @@ private struct CatalystBackhaulAckBody: View {
             case .accepted:         return "Dispatch locked. DVIR opens 60 minutes before pickup; ESang queues pretrip on ME's watch."
             case .pickupWatch:      return "Watch armed. Pickup opens 03:30 MST; -30 ping confirms ME is en-route to PHX-WVDC."
             case .onSite:           return "ME loading at PHX-WVDC dock 7B. Seal confirmation arms IN-TRANSIT ack on gate-out."
-            case .inTransit:        return "ME on I-10 WB. Long-haul leg holds 372mi to LA — watch ETA drift, ESang nudges if HOS tightens."
-            case .deliveryApproach: return "Approach acked at 28mi. Confirm receiver dock + paperwork — DOCK 7B armed for gate-in."
+            case .inTransit:        return "ME on I-10 WB. Long-haul leg holds 372mi to LA. Watch ETA drift, ESang nudges if HOS tightens."
+            case .deliveryApproach: return "Approach acked at 28mi. Confirm receiver dock + paperwork. DOCK 7B armed for gate-in."
             case .atDelivery:       return "Gate-in cleared. Receiver-bay queue is 0; POD chain arms on dock placement."
             }
         }()

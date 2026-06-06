@@ -65,10 +65,10 @@ private struct CompIntelBody: View {
             LifecycleSection(label: "BENCHMARKS", icon: "chart.line.uptrend.xyaxis")
             LifecycleRow(label: "Avg rate · me",      value: usd(d.myAvgRate))
             LifecycleRow(label: "Avg rate · market",  value: usd(d.marketAvgRate))
-            LifecycleRow(label: "On-time · me",       value: d.myOnTime.map { "\($0)%" } ?? "—")
-            LifecycleRow(label: "On-time · market",   value: d.marketOnTime.map { "\($0)%" } ?? "—")
-            LifecycleRow(label: "CO₂/load · me",      value: d.myCo2PerLoad.map { String(format: "%.2f t", $0) } ?? "—")
-            LifecycleRow(label: "CO₂/load · market",  value: d.marketCo2PerLoad.map { String(format: "%.2f t", $0) } ?? "—")
+            LifecycleRow(label: "On-time · me",       value: d.myOnTime.map { "\($0)%" } ?? "-")
+            LifecycleRow(label: "On-time · market",   value: d.marketOnTime.map { "\($0)%" } ?? "-")
+            LifecycleRow(label: "CO₂/load · me",      value: d.myCo2PerLoad.map { String(format: "%.2f t", $0) } ?? "-")
+            LifecycleRow(label: "CO₂/load · market",  value: d.marketCo2PerLoad.map { String(format: "%.2f t", $0) } ?? "-")
         }
     }
 

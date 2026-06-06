@@ -26,9 +26,9 @@
 //      time, approach progress) are computed LIVE from a HERE
 //      Routing v8 leg between the driver's CoreLocation fix and
 //      the pickup coordinate. No seeded constants — any field
-//      without a live source renders an honest em-dash "—"
+//      without a live source renders an honest em-dash "-"
 //      (e.g. instantaneous FUEL BURN: no truck-telemetry feed
-//      exists, so it is always "—").
+//      exists, so it is always "-").
 //    • `HereLiveMapView` renders the OMV vector map + a polyline
 //      from pickup to delivery. Truck-aware routing is computed
 //      via HERE Routing v8 per the doctrine.
@@ -83,7 +83,7 @@ struct ActiveEnroute: View {
     // to the pickup coordinate, or the load's own pickup window.
     // There are NO seeded constants. When a source isn't available
     // (no active load, no GPS fix, no truck-telemetry fuel feed),
-    // the field renders an honest em-dash "—".
+    // the field renders an honest em-dash "-".
 
     /// Remaining distance to the pickup, in meters, from the last
     /// HERE route between the live GPS fix and the pickup coordinate.
@@ -162,13 +162,13 @@ struct ActiveEnroute: View {
     /// fix to the pickup coordinate via HERE Routing v8 (truck-aware),
     /// and caches the summary numbers that drive the HUD. Every value
     /// is a real measurement; on any failure (no fix, no pickup, HERE
-    /// error) the cached values stay nil and the HUD shows "—".
+    /// error) the cached values stay nil and the HUD shows "-".
     @MainActor
     private func refreshLiveNav(for load: Load) async {
         guard let pickup = load.pickupLocation,
               pickup.lat != 0 || pickup.lng != 0 else { return }
 
-        // Live GPS fix. nil when denied / timed out → HUD reads "—".
+        // Live GPS fix. nil when denied / timed out → HUD reads "-".
         guard let fix = await DriverLocationResolver.shared.currentCoordinate() else {
             remainingMeters = nil
             remainingSeconds = nil
@@ -198,7 +198,7 @@ struct ActiveEnroute: View {
             if baselineMeters == nil { baselineMeters = Double(summary.length) }
         } catch {
             // Honest failure: leave the numbers nil so the HUD shows
-            // "—" rather than a stale or fabricated figure.
+            // "-" rather than a stale or fabricated figure.
             remainingMeters = nil
             remainingSeconds = nil
             etaISO = nil
@@ -227,25 +227,25 @@ struct ActiveEnroute: View {
 
     private static let metersPerMile = 1609.344
 
-    /// "42.7 mi" from the live HERE remaining length, else "—".
+    /// "42.7 mi" from the live HERE remaining length, else "-".
     private var remainingMilesText: String {
-        guard let m = remainingMeters else { return "—" }
+        guard let m = remainingMeters else { return "-" }
         return String(format: "%.1f mi", m / Self.metersPerMile)
     }
 
-    /// "0h 51m" from the live HERE remaining duration, else "—".
+    /// "0h 51m" from the live HERE remaining duration, else "-".
     private var remainingDriveText: String {
-        guard let s = remainingSeconds, s.isFinite, s >= 0 else { return "—" }
+        guard let s = remainingSeconds, s.isFinite, s >= 0 else { return "-" }
         let total = Int(s.rounded())
         let h = total / 3600
         let mins = (total % 3600) / 60
         return "\(h)h \(String(format: "%02dm", mins))"
     }
 
-    /// "08:14" local clock from the live HERE arrival ISO, else "—".
+    /// "08:14" local clock from the live HERE arrival ISO, else "-".
     private var etaClockText: String {
         guard let iso = etaISO,
-              let date = Self.parseISO(iso) else { return "—" }
+              let date = Self.parseISO(iso) else { return "-" }
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         return f.string(from: date)
@@ -258,12 +258,12 @@ struct ActiveEnroute: View {
         return tz.isEmpty ? "ETA" : "ETA · \(tz)"
     }
 
-    /// "412 mi" — live remaining distance for the miles row, else "—".
+    /// "412 mi" — live remaining distance for the miles row, else "-".
     private var milesLabelText: String { remainingMilesText }
 
-    /// "2h 08m remaining" from the live duration, else "—".
+    /// "2h 08m remaining" from the live duration, else "-".
     private var timeRemainingText: String {
-        guard let s = remainingSeconds, s.isFinite, s >= 0 else { return "—" }
+        guard let s = remainingSeconds, s.isFinite, s >= 0 else { return "-" }
         let total = Int(s.rounded())
         let h = total / 3600
         let mins = (total % 3600) / 60
@@ -280,10 +280,10 @@ struct ActiveEnroute: View {
     }
 
     /// Pickup-window clock from the load's `pickupDate` (the APPT
-    /// shown beside the pickup facility), else "—".
+    /// shown beside the pickup facility), else "-".
     private var appointmentText: String {
         guard let iso = activeLoad?.pickupDate,
-              let date = Self.parseISO(iso) else { return "—" }
+              let date = Self.parseISO(iso) else { return "-" }
         let f = DateFormatter()
         f.dateFormat = "HH:mm"
         let tz = TimeZone.current.abbreviation() ?? ""
@@ -293,13 +293,13 @@ struct ActiveEnroute: View {
     /// Instantaneous FUEL BURN has NO live source — there is no
     /// truck-telemetry feed anywhere in the platform — so it renders
     /// an honest em-dash, never a fabricated gallons figure.
-    private var fuelBurnText: String { "—" }
+    private var fuelBurnText: String { "-" }
 
     /// Maneuver heading: live remaining distance to the pickup. HERE
     /// turn-by-turn `actions` are not decoded by the route models, so
     /// we never fabricate an exit-narration string.
     private var titleHeading: String {
-        guard remainingMeters != nil else { return "—" }
+        guard remainingMeters != nil else { return "-" }
         return "In \(remainingMilesText)"
     }
 
@@ -309,7 +309,7 @@ struct ActiveEnroute: View {
         if let load = activeLoad, let loc = load.pickupLocation, !loc.cityState.isEmpty {
             return "Next stop · \(loc.cityState)"
         }
-        return "—"
+        return "-"
     }
 
     /// Lenient ISO-8601 parse (with and without fractional seconds).
@@ -328,7 +328,7 @@ struct ActiveEnroute: View {
             let stateSuffix = loc.state.isEmpty ? "" : ", \(loc.state)"
             return "\(loc.city)\(stateSuffix)"
         }
-        return "—"
+        return "-"
     }
 
     private var destinationAddress: String {
@@ -341,7 +341,7 @@ struct ActiveEnroute: View {
             if !loc.zipCode.isEmpty { parts.append(loc.zipCode) }
             return parts.joined(separator: " · ")
         }
-        return "—"
+        return "-"
     }
 
     // MARK: - Commodity chip row
@@ -417,7 +417,15 @@ struct ActiveEnroute: View {
     private var mapLayer: some View {
         if let load = activeLoad,
            let pickup = load.pickupLocation,
-           let delivery = load.deliveryLocation {
+           let delivery = load.deliveryLocation,
+           // Coord gate (D-maps-basemap 2026-06-01): the server's geocode
+           // self-heal can return a load whose pickup/delivery JSON is present
+           // but whose lat/lng are still 0 (HERE geocode not yet run). Drawing
+           // those frames the map on null island (0,0). Require a real fix on
+           // BOTH endpoints; otherwise fall to the honest placeholder until the
+           // next read lands coords.
+           !(pickup.lat == 0 && pickup.lng == 0),
+           !(delivery.lat == 0 && delivery.lng == 0) {
             // Canonical OMV vector map + live HERE add-ons surfaced as pins:
             // fuel / EV / weather / traffic / sponsored ad-zones. The route +
             // pickup/delivery are the base layers; HereLiveMapView fetches the

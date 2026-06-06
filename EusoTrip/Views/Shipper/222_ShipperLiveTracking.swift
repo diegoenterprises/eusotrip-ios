@@ -218,7 +218,7 @@ struct ShipperLiveTracking: View {
             return "\(healthy) PINGING · LAST \(lastSec)s AGO"
         }
         if store.loads.isEmpty {
-            return "—"
+            return "-"
         }
         return "\(healthy) PINGING · WAITING"
     }
@@ -309,8 +309,19 @@ struct ShipperLiveTracking: View {
             // 2026-05-21: swapped the raster HereMapView (MKMapView + HERE
             // Maps Tile v3 — empty grid, plan doesn't serve raster) for the
             // OMV vector renderer that the web platform uses + that the
-            // plan DOES serve. CONUS framing until per-load coords land.
-            HereLiveMapView(center: .init(39.5, -98.35), zoom: 4, addOns: .shipperTracking)
+            // plan DOES serve.
+            // 2026-06-01 (D-maps-basemap): the bespoke canvas now paints an
+            // abstract land basemap, so it never reads blank. We also feed it
+            // the REAL live driver positions (`store.positions`, sourced from
+            // `telemetry.getLiveLocation`) as truck pucks, and frame the
+            // camera on them. With no live fixes yet it falls back to CONUS so
+            // the basemap is still visible. No fabricated coords.
+            HereLiveMapView(
+                center: liveMapCenter,
+                zoom: liveMapZoom,
+                baseLayers: liveMapLayers,
+                addOns: .shipperTracking
+            )
                 .frame(height: 380)
                 .clipped()
                 .accessibilityLabel("Live load map, \(store.loads.count) active loads")
@@ -321,6 +332,55 @@ struct ShipperLiveTracking: View {
             }
             .padding(.horizontal, Space.s3)
             .padding(.top, 10)
+        }
+    }
+
+    // MARK: Live map data (real driver positions → truck pucks)
+
+    /// Loads with a live fix, honoring the active health filter. Each yields a
+    /// real `(load, coord)` from `telemetry.getLiveLocation`. Loads without a
+    /// driver / fix simply aren't pinned (no fabricated coords).
+    private var pinnedLive: [(load: ShipperAPI.ActiveLoad, coord: HereLatLng)] {
+        filteredLoads.compactMap { l in
+            guard let id = l.driverId,
+                  let p = store.positions[id],
+                  let lat = p.lat, let lng = p.lng,
+                  !(lat == 0 && lng == 0) else { return nil }
+            return (l, HereLatLng(lat, lng))
+        }
+    }
+
+    /// Truck-puck markers for every load with a real live fix. The marker id
+    /// is the load id so a tap routes back to that load (HereLiveMapView marks
+    /// id-carrying base pins actionable → `onSelectMarker`).
+    private var liveMapLayers: [HereMapLayer] {
+        let pins = pinnedLive.map { entry in
+            HereMarker(
+                at: entry.coord,
+                kind: .truck,
+                label: "\(entry.load.origin) → \(entry.load.destination)",
+                id: entry.load.id
+            )
+        }
+        return pins.isEmpty ? [] : [.markers(pins)]
+    }
+
+    /// Camera center = centroid of the live fixes; CONUS when none yet.
+    private var liveMapCenter: HereLatLng {
+        let coords = pinnedLive.map { $0.coord }
+        guard !coords.isEmpty else { return .init(39.5, -98.35) }
+        let lat = coords.map { $0.lat }.reduce(0, +) / Double(coords.count)
+        let lng = coords.map { $0.lng }.reduce(0, +) / Double(coords.count)
+        return .init(lat, lng)
+    }
+
+    /// Tighter zoom for a single fix, looser for a spread; CONUS framing (4)
+    /// when there are no fixes so the abstract basemap reads as North America.
+    private var liveMapZoom: Int {
+        switch pinnedLive.count {
+        case 0:  return 4
+        case 1:  return 8
+        default: return 5
         }
     }
 
@@ -413,7 +473,7 @@ struct ShipperLiveTracking: View {
         // EUSO-2131 — backend portfolio aggregate not shipped. Compute
         // client-side from current positions.
         let speeds = store.positions.values.compactMap { $0.speed }.filter { $0 > 0 }
-        guard !speeds.isEmpty else { return "—" }
+        guard !speeds.isEmpty else { return "-" }
         let avg = speeds.reduce(0, +) / Double(speeds.count)
         return String(format: "%.0f", avg)
     }
@@ -422,11 +482,11 @@ struct ShipperLiveTracking: View {
         // ETA on ActiveLoad is a String. Take the first non-empty as a
         // crude proxy until backend ships sortable ETAs (EUSO-2131).
         let firstEta = store.loads.first { !$0.eta.isEmpty }?.eta
-        return firstEta ?? "—"
+        return firstEta ?? "-"
     }
 
     private var soonestEtaLane: String {
-        guard let load = store.loads.first(where: { !$0.eta.isEmpty }) else { return "—" }
+        guard let load = store.loads.first(where: { !$0.eta.isEmpty }) else { return "-" }
         let o = load.origin.split(separator: ",").first.map(String.init) ?? load.origin
         let d = load.destination.split(separator: ",").first.map(String.init) ?? load.destination
         return "\(o)→\(d)"
@@ -436,7 +496,7 @@ struct ShipperLiveTracking: View {
         if let s = freshestPingSec {
             return "\(s)s"
         }
-        return "—"
+        return "-"
     }
 
     private var lastPingTrail: String {
@@ -647,7 +707,7 @@ struct ShipperLiveTracking: View {
     }
 
     private func positionLabel(_ pos: ShipperTelemetryAPI.LiveLocation?) -> String {
-        guard let pos else { return "—" }
+        guard let pos else { return "-" }
         if pos.stale { return "stale ping" }
         if let speed = pos.speed, speed > 0, let h = pos.heading {
             let dir = headingLabel(h)
@@ -656,7 +716,7 @@ struct ShipperLiveTracking: View {
         if let lat = pos.lat, let lng = pos.lng {
             return String(format: "%.2f° · %.2f°", lat, lng)
         }
-        return "—"
+        return "-"
     }
 
     private func headingLabel(_ h: Double) -> String {
@@ -667,7 +727,7 @@ struct ShipperLiveTracking: View {
 
     private func pingLabel(_ pos: ShipperTelemetryAPI.LiveLocation?) -> String {
         guard let pos, let updated = pos.updatedAt, let d = parseISO(updated) else {
-            return "—"
+            return "-"
         }
         let secs = max(0, Int(Date().timeIntervalSince(d)))
         if secs < 60 { return "\(secs)s" }
@@ -786,7 +846,7 @@ struct ShipperLiveTracking: View {
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
             Text(modeFilter == .all
-                 ? "Loads in `assigned`, `loading`, or `in_transit` status will appear here with live carrier coords."
+                 ? "Loads in `assigned`, `loading` or `in_transit` status will appear here with live carrier coords."
                  : "Try a different filter chip on the map.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
@@ -995,7 +1055,7 @@ struct ShipperLiveTrackingDetail: View {
                     .padding(.vertical, 6)
             } else {
                 BreadcrumbSparkline(points: trail).frame(height: 110)
-                Text("Most recent ping: \(trail.last.map { relativeTrail($0.recordedAt) } ?? "—")")
+                Text("Most recent ping: \(trail.last.map { relativeTrail($0.recordedAt) } ?? "-")")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -1024,7 +1084,7 @@ struct ShipperLiveTrackingDetail: View {
     }
 
     private func coordsLabel(_ p: ShipperTelemetryAPI.LiveLocation) -> String {
-        guard let lat = p.lat, let lng = p.lng else { return "— · —" }
+        guard let lat = p.lat, let lng = p.lng else { return "- · -" }
         return String(format: "%.4f° · %.4f°", lat, lng)
     }
 
@@ -1034,14 +1094,14 @@ struct ShipperLiveTrackingDetail: View {
     }
 
     private func headingLabel(_ h: Double?) -> String {
-        guard let h else { return "—" }
+        guard let h else { return "-" }
         let dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
         let idx = Int(((h.truncatingRemainder(dividingBy: 360) + 360) / 45).rounded()) % 8
         return dirs[idx]
     }
 
     private func updatedLabel(_ iso: String?) -> String {
-        guard let iso else { return "—" }
+        guard let iso else { return "-" }
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let d = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) ?? Date()

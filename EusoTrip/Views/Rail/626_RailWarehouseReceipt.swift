@@ -162,10 +162,6 @@ private struct RailWarehouseReceiptBody: View {
 
     private var titleBlock: some View {
         HStack(alignment: .top, spacing: Space.s3) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
-                .padding(.top, 6)
             Text("Warehouse")
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
@@ -455,8 +451,8 @@ private struct RailWarehouseReceiptBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 52)
                     .background(Color(hex: 0x232932))
-                    .overlay(Capsule().strokeBorder(Color.white.opacity(0.10)))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.10)))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }
@@ -522,7 +518,7 @@ private enum ReceiptState626 {
         }
     }
     func sub(qty: Int, expected: Int, delta: Int, location: String?) -> String {
-        let bin = (location?.isEmpty == false) ? location! : "—"
+        let bin = (location?.isEmpty == false) ? location! : "-"
         switch self {
         case .done:   return "\(qty) ctn received · putaway \(bin)"
         case .verify: return "counting \(qty) / \(expected) ctn"

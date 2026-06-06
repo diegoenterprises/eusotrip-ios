@@ -147,7 +147,7 @@ private struct RailChassisPoolBody: View {
         }
         let summed = accruals.reduce(into: 0.0) { acc, a in acc += (a.perDiemTotal ?? 0) }
         if summed > 0 { return "$\(moneyGroup(summed))" }
-        return "—"
+        return "-"
     }
 
     // per-diem daily rate (DCLI tariff)
@@ -158,7 +158,7 @@ private struct RailChassisPoolBody: View {
         if let r = accruals.compactMap({ $0.ratePerDay }).first {
             return "$\(Int(r))/day"
         }
-        return "—"
+        return "-"
     }
 
     // return-status — derived client-side from accruals (PORT-GAP: no procedure)
@@ -560,8 +560,8 @@ private struct RailChassisPoolBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 124, height: 48)
                     .background(palette.bgSecondary)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

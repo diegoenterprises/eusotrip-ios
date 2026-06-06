@@ -164,9 +164,6 @@ private struct VesselCarrierScorecardBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Scorecard")
                     .font(.system(size: 28, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
@@ -208,10 +205,10 @@ private struct VesselCarrierScorecardBody: View {
     @ViewBuilder
     private var heroMedallion: some View {
         if let s = scorecard {
-            let grade = (s.grade ?? "—")
+            let grade = (s.grade ?? "-")
             let bookings = s.metrics?.completionRate?.total ?? s.metrics?.onTimeDelivery?.totalDeliveries ?? 0
             let reliability = s.metrics?.onTimeDelivery?.rate ?? s.overallScore ?? 0
-            let scac = s.mcNumber ?? s.dotNumber ?? "—"
+            let scac = s.mcNumber ?? s.dotNumber ?? "-"
             let delta = qoqOnTimeDelta
 
             HStack(alignment: .top, spacing: Space.s4) {
@@ -292,7 +289,7 @@ private struct VesselCarrierScorecardBody: View {
             VStack(alignment: .leading, spacing: Space.s5) {
                 // gauge 1: on-time vs network 88%
                 gauge(label: "On-time",
-                      valueText: onTime.map { "\($0)%" } ?? "—",
+                      valueText: onTime.map { "\($0)%" } ?? "-",
                       valueColor: (onTime ?? 0) >= 88 ? Brand.success : palette.textPrimary,
                       fill: (onTime.map { Double($0) / 100.0 }) ?? 0,
                       fillColor: Brand.success,
@@ -304,7 +301,7 @@ private struct VesselCarrierScorecardBody: View {
                 // completion rate so the gauge stays honest (higher completion
                 // → faster effective transit). Label shows the live composite.
                 gauge(label: "Transit · SHA→LGB",
-                      valueText: completion.map { "\($0)%" } ?? "—",
+                      valueText: completion.map { "\($0)%" } ?? "-",
                       valueColor: palette.textPrimary,
                       fill: (completion.map { Double($0) / 100.0 }) ?? 0,
                       fillColor: Brand.blue.opacity(0.55),
@@ -315,7 +312,7 @@ private struct VesselCarrierScorecardBody: View {
                 // rate is not exposed by the procedure; we show the live
                 // completion metric the server does return.
                 gauge(label: "Completion",
-                      valueText: completion.map { "\($0)%" } ?? "—",
+                      valueText: completion.map { "\($0)%" } ?? "-",
                       valueColor: (completion ?? 0) >= 90 ? Brand.success : palette.textPrimary,
                       fill: (completion.map { Double($0) / 100.0 }) ?? 0,
                       fillColor: Brand.success,
@@ -400,11 +397,11 @@ private struct VesselCarrierScorecardBody: View {
     }
 
     private func carrierRow(rank: Int, carrier: CSTopCarrier, moreCount: Int) -> some View {
-        let grade = carrier.grade ?? "—"
+        let grade = carrier.grade ?? "-"
         let gradeColor: Color = grade.hasPrefix("A") ? Brand.success
             : grade.hasPrefix("B") ? Brand.info
             : grade.hasPrefix("C") ? Brand.warning : Brand.danger
-        let scac = carrier.mcNumber ?? carrier.dotNumber ?? "—"
+        let scac = carrier.mcNumber ?? carrier.dotNumber ?? "-"
         return HStack(spacing: Space.s3) {
             // rank badge
             ZStack {

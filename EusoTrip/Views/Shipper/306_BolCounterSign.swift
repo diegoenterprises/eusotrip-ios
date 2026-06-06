@@ -39,9 +39,9 @@ private struct CounterSignBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "signature").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · BOL COUNTER-SIGN").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("SHIPPER · \(TransportLexicon.generic(key: "billOfLading").uppercased()) COUNTER-SIGN").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal).lineLimit(1).minimumScaleFactor(0.7)
             }
-            Text("Sign the BOL").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text("Sign the \(TransportLexicon.generic(key: "billOfLading"))").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary).lineLimit(1).minimumScaleFactor(0.6)
             Text("Sign with finger or Apple Pencil. Server records the signature image + load ID + timestamp.").font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }

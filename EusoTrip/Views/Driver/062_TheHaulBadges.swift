@@ -238,7 +238,7 @@ struct TheHaulBadges: View {
             EusoEmptyState(
                 systemImage: "rosette",
                 title: "No badges yet",
-                subtitle: "First 100 loads, safety streaks, and MPG wins all unlock here."
+                subtitle: "First 100 loads, safety streaks and MPG wins all unlock here."
             )
             .padding(.top, Space.s4)
         case .error(let e):
@@ -496,7 +496,7 @@ private struct BadgeDetailSheet: View {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(palette.textTertiary)
-                Text("Locked — keep hauling")
+                Text("Locked - keep hauling")
                     .font(EType.micro)
                     .tracking(0.6)
                     .foregroundStyle(palette.textTertiary)

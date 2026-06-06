@@ -39,7 +39,7 @@ enum ComplianceNavRoute {
         "home":    "900",
         "drivers": "901",
         "audits":  "902",
-        "me":      "900",
+        "me":      "903",
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

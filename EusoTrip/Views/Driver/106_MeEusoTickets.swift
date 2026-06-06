@@ -370,7 +370,7 @@ struct MeEusoTicketsView: View {
         let mutating = store.mutatingId == "bol::\(b.bolNumber ?? "")"
         return HStack(alignment: .top, spacing: Space.s3) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(b.bolNumber ?? "—")
+                Text(b.bolNumber ?? "-")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)

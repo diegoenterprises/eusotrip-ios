@@ -41,7 +41,7 @@
 //      the inline error surfaces — local state never lies about the
 //      commit landing.
 //    • Empty / blank server fields surface as em-dash sentinels
-//      ("—"). Empty zones (zero slots) render zone scaffolding so
+//      ("-"). Empty zones (zero slots) render zone scaffolding so
 //      the operator still sees the yard's geometry at idle; only a
 //      zero-zones yard folds to `.empty`.
 //
@@ -259,7 +259,7 @@ struct TerminalYardMap: View {
                 Image(systemName: zoneIcon(for: zone.kind))
                     .font(.system(size: 12, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text(zone.label.isEmpty ? "—" : zone.label.uppercased())
+                Text(zone.label.isEmpty ? "-" : zone.label.uppercased())
                     .font(.system(size: 11, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textPrimary)
                 Spacer()
@@ -330,7 +330,7 @@ struct TerminalYardMap: View {
                     .foregroundStyle(occupied
                                      ? AnyShapeStyle(LinearGradient.diagonal)
                                      : AnyShapeStyle(palette.textTertiary))
-                Text(slot.label.isEmpty ? "—" : slot.label)
+                Text(slot.label.isEmpty ? "-" : slot.label)
                     .font(.system(size: 13, weight: .heavy)).tracking(0.4)
                     .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: 0)
@@ -347,7 +347,7 @@ struct TerminalYardMap: View {
 
             if occupied {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(slot.loadNumber.isEmpty ? "—" : slot.loadNumber)
+                    Text(slot.loadNumber.isEmpty ? "-" : slot.loadNumber)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
@@ -395,7 +395,7 @@ struct TerminalYardMap: View {
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .frame(maxWidth: .infinity)
                     .background(LinearGradient.diagonal.opacity(inFlight ? 0.55 : 1.0))
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(inFlight)
@@ -602,9 +602,9 @@ struct TerminalYardMap: View {
     // MARK: - Helpers
 
     /// Format dwell hours as a one-decimal "12.4 hr" label. Returns
-    /// "—" for zero so empty/free slots never render as "0.0 hr".
+    /// "-" for zero so empty/free slots never render as "0.0 hr".
     private func dwell(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         return String(format: "%.1f hr", v)
     }
 
@@ -640,7 +640,7 @@ private struct YardSlotDnDModifier: ViewModifier {
                 .draggable(slot.id) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(slot.label).font(.system(size: 11, weight: .heavy)).tracking(0.4)
-                        Text(slot.loadNumber.isEmpty ? "—" : slot.loadNumber)
+                        Text(slot.loadNumber.isEmpty ? "-" : slot.loadNumber)
                             .font(.system(size: 13, weight: .heavy))
                     }
                     .padding(8)
@@ -677,7 +677,7 @@ private struct ReleaseSlotSheet: View {
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
                 }
-                Text(slot.label.isEmpty ? "—" : slot.label)
+                Text(slot.label.isEmpty ? "-" : slot.label)
                     .font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                 if !slot.loadNumber.isEmpty {

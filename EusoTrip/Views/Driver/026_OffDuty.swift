@@ -50,7 +50,7 @@ struct OffDuty: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    private static let em = "—"
+    private static let em = "-"
 
     // MARK: - Live HOS bindings
     //
@@ -133,14 +133,14 @@ struct OffDuty: View {
     }()
 
     // MARK: - Static chrome (caps + copy that aren't load-bearing data)
-    private let fallbackParking       = "—"
+    private let fallbackParking       = "-"
     private let fallbackDriveCap      = "/ 11h"
     private let fallbackWindowCap     = "/ 14h"
     private let fallbackCycleCap      = "/ 70h"
-    private let fallbackTodayMiles    = "—"
-    private let fallbackTodayCpm      = "—"
-    private let fallbackPayHero       = "—"
-    private let fallbackPayBonus      = "—"
+    private let fallbackTodayMiles    = "-"
+    private let fallbackTodayCpm      = "-"
+    private let fallbackPayHero       = "-"
+    private let fallbackPayBonus      = "-"
     private let fallbackPayCaption    = "Detention share auto-bills to you per the load's accessorial split; the balance to EusoTrip. Settled on the next pay run."
 
     /// Parking slot — surfaced from the just-closed load's delivery
@@ -163,7 +163,7 @@ struct OffDuty: View {
 
     private var nextPickupTip: String {
         guard nextLoad != nil else {
-            return "Your dispatcher hasn't tendered the next load yet — the brief will appear here when one lands."
+            return "Your dispatcher hasn't tendered the next load yet, the brief will appear here when one lands."
         }
         if let label = eligibleByLabelTip {
             return "Next pickup brief unlocks once your reset clears · \(label)."

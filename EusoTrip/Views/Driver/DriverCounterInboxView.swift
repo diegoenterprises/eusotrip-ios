@@ -273,7 +273,7 @@ struct DriverCounterInboxView: View {
             Text("No counters waiting")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
-            Text("When a shipper counters one of your bids, it lands here. You can accept, decline, or roll back to the bid stack.")
+            Text("When a shipper counters one of your bids, it lands here. You can accept, decline or roll back to the bid stack.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
@@ -547,10 +547,10 @@ struct DriverCounterDetailView: View {
                 .foregroundStyle(palette.textTertiary)
                 .frame(width: 28, alignment: .leading)
             VStack(alignment: .leading, spacing: 1) {
-                Text("\(row.bidderRole?.uppercased() ?? "—") · \(currency(parseAmount(row.bidAmount)))")
+                Text("\(row.bidderRole?.uppercased() ?? "-") · \(currency(parseAmount(row.bidAmount)))")
                     .font(EType.body).fontWeight(.semibold)
                     .foregroundStyle(palette.textPrimary)
-                Text(row.status?.uppercased() ?? "—")
+                Text(row.status?.uppercased() ?? "-")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(statusColor(row.status))
             }

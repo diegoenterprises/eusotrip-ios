@@ -103,7 +103,7 @@ private struct BidReviewBody: View {
                                 Text(col.rawValue.uppercased())
                                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                             }
-                            Text(count.map { "\($0)" } ?? "—")
+                            Text(count.map { "\($0)" } ?? "-")
                                 .font(.system(size: 13, weight: .heavy)).monospacedDigit()
                         }
                         .foregroundStyle(on ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textSecondary))

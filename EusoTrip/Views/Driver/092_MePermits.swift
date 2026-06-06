@@ -196,7 +196,7 @@ struct MePermits: View {
                 EusoEmptyState(
                     systemImage: "doc.text.magnifyingglass",
                     title: "No active permits",
-                    subtitle: "Permits you've pulled for oversize runs, IRP renewals, or hazmat specialty hauls land here."
+                    subtitle: "Permits you've pulled for oversize runs, IRP renewals or hazmat specialty hauls land here."
                 )
             } else {
                 ForEach(store.active) { p in
@@ -280,7 +280,7 @@ struct MePermits: View {
     }
 
     private func humanizeDate(_ iso: String?) -> String {
-        guard let iso, !iso.isEmpty else { return "—" }
+        guard let iso, !iso.isEmpty else { return "-" }
         let inFormatter = DateFormatter()
         inFormatter.dateFormat = "yyyy-MM-dd"
         inFormatter.locale = Locale(identifier: "en_US_POSIX")

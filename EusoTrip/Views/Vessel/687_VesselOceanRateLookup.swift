@@ -215,9 +215,6 @@ private struct VesselOceanRateLookupBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Ocean rate")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -239,7 +236,7 @@ private struct VesselOceanRateLookupBody: View {
     private var heroCard: some View {
         let best = cheapest
         let allIn = best?.allIn ?? 0
-        let svcRoute = best?.serviceRoute ?? "—"
+        let svcRoute = best?.serviceRoute ?? "-"
         let transit = best?.transitDays ?? 0
         let eff = best.flatMap { friendlyDate($0.effectiveDate) }
         return VStack(alignment: .leading, spacing: 0) {
@@ -372,7 +369,7 @@ private struct VesselOceanRateLookupBody: View {
 
         let title = rate.serviceRoute ?? "Service \(rate.id)"
         let transit = rate.transitDays ?? 0
-        let detailLine = "\(rate.containerSize.map { displaySize($0) } ?? "—") · \(transit)d"
+        let detailLine = "\(rate.containerSize.map { displaySize($0) } ?? "-") · \(transit)d"
 
         // delta vs. cheapest all-in.
         let deltaStr: String? = {
@@ -496,7 +493,7 @@ private struct VesselOceanRateLookupBody: View {
                 Text("ESang: \(cheapest?.serviceRoute ?? "Best service") saves \(usdShort(delta))/FEU at a 3-day trade")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
-                Text("\(usdShort(total)) across the 40 FEU on this booking — book before Fri cutoff")
+                Text("\(usdShort(total)) across the 40 FEU on this booking - book before Fri cutoff")
                     .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 8)
@@ -528,7 +525,7 @@ private struct VesselOceanRateLookupBody: View {
                     }
                     .frame(maxWidth: .infinity).frame(height: 48)
                     .background(LinearGradient.primary)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(saving || cheapest == nil)
@@ -543,8 +540,8 @@ private struct VesselOceanRateLookupBody: View {
                         .foregroundStyle(palette.textPrimary)
                         .frame(width: 136, height: 48)
                         .background(palette.bgCardSoft)
-                        .overlay(Capsule().strokeBorder(palette.borderFaint))
-                        .clipShape(Capsule())
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
@@ -649,7 +646,7 @@ private struct VesselOceanRateLookupBody: View {
         // when the searchRates row carries them we book, otherwise we surface
         // the gap rather than POSTing an invalid (port-less) booking.
         guard let origin = best.originPortId, let dest = best.destinationPortId else {
-            saveError = "This rate row has no resolved lane ports — open the lane to book."
+            saveError = "This rate row has no resolved lane ports. Open the lane to book."
             saving = false
             return
         }

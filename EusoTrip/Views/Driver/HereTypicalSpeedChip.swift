@@ -1,12 +1,12 @@
 //
 //  HereTypicalSpeedChip.swift
-//  EusoTrip — typical-speed annotation backed by HERE Traffic
-//  Analytics flow.json (historical aggregated speeds per link).
+//  EusoTrip — typical-speed annotation backed by HERE Real-Time
+//  Traffic v7 flow (free-flow baseline speed per link).
 //
 //  Why this is here:
-//    HereTrafficClient surfaces *live* flow / incidents. Analytics
-//    answers a different question: "what's the typical pace on
-//    this stretch at this hour?" That number anchors a driver's
+//    The live `speed` says how fast traffic is moving right now;
+//    the `freeFlow` baseline says how fast the road *typically*
+//    flows with no congestion. That baseline anchors a driver's
 //    self-pacing — a spot reading of 58 mph means one thing on a
 //    65-mph corridor, another on a 40-mph one — and feeds the
 //    "am I early/late vs the lane" narrative ESANG renders on
@@ -14,13 +14,13 @@
 //
 //  Behaviour:
 //    • Reads the live coordinate from DriverLocationResolver.
-//    • Builds a small ~8-mile bbox around the fix.
-//    • Calls HereTrafficAnalyticsClient.typicalFlow(bbox:).
-//    • Picks the median typical speed across returned links and
-//      renders it as a single inline pill.
-//    • Hides cleanly when location is denied, the tenant key
-//      lacks Analytics access (HERE returns 403 → quiet fail),
-//      or no links sit inside the bbox.
+//    • Calls HereTrafficClient.flow(near:radiusMeters:) on the v7
+//      `data.traffic.hereapi.com/v7/flow` endpoint.
+//    • Reads each link's `currentFlow.freeFlow` (meters/second),
+//      converts to mph (×2.23694), and renders the median across
+//      returned links as a single inline pill.
+//    • Hides cleanly when location is denied, the request fails
+//      (quiet fail), or no links sit inside the radius.
 //
 //  Powered by ESANG AI™.
 //
@@ -33,11 +33,13 @@ final class HereTypicalSpeedStore: ObservableObject {
     @Published private(set) var medianSpeed: Double?
     @Published private(set) var sampleCount: Int = 0
 
-    /// ~0.07° latitude ≈ 8 km north–south. Keep the bbox small so
-    /// HERE returns a tight set of links representative of the
-    /// driver's immediate corridor instead of the whole metro.
-    private let halfSpanLat: Double = 0.07
-    private let halfSpanLng: Double = 0.07
+    /// Meters/second → mph.
+    private let mpsToMph: Double = 2.23694
+
+    /// ~12 km radius around the fix. Keep it tight so HERE returns a
+    /// set of links representative of the driver's immediate corridor
+    /// instead of the whole metro.
+    private let radiusMeters: Int = 12_000
 
     func refresh() async {
         guard let coord = await DriverLocationResolver.shared.currentCoordinate() else {
@@ -45,17 +47,11 @@ final class HereTypicalSpeedStore: ObservableObject {
             sampleCount = 0
             return
         }
-        let bbox = (
-            minLng: coord.longitude - halfSpanLng,
-            minLat: coord.latitude  - halfSpanLat,
-            maxLng: coord.longitude + halfSpanLng,
-            maxLat: coord.latitude  + halfSpanLat
-        )
-        let items: [HereAnalyticsFlowItem]
+        let results: [HereTrafficFlowResult]
         do {
-            items = try await HereTrafficAnalyticsClient.shared.typicalFlow(
-                bbox: bbox,
-                time: Date()
+            results = try await HereTrafficClient.shared.flow(
+                near: coord,
+                radiusMeters: radiusMeters
             )
         } catch {
             // Quiet fail — chip hides until next refresh succeeds.
@@ -63,8 +59,11 @@ final class HereTypicalSpeedStore: ObservableObject {
             sampleCount = 0
             return
         }
-        let speeds = items.compactMap { $0.typicalSpeed ?? $0.speed }
+        // `freeFlow` is the typical (uncongested) speed baseline in
+        // meters/second; convert to mph for the chip.
+        let speeds = results.compactMap { $0.currentFlow?.freeFlow }
             .filter { $0 > 0 }
+            .map { $0 * mpsToMph }
             .sorted()
         guard !speeds.isEmpty else {
             medianSpeed = nil

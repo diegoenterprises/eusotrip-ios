@@ -149,7 +149,7 @@ private struct HOSBody: View {
                     .font(.system(size: 8, weight: .semibold)).tracking(0.4)
                     .foregroundStyle(palette.textTertiary)
             }
-            Text("Animals can't be in continuous transit more than 28 hours without food, water, and rest. Drivers below 4 hours need an immediate pen stop.")
+            Text("Animals can't be in continuous transit more than 28 hours without food, water and rest. Drivers below 4 hours need an immediate pen stop.")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -178,7 +178,7 @@ private struct HOSBody: View {
         HStack {
             Text(d.name).font(EType.bodyStrong).foregroundStyle(color)
             Spacer(minLength: 0)
-            Text(d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "—").font(EType.body).foregroundStyle(color).monospacedDigit()
+            Text(d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "-").font(EType.body).foregroundStyle(color).monospacedDigit()
         }
         .padding(.vertical, 4)
     }
@@ -196,7 +196,7 @@ private struct HOSBody: View {
                 }
             }
             Spacer(minLength: 0)
-            Text(d.livestock28hrRemaining.map { String(format: "%.1fh / 28h", $0) } ?? "—")
+            Text(d.livestock28hrRemaining.map { String(format: "%.1fh / 28h", $0) } ?? "-")
                 .font(EType.body).foregroundStyle(color).monospacedDigit()
         }
         .padding(.vertical, 4)

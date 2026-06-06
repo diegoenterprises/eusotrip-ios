@@ -258,7 +258,7 @@ private struct DispatcherLaneRFPBody: View {
             case .laneDrill:    return "KC→Omaha at 100% OTR. Next gate in 18 min; pre-clear the founder-pin haul (ME LD B417)."
             case .haulDetail:   return "ME on LD B417 · 78 mi to dest · 6h 24m HOS headroom. Confirm escort handoff at next gate."
             case .rfpInbox:     return "3 inbound RFPs + 1 outbound BH tender STAGED. Next decision in 8m for ME backhaul."
-            case .matchUp:      return "6 candidates ranked. Best is $2,950 · fit 96 vs $3,200 RFP — capture the $250 margin."
+            case .matchUp:      return "6 candidates ranked. Best is $2,950 · fit 96 vs $3,200 RFP. Capture the $250 margin."
             case .contractWrite:return "Counter $2,425 (+$225 vs $2,200). 26m to commit. 6 terms remain; ESang flags hazmat addendum."
             }
         }()

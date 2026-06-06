@@ -137,10 +137,6 @@ private struct RailCrewAvailabilityBody: View {
             }
             // Back chevron + title block, sync metadata trailing.
             HStack(alignment: .top, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(.top, 6)
                 Text("Crew availability")
                     .font(.system(size: 28, weight: .bold))
                     .tracking(-0.4)
@@ -456,7 +452,7 @@ private struct RailCrewAvailabilityBody: View {
     }
 
     private var nextCallLabel: String {
-        guard let d = nextCallDate else { return "—" }
+        guard let d = nextCallDate else { return "-" }
         let secs = max(0, Int(d.timeIntervalSinceNow))
         let h = secs / 3600, m = (secs % 3600) / 60
         if h > 0 { return "\(h)h \(m)m" }
@@ -464,7 +460,7 @@ private struct RailCrewAvailabilityBody: View {
     }
 
     private var nextCallShort: String {
-        guard let d = nextCallDate else { return "—" }
+        guard let d = nextCallDate else { return "-" }
         let secs = max(0, Int(d.timeIntervalSinceNow))
         let h = secs / 3600, m = (secs % 3600) / 60
         if h > 0 { return "\(h)h" }

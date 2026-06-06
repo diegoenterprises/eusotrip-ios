@@ -244,6 +244,7 @@ enum DriverMeHubCatalog {
             DriverMeCell(icon: "speedometer",           label: "Safety score",        action: .screen("075")),
             DriverMeCell(icon: "person.fill.checkmark", label: "Safety coach",        action: .screen("087")),
             DriverMeCell(icon: "exclamationmark.triangle", label: "Violations",       action: .screen("082")),
+            DriverMeCell(icon: "heart.text.square",     label: "Wellness & fatigue",  action: .screen("162")),
         ]),
         DriverMeSection(title: "DRIVER QUALIFICATION", icon: "checkmark.seal", cells: [
             DriverMeCell(icon: "doc.text",              label: "DQ file",             action: .screen("093")),
@@ -255,6 +256,8 @@ enum DriverMeHubCatalog {
     static let vehicle: [DriverMeSection] = [
         DriverMeSection(title: "VEHICLE", icon: "truck.box", cells: [
             DriverMeCell(icon: "truck.box",             label: "My vehicle",          action: .screen("073")),
+            DriverMeCell(icon: "rectangle.on.rectangle", label: "Vehicle card",       action: .screen("057")),
+            DriverMeCell(icon: "wrench.and.screwdriver", label: "Vehicle & equipment", action: .screen("059E")),
         ]),
         DriverMeSection(title: "DOCUMENTS", icon: "folder", cells: [
             DriverMeCell(icon: "folder",                label: "Documents Hub",       action: .screen("083")),
@@ -276,6 +279,8 @@ enum DriverMeHubCatalog {
         DriverMeSection(title: "SCHEDULING", icon: "calendar", cells: [
             DriverMeCell(icon: "calendar",              label: "Appointments",        action: .screen("101")),
             DriverMeCell(icon: "clock.arrow.circlepath", label: "Detention",          action: .screen("091")),
+            DriverMeCell(icon: "calendar.badge.clock",  label: "Weekly plan",         action: .screen("058")),
+            DriverMeCell(icon: "list.bullet.rectangle", label: "Trips history",       action: .screen("059")),
         ]),
         DriverMeSection(title: "MARKET INTEL", icon: "flame", cells: [
             DriverMeCell(icon: "flame.fill",            label: "Hot zones",           action: .screen("100")),
@@ -297,6 +302,7 @@ enum DriverMeHubCatalog {
             DriverMeCell(icon: "rosette",               label: "Badges",              action: .screen("062")),
             DriverMeCell(icon: "shippingbox.fill",      label: "Crates",              action: .screen("063")),
             DriverMeCell(icon: "flame.fill",            label: "Streaks",             action: .screen("065")),
+            DriverMeCell(icon: "gift.fill",             label: "Bonus tracker",       action: .screen("111")),
         ]),
         DriverMeSection(title: "COMMUNITY", icon: "person.3.fill", cells: [
             DriverMeCell(icon: "list.number",           label: "Leaderboard",         action: .screen("064")),
@@ -834,17 +840,38 @@ struct DriverMeSurface: View {
     /// Hub child screens that ship their own header back chevron —
     /// suppressing the surface overlay for these prevents the
     /// double-back collision the founder flagged. Every other
-    /// pushed leaf (HOS logs detail, ELD detail, Haul leaderboard,
-    /// ERG, etc) gets the surface overlay so a one-tap back is
-    /// always available.
+    /// pushed leaf (HOS logs detail, ELD detail, ERG, etc) gets the
+    /// surface overlay so a one-tap back is always available.
+    ///
+    /// The eight `067*` hub screens render their own `.eusoDriverMeNavBack`
+    /// chevron in `DriverMeHubBody.header` / `DriverMeSettingsHubBody.header`.
+    /// `019` (HOS), `064` (The Haul Leaderboard) and `162` (Wellness &
+    /// Fatigue) are leaf screens that ALSO bake their own header chevron —
+    /// each was double-rendering the surface overlay on top of their own bar
+    /// (and their own bar called a dead `dismiss()` in this push context).
+    /// Their chevrons now post `.eusoDriverMeNavBack` (see their top bars),
+    /// so they belong in this set to suppress the surface overlay and leave
+    /// exactly one working back button.
     private static let driverScreensWithOwnBack: Set<String> = [
         "067hub", "067a", "067b", "067c", "067d", "067e", "067f", "067g",
+        "019", "064", "162",
     ]
 
     var body: some View {
         current.view(palette)
             .id("driver-me-\(currentScreenId)")
             .transition(.opacity)
+            // Inside the Me stack, the ONLY back mechanism is this
+            // surface's `.eusoDriverMeNavBack` pop. A couple of pushed
+            // leaves (019 HOS, 064 Leaderboard) also live on the Home
+            // lifecycle and reach for the app-wide `\.driverNavBack`
+            // (→ `trip.stepBack()`) in their top bars. Null that env here
+            // so their chevron's `navBack?()` is a no-op in the Me context
+            // — otherwise tapping back would silently walk `trip.phase`
+            // backward and land the driver on the wrong Home screen the
+            // next time they open the Home tab. Their `.eusoDriverMeNavBack`
+            // post (fired alongside) does the real pop.
+            .environment(\.driverNavBack, nil)
             .overlay(alignment: .topLeading) {
                 // Re-introduces a single canonical surface back
                 // chevron for any driver-Me leaf that doesn't ship

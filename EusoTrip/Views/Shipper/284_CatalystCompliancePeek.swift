@@ -43,7 +43,7 @@ private struct CatalystCompliancePeekBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 if let p = peek { peekCard(p) }
-                else if loading { LifecycleCard { Text("Loading FMCSA data…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
+                else if loading { LifecycleCard { Text("Loading carrier safety data…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
                 else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 else { emptyCard }
                 Color.clear.frame(height: 96)
@@ -68,7 +68,7 @@ private struct CatalystCompliancePeekBody: View {
 
     private func peekCard(_ p: FmcsaPeek) -> some View {
         LifecycleCard(accentGradient: true) {
-            LifecycleSection(label: "FMCSA SAFER", icon: "checkmark.shield.fill")
+            LifecycleSection(label: "Carrier safety registry", icon: "checkmark.shield.fill")
             LifecycleRow(label: "Legal name",  value: dashIfEmpty(p.legalName))
             LifecycleRow(label: "USDOT",       value: dashIfEmpty(p.dotNumber))
             LifecycleRow(label: "MC",          value: dashIfEmpty(p.mcNumber))
@@ -85,7 +85,7 @@ private struct CatalystCompliancePeekBody: View {
 
     private var emptyCard: some View {
         LifecycleCard {
-            Text("FMCSA data not on file for this carrier yet. Carrier-intelligence integration may not be live for this DOT number.")
+            Text("Carrier safety data not on file for this carrier yet. Carrier-intelligence integration may not be live for this DOT number.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }

@@ -108,7 +108,7 @@ struct RailCrossBorderCustoms_006: View {
         case "cleared":     return "CLEARED"
         case "hold":        return "HOLD"
         case "in_transit":  return "IN TRANSIT"
-        case "":            return loading ? "…" : "—"
+        case "":            return loading ? "…" : "-"
         default:            return "PENDING"
         }
     }
@@ -116,12 +116,12 @@ struct RailCrossBorderCustoms_006: View {
         switch statusWord {
         case "CLEARED":    return Brand.success
         case "HOLD":       return Brand.danger
-        case "…", "—":     return palette.textTertiary
+        case "…", "-":     return palette.textTertiary
         default:           return Brand.warning
         }
     }
     private func dash(_ s: String?) -> String {
-        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "—" }
+        guard let s, !s.trimmingCharacters(in: .whitespaces).isEmpty else { return "-" }
         return s
     }
     private var missingCount: Int { clearance?.missingDocs?.count ?? 0 }
@@ -167,9 +167,6 @@ struct RailCrossBorderCustoms_006: View {
                     .foregroundStyle(statusColor)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Border clearance")
                     .font(.system(size: 28, weight: .bold)).kerning(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -188,7 +185,7 @@ struct RailCrossBorderCustoms_006: View {
     private var idCaption: String {
         let rr = dash(clearance?.railroad)
         let id = clearance?.loadId ?? "load_\(loadId)"
-        return rr == "—" ? id : "\(id) · \(rr)"
+        return rr == "-" ? id : "\(id) · \(rr)"
     }
 
     // MARK: - Hero (gradient-rimmed clearance)
@@ -250,9 +247,9 @@ struct RailCrossBorderCustoms_006: View {
     private var carLine: String {
         let n = clearance?.carCount ?? 0
         let rr = dash(clearance?.railroad)
-        if n <= 0 { return rr == "—" ? "intermodal · rail" : "intermodal · \(rr)" }
+        if n <= 0 { return rr == "-" ? "intermodal · rail" : "intermodal · \(rr)" }
         let noun = n == 1 ? "intermodal car" : "intermodal cars"
-        return rr == "—" ? "\(n) \(noun)" : "\(n) \(noun) · \(rr)"
+        return rr == "-" ? "\(n) \(noun)" : "\(n) \(noun) · \(rr)"
     }
 
     // MARK: - Required docs checklist
@@ -414,9 +411,9 @@ struct RailCrossBorderCustoms_006: View {
     private var etaArrivalLine: String {
         let interchange = dash(clearance?.interchange)
         let date = dash(clearance?.etaDate)
-        if interchange == "—" && date == "—" { return "Arrival window pending" }
-        if date == "—" { return "Arrives \(interchange)" }
-        if interchange == "—" { return "Arrives · \(date)" }
+        if interchange == "-" && date == "-" { return "Arrival window pending" }
+        if date == "-" { return "Arrives \(interchange)" }
+        if interchange == "-" { return "Arrives · \(date)" }
         return "Arrives \(interchange) · \(date)"
     }
 
@@ -432,7 +429,7 @@ struct RailCrossBorderCustoms_006: View {
                         .foregroundStyle(.white)
                 }
                 .frame(maxWidth: .infinity).frame(height: 48)
-                .background(Capsule().fill(LinearGradient.primary))
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .disabled(rechecking)
 
@@ -442,9 +439,9 @@ struct RailCrossBorderCustoms_006: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(
-                        Capsule()
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                             .fill(Color(hex: 0x232932))   // verbatim SVG secondary fill
-                            .overlay(Capsule().strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
                     )
             }
         }

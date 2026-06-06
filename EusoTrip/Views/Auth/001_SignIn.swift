@@ -170,8 +170,8 @@ struct SignInView: View {
                 .font(EType.caption)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background(palette.bgCardSoft.opacity(0.7))
-                .overlay(Capsule().strokeBorder(palette.borderSoft))
-                .clipShape(Capsule())
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
 

@@ -64,10 +64,10 @@ struct AtReceiverGate: View {
     // value. ARRIVED (a geofence-entry timestamp) and QUEUE (a guard
     // shack queue position) have no column on loads.getById or
     // appointments.getByLoad, so they stay em-dash until those land.
-    private let dash              = "—"
-    private let fallbackFacility  = "—"
-    private let fallbackTrailer   = "—"
-    private let fallbackLoadID    = "—"
+    private let dash              = "-"
+    private let fallbackFacility  = "-"
+    private let fallbackTrailer   = "-"
+    private let fallbackLoadID    = "-"
 
     /// Gate address line — delivery facility from the live load
     /// (address > cityState), em-dash until the load hydrates.

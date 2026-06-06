@@ -354,7 +354,7 @@ struct MeTaxDocuments: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("1099-NEC forms are issued by January 31 for income earned in the prior calendar year. State 1099s and Schedule C supporting documents follow the state's own filing calendar. Each PDF here is signed + archived — safe to forward to your CPA.")
+            Text("1099-NEC forms are issued by January 31 for income earned in the prior calendar year. State 1099s and Schedule C supporting documents follow the state's own filing calendar. Each PDF here is signed + archived, safe to forward to your CPA.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -160,8 +160,8 @@ private struct ConvoyComposerBody: View {
     private var parentShipmentCard: some View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: "PARENT SHIPMENT", icon: "shippingbox.fill")
-            LifecycleRow(label: "Load",     value: loadNumber ?? loadId ?? "—")
-            LifecycleRow(label: "Vertical", value: loadVertical?.displayName ?? "—")
+            LifecycleRow(label: "Load",     value: loadNumber ?? loadId ?? "-")
+            LifecycleRow(label: "Vertical", value: loadVertical?.displayName ?? "-")
             HStack(spacing: 6) {
                 Image(systemName: "info.circle")
                     .font(.system(size: 10, weight: .heavy))

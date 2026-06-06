@@ -127,8 +127,8 @@ struct DocumentClassifierSheet: View {
                 .font(.system(size: 18, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
             Text(mode == .prefillWizard
-                 ? "Rate confirmations, BOLs, run tickets, load tenders — anything load-shaped. Gemini Vision extracts lane, equipment, cargo, weight, rate, and dates straight into the wizard."
-                 : "CSV load batches, carrier packets, signed agreements, COIs, EIN letters, 1099s — anything. We classify each doc and route it to the right place.")
+                 ? "Rate confirmations, BOLs, run tickets, load tenders, anything load-shaped. Gemini Vision extracts lane, equipment, cargo, weight, rate and dates straight into the wizard."
+                 : "CSV load batches, carrier packets, signed agreements, COIs, EIN letters, 1099s, anything. We classify each doc and route it to the right place.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -198,8 +198,8 @@ struct DocumentClassifierSheet: View {
         .padding(.horizontal, 10)
         .foregroundStyle(filled ? .white : palette.textPrimary)
         .background(filled ? AnyView(LinearGradient.diagonal) : AnyView(palette.bgCardSoft))
-        .overlay(filled ? AnyView(EmptyView()) : AnyView(Capsule().strokeBorder(palette.borderSoft)))
-        .clipShape(Capsule())
+        .overlay(filled ? AnyView(EmptyView()) : AnyView(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft)))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     // MARK: — Progress + results
@@ -232,7 +232,7 @@ struct DocumentClassifierSheet: View {
                     .frame(maxWidth: .infinity).padding(.vertical, 13)
                     .foregroundStyle(.white)
                     .background(LinearGradient.diagonal)
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 6)

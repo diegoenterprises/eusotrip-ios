@@ -298,11 +298,11 @@ private struct KanbanBody: View {
                 LifecycleCard {
                     LifecycleSection(label: "STAGE", icon: col.icon)
                     LifecycleRow(label: "Now",    value: l.status.uppercased())
-                    LifecycleRow(label: "Next",   value: (col.nextStatus ?? "—").replacingOccurrences(of: "_", with: " ").uppercased())
+                    LifecycleRow(label: "Next",   value: (col.nextStatus ?? "-").replacingOccurrences(of: "_", with: " ").uppercased())
                     LifecycleRow(label: "Driver", value: dashIfEmpty(l.driverName))
                     LifecycleRow(label: "Rate",   value: usd(l.rate))
-                    LifecycleRow(label: "Distance", value: l.distance.map { String(format: "%.0f mi", $0) } ?? "—")
-                    LifecycleRow(label: "Weight", value: l.weight.map { String(format: "%.0f lb", $0) } ?? "—")
+                    LifecycleRow(label: "Distance", value: l.distance.map { String(format: "%.0f mi", $0) } ?? "-")
+                    LifecycleRow(label: "Weight", value: l.weight.map { String(format: "%.0f lb", $0) } ?? "-")
                     LifecycleRow(label: "Commodity", value: dashIfEmpty(l.commodityName ?? l.cargoType))
                     if let h = l.hazmatClass, !h.isEmpty { LifecycleRow(label: "Hazmat", value: h) }
                 }

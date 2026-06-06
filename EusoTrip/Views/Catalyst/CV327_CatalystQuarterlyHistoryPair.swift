@@ -160,8 +160,8 @@ private struct CatalystYTDBody: View {
                 Text("QUARTERS").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 quarterRow("Q1 2026", "CLOSED", "$14,820 gross · 9 loads · 94% OTP", .green)
                 quarterRow("Q2 2026", "IN PROGRESS", "in-flight · 9 loads to date · 95% OTP", .blue)
-                quarterRow("Q3 2026", "QUEUED", "—", .gray)
-                quarterRow("Q4 2026", "QUEUED", "—", .gray)
+                quarterRow("Q3 2026", "QUEUED", "-", .gray)
+                quarterRow("Q4 2026", "QUEUED", "-", .gray)
             }
         }
     }
@@ -184,7 +184,7 @@ private struct CatalystYTDBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .driver:  return "Q1 closed clean at 94% OTP. Q2 holding 95% — keep cadence to lock Schedule C through tax cabinet."
+            case .driver:  return "Q1 closed clean at 94% OTP. Q2 holding 95%. Keep cadence to lock Schedule C through tax cabinet."
             case .vehicle: return "Q1 asset rollup closed at 84% utilization. §168 depreciation books reconcile through TaxBook auto-export."
             }
         }()

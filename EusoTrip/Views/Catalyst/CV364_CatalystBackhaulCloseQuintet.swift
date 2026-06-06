@@ -234,7 +234,7 @@ private struct CatalystBackhaulCloseBody: View {
             case .dockedLoading: return "Bay 7B occupied at 4 ppm. Load completes at 06:42 MST; BOL pre-sign arms on dock-plate touch."
             case .bolPreSign:    return "BOL draft acked. ME taps sign-acknowledge on dock plate; BOL-signed broadcast fires next."
             case .bolSigned:     return "BOL SIGNED + sig-hash verified. Paperwork watch armed; filing closes when POD packet uploads."
-            case .paperwork:     return "Paperwork filed. POD watch is armed — POD-ink confirmation fires once receiver co-signs."
+            case .paperwork:     return "Paperwork filed. POD watch is armed. POD-ink confirmation fires once receiver co-signs."
             case .closedStage:   return "Chain sealed, escrow credited $2,128. ME wallet balance updates within 30s; advance-eligible."
             }
         }()

@@ -405,7 +405,7 @@ struct CatalystFleetSafetyCSA: View {
 
     private func statusLine(_ o: CSAOverview, criticalAlerts: Int) -> String {
         if criticalAlerts > 0 {
-            return "\(criticalAlerts) active critical alert\(criticalAlerts == 1 ? "" : "s") — review now"
+            return "\(criticalAlerts) active critical alert\(criticalAlerts == 1 ? "" : "s") - review now"
         }
         if o.overCount == 0 {
             return "No carrier BASIC over the intervention threshold"
@@ -503,13 +503,13 @@ struct CatalystFleetSafetyCSA: View {
             : nil
         return HStack(spacing: Space.s2) {
             factorCell(label: "POWER UNITS",
-                       value: powerUnits.map(String.init) ?? "—",
+                       value: powerUnits.map(String.init) ?? "-",
                        sub: shortName(carrierName))
             factorCell(label: "INSPECTIONS",
                        value: "\(inspections)",
                        sub: "24-month")
             factorCell(label: "CLEAN RATE",
-                       value: cleanRate.map { "\($0)%" } ?? "—",
+                       value: cleanRate.map { "\($0)%" } ?? "-",
                        sub: "of inspections")
         }
     }

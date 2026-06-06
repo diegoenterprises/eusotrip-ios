@@ -181,7 +181,7 @@ struct DriverProfile: View {
         if let r = reputation?.ratingAverage, r > 0 {
             return String(format: "%.2f", r)
         }
-        return "—"
+        return "-"
     }
 
     private var fiveStarCount: String {
@@ -205,13 +205,13 @@ struct DriverProfile: View {
     }
 
     private var onTimeText: String {
-        guard let v = reputation?.onTimeDeliveryPct, v > 0 else { return "—" }
+        guard let v = reputation?.onTimeDeliveryPct, v > 0 else { return "-" }
         // Server returns 0-100 already.
         return String(format: "%.1f%%", v)
     }
 
     private var safetyText: String {
-        guard let v = reputation?.safetyScore, v > 0 else { return "—" }
+        guard let v = reputation?.safetyScore, v > 0 else { return "-" }
         // Map 0-100 to letter grade
         switch v {
         case 95...:  return "A+"

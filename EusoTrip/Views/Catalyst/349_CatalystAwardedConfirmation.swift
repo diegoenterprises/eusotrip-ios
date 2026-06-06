@@ -11,7 +11,7 @@
 //  with `status == "awarded"`.
 //
 //  Doctrine: every visible value binds to a real tRPC proc. No
-//  scenario literals; "—" until data resolves. No mock data.
+//  scenario literals; "-" until data resolves. No mock data.
 //
 
 import SwiftUI
@@ -70,43 +70,43 @@ private struct CACBody: View {
     @Environment(\.palette) private var palette
     @State private var load: CACLoad?
 
-    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var rateDisplay: String {
         if let r = load?.rate, let n = Double(r), n > 0 {
             let v = n.rounded()
             return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
         }
-        return "—"
+        return "-"
     }
     private var laneDisplay: String? {
         let p = [load?.pickupLocation?.city, load?.pickupLocation?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
         if p.isEmpty && d.isEmpty { return nil }
-        return "\(p.isEmpty ? "—" : p) → \(d.isEmpty ? "—" : d)"
+        return "\(p.isEmpty ? "-" : p) → \(d.isEmpty ? "-" : d)"
     }
     private var distanceDisplay: String {
-        guard let d = load?.distance, d > 0 else { return "—" }
+        guard let d = load?.distance, d > 0 else { return "-" }
         return "\(Int(d.rounded())) mi"
     }
     private var equipmentDisplay: String {
         let parts = [load?.equipmentType, load?.cargoType].compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
     private var pickupDateDisplay: String {
         guard let iso = load?.pickupDate,
-              let dt = ISO8601DateFormatter().date(from: iso) else { return "—" }
+              let dt = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let f = DateFormatter(); f.dateFormat = "MMM d · h:mm a"
         return f.string(from: dt)
     }
     private var awardedAtDisplay: String {
         guard let iso = load?.updatedAt,
-              let dt = ISO8601DateFormatter().date(from: iso) else { return "—" }
+              let dt = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let f = DateFormatter(); f.dateFormat = "MMM d · h:mm a"
         return f.string(from: dt)
     }
     private var rpmDisplay: String {
         guard let r = load?.rate, let n = Double(r), n > 0,
-              let d = load?.distance, d > 0 else { return "—" }
+              let d = load?.distance, d > 0 else { return "-" }
         return String(format: "$%.2f/mi", n / d)
     }
 
@@ -229,13 +229,13 @@ private struct CACBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 rowFor(label: "Load number", value: loadNumberDisplay)
-                rowFor(label: "Lane", value: laneDisplay ?? "—")
+                rowFor(label: "Lane", value: laneDisplay ?? "-")
                 rowFor(label: "Distance", value: distanceDisplay)
                 rowFor(label: "Equipment", value: equipmentDisplay)
                 if let haz = load?.hazmatClass, !haz.isEmpty {
                     rowFor(label: "Hazmat class", value: haz, tint: .orange)
                 }
-                rowFor(label: "Status", value: (load?.status ?? "—").uppercased(), tint: .green)
+                rowFor(label: "Status", value: (load?.status ?? "-").uppercased(), tint: .green)
             }
         }
     }

@@ -21,6 +21,19 @@
 
 import SwiftUI
 
+/// Geo JSON the `loads.list` proc returns verbatim via its `...row`
+/// spread — `pickupLocation` / `deliveryLocation` carry the real
+/// `lat` / `lng` doubles (loads.ts:38 LocationJson, persisted at
+/// create via HERE geocode, loads.ts:453-477). City/state are
+/// flattened separately into `origin`/`destination` by the proc, so
+/// here we decode ONLY the coordinate pair that the flattened objects
+/// drop. Every active load in prod carries a non-zero pickup +
+/// delivery fix (verified 38/38), but we still coord-gate per load.
+private struct DispatchLocationGeo: Decodable, Hashable {
+    let lat: Double?
+    let lng: Double?
+}
+
 private struct DispatchLoad: Decodable, Hashable, Identifiable {
     let id: String
     let loadNumber: String?
@@ -38,6 +51,20 @@ private struct DispatchLoad: Decodable, Hashable, Identifiable {
     let trailerType: String?
     let assignedDriverName: String?
     let expiresAt: String?
+    // Real coordinate JSON from loads.list (`...row`). Optional so the
+    // decode never fails on a legacy row that predates geocoding.
+    let pickupLocation: DispatchLocationGeo?
+    let deliveryLocation: DispatchLocationGeo?
+
+    /// A real, non-null-island pickup fix or nil. `!(lat == 0 && lng == 0)`
+    /// coord gate (Driver 013 pattern) — this is the truck/load's job
+    /// origin, the honest puck position for a fleet board (the proc
+    /// ships no live `currentLocation` fix; 0/38 carry one).
+    var pickupFix: HereLatLng? {
+        guard let lat = pickupLocation?.lat, let lng = pickupLocation?.lng,
+              !(lat == 0 && lng == 0) else { return nil }
+        return HereLatLng(lat, lng)
+    }
 }
 
 private struct DispatchLoadsEnvelope: Decodable {
@@ -96,6 +123,7 @@ private struct DispatchBoardBody: View {
     var body: some View {
         VStack(spacing: 0) {
             header.padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 6)
+            fleetMapHero.padding(.horizontal, 14).padding(.bottom, 8)
             scrubber.padding(.bottom, 6)
             if loading && byColumn.isEmpty {
                 LifecycleCard {
@@ -124,6 +152,99 @@ private struct DispatchBoardBody: View {
         }
         .task { await loadAll() }
         .refreshable { await loadAll() }
+    }
+
+    // MARK: Fleet map hero — one .truck puck per load with a REAL pickup fix
+    //
+    // Mirrors Shipper 212 Control Tower's HereLiveMapView CONUS hero +
+    // `.shipperTracking` add-ons, but 301 HAS per-load coordinates that
+    // 212's `controlTower.overview` proc lacks — so where 212 honestly
+    // frames CONUS with NO pins, 301 drops a live puck per dispatch load.
+    // The puck position is the load's PICKUP fix (`pickupLocation.lat/lng`
+    // from loads.list); the proc ships no live `currentLocation`, so the
+    // job origin is the honest fleet-board position. Each marker carries
+    // its load `id`, so a tap routes through `onSelectMarker` → jumps the
+    // pager to that load's column (cheat-sheet §1 actionable-marker rule).
+    private var mappableLoads: [DispatchLoad] {
+        byColumn.values.flatMap { $0 }.filter { $0.pickupFix != nil }
+    }
+
+    private var fleetMarkers: [HereMarker] {
+        mappableLoads.compactMap { l in
+            guard let fix = l.pickupFix else { return nil }
+            return HereMarker(
+                at: fix,
+                kind: .truck,
+                label: l.loadNumber ?? "LD-\(l.id)",
+                id: l.id
+            )
+        }
+    }
+
+    @ViewBuilder
+    private var fleetMapHero: some View {
+        if mappableLoads.isEmpty {
+            // Honest-skip: no load on the board carries a real pickup
+            // fix (`pickupLocation.lat/lng` all null/0). Frame a neutral
+            // placeholder rather than fabricate a CONUS demo route.
+            VStack(spacing: 6) {
+                Image(systemName: "map")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                Text("No mapped loads")
+                    .font(.system(size: 13, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textSecondary)
+                Text("Board loads have no pickup coordinates yet — pucks light up once a load is geocoded.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 28)
+            .background(palette.bgCard)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint)
+            )
+        } else {
+            ZStack(alignment: .topLeading) {
+                HereLiveMapView(
+                    center: .init(39.5, -98.35),
+                    zoom: 4,
+                    baseLayers: [
+                        .markers(fleetMarkers)
+                    ],
+                    addOns: .shipperTracking,
+                    onSelectMarker: { loadId in focusLoad(loadId) }
+                )
+                .frame(height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint)
+                )
+                .accessibilityLabel("Fleet board map, \(mappableLoads.count) loads with a pickup location")
+
+                Text("\(fleetMarkers.count) ON MAP")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+                    .padding(10)
+            }
+        }
+    }
+
+    /// Tap on a map puck → jump the kanban pager to the column the load
+    /// currently lives in (real local effect — no dead marker).
+    private func focusLoad(_ loadId: String) {
+        for col in catalystKanbanColumns {
+            if (byColumn[col.id] ?? []).contains(where: { $0.id == loadId }) {
+                withAnimation(.easeOut(duration: 0.18)) { selected = col.id }
+                return
+            }
+        }
     }
 
     private var header: some View {
@@ -280,14 +401,14 @@ private struct DispatchBoardBody: View {
                 Text(l.loadNumber ?? "LD-\(l.id)")
                     .font(.caption.monospaced().weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
-                Text("\(l.pickupCity ?? "—"), \(l.pickupState ?? "—") → \(l.destCity ?? "—"), \(l.destState ?? "—")")
+                Text("\(l.pickupCity ?? "-"), \(l.pickupState ?? "-") → \(l.destCity ?? "-"), \(l.destState ?? "-")")
                     .font(EType.body.weight(.bold))
                     .foregroundStyle(palette.textPrimary)
                 Text("Pickup \(humanDate(l.pickupDate)) · \(Int(l.distance ?? 0)) mi")
                     .font(.caption)
                     .foregroundStyle(palette.textSecondary)
                 HStack {
-                    Text("$\(l.rate ?? "—")")
+                    Text("$\(l.rate ?? "-")")
                         .font(.title3.weight(.heavy).monospacedDigit())
                         .foregroundStyle(palette.textPrimary)
                     if let rpm = l.ratePerMile {
@@ -336,7 +457,7 @@ private struct DispatchBoardBody: View {
     }
 
     private func humanDate(_ iso: String?) -> String {
-        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let f = DateFormatter(); f.dateFormat = "MMM d HH:mm"
         return f.string(from: date)
     }

@@ -168,9 +168,6 @@ private struct VesselPortDirectoryBody: View {
                     .foregroundStyle(LinearGradient.primary)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Port directory")
                     .font(.system(size: 28, weight: .bold))
                     .tracking(-0.4)
@@ -281,7 +278,7 @@ private struct VesselPortDirectoryBody: View {
                                     .controlSize(.mini)
                                     .tint(palette.textSecondary)
                             } else {
-                                Text(port.unlocode ?? "—")
+                                Text(port.unlocode ?? "-")
                                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                                     .foregroundStyle(palette.textSecondary)
                             }

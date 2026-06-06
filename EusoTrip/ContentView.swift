@@ -11,6 +11,7 @@
 //
 
 import SwiftUI
+import Combine
 
 // MARK: - Register toggle
 
@@ -279,6 +280,7 @@ enum ScreenRegistry {
             // 2026-05-30 — the-oath §42/§48 driver ports.
             .init(id: "112",    title: "Driver · Load Closed (Settlement)", role: .driver) { p in AnyView(DriverClosedScreen(theme: p)) },
             .init(id: "161",    title: "Driver · Gate Pass",         role: .driver) { p in AnyView(DriverGatePass_161(appointmentId: 0).environment(\.palette, p)) },
+            .init(id: "162",    title: "Driver · Wellness & Fatigue", role: .driver) { p in AnyView(DriverWellnessFatigue_162().environment(\.palette, p)) },
         ]
 
         // MARK: Non-driver role placeholders (DEBUG only)
@@ -478,11 +480,9 @@ enum ScreenRegistry {
         // on isDefault icon-tint ternary, LinearGradient.diagonal on
         // header, default-banner glyph, default chip, retry CTA, add
         // CTA, toast checkmark.
-        list.append(
-            .init(id: "208", title: "Shipper · Payment Methods", role: .shipper) { p in
-                AnyView(ShipperPaymentMethodsScreen(theme: p))
-            }
-        )
+        // 2026-06-02 — dedup: dropped id "208" (legacy ShipperPaymentMethodsScreen),
+        // superseded by canonical 295 PaymentMethodsScreen (which the Me hub links).
+        // 208 was referenced 0×; file kept on disk, just unregistered.
         // 2026-04-26 — eusotrip-killers 127th firing (continued)
         // Cohort B day-1 brick — Shipper Contacts (working-carriers
         // directory). Backed by the new `shippers.getFavoriteCatalysts`
@@ -1115,6 +1115,18 @@ enum ScreenRegistry {
         list.append(.init(id: "319", title: "Carrier · Drivers List",      role: .carrier) { p in AnyView(CarrierDriversListScreen(theme: p)) })
         list.append(.init(id: "320", title: "Carrier · Vehicles List",     role: .carrier) { p in AnyView(CarrierVehiclesListScreen(theme: p)) })
         list.append(.init(id: "350", title: "Carrier · Me",                role: .carrier) { p in AnyView(CarrierMeScreen(theme: p)) })
+        // 2026-06-02 — WAVE 1: the 5 missing role Me hubs (kill Me→Home
+        // dead-routes). Each mirrors 350_CarrierMe chrome, indexes its
+        // role's real registered screens, and is bound as the Me-slot
+        // tabRoot via <Role>NavRoute.map["me"] + <Role>Surface.tabRoots.
+        list.append(.init(id: "404B", title: "Broker · Me",                role: .broker)     { p in AnyView(BrokerMeScreen(theme: p)) })
+        list.append(.init(id: "620",  title: "Escort · Me",                role: .escort)     { p in AnyView(EscortMeHomeScreen(theme: p)) })
+        list.append(.init(id: "703",  title: "Terminal · Me",              role: .terminal)   { p in AnyView(TerminalMeScreen(theme: p)) })
+        list.append(.init(id: "804",  title: "Admin · Me",                 role: .admin)      { p in AnyView(AdminMeScreen(theme: p)) })
+        list.append(.init(id: "903",  title: "Compliance · Me",            role: .compliance) { p in AnyView(ComplianceMeScreen(theme: p)) })
+        // ComplianceAgentView (DG segregation tool) — was the lone
+        // unregistered Compliance orphan; now housed in 903's TOOLS group.
+        list.append(.init(id: "904",  title: "Compliance · Segregation Agent", role: .compliance) { _ in AnyView(ComplianceAgentView()) })
         // 2026-04-25 — eusotrip-killers 99th firing
         // (Cowork-mode autonomous run, scheduled-task `eusotrip-killers`):
         // First real Broker-track brick lands in production. Lifts id
@@ -1267,6 +1279,12 @@ enum ScreenRegistry {
                 AnyView(CatalystClosedPayoutScreen(theme: p, loadId: BrokerNavContext.latestLoadId, onViewSettlement: {}, onDone: {}))
             }
         )
+        list.append(contentsOf: [
+            .init(id: "373", title: "Catalyst · Awarded (M04)", role: .catalyst) { p in AnyView(CatalystAwardedCelM04Screen(theme: p)) },
+            .init(id: "374", title: "Catalyst · Pickup On-Site Echo (M04)", role: .catalyst) { p in AnyView(CatalystPickupOnSiteEchoCelM04Screen(theme: p)) },
+            .init(id: "375", title: "Catalyst · In-Transit Fleet Track (M04)", role: .catalyst) { p in AnyView(CatalystInTransitFleetTrackCelM04Screen(theme: p)) },
+            .init(id: "376", title: "Catalyst · At-Delivery Fleet Track (M04)", role: .catalyst) { p in AnyView(CatalystAtDeliveryFleetTrackCelM04Screen(theme: p)) },
+        ])
         // 2026-05-22 — Catalyst CV379-CV382 M-05 bidding quartet.
         // Enum-driven shared body; loads.getById drives every value.
         list.append(.init(id: "379", title: "Catalyst · M-05 First Bid",     role: .catalyst) { p in AnyView(CatalystM05FirstBidScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) })
@@ -1476,7 +1494,12 @@ enum ScreenRegistry {
         // iftaCalculator.calculateQuarter × 4 + maintenance.{getUpcoming,
         // getAlerts}. Bottom nav frozen per doctrine — content only.
         list.append(.init(id: "301", title: "Catalyst · Dispatch Board", role: .catalyst) { p in AnyView(CatalystDispatchBoardScreen(theme: p)) })
-        list.append(.init(id: "302", title: "Catalyst · Profile",        role: .catalyst) { p in AnyView(CatalystProfileScreen(theme: p)) })
+        // 2026-06-02 — dedup: catalyst profile re-id'd 302→302C to end the
+        // id collision with Carrier·Load Detail ("302", .carrier), which
+        // (since allowedScreenRoles(.catalyst)=[.carrier,.catalyst], .carrier
+        // first) had shadowed CatalystProfileScreen entirely. Now reachable
+        // via 350 Account → Profile.
+        list.append(.init(id: "302C", title: "Catalyst · Profile",        role: .catalyst) { p in AnyView(CatalystProfileScreen(theme: p)) })
         list.append(.init(id: "303", title: "Catalyst · Fleet · Vehicles", role: .catalyst) { p in AnyView(CatalystFleetVehiclesScreen(theme: p)) })
         list.append(.init(id: "309", title: "Catalyst · Bids Outbound",  role: .catalyst) { p in AnyView(CatalystBidsOutboundScreen(theme: p)) })
         list.append(.init(id: "318", title: "Catalyst · RFP Inbound",    role: .catalyst) { p in AnyView(CatalystRFPInboundScreen(theme: p)) })
@@ -1772,7 +1795,12 @@ enum ScreenRegistry {
             // within their own role bucket; the prefix makes the
             // disambiguation visible to anyone reading the registry
             // directly). Each takes `theme: Theme.Palette` only.
-            .init(id: "Dpch700", title: "Dispatch · Home",             role: .dispatch) { p in AnyView(DispatchHomeScreen(theme: p)) },
+            // 2026-06-02 — Dpch700 "Dispatch · Home" RETIRED: it was the
+            // quarantined 700-series invention (no SVG provenance, Drivers/
+            // Loads nav). Canonical home is now Disp400 (verbatim 400 SVG
+            // port, more wired). DispatchHomeScreen struct kept on disk but
+            // unregistered. Driver roster (Dpch701) + load queue (Dpch702)
+            // remain registered + reachable via the Dpch713 Me hub.
             .init(id: "Dpch701", title: "Dispatch · Driver Board",     role: .dispatch) { p in AnyView(DispatchDriverBoardScreen(theme: p)) },
             // §37 — Dispatcher 404 Driver Roster (HOS-urgency-sorted roster; wires dispatch.getDriverRoster).
             .init(id: "Dpch404", title: "Dispatch · Driver Roster",    role: .dispatch) { p in AnyView(DispatcherDriverRosterScreen(theme: p)) },
@@ -1782,7 +1810,9 @@ enum ScreenRegistry {
             .init(id: "Dpch705", title: "Dispatch · Route Optimization", role: .dispatch) { p in AnyView(DispatchRouteOptimizationScreen(theme: p)) },
             .init(id: "Dpch706", title: "Dispatch · Driver Chat",      role: .dispatch) { p in AnyView(DispatchDriverChatScreen(theme: p)) },
             .init(id: "Dpch707", title: "Dispatch · Daily KPI",        role: .dispatch) { p in AnyView(DispatchDailyKPIScreen(theme: p)) },
-            .init(id: "Dpch708", title: "Dispatch · Kanban Board",     role: .dispatch) { p in AnyView(DispatchKanbanBoardScreen(theme: p)) },
+            // 2026-06-02 — Dpch708 "Dispatch · Kanban Board" RETIRED: superseded
+            // by canonical Disp401 (verbatim 401 SVG port, same endpoints).
+            // DispatchKanbanBoardScreen struct kept on disk but unregistered.
             // 2026-05-31 — Rescue land: bespoke Dispatcher greenfield home + kanban (full ports).
             .init(id: "Disp400", title: "Dispatch · Home",            role: .dispatch) { p in AnyView(DispatcherHomeScreen(theme: p)) },
             .init(id: "Disp401", title: "Dispatch · Kanban",          role: .dispatch) { p in AnyView(DispatcherKanbanScreen(theme: p)) },
@@ -1795,6 +1825,15 @@ enum ScreenRegistry {
             // functional dead-end. Now points here. Links to all 13
             // registered dispatch screens via .eusoDispatchNavSwap.
             .init(id: "Dpch713", title: "Dispatch · Me",               role: .dispatch) { p in AnyView(DispatchMeScreen(theme: p)) },
+            // 2026-06-02 — WAVE-0 orphan recovery: 710A ConvoyComposer
+            // (T-023, fully built, was never registered). Reachable via
+            // Dpch713 Me → TOOLS → "Convoy composer".
+            .init(id: "Dpch710A", title: "Dispatch · Convoy Composer",  role: .dispatch) { p in AnyView(DispatchConvoyComposerScreen(theme: p)) },
+            // 2026-06-03 — landed 3 scheduled-lane ports from _PORT_STAGING.
+            // Dpch402 (NOT "402" — that id is Broker·Tender Detail).
+            .init(id: "Dpch402", title: "Dispatch · Profile",           role: .dispatch) { p in AnyView(DispatcherProfileScreen(theme: p)) },
+            .init(id: "Vesl004", title: "Vessel Shipper · Demurrage & Detention", role: .shipper) { p in AnyView(VesselDemurrageDetentionScreen(theme: p)) },
+            .init(id: "Rail008", title: "Rail Shipper · Tender Workflow", role: .shipper) { _ in AnyView(RailShipperTenderWorkflow_008()) },
             // 2026-05-21 — eusotrip-killers screen-porting sweep.
             // Three dispatch flagship screens land bundled in one
             // Swift file (Dpch714_DispatchTrio.swift): Command Center,
@@ -2031,6 +2070,14 @@ enum ScreenRegistry {
             .init(id: "Rail565", title: "Rail Engineer · Container Timeline", role: .railEngineer) { p in AnyView(RailContainerTimelineScreen(theme: p, containerNumber: "", shipmentId: 0)) },
             .init(id: "Rail566", title: "Rail Engineer · Intermodal Transfer", role: .railEngineer) { p in AnyView(RailIntermodalTransferScreen(theme: p, shipmentId: 0)) },
             .init(id: "Rail567", title: "Rail Engineer · Chain of Custody", role: .railEngineer) { p in AnyView(RailChainOfCustodyScreen(theme: p, loadId: "0")) },
+            .init(id: "Rail606", title: "Rail Engineer · Cargo Insurance", role: .railEngineer) { p in AnyView(RailCargoInsuranceScreen(theme: p)) },
+            .init(id: "Rail656", title: "Rail Engineer · Claim Payments", role: .railEngineer) { p in AnyView(RailClaimPaymentsScreen(theme: p)) },
+            .init(id: "Rail669", title: "Rail Engineer · Overcharge Recovery", role: .railEngineer) { p in AnyView(RailOverchargeRecoveryScreen(theme: p)) },
+            .init(id: "Rail670", title: "Rail Engineer · Shortage Claims", role: .railEngineer) { p in AnyView(RailShortageClaimsScreen(theme: p)) },
+            .init(id: "Rail671", title: "Rail Engineer · Claim Templates", role: .railEngineer) { p in AnyView(RailClaimTemplatesScreen(theme: p)) },
+            .init(id: "Rail673", title: "Rail Engineer · Intermodal Dashboard", role: .railEngineer) { p in AnyView(RailIntermodalDashboardScreen(theme: p)) },
+            .init(id: "Rail639", title: "Rail Engineer · Yard Directory", role: .railEngineer) { p in AnyView(RailYardDirectoryScreen(theme: p)) },
+            .init(id: "Rail672", title: "Rail Engineer · Layover Tracking", role: .railEngineer) { p in AnyView(RailLayoverTrackingScreen(theme: p)) },
             .init(id: "Rail568", title: "Rail Engineer · Equipment Lease", role: .railEngineer) { p in AnyView(RailEquipmentLeaseScreen(theme: p)) },
             .init(id: "Rail569", title: "Rail Engineer · Tender Workflow", role: .railEngineer) { p in AnyView(RailTenderWorkflowScreen(theme: p)) },
             .init(id: "Rail571", title: "Rail Engineer · IMDG Hazmat Manifest", role: .railEngineer) { p in AnyView(RailIMDGHazmatManifestScreen(theme: p, containerNumber: "", railId: "0")) },
@@ -2131,6 +2178,42 @@ enum ScreenRegistry {
             .init(id: "Vesl003", title: "Vessel Shipper · Live Tracking",  role: .shipper) { p in AnyView(VesselLiveTrackingScreen(theme: p, bookingNumber: "VS-48217")) },
             .init(id: "Vesl651", title: "Vessel Operator · Shipments",  role: .vesselOperator) { p in AnyView(VesselShipmentsScreen(theme: p)) },
             .init(id: "Vesl652", title: "Vessel Operator · Compliance", role: .vesselOperator) { p in AnyView(VesselComplianceScreen(theme: p)) },
+            .init(id: "Vesl757", title: "Vessel · Detention Letters", role: .vesselOperator) { p in AnyView(VesselDetentionLettersScreen(theme: p)) },
+            .init(id: "Vesl815", title: "Vessel · Demurrage Charge Approval", role: .vesselOperator) { p in AnyView(VesselDemurrageChargeApprovalScreen(theme: p)) },
+            .init(id: "Vesl669", title: "Vessel · Booking Amendment", role: .vesselOperator) { p in AnyView(VesselBookingAmendmentScreen(theme: p)) },
+            .init(id: "Vesl706", title: "Vessel · Rebooking Suggestions", role: .vesselOperator) { p in AnyView(VesselRebookingSuggestionsScreen(theme: p)) },
+            .init(id: "Vesl737", title: "Vessel · Drayage Orders", role: .vesselOperator) { p in AnyView(VesselDrayageOrdersScreen(theme: p)) },
+            .init(id: "Vesl772", title: "Vessel · Demurrage Analytics", role: .vesselOperator) { p in AnyView(VesselDemurrageAnalyticsScreen(theme: p)) },
+            .init(id: "Vesl792", title: "Vessel · Demurrage Calculator", role: .vesselOperator) { p in AnyView(VesselDemurrageCalculatorScreen(theme: p)) },
+            .init(id: "Vesl709", title: "Vessel · Bid Board", role: .vesselOperator) { p in AnyView(VesselBidBoardScreen(theme: p)) },
+            .init(id: "Vesl800", title: "Vessel · Claims Dashboard", role: .vesselOperator) { p in AnyView(VesselClaimsDashboardScreen(theme: p)) },
+            .init(id: "Vesl801", title: "Vessel · Claims List", role: .vesselOperator) { p in AnyView(VesselClaimsListScreen(theme: p)) },
+            .init(id: "Vesl808", title: "Vessel · Claim Workflow", role: .vesselOperator) { p in AnyView(VesselClaimWorkflowScreen(theme: p)) },
+            .init(id: "Vesl732", title: "Vessel · Cargo Claim", role: .vesselOperator) { p in AnyView(VesselCargoClaimScreen(theme: p)) },
+            .init(id: "Vesl006", title: "Vessel Shipper · Customs ISF", role: .shipper) { p in AnyView(VesselCustomsISFScreen(theme: p)) },
+            .init(id: "Vesl814", title: "Vessel · Customs Entry Filing", role: .vesselOperator) { p in AnyView(VesselCustomsEntryFilingScreen(theme: p)) },
+            .init(id: "Vesl789", title: "Vessel · Customs Status Update", role: .vesselOperator) { p in AnyView(VesselCustomsStatusUpdateScreen(theme: p)) },
+            .init(id: "Vesl770", title: "Vessel · ETA Prediction", role: .vesselOperator) { p in AnyView(VesselETAPredictionScreen(theme: p)) },
+            .init(id: "Vesl782", title: "Vessel · Dwell Analysis", role: .vesselOperator) { p in AnyView(VesselDwellAnalysisScreen(theme: p)) },
+            .init(id: "Vesl816", title: "Vessel · Top Shippers", role: .vesselOperator) { p in AnyView(VesselTopShippersScreen(theme: p)) },
+            .init(id: "Vesl820", title: "Vessel · Reefer Pre-Cool", role: .vesselOperator) { p in AnyView(VesselReeferPreCoolScreen(theme: p)) },
+            .init(id: "Vesl821", title: "Vessel · Reefer Alert Console", role: .vesselOperator) { p in AnyView(VesselReeferAlertConsoleScreen(theme: p)) },
+            .init(id: "Vesl735", title: "Vessel · Demurrage Alerts", role: .vesselOperator) { p in AnyView(VesselDemurrageAlertsScreen(theme: p)) },
+            .init(id: "Vesl689", title: "Vessel · Network Disruption", role: .vesselOperator) { p in AnyView(VesselNetworkDisruptionScreen(theme: p)) },
+            .init(id: "Vesl802", title: "Vessel · Claim Payments", role: .vesselOperator) { p in AnyView(VesselClaimPaymentsScreen(theme: p)) },
+            .init(id: "Vesl804", title: "Vessel · Overcharge Recovery", role: .vesselOperator) { p in AnyView(VesselOverchargeRecoveryScreen(theme: p)) },
+            .init(id: "Vesl805", title: "Vessel · Loss Prevention", role: .vesselOperator) { p in AnyView(VesselLossPreventionScreen(theme: p)) },
+            .init(id: "Vesl809", title: "Vessel · Dispute Resolution", role: .vesselOperator) { p in AnyView(VesselDisputeResolutionScreen(theme: p)) },
+            .init(id: "Vesl660", title: "Vessel · Live Position", role: .vesselOperator) { p in AnyView(VesselLivePositionScreen(theme: p)) },
+            .init(id: "Vesl661", title: "Vessel · Port Calls", role: .vesselOperator) { p in AnyView(VesselPortCallsScreen(theme: p)) },
+            .init(id: "Vesl674", title: "Vessel · Cost Breakdown", role: .vesselOperator) { p in AnyView(VesselCostBreakdownScreen(theme: p)) },
+            .init(id: "Vesl696", title: "Vessel · Settlement Batch", role: .vesselOperator) { p in AnyView(VesselSettlementBatchScreen(theme: p)) },
+            .init(id: "Vesl784", title: "Vessel · Detention Tracking", role: .vesselOperator) { p in AnyView(VesselDetentionTrackingScreen(theme: p)) },
+            .init(id: "Vesl810", title: "Vessel · Dispute Mediation", role: .vesselOperator) { p in AnyView(VesselDisputeMediationScreen(theme: p)) },
+            .init(id: "Vesl811", title: "Vessel · Claims Analytics", role: .vesselOperator) { p in AnyView(VesselClaimsAnalyticsScreen(theme: p)) },
+            .init(id: "Vesl812", title: "Vessel · Claim Templates", role: .vesselOperator) { p in AnyView(VesselClaimTemplatesScreen(theme: p)) },
+            .init(id: "Vesl670", title: "Vessel · Bunker Prices", role: .vesselOperator) { p in AnyView(VesselBunkerPricesScreen(theme: p)) },
+            .init(id: "Vesl708", title: "Vessel · Shipment CO2", role: .vesselOperator) { p in AnyView(VesselShipmentCO2Screen(theme: p)) },
             .init(id: "Vesl653", title: "Vessel Operator · Booking Detail",      role: .vesselOperator) { p in AnyView(VesselBookingDetailCarrierScreen(theme: p, shipmentId: 0)) },
             .init(id: "Vesl654", title: "Vessel Operator · Crew Certifications",  role: .vesselOperator) { p in AnyView(VesselCrewCertificationsScreen(theme: p)) },
             .init(id: "Vesl655", title: "Vessel Operator · Container Positions",  role: .vesselOperator) { p in AnyView(VesselContainerPositionsScreen(theme: p)) },
@@ -2823,6 +2906,21 @@ struct ContentView: View {
             guard let key = note.object as? String else { return }
             handleDriverMeAction(key: key, userInfo: note.userInfo ?? [:])
         }
+        // Universal hands-free autopilot — mounted ONCE at the root so the
+        // orb press-and-hold activates continuous voice for WHATEVER role
+        // is signed in (driver / ship captain / rail engineer / shipper /
+        // dispatch / …), not just the driver/shipper chat sheets. The
+        // engine drives the shared voice controller; Driver actions route
+        // through `handleeSangAction`, every other role through
+        // `eSangRoleDispatcher`. Floats above the current surface + the
+        // BottomNav. See `EusoAutopilotMount` below this struct.
+        .overlay(alignment: .top) {
+            EusoAutopilotMount(
+                role: session.user?.roleEnum ?? .driver,
+                onDriverAction: { action in handleeSangAction(action) }
+            )
+            .environment(\.palette, register.palette)
+        }
 #if DEBUG
         .sheet(isPresented: $showChrome) {
             chromeSheet
@@ -2868,49 +2966,44 @@ struct ContentView: View {
     private func handleeSangAction(_ action: eSangAction) {
         switch action {
         case .navigate(let route):
-            // Founder fix 2026-05-30: ESANG-triggered navigation on the
-            // Driver surface used to flip the BottomNav tab while the
-            // ESANG coach sheet stayed up — so the driver "navigated"
-            // but landed BEHIND the overlay and never saw the screen.
-            // DISSOLVE the coach sheet first (the same `showeSang = false`
-            // path the close button / tap-out uses), THEN drive the
-            // EXISTING tab swap + Me deep-link so the user lands ON the
-            // destination as the sheet slides away. The `.sheet` dismissal
-            // is animated by SwiftUI; the tab swap is the live push/route
-            // mechanism a BottomNav / Me-row tap already uses — no new
-            // navigation system, no nav sheet.
-            nav.showeSang = false
-            switch route {
-            case .home:
-                nav.currentTab = .home
-                trip.jump(to: .idle)
-            case .trips:
-                nav.currentTab = .trips
-            case .myLoads:
-                nav.currentTab = .wallet
-            case .me:
-                nav.currentTab = .me
-            case .meDetail(let raw):
-                // Switch to the Me tab first — if a sheet is about to
-                // present, the user should see it layered over the right
-                // surface. Then fire the notification carrying the
-                // `MeDetailRoute.rawValue` so `DriverMePane` can flip its
-                // `@State route` and open the sub-sheet. Defer the Me
-                // sub-sheet until the coach sheet has finished dismissing
-                // so the two presentations don't fight (a `.sheet` can
-                // only present one item at a time per presenter).
-                nav.currentTab = .me
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                    NotificationCenter.default.post(
-                        name: .esangOpenMeDetail,
-                        object: raw
-                    )
-                }
+            driverNavigate(to: route)
+        case .navigatePath(let path):
+            // The parser now emits the raw server SPA path for every
+            // `navigate` verb so non-Driver roles can resolve it against
+            // THEIR push-nav registry (E1/E2 fix). On the DRIVER surface
+            // we keep the exact prior behavior: collapse the path onto a
+            // Driver tab via `eSangAutopilot.route(for:)`. An unknown path
+            // is a silent no-op (the reply text already rendered).
+            if let route = eSangAutopilot.route(for: path) {
+                driverNavigate(to: route)
             }
         case .openChat:
             nav.showeSang = true
         case .closeChat:
             nav.showeSang = false
+        case .back:
+            // Driver back: there's no push-nav stack on the Driver
+            // surface (it's a 4-tab + lifecycle state machine), so a
+            // spoken "go back" lands the driver on Home — the universal
+            // safe return target — and dissolves the coach sheet.
+            nav.showeSang = false
+            nav.currentTab = .home
+            trip.jump(to: .idle)
+        case .execute(let key, _):
+            // Broadcast the named action so any Driver surface owning a
+            // matching CTA fires the same code path the button does
+            // (e.g. "accept this load"). Also routes through the
+            // existing Driver MeAction dispatcher for keys it knows.
+            nav.showeSang = false
+            NotificationCenter.default.post(
+                name: .esangExecuteAction, object: key)
+            handleDriverMeAction(key: key, userInfo: [:])
+        case .autopilot:
+            // Enter hands-free autopilot. The orb / surface state machine
+            // owns continuous-listening; broadcast the enter signal.
+            NotificationCenter.default.post(name: .esangEnterAutopilot, object: nil)
+        case .undoAll:
+            NotificationCenter.default.post(name: .esangUndoAll, object: nil)
         case .selectLoad:
             // The iOS shell doesn't yet expose a generic "open load by
             // id" pathway from the root (the per-surface sheet state is
@@ -2926,6 +3019,50 @@ struct ContentView: View {
             // wants to listen can observe the notification and re-run
             // its loader.
             NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
+        }
+    }
+
+    /// Drive a typed Driver `eSangRoute` — extracted from
+    /// `handleeSangAction` so both `.navigate` (legacy typed) and
+    /// `.navigatePath` (raw server path, collapsed via `route(for:)`)
+    /// share one path. Behavior is byte-for-byte the prior `.navigate`
+    /// handler.
+    private func driverNavigate(to route: eSangRoute) {
+        // Founder fix 2026-05-30: ESANG-triggered navigation on the
+        // Driver surface used to flip the BottomNav tab while the
+        // ESANG coach sheet stayed up — so the driver "navigated"
+        // but landed BEHIND the overlay and never saw the screen.
+        // DISSOLVE the coach sheet first (the same `showeSang = false`
+        // path the close button / tap-out uses), THEN drive the
+        // EXISTING tab swap + Me deep-link so the user lands ON the
+        // destination as the sheet slides away.
+        nav.showeSang = false
+        switch route {
+        case .home:
+            nav.currentTab = .home
+            trip.jump(to: .idle)
+        case .trips:
+            nav.currentTab = .trips
+        case .myLoads:
+            nav.currentTab = .wallet
+        case .me:
+            nav.currentTab = .me
+        case .meDetail(let raw):
+            // Switch to the Me tab first — if a sheet is about to
+            // present, the user should see it layered over the right
+            // surface. Then fire the notification carrying the
+            // `MeDetailRoute.rawValue` so `DriverMePane` can flip its
+            // `@State route` and open the sub-sheet. Defer the Me
+            // sub-sheet until the coach sheet has finished dismissing
+            // so the two presentations don't fight (a `.sheet` can
+            // only present one item at a time per presenter).
+            nav.currentTab = .me
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+                NotificationCenter.default.post(
+                    name: .esangOpenMeDetail,
+                    object: raw
+                )
+            }
         }
     }
 
@@ -3383,6 +3520,316 @@ struct ContentView: View {
         }
     }
 #endif
+}
+
+// MARK: - Universal hands-free autopilot
+//
+// Founder direction (2026-06-02):
+//   > autopilot has to especially work when user in service meaning
+//   > drivers, ship captains, rail etc — every user role type,
+//   > especially the ones who have to operate.
+//
+// ONE role-agnostic activation path, mounted once at the ContentView
+// root, so every signed-in role gets identical press-and-hold autopilot.
+// The orb long-press (DesignSystem.BottomNav) latches
+// `eSangAutopilot.pendingAutopilotActivation` and posts
+// `.esangEnterAutopilot`; `EusoAutopilotMount` (the overlay below)
+// listens for both — the live notification AND the pending latch in its
+// own `.onAppear` — and drives `EusoAutopilotEngine`.
+//
+// The engine runs a continuous voice loop on the SHARED
+// `eSangVoiceInputController`: it listens, ships each final transcript to
+// `esang.chat`, parses the reply for `<<<ACTION:…>>>` tokens, dispatches
+// them to the CURRENT role (Driver via the injected `onDriverAction`
+// closure; every other role via `eSangRoleDispatcher.dispatch`), then
+// re-arms the mic for the next command — until the user taps the HUD's
+// stop control or `.esangExitAutopilot` is posted.
+
+/// Continuous hands-free voice loop shared by every role.
+@MainActor
+final class EusoAutopilotEngine: ObservableObject {
+
+    /// `true` while autopilot is live (HUD visible, mic looping).
+    @Published var isActive: Bool = false
+    /// Last final transcript ESANG heard — surfaced in the HUD so the
+    /// operator gets visible confirmation their command registered.
+    @Published var lastHeard: String = ""
+    /// Human status line for the HUD ("Listening…", "Thinking…", a denial
+    /// reason, or an error).
+    @Published var statusLine: String = "Listening…"
+
+    /// Shared voice pipeline (Speech + AVAudioEngine). Same controller
+    /// type the chat composers use, so the voice path terminates at the
+    /// same `esang.chat` backend.
+    let voice = eSangVoiceInputController()
+
+    /// Role the loop dispatches against. Set on `activate`.
+    private var role: EusoRole = .driver
+    /// Driver dispatch is owned by ContentView (`nav`/`trip`); the engine
+    /// calls back into it for the Driver role. Non-driver roles go through
+    /// `eSangRoleDispatcher`.
+    private var onDriverAction: ((eSangAction) -> Void)?
+    /// `true` between shipping a transcript to ESANG and the dispatch
+    /// settling — so the idle-watcher doesn't re-arm mid-request.
+    private var awaitingReply: Bool = false
+    /// Watches the voice controller returning to idle. The mic can finalize
+    /// with an EMPTY transcript (the operator paused before speaking, or the
+    /// utterance was unintelligible) — in that case `onFinalTranscript`
+    /// never fires, so without this the hands-free loop would die after one
+    /// silent cycle. We re-arm whenever the controller idles while autopilot
+    /// is live and we're not mid-request.
+    private var statusObserver: AnyCancellable?
+
+    /// Begin the continuous loop for `role`. Idempotent — a second
+    /// activation while already active is ignored.
+    func activate(role: EusoRole, onDriverAction: @escaping (eSangAction) -> Void) {
+        self.role = role
+        self.onDriverAction = onDriverAction
+        guard !isActive else { return }
+        isActive = true
+        lastHeard = ""
+        statusLine = "Listening…"
+        // Hands-free: auto-finalize a command after a short pause, since
+        // there's no manual "stop" tap in autopilot. The chat composers
+        // leave this nil and keep tap-to-stop.
+        voice.silenceAutoStopInterval = 2.0   // 2026-06-03 — was 1.6, too eager (clipped commands)
+        awaitingReply = false
+        // Each final transcript → chat → parse → dispatch → re-listen.
+        voice.onFinalTranscript = { [weak self] transcript in
+            Task { @MainActor in self?.handleTranscript(transcript) }
+        }
+        // Defer the first listen a beat: if a chat coach sheet was up when
+        // autopilot was entered, it tears down ITS mic + audio session on
+        // the same notification. Letting that settle before we arm our own
+        // session avoids the two controllers fighting over AVAudioSession.
+        // We install the idle-watcher only AFTER the first listen so the
+        // publisher's immediate `.idle` emission (on subscribe) can't open
+        // the mic inside the protective window.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            guard let self, self.isActive else { return }
+            self.startListening()
+            self.installIdleWatcher()
+        }
+    }
+
+    /// Re-arm after a SILENT finalize (empty transcript delivers no
+    /// `onFinalTranscript`, so the loop would otherwise stall). When the
+    /// controller returns to idle while we're live and not mid-request,
+    /// open the mic again. Installed after the first listen so the
+    /// publisher's replay-on-subscribe `.idle` can't fire prematurely.
+    private func installIdleWatcher() {
+        guard isActive else { return }
+        statusObserver = voice.$status
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] status in
+                guard let self, self.isActive, !self.awaitingReply else { return }
+                if status == .idle && !self.voice.isRecording {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        guard self.isActive, !self.awaitingReply,
+                              !self.voice.isRecording else { return }
+                        self.startListening()
+                    }
+                }
+            }
+    }
+
+    /// Stop the loop, release the mic, drop the HUD.
+    func deactivate() {
+        guard isActive else { return }
+        isActive = false
+        awaitingReply = false
+        statusObserver?.cancel()
+        statusObserver = nil
+        voice.onFinalTranscript = nil
+        voice.silenceAutoStopInterval = nil
+        voice.cancel()
+        NotificationCenter.default.post(name: .esangExitAutopilot, object: nil)
+    }
+
+    /// Arm the mic for the next utterance (no-op if already recording or
+    /// autopilot was just torn down).
+    private func startListening() {
+        guard isActive else { return }
+        statusLine = "Listening…"
+        // `toggle()` starts when idle. If a previous cycle left it
+        // mid-finalize, the controller drains before responding.
+        if !voice.isRecording { voice.toggle() }
+        // Surface a permission denial honestly instead of a silent loop.
+        if case .denied(let reason) = voice.status {
+            statusLine = reason
+        }
+    }
+
+    private func handleTranscript(_ transcript: String) {
+        let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard isActive, !text.isEmpty else {
+            // Empty utterance — just re-arm so the operator can try again.
+            if isActive { startListening() }
+            return
+        }
+        lastHeard = text
+        statusLine = "Thinking…"
+        // Guard the idle-watcher from re-arming the mic while the ESANG
+        // round-trip is in flight; cleared after the dispatch settles.
+        awaitingReply = true
+        let dispatchRole = role
+        let driverAction = onDriverAction
+        Task {
+            var reply = ""
+            do {
+                // 2026-06-03 — AUTOPILOT FIX. The voice command was being sent
+                // raw to esang.chat (the safety COACH prompt), which just chats
+                // ("No…") and never emits the <<<ACTION:…>>> control tokens the
+                // dispatcher needs — so autopilot "did nothing". Wrap the
+                // transcript in an explicit autopilot directive so the model
+                // drives the app. (Belt-and-suspenders for the server prompt;
+                // the matching server-side autopilot.* branch lands separately.)
+                let piloted = """
+                [EUSOTRIP AUTOPILOT] You are ESANG driving the app hands-free for a \(dispatchRole.rawValue). The operator spoke the command below. Reply with a SHORT spoken confirmation (under 12 words), then the EXACT control tokens to execute it — emit them literally, one per action, using this grammar:
+                <<<ACTION:navigate:/PATH>>>  — drive the screen there. Valid PATHs include /home /loads /me /trips /wallet /settlements /compliance /marketplace /dispatch/planner /shipper/settlements /rail/marketplace /vessel/bookings plus any visible tab name.
+                <<<ACTION:back>>>            — go back one screen.
+                Rules: NEVER refuse a navigation request; if the exact screen is unclear pick the closest tab and STILL emit a navigate token. Do not describe the tokens.
+                Operator command: \(text)
+                """
+                let resp = try await EusoTripAPI.shared.esang.chat(
+                    message: piloted,
+                    currentPage: "autopilot.\(dispatchRole.rawValue)",
+                    loadId: nil
+                )
+                reply = resp.message
+            } catch {
+                reply = "I couldn't reach ESANG just now — say that again and I'll retry."
+            }
+            let (_, actions) = eSangAutopilot.parse(reply)
+            await MainActor.run {
+                guard self.isActive else { return }
+                // Dispatch each parsed action to the CURRENT role. Driver
+                // uses the ContentView-owned typed handler; every other
+                // role resolves through the role dispatcher (which posts
+                // the right push-nav swap / back / execute notification).
+                for (idx, action) in actions.enumerated() {
+                    let delay = Double(idx) * 0.20
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                        guard self.isActive else { return }
+                        if dispatchRole == .driver {
+                            driverAction?(action)
+                        } else {
+                            eSangRoleDispatcher.dispatch(
+                                action,
+                                role: dispatchRole,
+                                dismissSheet: {}
+                            )
+                        }
+                    }
+                }
+                // Re-arm the mic for the next command after the actions
+                // settle, so autopilot stays hands-free across a sequence.
+                let reArm = Double(max(actions.count, 1)) * 0.20 + 0.35
+                DispatchQueue.main.asyncAfter(deadline: .now() + reArm) {
+                    self.awaitingReply = false
+                    guard self.isActive else { return }
+                    self.startListening()
+                }
+            }
+        }
+    }
+}
+
+/// Root-mounted overlay that owns the autopilot engine, listens for the
+/// universal enter/exit signals (live + pending latch), and renders the
+/// "ESANG is listening… (autopilot)" HUD. Mounted ONCE in ContentView so
+/// it works for whatever role is signed in.
+private struct EusoAutopilotMount: View {
+    /// Current signed-in role — drives which dispatch path the engine uses.
+    let role: EusoRole
+    /// Driver dispatch closure (ContentView's `handleeSangAction`).
+    let onDriverAction: (eSangAction) -> Void
+
+    @StateObject private var engine = EusoAutopilotEngine()
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            if engine.isActive {
+                hud
+                    .padding(.top, Device.safeTop + Space.s2)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            }
+        }
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: engine.isActive)
+        // Live in-session trigger (orb hold while overlay already mounted,
+        // or a chat reply carrying <<<ACTION:autopilot>>>). The overlay is
+        // always mounted at the root, so this is the PRIMARY activation
+        // path; clear the pending latch so it can't double-fire later.
+        .onReceive(NotificationCenter.default.publisher(for: .esangEnterAutopilot)) { _ in
+            _ = eSangAutopilot.consumePendingAutopilotActivation()
+            engine.activate(role: role, onDriverAction: onDriverAction)
+        }
+        // Allow any surface to cancel autopilot.
+        .onReceive(NotificationCenter.default.publisher(for: .esangExitAutopilot)) { _ in
+            if engine.isActive { engine.deactivate() }
+        }
+        // Pending-latch path: the orb long-press may have fired before this
+        // overlay subscribed (it presents a frame after the press). Consume
+        // the latch on appear so a hold that beat the observer still arms.
+        .onAppear {
+            if eSangAutopilot.consumePendingAutopilotActivation() {
+                engine.activate(role: role, onDriverAction: onDriverAction)
+            }
+        }
+        // Re-check the latch when the role changes (surface swap remounts).
+        .onChange(of: role) { _, _ in
+            if eSangAutopilot.consumePendingAutopilotActivation() {
+                engine.activate(role: role, onDriverAction: onDriverAction)
+            }
+        }
+    }
+
+    /// Minimal listening HUD. A pulsing orb-tinted capsule with the live
+    /// status + last-heard line and a stop control. Tapping anywhere on it
+    /// (or the stop glyph) ends autopilot.
+    private var hud: some View {
+        HStack(spacing: Space.s3) {
+            // Orb state tracks the engine's published status (which flips
+            // between "Listening…" and "Thinking…" as each command cycles)
+            // rather than reading the non-observed voice flag directly.
+            OrbeSang(state: engine.statusLine == "Thinking…" ? .thinking : .listening,
+                     diameter: 28)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("ESANG · Autopilot")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Text(engine.lastHeard.isEmpty ? engine.statusLine : engine.lastHeard)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: Space.s2)
+            Image(systemName: "stop.circle.fill")
+                .font(.system(size: 22))
+                .foregroundStyle(Brand.magenta)
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s2)
+        .background(
+            Capsule(style: .continuous)
+                .fill(.regularMaterial)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .stroke(LinearGradient.diagonal.opacity(0.55), lineWidth: 1)
+                )
+                .shadow(color: Brand.blue.opacity(0.30), radius: 16, x: -4, y: 4)
+                .shadow(color: Brand.magenta.opacity(0.30), radius: 16, x: 4, y: 4)
+        )
+        .padding(.horizontal, Space.s4)
+        .contentShape(Capsule())
+        .onTapGesture { engine.deactivate() }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("ESANG autopilot is listening. \(engine.lastHeard)")
+        .accessibilityHint("Double tap to stop autopilot.")
+    }
 }
 
 // MARK: - Previews

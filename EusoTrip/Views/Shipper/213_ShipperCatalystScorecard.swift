@@ -33,7 +33,7 @@
 //                line falls back to "DOT {N}" only until backend
 //                extends.
 //    EUSO-2111 — Equipment-type filter chips (Tanker/Reefer/Flatbed)
-//                have no backend-derived counts. They paint "—" until
+//                have no backend-derived counts. They paint "-" until
 //                an `equipmentType` join ships.
 //
 //  Doctrine refs: §2 LOADS-tab nav (handled by ContentView); §3
@@ -118,11 +118,11 @@ final class ShipperCatalystScorecardStore: ObservableObject {
         /// On-time formatted as "%5.1f%%" — but iOS backend ships an
         /// Int 0–100, so render plainly.
         var onTimeFormatted: String {
-            totalLoads > 0 ? "\(onTimeRate)%" : "—"
+            totalLoads > 0 ? "\(onTimeRate)%" : "-"
         }
 
         var completionFormatted: String {
-            guard totalLoads > 0 else { return "—" }
+            guard totalLoads > 0 else { return "-" }
             let pct = Double(delivered) / Double(totalLoads) * 100.0
             return String(format: "%.0f%%", pct)
         }
@@ -327,7 +327,7 @@ struct ShipperCatalystScorecard: View {
         if case .loaded(let merged) = store.state {
             return "\(merged.count) CARRIERS · \(store.favoritesCount) FAVORITED"
         }
-        return "—"
+        return "-"
     }
 
     private var counterAccessibility: String {
@@ -371,7 +371,7 @@ struct ShipperCatalystScorecard: View {
             EusoEmptyState(
                 systemImage: "rosette",
                 title: "No carrier history yet",
-                subtitle: "Once catalysts start delivering your loads, their scorecards land here — letter grades, on-time %, and composite ranking.",
+                subtitle: "Once catalysts start delivering your loads, their scorecards land here, letter grades, on-time % and composite ranking.",
                 comingSoon: false
             )
             .padding(.horizontal, Space.s5)
@@ -409,7 +409,7 @@ struct ShipperCatalystScorecard: View {
         case .tanker, .reefer, .flatbed:
             // EUSO-2111 — equipment classification not yet shipped from
             // backend. Filter falls back to all rows so the user still
-            // sees data; the chip count stays "—" to signal the gap.
+            // sees data; the chip count stays "-" to signal the gap.
             return rows
         }
     }
@@ -442,7 +442,7 @@ struct ShipperCatalystScorecard: View {
             kpiCell(label: "ON-TIME AVG",
                     value: "\(avgOnTime)%",
                     valueStyle: .neutral,
-                    trail: avgOnTime > 0 ? "rolling \(periodWindowLabel)" : "—",
+                    trail: avgOnTime > 0 ? "rolling \(periodWindowLabel)" : "-",
                     trailColor: palette.textSecondary,
                     showStar: false)
             kpiDivider
@@ -479,7 +479,7 @@ struct ShipperCatalystScorecard: View {
         case 0.88..<0.92: return "A−"
         case 0.84..<0.88: return "B+"
         case 0.78..<0.84: return "B"
-        default: return c > 0 ? "B−" : "—"
+        default: return c > 0 ? "B−" : "-"
         }
     }
 
@@ -532,9 +532,9 @@ struct ShipperCatalystScorecard: View {
         let chips: [(ScorecardFilter, String)] = [
             (.all,       "\(allCount)"),
             (.favorites, "\(favCount)"),
-            (.tanker,    "—"),
-            (.reefer,    "—"),
-            (.flatbed,   "—")
+            (.tanker,    "-"),
+            (.reefer,    "-"),
+            (.flatbed,   "-")
         ]
         return ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
@@ -1044,10 +1044,10 @@ private struct CatalystDetailSheet: View {
     private var periodCard: some View {
         sectionCard(title: "THIS WINDOW") {
             VStack(spacing: 6) {
-                kvRow("Loads", value: row.totalLoads > 0 ? "\(row.totalLoads)" : "—")
-                kvRow("Delivered", value: row.totalLoads > 0 ? "\(row.delivered)" : "—")
+                kvRow("Loads", value: row.totalLoads > 0 ? "\(row.totalLoads)" : "-")
+                kvRow("Delivered", value: row.totalLoads > 0 ? "\(row.delivered)" : "-")
                 kvRow("On-time rate", value: row.onTimeFormatted)
-                kvRow("Total spend", value: row.totalSpend > 0 ? formatMoney(row.totalSpend) : "—")
+                kvRow("Total spend", value: row.totalSpend > 0 ? formatMoney(row.totalSpend) : "-")
             }
         }
     }

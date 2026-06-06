@@ -46,27 +46,27 @@ struct RateconTender: View {
     // 052 Figma. Per §13 doctrine + 147th's broker-note pattern, every
     // synthetic fixture constant degrades to a neutral em-dash
     // sentinel. The visible copy on a tender with no live load now
-    // reads as a deliberate "—" instead of a fabricated $1,420 / Gate C
+    // reads as a deliberate "-" instead of a fabricated $1,420 / Gate C
     // line that would mislead the operator into thinking dispatch
     // had wired the tender.
-    private let fallbackTotalNet   = "—"
+    private let fallbackTotalNet   = "-"
     private let fallbackTotalSub   = ""
-    private let fallbackMiles      = "—"
-    private let fallbackRpm        = "—"
+    private let fallbackMiles      = "-"
+    private let fallbackRpm        = "-"
     private let fallbackPremium    = ""
     private let fallbackTenderExp  = ""
-    private let fallbackOrigin     = "—"
-    private let fallbackOriginLine = "—"
-    private let fallbackDest       = "—"
-    private let fallbackDestLine   = "—"
-    private let fallbackLinehaul   = "—"
-    private let fallbackFuelSur    = "—"
-    private let fallbackAccess     = "—"
-    private let fallbackTotal      = "—"
-    private let fallbackBroker     = "—"
-    private let fallbackBrokerNote = "BROKER · — · —"
+    private let fallbackOrigin     = "-"
+    private let fallbackOriginLine = "-"
+    private let fallbackDest       = "-"
+    private let fallbackDestLine   = "-"
+    private let fallbackLinehaul   = "-"
+    private let fallbackFuelSur    = "-"
+    private let fallbackAccess     = "-"
+    private let fallbackTotal      = "-"
+    private let fallbackBroker     = "-"
+    private let fallbackBrokerNote = "BROKER · - · -"
     private let fallbackBrokerGrade = "A+"
-    private let fallbackeSangCopy  = "—"
+    private let fallbackeSangCopy  = "-"
 
     /// Counter-offer button label. When a real load is loaded, suggests
     /// a counter at +5% of the offered rate (rounded to nearest dollar).

@@ -135,7 +135,7 @@ private struct RailReleaseOrderBody: View {
                 title: "Customs · CBP entry",
                 detail: "no customs-hold source on detail",
                 state: .unknown,
-                value: "—",
+                value: "-",
                 portGap: true
             ),
             // REAL — railDemurrage rows ($0 due ⇒ cleared).
@@ -155,7 +155,7 @@ private struct RailReleaseOrderBody: View {
                 title: "Freight charges",
                 detail: "no freight-hold source on detail",
                 state: .unknown,
-                value: "—",
+                value: "-",
                 portGap: true
             ),
         ]
@@ -177,7 +177,7 @@ private struct RailReleaseOrderBody: View {
         if let n = detail?.shipmentNumber, !n.isEmpty {
             return origin.isEmpty ? n : "\(n) · \(origin)"
         }
-        return origin.isEmpty ? "—" : origin
+        return origin.isEmpty ? "-" : origin
     }
 
     // MARK: Body
@@ -243,10 +243,6 @@ private struct RailReleaseOrderBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .top) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(.top, 10)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Release order")
                         .font(.system(size: 28, weight: .bold)).tracking(-0.4)
@@ -504,7 +500,7 @@ private struct RailReleaseOrderBody: View {
     }
 
     private var originLine: String {
-        let num = detail?.shipmentNumber ?? "—"
+        let num = detail?.shipmentNumber ?? "-"
         return "Eusorone Technologies (DU) · \(num)"
     }
 
@@ -591,7 +587,7 @@ private struct RailReleaseOrderBody: View {
             _ = try await EusoTripAPI.shared.mutation(
                 "railShipments.updateRailShipmentStatus",
                 input: StatusIn(id: id, newStatus: "in_transit",
-                                notes: "Release order armed — holds cleared, gate-out")) as Empty620
+                                notes: "Release order armed - holds cleared, gate-out")) as Empty620
             releaseDone = true
             await reload()
         } catch {

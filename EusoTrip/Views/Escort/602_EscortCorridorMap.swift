@@ -32,7 +32,7 @@
 //      shipped, the store resolves to `.error` and the screen
 //      surfaces an honest retry banner. No fixture data ever.
 //    • Empty / blank server fields surface as em-dash sentinels
-//      ("—"). A corridor with zero resolved legs folds to `.empty`
+//      ("-"). A corridor with zero resolved legs folds to `.empty`
 //      so the operator sees a deliberate "Corridor not yet routed"
 //      empty state rather than a blank scaffold.
 //    • Header preview-hint passthrough (loadNumber / lane / status)
@@ -86,10 +86,10 @@ struct EscortCorridorMap: View {
 
     private var header: some View {
         let live = corridor.state.value ?? nil
-        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "—"
+        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "-"
         let lane: String = {
             if let live { return "\(live.origin) → \(live.destination)" }
-            return previewLane ?? "—"
+            return previewLane ?? "-"
         }()
         let status = live?.status ?? previewStatus ?? ""
 
@@ -199,11 +199,177 @@ struct EscortCorridorMap: View {
 
     @ViewBuilder
     private func corridorCards(for v: EscortAPI.EscortCorridor) -> some View {
+        corridorMapCard(v)
         legsCard(v)
         milestonesCard(v)
         geofencesCard(v)
         escortVehiclesCard(v)
         permitClearanceCard(v)
+    }
+
+    // MARK: - Corridor map card (in-house HERE NativeMap)
+    //
+    // The canonical surface for this role. Renders the routed corridor
+    // polyline + origin/destination pins + live escort/lead/chase/piloted
+    // positions on the in-house HERE map (`HereLiveMapView` — the escort-
+    // corridor map path). EVERY coordinate is REAL, sourced from the
+    // server's `corridor` block:
+    //
+    //   • polyline / origin / dest ← loads.route JSON + pickup/delivery
+    //     lat/lng (escorts.getCorridor → corridor.polyline / originPin /
+    //     destPin)
+    //   • live positions ← newest location_history fix per escort / lead /
+    //     chase / piloted user (corridor.livePositions)
+    //
+    // Coord-gated (D-maps-basemap doctrine): a point only draws when it is
+    // finite AND not null-island (0,0). When the server projects no real
+    // coordinate yet (route engine hasn't resolved geometry / no GPS fix /
+    // an older envelope without the block), the card surfaces an honest
+    // "awaiting corridor coordinates" seam — NEVER a fabricated route. It
+    // lights up automatically the moment rows populate.
+
+    @ViewBuilder
+    private func corridorMapCard(_ v: EscortAPI.EscortCorridor) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            sectionHeader("CORRIDOR MAP", icon: "map.fill")
+            if let center = mapCenter(v) {
+                HereLiveMapView(
+                    center: center,
+                    zoom: 7,
+                    interactive: true,
+                    firstPerson: false,
+                    route: polylinePoints(v),
+                    baseLayers: corridorBaseLayers(v),
+                    addOns: .shipperTracking
+                )
+                .frame(height: 240)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+            } else {
+                mapAwaitingSeam
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Honest seam shown until the server projects ≥1 real corridor
+    /// coordinate. No map is drawn — the screen never fabricates a route.
+    private var mapAwaitingSeam: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "scope")
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+                .frame(width: 18, height: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Awaiting corridor coordinates")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("The map draws the routed polyline and live lead / chase positions once dispatch geocodes the route and the escort vehicles report a GPS fix. Pull to refresh.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+    }
+
+    // MARK: - Corridor map data plumbing (REAL coords only)
+
+    /// True only for a finite, non-null-island fix. The sole coordinate
+    /// sentinel on this screen (per D-maps-basemap: (0,0) gate).
+    private func validFix(_ lat: Double, _ lng: Double) -> Bool {
+        lat.isFinite && lng.isFinite && !(lat == 0 && lng == 0)
+    }
+
+    /// Routed corridor polyline, coord-gated. Empty when no real geometry.
+    private func polylinePoints(_ v: EscortAPI.EscortCorridor) -> [HereLatLng] {
+        guard let geo = v.corridor else { return [] }
+        return geo.polyline
+            .filter { validFix($0.lat, $0.lng) }
+            .map { HereLatLng($0.lat, $0.lng) }
+    }
+
+    /// Live escort / lead / chase / piloted markers, coord-gated. The pin
+    /// kind reads `.truck` for live vehicles (canonical live-puck kind);
+    /// id = vehicleId so a tap surfaces the detail card.
+    private func liveMarkers(_ v: EscortAPI.EscortCorridor) -> [HereMarker] {
+        guard let geo = v.corridor else { return [] }
+        return geo.livePositions.compactMap { p in
+            guard validFix(p.lat, p.lng) else { return nil }
+            return HereMarker(
+                at: HereLatLng(p.lat, p.lng),
+                kind: .truck,
+                label: p.role.uppercased(),
+                id: p.vehicleId
+            )
+        }
+    }
+
+    /// Origin / destination pins, coord-gated.
+    private func endpointMarkers(_ v: EscortAPI.EscortCorridor) -> [HereMarker] {
+        guard let geo = v.corridor else { return [] }
+        var out: [HereMarker] = []
+        if let o = geo.originPin, validFix(o.lat, o.lng) {
+            out.append(HereMarker(at: HereLatLng(o.lat, o.lng), kind: .pickup, label: v.origin))
+        }
+        if let d = geo.destPin, validFix(d.lat, d.lng) {
+            out.append(HereMarker(at: HereLatLng(d.lat, d.lng), kind: .delivery, label: v.destination))
+        }
+        return out
+    }
+
+    /// Base layers for the corridor map: routed polyline + endpoint pins +
+    /// live vehicle pucks. Only emits layers that carry ≥1 real point.
+    private func corridorBaseLayers(_ v: EscortAPI.EscortCorridor) -> [HereMapLayer] {
+        var out: [HereMapLayer] = []
+        let poly = polylinePoints(v)
+        if poly.count >= 2 {
+            out.append(.route(polyline: poly, colorHex: "#1473FF"))
+        }
+        let pins = endpointMarkers(v) + liveMarkers(v)
+        if !pins.isEmpty {
+            out.append(.markers(pins))
+        }
+        return out
+    }
+
+    /// Camera center: prefer the bounds midpoint, else the first live fix,
+    /// else the first polyline point, else the origin pin. Returns `nil`
+    /// only when NO real coordinate exists (→ awaiting seam, no map).
+    private func mapCenter(_ v: EscortAPI.EscortCorridor) -> HereLatLng? {
+        guard let geo = v.corridor else { return nil }
+        if let b = geo.bounds {
+            let mLat = (b.neLat + b.swLat) / 2
+            let mLng = (b.neLng + b.swLng) / 2
+            if validFix(mLat, mLng) { return HereLatLng(mLat, mLng) }
+        }
+        if let live = geo.livePositions.first(where: { validFix($0.lat, $0.lng) }) {
+            return HereLatLng(live.lat, live.lng)
+        }
+        if let p = geo.polyline.first(where: { validFix($0.lat, $0.lng) }) {
+            return HereLatLng(p.lat, p.lng)
+        }
+        if let o = geo.originPin, validFix(o.lat, o.lng) {
+            return HereLatLng(o.lat, o.lng)
+        }
+        return nil
     }
 
     // MARK: - Legs card
@@ -237,7 +403,7 @@ struct EscortCorridorMap: View {
     private func legRow(_ leg: EscortAPI.CorridorLeg) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
-                Text(leg.label.isEmpty ? "—" : leg.label)
+                Text(leg.label.isEmpty ? "-" : leg.label)
                     .font(.system(size: 12, weight: .heavy)).tracking(0.4)
                     .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: 0)
@@ -246,14 +412,14 @@ struct EscortCorridorMap: View {
                 }
             }
             HStack(spacing: 6) {
-                Text(leg.origin.isEmpty ? "—" : leg.origin)
+                Text(leg.origin.isEmpty ? "-" : leg.origin)
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
                 Image(systemName: "arrow.right")
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(palette.textTertiary)
-                Text(leg.destination.isEmpty ? "—" : leg.destination)
+                Text(leg.destination.isEmpty ? "-" : leg.destination)
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -346,7 +512,7 @@ struct EscortCorridorMap: View {
                 .foregroundStyle(glyphStyle)
                 .frame(width: 18, height: 18)
             VStack(alignment: .leading, spacing: 2) {
-                Text(m.label.isEmpty ? "—" : m.label)
+                Text(m.label.isEmpty ? "-" : m.label)
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                 if let note = m.note, !note.isEmpty {
@@ -420,7 +586,7 @@ struct EscortCorridorMap: View {
                 .foregroundStyle(breached
                                  ? AnyShapeStyle(Brand.danger)
                                  : AnyShapeStyle(LinearGradient.diagonal))
-            Text(g.label.isEmpty ? "—" : g.label)
+            Text(g.label.isEmpty ? "-" : g.label)
                 .font(.system(size: 10, weight: .heavy)).tracking(0.3)
                 .foregroundStyle(fg)
         }
@@ -465,10 +631,10 @@ struct EscortCorridorMap: View {
                 .frame(width: 18, height: 18)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(ev.role.isEmpty ? "—" : ev.role.uppercased())
+                    Text(ev.role.isEmpty ? "-" : ev.role.uppercased())
                         .font(.system(size: 10, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text(ev.vehicleId.isEmpty ? "—" : ev.vehicleId)
+                    Text(ev.vehicleId.isEmpty ? "-" : ev.vehicleId)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                 }
@@ -549,7 +715,7 @@ struct EscortCorridorMap: View {
     private var loadingCard: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             sectionHeader("LOADING", icon: "arrow.clockwise")
-            Text("Pulling the corridor route, milestones, and lead/chase pairing…")
+            Text("Pulling the corridor route, milestones and lead/chase pairing…")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -638,12 +804,12 @@ struct EscortCorridorMap: View {
     }
 
     private func coverage(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         return "\(Int((v * 100).rounded()))%"
     }
 
     private func milesString(_ v: Double) -> String {
-        guard v > 0 else { return "—" }
+        guard v > 0 else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
@@ -654,7 +820,7 @@ struct EscortCorridorMap: View {
     /// Header KPI display for total miles. `nil` / 0 fold to em-dash
     /// (no fabricated zero).
     private func milesDisplay(_ v: Double?) -> String {
-        guard let v, v > 0 else { return "—" }
+        guard let v, v > 0 else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
@@ -662,7 +828,7 @@ struct EscortCorridorMap: View {
     }
 
     private func clearanceString(_ ft: Double) -> String {
-        guard ft > 0 else { return "—" }
+        guard ft > 0 else { return "-" }
         let whole = Int(ft)
         let inches = Int(((ft - Double(whole)) * 12).rounded())
         if inches == 0 { return "\(whole)'" }
@@ -864,8 +1030,8 @@ private func escortNavTrailing_602() -> [NavSlot] {
     EscortCorridorMapScreen(
         theme: Theme.dark,
         assignmentId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewStatus: nil
     )
     .environmentObject(EusoTripSession())
@@ -876,8 +1042,8 @@ private func escortNavTrailing_602() -> [NavSlot] {
     EscortCorridorMapScreen(
         theme: Theme.light,
         assignmentId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewStatus: nil
     )
     .environmentObject(EusoTripSession())

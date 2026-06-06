@@ -193,9 +193,6 @@ private struct VesselIMDGHazmatManifestBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: 12) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("DG manifest")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -225,10 +222,10 @@ private struct VesselIMDGHazmatManifestBody: View {
                 diamondPlacard(classNumber: cls, color: placard)
                     .frame(width: 86, height: 100, alignment: .center)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(r.unNumber.map { "UN \($0)" } ?? "UN —")
+                    Text(r.unNumber.map { "UN \($0)" } ?? "UN -")
                         .font(.system(size: 11, weight: .bold, design: .monospaced)).tracking(0.6)
                         .foregroundStyle(palette.textSecondary)
-                    Text((r.properShippingName ?? "—").uppercased())
+                    Text((r.properShippingName ?? "-").uppercased())
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1).minimumScaleFactor(0.7)
@@ -446,7 +443,7 @@ private struct VesselIMDGHazmatManifestBody: View {
                 isManifested
                     ? AnyShapeStyle(Brand.success)
                     : AnyShapeStyle(LinearGradient.primary))
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .opacity(marking ? 0.6 : 1.0)
             .disabled(marking || isManifested)
 
@@ -459,8 +456,8 @@ private struct VesselIMDGHazmatManifestBody: View {
                     .frame(width: 124, height: 48)
             }
             .background(palette.bgCardSoft)
-            .overlay(Capsule().strokeBorder(palette.borderFaint))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
     }
 
@@ -483,10 +480,10 @@ private struct VesselIMDGHazmatManifestBody: View {
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 VStack(alignment: .leading, spacing: Space.s2) {
-                    emsRow("F-E", "Fire schedule — flammable liquid")
-                    emsRow("S-E", "Spillage schedule — recover spillage")
+                    emsRow("F-E", "Fire schedule - flammable liquid")
+                    emsRow("S-E", "Spillage schedule - recover spillage")
                     if let mp = r?.marinePollutant, mp != 0 {
-                        emsRow("MP", "Marine pollutant — contain runoff")
+                        emsRow("MP", "Marine pollutant - contain runoff")
                     }
                 }
                 Spacer()

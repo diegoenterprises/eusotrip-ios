@@ -80,7 +80,7 @@ private struct ELDBody: View {
                     LifecycleRow(label: "Driver",          value: dashIfEmpty(d.driverName))
                     LifecycleRow(label: "Provider",        value: d.provider.uppercased())
                     LifecycleRow(label: "Status",          value: d.dutyStatus.uppercased())
-                    LifecycleRow(label: "HOS remaining",    value: d.hosRemainingHours.map { String(format: "%.1f hr", $0) } ?? "—")
+                    LifecycleRow(label: "HOS remaining",    value: d.hosRemainingHours.map { String(format: "%.1f hr", $0) } ?? "-")
                     LifecycleRow(label: "Connectivity",     value: dashIfEmpty(d.connectivity?.uppercased()))
                     LifecycleRow(label: "Last ping",        value: humanISO(d.lastPing))
                     LifecycleRow(label: "Last location",    value: dashIfEmpty(d.lastLocation))

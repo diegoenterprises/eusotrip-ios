@@ -310,7 +310,7 @@ struct SOSEmergencySheet: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(e.title) — \(e.subtitle)")
+        .accessibilityLabel("\(e.title) - \(e.subtitle)")
         .accessibilityAddTraits(active ? .isSelected : [])
     }
 
@@ -499,7 +499,7 @@ struct SOSEmergencySheet: View {
             Image(systemName: "phone.fill")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(LinearGradient.diagonal)
-            Text("Life-threatening? Call 911 first — then send this alert so dispatch can track you.")
+            Text("Life-threatening? Call 911 first, then send this alert so dispatch can track you.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.leading)
@@ -522,7 +522,7 @@ struct SOSEmergencySheet: View {
             Image(systemName: "cpu")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(LinearGradient.diagonal)
-            Text("After the broadcast lands, we'll open Zeun Mechanics so you can file the full breakdown report — VIN, fault codes, photos, telemetry. A mobile mechanic is matched from there.")
+            Text("After the broadcast lands, we'll open Zeun Mechanics so you can file the full breakdown report, VIN, fault codes, photos, telemetry. A mobile mechanic is matched from there.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.leading)

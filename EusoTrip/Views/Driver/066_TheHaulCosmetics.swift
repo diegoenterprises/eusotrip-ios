@@ -137,7 +137,7 @@ struct TheHaulCosmetics: View {
         EusoEmptyState(
             systemImage: "sparkles",
             title: "No cosmetics in catalog",
-            subtitle: "The server didn't return any avatars, frames, or titles. Pull to refresh once your profile is set up."
+            subtitle: "The server didn't return any avatars, frames or titles. Pull to refresh once your profile is set up."
         )
     }
 

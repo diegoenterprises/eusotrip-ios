@@ -66,11 +66,11 @@ struct AtGateAwaitingDock: View {
 
     // MARK: - Figma-verbatim fallback (used only while the backend
     // hasn't hydrated a real load — matches the 2026-04-24 frame).
-    private let fallbackFacility = "—"
-    private let fallbackLoadID   = "—"
+    private let fallbackFacility = "-"
+    private let fallbackLoadID   = "-"
     private let fallbackCommod   = "UN1005 · NH3 · tanker"
-    private let fallbackGuard    = "—"
-    private let fallbackBadge    = "—"
+    private let fallbackGuard    = "-"
+    private let fallbackBadge    = "-"
     private let fallbackApptDrift = "-6 min"
     private let fallbackApptSched = "vs. scheduled 09:00 CDT"
     private let fallbackBayGate   = "Bay 03 · gate 2"
@@ -119,7 +119,7 @@ struct AtGateAwaitingDock: View {
                 facilityStrip
                 queueCard
                 metadataGrid
-                if loadIDText != "—" { gateCredentialCard }
+                if loadIDText != "-" { gateCredentialCard }
                 esangIdleWatchCard
                 footerActions
                 Color.clear.frame(height: 96)
@@ -350,7 +350,7 @@ struct AtGateAwaitingDock: View {
                 )
                 Spacer()
             }
-            Text("Show to guard or scan at reader — pickup credential for \(loadIDText)")
+            Text("Show to guard or scan at reader - pickup credential for \(loadIDText)")
                 .font(EType.mono(.micro)).tracking(0.4)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)

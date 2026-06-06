@@ -102,23 +102,23 @@ private struct RailSettlementSummaryBody: View {
     }
 
     private func formatK(_ v: Double) -> String {
-        if v == 0 { return "—" }
+        if v == 0 { return "-" }
         if v >= 1_000 { return String(format: "$%.1fK", v / 1000) }
         return String(format: "$%.0f", v)
     }
     private var grossLabel: String  { formatK(grossTotal) }
     private var settledLabel: String { formatK(settledTotal) }
     private var openLabel: String   { formatK(openTotal) }
-    private var cycleLabel: String  { dashStats?.avgTransitDays.map { "\($0).0d" } ?? "—" }
+    private var cycleLabel: String  { dashStats?.avgTransitDays.map { "\($0).0d" } ?? "-" }
 
     private var periodStatsLine1: String {
         let ships = dashStats?.activeShipments ?? 0
         let cars  = dashStats?.carsInTransit ?? 0
-        guard ships > 0 || cars > 0 else { return "—" }
+        guard ships > 0 || cars > 0 else { return "-" }
         return "\(ships) shipment\(ships == 1 ? "" : "s") · \(cars) car\(cars == 1 ? "" : "s") in transit"
     }
     private var periodStatsLine2: String {
-        let cycle = cycleLabel != "—" ? "avg cycle \(cycleLabel)" : "—"
+        let cycle = cycleLabel != "-" ? "avg cycle \(cycleLabel)" : "-"
         let open  = openCount > 0 ? "\(openCount) open invoice\(openCount == 1 ? "" : "s")" : "no open invoices"
         return "\(cycle) · \(open)"
     }
@@ -282,13 +282,13 @@ private struct RailSettlementSummaryBody: View {
             return s.shipmentNumber ?? "Settlement #\(s.id)"
         }()
         // Split into typed sub-expressions to keep the Swift type-checker fast.
-        let idPart: String = s.shipmentNumber ?? s.loadId.map(String.init) ?? "—"
+        let idPart: String = s.shipmentNumber ?? s.loadId.map(String.init) ?? "-"
         let carPart: String = s.carCount.map { " · \($0) car\($0 == 1 ? "" : "s")" } ?? ""
         let notePart: String = s.notes.map { " · \($0.prefix(16))" } ?? ""
         let sub: String = idPart + carPart + notePart
         let amountStr: String = {
             let v = settlementAmount(s)
-            if v == 0 { return "—" }
+            if v == 0 { return "-" }
             if v >= 1_000 { return String(format: "$%,.0f", v) }
             return String(format: "$%.2f", v)
         }()
@@ -380,8 +380,8 @@ private struct RailSettlementSummaryBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

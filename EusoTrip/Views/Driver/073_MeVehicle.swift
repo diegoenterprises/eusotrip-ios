@@ -562,7 +562,7 @@ struct MeVehicle: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("Real-time odometer and fuel-level readings land once the ELD / telematics integration ships. Until then, this screen shows the vehicle identifiers dispatch assigned — no stub numbers.")
+            Text("Real-time odometer and fuel-level readings land once the ELD / telematics integration ships. Until then, this screen shows the vehicle identifiers dispatch assigned, no stub numbers.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

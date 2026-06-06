@@ -141,7 +141,7 @@ struct eSangMorningBriefCard: View {
                     .frame(height: 14)
                     .opacity(pulse ? 0.85 : 0.55)
             } else {
-                Text("Safety brief syncing with ESANG — try again in a moment.")
+                Text("Safety brief syncing with ESANG, try again in a moment.")
                     .font(EType.body.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
             }
@@ -453,7 +453,7 @@ struct TheHaulWeeklyTile: View {
             return "#\(r) of \(total)"
         }
         if let r = profile?.rank { return "#\(r)" }
-        return "—"
+        return "-"
     }
 
     // MARK: Body
@@ -556,7 +556,7 @@ struct TheHaulWeeklyTile: View {
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(palette.textTertiary)
             if totalMissions == 0 {
-                Text("No active missions — tap to browse")
+                Text("No active missions - tap to browse")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             } else {

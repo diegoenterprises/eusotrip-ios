@@ -187,9 +187,6 @@ private struct VesselReeferMonitoringBody: View {
 
     private var titleRow: some View {
         HStack(alignment: .center) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
             Text("Reefer watch")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
@@ -376,11 +373,11 @@ private struct VesselReeferMonitoringBody: View {
 
         // Open excursion alerts surface first as ALERT rows (ack required).
         for a in alerts.prefix(4) where (a.acknowledged ?? false) == false {
-            let zoneLabel = (a.zone ?? "—").capitalized
-            let temp = a.tempF.map { String(format: "%.1f°", celsius($0)) } ?? "—"
+            let zoneLabel = (a.zone ?? "-").capitalized
+            let temp = a.tempF.map { String(format: "%.1f°", celsius($0)) } ?? "-"
             out.append(ReeferUnit702(
                 band: .alert,
-                title: "\(zoneLabel) — excursion",
+                title: "\(zoneLabel) - excursion",
                 meta: (a.message ?? "deviation above setpoint"),
                 tagText: "ALERT",
                 tempText: temp,
@@ -392,15 +389,15 @@ private struct VesselReeferMonitoringBody: View {
         for key in order {
             guard let z = zones[key] else { continue }
             let c = z.tempC ?? z.tempF.map { ($0 - 32) * 5 / 9 }
-            let temp = c.map { String(format: "%.1f°", $0) } ?? "—"
+            let temp = c.map { String(format: "%.1f°", $0) } ?? "-"
             let status = (z.status ?? "").lowercased()
             let isAlert = status == "critical"
             if isAlert { continue } // already represented by the alert rows
             let isPreCool = status == "precool" || status == "pre_cool"
             out.append(ReeferUnit702(
                 band: isPreCool ? .preCool : .inBand,
-                title: "\(key.capitalized) — \(isPreCool ? "pre-cool verified" : "live")",
-                meta: "\(zoneCode(key)) · \(z.recordedAt.map(shortStamp) ?? "—")",
+                title: "\(key.capitalized) - \(isPreCool ? "pre-cool verified" : "live")",
+                meta: "\(zoneCode(key)) · \(z.recordedAt.map(shortStamp) ?? "-")",
                 tagText: isPreCool ? "PRE-COOL" : "IN BAND",
                 tempText: temp,
                 devText: isPreCool ? "nominal" : "within band"))

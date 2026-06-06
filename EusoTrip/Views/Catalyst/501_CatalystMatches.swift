@@ -399,7 +399,7 @@ struct CatalystMatches: View {
                             .font(.system(size: 10, weight: .heavy)).tracking(0.4)
                             .foregroundStyle(palette.textTertiary)
                         Text("·").foregroundStyle(palette.textTertiary)
-                        Text(row.startedAt.isEmpty ? "—" : "started \(row.startedAt)")
+                        Text(row.startedAt.isEmpty ? "-" : "started \(row.startedAt)")
                             .font(EType.mono(.micro)).tracking(0.3)
                             .foregroundStyle(palette.textTertiary)
                     }
@@ -436,7 +436,7 @@ struct CatalystMatches: View {
                             .font(.system(size: 7, weight: .heavy)).tracking(0.6)
                             .foregroundStyle(palette.textTertiary)
                     } else {
-                        Text("—")
+                        Text("-")
                             .font(EType.bodyStrong)
                             .foregroundStyle(palette.textTertiary)
                     }

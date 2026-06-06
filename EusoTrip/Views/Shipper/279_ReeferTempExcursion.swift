@@ -71,7 +71,7 @@ private struct ReeferBody: View {
                 ForEach(readings.suffix(8), id: \.self) { r in
                     HStack {
                         Text(humanISO(r.timestamp, format: "HH:mm")).font(EType.mono(.micro)).tracking(0.4).foregroundStyle(palette.textTertiary)
-                        Text(r.zone ?? "—").font(EType.caption).foregroundStyle(palette.textSecondary)
+                        Text(r.zone ?? "-").font(EType.caption).foregroundStyle(palette.textSecondary)
                         Spacer(minLength: 0)
                         Text(String(format: "%.1f°F", r.temp))
                             .font(.system(size: 13, weight: .heavy))

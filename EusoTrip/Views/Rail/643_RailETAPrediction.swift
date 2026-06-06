@@ -151,10 +151,6 @@ private struct RailETAPredictionBody: View {
 
     private var titleBlock: some View {
         HStack(alignment: .top, spacing: Space.s3) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
-                .padding(.top, 6)
             Text("ETA prediction")
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
@@ -173,9 +169,9 @@ private struct RailETAPredictionBody: View {
         .padding(.top, Space.s4)
     }
 
-    /// No predictEta model → no confidence number to show. Renders "—" until
+    /// No predictEta model → no confidence number to show. Renders "-" until
     /// the forecast endpoint ships (PORT-GAP) rather than the SVG's mock 82%.
-    private var confidenceText: String { "—" }
+    private var confidenceText: String { "-" }
 
     // MARK: - HERO · map canvas route panel
 
@@ -385,7 +381,7 @@ private struct RailETAPredictionBody: View {
             parts.append(String(format: "est %.0fh", h))
         }
         // PORT-GAP: per-leg confidence% lives on predictEta (absent) — omitted.
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     private func legClock(_ seg: IMSegment643) -> String {
@@ -634,12 +630,26 @@ private struct RouteCanvas643: View {
                 label(destinationLabel, at: CGPoint(x: p2.x, y: p2.y - sy(12)),
                       color: palette.textPrimary, bold: true)
 
-                // Live car-position pin on the arc
-                Circle().fill(Brand.blue.opacity(0.18)).frame(width: 22, height: 22)
-                    .position(livePoint)
-                Circle().fill(LinearGradient.diagonal).frame(width: 10, height: 10)
-                    .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
-                    .position(livePoint)
+                // Live car-position marker — the canonical rail BOXCAR model
+                // from the EusoTrip Animation Design System (Resources/
+                // Animations/Equipment/02_Rail/23_rail_boxcar_anim.svg),
+                // rendered through the in-house native SVG engine and ridden
+                // along the route arc. Replaces the plain position dot (and
+                // any hand-drawn car) with the founder-approved equipment
+                // lockup so the live vehicle reads as a real rail car.
+                Circle().fill(Brand.blue.opacity(0.16)).frame(width: 30, height: 30)
+                    .position(livePoint)   // soft ramp-fence glow under the car
+                Group {
+                    if let boxcarSVG = EquipmentAnimationCache.shared.svg(for: .railBoxcar) {
+                        NativeSVGView(svgString: boxcarSVG)
+                            .frame(width: 58, height: 24)
+                    } else {
+                        // Fallback to the gradient dot if the model can't load.
+                        Circle().fill(LinearGradient.diagonal).frame(width: 10, height: 10)
+                            .overlay(Circle().strokeBorder(Color.white, lineWidth: 1.5))
+                    }
+                }
+                .position(livePoint)
 
                 // ETA callout chip (top center)
                 Text(etaChip)

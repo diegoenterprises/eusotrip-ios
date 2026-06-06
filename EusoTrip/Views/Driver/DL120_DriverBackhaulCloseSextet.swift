@@ -175,7 +175,7 @@ private struct BHCloseBody: View {
                 actionAck = "BOL signed · sig-hash \(resp.signatureHash ?? sigHash) committed · paperwork watch armed."
                 await loadCtx()
             } else {
-                actionError = "BOL sign returned no success flag — reload and try again."
+                actionError = "BOL sign returned no success flag, reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "BOL sign failed: \(err)"
@@ -295,10 +295,10 @@ private struct BHCloseBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .loadingTick2: return "52/72 loaded, 20 pallets left. Forklift cadence steady at 4 ppm — depart on schedule at 06:42 MST."
-            case .loadingTick3: return "Loading complete at 72/72. BOL-PRE-SIGN armed — proceed to dock plate to sign the draft."
+            case .loadingTick2: return "52/72 loaded, 20 pallets left. Forklift cadence steady at 4 ppm, depart on schedule at 06:42 MST."
+            case .loadingTick3: return "Loading complete at 72/72. BOL-PRE-SIGN armed, proceed to dock plate to sign the draft."
             case .bolPreSign:   return "BOL draft loaded. ME taps sign-acknowledge on dock plate; sig-hash commits the BOL."
-            case .bolSigned:    return "BOL signed and verified (0x9F1C). Roll the chain to paperwork — packet-desk watch fires on filing."
+            case .bolSigned:    return "BOL signed and verified (0x9F1C). Roll the chain to paperwork, packet-desk watch fires on filing."
             case .paperwork:    return "BOL filed at packet desk. Submit the POD to advance the chain to closed and stage payout."
             case .closed:       return "Chain closed. POD audit-chained, BOL archived (0x9F1C), $2,128 NET-30 locked. Backhaul complete."
             }

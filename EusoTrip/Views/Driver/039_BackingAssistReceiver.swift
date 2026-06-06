@@ -42,7 +42,7 @@ struct BackingAssistReceiver: View {
     private let fallbackLeft     = "22"
     private let fallbackRight    = "9"
     private let fallbackSupervisor = "Reg Hammond · night supervisor"
-    private let fallbackSupervisorLine = "Two more inches, hold your wheel — scrubber post on the right at ten-thirty."
+    private let fallbackSupervisorLine = "Two more inches, hold your wheel, scrubber post on the right at ten-thirty."
 
     private var dockLabel: String {
         switch ctx.vertical {
@@ -59,10 +59,10 @@ struct BackingAssistReceiver: View {
     private var receiverCity: String {
         // 116th firing M2 retrofit (2026-04-26): replaced fixture
         // fallback "Yara York PA" with the canonical em-dash sentinel.
-        // The screen now renders an honest "—" when the active trip
+        // The screen now renders an honest "-" when the active trip
         // hasn't hydrated yet, never a fabricated city. Doctrine:
         // 0% mock data — sentinel parity with 018/024/038/051/055.
-        activeLoad?.deliveryLocation?.cityState ?? "—"
+        activeLoad?.deliveryLocation?.cityState ?? "-"
     }
 
     var body: some View {

@@ -169,7 +169,7 @@ struct MeSafetyScore: View {
         EusoEmptyState(
             systemImage: "shield",
             title: "No safety activity yet",
-            subtitle: "Your score will appear after your first roadside inspection, completed run, or training module. Pull to refresh anytime."
+            subtitle: "Your score will appear after your first roadside inspection, completed run or training module. Pull to refresh anytime."
         )
     }
 
@@ -521,7 +521,7 @@ struct MeSafetyScore: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("Scores update from roadside inspections, incidents, vehicle care checks, and training completions. Dispatch, catalysts, and FMCSA-reporting tools see the same number — this is the real value, not a preview.")
+            Text("Scores update from roadside inspections, incidents, vehicle care checks and training completions. Dispatch, catalysts and FMCSA-reporting tools see the same number. This is the real value, not a preview.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

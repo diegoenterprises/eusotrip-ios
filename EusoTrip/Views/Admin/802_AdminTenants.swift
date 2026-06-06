@@ -45,7 +45,7 @@
 //      detail screen + confirmation flow lands. Doctrine §11
 //      (no fake data) is preserved either way.
 //    • Empty / blank server fields surface as em-dash sentinels
-//      ("—") — every nullable column on a fresh tenant row (no plan,
+//      ("-") — every nullable column on a fresh tenant row (no plan,
 //      no primary user, no monthly volume, no MRR) renders as a
 //      neutral em-dash, never a fabricated value.
 //
@@ -276,7 +276,7 @@ struct AdminTenants: View {
                 systemImage: "building.2",
                 title: filter == .all ? "No tenants yet" : "No tenants match this filter",
                 subtitle: filter == .all
-                    ? "Once a shipper, carrier, brokerage, or catalyst collective signs up on the platform, they'll appear here in real time."
+                    ? "Once a shipper, carrier, brokerage or catalyst collective signs up on the platform, they'll appear here in real time."
                     : "Try a different status filter, or pull to refresh."
             )
         case .error(let err):
@@ -292,7 +292,7 @@ struct AdminTenants: View {
             // Top: tenant name + status chip
             HStack(alignment: .top, spacing: Space.s3) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(row.name.isEmpty ? "—" : row.name)
+                    Text(row.name.isEmpty ? "-" : row.name)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
@@ -301,7 +301,7 @@ struct AdminTenants: View {
                             .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                             .foregroundStyle(palette.textTertiary)
                     } else {
-                        Text("—")
+                        Text("-")
                             .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                             .foregroundStyle(palette.textTertiary)
                     }
@@ -315,7 +315,7 @@ struct AdminTenants: View {
                 Image(systemName: "person.crop.circle")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(palette.textTertiary)
-                Text(row.primaryUserName ?? "—")
+                Text(row.primaryUserName ?? "-")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -323,7 +323,7 @@ struct AdminTenants: View {
                 Image(systemName: "calendar")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(palette.textTertiary)
-                Text(row.signedUpAt.isEmpty ? "—" : row.signedUpAt)
+                Text(row.signedUpAt.isEmpty ? "-" : row.signedUpAt)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -398,7 +398,7 @@ struct AdminTenants: View {
             style = AnyShapeStyle(palette.tintNeutral)
             fg = palette.textSecondary
         }
-        return Text(label.isEmpty ? "—" : label)
+        return Text(label.isEmpty ? "-" : label)
             .font(.system(size: 9, weight: .heavy)).tracking(0.6)
             .foregroundStyle(fg)
             .padding(.horizontal, 8).padding(.vertical, 4)
@@ -472,10 +472,10 @@ struct AdminTenants: View {
     // MARK: - Helpers
 
     /// Format an optional USD amount to a compact "$1.2k", "$340k",
-    /// "$2.4M" string. Returns "—" when nil so the empty case never
+    /// "$2.4M" string. Returns "-" when nil so the empty case never
     /// renders as "$0" (which would be a fabricated zero).
     private func usd(_ v: Double?) -> String {
-        guard let v = v, v > 0 else { return "—" }
+        guard let v = v, v > 0 else { return "-" }
         if v >= 1_000_000 {
             return String(format: "$%.1fM", v / 1_000_000)
         } else if v >= 1_000 {

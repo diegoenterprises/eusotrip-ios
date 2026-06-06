@@ -35,7 +35,7 @@
 //  Backend gaps surfaced (logged in audit log, no fake data):
 //    EUSO-2126 — `rates.getContractRate(laneId | originState,
 //                destState, equipment)` not yet on iOS API. CONTRACT
-//                column paints "—" pending the contract baseline.
+//                column paints "-" pending the contract baseline.
 //    EUSO-2127 — `rates.getForecast(laneId, days:14)` not shipped.
 //                Forecast chart paints placeholder.
 //    EUSO-2128 — `rates.getPortfolioLaneComparison()` not shipped.
@@ -295,7 +295,7 @@ struct ShipperRateBoard: View {
                     .foregroundStyle(palette.textTertiary)
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     // EUSO-2126 — contract baseline not on API.
-                    Text("—")
+                    Text("-")
                         .font(.system(size: 32, weight: .bold).monospacedDigit())
                         .foregroundStyle(palette.textPrimary)
                     Text("/ mi · pending")
@@ -311,7 +311,7 @@ struct ShipperRateBoard: View {
         if let r = store.featuredSpot {
             return String(format: "$%.2f", r.avgRate)
         }
-        return "—"
+        return "-"
     }
 
     private var featuredSpotSubLine: String {
@@ -503,7 +503,7 @@ struct ShipperRateBoard: View {
                     Text("Pull rates").font(.system(size: 14, weight: .heavy))
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 12)
-                .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+                .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

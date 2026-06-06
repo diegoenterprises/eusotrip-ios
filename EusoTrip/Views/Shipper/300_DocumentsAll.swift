@@ -88,7 +88,7 @@ private struct DocumentsAllBody: View {
     private var content: some View {
         if loading { LifecycleCard { Text("Loading documents…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
         else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
-        else if docs.isEmpty { EusoEmptyState(systemImage: "doc", title: "No documents", subtitle: "Run tickets, BOLs, PODs, and rate-cons land here as your loads progress.") }
+        else if docs.isEmpty { EusoEmptyState(systemImage: "doc", title: "No documents", subtitle: "Run tickets, BOLs, PODs and rate-cons land here as your loads progress.") }
         else {
             ForEach(docs) { d in
                 Button {

@@ -140,12 +140,12 @@ private struct PerfBody: View {
                     Text(initialsFor(perf?.name)).font(.system(size: 20, weight: .heavy)).foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(perf?.name ?? "—").font(.system(size: 17, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                    Text("\(perf?.companyName ?? "—") · DR-\(driverId)")
+                    Text(perf?.name ?? "-").font(.system(size: 17, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                    Text("\(perf?.companyName ?? "-") · DR-\(driverId)")
                         .font(.caption).foregroundStyle(palette.textSecondary)
                 }
                 Spacer()
-                Text(perf?.grade ?? "—")
+                Text(perf?.grade ?? "-")
                     .font(.system(size: 28, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
             }
@@ -198,7 +198,7 @@ private struct PerfBody: View {
     }
 
     private func initialsFor(_ name: String?) -> String {
-        guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return "—" }
+        guard let name = name?.trimmingCharacters(in: .whitespaces), !name.isEmpty else { return "-" }
         let parts = name.split(separator: " ").map(String.init)
         let first = parts.first?.first.map(String.init) ?? ""
         let last = parts.count > 1 ? (parts.last?.first.map(String.init) ?? "") : ""

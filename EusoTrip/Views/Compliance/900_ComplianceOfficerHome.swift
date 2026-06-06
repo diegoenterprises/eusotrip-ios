@@ -148,7 +148,7 @@ private struct ComplianceHomeBody: View {
             HStack(spacing: 8) {
                 Text("COMPLIANT \(d.compliant ?? 0)").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
                 Text("EXPIRING \(d.expiring ?? d.expiringDocs ?? 0)").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
-                Text("TREND \((d.trend ?? "—").uppercased())").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
+                Text("TREND \((d.trend ?? "-").uppercased())").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
             }
         }
         .padding(Space.s5).frame(maxWidth: .infinity, alignment: .leading)
@@ -175,11 +175,11 @@ private struct ComplianceHomeBody: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("CLOSEST EXPIRY").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle((e.daysRemaining ?? 99) < 7 ? Brand.danger : palette.textSecondary)
                         Text(e.type ?? "Document").font(.system(size: 18, weight: .heavy)).foregroundStyle(palette.textPrimary).lineLimit(1)
-                        Text("\(e.driver ?? "—") · expires \(e.expiresAt ?? "—")").font(EType.caption).foregroundStyle(palette.textSecondary)
+                        Text("\(e.driver ?? "-") · expires \(e.expiresAt ?? "-")").font(EType.caption).foregroundStyle(palette.textSecondary)
                     }
                     Spacer(minLength: 0)
                     VStack(spacing: 0) {
-                        Text(e.daysRemaining.map { "\($0)" } ?? "—").font(.system(size: 28, weight: .heavy)).foregroundStyle(palette.textPrimary).monospacedDigit()
+                        Text(e.daysRemaining.map { "\($0)" } ?? "-").font(.system(size: 28, weight: .heavy)).foregroundStyle(palette.textPrimary).monospacedDigit()
                         Text("DAYS").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                     }
                 }
@@ -209,7 +209,7 @@ private struct ComplianceHomeBody: View {
                                       icon: "exclamationmark.triangle", danger: (d.violations ?? 0) > 0)
                     LifecycleStatTile(label: "OVERDUE",    value: "\(d.overdueItems ?? 0)",
                                       icon: "calendar.badge.exclamationmark", danger: (d.overdueItems ?? 0) > 0)
-                    LifecycleStatTile(label: "TREND",      value: (d.trend ?? "—").uppercased(),
+                    LifecycleStatTile(label: "TREND",      value: (d.trend ?? "-").uppercased(),
                                       icon: "arrow.up.right")
                 }
             } else {
@@ -272,7 +272,7 @@ private struct ComplianceHomeBody: View {
         return HStack(spacing: Space.s3) {
             Circle().fill(statusColor).frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 1) {
-                Text(row.name ?? "—")
+                Text(row.name ?? "-")
                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                 HStack(spacing: 6) {
                     if let exp = row.expiringCount, exp > 0 {
@@ -284,7 +284,7 @@ private struct ComplianceHomeBody: View {
                 }
             }
             Spacer()
-            Text((row.status ?? "—").uppercased())
+            Text((row.status ?? "-").uppercased())
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(statusColor)
                 .padding(.horizontal, 8).padding(.vertical, 3)

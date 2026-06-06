@@ -30,7 +30,7 @@
 //      (Carrier reframes "bids count" as "driver assignment +
 //      counterparty + ratecon").
 //    • Empty / blank server fields surface as em-dash sentinels
-//      ("—") — every nullable column on a fresh tender (no pickup
+//      ("-") — every nullable column on a fresh tender (no pickup
 //      date, no driver assigned, no actual delivery date) renders
 //      as a neutral em-dash, never a fabricated value.
 //    • Server errors surface via `EusoTripAPIError.errorDescription`
@@ -96,8 +96,8 @@ struct CarrierLoadDetail: View {
 
     private var header: some View {
         let live: LoadsAPI.LoadDetail? = detailStore.state.value ?? nil
-        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "—"
-        let lane: String = live?.laneDisplay ?? previewLane ?? "—"
+        let loadNumber = live?.loadNumber ?? previewLoadNumber ?? "-"
+        let lane: String = live?.laneDisplay ?? previewLane ?? "-"
         let status = live?.status ?? previewStatus ?? ""
 
         return VStack(alignment: .leading, spacing: Space.s2) {
@@ -225,8 +225,8 @@ struct CarrierLoadDetail: View {
     private func assignmentCard(_ d: LoadsAPI.LoadDetail) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             sectionHeader("ASSIGNMENT", icon: "person.2.fill")
-            scheduleRow(label: "Driver",       value: previewDriver ?? "—")
-            scheduleRow(label: "Counterparty", value: previewCounterparty ?? "—")
+            scheduleRow(label: "Driver",       value: previewDriver ?? "-")
+            scheduleRow(label: "Counterparty", value: previewCounterparty ?? "-")
             if d.driverId != nil || d.catalystId != nil || d.shipperId != nil {
                 HStack(spacing: 8) {
                     if let did = d.driverId {
@@ -269,10 +269,13 @@ struct CarrierLoadDetail: View {
     /// columns so a fresh tender (status = "available", no pickup
     /// scheduled) doesn't show synthetic dates.
     private func scheduleCard(_ d: LoadsAPI.LoadDetail) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
+        let mode = TransportMode(rawValue: d.transportMode ?? "truck") ?? .truck
+        return VStack(alignment: .leading, spacing: Space.s2) {
             sectionHeader("SCHEDULE", icon: "calendar")
-            scheduleRow(label: "Pickup",        value: humanDate(d.pickupDate))
-            scheduleRow(label: "Delivery",      value: humanDate(d.deliveryDate))
+            scheduleRow(label: TransportLexicon.short(.originWindow, mode: mode, equipmentRaw: d.equipmentType),
+                        value: humanDate(d.pickupDate))
+            scheduleRow(label: TransportLexicon.short(.destinationWindow, mode: mode, equipmentRaw: d.equipmentType),
+                        value: humanDate(d.deliveryDate))
             if d.estimatedDeliveryDate != nil {
                 scheduleRow(label: "Est. delivery", value: humanDate(d.estimatedDeliveryDate))
             }
@@ -414,7 +417,7 @@ struct CarrierLoadDetail: View {
 
     /// Notes block — only renders when the load actually carries
     /// special-instructions text from the server. Drafts with no
-    /// notes get the section omitted entirely (no "—" filler).
+    /// notes get the section omitted entirely (no "-" filler).
     @ViewBuilder
     private func notesCard(_ d: LoadsAPI.LoadDetail) -> some View {
         if let notes = d.notes, !notes.isEmpty {
@@ -524,7 +527,7 @@ struct CarrierLoadDetail: View {
     /// Em-dash on empty/nil so a draft cargoType missing from the row
     /// surfaces as a neutral cell.
     private func humanCargoType(_ raw: String?) -> String {
-        guard let r = raw, !r.isEmpty else { return "—" }
+        guard let r = raw, !r.isEmpty else { return "-" }
         switch r.lowercased() {
         case "general":     return "General freight"
         case "hazmat":      return "Hazmat"
@@ -543,7 +546,7 @@ struct CarrierLoadDetail: View {
     /// when nil / empty / unparseable so missing dates always look
     /// like a deliberate sentinel and never an error string.
     private func humanDate(_ iso: String?) -> String {
-        guard let iso = iso, !iso.isEmpty else { return "—" }
+        guard let iso = iso, !iso.isEmpty else { return "-" }
         let isoFmt = ISO8601DateFormatter()
         isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         var date = isoFmt.date(from: iso)
@@ -662,8 +665,8 @@ private func carrierNavTrailing_302() -> [NavSlot] {
     CarrierLoadDetailScreen(
         theme: Theme.dark,
         loadId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewStatus: nil,
         previewDriver: nil,
         previewCounterparty: nil,
@@ -678,8 +681,8 @@ private func carrierNavTrailing_302() -> [NavSlot] {
     CarrierLoadDetailScreen(
         theme: Theme.light,
         loadId: "0",
-        previewLoadNumber: "—",
-        previewLane: "—",
+        previewLoadNumber: "-",
+        previewLane: "-",
         previewStatus: nil,
         previewDriver: nil,
         previewCounterparty: nil,

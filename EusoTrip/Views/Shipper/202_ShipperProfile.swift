@@ -348,7 +348,7 @@ struct ShipperProfile: View {
     }
 
     private var unlockBlurb: String {
-        guard let next = nextTier else { return "Maxed — same-day settlement, 24/7 strategic team" }
+        guard let next = nextTier else { return "Maxed - same-day settlement, 24/7 strategic team" }
         let s = statsStore.state.value ?? nil
         let target = next.threshold.loads
         let count = max(0, s?.totalLoads ?? 0)
@@ -553,13 +553,13 @@ struct ShipperProfile: View {
         HStack(spacing: Space.s2) {
             statTile(
                 label: "Total loads",
-                value: s.totalLoads <= 0 ? "—" : "\(s.totalLoads)",
+                value: s.totalLoads <= 0 ? "-" : "\(s.totalLoads)",
                 trail: s.totalLoads <= 0 ? "lifetime" : "lifetime",
                 trailColor: Brand.success
             )
             statTile(
                 label: "Total spend",
-                value: s.totalSpend <= 0 ? "—" : dollars(Double(s.totalSpend)),
+                value: s.totalSpend <= 0 ? "-" : dollars(Double(s.totalSpend)),
                 trail: "YTD",
                 trailColor: palette.textSecondary,
                 gradientNumeral: true,
@@ -567,7 +567,7 @@ struct ShipperProfile: View {
             )
             statTile(
                 label: "On-time",
-                value: s.onTimeRate <= 0 ? "—" : "\(s.onTimeRate)%",
+                value: s.onTimeRate <= 0 ? "-" : "\(s.onTimeRate)%",
                 trail: "delivered",
                 trailColor: Brand.success,
                 gradientNumeral: true
@@ -776,7 +776,7 @@ struct ShipperProfile: View {
     }
 
     private func contactLine(systemImage: String, value: String) -> some View {
-        let display = value.isEmpty ? "—" : value
+        let display = value.isEmpty ? "-" : value
         return HStack(spacing: 10) {
             Image(systemName: systemImage)
                 .font(.system(size: 12, weight: .heavy))
@@ -851,7 +851,7 @@ struct ShipperProfile: View {
 
     private func monthInitial(_ ym: String) -> String {
         let parts = ym.split(separator: "-")
-        guard parts.count == 2, let m = Int(parts[1]), (1...12).contains(m) else { return "—" }
+        guard parts.count == 2, let m = Int(parts[1]), (1...12).contains(m) else { return "-" }
         let initials = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"]
         return initials[m - 1]
     }
@@ -924,7 +924,7 @@ struct ShipperProfile: View {
             .padding(.vertical, 12)
             .foregroundStyle(.white)
             .background(LinearGradient.diagonal)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
     }

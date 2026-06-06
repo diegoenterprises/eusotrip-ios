@@ -157,16 +157,16 @@ private struct RailAccessorialChargesBody: View {
     // MARK: Derived
 
     private var heroTotalLabel: String {
-        guard let t = billing?.totalAmountUsd else { return "—" }
+        guard let t = billing?.totalAmountUsd else { return "-" }
         return "$\(Int(t))"
     }
     private var lineCountLabel: String {
-        let n = billing?.lineCount.map { "\($0) line items" } ?? "—"
+        let n = billing?.lineCount.map { "\($0) line items" } ?? "-"
         if let shipper = billing?.shipperName { return "\(n) · shipper \(shipper)" }
         return n
     }
     private var routeLabel: String  { billing?.routeSummary ?? "Open billing" }
-    private var dwellLabel: String  { billing?.dwellHours.map { "\(Int($0))h" } ?? "—" }
+    private var dwellLabel: String  { billing?.dwellHours.map { "\(Int($0))h" } ?? "-" }
     private var billingStatusLabel: String {
         (billing?.status ?? "PENDING REVIEW").uppercased().replacingOccurrences(of: "_", with: " ")
     }
@@ -177,9 +177,9 @@ private struct RailAccessorialChargesBody: View {
         default:                    return Brand.warning
         }
     }
-    private var billedMtdLabel: String { billing?.billedMtdUsd.map { "$\(Int($0))" } ?? "—" }
-    private var pendingLabel: String   { billing?.pendingUsd.map   { "$\(Int($0))" } ?? "—" }
-    private var disputedLabel: String  { billing?.disputedUsd.map  { "$\(Int($0))" } ?? "—" }
+    private var billedMtdLabel: String { billing?.billedMtdUsd.map { "$\(Int($0))" } ?? "-" }
+    private var pendingLabel: String   { billing?.pendingUsd.map   { "$\(Int($0))" } ?? "-" }
+    private var disputedLabel: String  { billing?.disputedUsd.map  { "$\(Int($0))" } ?? "-" }
 
     private func isLineApplied(_ line: AccessorialLine573) -> Bool {
         appliedLines.contains(line.id) || (line.isApplied ?? false)
@@ -373,10 +373,10 @@ private struct RailAccessorialChargesBody: View {
                     .foregroundStyle(chip.color)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text(line.name ?? "—")
+                Text(line.name ?? "-")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("\(line.code ?? "—") · \(line.rateDescription ?? "—")")
+                Text("\(line.code ?? "-") · \(line.rateDescription ?? "-")")
                     .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
@@ -420,8 +420,8 @@ private struct RailAccessorialChargesBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderFaint))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

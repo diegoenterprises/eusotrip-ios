@@ -555,7 +555,7 @@ struct ShipperAnalyticsDeepDive: View {
 
     private var equipmentCard: some View {
         let segments = resolvedEquipmentSegments
-        let center = segments.first ?? DonutSegment(id: "n/a", label: "—", percent: 0, paint: .gradient)
+        let center = segments.first ?? DonutSegment(id: "n/a", label: "-", percent: 0, paint: .gradient)
         return VStack(alignment: .leading, spacing: 0) {
             Text("BY EQUIPMENT")
                 .font(EType.micro).tracking(1.0)
@@ -711,7 +711,7 @@ struct ShipperAnalyticsDeepDive: View {
             return ranked.map { r in
                 CatalystRowVM(
                     id: r.id,
-                    name: r.name.isEmpty ? "—" : r.name,
+                    name: r.name.isEmpty ? "-" : r.name,
                     loads: "\(r.totalLoads)",
                     fraction: CGFloat(r.totalLoads) / CGFloat(topLoads)
                 )
@@ -801,7 +801,7 @@ struct ShipperAnalyticsDeepDive: View {
         if let s = liveSpend, s.totalSpend > 0 {
             out.append("Total spend \(currency(s.totalSpend)) across \(s.loadCount) loads · avg \(currency(s.avgPerLoad))/load")
             if s.avgPerMile > 0 {
-                out.append("Average rate \(currency4(s.avgPerMile))/mi vs market — review BY LANE for the spread")
+                out.append("Average rate \(currency4(s.avgPerMile))/mi vs market - review BY LANE for the spread")
             }
         }
         if case .loaded(let rows) = catalystStore.state, !rows.isEmpty {
@@ -810,7 +810,7 @@ struct ShipperAnalyticsDeepDive: View {
             let totalCatSpend = rows.reduce(0.0) { $0 + $1.totalSpend }
             if totalCatSpend > 0 {
                 let pct = Int((top3Sum / totalCatSpend * 100).rounded())
-                out.append("Top 3 catalysts carry \(pct)% of spend — concentration risk if any one drops out")
+                out.append("Top 3 catalysts carry \(pct)% of spend - concentration risk if any one drops out")
             }
             let avgOnTime = rows.map { Double($0.onTimeRate) }.reduce(0, +) / Double(rows.count)
             out.append(String(format: "Average on-time rate %.0f%% across %d catalysts", avgOnTime, rows.count))

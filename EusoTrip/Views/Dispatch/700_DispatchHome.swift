@@ -208,7 +208,7 @@ private struct DispatchHomeBody: View {
                                           compact: true)
                         }
                         Text(e.type ?? "Open exception").font(.system(size: 18, weight: .heavy)).foregroundStyle(palette.textPrimary).lineLimit(1)
-                        Text("\(e.driverName ?? "—") · \(e.loadNumber ?? "—")").font(EType.caption).foregroundStyle(palette.textSecondary)
+                        Text("\(e.driverName ?? "-") · \(e.loadNumber ?? "-")").font(EType.caption).foregroundStyle(palette.textSecondary)
                         if let s = e.severity {
                             Text(s.uppercased())
                                 .font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(.white)
@@ -241,7 +241,7 @@ private struct DispatchHomeBody: View {
                     if let load = d.load, !load.isEmpty {
                         Text(load).font(EType.caption).foregroundStyle(palette.textTertiary).lineLimit(1)
                     }
-                    Text(d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "—")
+                    Text(d.hoursRemaining.map { String(format: "%.1fh", $0) } ?? "-")
                         .font(EType.bodyStrong).monospacedDigit()
                         .foregroundStyle((d.hoursRemaining ?? 999) < 2 ? Brand.danger : palette.textPrimary)
                 }
@@ -307,7 +307,7 @@ private struct DispatchHomeBody: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(e.type ?? "Open exception")
                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary).lineLimit(1)
-                Text("\(e.driverName ?? "—") · \(e.loadNumber ?? "—")")
+                Text("\(e.driverName ?? "-") · \(e.loadNumber ?? "-")")
                     .font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(1)
             }
             Spacer()

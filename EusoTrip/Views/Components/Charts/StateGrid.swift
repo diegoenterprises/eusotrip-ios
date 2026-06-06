@@ -137,6 +137,16 @@ public struct StateGrid: View {
     @State private var dragTranslation: CGSize = .zero
     @State private var hoverTargetID: String? = nil
 
+    /// 2026-06-03 — internal scrub/selection. The cursor was "stuck" because
+    /// `selection` defaults to `.constant(nil)` and EVERY call site (0 pass a
+    /// binding) used that default, so `select`'s `selection = cell.id` was a
+    /// silent no-op — the touched cell never held its ring. This local state
+    /// drives the selected-cell ring + readout self-contained; a real host
+    /// binding still wins when present (for hosts that drive/echo selection).
+    @State private var localSelected: String? = nil
+    /// Re-keys the per-cell selection haptic (iOS17 .sensoryFeedback).
+    @State private var scrubTick: Int = 0
+
     public init(
         model: StateGridModel,
         selection: Binding<String?> = .constant(nil),
@@ -151,6 +161,25 @@ public struct StateGrid: View {
         self.onMove = onMove
     }
 
+    /// Coordinate space the scrub gesture hit-tests against — the grid's own
+    /// top-leading origin, so a finger point maps straight through the metrics.
+    private static let gridSpace = "StateGrid.grid"
+
+    /// The selected cell id the grid renders: a real host binding wins;
+    /// otherwise the internal scrub state. Nil = nothing selected yet.
+    private var effectiveSelected: String? { selection ?? localSelected }
+
+    /// The currently selected cell (if it resolves to a real, interactive
+    /// coordinate) — surfaced as a readout under the grid.
+    private var selectedCell: StateGridCellSG? {
+        guard let id = effectiveSelected else { return nil }
+        if let match = model.cells.first(where: { $0.id == id }) { return match }
+        // Synthesize an open-slot read for a coordinate with no sparse cell.
+        let parts = id.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 2 else { return nil }
+        return StateGridCellSG(row: parts[0], col: parts[1], status: .empty)
+    }
+
     // MARK: Body
 
     public var body: some View {
@@ -158,6 +187,7 @@ public struct StateGrid: View {
             header
             gridBody
             if showsLegend { legend }
+            readout
         }
         .padding(Space.s4)
         .background(
@@ -168,9 +198,10 @@ public struct StateGrid: View {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
+        .sensoryFeedback(.selection, trigger: scrubTick)   // haptic tick per cell
         .animation(reduceMotion ? nil : .easeOut(duration: 0.22), value: model)
         .animation(reduceMotion ? nil : .spring(response: 0.30, dampingFraction: 0.78),
-                   value: selection)
+                   value: effectiveSelected)
     }
 
     // MARK: Header (eyebrow + right meta) — SVG :33–34
@@ -205,6 +236,13 @@ public struct StateGrid: View {
                 }
             }
             .frame(width: geo.size.width, height: metrics.gridHeight, alignment: .topLeading)
+            // Whole-plot scrub: a min-distance-0 drag snaps the cursor to the
+            // cell under the finger and HOLDS it on release (no snap-back). Sits
+            // BEHIND the cells so per-cell taps / drag-to-move still win — it
+            // only catches drags that start in a gutter or glide across cells.
+            .contentShape(Rectangle())
+            .coordinateSpace(name: Self.gridSpace)
+            .gesture(scrubGesture(metrics: metrics))
         }
         .frame(height: gridIntrinsicHeight)
     }
@@ -251,7 +289,7 @@ public struct StateGrid: View {
     @ViewBuilder
     private func cellView(for coord: StateGridCoordSG, metrics: StateGridMetricsSG) -> some View {
         let cell = resolved(coord)
-        let isSelected = selection == cell.id && cell.isInteractive
+        let isSelected = effectiveSelected == cell.id && cell.isInteractive
         let isDragging = draggingID == cell.id
         let isHoverTarget = hoverTargetID == cell.id && draggingID != nil && draggingID != cell.id
         let origin = metrics.origin(row: coord.row, col: coord.col)
@@ -283,14 +321,25 @@ public struct StateGrid: View {
 
     private func select(_ cell: StateGridCellSG) {
         guard cell.isInteractive else { return }
+        commitSelection(to: cell.id)   // drives local + host binding
+        onSelect(cell)
+    }
+
+    /// Single funnel for both tap and scrub: write the internal cursor (so the
+    /// ring/readout works with NO host binding) and mirror to the host binding
+    /// when one is wired. Bumps the haptic tick only on an actual change.
+    private func commitSelection(to id: String?) {
+        guard effectiveSelected != id else { return }
+        scrubTick &+= 1
         if reduceMotion {
-            selection = cell.id
+            localSelected = id
+            selection = id
         } else {
             withAnimation(.spring(response: 0.30, dampingFraction: 0.78)) {
-                selection = cell.id
+                localSelected = id
+                selection = id
             }
         }
-        onSelect(cell)
     }
 
     // MARK: Drag-to-move
@@ -331,6 +380,36 @@ public struct StateGrid: View {
             }
     }
 
+    // MARK: Scrub-to-inspect (chart cursor)
+
+    /// Whole-plot cursor: a `minimumDistance: 0` drag in the grid's coordinate
+    /// space snaps the selection to the cell under the finger and HOLDS it on
+    /// release (no snap-back to nil). Skips non-interactive coordinates so the
+    /// cursor never lands on a dimmed/out-of-yard slot. Runs UNDER the per-cell
+    /// tap + drag-to-move, so those still win when they fire.
+    private func scrubGesture(metrics: StateGridMetricsSG) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.gridSpace))
+            .onChanged { value in
+                guard let id = metrics.cellID(atPoint: value.location,
+                                              rows: model.rows, cols: model.cols)
+                else { return }
+                let cell = resolved(coordFromID(id))
+                guard cell.isInteractive else { return }
+                commitSelection(to: id)
+            }
+            .onEnded { _ in
+                // HOLD on the touched cell — the readout stays until the next
+                // tap/scrub. (No snap-back to nil.)
+            }
+    }
+
+    /// Parse a "row-col" id back into a coordinate for resolution.
+    private func coordFromID(_ id: String) -> StateGridCoordSG {
+        let parts = id.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 2 else { return StateGridCoordSG(row: 0, col: 0) }
+        return StateGridCoordSG(row: parts[0], col: parts[1])
+    }
+
     // MARK: Legend — SVG :67–74
 
     private var legend: some View {
@@ -346,6 +425,48 @@ public struct StateGrid: View {
                 }
             }
             Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: Readout (selected-cell inspector) — surfaces state + label
+
+    /// Compact callout under the grid showing the scrubbed/selected cell's
+    /// coordinate, state and label. Hidden until something is selected, so the
+    /// trace/look is unchanged on first render. Themed with existing tokens
+    /// (the status fill doubles as the swatch — no new colors).
+    @ViewBuilder
+    private var readout: some View {
+        if let cell = selectedCell {
+            HStack(spacing: 8) {
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(fillColor(for: cell.status))
+                    .frame(width: 12, height: 12)
+                Text("R\(cell.row + 1)·C\(cell.col + 1)")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
+                Text(legendLabel(for: cell.status))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                if !cell.label.isEmpty {
+                    Text(cell.label)
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Space.s3)
+            .padding(.vertical, Space.s2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                    .fill(palette.bgCardSoft)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                            .strokeBorder(palette.borderFaint, lineWidth: 1)
+                    )
+            )
+            .transition(.opacity.combined(with: .move(edge: .top)))
         }
     }
 
@@ -455,6 +576,23 @@ private struct StateGridMetricsSG {
         let col = Int((cx / strideX).rounded(.down))
         let row = Int((cy / strideY).rounded(.down))
         guard row >= 0, row < rows, col >= 0, col < cols else { return nil }
+        return "\(row)-\(col)"
+    }
+
+    /// Snap an absolute point in the grid's own coordinate space to the (row,
+    /// col) of the cell under the finger. Clamps the finger to the nearest cell
+    /// in-bounds (gutters and the trailing edge resolve to the closest cell) so
+    /// a scrub never drops the cursor between cells. Returns nil only for an
+    /// empty grid.
+    func cellID(atPoint p: CGPoint, rows: Int, cols: Int) -> String? {
+        guard rows > 0, cols > 0 else { return nil }
+        let strideX = cellWidth + hGap
+        let strideY = cellHeight + vGap
+        guard strideX > 0, strideY > 0 else { return nil }
+        let rawCol = Int((p.x / strideX).rounded(.down))
+        let rawRow = Int((p.y / strideY).rounded(.down))
+        let col = min(max(rawCol, 0), cols - 1)
+        let row = min(max(rawRow, 0), rows - 1)
         return "\(row)-\(col)"
     }
 }

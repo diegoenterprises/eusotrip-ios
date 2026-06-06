@@ -199,7 +199,7 @@ private struct CELCloseBody: View {
                 actionAck = "POD signed · cert \(resp.podCertId ?? podCertId) · ring rolled · pod_pending → DU."
                 await loadCtx()
             } else {
-                actionError = "POD sign returned no success flag — reload and try again."
+                actionError = "POD sign returned no success flag, reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "POD sign failed: \(err)"
@@ -208,9 +208,9 @@ private struct CELCloseBody: View {
 
     // MARK: - Dynamic display helpers
 
-    private var loadNumberDisplay: String { load?.loadNumber ?? "—" }
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
     private var carrierCodeDisplay: String {
-        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "—"
+        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
     }
     private var laneDisplay: String? {
         guard let p = load?.pickupCity, let d = load?.destCity else { return nil }
@@ -249,9 +249,9 @@ private struct CELCloseBody: View {
     }
 
     private func chainPill(_ c: CCConfig) -> some View {
-        let driverIni = load?.driver?.initials ?? "—"
-        let dispIni = load?.catalyst?.initials ?? "—"
-        let shipIni = load?.shipper?.initials ?? "—"
+        let driverIni = load?.driver?.initials ?? "-"
+        let dispIni = load?.catalyst?.initials ?? "-"
+        let shipIni = load?.shipper?.initials ?? "-"
         return LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
                 Text("DISPATCH CHAIN")
@@ -265,12 +265,12 @@ private struct CELCloseBody: View {
     }
 
     private var identityRow: some View {
-        let driverIni = load?.driver?.initials ?? "—"
+        let driverIni = load?.driver?.initials ?? "-"
         let driverName = load?.driver?.name ?? "driver"
-        let carrierFull = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "—"
-        let mc = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "—"
-        let dispatchName = load?.catalyst?.name ?? "—"
-        let shipperName = load?.shipper?.name ?? "—"
+        let carrierFull = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
+        let mc = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "-"
+        let dispatchName = load?.catalyst?.name ?? "-"
+        let shipperName = load?.shipper?.name ?? "-"
         return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
@@ -369,13 +369,13 @@ private struct CELCloseBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .onSite:     return "Gated in at dock 4A. Pickup window 08:00-10:00 EDT — back to the dock when receiver waves."
+            case .onSite:     return "Gated in at dock 4A. Pickup window 08:00-10:00 EDT, back to the dock when receiver waves."
             case .atDock:     return "Backed in at 4A. Forklift will arrive within free-dwell; loading-state arms on first pallet."
             case .loading:    return "Loading commenced. Watch dwell against the 2h free window; ESang nudges if it threatens to spill."
-            case .bolSign:    return "Loaded and sealed. Tap to sign BOL — gradient ink commits the pickup chain."
+            case .bolSign:    return "Loaded and sealed. Tap to sign BOL, gradient ink commits the pickup chain."
             case .departed:   return "Gate-out cleared. 245 mi long-haul leg begins; ETA holds 12:46 EDT to CLT Newell."
             case .inTransit:  return "Rolling I-85 SE with 199 mi left. ESang nudges if ETA drifts >10 min vs 12:44 target."
-            case .atDelivery: return "Arrived CLT Newell at 12:43 — 17 min early. Receiver will dock-in for unload."
+            case .atDelivery: return "Arrived CLT Newell at 12:43, 17 min early. Receiver will dock-in for unload."
             case .podSigned:  return "POD signed at 13:34, delivered fired. Ring rolls to DU; payout release queues next."
             }
         }()
@@ -393,9 +393,9 @@ private struct CELCloseBody: View {
     }
 
     /// Format the load's rate (decimal string from server) into a
-    /// display payout string. Falls back to "—" when missing/invalid.
+    /// display payout string. Falls back to "-" when missing/invalid.
     private static func payoutDisplay(_ rate: String?) -> String {
-        guard let r = rate, let n = Double(r), n > 0 else { return "—" }
+        guard let r = rate, let n = Double(r), n > 0 else { return "-" }
         let v = n.rounded()
         return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
     }

@@ -254,7 +254,7 @@ struct ShipperHandoffContinuity: View {
                     GradientCapsuleCTA(label: activeHandoff.ctaLabel, width: 140)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Run the active handoff on the Mac — promotes the iPhone session into a Mac session via NSUserActivity continuation.")
+                .accessibilityLabel("Run the active handoff on the Mac. Promotes the iPhone session into a Mac session via NSUserActivity continuation.")
             }
             .padding(.top, 14)
             .padding(.horizontal, 20)

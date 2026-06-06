@@ -57,18 +57,24 @@ struct Unloading: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
+    /// Transport mode of the active load (truck fallback) — drives the
+    /// mode-aware detained-equipment charge label (Detention vs Barge Det.).
+    private var resolvedMode: TransportMode {
+        TransportMode(rawValue: activeLoad?.transportMode ?? "truck") ?? .truck
+    }
+
     // MARK: - Figma fallback
     private let fallbackDoor      = "12"
     private let fallbackOff       = 4
     private let fallbackTotal     = 26
-    private let fallbackTrailer   = "—"
+    private let fallbackTrailer   = "-"
     private let fallbackStarted   = "00:32"
     private let fallbackEtaRemain = "3:15"
     private let fallbackRate      = "2"
     private let fallbackDetention = "2:47"
-    private let fallbackDetRate   = "—"
-    private let fallbackDetCharge = "—"
-    private let fallbackReceiver  = "—"
+    private let fallbackDetRate   = "-"
+    private let fallbackDetCharge = "-"
+    private let fallbackReceiver  = "-"
     private let fallbackReceiverSub = "dispatch bell · door 12"
 
     // MARK: - Real-logic bindings
@@ -166,9 +172,10 @@ struct Unloading: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text("DETENTION")
+                    Text(TransportLexicon.short(.detention, mode: resolvedMode).uppercased())
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(Brand.warning)
+                        .lineLimit(1)
                     Text("· PAID TIME")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textSecondary)
@@ -234,7 +241,7 @@ struct Unloading: View {
                     Text(fallbackTrailer)
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
-                        .accessibilityLabel(fallbackTrailer == "—" ? "Trailer pending" : "Trailer \(fallbackTrailer)")
+                        .accessibilityLabel(fallbackTrailer == "-" ? "Trailer pending" : "Trailer \(fallbackTrailer)")
                     Spacer()
                     Text("DOOR \(fallbackDoor)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
@@ -391,9 +398,10 @@ struct Unloading: View {
 
             return VStack(alignment: .leading, spacing: Space.s2) {
                 HStack {
-                    Text("DETENTION · PAID")
+                    Text("\(TransportLexicon.short(.detention, mode: resolvedMode).uppercased()) · PAID")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(LinearGradient.diagonal)
+                        .lineLimit(1)
                     Spacer()
                     Text("PAID")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
@@ -493,7 +501,7 @@ struct Unloading: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(Brand.success)
-            Text("Wake the house crew if it stalls. No lumper overnight — they run a two-person crew at 4 \(ctx.unloadUnitLabel)/hr. If detention passes $75, ping dispatch from the Chat button and they'll rebill the shipper.")
+            Text("Wake the house crew if it stalls. No lumper overnight. They run a two-person crew at 4 \(ctx.unloadUnitLabel)/hr. If detention passes $75, ping dispatch from the Chat button and they'll rebill the shipper.")
                 .font(EType.body)
                 .foregroundStyle(palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -35,7 +35,7 @@ struct SequencedLegApproach: View {
     private let fallbackHero       = "5.4"
     private let fallbackEtaMin     = "16 min"
     private let fallbackArriveBy   = "23:14"
-    private let fallbackYard       = "—"
+    private let fallbackYard       = "-"
     private let fallbackYardAddr   = "3608 HAWKINS POINT RD · BALTIMORE MD 21226"
 
     var body: some View {

@@ -23,7 +23,7 @@
 //  ledger). The hero per-diem accrual figures the SVG mocks ($148/day, $764 accrued, per-row
 //  $/day · days) cannot be sourced from the server today — see portGaps. We render the REAL
 //  detention exposure (demurrageAlerts.atRiskContainers projectedCharge), REAL utilization,
-//  REAL expiring certs, and the REAL leased-unit roster; per-diem rate fields surface as "—"
+//  REAL expiring certs, and the REAL leased-unit roster; per-diem rate fields surface as "-"
 //  with an honest empty/partial state rather than fabricated numbers.
 //
 
@@ -181,9 +181,6 @@ private struct VesselContainerLeaseBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Per-diem ledger")
                     .font(EType.display)
                     .foregroundStyle(palette.textPrimary)
@@ -257,7 +254,7 @@ private struct VesselContainerLeaseBody: View {
 
     /// "accrued exposure · $—/day" — rate column absent server-side (PORT-GAP).
     private var perDiemRateLine: String {
-        "detention exposure · per-diem rate —"
+        "detention exposure · per-diem rate -"
     }
 
     /// "5 units · CNSHA → USLGB" — unit count is REAL; lane is the canonical booking lane.
@@ -270,8 +267,8 @@ private struct VesselContainerLeaseBody: View {
     private var statStrip: some View {
         HStack(spacing: Space.s2) {
             MetricTile(label: "ACTIVE",    value: "\(activeUnits)",            gradientNumeral: true)
-            // PORT-GAP: PER-DIEM $/day rate not on server — render "—" not a fabricated $148.
-            MetricTile(label: "PER-DIEM",  value: "—")
+            // PORT-GAP: PER-DIEM $/day rate not on server — render "-" not a fabricated $148.
+            MetricTile(label: "PER-DIEM",  value: "-")
             MetricTile(label: "DETENTION", value: "$\(Int(detentionExposure))", accent: detentionExposure > 0 ? Brand.warning : nil)
         }
     }
@@ -366,7 +363,7 @@ private struct VesselContainerLeaseBody: View {
 
     private func unitTitle(_ u: EquipmentRow) -> String {
         let type = (u.type ?? "Unit").capitalized
-        let num = u.unitNumber ?? u.licensePlate ?? "—"
+        let num = u.unitNumber ?? u.licensePlate ?? "-"
         return "\(type) \(num)"
     }
 
@@ -378,7 +375,7 @@ private struct VesselContainerLeaseBody: View {
         if !mm.isEmpty { parts.append(mm) }
         if let y = u.year, y > 0 { parts.append("\(y)") }
         if let ni = u.nextInspection, !ni.isEmpty { parts.append("insp \(ni)") }
-        return parts.isEmpty ? (u.status ?? "—") : parts.joined(separator: " \u{00B7} ")
+        return parts.isEmpty ? (u.status ?? "-") : parts.joined(separator: " \u{00B7} ")
     }
 
     private func detentionCharge(for u: EquipmentRow) -> Double? {
@@ -388,7 +385,7 @@ private struct VesselContainerLeaseBody: View {
     private func unitTrailingMeta(_ u: EquipmentRow, kind: UnitPill) -> String {
         switch kind {
         case .healthy:
-            return inServicePct > 0 ? "\(inServicePct)% in-service" : (u.status ?? "—")
+            return inServicePct > 0 ? "\(inServicePct)% in-service" : (u.status ?? "-")
         case .detention:
             if let d = atRisk.first(where: { $0.containerId.map(String.init) == u.id })?.daysOverdue {
                 return "\(d)d over free-time"
@@ -478,7 +475,7 @@ private struct VesselContainerLeaseBody: View {
     private func certWatchLine(_ c: ExpiringCert) -> String {
         let unit = c.unitNumber ?? "Unit"
         let type = c.certificationType ?? "Cert"
-        let exp = c.expiresAt ?? "—"
+        let exp = c.expiresAt ?? "-"
         let days = c.daysRemaining ?? 0
         return "\(unit) \u{00B7} \(type) renews \(exp) \u{00B7} \(days) days"
     }

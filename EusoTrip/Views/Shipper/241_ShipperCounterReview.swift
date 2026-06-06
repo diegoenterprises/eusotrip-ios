@@ -102,7 +102,7 @@ private struct CounterReviewBody: View {
                     TextField("Counter amount (e.g. 2425)", text: $counterAmountText)
                         .keyboardType(.numberPad)
                     if let c = counter, let original = c.amount {
-                        Text("Carrier countered at $\(c.counterAmount ?? "—") vs original $\(original).")
+                        Text("Carrier countered at $\(c.counterAmount ?? "-") vs original $\(original).")
                             .font(.caption).foregroundStyle(palette.textSecondary)
                     }
                 }
@@ -131,8 +131,8 @@ private struct CounterReviewBody: View {
             }
             Text("Review counter").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             if let c = counter {
-                let amt = c.counterAmount ?? c.amount ?? "—"
-                let orig = c.originalRate ?? "—"
+                let amt = c.counterAmount ?? c.amount ?? "-"
+                let orig = c.originalRate ?? "-"
                 let delta = computeDelta(counter: c.counterAmount ?? c.amount, original: c.originalRate)
                 Text("COUNTER $\(amt) · DELTA \(delta) · \(expiresAgo(c.expiresAt))")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textSecondary)
@@ -147,7 +147,7 @@ private struct CounterReviewBody: View {
                 Text("§11.4 COUNTER REVIEW · CROSS-TRACK PARITY")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 if let l = load {
-                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "—") → \(l.destCity ?? "—") · \(l.trailerType ?? "—")")
+                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-") · \(l.trailerType ?? "-")")
                         .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
                 }
             }
@@ -162,7 +162,7 @@ private struct CounterReviewBody: View {
                     Text(initialsFor(c.carrierContactName)).font(.system(size: 16, weight: .heavy)).foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(c.carrierName ?? "—").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
+                    Text(c.carrierName ?? "-").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
                     if let n = c.carrierContactName { Text(n).font(.caption).foregroundStyle(palette.textSecondary) }
                     if let dot = c.dotNumber, let mc = c.mcNumber {
                         Text("USDOT \(dot) · MC-\(mc)").font(.caption.monospaced()).foregroundStyle(palette.textTertiary)
@@ -175,11 +175,11 @@ private struct CounterReviewBody: View {
 
     private func kpiGrid(_ c: CounterBid) -> some View {
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
-        let counterAmt = c.counterAmount ?? c.amount ?? "—"
+        let counterAmt = c.counterAmount ?? c.amount ?? "-"
         let delta = computeDelta(counter: c.counterAmount ?? c.amount, original: c.originalRate)
         let rpm: String = {
             guard let amt = Double(c.counterAmount ?? c.amount ?? "0"), amt > 0,
-                  let mi = load?.distance, mi > 0 else { return "—" }
+                  let mi = load?.distance, mi > 0 else { return "-" }
             return String(format: "$%.2f", amt / mi)
         }()
         return LazyVGrid(columns: cols, spacing: 8) {
@@ -247,7 +247,7 @@ private struct CounterReviewBody: View {
                 actionAck = "Counter accepted · bid #\(bidId) awarded · carrier notified · load locked."
                 await self.load()
             } else {
-                actionError = "Accept returned no success flag — reload and try again."
+                actionError = "Accept returned no success flag. Reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "Accept failed: \(err)"
@@ -270,7 +270,7 @@ private struct CounterReviewBody: View {
                 counterAmountText = ""
                 await self.load()
             } else {
-                actionError = "Counter returned no success flag — reload and try again."
+                actionError = "Counter returned no success flag. Reload and try again."
             }
         } catch let err {
             actionError = (err as? LocalizedError)?.errorDescription ?? "Counter failed: \(err)"
@@ -278,13 +278,13 @@ private struct CounterReviewBody: View {
     }
 
     private func computeDelta(counter: String?, original: String?) -> String {
-        guard let c = Double(counter ?? "0"), let o = Double(original ?? "0"), o > 0 else { return "—" }
+        guard let c = Double(counter ?? "0"), let o = Double(original ?? "0"), o > 0 else { return "-" }
         let d = Int(c - o)
         return (d >= 0 ? "+" : "") + "$\(d)"
     }
 
     private func expiresAgo(_ iso: String?) -> String {
-        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let mins = max(0, Int(d.timeIntervalSinceNow / 60))
         if mins < 60 { return "\(mins)m" }
         let h = mins / 60
@@ -292,7 +292,7 @@ private struct CounterReviewBody: View {
     }
 
     private func initialsFor(_ name: String?) -> String {
-        guard let n = name?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return "—" }
+        guard let n = name?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return "-" }
         let parts = n.split(separator: " ").map(String.init)
         let f = parts.first?.first.map(String.init) ?? ""
         let l = parts.count > 1 ? (parts.last?.first.map(String.init) ?? "") : ""

@@ -106,11 +106,11 @@ struct FleetBulkRegisterStep: View {
     private var headerSubtitle: String {
         switch vertical {
         case "rail":
-            return "Add each locomotive, intermodal chassis, or rail car by VIN. We auto-fill make/model/year via NHTSA and create AAR-compliant maintenance schedules + DVIR baselines."
+            return "Add each locomotive, intermodal chassis or rail car by VIN. We auto-fill make/model/year via NHTSA and create AAR-compliant maintenance schedules + DVIR baselines."
         case "vessel":
             return "Add support vehicles and shore equipment by VIN. USCG-documented vessels are registered separately via the USCG vessel document scanner."
         default:
-            return "Scan each truck's VIN or type it in. We auto-fill make/model/year via NHTSA, seed Zeun maintenance schedules, and queue a DVIR baseline so your drivers are ready on day one."
+            return "Scan each truck's VIN or type it in. We auto-fill make/model/year via NHTSA, seed Zeun maintenance schedules and queue a DVIR baseline so your drivers are ready on day one."
         }
     }
 
@@ -151,7 +151,7 @@ struct FleetBulkRegisterStep: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 13)
                 .foregroundStyle(.white)
                 .background(LinearGradient.diagonal)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -172,8 +172,8 @@ struct FleetBulkRegisterStep: View {
                 .padding(.vertical, 12).padding(.horizontal, 14)
                 .foregroundStyle(palette.textPrimary)
                 .background(palette.bgCardSoft)
-                .overlay(Capsule().strokeBorder(palette.borderSoft))
-                .clipShape(Capsule())
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }
@@ -305,7 +305,7 @@ struct FleetBulkRegisterStep: View {
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(Brand.warning)
                 ForEach(r.rejected, id: \.vin) { rej in
-                    Text("• \(rej.vin) — \(rej.reason)")
+                    Text("• \(rej.vin) · \(rej.reason)")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
             }
@@ -338,7 +338,7 @@ struct FleetBulkRegisterStep: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 13)
                 .foregroundStyle(.white)
                 .background(canCommit ? AnyView(LinearGradient.diagonal) : AnyView(Color.gray.opacity(0.4)))
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(!canCommit)
@@ -352,8 +352,8 @@ struct FleetBulkRegisterStep: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                             .foregroundStyle(palette.textPrimary)
                             .background(palette.bgCardSoft)
-                            .overlay(Capsule().strokeBorder(palette.borderSoft))
-                            .clipShape(Capsule())
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }
@@ -364,7 +364,7 @@ struct FleetBulkRegisterStep: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                             .foregroundStyle(.white)
                             .background(LinearGradient.diagonal)
-                            .clipShape(Capsule())
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     }
                     .buttonStyle(.plain)
                 }

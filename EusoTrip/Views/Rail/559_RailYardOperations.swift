@@ -54,6 +54,15 @@ private struct RailYard559: Decodable, Identifiable {
     let hasIntermodal: Bool?
     let hasHazmat: Bool?
     let status: String?
+    /// Real yard fix (rail_yards.coordinates JSON {lat,lng}) — keys the
+    /// route-overview map. Optional: a yard row may predate geocoding.
+    let coordinates: YardCoord559?
+}
+
+/// {lat,lng} payload from the rail_yards.coordinates JSON column.
+private struct YardCoord559: Decodable, Hashable {
+    let lat: Double
+    let lng: Double
 }
 
 // MARK: - Lane model
@@ -91,6 +100,7 @@ private enum YardPill {
 
 private struct RailYardOperationsBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.colorScheme) private var colorScheme
     @State private var yards: [RailYard559] = []
     @State private var loading = true
     @State private var loadError: String? = nil
@@ -125,6 +135,36 @@ private struct RailYardOperationsBody: View {
         }
     }
 
+    // Route map ---------------------------------------------------------------
+
+    /// Yards that carry a real geocode (rail_yards.coordinates) — the only ones
+    /// the route-overview map can plot. Driven entirely by live data; if none
+    /// are geocoded the map card is simply omitted.
+    private var mappedYards: [RailYard559] {
+        yards.filter { $0.coordinates != nil }
+    }
+
+    /// Camera anchor = centroid of the plotted yard fixes.
+    private var mapCenter: HereLatLng {
+        let pts = mappedYards.compactMap { $0.coordinates }
+        guard !pts.isEmpty else { return HereLatLng(39.0, -98.0) } // CONUS fallback (unused: card hidden when empty)
+        let lat = pts.map { $0.lat }.reduce(0, +) / Double(pts.count)
+        let lng = pts.map { $0.lng }.reduce(0, +) / Double(pts.count)
+        return HereLatLng(lat, lng)
+    }
+
+    /// Lane glyph → map marker kind (`.truck` puck for live on-route yards,
+    /// endpoint glyphs for staging/ramp/hazmat), so the map reads the same
+    /// status taxonomy as the swim-lanes below it.
+    private func markerKind(for y: RailYard559) -> HereMarker.Kind {
+        switch pill(for: y) {
+        case .active:  return .truck
+        case .ramp:    return .delivery
+        case .staging: return .stop
+        case .hazmat:  return .alert
+        }
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
@@ -148,6 +188,13 @@ private struct RailYardOperationsBody: View {
                 } else {
                     filterChips
                         .padding(.horizontal, 20).padding(.top, 14)
+
+                    // Route map — yard fixes plotted at their real geocodes
+                    // (rail_yards.coordinates). Lane-colored pins; tap → ramp.
+                    if !mappedYards.isEmpty {
+                        routeMapCard
+                            .padding(.horizontal, 20).padding(.top, 16)
+                    }
 
                     // Lane 1 · ON ROUTE
                     laneHeader(title: "ON ROUTE · \(onRouteYards.count)", color: Color(hex: 0x2BD9A4))
@@ -198,9 +245,6 @@ private struct RailYardOperationsBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Yard operations")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -280,6 +324,61 @@ private struct RailYardOperationsBody: View {
         }
         .padding(.horizontal, 20)
         .padding(.top, 18)
+    }
+
+    // MARK: - Route map (in-house HERE · BespokeMapCanvas · standard register)
+
+    /// A bespoke yard-positions board: every geocoded yard plotted at its real
+    /// rail_yards.coordinates fix, colored by the same lane taxonomy as the
+    /// swim-lanes (active=puck, ramp=delivery, staging=stop, hazmat=alert).
+    /// RAIL has no dedicated style ⇒ flat `.standard` register (tilt 0, no
+    /// ocean hint). Tapping a pin swaps to the rail tracking map (Rail560).
+    private var routeMapCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("ROUTE MAP · \(mappedYards.count) PLOTTED")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text("tap a yard ›")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
+
+            BespokeMapCanvas(
+                center: mapCenter,
+                zoom: 4,
+                interactive: true,
+                tilt: 0,
+                isDark: colorScheme == .dark,
+                layers: [
+                    .markers(mappedYards.compactMap { y in
+                        guard let c = y.coordinates else { return nil }
+                        return HereMarker(
+                            at: HereLatLng(c.lat, c.lng),
+                            kind: markerKind(for: y),
+                            label: y.name,
+                            id: String(y.id))
+                    })
+                ],
+                onSelectMarker: { _ in
+                    NotificationCenter.default.post(
+                        name: .eusoRailNavSwap, object: nil,
+                        userInfo: ["screenId": "Rail560"])
+                }
+            )
+            .frame(height: 220)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .padding(.horizontal, 12)
+            .padding(.bottom, 12)
+        }
+        .background(palette.bgCardSoft)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
     // MARK: - Lane 1 · ON ROUTE card (yard rows w/ relative-capacity bars)
@@ -389,7 +488,7 @@ private struct RailYardOperationsBody: View {
     }
 
     private func capacityString(_ cap: Int?) -> String {
-        guard let cap = cap else { return "—" }
+        guard let cap = cap else { return "-" }
         let fmt = NumberFormatter()
         fmt.numberStyle = .decimal
         return fmt.string(from: NSNumber(value: cap)) ?? "\(cap)"
@@ -484,7 +583,7 @@ private struct RailYardOperationsBody: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .background(LinearGradient.primary)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -494,8 +593,8 @@ private struct RailYardOperationsBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCard)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft, lineWidth: 1))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

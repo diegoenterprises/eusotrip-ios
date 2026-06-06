@@ -146,8 +146,6 @@ private struct RailBorderClearanceBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Image(systemName: "flag.2.crossed")
                     .font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("RAIL ENGINEER · BORDER CLEARANCE")
@@ -213,7 +211,7 @@ private struct RailBorderClearanceBody: View {
                         Text("\(d.numberOfCars ?? 1)")
                             .font(.system(size: 22, weight: .heavy)).monospacedDigit()
                             .foregroundStyle(palette.textPrimary)
-                        Text("\(d.hazmatClass ?? "") · UN\(d.unNumber ?? "—")")
+                        Text("\(d.hazmatClass ?? "") · UN\(d.unNumber ?? "-")")
                             .font(.system(size: 11))
                             .foregroundStyle(palette.textSecondary)
                     }

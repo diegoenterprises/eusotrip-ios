@@ -33,7 +33,7 @@
 //                destinationCity / destinationState`.
 //    EUSO-2135 — No countered-delta or term-length aggregates on the
 //                row envelope. 3-stat row's term + countered slots
-//                paint "—" until backend ships explicit fields.
+//                paint "-" until backend ships explicit fields.
 //
 //  Doctrine refs: §2 LOADS-tab nav (handled by ContentView); §3
 //  numbers-first copy; §4.3 single iridescent hairline; §11 / §11.2
@@ -632,7 +632,7 @@ struct ShipperAgreements: View {
                                stage: .active, isCompactExpired: true)
         default:
             return CanonStatus(tier: .neutral, pillKind: .draft,
-                               pillLegend: (row.status ?? "—").uppercased(), pillWidth: 84,
+                               pillLegend: (row.status ?? "-").uppercased(), pillWidth: 84,
                                stage: .draft, isCompactExpired: false)
         }
     }
@@ -805,29 +805,29 @@ struct ShipperAgreements: View {
     }
 
     private func rateValue(_ row: ShipperAgreementsAPI.Agreement) -> String {
-        guard let r = row.baseRate, !r.isEmpty else { return "—" }
+        guard let r = row.baseRate, !r.isEmpty else { return "-" }
         return "$\(r)"
     }
 
     private func termValue(_ row: ShipperAgreementsAPI.Agreement) -> String {
         // EUSO-2135 — term length aggregate not on envelope.
         guard let eff = row.effectiveDate.flatMap(parseDate),
-              let exp = row.expirationDate.flatMap(parseDate) else { return "—" }
+              let exp = row.expirationDate.flatMap(parseDate) else { return "-" }
         let days = max(0, Int(exp.timeIntervalSince(eff) / 86400))
         if days >= 365 { return "\(days / 365)y" }
         if days >= 30 { return "\(days / 30)mo" }
         if days > 0 { return "\(days)d" }
-        return "—"
+        return "-"
     }
 
     private func sentValue(_ row: ShipperAgreementsAPI.Agreement) -> String {
-        guard let s = row.createdAt else { return "—" }
+        guard let s = row.createdAt else { return "-" }
         let trimmed = String(s.prefix(10))
         let parts = trimmed.split(separator: "-")
         guard parts.count == 3 else { return trimmed }
         let monthIdx = Int(parts[1]) ?? 1
-        let months = ["—", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        let month = (monthIdx >= 1 && monthIdx <= 12) ? months[monthIdx] : "—"
+        let months = ["-", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        let month = (monthIdx >= 1 && monthIdx <= 12) ? months[monthIdx] : "-"
         let day = parts[2]
         return "\(month) \(day)"
     }
@@ -929,7 +929,7 @@ struct ShipperAgreements: View {
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 48)
-                .background(Capsule().fill(LinearGradient.primary))
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Create a new agreement")
@@ -994,7 +994,7 @@ struct ShipperAgreements: View {
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
             Text(store.filter == .all
-                 ? "Send a counter-party an agreement from the New button below — it'll appear here for sign-off."
+                 ? "Send a counter-party an agreement from the New button below. It'll appear here for sign-off."
                  : "Try a different filter, or create a new agreement.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
@@ -1396,7 +1396,7 @@ struct ShipperAgreementDetailSheet: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 11)
                         .foregroundStyle(.white)
                         .background(LinearGradient.diagonal)
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .disabled(respondingAmendmentId != nil)
@@ -1414,8 +1414,8 @@ struct ShipperAgreementDetailSheet: View {
                             .frame(maxWidth: .infinity).padding(.vertical, 11)
                             .foregroundStyle(palette.textPrimary)
                             .background(palette.bgCardSoft)
-                            .overlay(Capsule().strokeBorder(palette.borderFaint))
-                            .clipShape(Capsule())
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     }
                     .buttonStyle(.plain)
                     .disabled(respondingAmendmentId != nil)
@@ -1476,9 +1476,9 @@ struct ShipperAgreementDetailSheet: View {
             .foregroundStyle(variant == .filled ? .white : palette.textPrimary)
             .background(variant == .filled ? AnyView(LinearGradient.diagonal) : AnyView(palette.bgCardSoft))
             .overlay(variant == .outline
-                     ? AnyView(Capsule().strokeBorder(palette.borderFaint))
+                     ? AnyView(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
                      : AnyView(EmptyView()))
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -1505,7 +1505,7 @@ struct ShipperAgreementDetailSheet: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             Text("GRADIENT INK · SIGN").font(.system(size: 9, weight: .heavy)).tracking(0.9)
                 .foregroundStyle(palette.textTertiary)
-            Text("Tapping sign appends a SHA-256 audit row tied to your account, IP, and timestamp. Both parties must sign to activate.")
+            Text("Tapping sign appends a SHA-256 audit row tied to your account, IP and timestamp. Both parties must sign to activate.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 6) {
@@ -1550,7 +1550,7 @@ struct ShipperAgreementDetailSheet: View {
                         .font(.system(size: 14, weight: .heavy))
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 13)
-                .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+                .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(signing || signerName.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -1590,7 +1590,7 @@ struct ShipperAgreementDetailSheet: View {
             .padding(.horizontal, 14)
             .foregroundStyle(.white)
             .background(LinearGradient.diagonal)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .sheet(isPresented: $presentingPDFViewer) {
@@ -1819,7 +1819,7 @@ struct ShipperAgreementCounterForm: View {
                 .foregroundStyle(LinearGradient.diagonal)
             Text(row.agreementNumber ?? "#\(row.id)")
                 .font(.system(size: 24, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("Push back on terms before signing. The other party gets notified and can Accept or Reject your counter — both parties re-sign once accepted.")
+            Text("Push back on terms before signing. The other party gets notified and can Accept or Reject your counter. Both parties re-sign once accepted.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

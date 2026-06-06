@@ -56,6 +56,23 @@ private struct PostedBody: View {
     @State private var isCancelling: Bool = false
     @State private var cancelError: String? = nil
 
+    /// The snapshot carries no `transportMode` column — only `equipmentType`.
+    /// Derive the base mode from the equipment keyword (same rail*/vessel*
+    /// convention the LifecycleScaffold uses) so mode-dependent labels speak
+    /// the load's language; default to truck.
+    private var loadMode: TransportMode {
+        let e = (live.load.equipmentType ?? "").lowercased()
+        if e.contains("rail") || e.contains("tofc") || e.contains("cofc")
+            || e.contains("boxcar") || e.contains("hopper") || e.contains("gondola")
+            || e.contains("centerbeam") || e.contains("autorack") || e.contains("flatcar")
+            || e.contains("well car") { return .rail }
+        if e.contains("vessel") || e.contains("container ship") || e.contains("vlcc")
+            || e.contains("bulk carrier") || e.contains("ro/ro") || e.contains("roro")
+            || e.contains("lng") || e.contains("iso tank") { return .vessel }
+        if e.contains("barge") { return .barge }
+        return .truck
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             reachCard
@@ -86,12 +103,12 @@ private struct PostedBody: View {
                 )
             }
             if live.bidsSummary.count == 0 {
-                Text("No bids yet — carriers will surface offers here as they come in. Live updates over the lifecycle socket channel.")
+                Text("No bids yet. Carriers will surface offers here as they come in. Live updates over the lifecycle socket channel.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text(live.recommendedBidId != nil
-                     ? "ESANG flagged a recommended bid — open the bids feed to review."
+                     ? "ESANG flagged a recommended bid. Open the bids feed to review."
                      : "Bids in flight. Open the bids feed for full triage.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -103,9 +120,9 @@ private struct PostedBody: View {
         LifecycleCard {
             LifecycleSection(label: "LOAD", icon: "doc.text")
             LifecycleRow(label: "Posted rate",  value: usd(live.load.rate))
-            LifecycleRow(label: "Distance",     value: live.load.distance.map { "\(Int($0)) mi" } ?? "—")
+            LifecycleRow(label: "Distance",     value: live.load.distance.map { "\(Int($0)) mi" } ?? "-")
             LifecycleRow(label: "Equipment",    value: dashIfEmpty(live.load.equipmentType))
-            LifecycleRow(label: "Pickup window", value: humanISO(live.load.pickupDate))
+            LifecycleRow(label: TransportLexicon.short(.originWindow, mode: loadMode, equipmentRaw: live.load.equipmentType), value: humanISO(live.load.pickupDate))
             if let bidEnd = live.load.biddingEnds {
                 LifecycleRow(label: "Bidding ends", value: humanISO(bidEnd))
             }

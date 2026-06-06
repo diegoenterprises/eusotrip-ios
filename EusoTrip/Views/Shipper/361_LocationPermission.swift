@@ -23,7 +23,7 @@ struct LocationPermissionScreen: View {
             title: "Location",
             eyebrow: "Shipper · Location",
             icon: "location.fill",
-            message: "Location lets the app surface a Live Activity for your in-transit loads, geofence pre-arrival pings, and accurate ETA recalcs.",
+            message: "Location lets the app surface a Live Activity for your in-transit loads, geofence pre-arrival pings and accurate ETA recalcs.",
             bullets: [
                 "Live Activity ETA on Lock Screen + Dynamic Island",
                 "Geofence enter/exit alerts (30-min and at-gate)",

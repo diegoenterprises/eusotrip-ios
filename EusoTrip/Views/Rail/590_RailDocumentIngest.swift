@@ -194,15 +194,15 @@ private struct RailDocumentIngestBody: View {
     }
     private var fieldsNormalized: Int { parsed?.fieldsNormalized ?? 0 }
     private var totalFields: Int      { parsed?.totalFields      ?? 14 }
-    private var missingField: String  { parsed?.missingField     ?? "—" }
-    private var parsedAgoLabel: String { parsed?.parsedAgoLabel  ?? "—" }
+    private var missingField: String  { parsed?.missingField     ?? "-" }
+    private var parsedAgoLabel: String { parsed?.parsedAgoLabel  ?? "-" }
     private var parseTimeLabel: String {
         guard let t = parsed?.parseTimeSeconds else { return "" }
         return " · \(Int(t))s parse"
     }
     private var docsToday: Int        { dashboard?.docsToday      ?? 0 }
-    private var docsStatusLabel: String { dashboard?.docsStatusLabel ?? "—" }
-    private var draftRailId: String   { draft?.railId     ?? "—" }
+    private var docsStatusLabel: String { dashboard?.docsStatusLabel ?? "-" }
+    private var draftRailId: String   { draft?.railId     ?? "-" }
     private var draftCompany: String  { draft?.companyName ?? "Eusorone Technologies" }
     private var missingCount: Int     { totalFields - fieldsNormalized }
 
@@ -252,9 +252,6 @@ private struct RailDocumentIngestBody: View {
                 Circle()
                     .fill(palette.bgCard)
                     .overlay(Circle().stroke(Color.black.opacity(0.10), lineWidth: 1))
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(palette.textPrimary)
             }
             .frame(width: 40, height: 40)
 
@@ -370,11 +367,11 @@ private struct RailDocumentIngestBody: View {
             }
             .padding(.bottom, Space.s3)
 
-            fieldRow(label: "Waybill",         value: fields?.waybillNumber  ?? "—", mono: true)
+            fieldRow(label: "Waybill",         value: fields?.waybillNumber  ?? "-", mono: true)
             fieldRow(label: "Carrier · Train",  value: [fields?.carrierName, fields?.trainSymbol].compactMap { $0 }.joined(separator: " · "), mono: true)
-            fieldRow(label: "Lane",             value: fields?.lane           ?? "—", mono: false)
+            fieldRow(label: "Lane",             value: fields?.lane           ?? "-", mono: false)
             fieldRow(label: "ETD · ETA",        value: [fields?.etdLabel, fields?.etaLabel].compactMap { $0 }.joined(separator: " → "), mono: false)
-            fieldRow(label: "Containers",       value: fields?.containerDesc  ?? "—", mono: true)
+            fieldRow(label: "Containers",       value: fields?.containerDesc  ?? "-", mono: true)
             fieldRow(label: "Commodity · Terms", value: [fields?.commodity, fields?.terms].compactMap { $0 }.joined(separator: " · "), mono: false, isLast: true)
         }
         .padding(Space.s4)

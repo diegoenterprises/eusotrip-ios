@@ -541,7 +541,7 @@ private struct RailYardMoveQueueBody: View {
             parts.append("from \(from)")
         }
         if let who = m.assignedTo, !who.isEmpty { parts.append(who) }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     // Seconds the move has waited since requestedAt.
@@ -579,11 +579,11 @@ private struct RailYardMoveQueueBody: View {
     private func assignTopMove() async {
         guard !assigning else { return }
         guard let move = topMove else {
-            assignBanner = "No move to assign — the queue is clear."
+            assignBanner = "No move to assign. The queue is clear."
             return
         }
         guard let hostler = nextFreeHostler else {
-            assignBanner = "No hostler available — none on shift to take the move."
+            assignBanner = "No hostler available. None on shift to take the move."
             return
         }
         assigning = true; assignBanner = nil
@@ -602,7 +602,7 @@ private struct RailYardMoveQueueBody: View {
                 assignBanner = "Assigned \(moveTitle(move)) → \(hostler.name ?? hostler.id)."
                 await reload()
             } else {
-                assignBanner = "Assignment did not complete — try again."
+                assignBanner = "Assignment did not complete. Try again."
             }
         } catch {
             assignBanner = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

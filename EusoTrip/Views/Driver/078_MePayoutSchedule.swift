@@ -195,7 +195,7 @@ struct MePayoutSchedule: View {
                     .font(EType.h2)
                     .foregroundStyle(LinearGradient.diagonal)
             } else {
-                Text("—")
+                Text("-")
                     .font(EType.h2)
                     .foregroundStyle(palette.textSecondary)
                 Text("Your first payout posts after your first settled load.")
@@ -471,7 +471,7 @@ struct MePayoutSchedule: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("Payouts run against your default method (manage in Payment Methods). With auto-payout off, Eusowallet still accrues earnings — you press Pay now when you want the release. Instant payouts land in ~30 minutes for a 1.5% fee; standard ACH lands in 1–2 business days free.")
+            Text("Payouts run against your default method (manage in Payment Methods). With auto-payout off, Eusowallet still accrues earnings. You press Pay now when you want the release. Instant payouts land in ~30 minutes for a 1.5% fee; standard ACH lands in 1–2 business days free.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -279,7 +279,7 @@ struct ShipperSettings: View {
             if !u.email.isEmpty { return u.email }
             if let name = u.name, !name.isEmpty { return name }
         }
-        return "—"
+        return "-"
     }
 
     private func accountRow(
@@ -466,7 +466,7 @@ struct ShipperSettings: View {
                 alertToggle(
                     glyph: "trophy.fill",
                     title: "Missions",
-                    subtitle: "Streaks, badges, and crate drops",
+                    subtitle: "Streaks, badges and crate drops",
                     keyName: "missionAlerts",
                     isOn: prefsStore.matrix.missionAlerts
                 )
@@ -784,8 +784,8 @@ struct ShipperSettings: View {
         }()
         switch (lhs, rhs) {
         case (let l?, let r?): return "\(l) → \(r)"
-        case (let l?, nil):    return "\(l) → —"
-        case (nil, let r?):    return "— → \(r)"
+        case (let l?, nil):    return "\(l) → -"
+        case (nil, let r?):    return "- → \(r)"
         case (nil, nil):       return nil
         }
     }

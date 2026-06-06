@@ -139,10 +139,6 @@ private struct VesselIMDGDGRulesBody: View {
 
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Image(systemName: "chevron.left")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
-                .padding(.top, Space.s3)
             Text("DG Rules")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
@@ -345,7 +341,7 @@ private struct VesselIMDGDGRulesBody: View {
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     // MARK: - Load

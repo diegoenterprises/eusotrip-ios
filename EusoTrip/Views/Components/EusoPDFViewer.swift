@@ -127,7 +127,7 @@ struct EusoPDFViewer: View {
             case .success:
                 savedAck = "Saved to Files"
             case .failure(let err):
-                savedAck = "Save canceled — \(err.localizedDescription)"
+                savedAck = "Save canceled, \(err.localizedDescription)"
             }
             scheduleAckClear()
         }
@@ -388,7 +388,7 @@ struct EusoPDFViewer: View {
             case .presented:
                 walletAck = "Apple Wallet sheet presented"
             case .signingUnavailable:
-                walletAck = "Wallet pass not yet available — try after dispatch"
+                walletAck = "Wallet pass not yet available, try after dispatch"
             case .failure(let msg):
                 walletAck = "Wallet error: \(msg)"
             }
@@ -520,8 +520,8 @@ struct EusoSignaturePadSheet: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .background(palette.bgCard)
-                        .overlay(Capsule().strokeBorder(palette.borderFaint))
-                        .clipShape(Capsule())
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(!EusoGradientInkCanvas.hasInk(strokes))
@@ -535,7 +535,7 @@ struct EusoSignaturePadSheet: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .background(LinearGradient.diagonal)
-                        .clipShape(Capsule())
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(!EusoGradientInkCanvas.hasInk(strokes))

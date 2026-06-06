@@ -37,14 +37,14 @@ struct AtReceiverGateFull: View {
     // MARK: - Figma fallback
     private let fallbackClock   = "21:15"
     private let fallbackGeofenceClock = "21:13"
-    private let fallbackArrivalLine   = "—"
+    private let fallbackArrivalLine   = "-"
     private let fallbackAddress       = "7600 N ROOSEVELT HWY · GATE B-2"
     private let fallbackDeskState     = "RECEIVER DESK PINGED"
-    private let fallbackDriverName    = "—"
+    private let fallbackDriverName    = "-"
     private let fallbackCDL           = "CDL X-XX"
     private let fallbackHazmatBadge   = "HAZMAT + TANK"
     private let fallbackPin           = "8-2-7-3"
-    private let fallbackGuardTip      = "—"
+    private let fallbackGuardTip      = "-"
 
     var body: some View {
         ScrollView(showsIndicators: false) {

@@ -299,7 +299,7 @@ private struct VesselShipperHomeBody: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .background(LinearGradient.primary)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
 
@@ -311,8 +311,8 @@ private struct VesselShipperHomeBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 132, height: 48)
                     .background(palette.bgCardSoft)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }
@@ -367,12 +367,12 @@ private struct VesselShipperHomeBody: View {
     }
 
     private var avgTransitStr: String {
-        guard let avg = dash?.avgTransitDays, avg > 0 else { return "—" }
+        guard let avg = dash?.avgTransitDays, avg > 0 else { return "-" }
         return "\(Int(avg.rounded()))d"
     }
 
     private var monthlySpendStr: String {
-        guard let s = dash?.monthlySpend, s > 0 else { return "—" }
+        guard let s = dash?.monthlySpend, s > 0 else { return "-" }
         if s >= 1_000_000 { return String(format: "$%.1fM", s / 1_000_000) }
         return String(format: "$%.0fK", s / 1_000)
     }
@@ -419,7 +419,7 @@ private struct VesselShipperHomeBody: View {
         return HStack(alignment: .top, spacing: Space.s3) {
             bookingBadge(for: b)
             VStack(alignment: .leading, spacing: 5) {
-                Text("\(b.origin ?? "—") → \(b.destination ?? "—")")
+                Text("\(b.origin ?? "-") → \(b.destination ?? "-")")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.8)
@@ -494,12 +494,12 @@ private struct VesselShipperHomeBody: View {
         case "customs_hold", "on_hold", "hold": return ("CUSTOMS HOLD", Brand.warning)
         case "loaded", "loaded_on_vessel":     return ("LOADED", Brand.success)
         case "delivered":                      return ("DELIVERED", palette.textSecondary)
-        default:                               return ((b.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased(), Brand.blue)
+        default:                               return ((b.status ?? "-").replacingOccurrences(of: "_", with: " ").uppercased(), Brand.blue)
         }
     }
 
     private func amountStr(_ amount: Double?) -> String {
-        guard let a = amount, a > 0 else { return "—" }
+        guard let a = amount, a > 0 else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = "USD"
@@ -641,7 +641,7 @@ private struct VesselShipperHomeBody: View {
         for d in demurrage where (d.onHold == true) {
             let used = d.freeDaysUsed ?? 0
             let total = d.freeDaysTotal ?? 0
-            let bn = d.bookingNumber ?? "—"
+            let bn = d.bookingNumber ?? "-"
             var meta: [String] = [bn, "customs hold"]
             if total > 0 { meta.append("demurrage day \(used) of \(total) free") }
             var route: [String] = []
@@ -660,7 +660,7 @@ private struct VesselShipperHomeBody: View {
                 kind: .danger))
         }
         for f in isf where (f.filed != true) {
-            let bn = f.bookingNumber ?? "—"
+            let bn = f.bookingNumber ?? "-"
             var meta: [String] = [bn]
             if let h = f.hoursUntilDue, h > 0 {
                 meta.append("ISF 10+2 due in \(Int(h.rounded()))h")
@@ -700,7 +700,7 @@ private struct VesselShipperHomeBody: View {
                 input: CreateIn(draft: true))
             await load()
         } catch {
-            actionError = "Couldn't start a booking — "
+            actionError = "Couldn't start a booking. "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
     }
@@ -714,7 +714,7 @@ private struct VesselShipperHomeBody: View {
             let _: TrackOut = try await EusoTripAPI.shared.queryNoInput(
                 "vesselShipments.liveTrackOceanShipment")
         } catch {
-            actionError = "Tracking unavailable — "
+            actionError = "Tracking unavailable. "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
     }
@@ -727,7 +727,7 @@ private struct VesselShipperHomeBody: View {
                 "vesselShipments.getVesselShipments",
                 input: DetailIn(bookingNumber: bookingNumber))
         } catch {
-            actionError = "Couldn't open \(bookingNumber) — "
+            actionError = "Couldn't open \(bookingNumber). "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
     }
@@ -741,7 +741,7 @@ private struct VesselShipperHomeBody: View {
             let _: [DemOut] = try await EusoTripAPI.shared.queryNoInput(
                 "vesselShipments.getVesselDemurrage")
         } catch {
-            actionError = "ESang couldn't refresh demurrage — "
+            actionError = "ESang couldn't refresh demurrage. "
                 + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
     }

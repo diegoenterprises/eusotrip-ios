@@ -147,7 +147,7 @@ private struct VesselPortStateControlBody: View {
         case "fail":        return ("Elevated", Brand.warning)
         case "conditional": return ("Elevated", Brand.warning)
         case "pass":        return ("Low", Brand.success)
-        default:            return ("—", palette.textTertiary)
+        default:            return ("-", palette.textTertiary)
         }
     }
 
@@ -203,9 +203,6 @@ private struct VesselPortStateControlBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Port State Control")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -409,7 +406,7 @@ private struct VesselPortStateControlBody: View {
         var parts: [String] = []
         if let c = d.code, !c.isEmpty { parts.append("code \(c)") }
         if let a = d.action, !a.isEmpty { parts.append(a) }
-        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+        return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
     // MARK: - ESang advisory
@@ -420,7 +417,7 @@ private struct VesselPortStateControlBody: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(openCount > 0
                      ? "ESang: clear \(openCount) open item\(openCount == 1 ? "" : "s") to avoid detention"
-                     : "ESang: no open PSC items — clearance unblocked")
+                     : "ESang: no open PSC items - clearance unblocked")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)

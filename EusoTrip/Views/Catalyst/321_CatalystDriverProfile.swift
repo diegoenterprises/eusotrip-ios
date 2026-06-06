@@ -167,7 +167,7 @@ private struct CatalystDriverProfile: View {
     }
 
     private var headerStatusLabel: String {
-        guard let p = profile else { return "—" }
+        guard let p = profile else { return "-" }
         return p.status.uppercased().replacingOccurrences(of: "_", with: " ")
     }
 
@@ -224,7 +224,7 @@ private struct CatalystDriverProfile: View {
     }
 
     private var hireDateDisplay: String {
-        guard let raw = profile?.hireDate, !raw.isEmpty else { return "—" }
+        guard let raw = profile?.hireDate, !raw.isEmpty else { return "-" }
         if raw.count >= 10 { return String(raw.prefix(10)) }
         return raw
     }
@@ -265,12 +265,12 @@ private struct CatalystDriverProfile: View {
                 Text(p.name)
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("CDL-\(p.cdl.class) · \(p.cdlNumber.isEmpty ? "—" : p.cdlNumber)")
+                Text("CDL-\(p.cdl.class) · \(p.cdlNumber.isEmpty ? "-" : p.cdlNumber)")
                     .font(.system(size: 11, design: .monospaced))
                     .tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                 if let load = p.currentLoad, !load.isEmpty {
-                    Text("On \(load) · \(rosterRow.map { $0.location } ?? "—")")
+                    Text("On \(load) · \(rosterRow.map { $0.location } ?? "-")")
                         .font(.system(size: 11))
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1)
@@ -300,7 +300,7 @@ private struct CatalystDriverProfile: View {
     }
 
     private var statusPill: some View {
-        let label = profile?.status.uppercased().replacingOccurrences(of: "_", with: " ") ?? "—"
+        let label = profile?.status.uppercased().replacingOccurrences(of: "_", with: " ") ?? "-"
         let tint: Color = {
             switch profile?.status.lowercased() ?? "" {
             case "on_load":    return Brand.blue
@@ -392,13 +392,13 @@ private struct CatalystDriverProfile: View {
                 credentialRow(
                     icon: "rectangle.fill.on.rectangle.fill",
                     label: "CDL · Class \(p.cdl.class)",
-                    value: p.cdl.number.isEmpty ? "—" : p.cdl.number,
+                    value: p.cdl.number.isEmpty ? "-" : p.cdl.number,
                     meta: cdlMeta(p)
                 )
                 credentialRow(
                     icon: "cross.case.fill",
                     label: "Medical · 49 CFR §391.41",
-                    value: p.medicalCard.expirationDate.isEmpty ? "—" : "exp \(p.medicalCard.expirationDate)",
+                    value: p.medicalCard.expirationDate.isEmpty ? "-" : "exp \(p.medicalCard.expirationDate)",
                     meta: medicalMeta(p)
                 )
                 if !p.cdl.endorsements.isEmpty {
@@ -455,7 +455,7 @@ private struct CatalystDriverProfile: View {
     }
 
     private func cdlMeta(_ p: DriversAPI.DriverProfile) -> (text: String, tint: Color) {
-        guard !p.cdl.expirationDate.isEmpty else { return ("—", palette.textTertiary) }
+        guard !p.cdl.expirationDate.isEmpty else { return ("-", palette.textTertiary) }
         return ("EXP \(p.cdl.expirationDate)", Brand.success)
     }
 
@@ -496,14 +496,14 @@ private struct CatalystDriverProfile: View {
                 kpiDivider
                 kpiCell(
                     eyebrow: "ON-TIME",
-                    value: p.onTimeRate > 0 ? String(format: "%.0f%%", p.onTimeRate) : "—",
+                    value: p.onTimeRate > 0 ? String(format: "%.0f%%", p.onTimeRate) : "-",
                     meta: "delivered/total",
                     emphasis: .success
                 )
                 kpiDivider
                 kpiCell(
                     eyebrow: "DQ",
-                    value: dqOverview.map { "\($0.complianceScore)%" } ?? "—",
+                    value: dqOverview.map { "\($0.complianceScore)%" } ?? "-",
                     meta: "compliance",
                     emphasis: .gradient
                 )
@@ -565,7 +565,7 @@ private struct CatalystDriverProfile: View {
     }
 
     private func formatCurrency(_ value: Double) -> String {
-        guard value > 0 else { return "—" }
+        guard value > 0 else { return "-" }
         let f = NumberFormatter()
         f.numberStyle = .currency
         f.currencyCode = "USD"
@@ -585,13 +585,13 @@ private struct CatalystDriverProfile: View {
                 quickActionRow(
                     icon: "doc.on.doc.fill",
                     title: "Documents",
-                    subtitle: "§391 vault — CDL · Medical · MVR · Drug",
+                    subtitle: "§391 vault · CDL · Medical · MVR · Drug",
                     action: { showDocuments = true }
                 )
                 quickActionRow(
                     icon: "shield.lefthalf.filled",
                     title: "Compliance",
-                    subtitle: "5 federal axes — CSA · §395 · MCSAP · §391.41 · §382",
+                    subtitle: "5 federal axes · CSA · §395 · MCSAP · §391.41 · §382",
                     action: { showCompliance = true }
                 )
                 quickActionRow(
@@ -788,7 +788,7 @@ private struct CatalystDriverEditSheet: View {
         NavigationStack {
             Form {
                 Section("Driver") {
-                    LabeledContent("Name", value: currentName.isEmpty ? "—" : currentName)
+                    LabeledContent("Name", value: currentName.isEmpty ? "-" : currentName)
                 }
                 Section("CDL") {
                     TextField("License number", text: $licenseNumber)

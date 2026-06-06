@@ -230,9 +230,6 @@ private struct VesselFinancialSummaryBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Financials")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -352,7 +349,7 @@ private struct VesselFinancialSummaryBody: View {
             kpiCell(label: "REVENUE", value: moneyKPI(r.revenue),
                     footnote: "MTD", footColor: Brand.success, gradient: false, valueColor: palette.textPrimary)
             kpiCell(label: "COST", value: moneyKPI(r.totalCost),
-                    footnote: r.revenue > 0 ? "\(Int((r.totalCost / r.revenue * 100).rounded()))% of rev" : "—",
+                    footnote: r.revenue > 0 ? "\(Int((r.totalCost / r.revenue * 100).rounded()))% of rev" : "-",
                     footColor: palette.textSecondary, gradient: false, valueColor: palette.textPrimary)
             kpiCell(label: "MARGIN", value: "\(Int(r.marginPct.rounded()))%",
                     footnote: r.marginPct >= 0 ? "net" : "loss",
@@ -483,7 +480,7 @@ private struct VesselFinancialSummaryBody: View {
                     .frame(maxWidth: .infinity, minHeight: 48)
             }
             .background(LinearGradient.primary)
-            .clipShape(Capsule())
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .frame(maxWidth: .infinity)
 
             Button {
@@ -497,8 +494,8 @@ private struct VesselFinancialSummaryBody: View {
                     .frame(width: 132, height: 48)
             }
             .background(palette.bgCardSoft)
-            .overlay(Capsule().strokeBorder(palette.borderSoft, lineWidth: 1))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
     }
 

@@ -132,13 +132,13 @@ private struct RailEquipmentSpecsBody: View {
         return specs?.loadLimit
     }
     private var grossLabel: String {
-        guard let g = grossRailLoad else { return "—" }
+        guard let g = grossRailLoad else { return "-" }
         return g >= 1000 ? "\(Int((g / 1000).rounded()))k" : "\(Int(g.rounded()))"
     }
 
     /// Well-car length (ft) — from inside length when present.
     private var lengthLabel: String {
-        guard let l = specs?.dimensions?.insideLength else { return "—" }
+        guard let l = specs?.dimensions?.insideLength else { return "-" }
         return "\(Int(l.rounded())) ft"
     }
 
@@ -146,14 +146,14 @@ private struct RailEquipmentSpecsBody: View {
     /// articulated well cars; absent → em-dash.
     private var platformLabel: String {
         if let p = specs?.plateC, !p.isEmpty { return p }
-        return "—"
+        return "-"
     }
 
     private var carTypeChip: String {
         guard let t = specs?.carType, !t.isEmpty else { return "well-car" }
         return t
     }
-    private var aarTypeLetter: String { specs?.aarType ?? "—" }
+    private var aarTypeLetter: String { specs?.aarType ?? "-" }
 
     private var mechHealthy: Bool {
         let c = (health?.overallCondition ?? health?.mechanicalCondition ?? "").uppercased()
@@ -203,9 +203,6 @@ private struct RailEquipmentSpecsBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Equipment")
                     .font(.system(size: 28, weight: .bold)).kerning(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -468,7 +465,7 @@ private struct RailEquipmentSpecsBody: View {
     }
     private var lastInspectionLine: String {
         guard let raw = health?.lastInspectionDate, !raw.isEmpty else {
-            return "Last AAR Rule 1 inspection · —"
+            return "Last AAR Rule 1 inspection · -"
         }
         return "Last AAR Rule 1 inspection · \(relativeDays(raw))"
     }
@@ -497,7 +494,7 @@ private struct RailEquipmentSpecsBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(Color(hex: 0x232932))
-                    .clipShape(Capsule())
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

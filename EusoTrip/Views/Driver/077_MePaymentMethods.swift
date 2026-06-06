@@ -377,7 +377,7 @@ struct MePaymentMethods: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("EusoTrip never stores your bank or card credentials — they live at Stripe and Plaid, both independently certified. The default method receives settlement payouts on the cadence set in Eusowallet.")
+            Text("EusoTrip never stores your bank or card credentials. They live at Stripe and Plaid, both independently certified. The default method receives settlement payouts on the cadence set in Eusowallet.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -177,7 +177,7 @@ private struct FmcsaBody: View {
             LifecycleRow(label: "USDOT",       value: dashIfEmpty(d.dotNumber))
             LifecycleRow(label: "MC",          value: dashIfEmpty(d.mcNumber))
             LifecycleRow(label: "Safety",      value: dashIfEmpty(d.safetyRating))
-            LifecycleRow(label: "OOS violations", value: d.oosViolations.map { "\($0)" } ?? "—")
+            LifecycleRow(label: "OOS violations", value: d.oosViolations.map { "\($0)" } ?? "-")
         }
     }
 

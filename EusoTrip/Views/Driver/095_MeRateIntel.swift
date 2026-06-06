@@ -330,7 +330,7 @@ struct MeRateIntel: View {
     // MARK: Footer
 
     private var footer: some View {
-        Text("Rate intel is a signal — not a guarantee. Use the forecast with your actual cost structure (CPM + deadhead + FSC) when negotiating.")
+        Text("Rate intel is a signal, not a guarantee. Use the forecast with your actual cost structure (CPM + deadhead + FSC) when negotiating.")
             .font(EType.caption)
             .foregroundStyle(palette.textTertiary)
             .multilineTextAlignment(.center)

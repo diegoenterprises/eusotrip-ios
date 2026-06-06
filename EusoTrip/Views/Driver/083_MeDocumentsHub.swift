@@ -339,7 +339,7 @@ struct MeDocumentsHub: View {
         EusoEmptyState(
             systemImage: "folder",
             title: "No documents yet",
-            subtitle: "Upload your CDL, Medical card, TWIC, Hazmat, Insurance, and Registration — ESANG AI auto-classifies each one after upload."
+            subtitle: "Upload your CDL, Medical card, TWIC, Hazmat, Insurance and Registration. ESANG AI auto-classifies each one after upload."
         )
     }
 
@@ -922,7 +922,7 @@ private struct ArchiveSheetContent: View {
                         .buttonStyle(.plain)
                     }
                 }
-                Text("Archiving soft-deletes the document — it leaves the vault but is retained for the chosen window to satisfy DOT / IRS audit requirements.")
+                Text("Archiving soft-deletes the document. It leaves the vault but is retained for the chosen window to satisfy DOT / IRS audit requirements.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

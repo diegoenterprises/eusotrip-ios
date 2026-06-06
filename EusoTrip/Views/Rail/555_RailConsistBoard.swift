@@ -97,7 +97,6 @@ private struct RailConsistBoardBody: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Image(systemName: "tram.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("RAIL ENGINEER · CONSISTS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
@@ -115,11 +114,11 @@ private struct RailConsistBoardBody: View {
         let hazmat = min(c.hazmatCars ?? 0, total)
         return VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text(c.consistNumber ?? "—").font(.system(size: 15, weight: .bold)).monospaced().foregroundStyle(palette.textPrimary)
+                Text(c.consistNumber ?? "-").font(.system(size: 15, weight: .bold)).monospaced().foregroundStyle(palette.textPrimary)
                 Spacer()
-                StatusPill(text: (c.status ?? "—").uppercased(), kind: rolling ? .info : .neutral)
+                StatusPill(text: (c.status ?? "-").uppercased(), kind: rolling ? .info : .neutral)
             }
-            Text("\(c.originYard ?? "—") → \(c.destinationYard ?? "—") · \(assigned)/\(total) cars\(c.note.map { " · \($0)" } ?? "")")
+            Text("\(c.originYard ?? "-") → \(c.destinationYard ?? "-") · \(assigned)/\(total) cars\(c.note.map { " · \($0)" } ?? "")")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
             ConsistCarStrip555(total: total, assigned: assigned, hazmat: hazmat, trackTint: palette.textTertiary)
         }

@@ -53,8 +53,8 @@ private struct ComplianceBody: View {
     private var tilesRow: some View {
         HStack(spacing: Space.s2) {
             LifecycleStatTile(label: "EXPIRING", value: "\(expiring.count)", icon: "exclamationmark.triangle", danger: !expiring.isEmpty)
-            LifecycleStatTile(label: "FMCSA",    value: "—", icon: "checkmark.shield")
-            LifecycleStatTile(label: "INSURANCE", value: "—", icon: "umbrella")
+            LifecycleStatTile(label: "SAFETY",   value: "-", icon: "checkmark.shield")
+            LifecycleStatTile(label: "INSURANCE", value: "-", icon: "umbrella")
         }
     }
 
@@ -91,7 +91,7 @@ private struct ComplianceBody: View {
         LifecycleCard {
             LifecycleSection(label: "DETAILS", icon: "list.bullet")
             link(icon: "umbrella", label: "Insurance",          screen: "325")
-            link(icon: "checkmark.shield", label: "FMCSA SAFER", screen: "326")
+            link(icon: "checkmark.shield", label: "Carrier safety", screen: "326")
             link(icon: "triangle.fill", label: "Hazmat audit",   screen: "327")
             link(icon: "doc",          label: "All documents",   screen: "300")
         }

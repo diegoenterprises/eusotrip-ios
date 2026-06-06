@@ -215,7 +215,7 @@ private struct DispatcherDriverRosterBody: View {
                     Text("ESang says: assign \(pick.name.split(separator: " ").last.map(String.init) ?? pick.name) → next open lane")
                         .font(EType.caption.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("\(pick.initials) · \(pick.hosRemaining ?? "—") HOS · \(pick.locationLine ?? "reassignable")")
+                    Text("\(pick.initials) · \(pick.hosRemaining ?? "-") HOS · \(pick.locationLine ?? "reassignable")")
                         .font(EType.mono(.caption))
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -238,8 +238,8 @@ private struct DispatcherDriverRosterBody: View {
                 .font(EType.caption.weight(.heavy)).tracking(0.4)
                 .foregroundStyle(palette.textPrimary)
                 .frame(maxWidth: .infinity).frame(height: 36)
-                .background(Capsule().fill(palette.bgCardSoft))
-                .overlay(Capsule().strokeBorder(palette.borderSoft, lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCardSoft))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft, lineWidth: 1))
         }
         .buttonStyle(.plain)
         .padding(.top, Space.s4)
@@ -422,12 +422,12 @@ private struct DriverRosterRow: View {
             case "fresh":     return ("HOS · 11h", "FRESH",         Brand.success)
             case "available": return ("HOS · 11h", "AVAILABLE",     Brand.success)
             case "reset":     return ("RESET",     "UNTIL DUTY",    Brand.escort)
-            default:           return ("HOS",       "—",             palette.textSecondary)
+            default:           return ("HOS",       "-",             palette.textSecondary)
             }
         }()
         return VStack(spacing: 2) {
             Text(caption).font(EType.micro).tracking(0.4).foregroundStyle(tint.opacity(0.85))
-            Text(driver.hosRemaining ?? "—:—")
+            Text(driver.hosRemaining ?? "-:-")
                 .font(.system(size: 20, weight: .heavy, design: .monospaced))
                 .foregroundStyle(tint)
             Text(footer).font(EType.micro).foregroundStyle(tint.opacity(0.85))

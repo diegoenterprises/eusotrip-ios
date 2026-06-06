@@ -90,7 +90,7 @@ private struct AwardedBody: View {
             }
             Text("Counter accepted").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             if let l = load, let b = bid {
-                Text("AWARDED $\(b.amount ?? l.rate ?? "—") · ETA \(etaText) · BOOKED \(timeAgo(b.acceptedAt ?? l.acceptedAt))")
+                Text("AWARDED $\(b.amount ?? l.rate ?? "-") · ETA \(etaText) · BOOKED \(timeAgo(b.acceptedAt ?? l.acceptedAt))")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textSecondary)
             }
         }
@@ -102,7 +102,7 @@ private struct AwardedBody: View {
                 Text("§11.4 AWARDED · POST-ACCEPT FORWARD FLIP")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 if let l = load {
-                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "—") → \(l.destCity ?? "—") · \(l.trailerType ?? "—") · ACCEPTED")
+                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-") · \(l.trailerType ?? "-") · ACCEPTED")
                         .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
                 }
             }
@@ -117,7 +117,7 @@ private struct AwardedBody: View {
                     Text(initialsFor(b.carrierContactName)).font(.system(size: 16, weight: .heavy)).foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(b.carrierName ?? "—").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
+                    Text(b.carrierName ?? "-").font(EType.body.weight(.bold)).foregroundStyle(palette.textPrimary)
                     if let n = b.carrierContactName { Text(n).font(.caption).foregroundStyle(palette.textSecondary) }
                     if let dot = b.dotNumber, let mc = b.mcNumber {
                         Text("USDOT \(dot) · MC-\(mc)").font(.caption.monospaced()).foregroundStyle(palette.textTertiary)
@@ -137,11 +137,11 @@ private struct AwardedBody: View {
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         let rpm: String = {
             guard let amt = Double(bid?.amount ?? load?.rate ?? "0"), amt > 0,
-                  let mi = load?.distance, mi > 0 else { return "—" }
+                  let mi = load?.distance, mi > 0 else { return "-" }
             return String(format: "$%.2f", amt / mi)
         }()
         return LazyVGrid(columns: cols, spacing: 8) {
-            kpi("AWARDED",    "$\(bid?.amount ?? load?.rate ?? "—")", "to carrier", .green)
+            kpi("AWARDED",    "$\(bid?.amount ?? load?.rate ?? "-")", "to carrier", .green)
             kpi("ETA-PICKUP", etaText, "pickup window", .blue)
             kpi("BOOKED",     timeAgo(bid?.acceptedAt ?? load?.acceptedAt), "ago · NET-30", .green)
             kpi("RPM",        rpm, "per mile", .blue)
@@ -173,7 +173,7 @@ private struct AwardedBody: View {
     }
 
     private var etaText: String {
-        guard let pd = load?.pickupDate, let date = ISO8601DateFormatter().date(from: pd) else { return "—" }
+        guard let pd = load?.pickupDate, let date = ISO8601DateFormatter().date(from: pd) else { return "-" }
         let mins = Int(date.timeIntervalSinceNow / 60)
         if mins < 0 { return "in window" }
         let h = mins / 60
@@ -181,14 +181,14 @@ private struct AwardedBody: View {
     }
 
     private func timeAgo(_ iso: String?) -> String {
-        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "—" }
+        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "-" }
         let mins = max(0, Int(Date().timeIntervalSince(d) / 60))
         if mins < 1 { return "0:01" }
         return "0:\(String(format: "%02d", mins))"
     }
 
     private func initialsFor(_ name: String?) -> String {
-        guard let n = name?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return "—" }
+        guard let n = name?.trimmingCharacters(in: .whitespaces), !n.isEmpty else { return "-" }
         let parts = n.split(separator: " ").map(String.init)
         let f = parts.first?.first.map(String.init) ?? ""
         let l = parts.count > 1 ? (parts.last?.first.map(String.init) ?? "") : ""

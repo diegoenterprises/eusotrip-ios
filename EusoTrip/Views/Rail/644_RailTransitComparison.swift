@@ -171,9 +171,6 @@ private struct RailTransitComparisonBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Transit comparison")
                     .font(.system(size: 28, weight: .bold))
                     .tracking(-0.4)
@@ -269,32 +266,32 @@ private struct RailTransitComparisonBody: View {
 
                 matrixRow(
                     label: "Cost", sub: "landed USD",
-                    aValue: optionACostLabel ?? "—", aWins: true,
-                    bValue: optionBCostLabel ?? "—", bWins: false,
+                    aValue: optionACostLabel ?? "-", aWins: true,
+                    bValue: optionBCostLabel ?? "-", bWins: false,
                     live: true
                 )
                 Rectangle().fill(palette.borderFaint.opacity(0.6)).frame(height: 1)
 
                 matrixRow(
                     label: "Transit", sub: "door-to-ramp",
-                    aValue: "—", aWins: false,
-                    bValue: "—", bWins: false,
+                    aValue: "-", aWins: false,
+                    bValue: "-", bWins: false,
                     live: false
                 )
                 Rectangle().fill(palette.borderFaint.opacity(0.6)).frame(height: 1)
 
                 matrixRow(
                     label: "Reliability", sub: "90-day OTR",
-                    aValue: "—", aWins: false,
-                    bValue: "—", bWins: false,
+                    aValue: "-", aWins: false,
+                    bValue: "-", bWins: false,
                     live: false
                 )
                 Rectangle().fill(palette.borderFaint.opacity(0.6)).frame(height: 1)
 
                 matrixRow(
                     label: "Emissions", sub: "t CO2 / load",
-                    aValue: "—", aWins: false,
-                    bValue: "—", bWins: false,
+                    aValue: "-", aWins: false,
+                    bValue: "-", bWins: false,
                     live: false
                 )
             }
@@ -305,7 +302,7 @@ private struct RailTransitComparisonBody: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
 
             // Honest gap note for the un-sourced scoring axes.
-            Text("Transit · reliability · emissions need a routing-comparison endpoint (intermodal.compareRoutings — not yet built). Only landed cost is live.")
+            Text("Transit · reliability · emissions need a routing-comparison endpoint (intermodal.compareRoutings - not yet built). Only landed cost is live.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -367,7 +364,7 @@ private struct RailTransitComparisonBody: View {
     }
 
     private func cell(value: String, wins: Bool, live: Bool) -> some View {
-        let isPlaceholder = (value == "—") || !live
+        let isPlaceholder = (value == "-") || !live
         return Text(value)
             .font(.system(size: 15, weight: .bold))
             .monospacedDigit()
@@ -444,7 +441,7 @@ private struct RailTransitComparisonBody: View {
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity, minHeight: 48, maxHeight: 48)
                 .background(LinearGradient.primary)
-                .clipShape(Capsule())
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .disabled(optimizing)
@@ -459,8 +456,8 @@ private struct RailTransitComparisonBody: View {
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 132, height: 48)
                     .background(palette.bgCardSoft)
-                    .overlay(Capsule().strokeBorder(palette.borderSoft, lineWidth: 1))
-                    .clipShape(Capsule())
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
         }

@@ -318,13 +318,13 @@ struct DriverTripsPane: View {
                     StatusPill(text: trip.phase.displayName, kind: .info)
                 }
                 HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                    Text(load.pickupLocation?.city ?? "—")
+                    Text(load.pickupLocation?.city ?? "-")
                         .font(EType.h2)
                         .foregroundStyle(palette.textPrimary)
                     Image(systemName: "arrow.right")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text(load.deliveryLocation?.city ?? "—")
+                    Text(load.deliveryLocation?.city ?? "-")
                         .font(EType.h2)
                         .foregroundStyle(LinearGradient.diagonal)
                 }
@@ -483,12 +483,12 @@ struct DriverTripsPane: View {
     }
 
     private var milesRemaining: String {
-        guard let load = trip.currentLoad else { return "—" }
+        guard let load = trip.currentLoad else { return "-" }
         return "\(Int(load.distanceValue)) mi"
     }
 
     private var etaDisplay: String {
-        trip.currentLoad?.deliveryDate.flatMap { String($0.prefix(16)) } ?? "—"
+        trip.currentLoad?.deliveryDate.flatMap { String($0.prefix(16)) } ?? "-"
     }
 
     private var nextStopDisplay: String {
@@ -585,7 +585,7 @@ struct DriverTripsPane: View {
                     radius: 18, y: 6)
         }
         .buttonStyle(PressableCardStyle())
-        .accessibilityLabel("SOS emergency — breakdown, accident, medical, spill")
+        .accessibilityLabel("SOS emergency - breakdown, accident, medical, spill")
     }
 
     // MARK: View mode (list / map) segmented control
@@ -925,7 +925,7 @@ struct DriverTripsPane: View {
             .shadow(color: Brand.magenta.opacity(0.30), radius: 16, x: 2, y: 6)
         }
         .buttonStyle(PressableCardStyle())
-        .accessibilityLabel("My Loads — Active, Pending, Finished")
+        .accessibilityLabel("My Loads - Active, Pending, Finished")
     }
 
     // MARK: Origin → Destination search card
@@ -1041,7 +1041,7 @@ struct DriverTripsPane: View {
                     Text("No loads match your filters")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Text("Try clearing the origin, destination, or equipment chip.")
+                    Text("Try clearing the origin, destination or equipment chip.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .multilineTextAlignment(.center)
@@ -1138,6 +1138,19 @@ struct AvailableLoad: Identifiable, Equatable {
     /// recommended counter rather than booking blind.
     var originState: String? = nil
     var destState: String? = nil
+    /// Canonical transport mode for this load — "truck" / "rail" / "vessel"
+    /// / "barge". Plumbed from the source load's `transportMode` column
+    /// (loads.transport_mode) by every `AvailableLoad.from(...)` adapter.
+    /// Drives mode-aware LoadDetail surfaces (prohibited routes, equipment
+    /// compliance authority, escort vocabulary). Defaults to "truck" so
+    /// existing truck loads render unchanged; resolve to the canonical
+    /// enum via `TransportMode.from(raw:)`.
+    var transportMode: String? = nil
+    /// Raw equipment / cargo string off the source row (e.g. "Reefer",
+    /// "DOT-117 crude", "container"). Feeds the lexicon's equipment hint
+    /// (`TransportLexicon.short(..., equipmentRaw:)`) so sub-mode-specific
+    /// terminology resolves correctly. nil when the source carries none.
+    var equipmentRaw: String? = nil
 
     /// Convenience — pickup as a `LoadLocation` for HERE Maps annotations.
     var pickupLocation: LoadLocation {
@@ -1370,7 +1383,7 @@ struct MyLoadsSheet: View {
                                 MyLoadCard(load: load, heroNamespace: loadHero)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityHint("Shows route, rate, and broker detail")
+                            .accessibilityHint("Shows route, rate and broker detail")
                             .cafeDoorReveal(index: idx)
                         }
                     }
@@ -1460,7 +1473,7 @@ struct MyLoadsSheet: View {
                             // count — the store fetches one bucket at a time
                             // to avoid triple-firing `loads.search`. Other
                             // buckets render as a dash until tapped.
-                            Text(active ? "\(visible.count)" : "—")
+                            Text(active ? "\(visible.count)" : "-")
                                 .font(EType.micro).tracking(0.4)
                                 .foregroundStyle(active ? .white : palette.textTertiary)
                                 .padding(.horizontal, 6).padding(.vertical, 1)
@@ -1501,7 +1514,7 @@ struct MyLoadsSheet: View {
                         "Accept a tender from Eusoboards and you'll see it here.")
             case .pending:
                 return ("No pending tenders",
-                        "Brokers will offer here — tender accept or decline within the window.")
+                        "Brokers will offer here, tender accept or decline within the window.")
             case .finished:
                 return ("No completed loads yet",
                         "Your finished loads + POD receipts will log here.")
@@ -1815,7 +1828,7 @@ struct DriverLoadsPane: View {
                             // Only the currently-selected bucket exposes
                             // a live count — the store loads one bucket
                             // at a time. Other buckets render as a dash.
-                            Text(active ? "\(visible.count)" : "—")
+                            Text(active ? "\(visible.count)" : "-")
                                 .font(EType.micro).tracking(0.4)
                                 .foregroundStyle(active ? .white
                                                         : palette.textTertiary)
@@ -1861,7 +1874,7 @@ struct DriverLoadsPane: View {
                             "Accept a tender from Eusoboards and you'll see it here.")
                 case .pending:
                     return ("No pending tenders",
-                            "Brokers will offer here — tender accept or decline within the window.")
+                            "Brokers will offer here, tender accept or decline within the window.")
                 case .finished:
                     return ("No completed loads yet",
                             "Your finished loads + POD receipts will log here.")
@@ -1879,7 +1892,7 @@ struct DriverLoadsPane: View {
                         MyLoadCard(load: load)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityHint("Shows route, rate, and broker detail")
+                    .accessibilityHint("Shows route, rate and broker detail")
                 }
             }
         }
@@ -1942,7 +1955,7 @@ struct DriverLoadsPane: View {
             .shadow(color: Brand.magenta.opacity(0.35), radius: 18, y: 6)
         }
         .buttonStyle(PressableCardStyle())
-        .accessibilityLabel("Zeun Mechanics — diagnostics, DVIR, maintenance, breakdowns")
+        .accessibilityLabel("Zeun Mechanics - diagnostics, DVIR, maintenance, breakdowns")
     }
 }
 
@@ -2365,7 +2378,7 @@ struct DriverWalletPane: View {
                 EusoEmptyState(
                     systemImage: "clock.arrow.circlepath",
                     title: "No activity yet",
-                    subtitle: "Every payout, fee, and load credit shows up here the moment it clears."
+                    subtitle: "Every payout, fee and load credit shows up here the moment it clears."
                 )
                 .padding(Space.s2)
             case .error(let err):
@@ -3018,11 +3031,11 @@ struct WalletSheetContainer: View {
         case .transfer:
             return "Move funds between your EusoWallet and linked accounts, or split settlements across multiple banks."
         case .card:
-            return "The Euso debit card spends directly from your EusoWallet available balance. Activation ships alongside the issuer partner — this flow will go live once the card issuer router lands."
+            return "The Euso debit card spends directly from your EusoWallet available balance. Activation ships alongside the issuer partner. This flow will go live once the card issuer router lands."
         case .factoring:
             return "Advance against your pending POD at a flat factoring rate. Cash lands in your EusoWallet in under 10 minutes and the platform recovers from the broker settlement."
         case .paymentMethods:
-            return "Manage the accounts you use to deposit, withdraw, and factor. Plaid-backed verification; tier fees shown per rail."
+            return "Manage the accounts you use to deposit, withdraw and factor. Plaid-backed verification; tier fees shown per rail."
         case .tax:
             return "Your 1099-NEC populates each January as settlements clear. W-9 goes on file when you link your first account."
         case .none:
@@ -3965,7 +3978,7 @@ struct DriverMessagesSheet: View {
                 }
                 lastDeletedSnapshot = nil
             }
-            loadError = "Couldn't delete — \(error.localizedDescription)"
+            loadError = "Couldn't delete - \(error.localizedDescription)"
         }
     }
 
@@ -3985,7 +3998,7 @@ struct DriverMessagesSheet: View {
             loadError = "Please sign in to load messages."
             didFirstLoad = true
         } catch {
-            loadError = "Couldn't refresh messages — \(error.localizedDescription)"
+            loadError = "Couldn't refresh messages - \(error.localizedDescription)"
             didFirstLoad = true
         }
     }
@@ -4000,7 +4013,7 @@ struct DriverMessagesSheet: View {
             Text("No conversations yet")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
-            Text("Start a direct chat with dispatch, a broker, or another driver — or spin up a group for your lane.")
+            Text("Start a direct chat with dispatch, a broker or another driver, or spin up a group for your lane.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
@@ -4160,40 +4173,40 @@ enum eSangGreeting {
     /// the time of day, then opens the lane for the driver to talk.
     private static let variants: [DayPart: [String]] = [
         .earlyMorning: [
-            "Morning, driver. Coffee's kicking in for both of us — I've got your HOS, the load, and weather on deck. What are we chasing first?",
-            "Early start, huh? I'm riding shotgun — HOS, dispatch, weather, all pulled up. Talk to me.",
+            "Morning, driver. Coffee's kicking in for both of us. I've got your HOS, the load and weather on deck. What are we chasing first?",
+            "Early start, huh? I'm riding shotgun, HOS, dispatch, weather, all pulled up. Talk to me.",
             "Hey, you're up before the sun again. I'm watching the clock and the road. What's on the radar?",
-            "Good morning. Let's make this one smooth — HOS is green, weather's clean. What do you need from me?"
+            "Good morning. Let's make this one smooth, HOS is green, weather's clean. What do you need from me?"
         ],
         .morning: [
             // 113th firing — corridor fixture excised ("I-20 weather"). Live
             // greeting hydrates real corridor weather from the routing layer.
-            "Hey, good morning — I'm locked in on your HOS, the assigned load, and the corridor weather. What's first?",
+            "Hey, good morning. I'm locked in on your HOS, the assigned load and the corridor weather. What's first?",
             "Morning, driver. The rig's dialed in and so am I. Tell me what you want to tackle.",
             "Hey there. Dispatch queue is quiet so far, HOS looks healthy. What's on your mind?",
-            "Good to see you rolling. Weather, route, clock — all pulled up. What can I chase down for you?",
-            "Morning. I've been watching your lane overnight — nothing hot. How can I help today?"
+            "Good to see you rolling. Weather, route, clock, all pulled up. What can I chase down for you?",
+            "Morning. I've been watching your lane overnight, nothing hot. How can I help today?"
         ],
         .afternoon: [
-            "Hey — afternoon stretch. Load's tracking, HOS has runway. What do you need a hand with?",
+            "Hey, afternoon stretch. Load's tracking, HOS has runway. What do you need a hand with?",
             "Afternoon, driver. I've got your eyes on the road so you keep yours on the road. What's up?",
-            "Hey. Midday check-in — everything on your load looks clean from here. Talk to me.",
-            "Good afternoon. I'm monitoring the corridor ahead — nothing flagged. What's on your list?"
+            "Hey. Midday check-in, everything on your load looks clean from here. Talk to me.",
+            "Good afternoon. I'm monitoring the corridor ahead, nothing flagged. What's on your list?"
         ],
         .evening: [
-            "Hey — evening driver. I'm tracking traffic into sundown. What can I get for you?",
+            "Hey, evening driver. I'm tracking traffic into sundown. What can I get for you?",
             "Evening, driver. Let's bring this one home clean. What's on your mind?",
             "Hey. Sun's sliding down, HOS still has room. How can I help wrap this leg?",
             "Evening. I'm keeping an eye on overnight parking within your buffer. What do you need?"
         ],
         .night: [
-            "Hey — running on night shift. I've got HOS, weather, and a parking list ready. What's first?",
-            "Evening, driver. It's quiet out there — perfect time to nail this load. Talk to me.",
+            "Hey, running on night shift. I've got HOS, weather and a parking list ready. What's first?",
+            "Evening, driver. It's quiet out there, perfect time to nail this load. Talk to me.",
             "Hey. You hanging in? Clock and road are watched. What can I chase for you?",
-            "Late push tonight. I'm here — HOS, fuel, safe stops, all pulled up. What do you need?"
+            "Late push tonight. I'm here, HOS, fuel, safe stops, all pulled up. What do you need?"
         ],
         .lateNight: [
-            "Hey — you're grinding. Watching your HOS like a hawk so you don't have to. What's up?",
+            "Hey. You're grinding. Watching your HOS like a hawk so you don't have to. What's up?",
             "Late one tonight, driver. I'm on weather and parking within your remaining clock. Talk to me.",
             "Hey. Running on fumes out there? I've got truck stops w/ open parking queued. What do you need?",
             "Middle of the night and the only company worth having is the one watching your clock. What's first?"
@@ -4318,6 +4331,7 @@ struct DrivereSangCoachSheet: View {
             header
             IridescentHairline()
             transcript
+            watchingPill
             chipRow
             composer
         }
@@ -4366,22 +4380,57 @@ struct DrivereSangCoachSheet: View {
             // release cleanly when the sheet dismisses.
             voice.cancel()
         }
+        // Hands-free autopilot entry (founder press-and-hold spec). When
+        // `.esangEnterAutopilot` fires while this coach sheet is up — ESANG
+        // replied `<<<ACTION:autopilot>>>`, or the driver long-pressed the
+        // orb — release THIS sheet's mic and dismiss so the root-level
+        // `EusoAutopilotMount` HUD (which owns the continuous voice loop for
+        // the DRIVER role and dispatches through `handleeSangAction`) takes
+        // over without two mics contending. The global engine is the single
+        // owner — we don't start a second loop here.
+        .onReceive(NotificationCenter.default.publisher(for: .esangEnterAutopilot)) { _ in
+            orbState = .idle
+            voice.cancel()
+            if let onClose { onClose() } else { dismiss() }
+        }
     }
 
     // MARK: Header
 
+    /// ESANG coach header — the bespoke OrbeSang (state machine: idle /
+    /// listening / thinking) is preserved as the live avatar, and the title
+    /// block is dressed in the shared `ChatHeaderESang` look (breadcrumb +
+    /// AI pill + presence dot + status text) so the coach sheet reads
+    /// pixel-consistent with the 053 dispatch chat. The trailing control is
+    /// a close X (this surface is a modal sheet, not a pushed thread).
     private var header: some View {
-        HStack(alignment: .center, spacing: Space.s3) {
-            OrbeSang(state: orbState, diameter: 56)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("ESANG")
-                    .font(.system(size: 22, weight: .heavy))
+        HStack(alignment: .center, spacing: 10) {
+            // KEEP the bespoke orb — its state animation is the heartbeat of
+            // the coach surface. It stands in for the kit's static ChatAvatar.
+            OrbeSang(state: orbState, diameter: 44)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("DRIVER · ESANG COACH")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Your AI copilot · online")
-                    .font(EType.micro).tracking(0.6)
-                    .foregroundStyle(palette.textSecondary)
+                HStack(spacing: 5) {
+                    Text("ESANG")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("AI")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(LinearGradient.diagonal)
+                        .clipShape(Capsule())
+                }
+                HStack(spacing: 4) {
+                    Circle().fill(Brand.success).frame(width: 5, height: 5)
+                    Text("ONLINE · YOUR AI COPILOT")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                }
             }
-            Spacer()
+            Spacer(minLength: 0)
             Button {
                 if let onClose { onClose() } else { dismiss() }
             } label: {
@@ -4399,7 +4448,7 @@ struct DrivereSangCoachSheet: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Close ESANG")
         }
-        .padding(.horizontal, Space.s5)
+        .padding(.horizontal, 14)
         .padding(.top, Space.s4)
         .padding(.bottom, Space.s3)
     }
@@ -4410,11 +4459,12 @@ struct DrivereSangCoachSheet: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s3) {
+                    ChatDayDivider()
                     ForEach(messages) { m in
                         bubble(m).id(m.id)
                     }
                 }
-                .padding(.horizontal, Space.s5)
+                .padding(.horizontal, 14)
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s3)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -4429,74 +4479,91 @@ struct DrivereSangCoachSheet: View {
         }
     }
 
+    /// Short `HH:mm` stamp shown inside each bubble — matches the 053
+    /// reference, where the timestamp lives INSIDE the card.
+    private static let bubbleClock: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+    private func stamp(_ m: Msg) -> String { Self.bubbleClock.string(from: m.time) }
+
+    /// Routes each transcript row onto the shared chat kit. ESANG replies
+    /// become `ChatBubbleReceived(.esang)` (with any photo dropped into the
+    /// attachment slot); plain driver text becomes `ChatBubbleSent`; and the
+    /// driver-initiated photo + EusoWallet transfer cards keep their bespoke
+    /// gradient outbound shells (the kit's sent bubble has no attachment
+    /// slot) but now carry the same in-card timestamp as the rest.
     @ViewBuilder
     private func bubble(_ m: Msg) -> some View {
-        HStack {
-            if m.role == .driver { Spacer(minLength: 40) }
-            bubbleBody(m)
-                .frame(maxWidth: 280, alignment: m.role == .driver ? .trailing : .leading)
-            if m.role == .esang { Spacer(minLength: 40) }
+        if m.role == .esang {
+            ChatBubbleReceived(avatar: .esang, text: m.text, time: stamp(m)) {
+                esangAttachment(m)
+            }
+        } else if m.transfer != nil || m.imageData != nil {
+            // Driver-initiated rich payloads (transfer card / photo) — keep the
+            // outbound gradient shell the kit can't express, right-aligned.
+            HStack {
+                Spacer(minLength: 40)
+                outboundRichBubble(m)
+                    .frame(maxWidth: 280, alignment: .trailing)
+            }
+        } else {
+            ChatBubbleSent(text: m.text, time: stamp(m))
         }
     }
 
+    /// ESANG-side attachment slot. ESANG can echo a photo back; we render it
+    /// here so `ChatBubbleReceived` keeps the card chrome + timestamp.
     @ViewBuilder
-    private func bubbleBody(_ m: Msg) -> some View {
-        if let payload = m.transfer {
-            // EusoWallet transfer card. Always driver-initiated in this
-            // surface, so the outbound (gradient) variant is what we
-            // render here.
-            esangTransferCard(payload)
-        } else if let data = m.imageData,
-                  let ui = UIImage(data: data) {
-            VStack(alignment: .leading, spacing: Space.s2) {
-                Image(uiImage: ui)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: 240, maxHeight: 320)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
-                if !m.text.isEmpty {
-                    Text(m.text)
-                        .font(EType.body)
-                        .foregroundStyle(m.role == .driver ? .white : palette.textPrimary)
-                }
-            }
-            .padding(.horizontal, Space.s3)
-            .padding(.vertical, Space.s3)
-            .background(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(m.role == .driver
-                          ? AnyShapeStyle(LinearGradient.diagonal)
-                          : AnyShapeStyle(palette.bgCard))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(m.role == .driver ? Color.clear : palette.borderFaint)
-            )
-        } else {
-            Text(m.text)
-                .font(EType.body)
-                .foregroundStyle(m.role == .driver ? Color.white : palette.textPrimary)
-                .padding(.horizontal, Space.s4)
-                .padding(.vertical, Space.s3)
-                .background(
-                    Group {
-                        if m.role == .driver {
-                            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                                .fill(LinearGradient.diagonal)
-                        } else {
-                            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                                .fill(palette.bgCard)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                                        .strokeBorder(palette.borderFaint)
-                                )
-                        }
-                    }
+    private func esangAttachment(_ m: Msg) -> some View {
+        if let data = m.imageData, let ui = UIImage(data: data) {
+            Image(uiImage: ui)
+                .resizable()
+                .scaledToFill()
+                .frame(maxWidth: 240, maxHeight: 320)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint)
                 )
+        }
+    }
+
+    /// Driver-initiated outbound bubble for the two rich payload kinds the
+    /// kit's `ChatBubbleSent` can't carry: a EusoWallet transfer card and a
+    /// shared photo. Both ride the gradient (outbound) treatment with the
+    /// in-card timestamp under the content.
+    @ViewBuilder
+    private func outboundRichBubble(_ m: Msg) -> some View {
+        if let payload = m.transfer {
+            VStack(alignment: .trailing, spacing: 4) {
+                esangTransferCard(payload)
+                Text(stamp(m))
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        } else if let data = m.imageData, let ui = UIImage(data: data) {
+            VStack(alignment: .trailing, spacing: 4) {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    Image(uiImage: ui)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(maxWidth: 240, maxHeight: 320)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    if !m.text.isEmpty {
+                        Text(m.text)
+                            .font(EType.body)
+                            .foregroundStyle(.white)
+                    }
+                }
+                .padding(Space.s3)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                Text(stamp(m))
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+            }
         }
     }
 
@@ -4560,31 +4627,25 @@ struct DrivereSangCoachSheet: View {
 
     // MARK: Chip row
 
+    /// Live "ESANG watching" presence pill — centered, above the quick-reply
+    /// rail, matching the 053 AFTER frame.
+    private var watchingPill: some View {
+        ChatPresencePill(text: "ESANG monitoring your trip · live")
+            .padding(.bottom, Space.s2)
+    }
+
     private var chipRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Space.s2) {
-                ForEach(chips, id: \.0) { chip in
-                    Button {
+                ForEach(Array(chips.enumerated()), id: \.element.0) { idx, chip in
+                    // First chip reads as the primary prompt (gradient outline),
+                    // mirroring the highlighted lead chip in 053.
+                    ChatQuickChip(label: chip.0, highlighted: idx == 0) {
                         send(chip.1)
-                    } label: {
-                        Text(chip.0)
-                            .font(EType.caption)
-                            .foregroundStyle(palette.textPrimary)
-                            .padding(.horizontal, Space.s3)
-                            .padding(.vertical, Space.s2)
-                            .background(
-                                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                                    .fill(palette.bgCardSoft)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                                    .strokeBorder(palette.borderFaint)
-                            )
                     }
-                    .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, 14)
             .padding(.bottom, Space.s2)
         }
     }
@@ -4632,58 +4693,75 @@ struct DrivereSangCoachSheet: View {
         }
     }
 
+    /// Custom +menu composer, restyled to the shared `ChatComposer` look.
+    /// We do NOT swap in `ChatComposer` itself because that would drop the
+    /// PhotosPicker (the kit composer routes uploads through an `onUpload`
+    /// callback, not a native picker) — so this surface keeps its bespoke
+    /// photo affordance, but matches the kit chrome: a single rounded pill
+    /// holding [photo picker] [growing field bound live to the voice
+    /// transcript] [in-field mic], then the prominent SFSpeech voice button,
+    /// then the gradient send circle.
     private var composer: some View {
         VStack(spacing: 0) {
             pendingAttachmentStrip
-            HStack(alignment: .bottom, spacing: Space.s2) {
-                // PhotosPicker — single-tap shortcut to share a photo with
-                // ESANG (BOL snap, reefer gauge, dash warning, DVIR pic).
-                PhotosPicker(selection: $pickedPhoto,
-                             matching: .images,
-                             photoLibrary: .shared()) {
-                    Image(systemName: "photo")
-                        .font(.system(size: 16, weight: .semibold))
+            HStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    // PhotosPicker — single-tap shortcut to share a photo with
+                    // ESANG (BOL snap, reefer gauge, dash warning, DVIR pic).
+                    // Sits inside the pill where the kit composer's paperclip
+                    // lives, so the attach affordance reads identically.
+                    PhotosPicker(selection: $pickedPhoto,
+                                 matching: .images,
+                                 photoLibrary: .shared()) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    .accessibilityLabel("Attach photo")
+
+                    // NOTE: EusoWallet P2P transfers live on the messaging surface
+                    // (DriverConversationView), not on the ESANG coach. The coach
+                    // has no conversationId to bind against `messages.sendPayment`,
+                    // so the dollar-sign entry point was removed in the 65th firing
+                    // (Phase C landmine sweep) to eliminate a DispatchQueue-timer
+                    // mock that faked a Stripe ACK. Drivers send money through
+                    // Messages → thread → composer, where the real tRPC call runs.
+
+                    // While the mic is hot we route live partial transcripts into
+                    // the `draft` binding so the driver can see what ESANG will
+                    // receive; on final (onFinalTranscript) we ship it straight
+                    // through `send(_:)`.
+                    TextField("Ask ESANG…", text: voice.isRecording ? $voice.transcript : $draft, axis: .vertical)
+                        .lineLimit(1...4)
+                        .focused($composerFocused)
+                        .font(EType.body)
                         .foregroundStyle(palette.textPrimary)
-                        .frame(width: 40, height: 40)
-                        .background(palette.bgCardSoft)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                .strokeBorder(palette.borderFaint)
-                        )
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                        .disabled(voice.isRecording)
+
+                    // In-field dictation toggle — mirrors the kit composer's
+                    // inline mic. The prominent SFSpeech button still sits
+                    // outside the pill (below) for the push-to-talk capture.
+                    Button {
+                        voice.toggle()
+                    } label: {
+                        Image(systemName: voice.isRecording ? "waveform" : "mic.fill")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(voice.isRecording ? Brand.magenta : palette.textSecondary)
+                            .symbolEffect(.variableColor.iterative.hideInactiveLayers,
+                                          options: .repeating, isActive: voice.isRecording)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(voice.isRecording ? "Stop dictation" : "Dictate")
                 }
-                .accessibilityLabel("Attach photo")
-
-                // NOTE: EusoWallet P2P transfers live on the messaging surface
-                // (DriverConversationView), not on the ESANG coach. The coach
-                // has no conversationId to bind against `messages.sendPayment`,
-                // so the dollar-sign entry point was removed in the 65th firing
-                // (Phase C landmine sweep) to eliminate a DispatchQueue-timer
-                // mock that faked a Stripe ACK. Drivers send money through
-                // Messages → thread → composer, where the real tRPC call runs.
-
-                // While the mic is hot we route live partial transcripts into
-                // the `draft` binding so the driver can see what ESANG will
-                // receive; on final (onFinalTranscript) we ship it straight
-                // through `send(_:)`.
-                TextField("Ask ESANG…", text: voice.isRecording ? $voice.transcript : $draft, axis: .vertical)
-                    .lineLimit(1...4)
-                    .focused($composerFocused)
-                    .font(EType.body)
-                    .foregroundStyle(palette.textPrimary)
-                    .padding(.horizontal, Space.s3)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .fill(palette.bgCard)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(voice.isRecording
-                                          ? Brand.magenta.opacity(0.55)
-                                          : palette.borderFaint,
-                                          lineWidth: voice.isRecording ? 1.2 : 1)
-                    )
+                .padding(.horizontal, Space.s3)
+                .padding(.vertical, 10)
+                .background(palette.bgCard)
+                .overlay(
+                    Capsule().strokeBorder(
+                        voice.isRecording ? Brand.magenta.opacity(0.55) : palette.borderFaint,
+                        lineWidth: 1)
+                )
+                .clipShape(Capsule())
 
                 // Push-to-talk mic. Per user direction (2026-04-20):
                 //   > also add voice command to esang chat in the app. its missing
@@ -4701,21 +4779,21 @@ struct DrivereSangCoachSheet: View {
                     pendingImageData = nil
                     pickedPhoto = nil
                 } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 40, height: 40)
-                        .background(
-                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                .fill(LinearGradient.diagonal)
-                        )
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient.diagonal)
+                            .frame(width: 40, height: 40)
+                            .opacity(canSend ? 1 : 0.45)
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSend)
-                .opacity(canSend ? 1 : 0.55)
                 .accessibilityLabel("Send to ESANG")
             }
-            .padding(.horizontal, Space.s5)
+            .padding(.horizontal, 14)
             // Lift the composer off the home indicator — the coach sheet is
             // presented as a custom overlay (not a system sheet), so we have to
             // respect the bottom safe area ourselves.
@@ -4832,14 +4910,14 @@ struct DrivereSangCoachSheet: View {
             // clock / Dallas on-time with 45-min cushion". Replaced with a
             // generic clock-pointer response. Live endpoint serves the real
             // hours from `hos.getStatus`.
-            return "I'm reading your remaining drive time and 14-hour clock — open the HOS panel for the exact minutes and I'll flag the next break window."
+            return "I'm reading your remaining drive time and 14-hour clock, open the HOS panel for the exact minutes and I'll flag the next break window."
         }
         if p.contains("weather") || p.contains("rain") || p.contains("storm") {
             // 113th firing — was: "I-20 west / Longview / Visibility 10+ mi"
             // corridor-specific fixture copy. Replaced with a generic radar
             // response. Live endpoint pulls real corridor weather from the
             // routing layer.
-            return "Pulling the radar along your route — I'll ping you the moment anything severe pops onto the corridor ahead."
+            return "Pulling the radar along your route. I'll ping you the moment anything severe pops onto the corridor ahead."
         }
         if p.contains("fuel") || p.contains("diesel") {
             // 113th firing — was: competitor brand fixtures "Love's #448 in
@@ -4853,14 +4931,14 @@ struct DrivereSangCoachSheet: View {
             // real shipper / dock / over-window / accessorial dollars from the
             // Load + dispatch.getExceptions payload. Removed the Walmart DC 4492
             // / 2h 14m / $150 fixture per 111th firing's M2 leak sweep.
-            return "Filed. Detention claim is in queue with the receiver — I'll ping you the moment they cut the add-on."
+            return "Filed. Detention claim is in queue with the receiver. I'll ping you the moment they cut the add-on."
         }
         if p.contains("eta") || p.contains("dallas") || p.contains("arriv") {
             // 113th firing — was: hard-coded "ETA 13:13 CDT at 2115 Dallas
             // Logistics Blvd — 7 min ahead". Replaced with a generic ETA
             // pointer. Live endpoint serves real ETA from the active Load
             // + routing telemetry.
-            return "Math says you're trending toward your receiver appointment — tap the load card for the live ETA breakdown and the cushion you've got in hand."
+            return "Math says you're trending toward your receiver appointment, tap the load card for the live ETA breakdown and the cushion you've got in hand."
         }
         return "Got it. I'll dig into that and come back with specifics in a sec."
     }
@@ -4968,7 +5046,7 @@ struct NewMessageSheet: View {
                     .font(.system(size: 24, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                 Text(mode == .direct
-                     ? "Pick a dispatcher, broker, or driver to DM."
+                     ? "Pick a dispatcher, broker or driver to DM."
                      : "Pick 2+ people and give the group a name.")
                     .font(EType.micro)
                     .foregroundStyle(palette.textSecondary)
@@ -5352,7 +5430,7 @@ struct NewMessageSheet: View {
             errorText = "Sign in to find people to message."
             didFirstLoad = true
         } catch {
-            errorText = "Couldn't reach the directory — \(error.localizedDescription)"
+            errorText = "Couldn't reach the directory - \(error.localizedDescription)"
             didFirstLoad = true
         }
     }
@@ -5390,7 +5468,7 @@ struct NewMessageSheet: View {
         } catch EusoTripAPIError.unauthenticated {
             errorText = "Please sign in to start a conversation."
         } catch {
-            errorText = "Couldn't start the conversation — \(error.localizedDescription)"
+            errorText = "Couldn't start the conversation - \(error.localizedDescription)"
         }
     }
 
@@ -5418,7 +5496,7 @@ struct NewMessageSheet: View {
         } catch EusoTripAPIError.unauthenticated {
             errorText = "Please sign in to create a group."
         } catch {
-            errorText = "Couldn't create the group — \(error.localizedDescription)"
+            errorText = "Couldn't create the group - \(error.localizedDescription)"
         }
     }
 

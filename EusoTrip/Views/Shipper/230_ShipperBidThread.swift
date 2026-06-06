@@ -62,7 +62,7 @@ final class ShipperBidThreadStore: ObservableObject {
         defer { working = false }
         do {
             _ = try await api.loadBidding.accept(bidId: bidId)
-            lastAck = "Bid accepted — load assigned."
+            lastAck = "Bid accepted - load assigned."
             await load()
         } catch {
             lastError = "Couldn't accept. Compliance gate may have rejected (FMCSA / authority)."
@@ -350,7 +350,7 @@ struct ShipperBidThread: View {
                 Text(store.working ? "Working…" : label).font(.system(size: 14, weight: .heavy))
             }
             .frame(maxWidth: .infinity).padding(.vertical, 13)
-            .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+            .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(store.working)
@@ -364,8 +364,8 @@ struct ShipperBidThread: View {
             }
             .frame(maxWidth: .infinity).padding(.vertical, 13)
             .foregroundStyle(Brand.danger).background(palette.bgCard)
-            .overlay(Capsule().strokeBorder(Brand.danger.opacity(0.6)))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.6)))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(store.working)
@@ -379,8 +379,8 @@ struct ShipperBidThread: View {
             }
             .frame(maxWidth: .infinity).padding(.vertical, 11)
             .foregroundStyle(palette.textPrimary).background(palette.bgCard)
-            .overlay(Capsule().strokeBorder(palette.borderFaint))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(store.working)
@@ -428,7 +428,7 @@ struct ShipperBidThread: View {
                         Text(store.working ? "Sending…" : "Send counter").font(.system(size: 14, weight: .heavy))
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 13)
-                    .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(Capsule())
+                    .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(store.working || (Double(store.counterAmount) ?? 0) <= 0)
@@ -448,7 +448,7 @@ struct ShipperBidThread: View {
                 Text("Decline this bid").font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2).minimumScaleFactor(0.75)
-                Text("The driver gets a push notification with your reason. The thread closes — they can't counter back without reposting.")
+                Text("The driver gets a push notification with your reason. The thread closes. They can't counter back without reposting.")
                     .font(EType.body).foregroundStyle(palette.textSecondary)
                 ZStack(alignment: .topLeading) {
                     if store.rejectReason.isEmpty {
@@ -482,7 +482,7 @@ struct ShipperBidThread: View {
                         Text(store.working ? "Sending…" : "Reject bid").font(.system(size: 14, weight: .heavy))
                     }
                     .frame(maxWidth: .infinity).padding(.vertical, 13)
-                    .foregroundStyle(.white).background(Brand.danger).clipShape(Capsule())
+                    .foregroundStyle(.white).background(Brand.danger).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(store.working)
@@ -556,7 +556,7 @@ struct ShipperBidThread: View {
     // MARK: - helpers
 
     private func amountLabel(_ raw: String?) -> String {
-        guard let r = raw, let v = Double(r) else { return "$—" }
+        guard let r = raw, let v = Double(r) else { return "$-" }
         if v >= 1000 { return String(format: "$%.0f", v) }
         return String(format: "$%.2f", v)
     }

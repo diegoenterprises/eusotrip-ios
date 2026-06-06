@@ -125,11 +125,11 @@ private struct RailConsigneeTrackingLinkBody: View {
 
     private var expiresLabel: String {
         if let d = expiresInDays { return "\(d)d" }
-        return "—"
+        return "-"
     }
 
     private var stateLabel: String {
-        guard link != nil else { return "—" }
+        guard link != nil else { return "-" }
         return revoked ? "Revoked" : "Active"
     }
 
@@ -174,9 +174,6 @@ private struct RailConsigneeTrackingLinkBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: Space.s2) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Consignee link")
                     .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)

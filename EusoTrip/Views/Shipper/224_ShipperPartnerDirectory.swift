@@ -30,8 +30,8 @@
 //    EUSO-2136 — Partner envelope doesn't ship `loads`, `onTime`,
 //                `completion`, `composite`, or `equipmentTypes`.
 //                Per-row LOADS / ON-TIME stats and index badge paint
-//                "—" placeholders. Equipment chip filter (Tanker /
-//                Reefer / Cryo) paints "—" pending classification.
+//                "-" placeholders. Equipment chip filter (Tanker /
+//                Reefer / Cryo) paints "-" pending classification.
 //                Suggested wire shape: extend Partner with `loads90d:
 //                int, onTimeRate: int, completionRate: int, composite:
 //                double, equipmentTypes: string[]`.
@@ -321,7 +321,7 @@ struct ShipperPartnerDirectory: View {
         return HStack(spacing: 0) {
             // EUSO-2136 — index aggregate not on envelope.
             kpiCell(label: "AVG INDEX",
-                    value: "—",
+                    value: "-",
                     valueStyle: .gradient,
                     trail: "pending",
                     trailColor: palette.textSecondary,
@@ -329,7 +329,7 @@ struct ShipperPartnerDirectory: View {
             kpiDivider
             // EUSO-2136 — loads aggregate not on envelope.
             kpiCell(label: "LOADS YTD",
-                    value: "—",
+                    value: "-",
                     valueStyle: .neutral,
                     trail: "pending",
                     trailColor: palette.textSecondary,
@@ -456,7 +456,7 @@ struct ShipperPartnerDirectory: View {
         case .favorites:
             return "\(store.unfiltered.filter { ($0.agreementStatus ?? "").lowercased() == "active" }.count)"
         case .tanker, .reefer, .cryo:
-            return "—"
+            return "-"
         }
     }
 
@@ -569,8 +569,8 @@ struct ShipperPartnerDirectory: View {
                         .padding(.bottom, 2)
 
                     HStack(spacing: Space.s5) {
-                        statCell(label: "LOADS",   value: "—")
-                        statCell(label: "ON-TIME", value: "—")
+                        statCell(label: "LOADS",   value: "-")
+                        statCell(label: "ON-TIME", value: "-")
                         statCell(label: "AGR",
                                  value: agrText(for: agr),
                                  color: agrColor(for: agr),
@@ -685,7 +685,7 @@ struct ShipperPartnerDirectory: View {
         // badge with neutral tier styling.
         let tier: PartnerDirectoryBadgeTier = (p.companyName ?? "").lowercased().contains("eusotrans")
             ? .gradientHero : .goldHollow
-        let letter = tier == .gradientHero ? "P1" : "P—"
+        let letter = tier == .gradientHero ? "P1" : "P-"
         let badgeShape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         let goldFade = LinearGradient(
             colors: [Color(hex: 0xFFB100), Color(hex: 0xFFA726)],
@@ -701,17 +701,17 @@ struct ShipperPartnerDirectory: View {
             case .gradientHollow:
                 badgeShape.fill(palette.bgCard)
                 badgeShape.strokeBorder(LinearGradient.primary, lineWidth: 2)
-                gradeTextGradient(letter, "—",
+                gradeTextGradient(letter, "-",
                                   subColor: palette.textSecondary)
             case .goldHero:
                 badgeShape.fill(goldFade)
-                gradeText(letter, "—",
+                gradeText(letter, "-",
                           color: .white,
                           subColor: .white.opacity(0.85))
             case .goldHollow:
                 badgeShape.fill(palette.bgCard)
                 badgeShape.strokeBorder(goldFade, lineWidth: 2)
-                gradeText(letter, "—",
+                gradeText(letter, "-",
                           color: Color(hex: 0xB27300),
                           subColor: palette.textSecondary)
             }
@@ -776,7 +776,7 @@ struct ShipperPartnerDirectory: View {
         case .active:    return "ACTIVE"
         case .expiring:  return "EXPIRING"
         case .awaiting:  return "AWAITING SIG"
-        case .none:      return "—"
+        case .none:      return "-"
         }
     }
 

@@ -44,11 +44,11 @@ struct SpectraMatchVerdict: View {
     // before the first verified fill of the shift. Once
     // `spectraStore.items` is non-empty every line below is sourced
     // from live backend data via `liveLanes` / `headlineLane`.
-    private let placeholderClock    = "—:—"
-    private let placeholderLoadID   = "—"
+    private let placeholderClock    = "-:-"
+    private let placeholderLoadID   = "-"
     private let placeholderTitle    = "Awaiting first verified fill"
     private let placeholderSub      = "Spectra-Match has no captures for this shift yet"
-    private let placeholderHero     = "—"
+    private let placeholderHero     = "-"
     private let placeholderTarget   = "VS TARGET ≥ 99.5%"
     private let placeholderCaptured = "WAITING ON RACK SIGNOFF"
     private let placeholderRange    = "Sample lineage will populate after the first verified fill of the shift."

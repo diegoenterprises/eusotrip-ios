@@ -114,8 +114,8 @@ struct AppleAuthButtons: View {
             .frame(maxWidth: .infinity, minHeight: 50)
             .foregroundStyle(palette.textPrimary)
             .background(palette.bgCardSoft)
-            .overlay(Capsule().strokeBorder(palette.borderSoft))
-            .clipShape(Capsule())
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
         .disabled(inflightPasskey)
