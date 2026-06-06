@@ -10,17 +10,14 @@
 //  BY LANE top-5 horizontal-bar card with tail row, 2-up cohort row
 //  (BY EQUIPMENT donut + BY CATALYST stacked-bar with scorecard link).
 //
-//  Real data preserved: ShipperSpendingAnalyticsStore +
-//  ShipperCatalystPerformanceStore + period propagation logic. Spend-
-//  trend hero hydrates the headline numeral + sub-line from live data;
-//  the dual-polyline chart uses canonical §11 fractional coordinates
-//  until the backend ships a byMonth time series (logged EUSO-2064).
-//
-//  Persona canon (§11): Diego Usoro · Eusorone Technologies (companyId 1).
-//  §11.4 anchor lanes (Houston→Dallas / LA→Phoenix / KC→Omaha /
-//  Newark→Boston / Atlanta→Miami) drive the BY LANE rows. §13 carrier
-//  mix (Eusotrans / Test Carrier / Plainview Petroleum) drives the
-//  BY CATALYST rows.
+//  Real data ONLY: ShipperSpendingAnalyticsStore (`shippers.getSpendingAnalytics`
+//  → byLane / byEquipment / byCatalyst), ShipperCatalystPerformanceStore
+//  (`shippers.getCatalystPerformance`), and `shippers.getSpendTrend` for
+//  the dual-polyline chart. When a store is empty there is NO canonical
+//  fallback — the lane card, equipment donut, catalyst card, and the
+//  spend-trend hero render an honest empty state. Every numeral on this
+//  screen is bound to one of those three named procs or to the session
+//  user; nothing is fabricated.
 //
 //  Web peer: Analytics.tsx (`/shipper/analytics`).
 //  Notification names: eusoShipperAnalyticsWindow,
@@ -70,12 +67,16 @@ struct ShipperAnalyticsDeepDive: View {
     @StateObject private var catalystStore = ShipperCatalystPerformanceStore()
 
     /// Live spend-trend time series — drives the Spend Trend hero
-    /// chart's polylines instead of the canonical 10-point stub.
-    /// Server source: `shippers.getSpendTrend`. Optional: `nil`
-    /// while in flight or on transient failure, in which case the
-    /// view falls back to the canonical anchor points so the chart
-    /// never paints empty.
+    /// chart's polylines. Server source: `shippers.getSpendTrend`.
+    /// Optional: `nil` while in flight or on transient failure, in
+    /// which case the chart renders an honest empty state rather than
+    /// fabricating a trend.
     @State private var liveTrend: ShipperAPI.SpendTrend? = nil
+
+    /// True once the first spend-trend fetch has settled (success or
+    /// failure). Distinguishes "still loading" from "loaded, nothing
+    /// to show" so the hero card paints the right empty copy.
+    @State private var trendSettled: Bool = false
 
     @State private var selectedWindow: String = "90d"
 
@@ -87,51 +88,6 @@ struct ShipperAnalyticsDeepDive: View {
         TimeWindow(id: "vs",  label: "vs prior 90d", isWide: true,  period: .quarter),
     ]
 
-    /// §11.4 anchor lanes — used until the backend ships
-    /// `shippers.byLane` (EUSO-2064 / `shippers.ts:489-493`).
-    private let canonicalLaneRows: [LaneRow] = [
-        LaneRow(id: "houston-dallas", lane: "Houston → Dallas",  amount: "$184k", fraction: 200.0 / 220.0),
-        LaneRow(id: "la-phoenix",     lane: "LA → Phoenix",      amount: "$132k", fraction: 146.0 / 220.0),
-        LaneRow(id: "kc-omaha",       lane: "KC → Omaha",        amount: "$108k", fraction: 118.0 / 220.0),
-        LaneRow(id: "newark-boston",  lane: "Newark → Boston",   amount: "$84k",  fraction:  92.0 / 220.0),
-        LaneRow(id: "atlanta-miami",  lane: "Atlanta → Miami",   amount: "$58k",  fraction:  64.0 / 220.0),
-    ]
-    private let laneTailLabel = "17 more lanes"
-    private let laneTailAmount = "$218k"
-
-    /// §11.2 MATRIX-50 fuel + NH₃ mix.
-    private let equipmentSegments: [DonutSegment] = [
-        DonutSegment(id: "tanker", label: "Tanker", percent: 60, paint: .gradient),
-        DonutSegment(id: "reefer", label: "Reefer", percent: 24, paint: .warning),
-        DonutSegment(id: "dry",    label: "Dry",    percent: 16, paint: .success),
-    ]
-
-    /// 10-point fractional polylines (current + prior) — verbatim §11
-    /// canon until backend ships byMonth time series.
-    private let currentPoints: [CGPoint] = [
-        CGPoint(x: 0.000, y: 0.683),
-        CGPoint(x: 0.111, y: 0.488),
-        CGPoint(x: 0.222, y: 0.610),
-        CGPoint(x: 0.333, y: 0.366),
-        CGPoint(x: 0.444, y: 0.463),
-        CGPoint(x: 0.556, y: 0.244),
-        CGPoint(x: 0.667, y: 0.390),
-        CGPoint(x: 0.778, y: 0.171),
-        CGPoint(x: 0.889, y: 0.317),
-        CGPoint(x: 1.000, y: 0.049),
-    ]
-    private let priorPoints: [CGPoint] = [
-        CGPoint(x: 0.000, y: 0.756),
-        CGPoint(x: 0.111, y: 0.683),
-        CGPoint(x: 0.222, y: 0.780),
-        CGPoint(x: 0.333, y: 0.610),
-        CGPoint(x: 0.444, y: 0.634),
-        CGPoint(x: 0.556, y: 0.561),
-        CGPoint(x: 0.667, y: 0.683),
-        CGPoint(x: 0.778, y: 0.610),
-        CGPoint(x: 0.889, y: 0.659),
-        CGPoint(x: 1.000, y: 0.585),
-    ]
     private let gridFractions: [CGFloat] = [0.268, 0.634, 1.000]
 
     var body: some View {
@@ -166,7 +122,10 @@ struct ShipperAnalyticsDeepDive: View {
         async let b: Void = catalystStore.refresh()
         async let c: ShipperAPI.SpendTrend? = (try? await EusoTripAPI.shared.shipper.getSpendTrend(period: currentPeriod))
         let (_, _, trend) = await (a, b, c)
-        await MainActor.run { liveTrend = trend }
+        await MainActor.run {
+            liveTrend = trend
+            trendSettled = true
+        }
     }
 
     /// Resolve the active `SpendingPeriod` for the time-window chip.
@@ -176,15 +135,20 @@ struct ShipperAnalyticsDeepDive: View {
         timeWindows.first(where: { $0.id == selectedWindow })?.period ?? .quarter
     }
 
-    /// Live `LaneRow`s computed from the server's `byLane` cohort.
-    /// Top 5 by spend, fraction normalised against the largest entry
-    /// so the bar widths read at a glance. Falls back to the
-    /// canonical anchor rows when the server returns nothing — keeps
-    /// dev / fresh-account builds rendering the visual canon.
+    /// Telemetry-only shipper company id — session user or "—".
+    /// Never the founder company. Used only in NotificationCenter
+    /// userInfo payloads, never rendered as a business value.
+    private var telemetryCompanyId: String {
+        session.user?.companyId ?? "—"
+    }
+
+    /// Live `LaneRow`s computed strictly from the server's `byLane`
+    /// cohort (`shippers.getSpendingAnalytics`). Top 5 by spend,
+    /// fraction normalised against the largest entry so the bar widths
+    /// read at a glance. Empty when the store has no lanes — the lane
+    /// card renders an honest empty state instead.
     private var resolvedLaneRows: [LaneRow] {
-        guard let s = liveSpend, !s.byLane.isEmpty else {
-            return canonicalLaneRows
-        }
+        guard let s = liveSpend, !s.byLane.isEmpty else { return [] }
         let topFive = Array(s.byLane.prefix(5))
         let largest = topFive.first?.totalSpend ?? 1
         return topFive.map { c in
@@ -197,25 +161,22 @@ struct ShipperAnalyticsDeepDive: View {
         }
     }
 
-    /// Spend tail — "N more lanes · $K" line under the top-5 list.
-    /// Computed live from the cohort: count + sum beyond the top 5.
-    private var resolvedLaneTail: (label: String, amount: String) {
-        guard let s = liveSpend, s.byLane.count > 5 else {
-            return (laneTailLabel, laneTailAmount)
-        }
+    /// Spend tail — "N more lanes · $K" line under the top-5 list,
+    /// computed live from the cohort. `nil` when there are 5 or fewer
+    /// lanes (no tail to show).
+    private var resolvedLaneTail: (label: String, amount: String)? {
+        guard let s = liveSpend, s.byLane.count > 5 else { return nil }
         let tail = Array(s.byLane.dropFirst(5))
         let count = tail.count
         let sum = tail.reduce(0) { $0 + $1.totalSpend }
         return ("\(count) more lane\(count == 1 ? "" : "s")", shortMoney(sum))
     }
 
-    /// Live equipment donut segments — falls back to the §11.2
-    /// canonical Tanker/Reefer/Dry mix when the server returns
-    /// nothing.
+    /// Live equipment donut segments from `byEquipment`. Empty when the
+    /// store returns nothing — the equipment card renders an honest
+    /// empty state instead.
     private var resolvedEquipmentSegments: [DonutSegment] {
-        guard let s = liveSpend, !s.byEquipment.isEmpty else {
-            return equipmentSegments
-        }
+        guard let s = liveSpend, !s.byEquipment.isEmpty else { return [] }
         let top = s.byEquipment.prefix(3)
         let paints: [DonutSegment.SegmentPaint] = [.gradient, .warning, .success]
         return top.enumerated().map { (i, e) in
@@ -230,34 +191,37 @@ struct ShipperAnalyticsDeepDive: View {
 
     /// 10-point fractional polyline derived from the server's bucket
     /// time-series. Points are normalized so the largest spend in
-    /// either current or prior maps to y=0 (top), zero maps to y=1
-    /// (bottom of chart) — same shape the canonical stub used.
+    /// either current or prior maps to y≈0 (top), zero maps near the
+    /// bottom of the chart frame.
     private func polyline(from buckets: [Double], peak: Double) -> [CGPoint] {
         guard !buckets.isEmpty, peak > 0 else { return [] }
         return buckets.enumerated().map { (i, v) in
             let x = buckets.count > 1 ? CGFloat(i) / CGFloat(buckets.count - 1) : 0
             // Compress vertical so the trend stays in the upper 80% of
-            // the chart frame (the bottom strip is reserved for FEB /
-            // MAR / APR labels). 1.0 = bottom, 0.05 = near-top.
+            // the chart frame (the bottom strip is reserved for the
+            // bucket labels). 1.0 = bottom, 0.05 = near-top.
             let normalized = 1.0 - CGFloat(v / peak)
             let yScale: CGFloat = 0.78
             return CGPoint(x: x, y: 0.05 + normalized * yScale)
         }
     }
 
-    /// Resolved current-period polyline — live when available,
-    /// canonical otherwise.
+    /// Resolved current-period polyline — live only. Empty when there
+    /// is no live trend.
     private var resolvedCurrentPoints: [CGPoint] {
-        guard let t = liveTrend else { return currentPoints }
+        guard let t = liveTrend else { return [] }
         let peak = max((t.current + t.prior).max() ?? 0, 1)
-        let pts = polyline(from: t.current, peak: peak)
-        return pts.isEmpty ? currentPoints : pts
+        return polyline(from: t.current, peak: peak)
     }
     private var resolvedPriorPoints: [CGPoint] {
-        guard let t = liveTrend else { return priorPoints }
+        guard let t = liveTrend else { return [] }
         let peak = max((t.current + t.prior).max() ?? 0, 1)
-        let pts = polyline(from: t.prior, peak: peak)
-        return pts.isEmpty ? priorPoints : pts
+        return polyline(from: t.prior, peak: peak)
+    }
+
+    /// True when the spend-trend hero has a real series to draw.
+    private var hasTrend: Bool {
+        !resolvedCurrentPoints.isEmpty
     }
 
     /// Compact "$184k" / "$2.3M" label for lane bars.
@@ -324,7 +288,7 @@ struct ShipperAnalyticsDeepDive: View {
                         name: .eusoShipperAnalyticsWindow, object: nil,
                         userInfo: [
                             "source": "210_ShipperAnalyticsDeepDive",
-                            "shipperCompanyId": session.user?.companyId ?? "1",
+                            "shipperCompanyId": telemetryCompanyId,
                             "window": chip.label,
                         ]
                     )
@@ -368,16 +332,25 @@ struct ShipperAnalyticsDeepDive: View {
         }
     }
 
+    /// Headline numeral — bound to `getSpendingAnalytics.totalSpend`.
+    /// Honest "—" when there is no spend in window.
     private var trendHeadline: String {
         if let s = liveSpend, s.totalSpend > 0 { return currency(s.totalSpend) }
-        return "$784,210"
+        return "—"
     }
 
+    /// Sub-line — bound to `getSpendingAnalytics` (loadCount / avgPerLoad)
+    /// and `getSpendTrend` (current vs prior total). Honest "—" when
+    /// there is no spend in window.
     private var trendSubLine: String {
-        if let s = liveSpend, s.loadCount > 0 {
-            return "\(s.loadCount) loads · \(currency(s.avgPerLoad)) avg"
+        guard let s = liveSpend, s.loadCount > 0 else { return "—" }
+        var line = "\(s.loadCount) loads · \(currency(s.avgPerLoad)) avg"
+        if let t = liveTrend, t.priorTotal > 0 {
+            let deltaPct = (t.currentTotal - t.priorTotal) / t.priorTotal * 100
+            let sign = deltaPct >= 0 ? "+" : "−"
+            line += String(format: " · %@%.1f%% vs prior", sign, abs(deltaPct))
         }
-        return "53 loads · $14,797 avg · −6.2% vs prior"
+        return line
     }
 
     private var spendTrendCard: some View {
@@ -411,97 +384,121 @@ struct ShipperAnalyticsDeepDive: View {
         .accessibilityLabel("Spend trend, \(selectedWindow). \(trendHeadline). \(trendSubLine).")
     }
 
+    @ViewBuilder
     private var spendTrendChart: some View {
-        GeometryReader { geo in
-            let chartHeight = geo.size.height - 18
-            ZStack(alignment: .topLeading) {
-                ForEach(gridFractions.indices, id: \.self) { i in
+        if hasTrend {
+            GeometryReader { geo in
+                let chartHeight = geo.size.height - 18
+                ZStack(alignment: .topLeading) {
+                    ForEach(gridFractions.indices, id: \.self) { i in
+                        Path { p in
+                            let y = chartHeight * gridFractions[i]
+                            p.move(to: CGPoint(x: 0, y: y))
+                            p.addLine(to: CGPoint(x: geo.size.width, y: y))
+                        }
+                        .stroke(palette.borderFaint, lineWidth: 0.8)
+                    }
+                    if !resolvedPriorPoints.isEmpty {
+                        PriorPolyline(points: resolvedPriorPoints, areaHeight: chartHeight)
+                            .stroke(palette.textTertiary,
+                                    style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                    }
+                    CurrentTrendFill(points: resolvedCurrentPoints, areaHeight: chartHeight)
+                        .fill(LinearGradient(
+                            stops: [
+                                Gradient.Stop(color: Brand.magenta.opacity(0.20), location: 0.0),
+                                Gradient.Stop(color: Brand.blue.opacity(0.02),    location: 1.0),
+                            ],
+                            startPoint: .top, endPoint: .bottom
+                        ))
+                    CurrentTrendLine(points: resolvedCurrentPoints, areaHeight: chartHeight)
+                        .stroke(LinearGradient.primary,
+                                style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
+                    if let last = resolvedCurrentPoints.last {
+                        Circle()
+                            .fill(palette.bgCard)
+                            .frame(width: 8, height: 8)
+                            .overlay(Circle().stroke(LinearGradient.primary, lineWidth: 2))
+                            .position(x: last.x * geo.size.width, y: last.y * chartHeight)
+                    }
+                }
+            }
+        } else {
+            // Honest empty chart — no fabricated polyline. Single
+            // centered baseline + an in-frame label so the hero card's
+            // chrome reads identically while telling the truth.
+            GeometryReader { geo in
+                let chartHeight = geo.size.height - 18
+                ZStack {
                     Path { p in
-                        let y = chartHeight * gridFractions[i]
+                        let y = chartHeight * 1.0
                         p.move(to: CGPoint(x: 0, y: y))
                         p.addLine(to: CGPoint(x: geo.size.width, y: y))
                     }
                     .stroke(palette.borderFaint, lineWidth: 0.8)
+                    Text(trendSettled ? "No spend trend for this window" : "Loading trend…")
+                        .font(EType.micro).tracking(0.4)
+                        .foregroundStyle(palette.textTertiary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                PriorPolyline(points: resolvedPriorPoints, areaHeight: chartHeight)
-                    .stroke(palette.textTertiary,
-                            style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
-                CurrentTrendFill(points: resolvedCurrentPoints, areaHeight: chartHeight)
-                    .fill(LinearGradient(
-                        stops: [
-                            Gradient.Stop(color: Brand.magenta.opacity(0.20), location: 0.0),
-                            Gradient.Stop(color: Brand.blue.opacity(0.02),    location: 1.0),
-                        ],
-                        startPoint: .top, endPoint: .bottom
-                    ))
-                CurrentTrendLine(points: resolvedCurrentPoints, areaHeight: chartHeight)
-                    .stroke(LinearGradient.primary,
-                            style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
-                if let last = resolvedCurrentPoints.last {
-                    Circle()
-                        .fill(palette.bgCard)
-                        .frame(width: 8, height: 8)
-                        .overlay(Circle().stroke(LinearGradient.primary, lineWidth: 2))
-                        .position(x: last.x * geo.size.width, y: last.y * chartHeight)
-                }
-                HStack {
-                    Text("FEB").font(EType.micro).tracking(0.4).foregroundStyle(palette.textTertiary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("MAR").font(EType.micro).tracking(0.4).foregroundStyle(palette.textTertiary)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                    Text("APR").font(EType.micro).tracking(0.4).foregroundStyle(palette.textTertiary)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-                .frame(height: 18)
-                .offset(y: chartHeight)
             }
         }
     }
 
     // MARK: - BY LANE card
 
+    @ViewBuilder
     private var laneCard: some View {
         let rows = resolvedLaneRows
-        let tail = resolvedLaneTail
-        return VStack(spacing: 0) {
-            ForEach(rows.indices, id: \.self) { idx in
-                laneRowView(rows[idx])
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 11)
-                if idx < rows.count - 1 {
+        if rows.isEmpty {
+            EusoEmptyState(
+                systemImage: "point.topleft.down.curvedto.point.bottomright.up",
+                title: "No lane breakdown yet",
+                subtitle: "Lane spend appears here once you have loads in this window."
+            )
+        } else {
+            let tail = resolvedLaneTail
+            VStack(spacing: 0) {
+                ForEach(rows.indices, id: \.self) { idx in
+                    laneRowView(rows[idx])
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 11)
+                    if idx < rows.count - 1 {
+                        Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 20)
+                    }
+                }
+                if let tail = tail {
                     Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 20)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(tail.label)
+                            .font(.system(size: 11))
+                            .foregroundStyle(palette.textSecondary)
+                        Spacer()
+                        Text(tail.amount)
+                            .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    .padding(.horizontal, 20).padding(.vertical, 14)
                 }
             }
-            Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 20)
-            HStack(alignment: .firstTextBaseline) {
-                Text(tail.label)
-                    .font(.system(size: 11))
-                    .foregroundStyle(palette.textSecondary)
-                Spacer()
-                Text(tail.amount)
-                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(palette.textSecondary)
-            }
-            .padding(.horizontal, 20).padding(.vertical, 14)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(palette.borderFaint, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(palette.borderFaint, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private func laneRowView(_ row: LaneRow) -> some View {
         Button {
             // Real action: jump to 201 ShipperLoads with the lane
             // pre-applied as a search filter so the user sees the
-            // actual loads behind the lane bar. Replaces the prior
-            // openURL("…/analytics/lanes/{id}") stub. Telemetry post
+            // actual loads behind the lane bar. Telemetry post
             // retained for observability.
             NotificationCenter.default.post(
                 name: .eusoShipperAnalyticsLane, object: nil,
                 userInfo: [
                     "source": "210_ShipperAnalyticsDeepDive",
-                    "shipperCompanyId": session.user?.companyId ?? "1",
+                    "shipperCompanyId": telemetryCompanyId,
                     "lane": row.lane,
                     "amount": row.amount,
                 ]
@@ -553,70 +550,95 @@ struct ShipperAnalyticsDeepDive: View {
 
     // MARK: - BY EQUIPMENT donut
 
+    @ViewBuilder
     private var equipmentCard: some View {
         let segments = resolvedEquipmentSegments
-        let center = segments.first ?? DonutSegment(id: "n/a", label: "-", percent: 0, paint: .gradient)
-        return VStack(alignment: .leading, spacing: 0) {
+        if segments.isEmpty {
+            equipmentEmptyCard
+        } else {
+            let center = segments[0]
+            VStack(alignment: .leading, spacing: 0) {
+                Text("BY EQUIPMENT")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.top, 14).padding(.horizontal, 14)
+
+                ZStack {
+                    Circle()
+                        .stroke(palette.borderFaint, lineWidth: 10)
+                        .frame(width: 80, height: 80)
+                    ForEach(segments.indices, id: \.self) { idx in
+                        DonutSegmentShape(
+                            startFraction: cumulativeStart(idx, in: segments),
+                            endFraction:   cumulativeEnd(idx, in: segments)
+                        )
+                        .stroke(paintForSegment(segments[idx]),
+                                style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                        .frame(width: 80, height: 80)
+                    }
+                    VStack(spacing: 2) {
+                        Text(center.label.uppercased())
+                            .font(EType.micro).tracking(0.4)
+                            .foregroundStyle(palette.textTertiary)
+                        Text("\(center.percent)%")
+                            .font(.system(size: 14, weight: .bold).monospacedDigit())
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                }
+                .padding(.top, 6)
+                .frame(maxWidth: .infinity)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(segments.indices, id: \.self) { idx in
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(paintForSegment(segments[idx]))
+                                .frame(width: 6, height: 6)
+                            Text("\(segments[idx].label) · \(segments[idx].percent)%")
+                                .font(.system(size: 9, weight: .semibold))
+                                .tracking(0.4)
+                                .foregroundStyle(palette.textPrimary)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .padding(.top, 12).padding(.horizontal, 14).padding(.bottom, 14)
+            }
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(palette.borderFaint, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("By equipment. " + segments.map { "\($0.label) \($0.percent) percent." }.joined(separator: " "))
+        }
+    }
+
+    /// Honest equipment empty state — same card chrome, no fabricated mix.
+    private var equipmentEmptyCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
             Text("BY EQUIPMENT")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
-                .padding(.top, 14).padding(.horizontal, 14)
-
-            ZStack {
-                Circle()
-                    .stroke(palette.borderFaint, lineWidth: 10)
-                    .frame(width: 80, height: 80)
-                ForEach(segments.indices, id: \.self) { idx in
-                    DonutSegmentShape(
-                        startFraction: cumulativeStart(idx, in: segments),
-                        endFraction:   cumulativeEnd(idx, in: segments)
-                    )
-                    .stroke(paintForSegment(segments[idx]),
-                            style: StrokeStyle(lineWidth: 10, lineCap: .round))
-                    .frame(width: 80, height: 80)
-                }
-                VStack(spacing: 2) {
-                    Text(center.label.uppercased())
-                        .font(EType.micro).tracking(0.4)
-                        .foregroundStyle(palette.textTertiary)
-                    Text("\(center.percent)%")
-                        .font(.system(size: 14, weight: .bold).monospacedDigit())
-                        .foregroundStyle(palette.textPrimary)
-                }
-            }
-            .padding(.top, 6)
-            .frame(maxWidth: .infinity)
-
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(segments.indices, id: \.self) { idx in
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(paintForSegment(segments[idx]))
-                            .frame(width: 6, height: 6)
-                        Text("\(segments[idx].label) · \(segments[idx].percent)%")
-                            .font(.system(size: 9, weight: .semibold))
-                            .tracking(0.4)
-                            .foregroundStyle(palette.textPrimary)
-                            .lineLimit(1)
-                    }
-                }
-            }
-            .padding(.top, 12).padding(.horizontal, 14).padding(.bottom, 14)
+            Text("—")
+                .font(.system(size: 22, weight: .bold).monospacedDigit())
+                .foregroundStyle(palette.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 20)
+            Text("No equipment mix for this window")
+                .font(.system(size: 9, weight: .semibold)).tracking(0.4)
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(2).minimumScaleFactor(0.8)
         }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(palette.borderFaint, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("By equipment. " + segments.map { "\($0.label) \($0.percent) percent." }.joined(separator: " "))
+        .accessibilityLabel("By equipment. No equipment mix for this window.")
     }
 
-    private func cumulativeStart(_ i: Int) -> CGFloat {
-        cumulativeStart(i, in: equipmentSegments)
-    }
-    private func cumulativeEnd(_ i: Int) -> CGFloat {
-        cumulativeEnd(i, in: equipmentSegments)
-    }
     private func cumulativeStart(_ i: Int, in segments: [DonutSegment]) -> CGFloat {
         var sum: CGFloat = 0
         for k in 0..<i where k < segments.count {
@@ -638,6 +660,7 @@ struct ShipperAnalyticsDeepDive: View {
 
     // MARK: - BY CATALYST stacked-bar card
 
+    @ViewBuilder
     private var catalystCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("BY CATALYST")
@@ -655,41 +678,51 @@ struct ShipperAnalyticsDeepDive: View {
             }
             .padding(.top, 4).padding(.horizontal, 14)
 
-            VStack(spacing: 14) {
-                ForEach(catalystRows.indices, id: \.self) { idx in
-                    catalystRowView(catalystRows[idx])
+            if catalystRows.isEmpty {
+                Text("No catalyst activity for this window")
+                    .font(.system(size: 9, weight: .semibold)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(2).minimumScaleFactor(0.8)
+                    .padding(.top, 14).padding(.horizontal, 14)
+            } else {
+                VStack(spacing: 14) {
+                    ForEach(catalystRows.indices, id: \.self) { idx in
+                        catalystRowView(catalystRows[idx])
+                    }
                 }
+                .padding(.top, 14).padding(.horizontal, 14)
             }
-            .padding(.top, 14).padding(.horizontal, 14)
 
             Spacer(minLength: 6)
 
-            Button {
-                // Telemetry post for observability.
-                NotificationCenter.default.post(
-                    name: .eusoShipperAnalyticsScorecard, object: nil,
-                    userInfo: [
-                        "source": "210_ShipperAnalyticsDeepDive",
-                        "shipperCompanyId": session.user?.companyId ?? "1",
-                        "destination": "213_ShipperCatalystScorecard",
-                    ]
-                )
-                // Real in-app nav-swap to the catalyst scorecard
-                // (screen 213) — RoleSurfaceRouter listens for
-                // .eusoShipperNavSwap and renders the target screen.
-                NotificationCenter.default.post(
-                    name: .eusoShipperNavSwap, object: nil,
-                    userInfo: ["screenId": "213"]
-                )
-            } label: {
-                Text(catalystTailLink)
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(LinearGradient.primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 14).padding(.bottom, 14)
+            if let tail = catalystTailLink {
+                Button {
+                    // Telemetry post for observability.
+                    NotificationCenter.default.post(
+                        name: .eusoShipperAnalyticsScorecard, object: nil,
+                        userInfo: [
+                            "source": "210_ShipperAnalyticsDeepDive",
+                            "shipperCompanyId": telemetryCompanyId,
+                            "destination": "213_ShipperCatalystScorecard",
+                        ]
+                    )
+                    // Real in-app nav-swap to the catalyst scorecard
+                    // (screen 213) — RoleSurfaceRouter listens for
+                    // .eusoShipperNavSwap and renders the target screen.
+                    NotificationCenter.default.post(
+                        name: .eusoShipperNavSwap, object: nil,
+                        userInfo: ["screenId": "213"]
+                    )
+                } label: {
+                    Text(tail)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(LinearGradient.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14).padding(.bottom, 14)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open scorecard")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open scorecard")
         }
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -704,36 +737,40 @@ struct ShipperAnalyticsDeepDive: View {
         let fraction: CGFloat
     }
 
+    /// Live catalyst rows from `shippers.getCatalystPerformance`.
+    /// Empty when the store is empty/loading — the card shows an honest
+    /// empty line instead of a fabricated carrier list.
     private var catalystRows: [CatalystRowVM] {
-        if case .loaded(let rows) = catalystStore.state, !rows.isEmpty {
-            let ranked = rows.sorted { $0.totalLoads > $1.totalLoads }.prefix(3)
-            let topLoads = max(ranked.first?.totalLoads ?? 0, 1)
-            return ranked.map { r in
-                CatalystRowVM(
-                    id: r.id,
-                    name: r.name.isEmpty ? "-" : r.name,
-                    loads: "\(r.totalLoads)",
-                    fraction: CGFloat(r.totalLoads) / CGFloat(topLoads)
-                )
-            }
+        guard case .loaded(let rows) = catalystStore.state, !rows.isEmpty else { return [] }
+        let ranked = rows.sorted { $0.totalLoads > $1.totalLoads }.prefix(3)
+        let topLoads = max(ranked.first?.totalLoads ?? 0, 1)
+        return ranked.map { r in
+            CatalystRowVM(
+                id: r.id,
+                name: r.name.isEmpty ? "—" : r.name,
+                loads: "\(r.totalLoads)",
+                fraction: CGFloat(r.totalLoads) / CGFloat(topLoads)
+            )
         }
-        return [
-            CatalystRowVM(id: "eusotrans",  name: "Eusotrans LLC",         loads: "38", fraction: 1.0),
-            CatalystRowVM(id: "test",       name: "Test Carrier Services", loads: "26", fraction: 0.68),
-            CatalystRowVM(id: "plainview",  name: "Plainview Petroleum",   loads: "22", fraction: 0.58),
-        ]
     }
 
+    /// Active-catalyst count — bound to the loaded leaderboard length.
+    /// Honest "—" while loading / on failure.
     private var catalystHeadlineCount: String {
         if case .loaded(let rows) = catalystStore.state { return "\(rows.count)" }
-        return "5"
+        return "—"
     }
 
-    private var catalystTailLink: String {
+    /// "+N more · open scorecard →" tail — only when there are more
+    /// than the 3 shown rows. `nil` otherwise (no link rendered).
+    private var catalystTailLink: String? {
         if case .loaded(let rows) = catalystStore.state, rows.count > 3 {
             return "+\(rows.count - 3) more · open scorecard →"
         }
-        return "+2 more · open scorecard →"
+        if case .loaded(let rows) = catalystStore.state, !rows.isEmpty {
+            return "open scorecard →"
+        }
+        return nil
     }
 
     private func catalystRowView(_ row: CatalystRowVM) -> some View {
@@ -795,7 +832,8 @@ struct ShipperAnalyticsDeepDive: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    /// Programmatic insights derived from live data when present.
+    /// Programmatic insights derived strictly from live data. When no
+    /// store has data, a single honest line says so — no invented stats.
     private var insights: [String] {
         var out: [String] = []
         if let s = liveSpend, s.totalSpend > 0 {

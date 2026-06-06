@@ -1,60 +1,53 @@
 //
 //  230_ShipperWeeklyAllocations.swift
-//  EusoTrip 2027 UI — Shipper · Allocations (parity-reconciled 2026-04-29)
+//  EusoTrip 2027 UI — Shipper · Allocations (live-bound 2026-06-06)
 //
-//  PARITY AUDIT 2026-04-29 — new file at slot 230 to match wireframe
-//  canon at /02 Shipper/Code/230_ShipperWeeklyAllocations.swift. Persona:
-//  Diego Usoro / Eusorone Technologies (companyId 1) per §11.
-//  Allocation IDs reuse the §11.2 LD- audit-trail convention
-//  (`ALC-260427-{hex}`). The week-scope capacity-vs-load board.
+//  ZERO-FABRICATION REBUILD 2026-06-06 — the prior file painted a
+//  `canonRows` array of invented lanes (Houston→Dallas / KC→Omaha),
+//  carriers (Eusotrans LLC · Michael Eusorone · MC-306), rates
+//  ($1,840 / $3,180) and a §11 "Eusorone Technologies · MATRIX-50"
+//  persona. ALL of it is removed. This board now reads the SAME live
+//  store as its sibling 229 — `ShipperAllocationsStore().load()` →
+//  `allocationTracker.getDailyDashboard` — and computes the hero KPI
+//  quartet (ALLOCATED · AT-RISK · FILL · AVG RATE), filter-chip
+//  counts and the allocation rows off the real `DailyContractRow`
+//  envelope. No `?? <invented value>` anywhere — missing values
+//  render honest "—". Empty / loading / error states are explicit.
 //
-//  Note: slot 230 also holds `230_ShipperBidThread.swift` in the
-//  iOS tree (different scope, different struct names — no compile
-//  conflict). Wireframe canon governs the UI of this file.
+//  The visual layout / chrome / nav is preserved verbatim from the
+//  wireframe canon: TopBar quartet counter, 34pt title, iridescent
+//  hairline, gradient-rim hero KPI card, filter chip row, 3pt tier-
+//  rim allocation rows with status pill + 3-stat line + capacity bar,
+//  and the "+ Allocate" gradient pill CTA. Only the data source
+//  changed — every business value is now sourced from the named proc.
 //
-//  Layout (top → bottom):
-//    1. TopBar           ✦ SHIPPER · ALLOCATIONS / "{N} ALLOCATED · {M} AT-RISK"
-//                        Brand.danger when at-risk > 0
-//    2. Title block      Allocations (34pt) / "Eusorone Technologies · MATRIX-50 · this week"
-//    3. IridescentHairline
-//    4. Hero KPI card    gradient-rim 4-cell quartet (ALLOCATED · AT-RISK · FILL · AVG RATE)
-//    5. Filter chip row  All / Allocated / At-Risk / Reallocate / Closed
-//    6. Allocation rows  3pt tier rim · ALC id · status pill · lane title ·
-//                        spec line · 3-stat row · capacity bar with timing chip
-//    7. Compact closed   76pt variant for delivered/closed allocations
-//    8. "+ Allocate" gradient pill CTA
-//
-//  Real wiring: iOS doesn't yet have an allocations endpoint — the
-//  surface paints §11 persona canon anchor data with explicit
-//  EUSO-2149 backend gap.
-//
-//  Backend gaps surfaced (logged in audit log, no fake data):
-//    EUSO-2149 — `allocations.getWeek(weekStart:)` not yet on iOS
-//                API surface. Hero KPI quartet, filter chip counts,
-//                and allocation rows surface canonical §11.4 anchor
-//                data (3 active rows + 1 closed) until backend ships
-//                the allocations envelope: `[{ alcId, loadIdHexTail,
-//                lane: { origin, destination }, carrier: { name,
-//                companyDot, mc }, status: "allocated" | "at_risk" |
-//                "reallocate" | "delivered" | "closed", coveredCount,
-//                totalCount, ratePerLoad, vsSpotDelta, capacityWindow,
-//                timingHint }]`.
+//  Mode mapping (petroleum / refined-products daily nomination, the
+//  real shape of the allocation_tracker proc):
+//    • "ALLOCATED" hero / row count  = contracts.count
+//    • "AT-RISK"                     = contracts whose derived phase is
+//                                      at-risk or behind
+//    • "FILL"                        = summaryBar.fulfillmentPercent
+//    • "AVG RATE"                    = mean ratePerBbl across contracts
+//                                      ("$X / bbl"), "—" when none post a rate
+//    • row lane title                = contractName (or "Contract #id")
+//    • row spec line                 = buyer · product · loads-needed
+//    • row 3-stat                    = rate / coverage(del÷nom) / remaining
+//    • capacity bar fill             = deliveredBbl ÷ nominatedBbl
 //
 //  Doctrine refs: §2 LOADS-tab nav (handled by ContentView); §3
-//  numbers-first copy; §4.3 single iridescent hairline; §11 / §11.2 /
-//  §11.4 Diego canon + ALC audit-trail; §15.2 status-aware tier rim;
-//  §16 hero-rim KPI quartet; §16.2 gradient pill CTA; §17.2 status
-//  pill grammar; §19.2 file-scoped warnGrad / dangerGrad; §20.4 no
-//  dead buttons; §22.2 Brand.danger counter when at-risk > 0.
+//  numbers-first copy; §4.3 single iridescent hairline; §15.2 status-
+//  aware tier rim; §16 hero-rim KPI quartet; §16.2 gradient pill CTA;
+//  §17.2 status pill grammar; §19.2 file-scoped warnGrad / dangerGrad;
+//  §20.4 no dead buttons; §22.2 Brand.danger counter when at-risk > 0.
 //
 
 import SwiftUI
 
-// MARK: - Models (anchor-data while EUSO-2149 lands)
+// MARK: - Row view model (derived from the live DailyContractRow)
 
 private struct AllocRow: Identifiable {
-    let id = UUID()
-    let alcId: String
+    let id: Int
+    let contractId: Int
     let pillKind: PillKind
     let pillLegend: String
     let pillWidth: CGFloat
@@ -80,13 +73,6 @@ private struct AllocRow: Identifiable {
     }
 }
 
-private struct CompactAllocRow: Identifiable {
-    let id = UUID()
-    let alcId: String
-    let title: String
-    let subline: String
-}
-
 // MARK: - Filter
 
 private enum AllocFilter: String, CaseIterable, Identifiable {
@@ -108,77 +94,148 @@ private enum AllocFilter: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Derivation
+//
+// Maps the live `DailyContractRow` onto the wireframe row grammar.
+// Phase is derived the SAME way the sibling 229 derives it
+// (`ContractStatusStyle.from`) so both boards agree on what's at-risk:
+// server status wins; otherwise the delivered÷nominated ratio decides.
+
+private enum AllocPhase { case complete, onTrack, atRisk, behind, pending }
+
+private func derivePhase(_ c: AllocationsAPI.DailyContractRow) -> AllocPhase {
+    let s = (c.status ?? "").lowercased()
+    if s == "complete" { return .complete }
+    let ratio = c.nominatedBbl > 0 ? c.deliveredBbl / c.nominatedBbl : 0
+    if ratio >= 0.95 { return .complete }
+    if ratio >= 0.70 { return .onTrack }
+    if ratio >= 0.40 { return .atRisk }
+    if c.nominatedBbl > 0 { return .behind }
+    return .pending
+}
+
+private func bblShort(_ v: Double) -> String {
+    if v >= 10_000 { return String(format: "%.1fK bbl", v / 1000) }
+    return String(format: "%.0f bbl", v)
+}
+
+private func makeRow(_ c: AllocationsAPI.DailyContractRow) -> AllocRow {
+    let phase = derivePhase(c)
+
+    let coveredPct: Int = c.nominatedBbl > 0
+        ? Int((c.deliveredBbl / c.nominatedBbl) * 100.0)
+        : 0
+
+    let pillKind: AllocRow.PillKind
+    let tierRim: AllocRow.TierRim
+    let fillKind: AllocRow.FillKind
+    let pillLegendLead: String
+    switch phase {
+    case .complete:
+        pillKind = .delivered; tierRim = .neutral; fillKind = .gradient; pillLegendLead = "COMPLETE"
+    case .onTrack:
+        pillKind = .allocated; tierRim = .gradient; fillKind = .gradient; pillLegendLead = "ON TRACK"
+    case .atRisk:
+        pillKind = .atRisk;    tierRim = .warn;     fillKind = .warn;     pillLegendLead = "AT-RISK"
+    case .behind:
+        pillKind = .atRisk;    tierRim = .danger;   fillKind = .danger;   pillLegendLead = "BEHIND"
+    case .pending:
+        pillKind = .allocated; tierRim = .gradient; fillKind = .gradient; pillLegendLead = "PENDING"
+    }
+
+    // Spec line: buyer · product · loads-needed. Each segment only
+    // appears when its source field is present — no invented filler.
+    var specParts: [String] = []
+    if let buyer = c.buyerName?.trimmingCharacters(in: .whitespaces), !buyer.isEmpty { specParts.append(buyer) }
+    if let product = c.product?.trimmingCharacters(in: .whitespaces), !product.isEmpty { specParts.append(product) }
+    if c.loadsNeeded > 0 { specParts.append("\(c.loadsNeeded) loads needed") }
+    let specLine = specParts.isEmpty ? "—" : specParts.joined(separator: " · ")
+
+    // Rate stat — honest "—" when the contract carries no posted rate.
+    let rateStat: AllocRow.Stat
+    if let raw = c.ratePerBbl?.trimmingCharacters(in: .whitespaces),
+       !raw.isEmpty, let r = Double(raw) {
+        rateStat = .init(value: String(format: "$%.2f", r), unit: "/ bbl")
+    } else {
+        rateStat = .init(value: "—", unit: "/ bbl")
+    }
+
+    let fillRate = c.nominatedBbl > 0
+        ? CGFloat(min(c.deliveredBbl / c.nominatedBbl, 1.0))
+        : 0
+
+    // Timing chip mirrors the real fulfillment posture.
+    let timing: AllocRow.TimingChip
+    switch phase {
+    case .behind:
+        timing = .init(text: "BEHIND · \(bblShort(c.remainingBbl)) LEFT", kind: .danger)
+    case .atRisk:
+        timing = .init(text: "AT-RISK · \(bblShort(c.remainingBbl)) LEFT", kind: .warn)
+    case .complete:
+        timing = .init(text: "DELIVERED · \(coveredPct)%", kind: .neutral)
+    default:
+        timing = .init(text: c.remainingBbl > 0 ? "OPEN · \(bblShort(c.remainingBbl)) LEFT" : "FULFILLED",
+                       kind: .neutral)
+    }
+
+    return AllocRow(
+        id: c.contractId,
+        contractId: c.contractId,
+        pillKind: pillKind,
+        pillLegend: "\(pillLegendLead) · \(coveredPct)%",
+        pillWidth: 120,
+        tierRim: tierRim,
+        lane: c.contractName?.trimmingCharacters(in: .whitespaces).nilIfEmpty ?? "Contract #\(c.contractId)",
+        specLine: specLine,
+        stats: [
+            rateStat,
+            .init(value: "\(coveredPct)%", unit: "covered"),
+            .init(value: bblShort(c.remainingBbl), unit: "remaining",
+                  color: c.remainingBbl > 0 ? .warn : .success)
+        ],
+        fillRate: fillRate,
+        fillKind: fillKind,
+        fillLegend: "\(bblShort(c.deliveredBbl)) / \(bblShort(c.nominatedBbl))",
+        timing: timing
+    )
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
+}
+
 // MARK: - Screen root
 
 struct ShipperWeeklyAllocations: View {
     @Environment(\.palette) private var palette
-    @Environment(\.openURL) private var openURL
+    @EnvironmentObject private var session: EusoTripSession
+    @StateObject private var store = ShipperAllocationsStore()
     @State private var filter: AllocFilter = .all
 
-    // §11.4 anchor canon — 3 active rows + 1 compact closed row.
-    // EUSO-2149 — replaces with real data when backend ships.
-    private let canonRows: [AllocRow] = [
-        AllocRow(
-            alcId: "ALC-260427-A38FB12C7E",
-            pillKind: .allocated,
-            pillLegend: "ALLOCATED · 8/8",
-            pillWidth: 116,
-            tierRim: .gradient,
-            lane: "Houston TX → Dallas TX",
-            specLine: "Eusotrans LLC · Michael Eusorone · MC-306 UN1203 · 8 / wk",
-            stats: [
-                .init(value: "$1,840", unit: "/ load"),
-                .init(value: "8 / 8",  unit: "covered"),
-                .init(value: "−$60",   unit: "vs spot", color: .success)
-            ],
-            fillRate: 1.0,
-            fillKind: .gradient,
-            fillLegend: "8 / 8 LOADS",
-            timing: .init(text: "ALLOCATED · 4D AGO", kind: .neutral)
-        ),
-        AllocRow(
-            alcId: "ALC-260427-B41782FF02",
-            pillKind: .allocated,
-            pillLegend: "ALLOCATED · 4/6",
-            pillWidth: 116,
-            tierRim: .gradient,
-            lane: "Kansas City MO → Omaha NE",
-            specLine: "Heartland Cryogenics LLC · MC-331 NH₃ UN1005 · 6 / wk · escort",
-            stats: [
-                .init(value: "$3,180",   unit: "/ load"),
-                .init(value: "4 / 6",    unit: "covered"),
-                .init(value: "2 escorts", unit: "pending", color: .warn)
-            ],
-            fillRate: 0.67,
-            fillKind: .gradient,
-            fillLegend: "4 / 6 LOADS",
-            timing: .init(text: "DUE · 18H · 2 OPEN", kind: .warn)
-        ),
-        AllocRow(
-            alcId: "ALC-260427-7C3A09F18B",
-            pillKind: .atRisk,
-            pillLegend: "AT-RISK · 1/4",
-            pillWidth: 100,
-            tierRim: .danger,
-            lane: "Los Angeles CA → Phoenix AZ",
-            specLine: "Pacific Cold Logistics · 53′ Reefer berries 33–38°F · 4 / wk",
-            stats: [
-                .init(value: "$2,180",       unit: "/ load"),
-                .init(value: "1 / 4",        unit: "covered"),
-                .init(value: "+1 detention", unit: "flag", color: .warn)
-            ],
-            fillRate: 0.25,
-            fillKind: .warn,
-            fillLegend: "1 / 4 LOADS",
-            timing: .init(text: "REALLOCATE · 6H WINDOW", kind: .danger)
-        )
-    ]
+    /// Live rows derived from the loaded dashboard. Empty until the
+    /// proc resolves — no anchor / canon fallback.
+    private var liveRows: [AllocRow] {
+        guard case .loaded(let d) = store.phase else { return [] }
+        return d.contracts.map(makeRow)
+    }
 
-    private let compactRow = CompactAllocRow(
-        alcId: "ALC-260424-3F8C019A45",
-        title: "Atlanta GA → Charlotte NC · DELIVERED 6/6",
-        subline: "Pacific Cold Logistics · 53′ Reefer 38°F · WK 17 closed · paid"
-    )
+    private var isLoaded: Bool {
+        if case .loaded = store.phase { return true }
+        return false
+    }
+
+    private var loadError: String? {
+        if case .error(let m) = store.phase { return m }
+        return nil
+    }
+
+    /// Honest account subline — the session user's name / company,
+    /// NEVER the founder persona. Falls back to a neutral "—" label.
+    private var accountSubline: String {
+        let who = session.user?.name?.trimmingCharacters(in: .whitespaces).nilIfEmpty
+        if let who { return "\(who) · this week" }
+        return "—"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -198,23 +255,9 @@ struct ShipperWeeklyAllocations: View {
                 filterRow
                     .padding(.top, Space.s5)
 
-                let rows = filtered()
-                if rows.isEmpty && filter != .all {
-                    noMatchCard
-                        .padding(.horizontal, Space.s3)
-                        .padding(.top, Space.s4)
-                } else {
-                    VStack(spacing: Space.s2) {
-                        ForEach(rows) { row in
-                            allocRowView(row)
-                        }
-                        if filter == .all || filter == .closed {
-                            compactRowView(compactRow)
-                        }
-                    }
+                contentSection
                     .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
-                }
 
                 allocateButton
                     .padding(.horizontal, Space.s3)
@@ -223,12 +266,88 @@ struct ShipperWeeklyAllocations: View {
                 Color.clear.frame(height: 96)
             }
         }
+        .task { await store.load() }
+        .refreshable { await store.load() }
+    }
+
+    // MARK: Content (loading / error / empty / rows)
+
+    @ViewBuilder
+    private var contentSection: some View {
+        switch store.phase {
+        case .idle, .loading:
+            loadingCard
+        case .error(let m):
+            errorCard(m)
+        case .loaded:
+            let rows = filtered()
+            if liveRows.isEmpty {
+                EusoEmptyState(
+                    systemImage: "fuelpump",
+                    title: "No allocations this week",
+                    subtitle: "No daily-nomination contracts are open for your account yet. Tap “+ Allocate” to start one."
+                )
+            } else if rows.isEmpty {
+                noMatchCard
+            } else {
+                VStack(spacing: Space.s2) {
+                    ForEach(rows) { row in
+                        allocRowView(row)
+                    }
+                }
+            }
+        }
+    }
+
+    private var loadingCard: some View {
+        HStack(spacing: Space.s2) {
+            ProgressView()
+            Text("Loading allocations…")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer()
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private func errorCard(_ m: String) -> some View {
+        HStack(spacing: Space.s2) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(Brand.warning)
+            Text(m)
+                .font(EType.caption)
+                .foregroundStyle(palette.textPrimary)
+            Spacer()
+            Button("Retry") { Task { await store.load() } }
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(Brand.info)
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
     // MARK: TopBar
 
     private var topBar: some View {
-        let atRisk = canonRows.filter { $0.pillKind == .atRisk }.count
+        let rows = liveRows
+        let atRisk = rows.filter { $0.pillKind == .atRisk }.count
+        let counter: String = {
+            guard isLoaded else { return loadError != nil ? "UNAVAILABLE" : "LOADING…" }
+            return "\(rows.count) ALLOCATED · \(atRisk) AT-RISK"
+        }()
         return HStack(alignment: .firstTextBaseline) {
             Text("✦ SHIPPER · ALLOCATIONS")
                 .font(EType.micro)
@@ -237,11 +356,13 @@ struct ShipperWeeklyAllocations: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
             Spacer()
-            Text("\(canonRows.count) ALLOCATED · \(atRisk) AT-RISK")
+            Text(counter)
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(atRisk > 0 ? Brand.danger : palette.textTertiary)
-                .accessibilityLabel("\(canonRows.count) allocated, \(atRisk) at risk")
+                .accessibilityLabel(isLoaded
+                    ? "\(rows.count) allocated, \(atRisk) at risk"
+                    : "Allocations \(counter.lowercased())")
         }
         .padding(.horizontal, Space.s3)
     }
@@ -254,7 +375,7 @@ struct ShipperWeeklyAllocations: View {
                 .font(.system(size: 34, weight: .bold))
                 .tracking(-0.6)
                 .foregroundStyle(palette.textPrimary)
-            Text("Eusorone Technologies · MATRIX-50 · this week")
+            Text(accountSubline)
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -273,7 +394,7 @@ struct ShipperWeeklyAllocations: View {
                 .padding(1.5)
 
             VStack(alignment: .leading, spacing: 0) {
-                Text("ALLOCATION LEDGER · WK 18 · 2026")
+                Text("ALLOCATION LEDGER · \(ledgerLabel)")
                     .font(EType.micro)
                     .tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
@@ -282,17 +403,17 @@ struct ShipperWeeklyAllocations: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: 0)
                 HStack(spacing: 0) {
-                    kpiCell(label: "ALLOCATED", value: "\(canonRows.count)",
-                            valueStyle: .gradient, trailingUnit: "of 50")
+                    kpiCell(label: "ALLOCATED", value: allocatedValue,
+                            valueStyle: .gradient, trailingUnit: nil)
                     kpiDivider
                     kpiCell(label: "AT-RISK",
-                            value: "\(canonRows.filter { $0.pillKind == .atRisk }.count)",
+                            value: atRiskValue,
                             valueStyle: .danger, trailingUnit: nil)
                     kpiDivider
-                    kpiCell(label: "FILL", value: fillRate,
+                    kpiCell(label: "FILL", value: fillValue,
                             valueStyle: .primary, trailingUnit: nil)
                     kpiDivider
-                    kpiCell(label: "AVG RATE", value: avgRate,
+                    kpiCell(label: "AVG RATE", value: avgRateValue,
                             valueStyle: .success, trailingUnit: nil)
                 }
                 .padding(.horizontal, 20)
@@ -302,25 +423,41 @@ struct ShipperWeeklyAllocations: View {
         .frame(height: 92)
     }
 
-    private var fillRate: String {
-        let allocated = canonRows.count
-        // §11 MATRIX-50 batch is 50 loads.
-        let pct = Double(allocated) / 50.0 * 100.0
-        return String(format: "%.0f%%", pct)
+    /// Ledger label sourced from the loaded dashboard's date, not a
+    /// hardcoded week number.
+    private var ledgerLabel: String {
+        if case .loaded(let d) = store.phase { return d.date }
+        return "—"
     }
 
-    private var avgRate: String {
-        let rates = canonRows.compactMap { row -> Double? in
-            row.stats.first { $0.unit == "/ load" }
-                .flatMap {
-                    let cleaned = $0.value.replacingOccurrences(of: "$", with: "")
-                                       .replacingOccurrences(of: ",", with: "")
-                    return Double(cleaned)
-                }
+    private var allocatedValue: String {
+        isLoaded ? "\(liveRows.count)" : "—"
+    }
+
+    private var atRiskValue: String {
+        guard isLoaded else { return "—" }
+        return "\(liveRows.filter { $0.pillKind == .atRisk }.count)"
+    }
+
+    /// FILL = the server-computed fulfillment percent on the summary
+    /// bar. Honest "—" before the dashboard resolves.
+    private var fillValue: String {
+        guard case .loaded(let d) = store.phase else { return "—" }
+        return "\(d.summaryBar.fulfillmentPercent)%"
+    }
+
+    /// AVG RATE = mean of the contracts' posted ratePerBbl. "—" when
+    /// no contract posts a rate (no invented fallback number).
+    private var avgRateValue: String {
+        guard case .loaded(let d) = store.phase else { return "—" }
+        let rates = d.contracts.compactMap { c -> Double? in
+            guard let raw = c.ratePerBbl?.trimmingCharacters(in: .whitespaces),
+                  !raw.isEmpty else { return nil }
+            return Double(raw)
         }
-        guard !rates.isEmpty else { return "-" }
+        guard !rates.isEmpty else { return "—" }
         let avg = rates.reduce(0, +) / Double(rates.count)
-        return String(format: "$%.0f", avg)
+        return String(format: "$%.2f", avg)
     }
 
     private var kpiDivider: some View {
@@ -351,6 +488,8 @@ struct ShipperWeeklyAllocations: View {
                     }
                 }
                 .font(.system(size: 22, weight: .bold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 if let trailingUnit {
                     Text(trailingUnit)
                         .font(.system(size: 11, weight: .regular))
@@ -384,12 +523,14 @@ struct ShipperWeeklyAllocations: View {
     }
 
     private func count(for filter: AllocFilter) -> Int? {
+        guard isLoaded else { return nil }
+        let rows = liveRows
         switch filter {
         case .all:        return nil
-        case .allocated:  return canonRows.filter { $0.pillKind == .allocated }.count
-        case .atRisk:     return canonRows.filter { $0.pillKind == .atRisk }.count
-        case .reallocate: return canonRows.filter { $0.pillKind == .atRisk }.count // proxy
-        case .closed:     return 1 // compactRow
+        case .allocated:  return rows.filter { $0.pillKind == .allocated }.count
+        case .atRisk:     return rows.filter { $0.pillKind == .atRisk }.count
+        case .reallocate: return rows.filter { $0.pillKind == .atRisk }.count
+        case .closed:     return rows.filter { $0.pillKind == .delivered }.count
         }
     }
 
@@ -424,27 +565,28 @@ struct ShipperWeeklyAllocations: View {
     }
 
     private func tapFilter(_ f: AllocFilter) {
-        // observability post — real effect: filter @State mutation
         filter = f
         NotificationCenter.default.post(
             name: .eusoShipperAllocFilter,
             object: nil,
             userInfo: [
                 "source": "230_ShipperWeeklyAllocations",
-                "filter": f.rawValue,
-                "shipperCompanyId": 1
+                "filter": f.rawValue
             ]
         )
     }
 
     private func filtered() -> [AllocRow] {
+        let rows = liveRows
         switch filter {
-        case .all, .closed:
-            return canonRows
+        case .all:
+            return rows
         case .allocated:
-            return canonRows.filter { $0.pillKind == .allocated }
+            return rows.filter { $0.pillKind == .allocated }
         case .atRisk, .reallocate:
-            return canonRows.filter { $0.pillKind == .atRisk }
+            return rows.filter { $0.pillKind == .atRisk }
+        case .closed:
+            return rows.filter { $0.pillKind == .delivered }
         }
     }
 
@@ -459,7 +601,7 @@ struct ShipperWeeklyAllocations: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .center) {
-                        Text(row.alcId)
+                        Text("CONTRACT #\(row.contractId)")
                             .font(EType.mono(.micro))
                             .tracking(0.6)
                             .foregroundStyle(palette.textTertiary)
@@ -515,7 +657,7 @@ struct ShipperWeeklyAllocations: View {
 
     private func rowAccessibility(_ row: AllocRow) -> String {
         let pill = row.pillLegend.replacingOccurrences(of: "·", with: ",")
-        return "\(row.alcId), \(pill), \(row.lane), \(row.specLine), \(row.fillLegend)"
+        return "Contract \(row.contractId), \(pill), \(row.lane), \(row.specLine), \(row.fillLegend)"
     }
 
     @ViewBuilder
@@ -639,61 +781,6 @@ struct ShipperWeeklyAllocations: View {
             .background(Capsule().fill(bg))
     }
 
-    // MARK: Compact closed row
-
-    private func compactRowView(_ row: CompactAllocRow) -> some View {
-        Button(action: { tapCompact(row) }) {
-            HStack(spacing: 0) {
-                tierRimShape(.neutral)
-                    .frame(width: 3)
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .center) {
-                        Text(row.alcId)
-                            .font(EType.mono(.micro))
-                            .tracking(0.6)
-                            .foregroundStyle(palette.textTertiary)
-                        Spacer()
-                        Text("CLOSED")
-                            .font(EType.micro).tracking(0.6)
-                            .foregroundStyle(palette.textSecondary)
-                            .frame(width: 84, height: 20)
-                            .overlay(Capsule().strokeBorder(palette.textTertiary, lineWidth: 1))
-                            .background(Capsule().fill(palette.bgCard))
-                    }
-                    .padding(.top, Space.s3 + 2)
-
-                    Text(row.title)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(palette.textPrimary)
-                        .lineLimit(1)
-                        .padding(.top, Space.s2 + 2)
-
-                    Text(row.subline)
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                        .padding(.top, 4)
-                        .padding(.bottom, Space.s3 + 2)
-                }
-                .padding(.leading, Space.s4)
-                .padding(.trailing, Space.s4)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: Radius.lg)
-                    .fill(palette.bgCard)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg)
-                    .strokeBorder(palette.borderFaint)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(AllocRowStyle())
-    }
-
     // MARK: + Allocate CTA
 
     private var allocateButton: some View {
@@ -705,10 +792,10 @@ struct ShipperWeeklyAllocations: View {
                 .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Allocate new lane")
+        .accessibilityLabel("Allocate new contract")
     }
 
-    // MARK: Notification posts
+    // MARK: Notification posts + nav
 
     private func tapRow(_ row: AllocRow) {
         NotificationCenter.default.post(
@@ -716,36 +803,14 @@ struct ShipperWeeklyAllocations: View {
             object: nil,
             userInfo: [
                 "source": "230_ShipperWeeklyAllocations",
-                "alcId": row.alcId,
-                "shipperCompanyId": 1
+                "contractId": row.contractId
             ]
         )
-        // Native nav into the canonical Allocations screen (229).
-        // Was force-opening `app.eusotrip.com/...` in the in-app
-        // Safari sheet which surfaced as the founder's "redirects
-        // to web for some reason and its an error" report
-        // (2026-05-04). The web URL is kept on the notification
-        // userInfo so any listener that wants the deep-link can use
-        // it; the user-visible action stays in-app.
+        // Native nav into the canonical Allocations board (229b) where
+        // the per-contract detail + create flow live.
         NotificationCenter.default.post(
             name: .eusoShipperNavSwap, object: nil,
-            userInfo: ["screenId": "229"]
-        )
-    }
-
-    private func tapCompact(_ row: CompactAllocRow) {
-        NotificationCenter.default.post(
-            name: .eusoShipperAllocRow,
-            object: nil,
-            userInfo: [
-                "source": "230_ShipperWeeklyAllocations",
-                "alcId": row.alcId,
-                "shipperCompanyId": 1
-            ]
-        )
-        NotificationCenter.default.post(
-            name: .eusoShipperNavSwap, object: nil,
-            userInfo: ["screenId": "229"]
+            userInfo: ["screenId": "230b"]
         )
     }
 
@@ -753,17 +818,11 @@ struct ShipperWeeklyAllocations: View {
         NotificationCenter.default.post(
             name: .eusoShipperAllocCreate,
             object: nil,
-            userInfo: [
-                "source": "230_ShipperWeeklyAllocations",
-                "shipperCompanyId": 1
-            ]
+            userInfo: ["source": "230_ShipperWeeklyAllocations"]
         )
-        // "Create allocation" routes to the canonical 229 Allocations
-        // board where the create flow lives. Same web-redirect fix as
-        // the row taps above.
         NotificationCenter.default.post(
             name: .eusoShipperNavSwap, object: nil,
-            userInfo: ["screenId": "229"]
+            userInfo: ["screenId": "230b"]
         )
     }
 
@@ -822,6 +881,7 @@ extension Notification.Name {
 
 #Preview("230 · Allocations · Dark") {
     ShipperWeeklyAllocations()
+        .environmentObject(EusoTripSession())
         .environment(\.palette, Theme.dark)
         .preferredColorScheme(.dark)
         .background(Theme.dark.bgPage)
@@ -829,6 +889,7 @@ extension Notification.Name {
 
 #Preview("230 · Allocations · Light") {
     ShipperWeeklyAllocations()
+        .environmentObject(EusoTripSession())
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
         .background(Theme.light.bgPage)

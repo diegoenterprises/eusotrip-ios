@@ -64,7 +64,7 @@ struct RailWaybillScreen: View {
     let theme: Theme.Palette
     let shipmentId: Int
 
-    init(theme: Theme.Palette = Theme.dark, shipmentId: Int = 39044) {
+    init(theme: Theme.Palette = Theme.dark, shipmentId: Int = 0) {
         self.theme = theme
         self.shipmentId = shipmentId
     }
@@ -201,6 +201,7 @@ private enum ISO005 {
 
 private struct RailWaybill: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
     let shipmentId: Int
 
     @State private var detail: RailWaybillDetail005? = nil
@@ -276,11 +277,12 @@ private struct RailWaybill: View {
 
     private var issued: Bool { detail?.issued ?? (detail?.waybill != nil) }
 
-    /// SVG: "WB · RAIL-260519-39044B2".
+    /// SVG: "WB · <waybill or shipment ref>". Degrades to an honest dash when
+    /// neither the waybill number nor the shipment number has resolved yet —
+    /// never the invented "RAIL-260519-39044B2".
     private var monoCaption: String {
-        let wb = detail?.waybill?.waybillNumber
-        let ship = detail?.shipmentNumber ?? "RAIL-260519-39044B2"
-        return "WB · \(wb ?? ship)"
+        let ref = detail?.waybill?.waybillNumber ?? detail?.shipmentNumber
+        return "WB · \(ref ?? "—")"
     }
 
     // MARK: - Hero waybill summary (gradient rim) — SVG y=166, 400×104
@@ -329,9 +331,8 @@ private struct RailWaybill: View {
     }
 
     private var carTypeLabel: String {
-        (detail?.carType ?? "tankcar")
-            .replacingOccurrences(of: "_", with: " ")
-            .uppercased()
+        guard let ct = detail?.carType, !ct.isEmpty else { return "—" }
+        return ct.replacingOccurrences(of: "_", with: " ").uppercased()
     }
 
     private var carrierLabel: String {
@@ -398,7 +399,7 @@ private struct RailWaybill: View {
                 HStack(alignment: .center, spacing: Space.s3) {
                     ZStack {
                         Circle().fill(LinearGradient.diagonal).frame(width: 40, height: 40)
-                        Text(initials(detail?.shipperName ?? "Diego Usoro"))
+                        Text(initials(shipperLabel))
                             .font(.system(size: 13, weight: .bold)).tracking(0.4)
                             .foregroundStyle(.white)
                     }
@@ -406,7 +407,7 @@ private struct RailWaybill: View {
                         Text("SHIPPER")
                             .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                             .foregroundStyle(palette.textTertiary)
-                        Text(detail?.shipperName ?? "Eusorone Technologies · Diego Usoro")
+                        Text(shipperLabel)
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(palette.textPrimary)
                             .lineLimit(1).minimumScaleFactor(0.7)
@@ -439,6 +440,15 @@ private struct RailWaybill: View {
             .padding(Space.s4)
             .eusoCard()
         }
+    }
+
+    /// SHIPPER party name: the resolved party name from the waybill proc, else
+    /// the signed-in user (this is a SHIPPER vantage gated to the caller), else
+    /// an honest dash. NEVER the founder company/persona on empty.
+    private var shipperLabel: String {
+        if let s = detail?.shipperName, !s.isEmpty { return s }
+        if let n = session.user?.name, !n.isEmpty { return n }
+        return "—"
     }
 
     private func initials(_ name: String) -> String {
@@ -538,11 +548,22 @@ private struct RailWaybill: View {
     }
 
     private var carsLabel: String {
-        let n = detail?.numberOfCars ?? 1
-        let type = (detail?.carType ?? "car").replacingOccurrences(of: "_", with: " ")
         let st = (detail?.status ?? "").replacingOccurrences(of: "_", with: " ")
-        let cars = "· \(n) \(type)\(n == 1 ? "" : "s")"
-        return st.isEmpty ? cars : "\(cars) · \(st)"
+        let type = (detail?.carType ?? "car").replacingOccurrences(of: "_", with: " ")
+        // numberOfCars is a real column — only render a count when present;
+        // never invent "1 car" on a null.
+        let cars: String?
+        if let n = detail?.numberOfCars {
+            cars = "· \(n) \(type)\(n == 1 ? "" : "s")"
+        } else {
+            cars = nil
+        }
+        switch (cars, st.isEmpty) {
+        case let (c?, false): return "\(c) · \(st)"
+        case let (c?, true):  return c
+        case (nil, false):    return "· \(st)"
+        case (nil, true):     return ""
+        }
     }
 
     private func grouped(_ n: Int) -> String {
@@ -701,11 +722,11 @@ private struct RailWaybill: View {
     /// Real waybill content shared via the native sheet — a genuine local
     /// effect (not a dead tap, not a fabricated server PDF).
     private var shareText: String {
-        let wb = detail?.waybill?.waybillNumber ?? detail?.shipmentNumber ?? "RAIL-260519-39044B2"
+        let wb = detail?.waybill?.waybillNumber ?? detail?.shipmentNumber ?? "—"
         var lines: [String] = ["EusoTrip Rail Waybill \(wb)"]
         lines.append("Carrier: \(carrierLabel) · \(laneLabel)")
-        if let s = detail?.shipperName { lines.append("Shipper: \(s)") }
-        if let c = detail?.consigneeName { lines.append("Consignee: \(c)") }
+        if shipperLabel != "—" { lines.append("Shipper: \(shipperLabel)") }
+        if let c = detail?.consigneeName, !c.isEmpty { lines.append("Consignee: \(c)") }
         lines.append("Commodity: \(commodityTitle)")
         if hasHazmat { lines.append("Hazmat: class \(hazClass) · placarded · 49 CFR §172") }
         lines.append("\(weightLabel) \(carsLabel)")
@@ -790,11 +811,13 @@ private struct RailWaybill: View {
 // MARK: - Previews
 
 #Preview("005 · Rail Waybill · Night") {
-    RailWaybillScreen(theme: Theme.dark, shipmentId: 39044)
+    RailWaybillScreen(theme: Theme.dark)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
 }
 
 #Preview("005 · Rail Waybill · Afternoon") {
-    RailWaybillScreen(theme: Theme.light, shipmentId: 39044)
+    RailWaybillScreen(theme: Theme.light)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
 }

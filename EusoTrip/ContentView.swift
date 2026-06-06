@@ -1379,18 +1379,19 @@ enum ScreenRegistry {
         )
         // 2026-05-06 — Catalyst EusoTicket Renderer (Figma 313 light +
         // dark) lands. Pixel-faithful port of the Catalyst-side BOL ·
-        // POD · run-ticket · haul-receipt rendering surface — sole-driver
-        // Catalyst (Eusotrans LLC · Michael Eusorone) reviews the as-
-        // rendered EusoTicket document for the active load before
-        // dispatching to the shipper-of-record (Diego Usoro · Eusorone
-        // Technologies) and the receiver. Wired to `loads.getById` for
-        // the previewed load + `eusoTicket.generateBOLPDF` on Send;
-        // QR uses the canonical `EusoQRView` (kind `.eusoTicket(.bol)`,
-        // role `.carrier`) so the same QR scans into the iOS deep-link
-        // handler and the web router.
+        // POD · run-ticket · haul-receipt rendering surface — the Catalyst
+        // reviews the as-rendered EusoTicket document for the active load
+        // before dispatching to the shipper-of-record and the receiver.
+        // 2026-06-06 — routes the REAL selected load via
+        // `BrokerNavContext.latestLoadId` (was hardcoded "0", which made
+        // fetchLoad early-return and paint a fabricated sample BOL). Wired
+        // to `loads.getDetail`/`loads.getById` for the previewed load +
+        // `eusoTicket.generateBOLPDF` on Send; QR uses the canonical
+        // `EusoQRView` (kind `.eusoTicket(.bol)`, role `.carrier`) so the
+        // same QR scans into the iOS deep-link handler and the web router.
         list.append(
             .init(id: "313", title: "Catalyst · EusoTicket Renderer", role: .catalyst) { p in
-                AnyView(CatalystEusoTicketRendererScreen(theme: p, loadId: "0"))
+                AnyView(CatalystEusoTicketRendererScreen(theme: p, loadId: BrokerNavContext.latestLoadId))
             }
         )
         // 2026-05-06 — Catalyst Fleet Drivers (Figma 304 light + dark)

@@ -4,20 +4,23 @@
 //
 //  Parity-reconciled to `02 Shipper/Code/200_ShipperHome.swift` per
 //  _PARITY_PROMPT_FOR_CODING_TEAM_2026-04-29.md. Wireframe canon
-//  applied: TopBar greeting ("Hey, Diego" + DU avatar w/ unread dot),
-//  IridescentHairline, gradient-rim attention card, 4-stat strip
-//  (Active · Bids · Rate/mi · On-time), 8-stage lifecycle strip per
-//  active row, eSang strip.
+//  applied: TopBar greeting (time-of-day + signed-in user's first name +
+//  monogram avatar w/ unread dot), IridescentHairline, gradient-rim
+//  attention card, 4-stat strip (Active · Bids · Rate/mi · On-time),
+//  8-stage lifecycle strip per active row, eSang strip.
 //
 //  Real data preserved: every store wiring kept — `shippers.{getDashboardStats,
-//  getLoadsRequiringAttention, getActiveLoads, getRecentLoads}` via the
-//  existing ShipperDashboardStore / ShipperAlertsStore /
-//  ShipperActiveLoadsStore / ShipperRecentLoadsStore. Hard-coded
-//  canonical Diego / Eusorone Technologies / MATRIX-50 anchors are
-//  Preview-only fallbacks; runtime renders from the stores.
+//  getLoadsRequiringAttention, getActiveLoads, getRecentLoads, getProfile}` via
+//  the existing ShipperDashboardStore / ShipperAlertsStore /
+//  ShipperActiveLoadsStore / ShipperRecentLoadsStore / ShipperProfileStore.
 //
-//  Persona canon (§11): Diego Usoro · Eusorone Technologies (companyId 1)
-//                        · DU avatar · 50 MATRIX loads.
+//  ZERO-FABRICATION (2026-06-06): no hard-coded persona, company, or
+//  invented metric anywhere at runtime. The header company name binds to
+//  the signed-in user's `shippers.getProfile.companyName` (NEVER a founder
+//  default); active-load / pending-bid / attention counts bind to the
+//  real `shippers.getDashboardStats` + `getLoadsRequiringAttention`
+//  envelopes; no-source values render an honest "—". No `?? <invented>`
+//  number/string survives — only `?? "—"` sentinels remain.
 //  Web peer: ShipperDashboard.tsx (`/shipper/dashboard`).
 //
 //  BottomNav: out of scope per parity mandate §1 (Home / Create Load /
@@ -43,6 +46,9 @@ struct ShipperHome: View {
     @StateObject private var alerts    = ShipperAlertsStore()
     @StateObject private var active    = ShipperActiveLoadsStore()
     @StateObject private var recent    = ShipperRecentLoadsStore()
+    // Real company identity for the header subhead — `shippers.getProfile`
+    // (companyName). NEVER a founder default; empty/unavailable → "—".
+    @StateObject private var profile   = ShipperProfileStore()
     // EUSO-2057 — gates the DU avatar's unread dot on real messaging
     // unread count via the existing project-wide store.
     @ObservedObject private var unread = UnreadMessageStore.shared
@@ -193,10 +199,11 @@ struct ShipperHome: View {
         async let b: Void = alerts.refresh()
         async let c: Void = active.refresh()
         async let d: Void = recent.refresh()
+        async let p: Void = profile.refresh()
         async let av: Void = loadAvatar()
         async let w: WeatherSnapshot? = WeatherService.shared.fetchCurrent()
         let snap = await w
-        _ = await (a, b, c, d, av)
+        _ = await (a, b, c, d, p, av)
         weather = snap
         // Resolve CTA visibility from the post-fetch authorization
         // status so the home renders an "Enable location" affordance
@@ -327,14 +334,14 @@ struct ShipperHome: View {
         .padding(.bottom, Space.s3)
     }
 
-    /// Identity-aware + time-of-day-aware greeting. "Good morning, Diego"
-    /// / "Good afternoon, Diego" / "Good evening, Diego" / "Hey, Diego"
-    /// per the local hour. When the session has no first name we drop
-    /// the comma-tail entirely so the headline reads as a clean
-    /// "Good morning" instead of "Good morning, Diego" (the previous
-    /// hardcoded fallback shipped the founder's name to every cold-
-    /// start screen, which was the "discombobulated welcome back" the
-    /// user flagged 2026-05-04).
+    /// Identity-aware + time-of-day-aware greeting. "Good morning, <first>"
+    /// / "Good afternoon, <first>" / "Good evening, <first>" per the local
+    /// hour, where <first> is the SIGNED-IN user's first name from the
+    /// session. When the session has no first name we drop the comma-tail
+    /// entirely so the headline reads as a clean "Good morning" — never a
+    /// hardcoded persona (the previous hardcoded fallback shipped a fixed
+    /// name to every cold-start screen, the "discombobulated welcome back"
+    /// the user flagged 2026-05-04).
     /// Fetch the signed-in user's avatar (users.profilePicture, a base64 data
     /// URL written by profile.updateAvatar) via profile.getMyProfile and decode
     /// it for duAvatar. Cosmetic — any failure silently keeps the initials.
@@ -371,44 +378,61 @@ struct ShipperHome: View {
         return salutation
     }
 
-    /// "Eusorone Technologies · 50 MATRIX loads · 2 need attention" when
-    /// real data lands; canonical anchor when loading.
+    /// Identity + counts subhead, e.g. "<Company> · 12 active loads · 2 need
+    /// attention". Every value binds to a real proc; no-source segments
+    /// render an honest "—" (NEVER a founder company or invented number).
     private var subhead: String {
-        // AuthUser carries `companyId` only; the human company name comes
-        // through the dashboard envelope when wired. For now anchor to canon.
-        let company = "Eusorone Technologies"
-        let total = (dashboard.state.value ?? nil)?.activeLoads ?? 50  // §11 canon: 50 MATRIX loads
-        let attention: Int = {
-            if case .loaded(let rows) = alerts.state { return rows.count }
-            return 2  // §11 canon: 2 attention rows on Diego's home
+        // Company name from the signed-in shipper's `shippers.getProfile`
+        // envelope (companyName). Empty / unavailable → "—". The session
+        // user (AuthUser) carries only `companyId`, not a human company name,
+        // so the profile proc is the honest source — never a founder default.
+        let company: String = {
+            if let p = profile.state.value ?? nil,
+               !p.companyName.trimmingCharacters(in: .whitespaces).isEmpty {
+                return p.companyName
+            }
+            return "—"
         }()
-        return "\(company) · \(total) MATRIX loads · \(attention) need attention"
+        // Active-load count from `shippers.getDashboardStats`; no value yet → "—".
+        let totalText: String = {
+            if let s = dashboard.state.value ?? nil { return "\(s.activeLoads) active loads" }
+            return "—"
+        }()
+        // Attention count from `shippers.getLoadsRequiringAttention`; not loaded → "—".
+        let attentionText: String = {
+            if case .loaded(let rows) = alerts.state { return "\(rows.count) need attention" }
+            return "—"
+        }()
+        return "\(company) · \(totalText) · \(attentionText)"
     }
 
-    /// Top-right counter band — "12 ACTIVE · 7 BIDS PENDING".
+    /// Top-right counter band — "N ACTIVE · M BIDS PENDING" from
+    /// `shippers.getDashboardStats` (activeLoads / pendingBids). Renders an
+    /// honest "—" until the real envelope lands; no invented placeholder.
     private var counterLine: String {
         if let s = dashboard.state.value ?? nil {
             return "\(s.activeLoads) ACTIVE · \(s.pendingBids) BIDS PENDING"
         }
-        return "12 ACTIVE · 7 BIDS PENDING"
+        return "—"
     }
 
-    /// DU monogram on diagonal gradient + unread notification dot.
-    /// AuthUser doesn't carry `initials` or unread-count; derive initials
-    /// from `name` and assume the dot is on (top-bar bell will be wired
-    /// when notifications.getUnreadCount lands).
+    /// Signed-in user monogram on diagonal gradient + unread notification dot.
+    /// AuthUser doesn't carry `initials` or unread-count; derive initials from
+    /// the session user's real `name`. When no name is set we render a neutral
+    /// person glyph — NEVER a founder monogram. Dot gated on real unread count.
     /// Tapping the avatar drills into the Me Home gateway (320), same as
     /// the bottom-nav Me tab. Without this Button the avatar paints but
     /// dead-taps — a known UX bug per founder feedback 2026-05-04.
     private var duAvatar: some View {
-        let initials: String = {
-            if let n = session.user?.name, !n.isEmpty {
-                let parts = n.split(separator: " ").prefix(2).map(String.init)
-                let chars = parts.compactMap { $0.first }.map(String.init)
-                let derived = chars.joined().uppercased()
-                return derived.isEmpty ? "DU" : derived
-            }
-            return "DU"
+        // nil → no real name on the session, so render the person glyph
+        // instead of fabricating initials.
+        let initials: String? = {
+            guard let n = session.user?.name?.trimmingCharacters(in: .whitespaces),
+                  !n.isEmpty else { return nil }
+            let parts = n.split(separator: " ").prefix(2).map(String.init)
+            let chars = parts.compactMap { $0.first }.map(String.init)
+            let derived = chars.joined().uppercased()
+            return derived.isEmpty ? nil : derived
         }()
         return Button {
             NotificationCenter.default.post(
@@ -429,9 +453,15 @@ struct ShipperHome: View {
                             .overlay(Circle().strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
                     } else {
                         Circle().fill(LinearGradient.diagonal)
-                        Text(initials)
-                            .font(.system(size: 14, weight: .bold)).tracking(0.4)
-                            .foregroundStyle(.white)
+                        if let initials {
+                            Text(initials)
+                                .font(.system(size: 14, weight: .bold)).tracking(0.4)
+                                .foregroundStyle(.white)
+                        } else {
+                            Image(systemName: "person.fill")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
                     }
                 }
                 .frame(width: 40, height: 40)
@@ -449,7 +479,7 @@ struct ShipperHome: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Open Me · Diego Usoro · Eusorone Technologies")
+        .accessibilityLabel("Open Me")
         .accessibilityHint("Open your account, wallet, network and settings")
     }
 
@@ -528,9 +558,11 @@ struct ShipperHome: View {
 
     @ViewBuilder
     private func attentionShell<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        // Real alert count from `shippers.getLoadsRequiringAttention`; any
+        // non-loaded state shows 0 rather than an invented figure.
         let attentionCount: Int = {
             if case .loaded(let rows) = alerts.state { return rows.count }
-            return 2
+            return 0
         }()
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Space.s2) {
@@ -676,29 +708,33 @@ struct ShipperHome: View {
         case .loading:
             statSkeleton
         case .loaded(let maybe):
-            if let s = maybe { statTiles(s) } else { statTiles(canonStats) }
+            if let s = maybe { statTiles(s) } else { statTiles(emptyStats) }
         case .empty:
-            statTiles(canonStats)
+            statTiles(emptyStats)
         case .error(let e):
             inlineError(e) { Task { await dashboard.refresh() } }
         }
     }
 
     private func statTiles(_ s: ShipperAPI.DashboardStats) -> some View {
+        // Trails are honest descriptors only — the dashboard envelope carries
+        // no period-over-period delta, so we never fabricate "+3 this wk" /
+        // "−6% vs Mar" / "+1.2 pts" trend numerals. Each metric value itself
+        // binds to a real `shippers.getDashboardStats` field.
         HStack(spacing: Space.s2) {
             statTile(label: "Active", value: "\(s.activeLoads)",
-                     trail: trail(forActive: s.activeLoads),
-                     trailColor: Brand.success)
-            statTile(label: "Bids pending", value: "\(s.pendingBids)",
-                     trail: "avg \(dollarsPerMile(s.ratePerMile))",
+                     trail: "in flight",
                      trailColor: palette.textSecondary)
-            statTile(label: "Rate / mi", value: dollarsPerMile(s.ratePerMile),
-                     trail: trailVsLastMonth(s.ratePerMile),
+            statTile(label: "Bids pending", value: "\(s.pendingBids)",
+                     trail: "awaiting award",
+                     trailColor: palette.textSecondary)
+            statTile(label: "Rate / mi", value: rateValue(s.ratePerMile),
+                     trail: "avg",
                      trailColor: palette.textSecondary,
                      gradientNumeral: true, valueSize: 22)
-            statTile(label: "On-time", value: percent(s.onTimeRate),
-                     trail: "+1.2 pts",
-                     trailColor: Brand.success,
+            statTile(label: "On-time", value: percentValue(s.onTimeRate),
+                     trail: "delivery rate",
+                     trailColor: palette.textSecondary,
                      gradientNumeral: true)
         }
     }
@@ -740,7 +776,7 @@ struct ShipperHome: View {
         .eusoCard(radius: Radius.lg)
     }
 
-    // MARK: - Active loads — list of MATRIX-50 rows w/ 8-stage strip
+    // MARK: - Active loads — list of in-flight rows w/ 8-stage strip
 
     @ViewBuilder
     private var activeLoadsSection: some View {
@@ -1034,18 +1070,23 @@ struct ShipperHome: View {
         .buttonStyle(.plain)
     }
 
+    /// eSang strip headline — bound to the real `shippers.getDashboardStats`
+    /// rate/mi target. No fabricated carrier-match count or invented target;
+    /// when no real rate is present we render a neutral, honest prompt.
     private var esangHeadline: String {
-        if let s = dashboard.state.value ?? nil {
-            let target = dollarsPerMile(s.ratePerMile)
-            return "eSang found 3 carriers under your \(target) target"
+        if let s = dashboard.state.value ?? nil, s.ratePerMile > 0 {
+            return "Ask eSang to source carriers under your \(dollarsPerMile(s.ratePerMile))/mi target"
         }
-        return "eSang found 3 carriers under your $2.84/mi target"
+        return "Ask eSang for carrier and rate insights"
     }
+    /// eSang strip subline — bound to the real first active-load lane from
+    /// `shippers.getActiveLoads`. No invented savings/OTR figures; when there
+    /// is no active load we render a neutral CTA instead of a fake lane.
     private var esangSubline: String {
         if case .loaded(let rows) = active.state, let first = rows.first {
-            return "\(first.origin) → \(first.destination) · save $0.18/mi · 96% OTR"
+            return "\(first.origin) → \(first.destination)"
         }
-        return "Houston TX → Dallas TX · save $0.18/mi · 96% OTR"
+        return "Tap to open eSang"
     }
 
     // MARK: - Recent activity (kept — EXTRA-OK per parity audit)
@@ -1181,18 +1222,18 @@ struct ShipperHome: View {
 
     // MARK: - Formatters + canonical fallback values
 
-    /// Diego-anchor stats matching §11 canon. Used only when stores are
-    /// loaded with a nil envelope or empty (rare; previews mostly hit
-    /// `.loading`). Hard runtime fallback so a momentary nil doesn't
-    /// erase the strip.
-    private var canonStats: ShipperAPI.DashboardStats {
+    /// Honest zero envelope. Used only on the `.empty` edge (a nil from the
+    /// network layer — the server otherwise returns real zeros when a shipper
+    /// has no loads). Renders true zeros / em-dash sentinels, NEVER invented
+    /// founder figures, so the strip never fabricates a number on no-source.
+    private var emptyStats: ShipperAPI.DashboardStats {
         ShipperAPI.DashboardStats(
-            activeLoads: 12,
-            pendingBids: 7,
-            deliveredThisWeek: 18,
-            ratePerMile: 2.91,
-            onTimeRate: 0.946,
-            totalSpendThisMonth: 142_500
+            activeLoads: 0,
+            pendingBids: 0,
+            deliveredThisWeek: 0,
+            ratePerMile: 0,
+            onTimeRate: 0,
+            totalSpendThisMonth: 0
         )
     }
 
@@ -1205,8 +1246,11 @@ struct ShipperHome: View {
     }
     private func dollarsPerMile(_ v: Double) -> String { String(format: "$%.2f", v) }
     private func percent(_ v: Double) -> String { String(format: "%.1f%%", v * 100) }
-    private func trail(forActive count: Int) -> String { "+3 this wk" }
-    private func trailVsLastMonth(_ rpm: Double) -> String { "−6% vs Mar" }
+    /// Honest rate/mi: renders the real value when the server has a non-zero
+    /// rate, else an em-dash sentinel (no rate computed yet) rather than "$0.00".
+    private func rateValue(_ v: Double) -> String { v > 0 ? dollarsPerMile(v) : "—" }
+    /// Honest on-time percent: real value when present, else em-dash sentinel.
+    private func percentValue(_ v: Double) -> String { v > 0 ? percent(v) : "—" }
 
     // MARK: - Spend summary widget
 
@@ -1226,9 +1270,9 @@ struct ShipperHome: View {
             case .loading:
                 listSkeleton
             case .loaded(let maybe):
-                if let s = maybe { spendTiles(s) } else { spendTiles(canonStats) }
+                if let s = maybe { spendTiles(s) } else { spendTiles(emptyStats) }
             case .empty:
-                spendTiles(canonStats)
+                spendTiles(emptyStats)
             case .error(let e):
                 inlineError(e) { Task { await dashboard.refresh() } }
             }

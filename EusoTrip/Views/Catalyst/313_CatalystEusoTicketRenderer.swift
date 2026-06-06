@@ -4,109 +4,64 @@
 //
 //  Pixel-faithful port of "313 Catalyst EusoTicket Renderer · Light"
 //  (Figma `~/Desktop/EusoTrip 2027 UI Wireframes/03 Catalyst/Light-SVG/`)
-//  + the matching dark variant. Sole-driver Catalyst (Eusotrans LLC ·
-//  Michael Eusorone · USDOT 3 194 882 · MC-820 144) reviews the
-//  as-rendered EusoTicket document for the active load before
-//  dispatching to the shipper-of-record (Diego Usoro · Eusorone
-//  Technologies) and the receiver. The rendered document on the
-//  preview canvas is the BOL for the §11.4 flagship MATRIX-50 load
-//  Houston TX → Dallas TX · MC-306 Gasoline UN1203 · $1,900.
+//  + the matching dark variant. The Catalyst reviews the as-rendered
+//  EusoTicket document for the active (selected) load before dispatching
+//  it to the shipper-of-record and the receiver. The rendered document
+//  on the preview canvas is the BOL/POD/run-ticket/haul-receipt for the
+//  load routed into this screen via `BrokerNavContext.latestLoadId`.
 //
 //  Chassis (top → bottom, matching SVG):
 //    • TopBar eyebrow + textTertiary counter
-//    • Title "EusoTicket" + carrier subtitle
+//    • Title "EusoTicket" + doc-type subtitle
 //    • IridescentHairline
 //    • 4-chip doc-type filter row (BOL active by default — gradient)
 //    • Render-context ribbon (load id + version meta + green ✓)
 //    • Live-preview EusoTicket render canvas (gradient header band +
 //      origin/destination strip + Shipper/Carrier parties block +
 //      commodity + hazmat diamond + freight rate + signature receipt
-//      pill + canonical EusoQRView audit chip + USDOT/MC footer)
-//    • Send action ribbon (gradient — Render PDF · dispatch DU+ME+
-//      receiver)
+//      pill + canonical EusoQRView audit chip + compliance footer)
+//    • Send action ribbon (gradient — Render PDF · dispatch)
 //    • Retention-policy explainer
 //    • BottomNav · Catalyst variant · DISPATCH active
 //
 //  QR system: canonical `EusoQRView` (Views/Components/EusoQR.swift)
 //  — same generator that ships across every QR surface in the app.
-//  Payload is `EusoQRKind.eusoTicket(kind: .bol, id: bolNumber)`
-//  with `role: .carrier` so the receiving side decodes the catalyst
-//  context out of the URL without a second auth fetch. Rendered with
-//  the brand blue→magenta diagonal gradient on white, error-correction
-//  level H (30 % recoverable). The audit text under the QR shows the
+//  Payload is `EusoQRKind.eusoTicket(kind:, id: bolNumber)` with
+//  `role: .carrier` so the receiving side decodes the catalyst context
+//  out of the URL without a second auth fetch. Rendered with the brand
+//  blue→magenta diagonal gradient on white, error-correction level H
+//  (30 % recoverable). The audit text under the QR shows the
 //  human-readable short URL `eusotrip.com/t/<bol>` per the Figma
 //  audit-chip copy — the QR itself encodes the canonical universal
 //  link the iOS deep-link handler + web router both consume.
 //
-//  Wired to:
-//    • `loads.getById` for the previewed load (origin/destination,
-//      commodity, hazmat, rate, dates) — when the load resolves we
-//      paint the rendered document with real data; when it doesn't
-//      we fall back to the §11.4 flagship constants so the canvas
-//      always renders something the catalyst can review.
-//    • `eusoTicket.generateBOLPDF` on Send → produces the PDF and
-//      dispatches it to DU + ME + receiver per the action-ribbon
-//      promise. We don't fabricate a fake "PDF generated" state if
-//      the call fails — surface the error inline.
+//  ZERO-FABRICATION doctrine (2026-06-06 rebuild):
+//    • Every business value binds to the real load record returned by
+//      `loads.getById` (typed `LoadsAPI.LoadDetail`). There is NO
+//      fabricated MATRIX-50 / A38FB12C7E / Houston→Dallas / Gasoline /
+//      $1,900 / blockchain-tx fallback — when a field is missing on the
+//      record the surface renders an honest "—".
+//    • Shipper-of-record / carrier identity come from the session user
+//      (the signed-in Catalyst) or render "—". No founder company /
+//      persona (Eusorone Technologies / Diego Usoro / Michael Eusorone /
+//      Aurora / Eusotrans / EIN 87-3104952) is ever painted.
+//    • When no load is routed (or it doesn't resolve) the canvas is
+//      replaced with the canonical `EusoEmptyState` — never a sample BOL.
+//    • The footer states only what the record verifies. It never asserts
+//      "FMCSA SAFER clean / authority active / insurance verified" — on a
+//      no-source/failure path it reads "unavailable".
 //
-//  Pixel-doctrine compliant per EUSOTRIP2027GOLD §1 (gradient-only
-//  brand accent — no flat Brand.blue / .tint(.blue)), §2 (no Toggles
-//  on this brick), §4 (tokenized spacing / radius / type), §5
-//  (palette semantic only, no hard-coded Color.white / Color.black /
-//  Color.gray fills outside CTA inverse-text where the gradient is
-//  the background), §3 (`AnyShapeStyle` for ternary shape-styles),
-//  §10 (previews compile in isolation — `.task` doesn't run in
-//  preview canvas, so the load store stays in `.loading` and the
-//  canvas paints with the persona constants).
+//  Wired to:
+//    • `loads.getDetail` → `loads.getById` for the previewed load
+//      (origin/destination, commodity, hazmat, rate, dates).
+//    • `eusoTicket.generateBOLPDF` on Send → produces the PDF and
+//      dispatches it server-side. We don't fabricate a "PDF generated"
+//      state if the call fails — surface the error inline.
 //
 //  Powered by ESANG AI™.
 //
 
 import SwiftUI
-
-// MARK: - Persona constants (Figma 313 desc · §11 + §12)
-//
-// These hardcoded strings are NOT mock data — they are the canonical
-// Eusotrans LLC carrier persona and Diego Usoro / Eusorone Technologies
-// shipper-of-record persona that the SOLE-DRIVER Catalyst account on
-// the production app belongs to. Per §11/§12 doctrine, every Catalyst
-// surface paints with these identifiers because the live tenant IS
-// Eusotrans LLC. When the §11/§12 persona is replaced with a multi-
-// carrier Catalyst surface, the values move to `EusoTripSession`
-// + the catalysts.* router and feed in via @EnvironmentObject.
-
-private enum CatalystPersona {
-    // §12 — Carrier
-    static let carrier         = "Eusotrans LLC"
-    static let carrierMonogram = "ME"
-    static let carrierUSDOT    = "USDOT 3 194 882"
-    static let carrierMC       = "MC-820 144"
-    static let carrierIRP      = "IRP IA"
-    static let carrierBoc3     = "BOC-3 active"
-
-    // §11 — Shipper of record
-    static let shipper         = "Diego Usoro"
-    static let shipperCompany  = "Eusorone Technologies · companyId 1"
-    static let shipperMonogram = "DU"
-
-    // §11.4 flagship MATRIX-50 fallback (paints when loads.getById
-    // hasn't resolved yet OR when the previewed load doesn't exist
-    // server-side so the catalyst still has a reviewable canvas)
-    static let flagshipBolNumber       = "A38FB12C7E"
-    static let flagshipLoadNumber      = "LD-260427-A38FB12C7E"
-    static let flagshipDate            = "2026-04-27"
-    static let flagshipFromCity        = "Houston TX"
-    static let flagshipFromAddress     = "LyondellBasell Channelview · 1515 Sheldon Rd"
-    static let flagshipFromTime        = "Pickup 04-27 · 06:00 CDT"
-    static let flagshipToCity          = "Dallas TX"
-    static let flagshipToAddress       = "RaceTrac Terminal · 4801 Singleton Blvd"
-    static let flagshipToTime          = "Deliver 04-27 · 14:00 CDT"
-    static let flagshipCommodity       = "Gasoline · 7,500 gal"
-    static let flagshipCommodityMeta1  = "UN1203 · PG II · NMFC 145880"
-    static let flagshipCommodityMeta2  = "MC-306 Petroleum Tanker · seal № EU-71044"
-    static let flagshipRateDisplay     = "$1,900.00"
-    static let flagshipRateMeta        = "all-in · prepaid · invoiced post-POD"
-}
 
 // MARK: - DocType filter (BOL · POD · Run Ticket · Haul Receipt)
 
@@ -162,6 +117,7 @@ private func catalystNavTrailing_313() -> [NavSlot] {
 private struct CatalystEusoTicketRenderer: View {
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var scheme
+    @EnvironmentObject private var session: EusoTripSession
 
     let loadId: String
 
@@ -178,6 +134,9 @@ private struct CatalystEusoTicketRenderer: View {
     /// in the EusoTrip app.
     @State private var pdfPresentation: EusoPDFPresentation? = nil
 
+    /// Honest no-source token — em-dash everywhere a field is absent.
+    private let dash = "—"
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -186,8 +145,12 @@ private struct CatalystEusoTicketRenderer: View {
                 iridescentHairline
                 docFilterChips
                 renderContextRibbon
-                renderCanvas
-                sendActionRibbon
+                if load != nil {
+                    renderCanvas
+                    sendActionRibbon
+                } else {
+                    emptyCanvas
+                }
                 if let err = dispatchError {
                     Text(err)
                         .font(EType.caption)
@@ -281,7 +244,7 @@ private struct CatalystEusoTicketRenderer: View {
                 .font(.system(size: 34, weight: .bold))
                 .tracking(-0.6)
                 .foregroundStyle(palette.textPrimary)
-            Text("\(CatalystPersona.carrier) · BOL · POD · run ticket · haul receipt")
+            Text("BOL · POD · run ticket · haul receipt")
                 .font(.system(size: 12))
                 .foregroundStyle(palette.textSecondary)
         }
@@ -313,12 +276,11 @@ private struct CatalystEusoTicketRenderer: View {
 
     private func docChip(_ type: CatalystDocType) -> some View {
         let active = selectedDoc == type
-        // Counter dot per Figma — BOL has 1 (the rendered preview);
-        // others count zero until a POD/Run Ticket/Haul Receipt has
-        // been generated server-side for this load. We surface the
-        // canonical counts here; a future firing wires these from
-        // `eusoTicket.listBOLs(loadId:)` etc. when they ship.
-        let count = (type == .bol && load != nil) ? 1 : (type == .bol ? 1 : 0)
+        // Counter dot per Figma — BOL shows 1 (the rendered preview) only
+        // when a real load record is resolved; the others count zero until
+        // a POD/Run Ticket/Haul Receipt has been generated server-side.
+        // A future firing wires these from `eusoTicket.listBOLs(loadId:)`.
+        let count = (type == .bol && load != nil) ? 1 : 0
 
         return Button {
             withAnimation(.easeOut(duration: 0.12)) { selectedDoc = type }
@@ -378,13 +340,15 @@ private struct CatalystEusoTicketRenderer: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer(minLength: 0)
-            // Green ✓ — render fresh / saved
-            Image(systemName: "checkmark")
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(.white)
-                .frame(width: 32, height: 32)
-                .background(LinearGradient.diagonal)
-                .clipShape(Circle())
+            // Green ✓ — render fresh / saved (only when a real record resolved)
+            if load != nil {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .frame(width: 32, height: 32)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(Circle())
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity)
@@ -394,6 +358,30 @@ private struct CatalystEusoTicketRenderer: View {
                 .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: Empty canvas — no load routed / not resolved
+
+    private var emptyCanvas: some View {
+        Group {
+            if loading {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 48)
+            } else if let err = loadError {
+                EusoEmptyState(
+                    systemImage: "exclamationmark.triangle",
+                    title: "Couldn't load this EusoTicket",
+                    subtitle: err
+                )
+            } else {
+                EusoEmptyState(
+                    systemImage: "doc.text",
+                    title: "No load selected",
+                    subtitle: "Open a load to render its EusoTicket. The BOL, POD, run ticket and haul receipt paint here once a load is routed in."
+                )
+            }
+        }
     }
 
     // MARK: Render canvas — the "paper card" per Figma
@@ -439,7 +427,7 @@ private struct CatalystEusoTicketRenderer: View {
             .padding(.vertical, 8)
     }
 
-    // Gradient header band — "EUSOTICKET" + "Bill of Lading №" + load id + date
+    // Gradient header band — "EUSOTICKET" + doc-type № + load id + date
     private var renderHeader: some View {
         ZStack(alignment: .topLeading) {
             LinearGradient.diagonal
@@ -501,24 +489,25 @@ private struct CatalystEusoTicketRenderer: View {
         .padding(.top, 16)
     }
 
-    // SHIPPER OF RECORD (DU) + CARRIER (ME)
+    // SHIPPER OF RECORD + CARRIER — bound to the session user (the
+    // signed-in Catalyst) and the load's shipper, never a founder persona.
     private var renderParties: some View {
         HStack(alignment: .top, spacing: 0) {
             partyBlock(
                 eyebrow: "SHIPPER OF RECORD",
-                monogram: CatalystPersona.shipperMonogram,
+                monogram: shipperMonogram,
                 monogramFill: AnyShapeStyle(LinearGradient.diagonal),
-                title: CatalystPersona.shipper,
-                meta: CatalystPersona.shipperCompany
+                title: shipperNameDisplay,
+                meta: shipperMetaDisplay
             )
             .frame(maxWidth: .infinity, alignment: .leading)
 
             partyBlock(
                 eyebrow: "CARRIER",
-                monogram: CatalystPersona.carrierMonogram,
+                monogram: carrierMonogram,
                 monogramFill: AnyShapeStyle(Color(hex: 0x0D1117)),
-                title: CatalystPersona.carrier,
-                meta: "\(CatalystPersona.carrierUSDOT) · \(CatalystPersona.carrierMC)"
+                title: carrierNameDisplay,
+                meta: carrierMetaDisplay
             )
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -570,23 +559,31 @@ private struct CatalystEusoTicketRenderer: View {
                     .font(.system(size: 10, design: .monospaced))
                     .tracking(0.3)
                     .foregroundStyle(Color(hex: 0x52606D))
-                Text(commodityMeta2Display)
-                    .font(.system(size: 10, design: .monospaced))
-                    .tracking(0.3)
-                    .foregroundStyle(Color(hex: 0x52606D))
+                if let meta2 = commodityMeta2Display {
+                    Text(meta2)
+                        .font(.system(size: 10, design: .monospaced))
+                        .tracking(0.3)
+                        .foregroundStyle(Color(hex: 0x52606D))
+                }
             }
             Spacer(minLength: 0)
-            hazmatCallout
+            if let haz = load?.hazmatClass, !haz.isEmpty {
+                hazmatCallout(hazClass: haz)
+            }
         }
         .padding(.horizontal, 16)
     }
 
-    // Class 3 diamond callout — Brand.danger gradient (red→orange).
-    // We honor the load's actual hazmatClass when present.
-    private var hazmatCallout: some View {
-        let hazClass = load?.hazmatClass ?? "3"
-        let hazLabel = hazClass == "3" ? "FLAM" : "HAZ"
-        let pg = (load?.unNumber != nil || load?.hazmatClass == "3") ? "PG II" : "-"
+    // Hazmat diamond callout — Brand.danger gradient (red→orange).
+    // Rendered only when the load carries a real hazmatClass. Class 3 is
+    // flammable; other classes show the class number without asserting a
+    // label we can't verify.
+    private func hazmatCallout(hazClass: String) -> some View {
+        let isFlammable = hazClass == "3"
+        let hazLabel = isFlammable ? "FLAM" : "HAZ"
+        // Packing group is only known when the record surfaces a UN number
+        // lane; otherwise honest em-dash.
+        let pg = load?.unNumber != nil ? "PG II" : dash
 
         return HStack(alignment: .center, spacing: 8) {
             ZStack {
@@ -600,7 +597,7 @@ private struct CatalystEusoTicketRenderer: View {
                     .frame(width: 36, height: 36)
                 VStack(spacing: 0) {
                     Text(hazLabel).font(.system(size: 8, weight: .heavy)).foregroundStyle(.white)
-                    Text("\(hazClass)").font(.system(size: 14, weight: .heavy)).foregroundStyle(.white)
+                    Text(hazClass).font(.system(size: 14, weight: .heavy)).foregroundStyle(.white)
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -608,7 +605,7 @@ private struct CatalystEusoTicketRenderer: View {
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.4)
                     .foregroundStyle(Brand.danger)
-                Text("Flammable")
+                Text(isFlammable ? "Flammable" : "Hazardous")
                     .font(.system(size: 10, weight: .heavy))
                     .foregroundStyle(Color(hex: 0x0D1117))
                 Text(pg)
@@ -659,12 +656,17 @@ private struct CatalystEusoTicketRenderer: View {
     }
 
     private var signaturePill: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "checkmark")
+        // The pickup-signed receipt only renders an affirmative checkmark
+        // when the load has actually advanced past pickup (a real status /
+        // actualDeliveryDate signal). Otherwise it reads "pending" — we
+        // never assert a signature we can't verify.
+        let signed = pickupSigned
+        return HStack(spacing: 6) {
+            Image(systemName: signed ? "checkmark" : "clock")
                 .font(.system(size: 10, weight: .heavy))
-                .foregroundStyle(Brand.success)
+                .foregroundStyle(signed ? Brand.success : Color(hex: 0x8A96A3))
             VStack(alignment: .leading, spacing: 1) {
-                Text("Pickup signed")
+                Text(signed ? "Pickup signed" : "Pickup pending")
                     .font(.system(size: 10, weight: .heavy))
                     .foregroundStyle(Color(hex: 0x0D1117))
                 Text(pickupSignedMetaDisplay)
@@ -675,7 +677,7 @@ private struct CatalystEusoTicketRenderer: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(Brand.success.opacity(0.10))
+        .background((signed ? Brand.success : Color(hex: 0x8A96A3)).opacity(0.10))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
@@ -699,11 +701,11 @@ private struct CatalystEusoTicketRenderer: View {
                 Text(auditUrlDisplay)
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(Color(hex: 0x0D1117))
-                Text("SHA-256 · blockchain-anchored \(auditAnchorTime)")
-                    .font(.system(size: 10, design: .monospaced))
-                    .tracking(0.3)
-                    .foregroundStyle(Color(hex: 0x52606D))
-                Text("tx 0x9c4f…b021 · Polygon zkEVM")
+                // The QR encodes the canonical universal link; we describe
+                // the scan target honestly. We do NOT assert a blockchain
+                // transaction hash / anchor time we can't verify from the
+                // record — the on-chain anchor lands at dispatch (server).
+                Text("Resolves the canonical EusoTicket deep link")
                     .font(.system(size: 10, design: .monospaced))
                     .tracking(0.3)
                     .foregroundStyle(Color(hex: 0x52606D))
@@ -713,10 +715,13 @@ private struct CatalystEusoTicketRenderer: View {
         .padding(.horizontal, 16)
     }
 
-    // Footer — USDOT / MC / IRP / BOC-3 / FMCSA + UCC + CFR
+    // Footer — compliance line bound to what the record verifies.
+    // Never asserts unverified positive compliance ("SAFER clean /
+    // authority active / insurance verified"); on a no-source path the
+    // carrier registration line reads "unavailable".
     private var renderFooter: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("\(CatalystPersona.carrierUSDOT) · \(CatalystPersona.carrierMC) · \(CatalystPersona.carrierIRP) · \(CatalystPersona.carrierBoc3) · FMCSA SAFER clean")
+            Text(carrierRegistrationFooter)
                 .font(.system(size: 9, design: .monospaced))
                 .tracking(0.3)
                 .foregroundStyle(Color(hex: 0x8A96A3))
@@ -749,7 +754,7 @@ private struct CatalystEusoTicketRenderer: View {
                     Text(dispatching ? "Rendering and dispatching…" : sendTitleDisplay)
                         .font(.system(size: 13, weight: .heavy))
                         .foregroundStyle(.white)
-                    Text("3 recipients · auto-attach to Settlements + Wallet on POD")
+                    Text("Recipients resolved from the load · auto-attach to Settlements + Wallet on POD")
                         .font(.system(size: 11))
                         .foregroundStyle(.white.opacity(0.85))
                 }
@@ -791,17 +796,18 @@ private struct CatalystEusoTicketRenderer: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: - Display derivations (load-aware fallback to persona)
+    // MARK: - Display derivations (real-record only; "—" when absent)
 
     private var loadNumberDisplay: String {
-        load?.loadNumber ?? CatalystPersona.flagshipLoadNumber
+        load?.loadNumber ?? dash
     }
 
     private var loadShortIdDisplay: String {
-        // "LD-260427" eyebrow on header band
-        let full = loadNumberDisplay
-        if let dash = full.dropFirst(3).firstIndex(of: "-") {
-            return String(full[..<dash])
+        // Short eyebrow on header band — the prefix of the load number up
+        // to the second dash (e.g. "LD-260427"). Honest "—" when absent.
+        guard let full = load?.loadNumber, !full.isEmpty else { return dash }
+        if let dashIdx = full.dropFirst(3).firstIndex(of: "-") {
+            return String(full[..<dashIdx])
         }
         return full
     }
@@ -816,10 +822,14 @@ private struct CatalystEusoTicketRenderer: View {
     }
 
     private var bolNumberDisplay: String {
-        if let ln = load?.loadNumber, let dashRange = ln.range(of: "-", options: [.backwards]) {
+        // The document number is derived from the load number's trailing
+        // segment when present; otherwise the load number itself; honest
+        // "—" when there is no record.
+        guard let ln = load?.loadNumber, !ln.isEmpty else { return dash }
+        if let dashRange = ln.range(of: "-", options: [.backwards]) {
             return String(ln[dashRange.upperBound...])
         }
-        return CatalystPersona.flagshipBolNumber
+        return ln
     }
 
     private var docTypeFullLabel: String {
@@ -832,164 +842,218 @@ private struct CatalystEusoTicketRenderer: View {
     }
 
     private var rideDateDisplay: String {
-        load?.pickupDate.flatMap(shortDate) ?? CatalystPersona.flagshipDate
+        load?.pickupDate.flatMap(shortDate) ?? dash
     }
 
     private var routeDisplay: String {
-        if let l = load {
-            let lane = l.laneDisplay
-            let mc = l.cargoType?.uppercased().contains("FUEL") == true ? "MC-306" : "MC-306"
-            let un = l.unNumber.map { "UN\($0)" } ?? "UN1203"
-            let rate = l.rateDisplay
-            return "\(lane) · \(mc) \(un) · \(rate)"
-        }
-        return "\(CatalystPersona.flagshipFromCity) → \(CatalystPersona.flagshipToCity) · MC-306 UN1203 · $1,900"
+        guard let l = load else { return dash }
+        let lane = l.laneDisplay
+        let un = l.unNumber.map { "UN\($0)" }
+        let parts = [lane, un, l.rateValue > 0 ? l.rateDisplay : nil]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty && $0 != dash }
+        return parts.isEmpty ? dash : parts.joined(separator: " · ")
     }
 
     private var versionMetaDisplay: String {
-        // "v3 · auto-saved 14 min ago · 248 KB" per Figma — version + size
-        // are stable canvas constants until eusoTicket.* surfaces them.
-        if load != nil {
-            return "v3 · auto-saved · live preview"
+        // Live preview marker — no fabricated version number / file size /
+        // "14 min ago" timestamp. Updated-at, when present, is honest.
+        guard load != nil else { return dash }
+        if let updated = load?.updatedAt.flatMap(shortDate) {
+            return "Live preview · updated \(updated)"
         }
-        return "v3 · auto-saved 14 min ago · 248 KB"
+        return "Live preview"
     }
 
     private var fromCityDisplay: String {
-        load?.pickupLocation?.cityState ?? CatalystPersona.flagshipFromCity
+        let cs = load?.pickupLocation?.cityState ?? ""
+        return cs.isEmpty ? dash : cs
     }
 
     private var fromAddressDisplay: String {
-        if let o = load?.origin {
-            let parts = [o.address, [o.city, o.state].compactMap { $0 }.joined(separator: ", ")]
-                .compactMap { $0 }
-                .filter { !$0.isEmpty }
-            if !parts.isEmpty { return parts.joined(separator: " · ") }
-        }
-        return CatalystPersona.flagshipFromAddress
+        guard let o = load?.origin else { return dash }
+        let line = [o.city, o.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        let parts = [o.address, line.isEmpty ? nil : line]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? dash : parts.joined(separator: " · ")
     }
 
     private var fromTimeDisplay: String {
-        if let pickup = load?.pickupDate.flatMap(longDate) {
-            return "Pickup \(pickup)"
-        }
-        return CatalystPersona.flagshipFromTime
+        guard let pickup = load?.pickupDate.flatMap(longDate) else { return dash }
+        return "Pickup \(pickup)"
     }
 
     private var toCityDisplay: String {
-        load?.deliveryLocation?.cityState ?? CatalystPersona.flagshipToCity
+        let cs = load?.deliveryLocation?.cityState ?? ""
+        return cs.isEmpty ? dash : cs
     }
 
     private var toAddressDisplay: String {
-        if let d = load?.destination {
-            let parts = [d.address, [d.city, d.state].compactMap { $0 }.joined(separator: ", ")]
-                .compactMap { $0 }
-                .filter { !$0.isEmpty }
-            if !parts.isEmpty { return parts.joined(separator: " · ") }
-        }
-        return CatalystPersona.flagshipToAddress
+        guard let d = load?.destination else { return dash }
+        let line = [d.city, d.state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        let parts = [d.address, line.isEmpty ? nil : line]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+        return parts.isEmpty ? dash : parts.joined(separator: " · ")
     }
 
     private var toTimeDisplay: String {
-        if let deliv = load?.deliveryDate.flatMap(longDate) {
-            return "Deliver \(deliv)"
-        }
-        return CatalystPersona.flagshipToTime
+        guard let deliv = load?.deliveryDate.flatMap(longDate) else { return dash }
+        return "Deliver \(deliv)"
     }
 
     private var commodityDisplay: String {
-        if let l = load {
-            let name = l.commodityName ?? l.commodity ?? l.cargoType ?? "-"
-            return "\(name) · \(l.weightDisplay)"
-        }
-        return CatalystPersona.flagshipCommodity
+        guard let l = load else { return dash }
+        let name = [l.commodityName, l.commodity, l.cargoType]
+            .compactMap { $0 }
+            .first(where: { !$0.isEmpty })
+        let weight = l.weightValue > 0 ? l.weightDisplay : nil
+        let parts = [name, weight].compactMap { $0 }
+        return parts.isEmpty ? dash : parts.joined(separator: " · ")
     }
 
     private var commodityMeta1Display: String {
-        if let un = load?.unNumber {
-            return "UN\(un) · PG II · NMFC 145880"
-        }
-        return CatalystPersona.flagshipCommodityMeta1
+        // Only fields the record actually carries — UN number + ERG guide.
+        // No fabricated NMFC / packing-group string.
+        guard let l = load else { return dash }
+        var bits: [String] = []
+        if let un = l.unNumber, !un.isEmpty { bits.append("UN\(un)") }
+        if let erg = l.ergGuide { bits.append("ERG \(erg)") }
+        return bits.isEmpty ? dash : bits.joined(separator: " · ")
     }
 
-    private var commodityMeta2Display: String {
-        CatalystPersona.flagshipCommodityMeta2
+    private var commodityMeta2Display: String? {
+        // Equipment type, when present, is a real record field. No
+        // fabricated MC-306 tanker / seal number constant.
+        guard let eq = load?.equipmentType, !eq.isEmpty else { return nil }
+        return eq
     }
 
     private var rateDisplay: String {
-        load?.rateDisplay ?? CatalystPersona.flagshipRateDisplay
+        // LoadDetail.rateDisplay already returns "—" when the column is
+        // missing or zero — no invented "$1,900.00".
+        load?.rateDisplay ?? dash
     }
 
     private var rateMetaDisplay: String {
-        CatalystPersona.flagshipRateMeta
+        // Rate terms are not a column on the load record — honest "—".
+        dash
+    }
+
+    private var pickupSigned: Bool {
+        // Treat the load as past pickup once it has advanced beyond the
+        // pre-pickup states. We don't assert a signature without a status
+        // signal.
+        guard let status = load?.status.lowercased() else { return false }
+        let prePickup: Set<String> = ["posted", "bidding", "assigned", "en_route_pickup", "at_pickup"]
+        return !prePickup.contains(status)
     }
 
     private var pickupSignedMetaDisplay: String {
+        guard pickupSigned else { return dash }
         if let pickup = load?.pickupDate.flatMap(timeOnly) {
-            return "\(pickup) · \(CatalystPersona.carrierUSDOT.replacingOccurrences(of: "USDOT ", with: "DOT "))"
+            return pickup
         }
-        return "06:14 CDT · DOT 9211"
+        return dash
     }
 
     private var auditUrlDisplay: String {
         // Human-readable display URL per Figma — the QR encodes the
         // canonical universal link from EusoQRKind.eusoTicket.payload.
-        "eusotrip.com/t/\(bolNumberDisplay)"
-    }
-
-    private var auditAnchorTime: String {
-        if load?.pickupDate.flatMap(timeOnly) != nil {
-            return load?.pickupDate.flatMap(timeOnly) ?? "09:14 CDT"
-        }
-        return "09:14 CDT"
+        let bol = bolNumberDisplay
+        return bol == dash ? dash : "eusotrip.com/t/\(bol)"
     }
 
     private var sendTitleDisplay: String {
-        "Render PDF · dispatch to \(CatalystPersona.shipperMonogram) + \(CatalystPersona.carrierMonogram) + receiver"
+        "Render PDF · dispatch to shipper + carrier + receiver"
+    }
+
+    // MARK: Party identity (session user / load record; never a persona)
+
+    /// Carrier identity = the signed-in Catalyst (the account dispatching
+    /// the document). Name from the session user, or "—".
+    private var carrierNameDisplay: String {
+        let name = session.user?.name?.trimmingCharacters(in: .whitespaces) ?? ""
+        return name.isEmpty ? dash : name
+    }
+
+    private var carrierMonogram: String {
+        initials(from: session.user?.name)
+    }
+
+    private var carrierMetaDisplay: String {
+        // The load record / session user carry no USDOT / MC on this
+        // surface — show the account email when present, else "—". Never a
+        // fabricated USDOT / MC number.
+        let email = session.user?.email.trimmingCharacters(in: .whitespaces) ?? ""
+        return email.isEmpty ? dash : email
+    }
+
+    /// Carrier registration footer — never asserts unverified positive
+    /// compliance. With no DOT/MC/SAFER source on this surface it reads
+    /// "unavailable".
+    private var carrierRegistrationFooter: String {
+        "Carrier authority / insurance · unavailable on this surface"
+    }
+
+    /// Shipper of record — identified by the load's shipper. The record
+    /// carries only a numeric shipperId here, so we surface that honestly
+    /// rather than fabricating a company name.
+    private var shipperNameDisplay: String {
+        if let sid = load?.shipperId {
+            return "Shipper #\(sid)"
+        }
+        return dash
+    }
+
+    private var shipperMonogram: String {
+        if let sid = load?.shipperId {
+            return "S\(sid % 100)"
+        }
+        return dash
+    }
+
+    private var shipperMetaDisplay: String {
+        load?.shipperId.map { "shipperId \($0)" } ?? dash
+    }
+
+    private func initials(from name: String?) -> String {
+        let parts = (name ?? "").split(separator: " ").prefix(2)
+        let letters = parts.compactMap { $0.first }.map(String.init)
+        let joined = letters.joined().uppercased()
+        return joined.isEmpty ? dash : joined
     }
 
     // MARK: - Date helpers
 
     private func shortDate(_ iso: String) -> String? {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        var d = f.date(from: iso)
-        if d == nil {
-            f.formatOptions = [.withInternetDateTime]
-            d = f.date(from: iso)
-        }
-        guard let date = d else { return nil }
+        guard let date = parseISO(iso) else { return nil }
         let out = DateFormatter()
         out.dateFormat = "yyyy-MM-dd"
         return out.string(from: date)
     }
 
     private func longDate(_ iso: String) -> String? {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        var d = f.date(from: iso)
-        if d == nil {
-            f.formatOptions = [.withInternetDateTime]
-            d = f.date(from: iso)
-        }
-        guard let date = d else { return nil }
+        guard let date = parseISO(iso) else { return nil }
         let out = DateFormatter()
         out.dateFormat = "MM-dd · HH:mm zzz"
         return out.string(from: date)
     }
 
     private func timeOnly(_ iso: String) -> String? {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        var d = f.date(from: iso)
-        if d == nil {
-            f.formatOptions = [.withInternetDateTime]
-            d = f.date(from: iso)
-        }
-        guard let date = d else { return nil }
+        guard let date = parseISO(iso) else { return nil }
         let out = DateFormatter()
         out.dateFormat = "HH:mm zzz"
         return out.string(from: date)
+    }
+
+    private func parseISO(_ iso: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: iso) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: iso)
     }
 
     // MARK: - Network
@@ -998,17 +1062,25 @@ private struct CatalystEusoTicketRenderer: View {
         loading = true
         loadError = nil
         defer { loading = false }
-        guard !loadId.isEmpty, loadId != "0" else { return }
+        guard !loadId.isEmpty, loadId != "0" else {
+            // No load routed in — honest empty state, no sample BOL.
+            self.load = nil
+            return
+        }
         do {
             if let detail = try await EusoTripAPI.shared.loads.getDetail(id: loadId) {
                 self.load = detail
+            } else {
+                self.load = nil
             }
         } catch {
+            self.load = nil
             self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
     }
 
     private func dispatchPDF() async {
+        guard let l = load else { return }
         dispatching = true
         dispatchError = nil
         dispatchedURL = nil
@@ -1018,13 +1090,13 @@ private struct CatalystEusoTicketRenderer: View {
             let res = try await EusoTripAPI.shared.eusoTicket.generateBOLPDF(bolNumber: bol)
             self.dispatchedURL = res.documentUrl
             // Fire the canonical share / open notification — server
-            // already knows DU + ME + receiver from the load record,
-            // so the dispatcher chain runs server-side. iOS just
+            // already knows shipper + carrier + receiver from the load
+            // record, so the dispatcher chain runs server-side. iOS just
             // confirms by surfacing the documentUrl.
             if let url = URL(string: res.documentUrl) {
-                let title = "EusoTicket · \(bol.isEmpty ? "-" : bol)"
-                let subtitle = load.map { "Load \($0.loadNumber)" }
-                let loadIdForWallet = load.map { $0.id }
+                let title = "EusoTicket · \(bol == dash ? "—" : bol)"
+                let subtitle = "Load \(l.loadNumber)"
+                let loadIdForWallet = l.id
                 await MainActor.run {
                     pdfPresentation = EusoPDFPresentation(
                         url: url,
