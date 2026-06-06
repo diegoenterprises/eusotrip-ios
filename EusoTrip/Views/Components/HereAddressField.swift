@@ -183,6 +183,11 @@ struct HereAddressField: View {
         struct Item: Decodable, Identifiable {
             let id: String; let title: String
             let lat: Double?; let lng: Double?
+            // Optional structured hints — present when the server proc passes
+            // HERE's address admin through; nil-tolerant if it doesn't. The
+            // confirming geocode in `acceptSuggestion` uses these to pin the
+            // right same-named place across states.
+            let city: String?; let state: String?; let resultType: String?
         }
 
         isLoading = true
@@ -197,7 +202,10 @@ struct HereAddressField: View {
                     limit: 8
                 )
             )
-            suggestions = items.map { HereSuggestion(id: $0.id, title: $0.title, lat: $0.lat, lng: $0.lng) }
+            suggestions = items.map {
+                HereSuggestion(id: $0.id, title: $0.title, lat: $0.lat, lng: $0.lng,
+                               city: $0.city, stateCode: $0.state, resultType: $0.resultType)
+            }
         } catch {
             // Silent — suggestion list disappears on error so the user
             // can still type a free-form address. Server-side geocode
@@ -208,21 +216,52 @@ struct HereAddressField: View {
 
     private func acceptSuggestion(_ s: HereSuggestion) async {
         suppressNextSuggest = true
-        text = s.title
         suggestions = []
         focused = false
+        isLoading = true
+        defer { isLoading = false }
 
-        if let lat = s.lat, let lng = s.lng {
-            self.lat = lat; self.lng = lng
+        // CONFIRMING RESOLVE — do NOT trust the suggestion's ride-along
+        // coordinate or its raw title. The autosuggest `at=` hint can drag a
+        // same-named place 1,000+ mi to another state (Houston "Barbours Cut"
+        // → "Barbour Ct, San Pedro CA"; "Terminal Island" → Miami FL). We
+        // forward-geocode the chosen title with NO `at=` bias and lock onto
+        // the result whose admin (city/state) matches — so origin AND
+        // destination each resolve to their TRUE coordinate independently,
+        // and the stored label is rebuilt from structured fields, never the
+        // raw "Part near (of) …" title.
+        let hint = HereGeocodeItem(
+            id: s.id,
+            title: s.title,
+            address: HereAddress(
+                label: s.title, countryCode: nil, countryName: nil,
+                stateCode: s.stateCode, state: nil, county: nil,
+                city: s.city, district: nil, street: nil,
+                postalCode: nil, houseNumber: nil
+            ),
+            position: (s.lat != nil && s.lng != nil)
+                ? HerePlace.Coord(lat: s.lat!, lng: s.lng!) : nil,
+            mapView: nil,
+            resultType: s.resultType
+        )
+
+        if let resolved = await HereGeocodingClient.shared.resolve(hint) {
+            text = resolved.label
+            self.lat = resolved.coordinate.latitude
+            self.lng = resolved.coordinate.longitude
+            // Re-suppress: assigning `text` after the await re-fires
+            // onChange, which would re-pop the dropdown.
+            suppressNextSuggest = true
             return
         }
 
-        // Categorical hit (no coords on the suggestion). Resolve via
-        // a follow-up geocode so the create payload still ships coords.
-        struct In: Encodable { let query: String }
-        struct Geo: Decodable { let ok: Bool; let lat: Double; let lng: Double }
-        if let geo: Geo = try? await EusoTripAPI.shared.query("hereMaps.geocode", input: In(query: s.title)) {
-            if geo.ok { self.lat = geo.lat; self.lng = geo.lng }
+        // Confirming resolve failed entirely (offline / HERE error). Keep the
+        // raw title and the suggestion's own coord if it had one, so the user
+        // isn't blocked — server-side geocode fallback still runs at submit.
+        text = s.title
+        suppressNextSuggest = true
+        if let lat = s.lat, let lng = s.lng {
+            self.lat = lat; self.lng = lng
         }
     }
 
@@ -252,4 +291,10 @@ private struct HereSuggestion: Identifiable {
     let title: String
     let lat: Double?
     let lng: Double?
+    /// Structured admin from the autosuggest hit (nil when the server proc
+    /// doesn't forward it). Seeds the confirming geocode's admin match so the
+    /// right same-named place wins across states.
+    var city: String? = nil
+    var stateCode: String? = nil
+    var resultType: String? = nil
 }

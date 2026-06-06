@@ -151,10 +151,10 @@ final class LifecycleGeocodeStore: ObservableObject {
                 query: query,
                 limit: 1
             )
-            guard let top = results.first else { return }
+            guard let top = results.first, let pos = top.position else { return }
             let coord = Coord(
-                lat: top.position.lat,
-                lng: top.position.lng,
+                lat: pos.lat,
+                lng: pos.lng,
                 resolvedAt: Date()
             )
             coords[key] = coord

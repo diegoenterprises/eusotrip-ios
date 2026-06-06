@@ -279,10 +279,10 @@ struct EusoAddressField: View {
             )
             if Task.isCancelled { return }
             await MainActor.run {
-                // Filter down to items that actually have a position we can
-                // use — autosuggest sometimes returns category matches with
-                // no coord, which would look broken if picked.
-                self.suggestions = items.filter { _ in true }
+                // Keep category/coordless matches too — `pick(_:)` resolves
+                // them with a confirming, unbiased forward geocode, so they
+                // no longer look broken when tapped.
+                self.suggestions = items
                 self.showSuggestions = !items.isEmpty
             }
         } catch {
@@ -298,13 +298,40 @@ struct EusoAddressField: View {
 
     private func pick(_ hit: HereGeocodeItem) {
         autosuggestTask?.cancel()
-        let coord = CLLocationCoordinate2D(latitude: hit.position.lat,
-                                           longitude: hit.position.lng)
-        value = ResolvedAddress(text: hit.title, coordinate: coord, source: .autocomplete)
-        resolvedLabel = nil
+        reverseTask?.cancel()
         suggestions = []
         showSuggestions = false
         focused = false
+
+        // CONFIRMING RESOLVE — never trust the autosuggest hit's ride-along
+        // coordinate or raw title. The `near=` bias can surface a same-named
+        // place 1,000+ mi away in another state (see HereGeocodingClient
+        // .resolve). Forward-geocode the chosen title with no bias and lock
+        // onto the admin-matching result; store a clean structured label.
+        // Optimistically reflect the tap immediately, then correct once the
+        // confirming geocode returns.
+        if let pos = hit.position {
+            value = ResolvedAddress(
+                text: hit.displayLabel,
+                coordinate: CLLocationCoordinate2D(latitude: pos.lat, longitude: pos.lng),
+                source: .autocomplete
+            )
+        } else {
+            value = ResolvedAddress(text: hit.displayLabel, coordinate: nil, source: .typed)
+        }
+        resolvedLabel = nil
+
+        reverseTask = Task {
+            guard let resolved = await HereGeocodingClient.shared.resolve(hit) else { return }
+            if Task.isCancelled { return }
+            await MainActor.run {
+                self.value = ResolvedAddress(
+                    text: resolved.label,
+                    coordinate: resolved.coordinate,
+                    source: .autocomplete
+                )
+            }
+        }
     }
 
     private func clear() {

@@ -2522,11 +2522,11 @@ struct ShipperPostLoad: View {
             return ResolvedAddress(coord: coord, stateCode: state ?? nil)
         }
         let hits = try await HereGeocodingClient.shared.geocode(query: text, limit: 1)
-        guard let first = hits.first else {
+        guard let first = hits.first, let pos = first.position else {
             throw HereMapsError.providerError("No geocode result for '\(text)'")
         }
         return ResolvedAddress(
-            coord: CLLocationCoordinate2D(latitude: first.position.lat, longitude: first.position.lng),
+            coord: CLLocationCoordinate2D(latitude: pos.lat, longitude: pos.lng),
             stateCode: first.address.stateCode
         )
     }

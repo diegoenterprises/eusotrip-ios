@@ -130,14 +130,86 @@ struct HereGeocodeItem: Decodable, Identifiable {
     let id: String
     let title: String
     let address: HereAddress
-    let position: HerePlace.Coord
+    // Autosuggest can return category/chain hits with NO position. Geocode
+    // hits always carry one. Optional so a coordless autosuggest item still
+    // decodes (it's resolved with a confirming geocode of its title).
+    let position: HerePlace.Coord?
     let mapView: MapView?
+    // HERE result class — "place", "locality", "administrativeArea",
+    // "street", "houseNumber", "addressBlock", "intersection",
+    // "postalCodePoint", "chainQuery", "categoryQuery". Drives the
+    // confirming-resolve decision: a `*Query` / coordless hit must be
+    // forward-geocoded; a discrete hit can be admin-verified.
+    let resultType: String?
 
     struct MapView: Decodable {
         let west:  Double
         let south: Double
         let east:  Double
         let north: Double
+    }
+
+    /// True when this hit is a category/chain query placeholder, not a
+    /// discrete resolved location (no usable coordinate of its own).
+    var isCategorical: Bool {
+        position == nil
+            || resultType == "chainQuery"
+            || resultType == "categoryQuery"
+    }
+
+    /// True when the hit carries explicit administrative context — either
+    /// structured city+state from HERE's address block, OR a title that ends
+    /// in ", City, ST" (a 2-letter US state abbreviation). Drives the
+    /// admin-aware resolve policy: an admin-bearing hit is forward-geocoded
+    /// (admin-anchored, sanity-gated); a bare POI / port without admin is
+    /// trusted by its own ride-along coordinate.
+    var hasExplicitAdmin: Bool {
+        let hasStructured = (address.city?.isEmpty == false)
+            && ((address.stateCode ?? address.state)?.isEmpty == false)
+        if hasStructured { return true }
+
+        // Title-borne admin: "Terminal Island, Los Angeles, CA" — last segment
+        // is a 2-letter state code and there are ≥3 comma segments (POI, city,
+        // state). A bare "Port of Houston-Barbours Cut Terminal" has none.
+        let segs = title.split(separator: ",").map {
+            $0.trimmingCharacters(in: .whitespaces)
+        }
+        guard segs.count >= 3, let last = segs.last else { return false }
+        let isStateCode = last.count == 2
+            && last.uppercased() == last
+            && last.allSatisfy { $0.isLetter }
+        return isStateCode
+    }
+
+    /// Clean, user-facing label derived from the STRUCTURED address rather
+    /// than HERE's raw `title` — which can read "Barbour Ct, San Pedro, CA"
+    /// for a Houston port query, or a malformed "Part near (of) …". We
+    /// rebuild "<place/street>, City, ST" from the resolved admin fields so
+    /// what the user sees always matches the coordinate we stored.
+    var displayLabel: String {
+        let city  = address.city
+        let region = address.stateCode ?? address.state
+        // Lead with the most specific named component HERE resolved.
+        let lead: String? = {
+            if let hn = address.houseNumber, let st = address.street {
+                return "\(hn) \(st)"
+            }
+            if let st = address.street { return st }
+            // For a place/locality the title's first segment is the POI /
+            // locality name; keep it but strip any trailing admin echo so
+            // we don't double up city/state below.
+            let head = title.split(separator: ",").first.map {
+                $0.trimmingCharacters(in: .whitespaces)
+            }
+            return head?.isEmpty == false ? head : address.district
+        }()
+        let parts = [lead, city, region]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+        // De-dup if the lead already equals the city (e.g. "Dallas, Dallas").
+        var seen = Set<String>()
+        let deduped = parts.filter { seen.insert($0.lowercased()).inserted }
+        return deduped.isEmpty ? title : deduped.joined(separator: ", ")
     }
 }
 
