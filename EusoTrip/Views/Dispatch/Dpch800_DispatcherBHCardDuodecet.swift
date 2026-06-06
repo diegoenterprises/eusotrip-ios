@@ -16,122 +16,111 @@
 //    524 Dispatcher BH Paperwork Card
 //    525 Dispatcher BH Closed Stage Card
 //
-//  Aurora-board dispatcher cards mirroring the driver/catalyst
-//  backhaul chains from the dispatcher vantage. All 12 share
-//  `DispatcherBHCardBody`. Body reads `loads.getById`. Bottom nav
+//  Dispatcher backhaul cards mirroring the driver/catalyst chains from the
+//  dispatcher vantage. All 12 share `DispatcherBHCardBody`. Body reads
+//  `loads.getById` via the canonical `LoadsAPI.LoadDetail` projection and
+//  binds every business value (load number / lane / rate / distance / carrier
+//  / driver) to that live record. Stage-only chrome (eyebrow / citation /
+//  title / stage labels) describes the card lifecycle itself, never invented
+//  business figures. Values with no live source render an honest em-dash —
+//  no fabricated carrier names, USDOT/MC numbers, dollar amounts, miles,
+//  docks, ETAs, pallet counts, BOL/POD ids, or signature hashes. Bottom nav
 //  frozen.
 //
 
 import SwiftUI
 
-private struct DBCLoadCtx: Decodable, Hashable {
-    let id: Int?
-    let loadNumber: String?
-    let pickupCity: String?
-    let destCity: String?
-    let rate: String?
-}
-
 enum DispatcherBHCardKind: String {
     case reassign, tenderResolved, pickupArmed, pickupFired, inTransit, deliveryApproach, atDelivery, dockedLoading, bolPreSign, bolSigned, paperwork, closed
 }
 
+// Stage-only chrome. These describe the lifecycle position of the card
+// (which §-stage / which step in the chain) — they carry NO business data.
+// Every load-specific value (load number, lane, rate, distance, carrier,
+// driver) is bound at render time from `LoadsAPI.LoadDetail`.
 private struct DBCConfig {
     let eyebrow: String
     let citation: String
     let title: String
     let subhead: String
-    let pillCopy: String
-    let chainPill: String
+    let nextStep: String
 }
 
 private extension DispatcherBHCardKind {
     var config: DBCConfig {
         switch self {
         case .reassign:
-            return .init(eyebrow: "DISPATCHER · BH REASSIGN · TENDER STAGED · 4m LEFT",
-                         citation: "BH-7C3A · ME silent · 4:00 of 8:00 elapsed",
+            return .init(eyebrow: "DISPATCHER · BH REASSIGN · TENDER STAGED",
+                         citation: "DISPATCHER BH REASSIGN · TENDER STAGE",
                          title: "Reassign backhaul",
-                         subhead: "BH-7C3A · ME NO RESPONSE 4:00",
-                         pillCopy: "LD-260517-BH7C3A09F1 · parent LD-7C3A SEALED · PHX WVDC dock 7B → Naturipe LA RDC",
-                         chainPill: "Tender risks expiry. Pre-stage carrier B + carrier C as fallback")
+                         subhead: "Tender staged · awaiting carrier response",
+                         nextStep: "Carrier has not responded inside the accept window. Tap to reassign to the next fallback carrier in the pool.")
         case .tenderResolved:
             return .init(eyebrow: "DISPATCHER · TENDER · BACKHAUL · RESOLVED",
-                         citation: "§304 · DISPATCHER BH RESOLVED · TRIPLET 3/3 CLOSED · NEXT-CHAIN 7/N",
-                         title: "Tender resolved by ME",
-                         subhead: "AURORA · MC942008 · §304 · AWARDED",
-                         pillCopy: "ME accepted 0:00 ago · 4:00 left on window · DVIR pending · row 3 cleared",
-                         chainPill: "LD-BH7C3A · PHX-LA · 372 mi · ME accepted · margin $172 LOCKED · DVIR pending")
+                         citation: "DISPATCHER BH RESOLVED · TRIPLET CLOSED",
+                         title: "Tender resolved",
+                         subhead: "Tender accepted · awarded",
+                         nextStep: "Carrier accepted the tender. The triplet is closed; the DVIR sub-axis opens next.")
         case .pickupArmed:
             return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · PICKUP-BOARD",
-                         citation: "§308 · BOARD-CONSOLIDATED · NEXT-CHAIN 11/N",
-                         title: "Pickup board armed · 1 in window",
-                         subhead: "AURORA · MC942008 · §308 · WATCH ARMED",
-                         pillCopy: "Aurora board · ME DVIR 2/14 · ping -30 ARMED · pickup in 13h 32m",
-                         chainPill: "LD-BH7C3A · PHX-LA · ME DVIR 2/14 · PING -30 ARMED · BOARD 1 ACTIVE")
+                         citation: "BOARD-CONSOLIDATED · PICKUP WATCH",
+                         title: "Pickup board armed",
+                         subhead: "Watch armed · pickup window",
+                         nextStep: "Pickup board armed. The pre-arrival ping fires when the driver pulls toward the pickup dock.")
         case .pickupFired:
             return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · PICKUP-FIRED",
-                         citation: "§322 · QUARTET 3/4 · NEXT-CHAIN 25/N",
-                         title: "Pickup board fired · 1 loading",
-                         subhead: "AURORA · MC942008 · §322 · BOARD FIRED",
-                         pillCopy: "Aurora board · ME ON-SITE · DVIR 14/14 · DOCK 7B LOADING · 0:08 AGO",
-                         chainPill: "LD-BH7C3A · PHX-WVDC dock 7B · ME LOADING 0:08 AGO · DVIR 14/14 COMPLETE")
+                         citation: "BOARD · PICKUP FIRED · LOADING",
+                         title: "Pickup board fired",
+                         subhead: "On-site · loading",
+                         nextStep: "Driver is on-site and loading. Advance the card to in-transit on gate-out.")
         case .inTransit:
             return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · IN-TRANSIT",
-                         citation: "§326 · IN-TRANSIT CARD · QUARTET 3/4 · NEXT-CHAIN 29/N",
-                         title: "In-transit · 1 driving",
-                         subhead: "AURORA · MC942008 · §326 · IN-TRANSIT · DRIVING",
-                         pillCopy: "Aurora board · ME I-10 WB · HOS 00:00 · ETA 06:24 MST · 372 mi remaining",
-                         chainPill: "LD-BH7C3A · I-10 WB · ME driving · 12/12 sealed · ETA 06:24 MST")
+                         citation: "IN-TRANSIT CARD · DRIVING",
+                         title: "In-transit",
+                         subhead: "In-transit · driving",
+                         nextStep: "Driver is en route to the receiver. No intervention needed while HOS stays clean.")
         case .deliveryApproach:
             return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · DELIVERY · APPROACH",
-                         citation: "§330 · DELIVERY CARD · QUARTET 3/4 · NEXT-CHAIN 33/N",
+                         citation: "DELIVERY CARD · APPROACHING",
                          title: "Delivery card · approaching",
-                         subhead: "AURORA · MC942008 · §330 · APPROACHING",
-                         pillCopy: "Aurora board · ME 26mi to RDC · HOS 01:50 · ETA 06:24 MST · 0:30 left",
-                         chainPill: "LD-BH7C3A · I-10 WB approaching · ME 26mi · ETA 06:24 MST · on-time")
+                         subhead: "Approaching receiver",
+                         nextStep: "Approaching the receiver. Pre-arm dock + paperwork access; ESang nudges on final approach.")
         case .atDelivery:
             return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · AT-DELIVERY",
-                         citation: "§334 · AT-DELIVERY CARD · SUB-AXIS 3/N · NEXT-CHAIN 37/N",
-                         title: "At delivery · 1 docked",
-                         subhead: "AURORA · MC942008 · §334 · AT DELIVERY",
-                         pillCopy: "Aurora board · ME at Naturipe RDC · DOCK 7B GATE-IN · HOS 02:14 · queue 0",
-                         chainPill: "LD-BH7C3A · gate-in armed · DOCK 7B pre-assigned · queue depth 0 · ETA 06:24 MST")
+                         citation: "AT-DELIVERY CARD · GATE-IN",
+                         title: "At delivery",
+                         subhead: "At delivery · docked",
+                         nextStep: "Gate-in at the receiver. Receiver-bay attestation arms on dock placement.")
         case .dockedLoading:
-            return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · DOCKED-LOADING · 3/N",
-                         citation: "§338 · DOCKED-LOADING CARD · SUB-AXIS 3/N · NEXT-CHAIN 41/N",
-                         title: "Delivery · 1 docked loading",
-                         subhead: "AURORA · MC942008 · §338 · DOCKED LOADING CARD",
-                         pillCopy: "Aurora board · ME in DOCK 7B · HOS 02:30 · pallets 12/72 · depart 06:42 MST · 0:24 left",
-                         chainPill: "LD-BH7C3A · DOCK 7B occupied · forklift OXN-FL-04 · 4 ppm · depart 06:42 MST")
+            return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · DOCKED-LOADING",
+                         citation: "DOCKED-LOADING CARD",
+                         title: "Delivery · docked loading",
+                         subhead: "Docked · loading",
+                         nextStep: "Docked and loading. BOL pre-sign arms on dock-plate touch.")
         case .bolPreSign:
-            return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · BOL-PRE-SIGN · 3/N",
-                         citation: "§345 · BOL-PRE-SIGN CARD · SUB-AXIS 3/N · NEXT-CHAIN 45/N",
-                         title: "BOL pre-sign · 1 dock plate",
-                         subhead: "AURORA · MC942008 · §345 · BOL PRE-SIGN CARD",
-                         pillCopy: "Aurora board · ME at dock plate · BOL draft loaded · pallets 72/72 LOADED · depart 06:42 MST · 0:04 left",
-                         chainPill: "LD-BH7C3A · BOL packet BOL-NLR-LA-2026-05-19-BH7C3A · DRAFT · ME signing")
+            return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · BOL-PRE-SIGN",
+                         citation: "BOL-PRE-SIGN CARD",
+                         title: "BOL pre-sign",
+                         subhead: "Dock plate · BOL draft",
+                         nextStep: "BOL draft loaded at the dock plate. The driver taps to sign next.")
         case .bolSigned:
-            return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · BOL-SIGNED · 3/N",
-                         citation: "§349 · BOL-SIGNED CARD · SUB-AXIS 3/N · NEXT-CHAIN 49/N · VERIFIED WS",
-                         title: "BOL signed · 1 sealed",
-                         subhead: "AURORA · MC942008 · §349 · BOL SIGNED CARD",
-                         pillCopy: "Aurora board · BOL SIGNED 0x9F1C · pallets 72/72 sealed · depart 06:42 MST window closing",
-                         chainPill: "LD-BH7C3A · BOL doc SIGNED · sig 0x9F1C · paperwork watch armed")
+            return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · BOL-SIGNED",
+                         citation: "BOL-SIGNED CARD · VERIFIED WS",
+                         title: "BOL signed",
+                         subhead: "BOL signed · sealed",
+                         nextStep: "BOL signed and verified. Paperwork watch armed for filing.")
         case .paperwork:
-            return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · PAPERWORK · 3/N",
-                         citation: "§353 · PAPERWORK CARD · SUB-AXIS 3/N · NEXT-CHAIN 53/N",
-                         title: "Paperwork · 1 open",
-                         subhead: "AURORA · MC942008 · §353 · PAPERWORK CARD",
-                         pillCopy: "Aurora board · ME at packet desk · BOL FILED · POD pending submit · HOS 03:02",
-                         chainPill: "LD-BH7C3A · BOL filed BH7C3A-FILED · POD packet BH7C3A-POD · POD watch armed")
+            return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · PAPERWORK",
+                         citation: "PAPERWORK CARD",
+                         title: "Paperwork",
+                         subhead: "Packet open",
+                         nextStep: "Paperwork open · BOL filed. POD watch armed; POD-ink fires when the receiver co-signs.")
         case .closed:
-            return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · CLOSED · 3/N",
-                         citation: "§357 · CLOSED CARD · QUARTET 3/N · NEXT-CHAIN 57/N",
-                         title: "Closed · 1 BH card",
-                         subhead: "AURORA · MC942008 · §357 · CLOSED CARD",
-                         pillCopy: "Aurora board · POD submitted · HOS 03:08 · WALLET CREDITED · CHAIN-SEAL AVAILABLE",
-                         chainPill: "LD-BH7C3A · POD submitted · escrow CREDITED $2,128 · chain-seal available")
+            return .init(eyebrow: "DISPATCHER · BOARD · BACKHAUL · CLOSED",
+                         citation: "CLOSED CARD",
+                         title: "Closed",
+                         subhead: "Chain sealed",
+                         nextStep: "Chain sealed. POD submitted; settlement releases per the load's net terms. Chain-seal available for archive.")
         }
     }
 }
@@ -157,10 +146,13 @@ private struct DispatcherBHCardBody: View {
     let kind: DispatcherBHCardKind
 
     @Environment(\.palette) private var palette
-    @State private var load: DBCLoadCtx?
+    @State private var load: LoadsAPI.LoadDetail?
     @State private var actionInFlight: Bool = false
     @State private var actionAck: String?
     @State private var actionError: String?
+
+    // Em-dash placeholder for any business value with no live source.
+    private let none = "—"
 
     var body: some View {
         let c = kind.config
@@ -171,7 +163,7 @@ private struct DispatcherBHCardBody: View {
                 chainPill(c)
                 identityRow
                 kpiGrid
-                nextStepCard
+                nextStepCard(c)
                 if kind == .reassign { reassignActionRow }
                 if let ack = actionAck {
                     LifecycleCard { Text(ack).font(EType.caption).foregroundStyle(.green) }
@@ -187,11 +179,48 @@ private struct DispatcherBHCardBody: View {
         .refreshable { await loadCtx() }
     }
 
+    // MARK: - Live-bound helpers (no fabrication)
+
+    /// "LD-…" load number, or em-dash until the record hydrates.
+    private var loadNumberText: String { load?.loadNumber ?? none }
+
+    /// "Phoenix, AZ → Los Angeles, CA" — em-dash when both ends are blank.
+    private var laneText: String { load?.laneDisplay ?? none }
+
+    /// "$2,440" — em-dash when the rate column is null/zero.
+    private var rateText: String { load?.rateDisplay ?? none }
+
+    /// "372 mi" — em-dash when distance is null/zero.
+    private var distanceText: String { load?.distanceDisplay ?? none }
+
+    /// Carrier line bound to the load's catalystId (no name field exists on
+    /// the LoadDetail projection — honest "Catalyst #N" / pending state).
+    private var carrierLine: String {
+        if let id = load?.catalystId { return "Catalyst #\(id)" }
+        return "Catalyst · pending"
+    }
+
+    /// Driver line bound to driverId — honest "Driver #N" / awaiting state.
+    private var driverLine: String {
+        if let id = load?.driverId { return "Driver #\(id)" }
+        return "Driver · awaiting assignment"
+    }
+
+    /// Monogram for the identity chip. No catalyst-name field exists, so this
+    /// keys off the load id rather than a hardcoded company initial.
+    private var identityMonogram: String {
+        if let id = load?.catalystId { return "C\(id % 100)" }
+        if let n = load?.loadNumber, let first = n.uppercased().first(where: { $0.isLetter }) {
+            return String(first)
+        }
+        return "—"
+    }
+
     private var reassignActionRow: some View {
         Button { Task { await reassignLoad() } } label: {
             HStack(spacing: 6) {
                 if actionInFlight { ProgressView().tint(.white).scaleEffect(0.8) }
-                Text(actionInFlight ? "Reassigning…" : "Reassign to carrier B")
+                Text(actionInFlight ? "Reassigning…" : "Reassign to fallback carrier")
                     .font(EType.body.weight(.semibold))
             }
             .frame(maxWidth: .infinity, minHeight: 48)
@@ -211,10 +240,10 @@ private struct DispatcherBHCardBody: View {
         do {
             let resp: Out = try await EusoTripAPI.shared.mutation(
                 "dispatchRole.reassignLoad",
-                input: In(loadId: loadId, fallbackCarrierId: "carrier-b", reason: "ME silent 4:00 of 8:00 — dispatcher reassigned via Dpch800")
+                input: In(loadId: loadId, fallbackCarrierId: nil, reason: "Carrier did not respond inside the accept window — dispatcher reassigned via Dpch800")
             )
             if resp.success == true {
-                actionAck = "Tender reassigned · returned to the pool · carrier B armed for next acceptance."
+                actionAck = "Tender reassigned · returned to the pool · next fallback carrier armed for acceptance."
                 await loadCtx()
             } else {
                 actionError = "Reassign returned no success flag. Reload and try again."
@@ -239,7 +268,10 @@ private struct DispatcherBHCardBody: View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(c.pillCopy).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
+                // Live-bound summary: load number · lane · rate. Em-dash for
+                // any field the record hasn't supplied.
+                Text("\(loadNumberText) · \(laneText) · \(rateText)")
+                    .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -248,7 +280,9 @@ private struct DispatcherBHCardBody: View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
                 Text("BOARD CONTEXT").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(c.chainPill).font(.caption2).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                // Live-bound lane + distance + carrier from the load record.
+                Text("\(loadNumberText) · \(laneText) · \(distanceText) · \(carrierLine)")
+                    .font(.caption2).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -257,10 +291,10 @@ private struct DispatcherBHCardBody: View {
         LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("RM").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(identityMonogram).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Aurora Freight Lines · Renée Marquette · senior dispatcher").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("USDOT 3 482 119 · MC-942 008 · LD-BH7C3A backhaul board").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(carrierLine) · \(driverLine)").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).lineLimit(1)
+                    Text("\(loadNumberText) · backhaul board").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
@@ -268,91 +302,98 @@ private struct DispatcherBHCardBody: View {
     }
 
     private var kpiGrid: some View {
+        // KPI labels describe the lifecycle stage of the card (UI semantics:
+        // STATE / DVIR / BOL / POD / SEAL etc.). Their VALUES bind to the live
+        // load record where a real source exists (DIST → distanceDisplay,
+        // LANE → laneDisplay, RATE → rateDisplay, LOAD → loadNumber). Every
+        // value with no live source — margin, escrow, dock, ETA, HOS clocks,
+        // pallet counts, BOL signature hashes, depart times — renders the
+        // honest em-dash, never a fabricated literal.
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .reassign:
                 return [
-                    ("STAGE",   "4m LEFT",                                      "tender expiry imminent", .red),
-                    ("ME",      "NO RESP",                                       "4:00 silent",            .red),
-                    ("BOARD",   "1 BH",                                           "in reassign window",   .orange),
-                    ("STATE",   "STAGED",                                          "carrier B armed",     .blue),
+                    ("STATE",  "STAGED",        "tender staged",          .orange),
+                    ("CARRIER", carrierLine,    "current assignment",     .blue),
+                    ("RATE",   rateText,        "tender rate",            .blue),
+                    ("DIST",   distanceText,    "lane distance",          .blue),
                 ]
             case .tenderResolved:
                 return [
-                    ("STATE",   "AWARDED",                                          "ME accepted · 0:00",  .green),
-                    ("WINDOW",  "4:00",                                              "left on accept",     .green),
-                    ("MARGIN",  "$172",                                                "LOCKED",            .green),
-                    ("ROW",     "3/3",                                                  "triplet closed",   .green),
+                    ("STATE",  "AWARDED",       "tender accepted",        .green),
+                    ("CARRIER", carrierLine,    "awarded to",             .green),
+                    ("RATE",   rateText,        "awarded rate",           .green),
+                    ("MARGIN", none,            "no live source",         .blue),
                 ]
             case .pickupArmed:
                 return [
-                    ("WATCH",   "ARMED",                                                "ping -30",          .green),
-                    ("DVIR",    "2/14",                                                  "ME · in progress", .orange),
-                    ("PICKUP",  "13h 32m",                                                 "to gate open",   .blue),
-                    ("BOARD",   "1 ACTIVE",                                                  "consolidated", .blue),
+                    ("WATCH",  "ARMED",         "pre-arrival ping",       .green),
+                    ("DVIR",   none,            "no live source",         .orange),
+                    ("LANE",   laneText,        "pickup lane",            .blue),
+                    ("DIST",   distanceText,    "lane distance",          .blue),
                 ]
             case .pickupFired:
                 return [
-                    ("STATE",   "FIRED",                                                    "ME on-site · 0:08",  .green),
-                    ("DVIR",    "14/14",                                                      "COMPLETE",        .green),
-                    ("DOCK",    "7B",                                                          "loading · live", .orange),
-                    ("QUARTET", "3/4",                                                          "§322",          .blue),
+                    ("STATE",  "FIRED",         "on-site · loading",      .green),
+                    ("DVIR",   none,            "no live source",         .green),
+                    ("DOCK",   none,            "no live source",         .orange),
+                    ("LOAD",   loadNumberText,  "active card",            .blue),
                 ]
             case .inTransit:
                 return [
-                    ("STATE",   "DRIVING",                                                      "I-10 WB",       .blue),
-                    ("DIST",    "372 mi",                                                        "remaining",    .blue),
-                    ("ETA",     "06:24",                                                          "MST",         .blue),
-                    ("HOS",     "00:00",                                                           "/ 11h clean", .green),
+                    ("STATE",  "DRIVING",       "in-transit",             .blue),
+                    ("DIST",   distanceText,    "lane distance",          .blue),
+                    ("ETA",    none,            "no live source",         .blue),
+                    ("HOS",    none,            "no live source",         .green),
                 ]
             case .deliveryApproach:
                 return [
-                    ("STATE",   "APPROACH",                                                       "26mi to RDC",  .green),
-                    ("ETA",     "06:24",                                                            "MST · 0:30 left", .blue),
-                    ("HOS",     "01:50",                                                             "/ 9h 10m",    .green),
-                    ("BOARD",   "1 IN",                                                                "approach",  .blue),
+                    ("STATE",  "APPROACH",      "approaching receiver",   .green),
+                    ("DIST",   distanceText,    "lane distance",          .blue),
+                    ("ETA",    none,            "no live source",         .blue),
+                    ("HOS",    none,            "no live source",         .green),
                 ]
             case .atDelivery:
                 return [
-                    ("STATE",   "GATE-IN",                                                              "DOCK 7B armed", .orange),
-                    ("ETA",     "06:24",                                                                 "MST · on-time", .green),
-                    ("QUEUE",   "0",                                                                       "depth ahead", .green),
-                    ("HOS",     "02:14",                                                                    "/ 11h clean", .green),
+                    ("STATE",  "GATE-IN",       "at receiver",            .orange),
+                    ("ETA",    none,            "no live source",         .blue),
+                    ("QUEUE",  none,            "no live source",         .green),
+                    ("HOS",    none,            "no live source",         .green),
                 ]
             case .dockedLoading:
                 return [
-                    ("DOCK",    "7B",                                                                        "occupied",    .orange),
-                    ("PALLETS", "12/72",                                                                       "loading 4 ppm", .blue),
-                    ("DEPART",  "06:42",                                                                        "MST · 0:24 left", .blue),
-                    ("HOS",     "02:30",                                                                          "/ 8h 30m",     .green),
+                    ("DOCK",    none,           "no live source",         .orange),
+                    ("PALLETS", none,           "no live source",         .blue),
+                    ("DEPART",  none,           "no live source",         .blue),
+                    ("HOS",     none,           "no live source",         .green),
                 ]
             case .bolPreSign:
                 return [
-                    ("BOL",     "DRAFT",                                                                          "ME signing",    .blue),
-                    ("PALLETS", "72/72",                                                                            "LOADED · sealed", .green),
-                    ("DEPART",  "06:42",                                                                              "MST · 0:04 left", .orange),
-                    ("STATE",   "PRE-SIGN",                                                                            "card 3/N",     .blue),
+                    ("BOL",     "DRAFT",        "awaiting sign",          .blue),
+                    ("PALLETS", none,           "no live source",         .green),
+                    ("DEPART",  none,           "no live source",         .orange),
+                    ("STATE",   "PRE-SIGN",     "dock plate",             .blue),
                 ]
             case .bolSigned:
                 return [
-                    ("BOL",     "SIGNED",                                                                              "0x9F1C verified",  .green),
-                    ("PALLETS", "72/72",                                                                                  "sealed in transit", .green),
-                    ("DEPART",  "WINDOW",                                                                                  "closing",         .green),
-                    ("STATE",   "SIGNED",                                                                                   "§349 · verified", .green),
+                    ("BOL",     "SIGNED",       "verified",               .green),
+                    ("SIG",     none,           "no live source",         .green),
+                    ("DEPART",  none,           "no live source",         .green),
+                    ("STATE",   "SIGNED",       "paperwork watch",        .green),
                 ]
             case .paperwork:
                 return [
-                    ("BOL",     "FILED",                                                                                    "BH7C3A-FILED",      .green),
-                    ("POD",     "PENDING",                                                                                    "ME at packet desk", .orange),
-                    ("WATCH",   "ARMED",                                                                                       "POD packet",      .blue),
-                    ("HOS",     "03:02",                                                                                          "/ 7h 58m",     .green),
+                    ("BOL",     "FILED",        "packet filed",           .green),
+                    ("POD",     "PENDING",      "awaiting submit",        .orange),
+                    ("WATCH",   "ARMED",        "POD packet",             .blue),
+                    ("HOS",     none,           "no live source",         .green),
                 ]
             case .closed:
                 return [
-                    ("POD",     "SUBMITTED",                                                                                      "ME at payout review", .green),
-                    ("WALLET",  "CREDITED",                                                                                         "$2,128 NET-30",      .green),
-                    ("SEAL",    "AVAILABLE",                                                                                          "chain-seal ready", .green),
-                    ("HOS",     "03:08",                                                                                                "/ 7h 52m",       .green),
+                    ("POD",     "SUBMITTED",    "chain sealed",           .green),
+                    ("PAYOUT",  rateText,       "load rate",              .green),
+                    ("ESCROW",  none,           "no live source",         .green),
+                    ("SEAL",    "AVAILABLE",    "chain-seal ready",       .green),
                 ]
             }
         }()
@@ -361,7 +402,7 @@ private struct DispatcherBHCardBody: View {
             ForEach(Array(kpis.enumerated()), id: \.offset) { _, k in
                 VStack(alignment: .leading, spacing: 4) {
                     Text(k.0).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                    Text(k.1).font(.system(size: 18, weight: .heavy).monospacedDigit()).foregroundStyle(k.3)
+                    Text(k.1).font(.system(size: 18, weight: .heavy).monospacedDigit()).foregroundStyle(k.3).lineLimit(1).minimumScaleFactor(0.6)
                     Text(k.2).font(.caption2).foregroundStyle(palette.textTertiary).lineLimit(2)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -372,34 +413,18 @@ private struct DispatcherBHCardBody: View {
         }
     }
 
-    private var nextStepCard: some View {
-        let copy: String = {
-            switch kind {
-            case .reassign:        return "ME silent 4:00 of 8:00. Tap to reassign to carrier B; carrier C armed as second fallback."
-            case .tenderResolved:  return "ME accepted at §304. Triplet 3/3 closed; DVIR sub-axis opens next."
-            case .pickupArmed:     return "Pickup board armed. DVIR 2/14 in progress; -30 ping fires when ME pulls toward dock 7B."
-            case .pickupFired:     return "ME loading at dock 7B (0:08 ago). DVIR 14/14 sealed; advance card to in-transit on gate-out."
-            case .inTransit:       return "ME on I-10 WB, 372 mi to RDC. ETA holds 06:24 MST; clean HOS, no intervention needed."
-            case .deliveryApproach:return "26 mi to receiver. Pre-arm DOCK 7B + paperwork access; ESang nudges 5 min out."
-            case .atDelivery:      return "Gate-in at DOCK 7B. Queue 0 ahead; receiver-bay attestation arms on dock placement."
-            case .dockedLoading:   return "Bay 7B occupied · 12/72 at 4 ppm. Depart at 06:42 MST; BOL pre-sign arms on dock-plate touch."
-            case .bolPreSign:      return "BOL DRAFT loaded · pallets 72/72 sealed. Window closing in 0:04. ME taps to sign next."
-            case .bolSigned:       return "BOL SIGNED + verified (0x9F1C). Window closes; paperwork watch armed for filing."
-            case .paperwork:       return "Paperwork open · BOL filed. POD watch armed; POD-ink fires when receiver co-signs."
-            case .closed:          return "Chain sealed. POD submitted, wallet credited $2,128 NET-30. Chain-seal available for archive."
-            }
-        }()
-        return LifecycleCard {
+    private func nextStepCard(_ c: DBCConfig) -> some View {
+        LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
                 Text("NEXT STEP").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(copy).font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                Text(c.nextStep).font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
     private func loadCtx() async {
         struct In: Encodable { let id: String }
-        do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
+        do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* leaves nil → em-dash render */ }
     }
 }
 

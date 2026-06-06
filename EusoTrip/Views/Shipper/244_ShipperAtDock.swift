@@ -6,27 +6,30 @@
 //  At Dock.svg` (canvas 440×956). §280 SHIPPER-TRACK AT-DOCK OPENS —
 //  within-track FOURTH-PORT pattern 2/3. Shipper observer vantage on a
 //  live at-dock load: §60.2 context callout banner (BeamConverge glyph),
-//  §272 Aurora dispatch recap, KPI quartet (LOADED 18/72 · DWELL 0:08 ·
-//  PAYABLE $2,861 · BOL PEND), 8-stage lifecycle strip with AT-DOCK
-//  micro-chip, zoomed Dock-14 bay map, DOCK TERM ROSTER (6 rows), shipper-
-//  economics footer, and a TRACK LIVE / CALL FACILITY action ribbon.
+//  §272 dispatch recap, KPI quartet (LOADED · DWELL · PAYABLE · BOL),
+//  8-stage lifecycle strip with AT-DOCK micro-chip, zoomed dock-bay map,
+//  DOCK TERM ROSTER (6 rows), shipper-economics footer, and a TRACK LIVE
+//  / CALL FACILITY action ribbon.
 //
-//  Persona canon (§11): Diego Usoro (DU · shipper observing) · Michael
-//  Eusorone (ME · loading) · Aurora Freight Lines / Renée Marquette (RM ·
-//  senior dispatcher). Flagship lane LD-260427-7C3A09F18B · Los Angeles →
-//  Phoenix · 53' Reefer · fresh berries 33-38°F · Dock 14 · 18/72 loaded.
-//
-//  Wiring (honest — no mock data):
+//  Wiring (honest — no mock data, every business value bound or em-dashed):
 //    • loads.getDetail(id:)            EXISTS — full load record (lane,
-//      cargo, equipment, rate, status, assigned driverId).
-//    • appointments.getByLoad(loadId:) EXISTS — dock number / loading
-//      status / scheduled-at for the dwell + bay context.
+//      cargo, equipment, rate, status, assigned driverId/catalystId).
+//      Drives lane / equipment / load-number / payable (rate) / status.
+//    • appointments.getByLoad(loadId:) EXISTS — dock number / scheduled-at
+//      for the dwell + bay context. A nil appointment is a legitimate
+//      empty state (no dock assigned yet) — never faked.
 //    • shipperTelemetry.getLiveLocation(driverId:) EXISTS — backs the
 //      TRACK LIVE CTA (live carrier pin).
 //    • controlTower "pin to control tower"  STUB · named-gap — no
 //      mutation has shipped on the controlTower.* namespace (read-only
-//      overview/exceptions only). The TRACK LIVE CTA fetches the live
-//      pin and flags the pin-write as a stub.
+//      overview/exceptions only). TRACK LIVE fetches the live pin and
+//      flags the pin-write as a stub.
+//
+//  No-live-source values render an honest em-dash ("—"), never a figma
+//  anchor: carrier legal name / USDOT / MC (not on the load projection),
+//  live reefer temperature, pallet loaded-count, and the per-load
+//  accessorial breakdown (FSC / detention / lumper — no accessorial_stats
+//  client binding is wired to this screen yet).
 //
 //  RBAC gate: SHIPPER (read-side observer · §280). transportMode: truck.
 //  country: US.
@@ -112,8 +115,9 @@ struct ShipperAtDock: View {
     @Environment(\.palette) private var palette
     @StateObject private var store: ShipperAtDockStore
 
-    /// Default-initializable — calibrated against the §11 flagship lane.
-    init(loadId: String = "7C3A09F18B") {
+    /// `loadId` is supplied by the caller (load-row tap / deep link). No
+    /// flagship default — an empty id surfaces an honest "load not found".
+    init(loadId: String = "") {
         _store = StateObject(wrappedValue: ShipperAtDockStore(loadId: loadId))
     }
 
@@ -143,6 +147,109 @@ struct ShipperAtDock: View {
         .refreshable { await store.load() }
     }
 
+    // MARK: - Bound accessors (em-dash when no live source)
+
+    private var detail: LoadsAPI.LoadDetail? {
+        if case .loaded(let d, _) = store.phase { return d }
+        return nil
+    }
+
+    private var appt: AppointmentsAPI.ByLoadAppointment? {
+        if case .loaded(_, let a) = store.phase { return a }
+        return nil
+    }
+
+    /// Dock door from the appointment row; em-dash when unassigned.
+    private var dockText: String {
+        let dock = appt?.dockNumber?.trimmingCharacters(in: .whitespaces)
+        return (dock?.isEmpty == false) ? dock! : "—"
+    }
+
+    /// Dwell elapsed since the appointment scheduled-at. No client-side
+    /// loading-clock column on the projection, so this is em-dash unless
+    /// a scheduled-at exists to count from.
+    private var dwellText: String {
+        guard let iso = appt?.scheduledAt, let d = isoDate(iso) else { return "—" }
+        let mins = Int(Date().timeIntervalSince(d) / 60)
+        guard mins >= 0 else { return "—" }
+        return String(format: "%d:%02d", mins / 60, mins % 60)
+    }
+
+    /// Load number from the detail record; em-dash when missing.
+    private var loadNumberText: String {
+        let n = detail?.loadNumber.trimmingCharacters(in: .whitespaces)
+        return (n?.isEmpty == false) ? n! : "—"
+    }
+
+    /// Lane "<origin> → <destination>" from the load endpoints; the
+    /// LoadDetail formatter em-dashes either side when missing.
+    private var laneText: String { detail?.laneDisplay ?? "—" }
+
+    /// Equipment string straight off the load; em-dash when missing.
+    private var equipmentText: String {
+        let e = detail?.equipmentType?.trimmingCharacters(in: .whitespaces)
+        return (e?.isEmpty == false) ? e! : "—"
+    }
+
+    /// Cargo / commodity label off the load; em-dash when missing.
+    private var cargoText: String {
+        let c = [detail?.commodityName, detail?.commodity, detail?.cargoType]
+            .compactMap { $0?.isEmpty == false ? $0 : nil }
+            .first
+        return c ?? "—"
+    }
+
+    /// Payable = load.rate via the LoadDetail currency formatter (its own
+    /// honest em-dash when the rate column is empty).
+    private var payableText: String { detail?.rateDisplay ?? "—" }
+
+    /// No live pallet loaded-count column on this projection → em-dash.
+    private var loadedText: String { "—" }
+
+    /// No live reefer-temperature feed on this projection → em-dash.
+    private var tempText: String { "—" }
+
+    /// Carrier line is identifier-only (the load projection carries no
+    /// carrier legal name / USDOT / MC). Mirrors the honest 205 pattern.
+    private var carrierLine: String {
+        if let id = detail?.catalystId { return "Catalyst #\(id)" }
+        return "Carrier — awaiting assignment"
+    }
+
+    private var driverLine: String {
+        if let id = detail?.driverId { return "Driver #\(id)" }
+        return "Driver — awaiting assignment"
+    }
+
+    /// USDOT / MC are not on the load projection → em-dash both.
+    private var carrierAuthorityLine: String { "USDOT — · MC —" }
+
+    private var assignedDriverId: Int? { detail?.driverId }
+
+    /// Lifecycle current node index derived from the live load status
+    /// (8-stage strip: 0 posted … 3 pickup/at-dock … 7 closed).
+    private var lifecycleIndex: Int {
+        switch (detail?.status ?? "").lowercased() {
+        case "posted", "bidding":                       return 0
+        case "awarded", "assigned":                     return 1
+        case "en_route_pickup", "en route pickup":      return 2
+        case "at_pickup", "loading", "at dock", "pickup": return 3
+        case "in_transit", "in transit", "departing":   return 4
+        case "at_delivery", "at delivery", "delivering": return 5
+        case "unloading", "paperwork":                  return 6
+        case "delivered", "closed", "complete":         return 7
+        default:                                        return 3
+        }
+    }
+
+    private func isoDate(_ iso: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: iso) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: iso)
+    }
+
     // MARK: TopBar (SVG y=72)
 
     private var topBar: some View {
@@ -159,11 +266,7 @@ struct ShipperAtDock: View {
     }
 
     private var dockSummary: String {
-        guard case .loaded(_, let appt) = store.phase else {
-            return "DOCK 14 · DWELL 0:08 · 18/72"
-        }
-        let dock = appt?.dockNumber.flatMap { $0.isEmpty ? nil : $0 } ?? "14"
-        return "DOCK \(dock) · DWELL 0:08 · 18/72"
+        "DOCK \(dockText) · DWELL \(dwellText) · \(loadedText)"
     }
 
     // MARK: Headline + sub + DU disc (SVG y=116/140 + disc @ 364,86)
@@ -174,8 +277,9 @@ struct ShipperAtDock: View {
                 Text("Loading at the dock")
                     .font(.system(size: 34, weight: .bold)).tracking(-0.6)
                     .foregroundStyle(palette.textPrimary)
-                Text("Naturipe LA RDC · Dock 14 · 25% loaded · reefer 35°F")
+                Text("\(laneText) · Dock \(dockText) · \(loadedText) loaded · \(equipmentText)")
                     .font(.system(size: 12)).foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.75)
             }
             Spacer(minLength: 8)
             personaDisc("DU", diameter: 56, font: 14)
@@ -194,8 +298,9 @@ struct ShipperAtDock: View {
                 Text("SHIPPER AT DOCK · §280 · WITHIN-TRACK FOURTH-PORT 2/3")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(LinearGradient.primary)
-                Text("LD-7C3A LA→Phoenix · Reefer 33-38°F · DOCK 14 · 18/72 · ME loading · DU observing")
+                Text("\(loadNumberText) · \(laneText) · \(equipmentText) · DOCK \(dockText) · \(loadedText) · DU observing")
                     .font(.system(size: 10)).foregroundStyle(palette.textPrimary)
+                    .lineLimit(2).minimumScaleFactor(0.8)
             }
             Spacer(minLength: 0)
         }
@@ -227,19 +332,21 @@ struct ShipperAtDock: View {
         }
     }
 
-    // MARK: §272 Aurora dispatch recap (SVG y=224)
+    // MARK: §272 dispatch recap (SVG y=224)
 
     private var dispatchRecapCard: some View {
         HStack(alignment: .top, spacing: 10) {
-            personaDisc("RM", diameter: 32, font: 10)
+            personaDisc(driverInitials, diameter: 32, font: 10)
             VStack(alignment: .leading, spacing: 4) {
-                Text("§272 AURORA DISPATCHED ME · 0:08 AT DOCK · LOAD 25% LIVE")
+                Text("§272 DISPATCH RECAP · DWELL \(dwellText) AT DOCK · LOAD \(loadedText) LIVE")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(LinearGradient.primary)
-                Text("Aurora Freight Lines · Renée Marquette · senior dispatcher")
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Text(carrierLine)
                     .font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text("USDOT 3 482 119 · MC-942 008 · Cedar Rapids IA")
+                Text("\(carrierAuthorityLine) · \(driverLine)")
                     .font(EType.mono(.caption)).tracking(0.3).foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
             }
             Spacer(minLength: 0)
         }
@@ -253,22 +360,50 @@ struct ShipperAtDock: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
+    /// Recap disc shows the assigned-driver id initials when present;
+    /// neutral dash glyph otherwise (no driver-name field to monogram).
+    private var driverInitials: String {
+        if let id = detail?.driverId { return "#\(id % 100)" }
+        return "—"
+    }
+
     // MARK: KPI quartet hero · gradient rim (SVG y=290)
 
     private var kpiQuartet: some View {
         HStack(spacing: 0) {
-            kpi(label: "LOADED", value: "18/72", sub: "pallets", valueStyle: .gradient)
+            kpi(label: "LOADED", value: loadedText, sub: "pallets", valueStyle: .gradient)
             kpiDivider
-            kpi(label: "DWELL",  value: "0:08",  sub: "2H FREE", valueStyle: .solid(Brand.warning))
+            kpi(label: "DWELL",  value: dwellText, sub: "2H FREE", valueStyle: .solid(Brand.warning))
             kpiDivider
-            kpi(label: "PAYABLE", value: "$2,861", sub: "NET-30", valueStyle: .solid(Brand.blue))
+            kpi(label: "PAYABLE", value: payableText, sub: "NET-30", valueStyle: .solid(Brand.blue))
             kpiDivider
-            kpi(label: "BOL", value: "PEND", sub: "awaiting", valueStyle: .solid(Brand.blue))
+            kpi(label: "BOL", value: bolStateText, sub: bolSubText, valueStyle: .solid(Brand.blue))
         }
         .padding(.vertical, 12).padding(.horizontal, 16)
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
         .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+    }
+
+    /// BOL state derived from the live load status (same lifecycle map
+    /// the 205 detail screen uses); em-dash when status is unknown.
+    private var bolStateText: String {
+        switch (detail?.status ?? "").lowercased() {
+        case "posted", "bidding", "awarded", "assigned",
+             "at_pickup", "loading", "pickup", "at dock": return "PEND"
+        case "en_route_pickup", "in_transit", "in transit",
+             "at_delivery", "delivery", "delivering":      return "ISSUED"
+        case "unloading", "paperwork", "closed", "delivered", "complete": return "SIGNED"
+        default: return "—"
+        }
+    }
+    private var bolSubText: String {
+        switch bolStateText {
+        case "PEND":   return "awaiting"
+        case "ISSUED": return "issued"
+        case "SIGNED": return "signed"
+        default:       return "—"
+        }
     }
 
     private enum KPIValueStyle { case gradient; case solid(Color) }
@@ -294,7 +429,7 @@ struct ShipperAtDock: View {
         Rectangle().fill(palette.borderFaint).frame(width: 1, height: 32)
     }
 
-    // MARK: 8-stage lifecycle strip · PICKUP current (SVG y=376)
+    // MARK: 8-stage lifecycle strip · status-driven current (SVG y=376)
 
     private var lifecycleStrip: some View {
         ZStack {
@@ -304,7 +439,7 @@ struct ShipperAtDock: View {
                 let span = w - inset * 2
                 let count = 8
                 let step = span / CGFloat(count - 1)
-                let currentIndex = 3
+                let currentIndex = lifecycleIndex
                 let y = geo.size.height / 2
                 ZStack(alignment: .leading) {
                     Rectangle().fill(palette.borderFaint).frame(width: span, height: 2)
@@ -316,7 +451,7 @@ struct ShipperAtDock: View {
                         lifecycleNode(state: i < currentIndex ? .done : (i == currentIndex ? .current : .future))
                             .position(x: inset + step * CGFloat(i), y: y)
                     }
-                    // AT-DOCK micro-chip pinning the PICKUP node.
+                    // AT-DOCK micro-chip pinning the current node.
                     Text("AT DOCK")
                         .font(.system(size: 6.4, weight: .heavy)).tracking(0.5)
                         .foregroundStyle(.white)
@@ -352,7 +487,7 @@ struct ShipperAtDock: View {
         }
     }
 
-    // MARK: Dock-bay map strip · zoomed Dock 14 (SVG y=424)
+    // MARK: Dock-bay map strip · zoomed dock (SVG y=424)
 
     private var dockBayMap: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -363,27 +498,30 @@ struct ShipperAtDock: View {
                 Spacer(minLength: 0)
                 tempMeter
             }
-            // Warehouse dock-face zoomed strip.
-            Text("NATURIPE LA RDC · DOCK 14 · ZOOMED")
+            // Warehouse dock-face zoomed strip — facility name not on the
+            // load/appointment projection, so the lane label leads here.
+            Text("\(laneText) · DOCK \(dockText) · ZOOMED")
                 .font(.system(size: 8, weight: .heavy)).tracking(0.4)
                 .foregroundStyle(palette.textTertiary)
+                .lineLimit(1).minimumScaleFactor(0.7)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
                 .background(RoundedRectangle(cornerRadius: 3).fill(Color(hex: 0x0F141F)))
                 .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Color(hex: 0x3A4250), lineWidth: 0.8))
             HStack(spacing: 8) {
-                bayChip("LANE 3")
+                bayChip("LANE —")
                 Rectangle().fill(Brand.blue.opacity(0.55)).frame(height: 2.4)
                     .overlay(forkliftDash)
                 dockBayActive
                 palletGrid
             }
             HStack {
-                Text("DOCK BAY · DOCK 14 · LANE 3 · TEMP 35°F")
+                Text("DOCK BAY · DOCK \(dockText) · TEMP \(tempText)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(LinearGradient.primary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: 4)
-                Text("18/72 · DWELL 0:08")
+                Text("\(loadedText) · DWELL \(dwellText)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(palette.textSecondary).monospacedDigit()
             }
@@ -403,9 +541,10 @@ struct ShipperAtDock: View {
     }
 
     private var dockBayActive: some View {
-        Text("DOCK 14")
+        Text("DOCK \(dockText)")
             .font(.system(size: 6.5, weight: .heavy)).tracking(0.3)
             .foregroundStyle(LinearGradient.primary)
+            .lineLimit(1)
             .padding(.horizontal, 6).padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 1.5)
                 .fill(LinearGradient(colors: [Brand.blue.opacity(0.24), Brand.magenta.opacity(0.24)],
@@ -426,7 +565,7 @@ struct ShipperAtDock: View {
         HStack(spacing: 6) {
             Text("TEMP").font(.system(size: 6, weight: .heavy)).tracking(0.3)
                 .foregroundStyle(palette.textSecondary)
-            Text("35°F").font(.system(size: 8, weight: .heavy)).monospacedDigit()
+            Text(tempText).font(.system(size: 8, weight: .heavy)).monospacedDigit()
                 .foregroundStyle(Brand.blue)
         }
         .padding(.horizontal, 6).padding(.vertical, 3)
@@ -434,18 +573,19 @@ struct ShipperAtDock: View {
         .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Brand.blue.opacity(0.55), lineWidth: 0.8))
     }
 
-    // 18-of-72 pallet mini-grid (4-row × 5-col, 18 cells filled).
+    // Pallet mini-grid (4-row × 5-col). No live loaded-count feed, so the
+    // grid renders empty cells under an em-dash header rather than a faked
+    // fill ratio.
     private var palletGrid: some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text("18/72").font(.system(size: 6, weight: .heavy)).tracking(0.3)
+            Text(loadedText).font(.system(size: 6, weight: .heavy)).tracking(0.3)
                 .foregroundStyle(palette.textSecondary)
             VStack(spacing: 1) {
-                ForEach(0..<4, id: \.self) { row in
+                ForEach(0..<4, id: \.self) { _ in
                     HStack(spacing: 1) {
-                        ForEach(0..<5, id: \.self) { col in
-                            let filled = row < 2 || (row >= 2 && col < 4)  // 5+5+4+4 = 18
+                        ForEach(0..<5, id: \.self) { _ in
                             Rectangle()
-                                .fill(filled ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Color.clear))
+                                .fill(palette.borderFaint)
                                 .frame(width: 5, height: 4)
                         }
                     }
@@ -470,48 +610,53 @@ struct ShipperAtDock: View {
     }
 
     // MARK: Roster rows 1-6 (SVG y=546…766)
+    //
+    // Row 1 line-haul binds to the live load rate. Rows 2-4 (FSC /
+    // detention / lumper) have NO per-load accessorial source wired to
+    // this screen, so they render an honest em-dash amount + a STUB tag
+    // rather than a fabricated figure. Rows 5-6 are structural.
 
     private var rosterRows: some View {
         VStack(spacing: 4) {
-            // Row 1 · LINE HAUL · gradient rim · §11.4 founder pin.
+            // Row 1 · LINE HAUL · gradient rim · payable = load.rate.
             rosterRow(
-                eyebrow: "§11.4 LINE HAUL · EUSORONE FOUNDER PIN · 54TH",
-                detail: "DU paid · ME drives · NET-30 due to AUR-MC942008",
-                amount: "$2,425", tag: "PAYABLE",
+                eyebrow: "§11.4 LINE HAUL · PAYABLE",
+                detail: "DU paid · \(driverLine) · NET-30 to \(carrierLine)",
+                amount: payableText, tag: "PAYABLE",
                 rim: .gradient, accent: nil, eyebrowGradient: true, amountGradient: true)
-            // Row 2 · FUEL SURCHARGE · info rim.
+            // Row 2 · FUEL SURCHARGE · info rim · no accessorial feed.
             rosterRow(
                 eyebrow: "Fuel surcharge",
-                detail: "18% of line-haul · DOE diesel-2 weekly",
-                amount: "$436", tag: "FSC 18%",
+                detail: "Per-load accessorial breakdown not wired",
+                amount: "—", tag: "FSC —",
                 rim: .solid(Brand.blue), accent: Brand.blue, eyebrowGradient: false, amountGradient: false,
                 titleStyle: true)
-            // Row 3 · DETENTION · info rim · LIVE.
+            // Row 3 · DETENTION · info rim · no accessorial feed.
             rosterRow(
-                eyebrow: "Detention · risk live",
-                detail: "$50/hr after 2h free · DWELL 0:08 · 1h 52m left",
-                amount: "$50/hr", tag: "1H 52M LEFT",
+                eyebrow: "Detention",
+                detail: "Detention accrual not wired · DWELL \(dwellText)",
+                amount: "—", tag: "—",
                 rim: .solid(Brand.blue), accent: Brand.blue, eyebrowGradient: false, amountGradient: false,
                 titleStyle: true)
-            // Row 4 · LUMPER · warn rim · LIVE LANE 3.
+            // Row 4 · LUMPER · warn rim · no accessorial feed.
             rosterRow(
-                eyebrow: "Lumper · loading live",
-                detail: "OTR Solutions ticket #LMP-7C3A · receipt to Diego · LANE 3",
-                amount: "$185", tag: "LANE 3 LIVE",
+                eyebrow: "Lumper",
+                detail: "Lumper ticket not wired to this load",
+                amount: "—", tag: "—",
                 rim: .solid(Brand.warning), accent: Brand.warning, eyebrowGradient: false, amountGradient: false,
-                titleStyle: true, amountColor: Brand.warning, tagColor: Brand.warning)
+                titleStyle: true, amountColor: palette.textSecondary, tagColor: palette.textSecondary)
             // Row 5 · ESCORT · default rim · N/A.
             rosterRow(
                 eyebrow: "Escort",
-                detail: "N/A · ambient reefer · no escort required",
+                detail: "N/A · no escort required",
                 amount: "NONE", tag: "NOT REQ",
                 rim: .solid(Brand.neutral.opacity(0.45)), accent: nil, eyebrowGradient: false, amountGradient: false,
                 titleStyle: true, amountColor: palette.textSecondary, tagColor: palette.textSecondary)
             // Row 6 · LOAD VISIBILITY · gradient rim · §280.1 forward-flip.
             rosterRow(
                 eyebrow: "LOAD VISIBILITY · §280.1 SHIPPER-AT-DOCK FORWARD-FLIP",
-                detail: "18/72 PALLETS · LANE 3 LIVE · TEMP 35°F LOGGED",
-                amount: "25%", tag: "BOL PENDING",
+                detail: "\(loadedText) PALLETS · DOCK \(dockText) · TEMP \(tempText)",
+                amount: loadedText, tag: "BOL \(bolStateText)",
                 rim: .gradient, accent: nil, eyebrowGradient: true, amountGradient: true)
         }
     }
@@ -595,11 +740,12 @@ struct ShipperAtDock: View {
 
     private var economicsFooter: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("SHIPPER ECONOMICS · NET-30 PAYABLE · 54TH FOUNDER PIN · 4TH-PORT 2/3")
+            Text("SHIPPER ECONOMICS · NET-30 PAYABLE · 4TH-PORT 2/3")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(LinearGradient.primary)
-            Text("$2,861 total payable · BeamConverge POST-LOCK PORT 14 · WITHIN-TRACK FOURTH-PORT 2/3")
+            Text("\(payableText) line-haul payable · BeamConverge · WITHIN-TRACK FOURTH-PORT 2/3")
                 .font(.system(size: 10)).foregroundStyle(palette.textPrimary)
+                .lineLimit(2).minimumScaleFactor(0.85)
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -682,11 +828,6 @@ struct ShipperAtDock: View {
 
     // MARK: Helpers
 
-    private var assignedDriverId: Int? {
-        guard case .loaded(let detail, _) = store.phase else { return nil }
-        return detail.driverId
-    }
-
     private func callFacility() {
         // No facility-phone column on the at-dock projection yet; the
         // dialer opens to a blank facility number when one is missing
@@ -704,6 +845,7 @@ struct ShipperAtDock: View {
                 .frame(width: diameter * 0.72, height: diameter * 0.72)
             Text(initials).font(.system(size: font, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(.white)
+                .lineLimit(1).minimumScaleFactor(0.5)
         }
         .frame(width: diameter, height: diameter)
     }

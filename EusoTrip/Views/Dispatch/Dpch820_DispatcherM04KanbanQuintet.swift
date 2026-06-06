@@ -9,74 +9,46 @@
 //    529 Dispatcher At Delivery Kanban Cel M04
 //    530 Dispatcher Paperwork Kanban Cel M04
 //
-//  Closes the Dispatcher M-04 series — kanban-board view of the
-//  CEL-awarded LD-E5C9 (Atlanta → Charlotte) as it advances through
-//  lane swimlanes. All 5 share `DispatcherM04KanbanBody`. Body reads
-//  `loads.getById`. Bottom nav frozen.
+//  Kanban-board view of the bound load as it advances through lane
+//  swimlanes (AWARDED → PICKUP → IN-TRANSIT → AT-DELIVERY → PAPERWORK).
+//  All 5 share `DispatcherM04KanbanBody`. Bottom nav frozen.
+//
+//  Doctrine (honest-binding): every visible business value binds to
+//  `loads.getById`. No scenario literals. The wireframe illustrated the
+//  moment with canonical CEL/M-04/NC strings; production substitutes the
+//  bound load and shows "-" / "—" for any field that has no live source
+//  (card counts, dock/dwell, mileage progress, ETA/arrival/POD clocks,
+//  assign-by window). Phase/lane labels are structural, not fabricated.
 //
 
 import SwiftUI
 
+// MARK: - tRPC decode shape (mirrors Models/Load.swift LoadLocation)
+
 private struct DKLoadCtx: Decodable, Hashable {
     let id: Int?
     let loadNumber: String?
-    let pickupCity: String?
-    let destCity: String?
+    let status: String?
+    let rate: String?
+    let distance: Double?
+    let driverId: Int?
+    let catalystId: Int?
+    let shipperId: Int?
+    let pickupLocation: DKCityState?
+    let deliveryLocation: DKCityState?
+
+    struct DKCityState: Decodable, Hashable {
+        let city: String?
+        let state: String?
+        /// City + state space-joined (e.g. "City ST"), matching the pill format.
+        var cityStateSpaced: String {
+            [city, state].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " ")
+        }
+    }
 }
 
 enum DispatcherM04KanbanKind: String {
     case awardedShift, pickupOnSite, inTransitRolling, atDeliveryArrived, paperworkSettling
-}
-
-private struct DKConfig {
-    let eyebrow: String
-    let citation: String
-    let title: String
-    let subhead: String
-    let pillCopy: String
-    let boardPill: String
-}
-
-private extension DispatcherM04KanbanKind {
-    var config: DKConfig {
-        switch self {
-        case .awardedShift:
-            return .init(eyebrow: "DISPATCHER · BOARD · AWARDED · M-04 SHIFT",
-                         citation: "§370 · KANBAN SHIFT BIDDING → AWARDED · M-04 · CHAIN PORT 12/N · SHIFT 0:08 AGO",
-                         title: "Kanban · M-04 shifts BIDDING → AWARDED · CEL board",
-                         subhead: "LD-E5C9 · §370 · AWARDED · 3/N · KANBAN",
-                         pillCopy: "Atlanta GA → Charlotte NC · NC dispatching · $1,610 · assign ≤ 23h 36m",
-                         boardPill: "LD-260427-E5C9A41B22 · CEL board · NC dispatching · 47 cards")
-        case .pickupOnSite:
-            return .init(eyebrow: "DISPATCHER · BOARD · PICKUP · M-04 ON-SITE",
-                         citation: "§388 · PICKUP · ON-SITE ECHO · M-04 · QUARTET 3/N · ON-SITE 0:04 AGO",
-                         title: "Kanban · M-04 in PICKUP lane · JR on-site dock 4A",
-                         subhead: "LD-E5C9 · §388 · PICKUP · 3/N · ON-SITE",
-                         pillCopy: "Atlanta GA → Charlotte NC · NC dispatching · on-site 08:04 · dwell 0:04",
-                         boardPill: "LD-260427-E5C9A41B22 · CEL board · NC dispatching · 47 cards")
-        case .inTransitRolling:
-            return .init(eyebrow: "DISPATCHER · BOARD · IN-TRANSIT · M-04 ROLLING",
-                         citation: "§396 · KANBAN · IN-TRANSIT LANE · M-04 · CHAIN PORT 13/N · ROLLING 1:19",
-                         title: "Kanban · M-04 rolling in IN-TRANSIT lane · CEL board",
-                         subhead: "LD-E5C9 · §396 · TRANSIT · 3/4 · KANBAN",
-                         pillCopy: "Atlanta GA → Charlotte NC · NC dispatching · JR rolling · 74/245 mi · ETA 12:43 EDT",
-                         boardPill: "LD-260427-E5C9A41B22 · CEL board · NC dispatching · 14 in-transit cards")
-        case .atDeliveryArrived:
-            return .init(eyebrow: "DISPATCHER · BOARD · AT-DELIVERY · M-04 ARRIVED",
-                         citation: "§400 · KANBAN · DELIVERY LANE · M-04 · CHAIN PORT 14/N · ARRIVED 0:00",
-                         title: "Kanban · M-04 in DELIVERY lane · CEL board",
-                         subhead: "LD-E5C9 · §400 · DELIVERY · 3/4 · KANBAN",
-                         pillCopy: "Atlanta GA → Charlotte NC · NC dispatching · JR on-site · 245/245 mi · arr 12:43 EDT",
-                         boardPill: "LD-260427-E5C9A41B22 · CEL board · NC dispatching · 1 at-delivery card")
-        case .paperworkSettling:
-            return .init(eyebrow: "DISPATCHER · BOARD · PAPERWORK · M-04 SETTLING",
-                         citation: "§404 · KANBAN · PAPERWORK LANE · M-04 · CHAIN PORT 15/N · SETTLING 0:00",
-                         title: "Kanban · M-04 in PAPERWORK lane · CEL board",
-                         subhead: "LD-E5C9 · §404 · PAPERWORK · 3/4 · KANBAN",
-                         pillCopy: "Atlanta GA → Charlotte NC · NC dispatching · delivered · settlement queued · POD 13:34 EDT",
-                         boardPill: "LD-260427-E5C9A41B22 · CEL board · NC dispatching · 1 settlement card")
-        }
-    }
 }
 
 private struct DispatcherM04KanbanShell<Content: View>: View {
@@ -102,13 +74,46 @@ private struct DispatcherM04KanbanBody: View {
     @Environment(\.palette) private var palette
     @State private var load: DKLoadCtx?
 
+    // MARK: Bound derivations (honest — "-" / "—" when no live source)
+
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
+
+    /// "<origin city ST> → <dest city ST>" when both endpoints resolve, else nil.
+    private var laneDisplay: String? {
+        let p = load?.pickupLocation?.cityStateSpaced ?? ""
+        let d = load?.deliveryLocation?.cityStateSpaced ?? ""
+        guard !p.isEmpty, !d.isEmpty else { return nil }
+        return "\(p) → \(d)"
+    }
+
+    /// Formatted USD from the DECIMAL rate string, else "-".
+    private var rateDisplay: String {
+        if let r = load?.rate, let n = Double(r), n > 0 {
+            let v = n.rounded()
+            return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
+        }
+        return "-"
+    }
+
+    private var statusDisplay: String { load?.status ?? "-" }
+
+    /// Region eyebrow from the delivery state, else "-".
+    private var dispatchRegionDisplay: String {
+        load?.deliveryLocation?.state.map { $0.isEmpty ? "-" : "\($0) dispatching" } ?? "-"
+    }
+
+    /// 2-letter avatar seed from the delivery state, else "—".
+    private var regionSeed: String {
+        let s = load?.deliveryLocation?.state ?? ""
+        return s.isEmpty ? "—" : String(s.prefix(2)).uppercased()
+    }
+
     var body: some View {
-        let c = kind.config
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
-                header(c)
-                pill(c)
-                boardPill(c)
+                header
+                pill
+                boardPill
                 identityRow
                 kpiGrid
                 nextStepCard
@@ -120,31 +125,100 @@ private struct DispatcherM04KanbanBody: View {
         .refreshable { await loadCtx() }
     }
 
-    private func header(_ c: DKConfig) -> some View {
+    // MARK: Phase labels (structural, not fabricated)
+
+    private var laneLabel: String {
+        switch kind {
+        case .awardedShift:      return "AWARDED"
+        case .pickupOnSite:      return "PICKUP"
+        case .inTransitRolling:  return "IN-TRANSIT"
+        case .atDeliveryArrived: return "DELIVERY"
+        case .paperworkSettling: return "PAPERWORK"
+        }
+    }
+
+    private var eyebrowPhase: String {
+        switch kind {
+        case .awardedShift:      return "AWARDED"
+        case .pickupOnSite:      return "PICKUP"
+        case .inTransitRolling:  return "IN-TRANSIT"
+        case .atDeliveryArrived: return "AT-DELIVERY"
+        case .paperworkSettling: return "PAPERWORK"
+        }
+    }
+
+    private var titleCopy: String {
+        switch kind {
+        case .awardedShift:      return "Kanban · BIDDING → AWARDED lane"
+        case .pickupOnSite:      return "Kanban · PICKUP lane · on-site"
+        case .inTransitRolling:  return "Kanban · IN-TRANSIT lane · rolling"
+        case .atDeliveryArrived: return "Kanban · DELIVERY lane · arrived"
+        case .paperworkSettling: return "Kanban · PAPERWORK lane · settling"
+        }
+    }
+
+    private var subheadCopy: String {
+        switch kind {
+        case .awardedShift:      return "Card shifted BIDDING → AWARDED on the board"
+        case .pickupOnSite:      return "On-site echo · card advances on receiver wave"
+        case .inTransitRolling:  return "Rolling · card advances on geofence cross"
+        case .atDeliveryArrived: return "Arrived · auto-advance to PAPERWORK on dock placement"
+        case .paperworkSettling: return "POD captured · card archives on wallet credit"
+        }
+    }
+
+    private var citationLabel: String {
+        switch kind {
+        case .awardedShift:      return "KANBAN · BIDDING → AWARDED · CARD SHIFTED"
+        case .pickupOnSite:      return "KANBAN · PICKUP LANE · ON-SITE ECHO"
+        case .inTransitRolling:  return "KANBAN · IN-TRANSIT LANE · ROLLING"
+        case .atDeliveryArrived: return "KANBAN · DELIVERY LANE · ARRIVED"
+        case .paperworkSettling: return "KANBAN · PAPERWORK LANE · SETTLING"
+        }
+    }
+
+    /// Pill copy — bound lane + region + the one honest per-phase fact.
+    private var pillCopy: String {
+        let lane = laneDisplay ?? "-"
+        switch kind {
+        case .awardedShift:      return "\(lane) · \(dispatchRegionDisplay) · payout \(rateDisplay)"
+        case .pickupOnSite:      return "\(lane) · \(dispatchRegionDisplay) · on-site · dwell —"
+        case .inTransitRolling:  return "\(lane) · \(dispatchRegionDisplay) · rolling · ETA —"
+        case .atDeliveryArrived: return "\(lane) · \(dispatchRegionDisplay) · on-site · arrived —"
+        case .paperworkSettling: return "\(lane) · \(dispatchRegionDisplay) · delivered · POD —"
+        }
+    }
+
+    // MARK: Sections
+
+    private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("DISPATCHER · BOARD · \(eyebrowPhase) · \(loadNumberDisplay)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
-            Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text(c.subhead).font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text(titleCopy).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text(subheadCopy).font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
-    private func pill(_ c: DKConfig) -> some View {
+    private var pill: some View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(c.pillCopy).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
+                Text(citationLabel).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+                Text(pillCopy).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
-    private func boardPill(_ c: DKConfig) -> some View {
+    private var boardPill: some View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
                 Text("BOARD STATE").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(c.boardPill).font(.caption2).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                // Card-count has no live source on this screen → "—".
+                Text("\(loadNumberDisplay) · \(dispatchRegionDisplay) · \(laneLabel) lane · — cards")
+                    .font(.caption2).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -153,10 +227,15 @@ private struct DispatcherM04KanbanBody: View {
         LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("NC").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(regionSeed).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CEL · Naomi Chen · dispatcher").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("Carolina Express Logistics · MC-712 944 · JR driver · DU shipper").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text(load?.catalystId.map { "dispatcher · carrier #\($0)" } ?? "dispatcher")
+                        .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    Text([
+                        load?.driverId.map { "driver #\($0)" } ?? "driver —",
+                        load?.shipperId.map { "shipper #\($0)" } ?? "shipper —"
+                    ].joined(separator: " · "))
+                        .font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
@@ -164,42 +243,45 @@ private struct DispatcherM04KanbanBody: View {
     }
 
     private var kpiGrid: some View {
+        // Only LANE, PAYOUT, and STATE have live sources. Card counts,
+        // dock/dwell, mileage progress, ETA/arrival/POD clocks, and the
+        // assign-by window have NO live source on this screen → "—".
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .awardedShift:
                 return [
-                    ("LANE-IN",    "AWARDED",          "from BIDDING · 0:08",  .green),
-                    ("CARDS",      "47",                 "CEL board",          .blue),
-                    ("PAYOUT",     "$1,610",              "CEL win",           .green),
-                    ("ASSIGN",     "≤ 23h 36m",            "to driver",         .blue),
+                    ("LANE-IN",  laneLabel,    "from BIDDING",     .green),
+                    ("CARDS",    "—",          "no live count",    .blue),
+                    ("PAYOUT",   rateDisplay,  "load rate",        .green),
+                    ("ASSIGN",   "—",          "to driver",        .blue),
                 ]
             case .pickupOnSite:
                 return [
-                    ("LANE-IN",    "PICKUP",                "on-site echo",     .green),
-                    ("DOCK",       "4A",                     "dwell 0:04",      .orange),
-                    ("CARDS",      "47",                      "CEL board",      .blue),
-                    ("STATE",      "ON-SITE",                  "JR · CEL",      .green),
+                    ("LANE-IN",  laneLabel,    "on-site echo",     .green),
+                    ("DOCK",     "—",          "dwell —",          .orange),
+                    ("CARDS",    "—",          "no live count",    .blue),
+                    ("STATE",    statusDisplay, "load status",     .green),
                 ]
             case .inTransitRolling:
                 return [
-                    ("LANE",       "IN-TRANSIT",                "rolling · §396", .blue),
-                    ("DIST",       "74/245",                     "30% leg",       .blue),
-                    ("ETA",        "12:43",                       "EDT · rolling 1:19", .blue),
-                    ("CARDS",      "14",                            "in-transit lane", .blue),
+                    ("LANE",     laneLabel,    "rolling",          .blue),
+                    ("DIST",     "—",          "no live progress", .blue),
+                    ("ETA",      "—",          "no live clock",    .blue),
+                    ("CARDS",    "—",          "no live count",    .blue),
                 ]
             case .atDeliveryArrived:
                 return [
-                    ("LANE",       "DELIVERY",                       "arrived · §400",  .green),
-                    ("DIST",       "245/245",                          "100% leg",       .green),
-                    ("ARRIVED",    "12:43",                              "EDT · 0:00",   .green),
-                    ("CARDS",      "1",                                    "at-delivery lane", .blue),
+                    ("LANE",     laneLabel,    "arrived",          .green),
+                    ("DIST",     "—",          "no live progress", .green),
+                    ("ARRIVED",  "—",          "no live clock",    .green),
+                    ("CARDS",    "—",          "no live count",    .blue),
                 ]
             case .paperworkSettling:
                 return [
-                    ("LANE",       "PAPERWORK",                              "settling · §404",  .green),
-                    ("POD",        "13:34",                                    "EDT · delivered",  .green),
-                    ("PAYOUT",     "$1,610",                                     "settlement queued", .green),
-                    ("CARDS",      "1",                                            "settlement lane", .blue),
+                    ("LANE",     laneLabel,    "settling",         .green),
+                    ("POD",      "—",          "no live clock",    .green),
+                    ("PAYOUT",   rateDisplay,  "settlement queued", .green),
+                    ("CARDS",    "—",          "no live count",    .blue),
                 ]
             }
         }()
@@ -222,11 +304,11 @@ private struct DispatcherM04KanbanBody: View {
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
-            case .awardedShift:      return "M-04 shifted from BIDDING to AWARDED lane. CEL captures the $1,610 win; assign within 23h 36m."
-            case .pickupOnSite:      return "JR on-site at dock 4A. Dwell timer live; advance kanban card to LOADING when receiver waves to plate."
-            case .inTransitRolling:  return "JR rolling at 30% leg. ETA holds 12:43 EDT; ESang nudges if drift exceeds 10 min."
-            case .atDeliveryArrived: return "Arrived CLT Newell at 12:43 (17 min early). Auto-advance to PAPERWORK lane on dock placement."
-            case .paperworkSettling: return "POD signed at 13:34; settlement queued. Card auto-archives when wallet credit confirms."
+            case .awardedShift:      return "Card shifted from BIDDING to AWARDED lane. Assign a driver to advance it to PICKUP."
+            case .pickupOnSite:      return "Driver on-site. Advance the kanban card to LOADING when the receiver waves to plate."
+            case .inTransitRolling:  return "Driver rolling. ESang nudges the card if the ETA drifts past tolerance."
+            case .atDeliveryArrived: return "Arrived at receiver. Auto-advance to PAPERWORK lane on dock placement."
+            case .paperworkSettling: return "POD captured; settlement queued. Card auto-archives when wallet credit confirms."
             }
         }()
         return LifecycleCard {
@@ -239,7 +321,7 @@ private struct DispatcherM04KanbanBody: View {
 
     private func loadCtx() async {
         struct In: Encodable { let id: String }
-        do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
+        do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* read-only screen, tolerate */ }
     }
 }
 

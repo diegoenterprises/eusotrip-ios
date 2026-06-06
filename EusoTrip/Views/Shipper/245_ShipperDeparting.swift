@@ -7,27 +7,21 @@
 //  IN_TRANSIT OPENS — within-track FIFTH-PORT pattern 2/3 (direct
 //  lifecycle cousin of 244 At Dock). Shipper observer vantage on a load
 //  that has just rolled out of the dock: §60.2 context callout banner
-//  (BeamConverge glyph · POST-LOCK PORT 17), §272 Aurora dispatch recap,
-//  KPI quartet (ETA PHX 5h 28m · MILES 372 · TEMP 35°F · PAYABLE $2,861),
-//  8-stage lifecycle strip with IN_TRANSIT current + DEPARTING micro-chip,
-//  route-progress map strip (I-10 EAST corridor · LA pin · Phoenix diamond
-//  · ME tractor · Indio chain-stop · ETA meter), ROUTE TERM ROSTER (6
-//  rows), shipper-economics footer, and a TRACK LIVE / NOTIFY CONSIGNEE
-//  action ribbon.
+//  (BeamConverge glyph · POST-LOCK PORT 17), §272 dispatch recap, KPI
+//  quartet (ETA · MILES · TEMP · PAYABLE), 8-stage lifecycle strip with
+//  IN_TRANSIT current + DEPARTING micro-chip, route-progress map strip
+//  (origin pin · destination diamond · ME tractor · ETA meter), ROUTE
+//  TERM ROSTER (6 rows), shipper-economics footer, and a TRACK LIVE /
+//  NOTIFY CONSIGNEE action ribbon.
 //
-//  Persona canon (§11): Diego Usoro (DU · shipper tracking) · Michael
-//  Eusorone (ME · rolling) · Aurora Freight Lines / Renée Marquette (RM ·
-//  senior dispatcher). Flagship lane LD-260427-7C3A09F18B · Los Angeles →
-//  Phoenix · 53' Reefer · 33-38°F · I-10 EAST · 372mi · ETA 5h 28m ·
-//  BOL #BOL-7C3A signed.
-//
-//  Wiring (honest — no mock data):
+//  Wiring (honest — no mock data · zero fabrication):
 //    • loads.getDetail(id:)            EXISTS — full load record (lane,
-//      cargo, equipment, rate, status, assigned driverId).
+//      cargo, equipment, rate, distance, status, dates, assigned
+//      driverId). Backs the lane / distance / payable / route surfaces.
 //    • appointments.getByLoad(loadId:) EXISTS — final dwell / gate-exit
-//      context for the departed-from-dock recap.
+//      context for the departed-from-dock recap (dock number).
 //    • telemetry.getLiveLocation(driverId:) EXISTS — backs the TRACK LIVE
-//      CTA (live carrier pin on the I-10 corridor).
+//      CTA (live carrier pin on the corridor).
 //    • controlTower "pin to control tower"   STUB · named-gap — no
 //      mutation has shipped on the controlTower.* namespace (read-only
 //      overview/exceptions only). TRACK LIVE fetches the live pin then
@@ -35,6 +29,16 @@
 //    • "notify consignee"                     STUB · named-gap — no
 //      shipper→consignee notify mutation has shipped. The secondary CTA
 //      flags the gap rather than faking a send.
+//
+//  Honest empties (NO live source on the screen's fetches — rendered as
+//  "—", never a fabricated literal):
+//    • Live ETA / OTA  — no ETA projection on loads.getDetail.
+//    • Live reefer TEMP — no live reefer telemetry channel wired here.
+//    • Carrier name / driver name / dispatcher / USDOT / MC — not on the
+//      LoadDetail projection.
+//    • BOL / DVIR ids — no document-id column on the projection.
+//    • Per-line accessorials (FSC / detention / lumper / escort) — no
+//      accessorial_stats client method is wired to this screen.
 //
 //  RBAC gate: SHIPPER (read-side observer · §284). transportMode: truck.
 //  country: US.
@@ -133,8 +137,8 @@ struct ShipperDeparting: View {
     @Environment(\.palette) private var palette
     @StateObject private var store: ShipperDepartingStore
 
-    /// Default-initializable — calibrated against the §11 flagship lane.
-    init(loadId: String = "7C3A09F18B") {
+    /// Caller supplies the load id; no business default is fabricated.
+    init(loadId: String) {
         _store = StateObject(wrappedValue: ShipperDepartingStore(loadId: loadId))
     }
 
@@ -164,6 +168,79 @@ struct ShipperDeparting: View {
         .refreshable { await store.load() }
     }
 
+    // MARK: Bound load (nil until loaded)
+
+    private var detail: LoadsAPI.LoadDetail? {
+        if case .loaded(let d, _) = store.phase { return d }
+        return nil
+    }
+
+    private var appointment: AppointmentsAPI.ByLoadAppointment? {
+        if case .loaded(_, let a) = store.phase { return a }
+        return nil
+    }
+
+    /// Destination city for the headline — "—" when missing.
+    private var destinationCity: String {
+        let c = detail?.deliveryLocation?.city ?? ""
+        return c.isEmpty ? "—" : c
+    }
+
+    /// Origin city, used by route-map labels — "—" when missing.
+    private var originCity: String {
+        let c = detail?.pickupLocation?.city ?? ""
+        return c.isEmpty ? "—" : c
+    }
+
+    /// "620 mi" or "—" (distanceDisplay already em-dashes a missing value).
+    private var milesDisplay: String { detail?.distanceDisplay ?? "—" }
+
+    /// Numeric distance value for the route footer — "—" when absent.
+    private var distanceLabel: String {
+        guard let d = detail?.distance, d > 0 else { return "—" }
+        let unit = (detail?.distanceUnit?.isEmpty == false ? detail!.distanceUnit! : "mi")
+        return "\(Int(d.rounded())) \(unit)"
+    }
+
+    /// "$2,440" or "—" (rateDisplay already em-dashes a missing value).
+    private var payableDisplay: String { detail?.rateDisplay ?? "—" }
+
+    /// Load number for banner identity — "—" when missing.
+    private var loadNumberLabel: String {
+        let n = detail?.loadNumber ?? ""
+        return n.isEmpty ? "—" : n
+    }
+
+    /// Equipment label for the trace row — "—" when missing.
+    private var equipmentLabel: String {
+        let e = detail?.equipmentType ?? ""
+        return e.isEmpty ? "—" : e
+    }
+
+    /// Mode resolved from equipment for the document-term lexicon.
+    private var loadMode: TransportMode { Self.mode(detail?.equipmentType) }
+
+    /// Lexicon document label (BOL / Waybill) for this load's mode.
+    private var documentLabel: String {
+        TransportLexicon.short(.billOfLading, mode: loadMode, equipmentRaw: detail?.equipmentType)
+    }
+
+    /// Lane string "LA → Phoenix" or honest "—".
+    private var laneShort: String {
+        switch (originCity, destinationCity) {
+        case ("—", "—"): return "—"
+        case (let o, "—"): return "\(o) → —"
+        case ("—", let d): return "— → \(d)"
+        case (let o, let d): return "\(o) → \(d)"
+        }
+    }
+
+    /// Final dock number from the appointment record — "—" when none.
+    private var dockNumber: String {
+        let d = appointment?.dockNumber ?? ""
+        return d.isEmpty ? "—" : d
+    }
+
     // MARK: TopBar (SVG y=72)
 
     private var topBar: some View {
@@ -172,7 +249,8 @@ struct ShipperDeparting: View {
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer(minLength: 8)
-            Text("I-10 EAST · ETA 5H 28M")
+            // Live ETA has no projection on this fetch → honest "—".
+            Text("ROUTE · ETA —")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
                 .monospacedDigit().multilineTextAlignment(.trailing)
@@ -184,10 +262,11 @@ struct ShipperDeparting: View {
     private var headline: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Rolling to Phoenix")
+                Text("Rolling to \(destinationCity)")
                     .font(.system(size: 34, weight: .bold)).tracking(-0.6)
                     .foregroundStyle(palette.textPrimary)
-                Text("I-10 EAST · 372mi · ETA 5h 28m · BOL #BOL-7C3A signed")
+                // distance is live; ETA + BOL id have no source → "—".
+                Text("\(milesDisplay) · ETA — · BOL —")
                     .font(.system(size: 12)).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 8)
@@ -207,7 +286,8 @@ struct ShipperDeparting: View {
                 Text("SHIPPER DEPARTING · §284 · WITHIN-TRACK FIFTH-PORT 2/3")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(LinearGradient.primary)
-                Text("LD-7C3A LA→Phoenix · Reefer 33-38°F · I-10 EAST · ETA 5H 28M · ME rolling · DU tracking")
+                // Lane + equipment are live; TEMP + ETA have no source → "—".
+                Text("\(loadNumberLabel) \(laneShort) · \(equipmentLabel) · TEMP — · ETA — · DU tracking")
                     .font(.system(size: 10)).foregroundStyle(palette.textPrimary)
             }
             Spacer(minLength: 0)
@@ -240,19 +320,21 @@ struct ShipperDeparting: View {
         }
     }
 
-    // MARK: §272 Aurora dispatch recap (SVG y=224)
+    // MARK: §272 dispatch recap (SVG y=224)
 
     private var dispatchRecapCard: some View {
         HStack(alignment: .top, spacing: 10) {
-            personaDisc("RM", diameter: 32, font: 10)
+            personaDisc("—", diameter: 32, font: 10)
             VStack(alignment: .leading, spacing: 4) {
-                Text("§272 AURORA DISPATCHED ME · 0:01 DEPARTED · DWELL 1:42 FINAL · NO DETENTION")
+                Text("§272 DISPATCH RECAP · DEPARTED · FINAL DWELL —")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(LinearGradient.primary)
                     .lineLimit(1).minimumScaleFactor(0.7)
-                Text("Aurora Freight Lines · Renée Marquette · senior dispatcher")
+                // Carrier / dispatcher names are not on this projection → "—".
+                Text("—")
                     .font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text("USDOT 3 482 119 · MC-942 008 · Cedar Rapids IA")
+                // USDOT / MC / domicile are not on this projection → "—".
+                Text("USDOT — · MC — · —")
                     .font(EType.mono(.caption)).tracking(0.3).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)
@@ -271,13 +353,14 @@ struct ShipperDeparting: View {
 
     private var kpiQuartet: some View {
         HStack(spacing: 0) {
-            kpi(label: "ETA PHX", value: "5h 28m", sub: "live · OTA", valueStyle: .gradient)
+            // ETA + TEMP have no live source on this fetch → honest "—".
+            kpi(label: "ETA",     value: "—",            sub: "live · OTA",    valueStyle: .gradient)
             kpiDivider
-            kpi(label: "MILES",  value: "372",    sub: "to delivery", valueStyle: .solid(Brand.blue))
+            kpi(label: "MILES",   value: milesDisplay,   sub: "to delivery",   valueStyle: .solid(Brand.blue))
             kpiDivider
-            kpi(label: "TEMP",   value: "35°F",   sub: "REEFER LOG", valueStyle: .solid(Brand.blue))
+            kpi(label: "TEMP",    value: "—",            sub: "REEFER LOG",    valueStyle: .solid(Brand.blue))
             kpiDivider
-            kpi(label: "PAYABLE", value: "$2,861", sub: "NET-30", valueStyle: .solid(Brand.blue))
+            kpi(label: "PAYABLE", value: payableDisplay, sub: "NET-30",        valueStyle: .solid(Brand.blue))
         }
         .padding(.vertical, 12).padding(.horizontal, 16)
         .background(palette.bgCard)
@@ -366,7 +449,7 @@ struct ShipperDeparting: View {
         }
     }
 
-    // MARK: Route-progress map strip · 96h (SVG y=424)
+    // MARK: Route-progress map strip (SVG y=424)
 
     private var routeMap: some View {
         VStack(spacing: 0) {
@@ -384,14 +467,15 @@ struct ShipperDeparting: View {
                         .fill(Color(hex: 0x10131A))
                         .padding(1)
 
-                    // Corridor title.
-                    Text("I-10 EAST · LA · NATURIPE RDC → PHOENIX")
+                    // Corridor title — bound to real origin → destination.
+                    Text("ROUTE · \(originCity.uppercased()) → \(destinationCity.uppercased())")
                         .font(.system(size: 8, weight: .heavy)).tracking(0.4)
                         .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.6)
                         .frame(width: w, alignment: .center)
                         .position(x: w / 2, y: h * (20.0 / 96.0))
 
-                    // Base corridor line + progress segment.
+                    // Base corridor line + just-departed progress segment.
                     Capsule().fill(Color.white.opacity(0.16))
                         .frame(width: span, height: 3)
                         .position(x: leftX + span / 2, y: lineY)
@@ -399,23 +483,23 @@ struct ShipperDeparting: View {
                         .frame(width: w * (10.0 / 400.0), height: 3)
                         .position(x: leftX + w * (5.0 / 400.0), y: lineY)
 
-                    // LA · NATURIPE RDC origin pin (DU disc).
+                    // Origin pin (DU disc) + city label.
                     personaDisc("DU", diameter: 14, font: 6)
                         .position(x: leftX, y: lineY)
-                    Text("LA · NATURIPE RDC")
+                    Text(originCity.uppercased())
                         .font(.system(size: 6.5, weight: .heavy)).tracking(0.3)
                         .foregroundStyle(palette.textSecondary)
                         .fixedSize()
                         .position(x: leftX + 30, y: lineY + 18)
 
-                    // Phoenix destination diamond.
+                    // Destination diamond + city label.
                     Rectangle()
                         .fill(Color(hex: 0x10131A))
                         .frame(width: 10, height: 10)
                         .overlay(Rectangle().strokeBorder(LinearGradient.primary, lineWidth: 1.4))
                         .rotationEffect(.degrees(45))
                         .position(x: rightX, y: lineY)
-                    Text("PHOENIX")
+                    Text(destinationCity.uppercased())
                         .font(.system(size: 6.5, weight: .heavy)).tracking(0.3)
                         .foregroundStyle(LinearGradient.primary)
                         .fixedSize()
@@ -432,24 +516,12 @@ struct ShipperDeparting: View {
                     .background(RoundedRectangle(cornerRadius: 1.5).fill(LinearGradient.diagonal))
                     .position(x: leftX + w * (10.0 / 400.0), y: lineY)
 
-                    // Indio chain-stop marker + label.
-                    Circle()
-                        .fill(Color(hex: 0x10131A))
-                        .overlay(Circle().strokeBorder(Brand.blue.opacity(0.65), lineWidth: 1.0))
-                        .frame(width: 6, height: 6)
-                        .position(x: w * (155.0 / 400.0), y: lineY)
-                    Text("INDIO 132mi")
-                        .font(.system(size: 6, weight: .heavy)).tracking(0.3)
-                        .foregroundStyle(Brand.blue)
-                        .fixedSize()
-                        .position(x: w * (155.0 / 400.0), y: lineY - 10)
-
-                    // ETA meter chip (top-right).
+                    // ETA meter chip (top-right) — no live ETA → "—".
                     HStack(spacing: 4) {
                         Text("ETA").font(.system(size: 6, weight: .heavy)).tracking(0.3)
                             .foregroundStyle(palette.textSecondary)
                         Spacer(minLength: 4)
-                        Text("5H 28M").font(.system(size: 8, weight: .heavy)).monospacedDigit()
+                        Text("—").font(.system(size: 8, weight: .heavy)).monospacedDigit()
                             .foregroundStyle(LinearGradient.primary)
                     }
                     .padding(.horizontal, 8)
@@ -458,13 +530,13 @@ struct ShipperDeparting: View {
                     .overlay(RoundedRectangle(cornerRadius: 2).strokeBorder(Brand.blue.opacity(0.65), lineWidth: 0.8))
                     .position(x: w * (350.0 / 400.0), y: h * (28.0 / 96.0))
 
-                    // Footer route line.
-                    Text("ROUTE · I-10 EAST · NEXT Indio CA · 132mi")
+                    // Footer route line — distance is live, ETA is "—".
+                    Text("ROUTE · \(distanceLabel)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(LinearGradient.primary)
                         .fixedSize()
                         .position(x: leftX - 26 + 100, y: h * (86.0 / 96.0))
-                    Text("ETA 5H 28M")
+                    Text("ETA —")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.5).monospacedDigit()
                         .foregroundStyle(palette.textSecondary)
                         .fixedSize()
@@ -499,44 +571,46 @@ struct ShipperDeparting: View {
     private var rosterRows: some View {
         VStack(spacing: 4) {
             // Row 1 · LINE HAUL · gradient rim · §11.4 founder pin 57th.
+            // Amount = real load rate; "—" when the column is empty.
             rosterRow(
                 eyebrow: "§11.4 LINE HAUL · EUSORONE FOUNDER PIN · 57TH",
-                detail: "DU paid · ME drives · NET-30 due to AUR-MC942008",
-                amount: "$2,425", tag: "PAYABLE",
+                detail: "Net payable to assigned carrier · NET-30",
+                amount: payableDisplay, tag: "PAYABLE",
                 rim: .gradient, eyebrowGradient: true, amountGradient: true)
-            // Row 2 · FUEL SURCHARGE · info rim.
+            // Row 2 · FUEL SURCHARGE · info rim · no accessorial source → "—".
             rosterRow(
                 eyebrow: "Fuel surcharge",
-                detail: "18% of line-haul · DOE diesel-2 weekly",
-                amount: "$436", tag: "FSC 18%",
+                detail: "Accessorial line · no live stats wired",
+                amount: "—", tag: "FSC —",
                 rim: .solid(Brand.blue), eyebrowGradient: false, amountGradient: false,
                 titleStyle: true)
-            // Row 3 · DETENTION · info rim · NO DETENTION.
+            // Row 3 · DETENTION · info rim · no accessorial source → "—".
             rosterRow(
                 eyebrow: "Detention · final",
-                detail: "2h free window · DWELL 1:42 FINAL · stopped at gate exit",
-                amount: "$0", tag: "NO DETENTION",
+                detail: "Final dwell from gate exit · no live stats wired",
+                amount: "—", tag: "—",
                 rim: .solid(Brand.blue), eyebrowGradient: false, amountGradient: false,
                 titleStyle: true)
-            // Row 4 · LUMPER · info rim · SETTLED.
+            // Row 4 · LUMPER · info rim · no accessorial source → "—".
             rosterRow(
-                eyebrow: "Lumper · settled",
-                detail: "OTR Solutions ticket #LMP-7C3A · receipt to Diego · pass-through",
-                amount: "$185", tag: "SETTLED",
+                eyebrow: "Lumper",
+                detail: "Pass-through accessorial · no live stats wired",
+                amount: "—", tag: "—",
                 rim: .solid(Brand.blue), eyebrowGradient: false, amountGradient: false,
                 titleStyle: true, amountColor: Brand.blue)
-            // Row 5 · ESCORT · default rim · N/A.
+            // Row 5 · ESCORT · default rim · no accessorial source → "—".
             rosterRow(
                 eyebrow: "Escort",
-                detail: "N/A · ambient reefer · no escort required",
-                amount: "NONE", tag: "NOT REQ",
+                detail: "Accessorial line · no live stats wired",
+                amount: "—", tag: "—",
                 rim: .solid(Brand.neutral.opacity(0.55)), eyebrowGradient: false, amountGradient: false,
                 titleStyle: true, amountColor: palette.textSecondary, tagColor: palette.textSecondary)
             // Row 6 · LANE TRACE · gradient rim · §284.1 substitution.
+            // Lane + equipment are live; TEMP + ETA + document id are "—".
             rosterRow(
                 eyebrow: "LANE TRACE · §284.1 SHIPPER-DEPARTING FORWARD-FLIP",
-                detail: "I-10 E · 372mi · ME ROLLING · TEMP 35°F LOGGED · BOL #BOL-7C3A",
-                amount: "5H 28M", tag: "LIVE",
+                detail: "\(laneShort) · \(distanceLabel) · TEMP — · \(documentLabel) —",
+                amount: "—", tag: "LIVE",
                 rim: .gradient, eyebrowGradient: true, amountGradient: true)
         }
     }
@@ -620,7 +694,8 @@ struct ShipperDeparting: View {
             Text("SHIPPER ECONOMICS · NET-30 · 57TH FOUNDER PIN · 5TH-PORT 2/3")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(LinearGradient.primary)
-            Text("$2,861 total payable · BeamConverge POST-LOCK PORT 17 · WITHIN-TRACK FIFTH-PORT 2/3")
+            // Total payable bound to the real load rate; "—" when missing.
+            Text("\(payableDisplay) total payable · BeamConverge POST-LOCK PORT 17 · WITHIN-TRACK FIFTH-PORT 2/3")
                 .font(.system(size: 10)).foregroundStyle(palette.textPrimary)
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
@@ -714,6 +789,21 @@ struct ShipperDeparting: View {
         return detail.driverId
     }
 
+    /// Equipment → base transport mode (rail / vessel / barge / truck) for
+    /// the document-term lexicon. Mirrors the lifecycle-surface convention.
+    private static func mode(_ equipmentRaw: String?) -> TransportMode {
+        let e = (equipmentRaw ?? "").lowercased()
+        if e.contains("rail") || e.contains("tofc") || e.contains("cofc")
+            || e.contains("boxcar") || e.contains("hopper") || e.contains("gondola")
+            || e.contains("centerbeam") || e.contains("autorack") || e.contains("flatcar")
+            || e.contains("well car") { return .rail }
+        if e.contains("vessel") || e.contains("container ship") || e.contains("vlcc")
+            || e.contains("bulk carrier") || e.contains("ro/ro") || e.contains("roro")
+            || e.contains("lng") || e.contains("iso tank") { return .vessel }
+        if e.contains("barge") { return .barge }
+        return .truck
+    }
+
     private func personaDisc(_ initials: String, diameter: CGFloat, font: CGFloat) -> some View {
         ZStack {
             Circle().fill(LinearGradient.diagonal)
@@ -732,13 +822,13 @@ struct ShipperDeparting: View {
 // MARK: - Previews
 
 #Preview("245 · Shipper Departing · Night") {
-    ShipperDeparting()
+    ShipperDeparting(loadId: "0")
         .environment(\.palette, Theme.dark)
         .preferredColorScheme(.dark)
 }
 
 #Preview("245 · Shipper Departing · Afternoon") {
-    ShipperDeparting()
+    ShipperDeparting(loadId: "0")
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
 }
