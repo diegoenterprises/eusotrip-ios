@@ -328,8 +328,25 @@ struct ComplianceInlinePanel: View {
 
     let tags: [ComplianceRule.Tag]
     let topic: String     // e.g. "Electronic DVIR" — prints next to the header
+    /// Transport mode this panel sits on. Drives the AUTHORITY prefix in
+    /// the header strip so a vessel load doesn't read "FMCSA" — resolved
+    /// via `TransportLexicon.short(.primarySafetyAuthority, mode:)`
+    /// (truck→FMCSA, rail→FRA, vessel→IMO / USCG, barge→USCG / IMO).
+    /// Defaults to `.truck` so every existing call site is unchanged.
+    /// NOTE: the checklist CATALOG itself is still truck-keyed; only the
+    /// authority LABEL is mode-correct here. Per-mode rule catalogs are a
+    /// followup if non-truck checklist items are needed.
+    var mode: TransportMode = .truck
 
     private var rules: [ComplianceRule] { ComplianceCatalog.rules(for: tags) }
+
+    /// Authority prefix for the header strip — mode-keyed off the lexicon
+    /// (e.g. "FMCSA" / "FRA" / "IMO / USCG"). Falls back to "FMCSA" if the
+    /// lexicon ever returns empty so the strip never renders bare.
+    private var authorityLabel: String {
+        let auth = TransportLexicon.short(.primarySafetyAuthority, mode: mode)
+        return auth.isEmpty ? "FMCSA" : auth
+    }
 
     var body: some View {
         if rules.isEmpty { EmptyView() }
@@ -372,7 +389,7 @@ struct ComplianceInlinePanel: View {
                 .overlay(Circle().strokeBorder(palette.borderFaint))
                 .clipShape(Circle())
             VStack(alignment: .leading, spacing: 0) {
-                Text("FMCSA · MAR 23, 2026")
+                Text("\(authorityLabel) · MAR 23, 2026")
                     .font(EType.mono(.micro))
                     .tracking(0.6)
                     .foregroundStyle(palette.textTertiary)

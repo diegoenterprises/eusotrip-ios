@@ -59,7 +59,12 @@ extension AvailableLoad {
             // so Book Now can call `loadBidding.submit({ loadId: Int })`.
             backendLoadId: Int(my.id),
             originState: Self.stateFromCityState(my.origin),
-            destState: Self.stateFromCityState(my.destination)
+            destState: Self.stateFromCityState(my.destination),
+            // MyLoad is a UI-only model that carries no mode column —
+            // default to truck so the detail sheet's mode-aware surfaces
+            // (compliance authority, escort vocab) read correctly.
+            transportMode: "truck",
+            equipmentRaw: "Dry van"
         )
     }
 
@@ -127,7 +132,11 @@ extension AvailableLoad {
             destLng: delivery.lng,
             backendLoadId: load.id,
             originState: load.originState ?? (pickup.state.isEmpty ? nil : pickup.state),
-            destState: load.destState ?? (delivery.state.isEmpty ? nil : delivery.state)
+            destState: load.destState ?? (delivery.state.isEmpty ? nil : delivery.state),
+            // Multi-modal column off the backend `loads.getById` row;
+            // default truck so legacy/null rows render unchanged.
+            transportMode: load.transportMode ?? "truck",
+            equipmentRaw: load.cargoType
         )
     }
 
@@ -204,7 +213,11 @@ extension AvailableLoad {
             destLng: dLng,
             backendLoadId: Int(s.id),
             originState: Self.stateFromCityState(s.origin),
-            destState: Self.stateFromCityState(s.destination)
+            destState: Self.stateFromCityState(s.destination),
+            // Multi-modal column off the backend `loads.search` row;
+            // default truck so legacy/null rows render unchanged.
+            transportMode: s.transportMode ?? "truck",
+            equipmentRaw: s.cargoType
         )
     }
 

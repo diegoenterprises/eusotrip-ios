@@ -1138,6 +1138,19 @@ struct AvailableLoad: Identifiable, Equatable {
     /// recommended counter rather than booking blind.
     var originState: String? = nil
     var destState: String? = nil
+    /// Canonical transport mode for this load — "truck" / "rail" / "vessel"
+    /// / "barge". Plumbed from the source load's `transportMode` column
+    /// (loads.transport_mode) by every `AvailableLoad.from(...)` adapter.
+    /// Drives mode-aware LoadDetail surfaces (prohibited routes, equipment
+    /// compliance authority, escort vocabulary). Defaults to "truck" so
+    /// existing truck loads render unchanged; resolve to the canonical
+    /// enum via `TransportMode.from(raw:)`.
+    var transportMode: String? = nil
+    /// Raw equipment / cargo string off the source row (e.g. "Reefer",
+    /// "DOT-117 crude", "container"). Feeds the lexicon's equipment hint
+    /// (`TransportLexicon.short(..., equipmentRaw:)`) so sub-mode-specific
+    /// terminology resolves correctly. nil when the source carries none.
+    var equipmentRaw: String? = nil
 
     /// Convenience — pickup as a `LoadLocation` for HERE Maps annotations.
     var pickupLocation: LoadLocation {

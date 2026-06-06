@@ -579,6 +579,15 @@ final class EusoTripAPI: ObservableObject {
     /// Added in the 89th firing (brick port 096 Me · ERG).
     lazy var erg: ErgAPI = ErgAPI(api: self)
 
+    /// `commodityRouter` — non-hazmat commodity typeahead used by the
+    /// post-load wizard (204) as the ERG-parity sibling lookup. When
+    /// the chosen cargo type is NOT hazmat-flavored the wizard surfaces
+    /// the right product/chemical/reefer/container/STCC lookup instead
+    /// of the Dangerous-goods card. Mirrors `server/routers/commodity.ts`
+    /// (procs `searchChemical`, `searchPetroleum`, `searchReefer`,
+    /// `searchContainerType`, `searchStcc`).
+    lazy var commodity: CommodityLookupAPI = CommodityLookupAPI(api: self)
+
     /// `ratingsRouter` — driver / catalyst / shipper reviews and
     /// rating summary. MCP-verified at
     /// `frontend/server/routers/ratings.ts`. Added in the 90th
@@ -11121,6 +11130,122 @@ struct ErgAPI {
     /// should have these at a tap, per §172.704.
     func getEmergencyContacts() async throws -> EmergencyContactsResponse {
         try await api.queryNoInput("erg.getEmergencyContacts")
+    }
+}
+
+// MARK: - commodityRouter (204 Post-Load · Non-Hazmat Commodity Lookup)
+//
+// Mirrors `server/routers/commodity.ts`. This is the ERG-parity
+// sibling for NON-hazmat cargo: when the post-load wizard's cargo
+// type is not hazmat-flavored, the shipper still wants to pin the
+// exact product so the carrier quotes the right equipment + handling
+// (food-grade petroleum, reefer set-point, ISO container type, rail
+// STCC). The server is backed by seed commodity tables; iOS renders a
+// small typeahead exactly like the ERG search row, then auto-fills the
+// structured product / reefer-temp fields on selection.
+//
+// Procs surfaced today:
+//   - `searchChemical`       — non-haz chemical / liquid / gas products
+//   - `searchPetroleum`      — refined-product / crude commodity grades
+//   - `searchReefer`         — perishables w/ recommended temp band
+//   - `searchContainerType`  — ISO 6346 container size-type codes
+//   - `searchStcc`           — rail Standard Transportation Commodity Code
+
+struct CommodityLookupAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - Shared hit shape
+
+    /// One commodity typeahead hit. Optional fields are populated only
+    /// by the lookups that own them (reefer temps, container size-type,
+    /// STCC) so a single decodable serves all five procs.
+    struct CommodityHit: Decodable, Equatable, Identifiable {
+        /// Stable identifier for the row — server `code` when present
+        /// (STCC / ISO size-type / grade code), else the name.
+        let code: String?
+        let name: String
+        /// Human-readable category / grouping (e.g. "Refined product",
+        /// "Perishable — frozen", "Dry container").
+        let category: String?
+        /// Recommended reefer set-point band, °F. Only the reefer
+        /// lookup fills these; the wizard auto-fills its temp fields.
+        let tempLowF: Double?
+        let tempHighF: Double?
+        /// Pre-cool recommended for this perishable (reefer lookup).
+        let preCool: Bool?
+        /// Free-text note / handling hint shown under the row.
+        let note: String?
+
+        var id: String { code ?? name }
+    }
+
+    struct SearchResponse: Decodable, Equatable {
+        let results: [CommodityHit]
+        let count: Int
+    }
+
+    private struct QueryInput: Encodable {
+        let query: String
+        let limit: Int
+    }
+
+    // MARK: - Chemicals / liquids / gases
+
+    /// `commodity.searchChemical` — non-haz industrial chemical,
+    /// food/industrial liquid, or compressed/cryo gas product. Used
+    /// when cargoType is chemicals / liquid / gas and NOT hazmat.
+    func searchChemical(query: String, limit: Int = 10) async throws -> SearchResponse {
+        try await api.query(
+            "commodity.searchChemical",
+            input: QueryInput(query: query, limit: limit)
+        )
+    }
+
+    // MARK: - Petroleum
+
+    /// `commodity.searchPetroleum` — refined product / crude / blend
+    /// grade. Used when cargoType is petroleum.
+    func searchPetroleum(query: String, limit: Int = 10) async throws -> SearchResponse {
+        try await api.query(
+            "commodity.searchPetroleum",
+            input: QueryInput(query: query, limit: limit)
+        )
+    }
+
+    // MARK: - Reefer
+
+    /// `commodity.searchReefer` — perishable commodity with its
+    /// recommended carriage temperature band + pre-cool flag. The
+    /// wizard auto-fills `reeferTempLowText` / `reeferTempHighText`
+    /// from the chosen hit. Used when cargoType is refrigerated.
+    func searchReefer(query: String, limit: Int = 10) async throws -> SearchResponse {
+        try await api.query(
+            "commodity.searchReefer",
+            input: QueryInput(query: query, limit: limit)
+        )
+    }
+
+    // MARK: - Container type
+
+    /// `commodity.searchContainerType` — ISO 6346 container size-type
+    /// code (e.g. 22G1 / 45R1). Used for vessel / rail container
+    /// equipment.
+    func searchContainerType(query: String, limit: Int = 10) async throws -> SearchResponse {
+        try await api.query(
+            "commodity.searchContainerType",
+            input: QueryInput(query: query, limit: limit)
+        )
+    }
+
+    // MARK: - Rail STCC
+
+    /// `commodity.searchStcc` — rail Standard Transportation Commodity
+    /// Code lookup by name or partial code. Used for rail loads.
+    func searchStcc(query: String, limit: Int = 10) async throws -> SearchResponse {
+        try await api.query(
+            "commodity.searchStcc",
+            input: QueryInput(query: query, limit: limit)
+        )
     }
 }
 

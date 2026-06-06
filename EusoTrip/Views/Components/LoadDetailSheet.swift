@@ -95,6 +95,31 @@ struct LoadDetailSheet: View {
         case error(String)
     }
 
+    /// Escort-request state for the empty-state "Request …" button.
+    /// `idle` = button shown. `requesting` = spinner. `requested` =
+    /// success confirmation. `failed` = inline retry. The request is a
+    /// real action (MeAction fire + dispatch message) — not a dead
+    /// label (founder note "didnt see add escort").
+    @State private var escortRequestState: EscortRequestState = .idle
+
+    enum EscortRequestState: Equatable {
+        case idle
+        case requesting
+        case requested
+        case failed(String)
+    }
+
+    // MARK: - Mode resolution
+    //
+    // Resolve the load's transport mode once. Every mode-aware surface on
+    // this sheet (prohibited routes, escort vocabulary) reads from this so
+    // a vessel load never shows trucking copy and vice-versa. Defaults to
+    // `.truck` when the source row carried no `transportMode`, so existing
+    // truck loads render exactly as before.
+    private var mode: TransportMode {
+        TransportMode(rawValue: load.transportMode ?? "truck") ?? .truck
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -120,19 +145,37 @@ struct LoadDetailSheet: View {
                 // book / execute — no hub to navigate away from.
                 ComplianceInlinePanel(
                     tags: [.overfill, .auxPump, .warningDevice],
-                    topic: "Equipment compliance (Mar 23, 2026)"
+                    topic: "Equipment compliance (Mar 23, 2026)",
+                    mode: mode
                 )
                 if let f = feePreview {
                     feeBreakdownCard(f)
                 }
                 escortCard
                 brokerCard
-                actionButtons
+                // `actionButtons` lives in the sticky footer below
+                // (.safeAreaInset) — keeping it in-scroll pushed the
+                // Book now / Bid CTAs below the fold on long loads, so
+                // testers "couldn't book". This trailing spacer keeps
+                // the last scroll content clear of the pinned footer.
                 Color.clear.frame(height: Space.s5)
             }
             .padding(Space.s5)
         }
         .scrollIndicators(.hidden)
+        // Sticky CTA footer — mirrors the shipper sheet's
+        // `podDecisionBar` (205_ShipperLoadDetail.swift). Book now /
+        // Bid a different rate stay pinned to the bottom regardless of
+        // load length so the primary affordance is always reachable.
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 0) {
+                IridescentHairline()
+                actionButtons
+                    .padding(.horizontal, Space.s5)
+                    .padding(.vertical, Space.s3)
+            }
+            .background(palette.bgSheet)
+        }
         .background(palette.bgSheet.ignoresSafeArea())
         .overlay(alignment: .topTrailing) {
             // Canonical close X. Replaces the bespoke inline button
@@ -676,16 +719,51 @@ struct LoadDetailSheet: View {
         sectionCard(title: "PROHIBITED ROUTES",
                     subtitle: "Avoid per federal/state rules") {
             VStack(alignment: .leading, spacing: Space.s2) {
-                prohibitedRow(icon: "road.lanes.curved.left",
-                              text: "No commercial tunnels carrying Class 3 hazmat (Lincoln Tunnel, Holland Tunnel).")
-                    .opacity(load.hazmat ? 1 : 0.5)
-                prohibitedRow(icon: "building.2.fill",
-                              text: "No downtown truck routes between 07:00–09:30 and 16:00–18:30 local.")
-                prohibitedRow(icon: "arrow.up.arrow.down",
-                              text: "Bridges with posted weight <46,000 lb, alternate via I-highways only.")
-                if load.equipment == "Flatbed" || load.equipment == "Step Deck" {
+                switch mode {
+                case .truck:
+                    prohibitedRow(icon: "road.lanes.curved.left",
+                                  text: "No commercial tunnels carrying Class 3 hazmat (Lincoln Tunnel, Holland Tunnel).")
+                        .opacity(load.hazmat ? 1 : 0.5)
+                    prohibitedRow(icon: "building.2.fill",
+                                  text: "No downtown truck routes between 07:00–09:30 and 16:00–18:30 local.")
+                    prohibitedRow(icon: "arrow.up.arrow.down",
+                                  text: "Bridges with posted weight <46,000 lb, alternate via I-highways only.")
+                    if load.equipment == "Flatbed" || load.equipment == "Step Deck" {
+                        prohibitedRow(icon: "exclamationmark.triangle",
+                                      text: "Oversized load: follow state DOT permit routing only. No county or city bypass.")
+                    }
+
+                case .rail:
                     prohibitedRow(icon: "exclamationmark.triangle",
-                                  text: "Oversized load: follow state DOT permit routing only. No county or city bypass.")
+                                  text: "PHMSA 49 CFR 172.820 rail routing analysis (route selected vs alternatives).")
+                        .opacity(load.hazmat ? 1 : 0.5)
+                    prohibitedRow(icon: "road.lanes.curved.left",
+                                  text: "Railroad restricted/embargoed routings (Railinc OPSL).")
+                    prohibitedRow(icon: "arrow.up.arrow.down",
+                                  text: "Plate clearance limit (Plate B/C/F) + tunnel/overhead clearance.")
+                    prohibitedRow(icon: "gauge.with.dots.needle.bottom.50percent",
+                                  text: "Key-train / OT-55 speed + handling (PIH/Class 3).")
+                        .opacity(load.hazmat ? 1 : 0.5)
+
+                case .vessel:
+                    prohibitedRow(icon: "point.topleft.down.to.point.bottomright.curvepath",
+                                  text: "IMO Traffic Separation Schemes + routeing measures (COLREG Rule 10).")
+                    prohibitedRow(icon: "smoke.fill",
+                                  text: "Emission Control Area — 0.10% sulphur fuel (MARPOL Annex VI).")
+                    prohibitedRow(icon: "exclamationmark.octagon",
+                                  text: "Areas To Be Avoided / restricted + USCG regulated nav areas.")
+                    prohibitedRow(icon: "arrow.up.arrow.down",
+                                  text: "Draft (under-keel) + air-draft / bridge & cable clearance.")
+
+                case .barge:
+                    prohibitedRow(icon: "lock.fill",
+                                  text: "USACE lock status / scheduled closures + lockage delays (LPMS).")
+                    prohibitedRow(icon: "water.waves",
+                                  text: "Authorized channel + controlling depth (draft limit).")
+                    prohibitedRow(icon: "arrow.up.arrow.down",
+                                  text: "Fixed/movable bridge + overhead cable clearance (33 CFR 117).")
+                    prohibitedRow(icon: "exclamationmark.triangle",
+                                  text: "Navigation closures (high-water / ice / dredging / safety zone).")
                 }
             }
         }
@@ -726,21 +804,24 @@ struct LoadDetailSheet: View {
                         .foregroundStyle(palette.textSecondary)
                 }
             case .some(let rows) where rows.isEmpty:
-                HStack(spacing: Space.s2) {
-                    Image(systemName: "person.fill.checkmark")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(palette.textSecondary)
-                        .frame(width: 22)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("No escort assigned")
-                            .font(EType.bodyStrong)
-                            .foregroundStyle(palette.textPrimary)
-                        Text("Request one from dispatch if this lane needs a lead or chase car.")
-                            .font(EType.caption)
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    HStack(spacing: Space.s2) {
+                        Image(systemName: "person.fill.checkmark")
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(palette.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(width: 22)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("No \(mode.escortConcept.lowercased()) assigned")
+                                .font(EType.bodyStrong)
+                                .foregroundStyle(palette.textPrimary)
+                            Text(mode.escortEmptyNudge)
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer(minLength: 0)
+                    escortRequestButton
                 }
             case .some(let rows):
                 VStack(alignment: .leading, spacing: Space.s2) {
@@ -749,6 +830,129 @@ struct LoadDetailSheet: View {
                     }
                 }
             }
+        }
+    }
+
+    /// Real "Request escort" affordance for the empty state. The label
+    /// is "Request \(mode.escortConcept.lowercased())" — e.g. "Request
+    /// escort vehicle" (truck), "Request harbor pilot + tug escort"
+    /// (vessel). There is no dedicated `escorts.request` endpoint, so
+    /// this genuinely DOES something: it fires a MeAction (haptic +
+    /// surface notification) and posts a dispatch message via the
+    /// existing `messages.sendMessage` path keyed on the load id, then
+    /// confirms with a "requested from dispatch" success line. The
+    /// founder noted the prior label was dead — this is the live wire.
+    @ViewBuilder
+    private var escortRequestButton: some View {
+        switch escortRequestState {
+        case .requested:
+            HStack(spacing: Space.s2) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("Escort requested from dispatch")
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, Space.s2)
+            .padding(.horizontal, Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.bgCardSoft)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.5), lineWidth: 1)
+            )
+
+        default:
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Button {
+                    Task { await requestEscort() }
+                } label: {
+                    HStack(spacing: Space.s2) {
+                        if case .requesting = escortRequestState {
+                            ProgressView()
+                                .tint(.white)
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+                        Text(escortRequestState == .requesting
+                             ? "Requesting…"
+                             : "Request \(mode.escortConcept.lowercased())")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(.white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Space.s3)
+                    .background(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .fill(LinearGradient.diagonal)
+                    )
+                }
+                .buttonStyle(PressableCardStyle())
+                .disabled(escortRequestState == .requesting)
+
+                if case .failed(let msg) = escortRequestState {
+                    Text(msg)
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.warning)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    /// Fire the escort request. No `escorts.request` procedure exists on
+    /// the backend, so we (1) fire a MeAction so the haptic + any
+    /// listening surface (dispatch board, notifications) picks it up, and
+    /// (2) post a dispatch message on the load's conversation thread via
+    /// the canonical `messages.sendMessage` route — the same path the
+    /// driver dispatch chat (053_ESangDispatchChat) uses. The message
+    /// names the load + the mode's escort concept so dispatch sees a
+    /// concrete, actionable request rather than a silent flag.
+    private func requestEscort() async {
+        guard escortRequestState != .requesting else { return }
+        escortRequestState = .requesting
+
+        let loadRef = load.backendLoadId.map(String.init) ?? load.id
+        let concept = mode.escortConcept
+
+        // MeAction — haptic + surface notification. Listeners (dispatch
+        // board, notifications inbox) can react to the request without a
+        // dedicated endpoint.
+        MeAction.fire("loaddetail.request-escort", userInfo: [
+            "loadId": loadRef,
+            "mode": mode.rawValue,
+            "escortConcept": concept,
+        ])
+
+        // Post the dispatch message on the load's conversation thread.
+        // The messages router treats the load id as a stable conversation
+        // key for dispatch threads (same convention as 053 dispatch chat).
+        let body = "Escort request · \(load.origin) → \(load.destination): requesting \(concept.lowercased()) for load \(load.id)."
+        do {
+            _ = try await EusoTripAPI.shared.messaging.sendMessage(
+                conversationId: loadRef,
+                content: body,
+                type: "text"
+            )
+            escortRequestState = .requested
+        } catch {
+            // The MeAction already fired, but the dispatch message didn't
+            // land — surface an honest retry rather than a false success.
+            let msg: String
+            if let api = error as? EusoTripAPIError, case .trpcError(let m) = api {
+                msg = m
+            } else {
+                msg = "Couldn't reach dispatch. Tap to retry."
+            }
+            escortRequestState = .failed(msg)
         }
     }
 
@@ -800,16 +1004,26 @@ struct LoadDetailSheet: View {
     }
 
     private func escortPrimaryLine(_ r: LoadsAPI.EscortAssignment) -> String {
-        let posLabel: String
-        switch r.position {
-        case "lead":  posLabel = "Lead"
-        case "chase": posLabel = "Chase"
-        case "both":  posLabel = "Lead + Chase"
-        default:      posLabel = r.position.capitalized
-        }
+        let posLabel = escortPositionLabel(r.position)
         if let name = r.companyName, !name.isEmpty { return "\(posLabel) · \(name)" }
         if let name = r.escortName,  !name.isEmpty { return "\(posLabel) · \(name)" }
         return posLabel
+    }
+
+    /// Map the backend escort position enum ("lead" / "chase" / "both")
+    /// to the mode's native position vocabulary. `escortPositionLabels`
+    /// is ordered [primary, secondary, both] per mode — truck reads
+    /// [Lead, Chase, Lead + Chase], vessel [Harbor pilot, Bow tug,
+    /// Stern tug], etc. Falls back to the raw enum capitalized for any
+    /// position the mode list doesn't cover.
+    private func escortPositionLabel(_ position: String) -> String {
+        let labels = mode.escortPositionLabels
+        switch position {
+        case "lead":  return labels.first ?? "Lead"
+        case "chase": return labels.count > 1 ? labels[1] : "Chase"
+        case "both":  return labels.count > 2 ? labels[2] : (labels.first ?? "Both")
+        default:      return position.capitalized
+        }
     }
 
     private func escortSecondaryLine(_ r: LoadsAPI.EscortAssignment) -> String {
@@ -1507,9 +1721,9 @@ private struct LoadDetailHeroMatch: ViewModifier {
 // Drivers tap "Bid a different rate" → this sheet opens with the
 // posted rate pre-filled. They edit the amount, optionally attach
 // conditions ("if pickup before 14:00", "+ $200 detention waiver"),
-// and submit. Backed by `drivers.counterOffer` — server inserts a
-// loadBids row with bidderRole='driver', status='countered', and
-// fans an event so the catalyst sees it on their bid board within
+// and submit. Backed by `loadBidding.submit` — server inserts a
+// loadBids row with bidderRole='driver', runs the auto-accept rules,
+// and fans an event so the catalyst sees it on their bid board within
 // seconds.
 //
 // $/mi delta vs the posted spot rate is shown live so the driver
@@ -1521,11 +1735,12 @@ struct CounterOfferSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     let loadId: String
-    /// Backend numeric id when the caller has it (every live row
-    /// from `loads.search` does). When present, the sheet posts to
-    /// `loadBidding.submit` (the canonical web-platform endpoint);
-    /// when nil, falls back to the legacy `drivers.counterOffer`
-    /// path which only needs the loadNumber string.
+    /// Backend numeric id, required to open a bid chain. Every live
+    /// row from `loads.search` supplies it. The sheet posts to
+    /// `loadBidding.submit` (the canonical web-platform endpoint),
+    /// which is keyed on this numeric id. When nil, `submit()` fails
+    /// fast with a refresh-the-load-board message rather than firing a
+    /// doomed mutation — symmetric with `book()`.
     let backendLoadId: Int?
     let postedRate: Double
     let miles: Int
@@ -1738,33 +1953,31 @@ struct CounterOfferSheet: View {
 
     private func submit() async {
         guard !isSubmitting else { return }
+        // Symmetric with `book()` — the legacy `drivers.counterOffer`
+        // path took the loadNumber string, which the backend's bid
+        // chain rejects (it inserts a `loadBids` row keyed on the
+        // numeric loadId). When the caller didn't surface the numeric
+        // id we can't open a bid chain, so fail fast with a clear,
+        // recoverable line rather than firing a doomed mutation.
+        guard let backendId = backendLoadId else {
+            lastError = "Load id is missing. Refresh the load board and try again."
+            return
+        }
         isSubmitting = true
         defer { isSubmitting = false }
         do {
-            // Prefer `loadBidding.submit` — same endpoint the web
-            // platform's bid management page uses, fans realtime
-            // events to the shipper, runs auto-accept rules, and
-            // returns whether the bid was instantly accepted.
-            if let backendId = backendLoadId {
-                let resp = try await EusoTripAPI.shared.loadBidding.submit(
-                    loadId: backendId,
-                    bidAmount: amount,
-                    rateType: "flat",
-                    conditions: conditions.isEmpty ? nil : conditions,
-                    expiresInHours: 24
-                )
-                ack = .bidding(id: resp.id, status: resp.status)
-            } else {
-                // Legacy path — `drivers.counterOffer` accepts the
-                // loadNumber string. Used when the caller didn't
-                // surface the numeric loadId (older preview rows).
-                let resp = try await EusoTripAPI.shared.drivers.counterOffer(
-                    loadId: loadId,
-                    amount: amount,
-                    conditions: conditions.isEmpty ? nil : conditions
-                )
-                ack = .legacy(status: resp.status)
-            }
+            // `loadBidding.submit` — same endpoint `book()` and the web
+            // platform's bid-management page use. Fans realtime events
+            // to the shipper, runs the auto-accept rules, and returns
+            // whether the bid was instantly accepted.
+            let resp = try await EusoTripAPI.shared.loadBidding.submit(
+                loadId: backendId,
+                bidAmount: amount,
+                rateType: "flat",
+                conditions: conditions.isEmpty ? nil : conditions,
+                expiresInHours: 24
+            )
+            ack = .bidding(id: resp.id, status: resp.status)
             lastError = nil
         } catch {
             // Surface tRPC user-facing messages verbatim — common

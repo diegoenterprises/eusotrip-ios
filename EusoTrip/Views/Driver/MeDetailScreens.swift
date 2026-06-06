@@ -1573,11 +1573,26 @@ struct MeReferralsView: View {
 
 // MARK: - 8. Zeun (fleet mechanics)
 
-/// Identifiable wrapper for the breakdown-detail sheet binding. iOS
-/// `.sheet(item:)` requires an Identifiable; the bare Int reportId
-/// can't conform, so we wrap it.
-private struct ZeunDetailRoute: Identifiable, Equatable {
-    let id: Int
+/// Single presentation channel for every Zeun rollup sheet. Driving all
+/// four destinations through one `.sheet(item:)` on the body's stable
+/// root keeps the presenter from collapsing — stacking four separate
+/// `.sheet` modifiers on an inner card of an implicit `TupleView` caused
+/// the inner presentation to bounce straight back to Home (tester bug:
+/// "Report breakdown" / "Find a repair shop" dismissed instantly).
+private enum ZeunSheet: Identifiable, Equatable {
+    case reporter
+    case partDiagnosis
+    case providers
+    case detail(Int)
+
+    var id: String {
+        switch self {
+        case .reporter:        return "reporter"
+        case .partDiagnosis:   return "partDiagnosis"
+        case .providers:       return "providers"
+        case .detail(let rid): return "detail-\(rid)"
+        }
+    }
 }
 
 struct MeZeunView: View {
@@ -1595,12 +1610,20 @@ struct MeZeunView: View {
     /// Sheets the Zeun rollup launches into. Each closes the 12-feature
     /// gap report from the comparison agent (reportBreakdown UI,
     /// provider directory, breakdown drill-in, maintenance scheduler).
-    @State private var showReporter: Bool = false
-    @State private var showProviders: Bool = false
-    @State private var showPartDiagnosis: Bool = false
-    @State private var openReportId: Int? = nil
+    /// All four route through one `ZeunSheet` so a single `.sheet(item:)`
+    /// on the body's root drives them (see the bounce-to-Home note above).
+    @State private var activeSheet: ZeunSheet? = nil
 
     var body: some View {
+        // Single stable root for every Zeun card. The container hosts us
+        // in a `ScrollView { VStack(spacing: Space.s4) }`, so this inner
+        // VStack uses the SAME spacing — the layout is unchanged, but the
+        // cards now share one parent. That stability is what lets a single
+        // `.sheet(item:)` present reliably; four `.sheet` modifiers stacked
+        // on an inner card of the old implicit TupleView collapsed the
+        // presentation and bounced "Report breakdown" / "Find a repair
+        // shop" straight back to Home.
+        VStack(alignment: .leading, spacing: Space.s4) {
         // Canonical wiring: `zeunMechanics.getMyBreakdowns` (MCP-verified
         // at frontend/server/routers/zeunMechanics.ts:402). Returns the
         // driver's open + resolved breakdown reports. Empty = "no
@@ -1638,7 +1661,7 @@ struct MeZeunView: View {
                             // Tap-to-drill — opens the full breakdown
                             // detail with diagnosis, status timeline,
                             // and the status-update mutation.
-                            Button { openReportId = r.id } label: {
+                            Button { activeSheet = .detail(r.id) } label: {
                                 HStack {
                                     Text(r.issueCategory.capitalized)
                                         .font(EType.bodyStrong)
@@ -1674,11 +1697,11 @@ struct MeZeunView: View {
                     .foregroundStyle(palette.textTertiary)
                 CTAButton(title: "Report breakdown") {
                     MeAction.fire("zeun.report-breakdown")
-                    showReporter = true
+                    activeSheet = .reporter
                 }
                 Button {
                     MeAction.fire("zeun.diagnose-part")
-                    showPartDiagnosis = true
+                    activeSheet = .partDiagnosis
                 } label: {
                     HStack {
                         Image(systemName: "sparkles.tv.fill")
@@ -1699,7 +1722,7 @@ struct MeZeunView: View {
                 .buttonStyle(.plain)
                 Button {
                     MeAction.fire("zeun.find-provider")
-                    showProviders = true
+                    activeSheet = .providers
                 } label: {
                     HStack {
                         Image(systemName: "wrench.and.screwdriver.fill")
@@ -1719,21 +1742,6 @@ struct MeZeunView: View {
                 }
                 .buttonStyle(.plain)
             }
-        }
-        .sheet(isPresented: $showReporter) {
-            ZeunBreakdownReporter().eusoSheet()
-        }
-        .sheet(isPresented: $showPartDiagnosis) {
-            ZeunPartDiagnosisScreen().eusoSheet()
-        }
-        .sheet(isPresented: $showProviders) {
-            ZeunProviderNetwork().eusoSheet()
-        }
-        .sheet(item: Binding(
-            get: { openReportId.map { ZeunDetailRoute(id: $0) } },
-            set: { openReportId = $0?.id }
-        )) { route in
-            ZeunBreakdownDetail(reportId: route.id).eusoSheet()
         }
 
         // Inspection (DVIR) section — live from `InspectionsHistoryStore`.
@@ -1810,6 +1818,25 @@ struct MeZeunView: View {
             }
         }
         .task { await historyStore.refresh() }
+        }
+        // ─── Single presenter for all four Zeun sheets, anchored to the
+        // stable root above. `ZeunBreakdownReporter` posts to
+        // `zeunMechanics.reportBreakdown`; `ZeunProviderNetwork`
+        // (ZeunMechanicsScreens.swift:514) opens the repair-shop directory;
+        // `ZeunPartDiagnosisScreen` runs the photo diagnosis; the
+        // `.detail` case drills into one breakdown report.
+        .sheet(item: $activeSheet) { sheet in
+            switch sheet {
+            case .reporter:
+                ZeunBreakdownReporter().eusoSheet()
+            case .partDiagnosis:
+                ZeunPartDiagnosisScreen().eusoSheet()
+            case .providers:
+                ZeunProviderNetwork().eusoSheet()
+            case .detail(let reportId):
+                ZeunBreakdownDetail(reportId: reportId).eusoSheet()
+            }
+        }
     }
 }
 
@@ -2612,13 +2639,16 @@ private struct HaulLeaderboardTab: View {
 
 // MARK: - Haul · Lobby tab (moderated driver chat)
 //
-// Global multi-role chat room — drivers, dispatch, and fleet owners
-// all read and post here. Wired to the real `messages.getMessages`
-// / `messages.sendMessage` procs via `PulseLobbyStore` against the
-// `driver-lobby` conversation id (same contract as the web app's
-// TheHaul page). No local @State message seed. Every message that
-// renders came from the server. Every outgoing message round-trips
-// through `messaging.sendMessage` and refreshes the feed.
+// "The Haul" GLOBAL chat room — drivers, dispatch, and fleet owners all
+// read and post here. Wired to the gamification router that backs the
+// web TheHaul page: reads through `gamification.getLobbyMessages` (via
+// `PulseLobbyStore`) and posts through `gamification.postLobbyMessage`.
+// This replaced the company `messaging.getLobby` / `sendLobbyMessage`
+// wiring, which needed a companyId + a pre-existing "The Lobby"
+// conversation and surfaced as "Invalid conversation ID" with a dead
+// send. No local @State message seed — every message that renders came
+// from the server, and every outgoing message round-trips through the
+// moderated `postLobbyMessage` mutation and refreshes the feed.
 //
 // Role color is derived from the message sender's server-returned
 // `senderName` + role hints; absent a role hint we render the
@@ -2659,8 +2689,6 @@ struct HaulLobbyTab: View {
     @State private var draft: String = ""
     @State private var isPosting: Bool = false
     @State private var postError: String?
-
-    private static let lobbyConversationId = "driver-lobby"
 
     private var liveMessages: [MessagingMessage] {
         store.items
@@ -2802,23 +2830,30 @@ struct HaulLobbyTab: View {
         postError = nil
         isPosting = true
         defer { isPosting = false }
-        // The lobby uses a dedicated `messaging.sendLobbyMessage`
-        // procedure that resolves the caller → company → "The Lobby"
-        // conversation server-side. The previous implementation called
-        // the canonical `messages.sendMessage` with conversationId
-        // = "driver-lobby" (a string token), which the server's
-        // parseInt rejected with "Invalid conversation ID" — so every
-        // lobby post failed silently. The dedicated endpoint takes
-        // just `{text}` and handles routing internally.
-        struct In: Encodable { let text: String }
-        struct Out: Decodable { let messageId: Int; let conversationId: Int }
+        // The Haul lobby is the global driver chat backed by the
+        // gamification router — `gamification.postLobbyMessage` (input
+        // `{ message }`, MCP-verified at
+        // frontend/server/routers/gamification.ts:1363). The previous
+        // implementation posted to the company `messaging.sendLobbyMessage`
+        // (conversationId = "driver-lobby" string token), which the
+        // server's parseInt rejected with "Invalid conversation ID" — so
+        // every lobby post failed silently. The gamification endpoint also
+        // runs content moderation and can return `{ success: false, error }`
+        // on a 200 response (muted / blocked / rate-limited), which we
+        // surface to the composer rather than treating as a clean send.
+        struct In: Encodable { let message: String }
+        struct Out: Decodable { let success: Bool; let error: String? }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
-                "messaging.sendLobbyMessage",
-                input: In(text: trimmed)
+            let out: Out = try await EusoTripAPI.shared.mutation(
+                "gamification.postLobbyMessage",
+                input: In(message: trimmed)
             )
-            draft = ""
-            await store.refresh()
+            if out.success {
+                draft = ""
+                await store.refresh()
+            } else {
+                postError = out.error ?? "Message couldn't be posted."
+            }
         } catch {
             postError = (error as? LocalizedError)?.errorDescription
                 ?? "Couldn't post, try again in a moment."

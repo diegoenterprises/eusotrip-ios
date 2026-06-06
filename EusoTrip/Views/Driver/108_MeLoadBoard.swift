@@ -159,7 +159,9 @@ struct MeLoadBoardView: View {
             originLng: 0,
             destLat: 0,
             destLng: 0,
-            backendLoadId: Int(r.id)
+            backendLoadId: Int(r.id),
+            transportMode: r.transportMode ?? "truck",
+            equipmentRaw: r.equipmentType
         )
     }
 

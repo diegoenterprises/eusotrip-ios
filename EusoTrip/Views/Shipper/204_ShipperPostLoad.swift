@@ -151,6 +151,22 @@ struct ShipperPostLoad: View {
     @State private var ergSearchHits: [ErgAPI.SearchHit] = []
     @State private var isSearchingERG: Bool = false
 
+    // Non-hazmat commodity lookup state — the ERG-parity sibling for
+    // non-hazardous cargo. When the chosen cargo type is NOT hazmat-
+    // flavored the wizard surfaces a typeahead against the right
+    // `commodity.*` proc (chemical / petroleum / reefer / container /
+    // STCC) and pins the chosen product into `properShippingName`
+    // (and the reefer temp band, for the reefer lookup). Mirrors the
+    // ERG search-sheet + binding pattern exactly.
+    @State private var showCommoditySearchSheet: Bool = false
+    @State private var commoditySearchQuery: String = ""
+    @State private var commoditySearchHits: [CommodityLookupAPI.CommodityHit] = []
+    @State private var isSearchingCommodity: Bool = false
+    @State private var commodityLookupError: String? = nil
+    /// The selected non-hazmat commodity, pinned into the structured
+    /// block (mirrors `ergMatch` for the hazmat branch).
+    @State private var commodityMatch: CommodityLookupAPI.CommodityHit? = nil
+
     // Reefer subform.
     @State private var reeferTempLowText:  String = ""
     @State private var reeferTempHighText: String = ""
@@ -700,6 +716,8 @@ struct ShipperPostLoad: View {
         }
         // ERG search sheet (typeahead by name)
         .sheet(isPresented: $showErgSearchSheet) { ergSearchSheet }
+        // Commodity search sheet (non-hazmat ERG-parity typeahead)
+        .sheet(isPresented: $showCommoditySearchSheet) { commoditySearchSheet }
         // Templates picker (loadTemplates.list — server-backed,
         // visible on web platform too for true cross-device parity)
         .sheet(isPresented: $showTemplatePicker) { templatePickerSheet }
@@ -825,6 +843,106 @@ struct ShipperPostLoad: View {
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
                 Text("Class \(hit.hazardClass) · \(hit.placardName)")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Commodity search sheet (non-hazmat ERG-parity typeahead)
+
+    private var commoditySearchSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack {
+                Text("Find a commodity")
+                    .font(.system(size: 18, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                Button { showCommoditySearchSheet = false } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                TextField(commodityCardPlaceholder, text: $commoditySearchQuery)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .tint(LinearGradient.diagonal)
+                    .autocorrectionDisabled()
+                    .onSubmit { searchCommodity() }
+                    .onChange(of: commoditySearchQuery) { _, _ in searchCommodity() }
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            if isSearchingCommodity {
+                HStack(spacing: 6) {
+                    ProgressView().scaleEffect(0.7).tint(LinearGradient.diagonal)
+                    Text("Searching commodities…")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: Space.s2) {
+                    ForEach(commoditySearchHits) { hit in
+                        Button { applyCommodityHit(hit) } label: {
+                            commoditySearchRow(hit)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if commoditySearchHits.isEmpty && !commoditySearchQuery.isEmpty && !isSearchingCommodity {
+                        Text("No commodity match for '\(commoditySearchQuery)'")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textTertiary)
+                            .padding(.top, Space.s4)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .background(palette.bgPrimary)
+    }
+
+    @ViewBuilder
+    private func commoditySearchRow(_ hit: CommodityLookupAPI.CommodityHit) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    if let code = hit.code, !code.isEmpty {
+                        Text(code)
+                            .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(LinearGradient.diagonal)
+                    }
+                    if let cat = hit.category, !cat.isEmpty {
+                        Text(cat)
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+                Text(hit.name)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2)
+                Text(commodityMatchSubtitle(hit))
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -2309,6 +2427,70 @@ struct ShipperPostLoad: View {
         }
     }
 
+    // MARK: - Non-hazmat commodity lookup (ERG-parity)
+
+    /// `commodity.*` typeahead — debounced inside the commodity search
+    /// sheet. Dispatches to the proc the active (cargoType, equipment,
+    /// mode) tuple selects. Mirrors `searchERG()`.
+    private func searchCommodity() {
+        let q = commoditySearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.count >= 2 else {
+            commoditySearchHits = []
+            return
+        }
+        let proc = activeCommodityProc
+        isSearchingCommodity = true
+        commodityLookupError = nil
+        Task {
+            do {
+                let api = EusoTripAPI.shared.commodity
+                let resp: CommodityLookupAPI.SearchResponse
+                switch proc {
+                case .chemical:      resp = try await api.searchChemical(query: q, limit: 12)
+                case .petroleum:     resp = try await api.searchPetroleum(query: q, limit: 12)
+                case .reefer:        resp = try await api.searchReefer(query: q, limit: 12)
+                case .containerType: resp = try await api.searchContainerType(query: q, limit: 12)
+                case .stcc:          resp = try await api.searchStcc(query: q, limit: 12)
+                }
+                await MainActor.run {
+                    self.commoditySearchHits = resp.results
+                    self.isSearchingCommodity = false
+                }
+            } catch {
+                await MainActor.run {
+                    self.commoditySearchHits = []
+                    self.isSearchingCommodity = false
+                    self.commodityLookupError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                }
+            }
+        }
+    }
+
+    /// Apply a commodity search-hit selection — pins the product into
+    /// `properShippingName` (the single commodity source of truth) and,
+    /// for the reefer lookup, auto-fills the temp band ONLY when the
+    /// user hasn't already typed one (never overwrite explicit entry),
+    /// mirroring the ERG auto-fill rule.
+    private func applyCommodityHit(_ hit: CommodityLookupAPI.CommodityHit) {
+        commodityMatch = hit
+        commodityLookupError = nil
+        properShippingName = hit.name
+        if hit.preCool == true { preCoolRequired = true }
+        if let lo = hit.tempLowF, reeferTempLowText.isEmpty {
+            reeferTempLowText = formatTemp(lo)
+        }
+        if let hi = hit.tempHighF, reeferTempHighText.isEmpty {
+            reeferTempHighText = formatTemp(hi)
+        }
+        showCommoditySearchSheet = false
+    }
+
+    /// Format a °F temperature for the reefer text fields — drops a
+    /// trailing ".0" so a whole number reads "40", not "40.0".
+    private func formatTemp(_ v: Double) -> String {
+        v == v.rounded() ? String(Int(v)) : String(v)
+    }
+
     /// Resolved geocode hit — coordinate + state code. Used by both
     /// the routing step (needs lat/lng) and the rate compare step
     /// (needs state code).
@@ -3075,14 +3257,25 @@ struct ShipperPostLoad: View {
         // BOV, ISO T-codes) instead of blanket truck cam-locks.
         catalogRequirementsSection
         switch equipmentType {
-        case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas,
-             .vesselTanker, .vesselLNG, .vesselISOTank,
-             .railTankLiquid, .railTankGas:
-            tankerSubform   // structured UN/Class/PG/PSN + ERG search (universal)
         case .reefer, .railReeferBoxcar, .vesselReeferContainer:
             reeferSubform   // structured LOW/HIGH temperature window
         default:
             EmptyView()
+        }
+        // SINGLE commodity / dangerous-goods identity block — shown for
+        // EVERY equipment type, sourced once from the structured fields.
+        // The per-equipment catalog no longer asks commodity or hazmat
+        // class (those groups were removed), so this is the only place
+        // the load's product + UN/Class/PG/PSN is captured:
+        //   • hazmat-flavored cargo → universal Dangerous-goods card
+        //     (UN / Class / PG / PSN + ERG lookup, the sole owner of
+        //     {UN, hazmatClass, packingGroup, PSN}).
+        //   • non-hazmat cargo      → ERG-parity commodity lookup
+        //     (chemical / petroleum / reefer / container / STCC).
+        if cargoType.isHazmatFlavored {
+            dangerousGoodsCard
+        } else {
+            commodityLookupCard
         }
     }
 
@@ -3173,31 +3366,155 @@ struct ShipperPostLoad: View {
         }
     }
 
-    // MARK: tanker subform (hazmat / petroleum / chemicals / gas / liquid)
+    // MARK: universal Dangerous-goods card (any equipment · hazmat-flavored cargo)
 
+    /// THE single owner of the load's {UN, hazmatClass, packingGroup,
+    /// PSN} for hazmat-flavored cargo on ANY equipment. The per-
+    /// equipment catalog no longer asks hazmat class anywhere, so this
+    /// card is the only place the dangerous-goods identity is captured.
+    /// The ERG lookup auto-fills class + PSN; the structured fields are
+    /// the source of truth. Header reads the tanker-family context when
+    /// the equipment is a tank, else a generic dangerous-goods label.
     @ViewBuilder
-    private var tankerSubform: some View {
+    private var dangerousGoodsCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: 6) {
                 Image(systemName: "drop.triangle.fill")
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text(tankerSubformLabel)
+                Text(dangerousGoodsCardLabel)
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
             }
-            // 2026-06-03 — connection / fitting / tank-spec chips moved to the
-            // mode-correct data-driven catalog above (catalogRequirementsSection):
-            // marine ANSI presentation flanges + loading arms for VESSEL tankers,
-            // BOV / eduction / pressure-angle valves for RAIL tank cars, UN T-codes
-            // for ISO tanks — NOT blanket truck cam-locks. This card keeps only the
-            // universal UN / hazmat identification block.
-            // UN / hazmat fields surface only for the hazmat/petroleum
-            // / chemicals branches (gas + liquid are food-grade or
-            // non-hazmat liquids). Mirrors the web Hazmat subform.
-            if cargoType == .hazmat || cargoType == .petroleum || cargoType == .chemicals {
-                Divider().background(palette.borderFaint).padding(.vertical, 2)
-                tankerHazmatRow
+            Divider().background(palette.borderFaint).padding(.vertical, 2)
+            tankerHazmatRow
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    /// Header label for the Dangerous-goods card — surfaces the tanker-
+    /// family paperwork context (MC-306 / IMO / MC-331) when the
+    /// equipment is a tank, else a generic dangerous-goods header so a
+    /// hazmat-flavored load on a dry van / flatbed / box still reads
+    /// correctly.
+    private var dangerousGoodsCardLabel: String {
+        switch equipmentType {
+        case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas,
+             .vesselTanker, .vesselLNG, .vesselISOTank,
+             .railTankLiquid, .railTankGas:
+            return tankerSubformLabel
+        default:
+            return "DANGEROUS GOODS · 49 CFR 172"
+        }
+    }
+
+    // MARK: universal Commodity-lookup card (any equipment · non-hazmat cargo)
+
+    /// Which `commodity.*` proc serves the active (cargoType, equipment,
+    /// mode) tuple. This is the ERG-parity dispatch: refrigerated →
+    /// reefer, container equipment → ISO size-type, rail → STCC,
+    /// petroleum → petroleum grades, everything else → chemical/product.
+    /// Drives the card label, the placeholder, and the search call.
+    private enum CommodityProc {
+        case chemical, petroleum, reefer, containerType, stcc
+    }
+
+    private var activeCommodityProc: CommodityProc {
+        // Petroleum is hazmat-flavored so this card won't render for it,
+        // but the dispatch stays complete per spec.
+        if cargoType == .petroleum { return .petroleum }
+        if cargoType == .refrigerated
+            || equipmentType == .reefer
+            || equipmentType == .railReeferBoxcar
+            || equipmentType == .vesselReeferContainer { return .reefer }
+        switch equipmentType {
+        case .container, .railTOFC, .railCOFC, .railIntermodal,
+             .vesselContainer, .vesselReeferContainer:
+            return .containerType
+        default:
+            break
+        }
+        if transportMode == .rail { return .stcc }
+        return .chemical
+    }
+
+    private var commodityCardLabel: String {
+        switch activeCommodityProc {
+        case .chemical:      return "COMMODITY · PRODUCT LOOKUP"
+        case .petroleum:     return "COMMODITY · PETROLEUM GRADE"
+        case .reefer:        return "COMMODITY · PERISHABLE (REEFER)"
+        case .containerType: return "COMMODITY · ISO CONTAINER TYPE"
+        case .stcc:          return "COMMODITY · RAIL STCC"
+        }
+    }
+
+    private var commodityCardPlaceholder: String {
+        switch activeCommodityProc {
+        case .chemical:      return "e.g. Latex resin"
+        case .petroleum:     return "e.g. Diesel"
+        case .reefer:        return "e.g. Fresh berries"
+        case .containerType: return "e.g. 40' high cube"
+        case .stcc:          return "e.g. Corn, grain"
+        }
+    }
+
+    /// ERG-parity commodity card — shown for NON-hazmat cargo on any
+    /// equipment. A typeahead row + a free-text product field, both
+    /// pinned into `properShippingName` (the single commodity source of
+    /// truth alongside the top cargoType chip). The reefer lookup also
+    /// auto-fills `reeferTempLowText` / `reeferTempHighText`.
+    @ViewBuilder
+    private var commodityLookupCard: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 6) {
+                Image(systemName: "shippingbox.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(commodityCardLabel)
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                // Commodity search button — opens a typeahead sheet,
+                // mirroring the ERG search row. Web parity with the
+                // platform's `commodity.*` lookups.
+                Button { showCommoditySearchSheet = true } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 9, weight: .heavy))
+                        Text("Lookup")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    }
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .overlay(Capsule().strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+            Divider().background(palette.borderFaint).padding(.vertical, 2)
+            // Structured product field — same single PSN binding the
+            // hazmat branch writes, so the load carries exactly one
+            // commodity regardless of which card captured it.
+            hazmatTextField(label: "Commodity / product",
+                            text: $properShippingName,
+                            placeholder: commodityCardPlaceholder,
+                            width: nil)
+            if isSearchingCommodity {
+                HStack(spacing: 6) {
+                    ProgressView().scaleEffect(0.6).tint(LinearGradient.diagonal)
+                    Text("Looking up commodity…")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            } else if let m = commodityMatch {
+                commodityMatchChip(m)
+            } else if let err = commodityLookupError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.warning)
             }
         }
         .padding(Space.s3)
@@ -3205,6 +3522,43 @@ struct ShipperPostLoad: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.lg)
                     .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    /// Compact "commodity matched" chip — product name + category +
+    /// (for reefer) the recommended temp band. Mirrors `ergMatchChip`.
+    @ViewBuilder
+    private func commodityMatchChip(_ m: CommodityLookupAPI.CommodityHit) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(m.name)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Text(commodityMatchSubtitle(m))
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(palette.bgCardSoft)
+        .overlay(RoundedRectangle(cornerRadius: Radius.sm)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.45), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm))
+    }
+
+    private func commodityMatchSubtitle(_ m: CommodityLookupAPI.CommodityHit) -> String {
+        var bits: [String] = []
+        if let code = m.code, !code.isEmpty { bits.append(code) }
+        if let cat = m.category, !cat.isEmpty { bits.append(cat) }
+        if let lo = m.tempLowF, let hi = m.tempHighF {
+            bits.append("\(Int(lo))–\(Int(hi)) °F")
+        }
+        if let note = m.note, !note.isEmpty { bits.append(note) }
+        return bits.isEmpty ? "Selected" : bits.joined(separator: " · ")
     }
 
     @ViewBuilder
@@ -3945,16 +4299,28 @@ struct ShipperPostLoad: View {
     /// into the equipment preview + the eventual `shippers.create`
     /// payload — exactly what showed up in the 2026-05-16 screenshot.
     private func clearHazmatFieldsIfNoLongerHazmat(_ ct: ShipperAPI.CargoType) {
-        guard !ct.isHazmatFlavored else { return }
-        unNumber = ""
-        hazmatClass = ""
-        packingGroup = ""
-        properShippingName = ""
-        tankerHoseSpec = ""
-        tankerFitting = ""
-        ergMatch = nil
-        ergLookupError = nil
-        lastErgQueryKey = ""
+        // Switching TO a non-hazmat cargo: drop the hazmat identity so a
+        // stale UN/class/PG/PSN + ERG match can't leak onto a general /
+        // reefer / oversized load. The commodity lookup re-pins PSN.
+        if !ct.isHazmatFlavored {
+            unNumber = ""
+            hazmatClass = ""
+            packingGroup = ""
+            properShippingName = ""
+            tankerHoseSpec = ""
+            tankerFitting = ""
+            ergMatch = nil
+            ergLookupError = nil
+            lastErgQueryKey = ""
+            commodityMatch = nil
+            commodityLookupError = nil
+        } else {
+            // Switching TO a hazmat-flavored cargo: drop a stale non-hazmat
+            // commodity match (the ERG branch re-pins PSN on UN lookup) so
+            // the two lookups never cross-contaminate.
+            commodityMatch = nil
+            commodityLookupError = nil
+        }
     }
 
     /// Menu picker — surfaces the suggested unit list at the top
@@ -5544,6 +5910,11 @@ struct ShipperPostLoad: View {
         }
         // 2026-06-03 — data-driven equipment requirements (every equipment type).
         // Each selected requirement group → "Group: option, option (+ Other: …)".
+        // 2026-06-05 — the catalog no longer carries commodity or hazmat-class
+        // groups (those were consolidated to the single top cargo chip + the
+        // universal Dangerous-goods / Commodity card), so this loop now emits
+        // ONLY genuine per-equipment requirements (tank spec, lining, wash,
+        // securement, power, docs).
         for g in EquipmentRequirementsCatalog.groups(forRaw: equipmentType.rawValue) {
             let sel = equipReqSel[g.key] ?? []
             guard !sel.isEmpty else { continue }
@@ -5552,14 +5923,22 @@ struct ShipperPostLoad: View {
             if !other.isEmpty { picks.append("Other: \(other)") }
             if !picks.isEmpty { lines.append("\(g.label): \(picks.joined(separator: ", "))") }
         }
+        // 2026-06-05 — SINGLE commodity + dangerous-goods identity block.
+        // Emitted once here from the structured fields (the universal
+        // Dangerous-goods / Commodity card), into dedicated machine-readable
+        // tokens — never duplicated into the per-equipment loop above or the
+        // free-text notes below.
+        lines.append("Cargo: \(cargoType.label) [\(cargoType.rawValue)]")
+        if !properShippingName.isEmpty { lines.append("Commodity / PSN: \(properShippingName)") }
+        if cargoType.isHazmatFlavored {
+            if !unNumber.isEmpty    { lines.append("UN: \(unNumber)") }
+            if !hazmatClass.isEmpty { lines.append("Hazmat class: \(hazmatClass)") }
+            if !packingGroup.isEmpty { lines.append("Packing group: \(packingGroup)") }
+        }
         switch equipmentType {
         case .tankerHazmat, .tankerPetro, .tankerLiquid, .tankerGas, .vesselTanker:
             if !tankerHoseSpec.isEmpty { lines.append("Tanker hose: \(tankerHoseSpec)") }
             if !tankerFitting.isEmpty  { lines.append("Tanker fitting: \(tankerFitting)") }
-            if !unNumber.isEmpty       { lines.append("UN: \(unNumber)") }
-            if !hazmatClass.isEmpty    { lines.append("Hazmat class: \(hazmatClass)") }
-            if !packingGroup.isEmpty   { lines.append("Packing group: \(packingGroup)") }
-            if !properShippingName.isEmpty { lines.append("Proper shipping name: \(properShippingName)") }
         case .reefer:
             if !reeferTempLowText.isEmpty || !reeferTempHighText.isEmpty {
                 lines.append("Reefer temp: \(reeferTempLowText)–\(reeferTempHighText)°F")

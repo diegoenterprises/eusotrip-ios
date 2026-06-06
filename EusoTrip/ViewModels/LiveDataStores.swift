@@ -1068,31 +1068,74 @@ final class CratesStore: BaseDynamicListStore<GamificationAPI.Crate> {
     }
 }
 
-// MARK: - PulseLobbyStore — `messages.getMessages(conversationId: "driver-lobby")`
+// MARK: - PulseLobbyStore — `gamification.getLobbyMessages` (The Haul global chat)
 
-/// Drives the Driver Pulse group-chat lobby. The `driver-lobby`
-/// conversation id is a server-side convention (same contract as the
-/// web app's lobby). If the conversation doesn't exist yet for this
-/// driver, the server returns `[]` and the view falls through to
-/// `EusoEmptyState`.
+/// Drives "The Haul" GLOBAL driver chat lobby — the same backend the
+/// web TheHaul page reads. The previous implementation was wired to the
+/// company lobby (`messaging.getLobby`), which needs a companyId and a
+/// pre-existing "The Lobby" conversation; for a global driver feed it
+/// returned nothing useful and the canonical messages parser rejected
+/// the old hardcoded `conversationId: "driver-lobby"` token (parseInt →
+/// 0 → "Invalid conversation ID"). The Haul lobby lives on the
+/// gamification router (`gamification.getLobbyMessages` /
+/// `postLobbyMessage`, MCP-verified at
+/// `frontend/server/routers/gamification.ts:1304` / `:1363`) and is
+/// world-readable for any signed-in driver.
 @MainActor
 final class PulseLobbyStore: BaseDynamicListStore<MessagingMessage> {
-    /// Decodable envelope for `messaging.getLobby`. The endpoint
-    /// resolves the user → company → "The Lobby" conversation and
-    /// returns the recent messages in the canonical
-    /// `MessagingMessage` shape (server-side mapped — see
-    /// `messaging.ts :: getLobby`). The previous implementation
-    /// posted to a hardcoded `conversationId: "driver-lobby"`,
-    /// which the canonical `messages.getMessages` parser rejected
-    /// (parseInt of "driver-lobby" → 0 → "Invalid conversation
-    /// ID") so the lobby was always empty.
+    /// Wire shape of one `gamification.getLobbyMessages` row. Mirrors the
+    /// server projection at gamification.ts:1342 exactly.
+    private struct LobbyRow: Decodable {
+        let id: Int
+        let userId: Int
+        let userName: String
+        let userRole: String
+        let message: String
+        let messageType: String
+        let isPinned: Bool
+        let createdAt: String
+    }
+
+    /// `{ messages: [...], total }` envelope returned by
+    /// `gamification.getLobbyMessages`.
     private struct LobbyEnvelope: Decodable {
-        let messages: [MessagingMessage]
+        let messages: [LobbyRow]
+        let total: Int
+    }
+
+    /// tRPC input — `{ limit: 50 }`. `before` is intentionally omitted
+    /// (the server defaults it) so the encoder never emits an explicit
+    /// `null` that the zod `.optional()` guard would reject.
+    private struct LobbyInput: Encodable {
+        let limit: Int
     }
 
     override func fetch() async throws -> [MessagingMessage] {
-        let env: LobbyEnvelope = try await EusoTripAPI.shared.queryNoInput("messaging.getLobby")
-        return env.messages
+        // The Haul lobby row carries the author's userId but not an
+        // `isOwn` flag (it's a global feed, not a 1:1 thread). Resolve
+        // the signed-in driver once so own-vs-other bubbles render on the
+        // correct side. `auth.me` is already the canonical identity call
+        // used by the profile stores in this file.
+        let myId: String? = try? await EusoTripAPI.shared.auth.me().id
+        let env: LobbyEnvelope = try await EusoTripAPI.shared.query(
+            "gamification.getLobbyMessages",
+            input: LobbyInput(limit: 50)
+        )
+        return env.messages.map { row in
+            MessagingMessage(
+                id: String(row.id),
+                conversationId: "haul-lobby",
+                senderId: String(row.userId),
+                senderName: row.userName,
+                senderAvatar: nil,
+                content: row.message,
+                type: row.messageType,
+                timestamp: row.createdAt,
+                read: nil,
+                isOwn: myId.map { $0 == String(row.userId) } ?? false,
+                metadata: nil
+            )
+        }
     }
 }
 

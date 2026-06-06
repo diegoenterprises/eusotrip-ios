@@ -1060,7 +1060,12 @@ struct DriverHome: View {
                         weight: "-",
                         hotScore: 0,
                         originLat: 39.8283, originLng: -98.5795,
-                        destLat: 39.8283, destLng: -98.5795
+                        destLat: 39.8283, destLng: -98.5795,
+                        // Summary-only fallback — the VM doesn't surface a
+                        // mode here; default truck so mode-aware surfaces
+                        // read correctly until getById hydrates the row.
+                        transportMode: "truck",
+                        equipmentRaw: nil
                     )
                 )
                 .environment(\.palette, palette)

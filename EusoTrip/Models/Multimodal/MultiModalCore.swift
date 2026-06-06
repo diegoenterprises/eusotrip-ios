@@ -126,6 +126,75 @@ public enum TransportMode: String, CaseIterable, Codable, Identifiable, Sendable
         case .barge:  return "DISCHARGING"
         }
     }
+
+    // MARK: - Escort vocabulary (2026-06-02 · mode-aware Load Detail)
+    //
+    // The Load Detail escort card was truck-centric ("Escort vehicle" /
+    // "Request one from dispatch if this lane needs a lead or chase car." /
+    // [Lead, Chase, Lead + Chase]). On a vessel that's nonsense — a transit
+    // needs a harbor pilot + escort tug, a dimensional rail move needs
+    // flagging + idler cars. These getters give the escort surface a
+    // per-mode vocabulary so the concept, the empty-state nudge, and the
+    // position chips all speak the load's native mode.
+
+    /// Noun for the escort concept itself — the card's primary label.
+    public var escortConcept: String {
+        switch self {
+        case .truck:  return "Escort vehicle"
+        case .rail:   return "Flagging + idler cars"
+        case .vessel: return "Harbor pilot + tug escort"
+        case .barge:  return "Assist tug"
+        }
+    }
+
+    /// Empty-state nudge shown when no escort is assigned — per-mode
+    /// replacement for the truck "Request one from dispatch if this lane
+    /// needs a lead or chase car." copy.
+    public var escortEmptyNudge: String {
+        switch self {
+        case .truck:  return "Request one from dispatch if this lane needs a lead or chase car."
+        case .rail:   return "Request flagging + idler cars if this is a dimensional move."
+        case .vessel: return "Request a harbor pilot + escort tug if this transit requires it."
+        case .barge:  return "Request an assist tug for this lockage/transit."
+        }
+    }
+
+    /// Position / role chips offered when assigning an escort — the
+    /// selectable options on the escort picker, per mode.
+    public var escortPositionLabels: [String] {
+        switch self {
+        case .truck:  return ["Lead", "Chase", "Lead + Chase"]
+        case .vessel: return ["Harbor pilot", "Bow tug", "Stern tug"]
+        case .rail:   return ["Flagman", "Idler car", "Special handling"]
+        case .barge:  return ["Assist tug", "Fleet/bridge assist"]
+        }
+    }
+
+    // MARK: - Loose raw-string resolution
+    //
+    // Maps a backend / UI raw mode string ("truck" / "rail" / "vessel" /
+    // "barge", any case, with surrounding whitespace tolerated) to the
+    // canonical enum. Returns `.truck` on an unrecognized or empty value
+    // so mode-aware surfaces fail safe to the truck default. Use this
+    // wherever an `AvailableLoad.transportMode` String? lands on a view.
+
+    /// Best-effort resolve a raw mode string → `TransportMode`, defaulting
+    /// to `.truck` on nil / empty / unrecognized input.
+    public static func from(raw: String?) -> TransportMode {
+        guard let raw else { return .truck }
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return TransportMode(rawValue: key) ?? .truck
+    }
+
+    /// Strict loose initializer — succeeds only when the raw string maps
+    /// to a known mode (case/whitespace-insensitive); nil otherwise so a
+    /// caller can branch rather than silently coerce to truck.
+    public init?(rawValueLoose raw: String?) {
+        guard let raw else { return nil }
+        let key = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard let mode = TransportMode(rawValue: key) else { return nil }
+        self = mode
+    }
 }
 
 // MARK: - ModeRoute
