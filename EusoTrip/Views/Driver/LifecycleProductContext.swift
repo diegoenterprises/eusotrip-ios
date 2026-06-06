@@ -555,6 +555,23 @@ struct LifecycleProductContext {
         LifecycleProductContext(load: nil, role: role)
     }
 
+    /// Build the product context directly from the live cargo/hazmat strings
+    /// the corrected decode ships, with NO `Load` object — for screens (e.g.
+    /// 050 NextBeatLive) that read the vertical word + ESANG holds off the
+    /// decoded ctx rather than a full `Load`. Product resolves via
+    /// `TripProduct.resolveDirect`; `load` stays nil (facets em-dash).
+    static func forCargo(cargoType: String?, hazmatClass: String?, role: String?) -> LifecycleProductContext {
+        let vertical = TripVertical(role: role)
+        let product = TripProduct.resolveDirect(cargoType: cargoType, hazmatClass: hazmatClass, vertical: vertical)
+        return LifecycleProductContext(vertical: vertical, product: product)
+    }
+
+    private init(vertical: TripVertical, product: TripProduct) {
+        self.load = nil
+        self.vertical = vertical
+        self.product = product
+    }
+
     /// Vertical-only kicker label for screens that don't render a
     /// product variant (e.g. 056 Driver Profile shows "DRIVER ·
     /// TRUCK" / "ENGINEER · RAIL" / "CAPTAIN · VESSEL"). The

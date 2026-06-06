@@ -16,22 +16,60 @@
 //  Body reads `loads.getById` for live shipment context. Bottom nav
 //  frozen (Catalyst: Home / Fleet / Wallet / Me).
 //
+//  ZERO-FABRICATION binding (parity with sibling DL133_DriverCELM04…
+//  and 373_CatalystAwardedCelM04):
+//    • `loads.getById` ({ id }) → CLLoadCtx
+//        loadNumber, pickup/dest lane (nested {city,state}), trailerType
+//        (equipmentType), and PAYOUT (load.rate — the shipper-posted
+//        rate). Counter-party identity binds to the resolved load
+//        parties (shipper / catalyst), NOT a hardcoded founder pin.
+//
+//    Decode contract (server loads.ts:1338-1379):
+//      - top-level `id` is a STRING (`String(load.id)`); decoding it as
+//        Int throws typeMismatch and silently fails the WHOLE decode →
+//        every value blanks. It MUST be `String?`.
+//      - `pickupLocation`/`deliveryLocation` are nested {city,state}
+//        objects (NOT flat `pickupCity`/`destCity` columns). Server
+//        sends "" (not nil) when a field is missing.
+//      - party objects are {id:Int?, name, initials, companyName,
+//        mcNumber, dotNumber}; the party `id` is numeric on the wire.
+//
+//  Honest backend gaps — rendered "-"/"—"/EusoEmptyState, NEVER faked:
+//    • Carrier-split / carrier net — no source on loads.getById → "—".
+//    • ETA / route / dock / dwell / loaded-progress / reefer band /
+//      BOL / POD-cert / advance — no live source on this proc → "—".
+//    • Counter-party EIN — no EIN field on the resolved parties → "—".
+//
+//  Powered by ESANG AI™.
+//
 
 import SwiftUI
 
+/// `loads.getById` decode shape (server loads.ts:1338-1379). Top-level
+/// `id` is a String on the wire; pickup/delivery are nested {city,state}.
 private struct CLLoadCtx: Decodable, Hashable {
-    let id: Int?
+    let id: String?
     let loadNumber: String?
-    let pickupCity: String?
-    let destCity: String?
-    let trailerType: String?
-    let cargoType: String?
-    let rate: String?
-    let palletCount: Int?
-    let temperatureF: Double?
-    let dockNumber: String?
-    let podCertId: String?
-    let deliveryDate: String?
+    let pickupLocation: CLLoc?
+    let deliveryLocation: CLLoc?
+    let rate: String?            // decimal string from server → PAYOUT
+    let equipmentType: String?   // trailer / equipment ("Reefer" …)
+    let shipper: CLParty?
+    let catalyst: CLParty?
+    let driver: CLParty?
+
+    struct CLLoc: Decodable, Hashable {
+        let city: String?
+        let state: String?
+    }
+    struct CLParty: Decodable, Hashable {
+        let id: Int?             // party (user/company) id is numeric on the wire
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+        let dotNumber: String?
+    }
 }
 
 enum CatalystLifecycleKind: String {
@@ -54,51 +92,51 @@ private extension CatalystLifecycleKind {
             return .init(eyebrow: "CATALYST · OUTBOUND · IN TRANSIT · AT GATE",
                          citation: "§278 · WITHIN-TRACK THIRD-PORT 3/3 · TRIGGER CLOSED",
                          title: "Driver at the gate",
-                         subhead: "DOCK 14 · DWELL 0:00 · LIVE",
-                         pillCopy: "Naturipe LA RDC · ME at Gate 1 · 0:00 ago · 2 ahead",
+                         subhead: "GATE-IN · LIVE",
+                         pillCopy: "Driver checked in at the receiving gate · queued for dock assignment",
                          receivablePill: "§11.4 RECEIVABLE FROM EUSORONE · NET-30 · DETENTION REIMB ARMED")
         case .atDock:
             return .init(eyebrow: "CATALYST · OUTBOUND · IN TRANSIT · AT DOCK",
                          citation: "§281 · WITHIN-TRACK FOURTH-PORT 3/3 · TRIGGER CLOSED",
                          title: "Driver loading at dock",
-                         subhead: "DOCK 14 · DWELL 0:08 · 18/72",
-                         pillCopy: "Naturipe LA RDC · ME at Dock 14 · 25% loaded · reefer 35°F",
+                         subhead: "AT DOCK · LOADING",
+                         pillCopy: "Driver loading at the assigned dock · chain-of-custody attestation arming",
                          receivablePill: "§11.4 RECEIVABLE FROM EUSORONE · NET-30 · ATTESTATION ARMING")
         case .departing:
             return .init(eyebrow: "CATALYST · OUTBOUND · IN TRANSIT · DEPARTING",
                          citation: "§285 · WITHIN-TRACK FIFTH-PORT 3/3 · TRIGGER CLOSED",
-                         title: "Driver rolling to Phoenix",
-                         subhead: "I-10 EAST · ETA 5H 28M",
-                         pillCopy: "I-10 EAST · 372mi · ETA 5h 28m · BOL #BOL-7C3A signed",
+                         title: "Driver rolling to delivery",
+                         subhead: "DEPARTED · EN ROUTE",
+                         pillCopy: "Driver gate-out cleared · BOL signed · en route to the receiver",
                          receivablePill: "§11.4 RECEIVABLE FROM EUSORONE · NET-30 · POD-ARMING ON DELIVERY")
         case .preDelivery:
             return .init(eyebrow: "CATALYST · OUTBOUND · IN TRANSIT · APPROACHING DELIVERY",
                          citation: "§288 · WITHIN-TRACK SIXTH-PORT 3/3 · TRIGGER CLOSED",
-                         title: "Approaching Phoenix gate",
-                         subhead: "LOOP 202 W · ETA 22M",
-                         pillCopy: "LOOP 202 W · 18mi to gate · ETA 22m · DOCK 7B pre-assigned · BOL at-receiving",
+                         title: "Approaching delivery gate",
+                         subhead: "APPROACHING · BOL AT-RECEIVING",
+                         pillCopy: "Driver approaching the receiver gate · dock pre-assignment · BOL at-receiving",
                          receivablePill: "§11.4 RECEIVABLE FROM EUSORONE · POD-ARMING · NET-30 DOWNSTREAM")
         case .atDelivery:
             return .init(eyebrow: "CATALYST · OUTBOUND · DELIVERY · AT DOCK",
                          citation: "§291 · WITHIN-TRACK SEVENTH-PORT 3/3 · TRIGGER CLOSED",
                          title: "My driver · at delivery",
-                         subhead: "DOCK 7B IN · POD-INK QUEUED",
-                         pillCopy: "DOCK 7B receiving bay · BOL co-sign begun · 36°F seal-at-arrival · POD-ink one tap",
+                         subhead: "AT DELIVERY · POD-INK QUEUED",
+                         pillCopy: "Driver at the receiving bay · BOL co-sign begun · POD-ink one tap",
                          receivablePill: "§11.4 RECEIVABLE READY · POD-INK QUEUED · CHAIN COMPLETE · NET-30 DOWNSTREAM")
         case .podReceipt:
             return .init(eyebrow: "CATALYST · OUTBOUND · PAPERWORK · POD RECEIPT",
                          citation: "§294 · WITHIN-TRACK EIGHTH-PORT 3/3 · TRIGGER CLOSED",
                          title: "POD chain · closed",
                          subhead: "POD CERT · ISSUED · NET-30",
-                         pillCopy: "ePOD CERT ISSUED · 72/72 reconciled · DU timestamped · NET-30 wired · payout-advance armed",
+                         pillCopy: "ePOD CERT issued · chain reconciled · NET-30 wired · payout-advance armed",
                          receivablePill: "§11.4 RECEIVABLE RELEASED · POD CERT ISSUED · NET-30 WIRED · PAYOUT-ADVANCE 1.5%/5D")
         case .loadClosed:
             return .init(eyebrow: "CATALYST · DISPATCH · CLOSED · LOAD CLOSED",
                          citation: "§296 · WITHIN-TRACK NINTH-PORT 3/3 · TRIGGER CLOSED",
                          title: "Load closed · backhaul armed",
-                         subhead: "AURORA · ROLLUP · CONFIRMED",
-                         pillCopy: "ROLLUP CONFIRMED · CARRIER $211.75 NETTED · ME PAYOUT $2,649.25 STAGED · BACKHAUL TENDER READY",
-                         receivablePill: "§295 ME PAYOUT STAGED · §296 CARRIER NETTED · BACKHAUL PHX-LA ARMED · Q2 +1")
+                         subhead: "ROLLUP · CONFIRMED",
+                         pillCopy: "Rollup confirmed · payout staged · carrier netted · backhaul tender ready",
+                         receivablePill: "§295 PAYOUT STAGED · §296 CARRIER NETTED · BACKHAUL ARMED · Q2 +1")
         }
     }
 }
@@ -125,6 +163,39 @@ private struct CatalystLifecycleBody: View {
 
     @Environment(\.palette) private var palette
     @State private var load: CLLoadCtx?
+
+    // MARK: - Live display helpers (honest "-"/"—" when no source)
+
+    /// Real load number, or em-dash when the load hasn't resolved.
+    private var loadNumberDisplay: String {
+        let n = load?.loadNumber?.trimmingCharacters(in: .whitespaces) ?? ""
+        return n.isEmpty ? "—" : n
+    }
+
+    /// Nested {city,state} lane "Origin, ST → Dest, ST". Server sends ""
+    /// (not nil) for missing fields → treat empty as the no-source case.
+    private var laneDisplay: String? {
+        let o = [load?.pickupLocation?.city, load?.pickupLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        guard !o.isEmpty || !d.isEmpty else { return nil }
+        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
+    }
+
+    /// Trailer / equipment — "—" when the shipper never specified.
+    private var trailerDisplay: String {
+        let eq = load?.equipmentType?.trimmingCharacters(in: .whitespaces) ?? ""
+        return eq.isEmpty ? "—" : eq
+    }
+
+    /// PAYOUT — bound to the real load.rate (decimal string). "—" when
+    /// missing/invalid. No invented fallback.
+    private var payoutDisplay: String {
+        guard let r = load?.rate, let n = Double(r), n > 0 else { return "—" }
+        let v = n.rounded()
+        return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
+    }
 
     var body: some View {
         let c = kind.config
@@ -160,8 +231,8 @@ private struct CatalystLifecycleBody: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 Text(c.pillCopy).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                if let l = load {
-                    Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-") · \(l.trailerType ?? "-")")
+                if load != nil {
+                    Text("\(loadNumberDisplay) · \(laneDisplay ?? "—") · \(trailerDisplay)")
                         .font(.caption2).foregroundStyle(palette.textSecondary)
                 }
             }
@@ -177,14 +248,24 @@ private struct CatalystLifecycleBody: View {
         }
     }
 
+    /// Counter-party = the load's shipper-of-record (resolved party from
+    /// loads.getById). No hardcoded founder pin. EIN has no source on the
+    /// resolved party → "—". Whole card degrades honestly when no party.
     private var counterparty: some View {
-        LifecycleCard {
+        let party = load?.shipper
+        let name = party?.companyName?.trimmingCharacters(in: .whitespaces).nilIfEmpty
+            ?? party?.name?.trimmingCharacters(in: .whitespaces).nilIfEmpty
+            ?? "—"
+        let ini = party?.initials?.trimmingCharacters(in: .whitespaces).nilIfEmpty ?? "—"
+        let companyId = party?.id.map { "companyId \($0)" } ?? "companyId —"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("DU").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(ini).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Eusorone Technologies · Diego Usoro · founder").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("companyId 1 · EIN 87-3104952 · NET-30 receivable · counter-party").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(name) · shipper-of-record · counter-party").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("\(companyId) · EIN — · NET-30 receivable").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
@@ -192,57 +273,56 @@ private struct CatalystLifecycleBody: View {
     }
 
     private var kpiGrid: some View {
-        let l = load
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .atGate:
                 return [
-                    ("DOCK",     l?.dockNumber ?? "14",           "bay live · DWELL 0:00",      .blue),
-                    ("PALLETS",  "\(l?.palletCount ?? 72)",        "ME to load",                .blue),
-                    ("REEFER",   tempCL(l?.temperatureF, fallback: 35), "33-38°F window",     .green),
-                    ("AHEAD",    "2",                              "trucks before ME",           .orange),
+                    ("DOCK",     "—",                "bay assignment pending",     .blue),
+                    ("PALLETS",  "—",                "load count pending",         .blue),
+                    ("REEFER",   "—",                "temp telemetry pending",     .green),
+                    ("AHEAD",    "—",                "gate queue pending",         .orange),
                 ]
             case .atDock:
                 return [
-                    ("DOCK",     l?.dockNumber ?? "14",           "IN · loading",               .orange),
-                    ("LOADED",   "18/72",                          "25% · live",                 .blue),
-                    ("REEFER",   tempCL(l?.temperatureF, fallback: 35), "in-range · live",     .green),
-                    ("DWELL",    "0:08",                           "within 2h free",             .green),
+                    ("DOCK",     "—",                "IN · loading",               .orange),
+                    ("LOADED",   "—",                "progress telemetry pending", .blue),
+                    ("REEFER",   "—",                "temp telemetry pending",     .green),
+                    ("DWELL",    "—",                "dwell clock pending",        .green),
                 ]
             case .departing:
                 return [
-                    ("ROUTE",    "I-10 E",                         "372mi to Phoenix",          .blue),
-                    ("ETA",      "5h 28m",                          "to dock",                    .blue),
-                    ("BOL",      "SIGNED",                          "#BOL-7C3A",                 .green),
-                    ("STATUS",   "DEPARTED",                        "gate-out cleared",           .green),
+                    ("ROUTE",    "—",                "route telemetry pending",    .blue),
+                    ("ETA",      "—",                "routed ETA pending",         .blue),
+                    ("BOL",      "SIGNED",           "gate-out cleared",           .green),
+                    ("STATUS",   "DEPARTED",         "en route",                   .green),
                 ]
             case .preDelivery:
                 return [
-                    ("ROUTE",    "LOOP 202 W",                     "18mi to gate",               .blue),
-                    ("ETA",      "22m",                              "to receiver",              .blue),
-                    ("DOCK",     "7B",                                "pre-assigned",            .orange),
-                    ("BOL",      "AT-RECV",                            "co-sign queued",         .blue),
+                    ("ROUTE",    "—",                "route telemetry pending",    .blue),
+                    ("ETA",      "—",                "routed ETA pending",         .blue),
+                    ("DOCK",     "—",                "pre-assignment pending",     .orange),
+                    ("BOL",      "AT-RECV",          "co-sign queued",             .blue),
                 ]
             case .atDelivery:
                 return [
-                    ("DOCK",     "7B",                                "IN · receiving",          .orange),
-                    ("BOL",      "CO-SIGN",                           "TR signing now",          .green),
-                    ("REEFER",   tempCL(l?.temperatureF, fallback: 36),"seal-at-arrival",       .green),
-                    ("ETA",      "0m",                                "ARRIVED · OTA",          .green),
+                    ("DOCK",     "—",                "IN · receiving",             .orange),
+                    ("BOL",      "CO-SIGN",          "signing now",                .green),
+                    ("REEFER",   "—",                "temp telemetry pending",     .green),
+                    ("ETA",      "0m",               "ARRIVED · OTA",              .green),
                 ]
             case .podReceipt:
                 return [
-                    ("PALLETS",  "72/72",                              "RECONCILED · sealed",   .green),
-                    ("POD CERT", "ISSUED",                              l?.podCertId ?? "ePOD chain sealed", .green),
-                    ("PAY",      "NET-30",                              "wired",                .green),
-                    ("ADVANCE",  "1.5%/5D",                              "armed",                .blue),
+                    ("PALLETS",  "—",                "reconciliation pending",     .green),
+                    ("POD CERT", "ISSUED",           "ePOD chain sealed",          .green),
+                    ("PAY",      "NET-30",           "wired",                      .green),
+                    ("ADVANCE",  "1.5%/5D",          "armed",                      .blue),
                 ]
             case .loadClosed:
                 return [
-                    ("PALLETS",  "72/72",                              "FINAL · sealed",        .green),
-                    ("PAYOUT",   "$\(l?.rate ?? "2,649.25")",           "ME staged · NET-30",   .green),
-                    ("CARRIER",  "$211.75",                             "Aurora netted",        .green),
-                    ("BACKHAUL", "ARMED",                                "PHX-LA · Q2 +1",      .blue),
+                    ("PALLETS",  "—",                "reconciliation pending",     .green),
+                    ("PAYOUT",   payoutDisplay,      "staged · NET-30",            .green),
+                    ("CARRIER",  "—",                "split telemetry pending",    .green),
+                    ("BACKHAUL", "ARMED",            "tender ready · Q2 +1",       .blue),
                 ]
             }
         }()
@@ -266,12 +346,12 @@ private struct CatalystLifecycleBody: View {
         let copy: String = {
             switch kind {
             case .atGate:      return "Dock confirms in app. Pre-stage detention timer at 2h free; reimbursement armed via §11.4."
-            case .atDock:      return "Live load on 25% progress. Watch reefer band; chain-of-custody attestation arms at seal."
+            case .atDock:      return "Watch the reefer band; chain-of-custody attestation arms at seal."
             case .departing:   return "Long-haul leg begins. POD arming activates at receiver-gate; net-30 downstream wires on POD-ink."
             case .preDelivery: return "Call ahead 15 minutes out. Confirm receiver dock + paperwork access; backhaul tender pre-stages."
             case .atDelivery:  return "Receiver inspects + co-signs. POD-ink lands the chain; NET-30 downstream wires on issue."
             case .podReceipt:  return "ePOD CERT issued, NET-30 wired. Payout-advance 1.5%/5D armed. Pull if cash-flow needed."
-            case .loadClosed:  return "Rollup confirmed, backhaul tender ready. Approve to keep Aurora moving on the PHX-LA chain."
+            case .loadClosed:  return "Rollup confirmed, backhaul tender ready. Approve to keep the fleet moving on the backhaul chain."
             }
         }()
         return LifecycleCard {
@@ -284,13 +364,12 @@ private struct CatalystLifecycleBody: View {
 
     private func loadCtx() async {
         struct In: Encodable { let id: String }
-        do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
+        do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* leaves load nil → honest "—" */ }
     }
 }
 
-private func tempCL(_ raw: Double?, fallback: Int) -> String {
-    if let raw, raw > 0 { return String(format: "%.0f°F", raw) }
-    return "\(fallback)°F"
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 // MARK: - Screens (CV350-CV356)
