@@ -6,60 +6,84 @@
 //    375 Catalyst In Transit Fleet Track Cel M04
 //    376 Catalyst At Delivery Fleet Track Cel M04
 //
-//  Closes the M-04 scenario chain (CV369-CV376). Both screens track
-//  the CEL fleet (Carolina Express Logistics) over the Atlanta →
-//  Charlotte leg. Body reads `loads.getById`. Bottom nav frozen.
+//  Closes the M-04 scenario chain (CV369-CV376). Both screens track the
+//  dispatched fleet over the live load's lane. Body reads `loads.getById`
+//  (parties, rate, distance, lane, equipment). Every rendered business
+//  value binds to the live fetched record; anything without a live source
+//  (live progress fraction, live ETA) renders an honest "-"/"—". Bottom
+//  nav frozen.
+//
+//  Honest binding parity with the corrected sibling
+//  DL133_DriverCELM04DVIRContinuationOctet (loads.getById: String
+//  top-level id, nested pickup/delivery {city,state}, party objects with
+//  numeric ids) and DL126_DriverCELM04Septet.
 //
 
 import SwiftUI
 
 private struct CFLoadCtx: Decodable, Hashable {
-    let id: Int?
+    // Top-level load id is a String on the wire (loads.getById -> String(load.id));
+    // decoding as Int throws typeMismatch and fails the WHOLE decode -> blank screen.
+    // pickup/delivery are nested {city,state} objects (NOT flat city fields).
+    let id: String?
     let loadNumber: String?
-    let pickupCity: String?
-    let destCity: String?
+    let pickupLocation: CFLoc?
+    let deliveryLocation: CFLoc?
+    let rate: String?
     let distance: Double?
-    let deliveryDate: String?
+    let equipmentType: String?
+    let driver: CFParty?
+    let catalyst: CFParty?
+    let shipper: CFParty?
+    struct CFLoc: Decodable, Hashable {
+        let city: String?
+        let state: String?
+    }
+    struct CFParty: Decodable, Hashable {
+        let id: Int?            // party (user/company) id is numeric on the wire
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+    }
 }
 
 enum CatalystM04TrackKind: String {
     case inTransit, atDelivery
 }
 
+/// Stage-only labels — no scenario data baked in. The view body composes
+/// these with the live `load` (lane, parties, equipment, distance) at
+/// render time. Carries NO fabricated lane / ETA / progress / carrier.
 private struct CTConfig {
-    let eyebrow: String
-    let citation: String
-    let title: String
-    let subhead: String
-    let pillCopy: String
-    let chainPill: String
-    let progressMiles: Int       // 62 / 245
-    let totalMiles: Int           // 245
-    let eta: String                 // "12:43 EDT" / "appt 14:00"
-    let stage: String              // "ROLLING" / "ARRIVED"
+    let eyebrowStage: String   // "IN-TRANSIT · FLEET-TRACK" / "AT-DELIVERY · FLEET-TRACK"
+    let citation: String       // canonical stage citation
+    let title: String          // UX title
+    let subhead: String        // stage state line (no scenario data)
+    let stageNote: String      // composed after carrier + loadNumber
+    let stage: String          // "IN-TRANSIT" / "AT-DELIVERY"
+    let isDelivery: Bool
 }
 
 private extension CatalystM04TrackKind {
     var config: CTConfig {
         switch self {
         case .inTransit:
-            return .init(eyebrow: "CATALYST · DISPATCH · IN-TRANSIT · FLEET-TRACK",
-                         citation: "§395 · CHAIN PORT 20/N · TRANSIT · 2/4 · CEL ROLLING",
-                         title: "In-transit · CEL fleet rolling · I-85 SE",
-                         subhead: "Atlanta GA → Charlotte NC · 53' Dry Van · 62/245 mi · ETA 12:43 EDT",
-                         pillCopy: "IN-TRANSIT · ROLLING · I-85 SE · ETA 12:43",
-                         chainPill: "M-04 · CHAIN PORT 20/N · 09:48 EDT 5/21 · CEL JR rolling I-85 SE",
-                         progressMiles: 62, totalMiles: 245,
-                         eta: "12:43 EDT", stage: "ROLLING")
+            return .init(eyebrowStage: "IN-TRANSIT · FLEET-TRACK",
+                         citation: "§395 · CHAIN PORT 20/N · TRANSIT · 2/4 · FLEET ROLLING",
+                         title: "In-transit · fleet rolling",
+                         subhead: "IN-TRANSIT · fleet en route",
+                         stageNote: "fleet rolling · in-transit · live track armed",
+                         stage: "IN-TRANSIT",
+                         isDelivery: false)
         case .atDelivery:
-            return .init(eyebrow: "CATALYST · DISPATCH · AT-DELIVERY · FLEET-TRACK",
-                         citation: "§399 · CHAIN PORT 21/N · DELIVERY · 2/4 · CEL ARRIVED",
-                         title: "At delivery · CEL fleet arrived · CLT Newell",
-                         subhead: "Atlanta GA → Charlotte NC · 53' Dry Van · 245/245 mi · appt 14:00 EDT",
-                         pillCopy: "AT-DELIVERY · CLT NEWELL · ARRIVED · appt 14:00",
-                         chainPill: "M-04 · CHAIN PORT 21/N · 12:46 EDT 5/21 · CEL JR arrived CLT Newell",
-                         progressMiles: 245, totalMiles: 245,
-                         eta: "appt 14:00", stage: "ARRIVED")
+            return .init(eyebrowStage: "AT-DELIVERY · FLEET-TRACK",
+                         citation: "§399 · CHAIN PORT 21/N · DELIVERY · 2/4 · FLEET ARRIVED",
+                         title: "At delivery · fleet arrived",
+                         subhead: "AT-DELIVERY · fleet on receiver dock",
+                         stageNote: "fleet arrived · at-delivery · receiver-bay queue armed",
+                         stage: "AT-DELIVERY",
+                         isDelivery: true)
         }
     }
 }
@@ -87,6 +111,24 @@ private struct CatalystM04TrackBody: View {
     @Environment(\.palette) private var palette
     @State private var load: CFLoadCtx?
 
+    // MARK: - Dynamic display helpers (live-bound; honest "-"/"—" fallback)
+
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
+    private var carrierCodeDisplay: String {
+        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
+    }
+    private var laneDisplay: String? {
+        // Nested {city,state}; server sends "" (not nil) when missing.
+        let o = [load?.pickupLocation?.city, load?.pickupLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        guard !o.isEmpty || !d.isEmpty else { return nil }
+        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
+    }
+    private var equipDisplay: String { load?.equipmentType ?? "-" }
+    private var distanceDisplay: String { Self.distanceDisplay(load?.distance) }
+
     var body: some View {
         let c = kind.config
         ScrollView(showsIndicators: false) {
@@ -96,7 +138,7 @@ private struct CatalystM04TrackBody: View {
                 progressCard(c)
                 identityRow
                 kpiGrid(c)
-                nextStepCard
+                nextStepCard(c)
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
@@ -109,54 +151,80 @@ private struct CatalystM04TrackBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("CATALYST · DISPATCH · \(c.eyebrowStage) · \(loadNumberDisplay)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
             }
             Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text(c.subhead).font(EType.caption).foregroundStyle(palette.textSecondary)
+            // Lane · equipment · distance from the live record; "—" leg-state has no live source.
+            Text("\(laneDisplay ?? "-") · \(equipDisplay) · \(distanceDisplay)")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
     private func citationPill(_ c: CTConfig) -> some View {
-        LifecycleCard(accentGradient: true) {
+        let driverIni = load?.driver?.initials ?? "-"
+        let dispIni   = load?.catalyst?.initials ?? "-"
+        let shipIni   = load?.shipper?.initials ?? "-"
+        return LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(c.pillCopy).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                Text(c.chainPill).font(.caption2).foregroundStyle(palette.textSecondary)
+                Text(c.citation)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Text("\(carrierCodeDisplay) · \(loadNumberDisplay) · \(c.stageNote)")
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(loadNumberDisplay) · \(laneDisplay ?? "-") · \(driverIni) driver · \(dispIni) dispatch · \(shipIni) shipper")
+                    .font(.caption2)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
+    /// Leg progress has NO live source (no live odometer/position feed on
+    /// loads.getById) → renders honest "—" with an empty track; never a
+    /// fabricated 62/245 fraction.
     private func progressCard(_ c: CTConfig) -> some View {
-        let pct = Double(c.progressMiles) / Double(max(c.totalMiles, 1))
-        return LifecycleCard {
+        LifecycleCard {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("LEG PROGRESS").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                     Spacer()
-                    Text("\(c.progressMiles)/\(c.totalMiles) mi").font(.caption2.weight(.semibold)).foregroundStyle(palette.textSecondary)
+                    Text("— / \(distanceDisplay)").font(.caption2.weight(.semibold)).foregroundStyle(palette.textSecondary)
                 }
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         RoundedRectangle(cornerRadius: 4).fill(palette.bgPage).frame(height: 8)
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(LinearGradient.diagonal)
-                            .frame(width: max(8, geo.size.width * pct), height: 8)
+                        // No live progress fraction → no fill.
                     }
                 }
                 .frame(height: 8)
-                Text("CEL JR · \(c.stage) · ETA \(c.eta)").font(.caption2).foregroundStyle(palette.textTertiary)
+                Text("\(carrierCodeDisplay) · \(c.stage) · ETA —").font(.caption2).foregroundStyle(palette.textTertiary)
             }
         }
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        let dispIni     = load?.catalyst?.initials ?? "-"
+        let dispName    = load?.catalyst?.name ?? "-"
+        let carrierFull = load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
+        let mc          = load?.catalyst?.mcNumber.map { "MC-\($0)" } ?? "-"
+        let driverName  = load?.driver?.name ?? "-"
+        let shipperName = load?.shipper?.name ?? "-"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("DU").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(dispIni).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Eusorone Technologies · Diego Usoro · catalyst").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("LD-260427-E5C9A41B22 · CEL-MC712944 · driver JR · 53' Dry Van").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(carrierCodeDisplay) · \(dispName) · dispatcher")
+                        .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("\(carrierFull) · \(mc) · \(driverName) (driver) · \(shipperName) (shipper) · \(equipDisplay)")
+                        .font(.caption2).foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
                 }
                 Spacer()
             }
@@ -164,25 +232,17 @@ private struct CatalystM04TrackBody: View {
     }
 
     private func kpiGrid(_ c: CTConfig) -> some View {
-        let pctInt = Int(Double(c.progressMiles) / Double(max(c.totalMiles, 1)) * 100)
-        let kpis: [(String, String, String, Color)] = {
-            switch kind {
-            case .inTransit:
-                return [
-                    ("ETA",     c.eta,                     "rolling · live",      .blue),
-                    ("DIST",    "\(c.progressMiles) mi",    "\(c.totalMiles - c.progressMiles) mi left", .blue),
-                    ("STAGE",   c.stage,                     "I-85 SE",            .green),
-                    ("PROGRESS","\(pctInt)%",                 "of leg",             .green),
-                ]
-            case .atDelivery:
-                return [
-                    ("APPT",    "14:00",                     "EDT · receiver",     .blue),
-                    ("STAGE",   c.stage,                      "CLT Newell · 0:00 ago", .green),
-                    ("DIST",    "245/245 mi",                  "leg complete",      .green),
-                    ("PROGRESS","100%",                          "of leg",          .green),
-                ]
-            }
-        }()
+        let lane = laneDisplay ?? "-"
+        let dist = distanceDisplay
+        let equip = equipDisplay
+        let payout = Self.payoutDisplay(load?.rate)
+        let kpis: [(String, String, String, Color)] = [
+            // ETA + leg progress have no live source → honest "—".
+            ("ETA",    "—",     c.isDelivery ? "appt · no live feed" : "rolling · no live feed", .blue),
+            ("DIST",   dist,    lane,                                                            .blue),
+            ("STAGE",  c.stage, equip,                                                           .green),
+            ("PAYOUT", payout,  "LOCKED · \(carrierCodeDisplay) · §371",                         .green),
+        ]
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         return LazyVGrid(columns: cols, spacing: 8) {
             ForEach(Array(kpis.enumerated()), id: \.offset) { _, k in
@@ -199,11 +259,11 @@ private struct CatalystM04TrackBody: View {
         }
     }
 
-    private var nextStepCard: some View {
+    private func nextStepCard(_ c: CTConfig) -> some View {
         let copy: String = {
             switch kind {
-            case .inTransit:  return "CEL fleet rolling I-85 SE. ESang nudges DU if ETA drifts >10 min vs the 12:43 EDT target."
-            case .atDelivery: return "CEL fleet arrived at CLT Newell. Appt holds at 14:00 EDT; receiver-bay queue arms on dock placement."
+            case .inTransit:  return "\(carrierCodeDisplay) fleet is in-transit on \(laneDisplay ?? "the awarded lane"). ESang arms a drift nudge when a live ETA feed is available."
+            case .atDelivery: return "\(carrierCodeDisplay) fleet arrived at the delivery stop on \(laneDisplay ?? "the awarded lane"). Receiver-bay queue arms on dock placement."
             }
         }()
         return LifecycleCard {
@@ -217,6 +277,20 @@ private struct CatalystM04TrackBody: View {
     private func loadCtx() async {
         struct In: Encodable { let id: String }
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
+    }
+
+    /// Format the load's rate (decimal string from server) as a payout
+    /// display. Falls back to "-" when missing/invalid.
+    private static func payoutDisplay(_ rate: String?) -> String {
+        guard let r = rate, let n = Double(r), n > 0 else { return "-" }
+        let v = n.rounded()
+        return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
+    }
+
+    /// Format the load's distance in miles. Falls back to "-".
+    private static func distanceDisplay(_ d: Double?) -> String {
+        guard let d, d > 0 else { return "-" }
+        return "\(Int(d.rounded())) mi"
     }
 }
 

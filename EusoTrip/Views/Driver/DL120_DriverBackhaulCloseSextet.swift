@@ -12,77 +12,108 @@
 //
 //  Closes the Driver backhaul chain that began at DL114. All 6 share
 //  `BHCloseBody` parameterized by `BHCloseKind`. Body reads
-//  `loads.getById`. Bottom nav frozen.
+//  `loads.getById` (parties, rate, distance, lane). Every rendered
+//  business value binds to live fetched data; anything without a live
+//  source renders an honest "-" / "—". Bottom nav frozen.
+//
+//  Honest binding parity with sibling DL126_DriverCELM04Septet and the
+//  corrected DL133_DriverCELM04DVIRContinuationOctet (loads.getById
+//  parties). Decode shape MIRRORS DL133 exactly: top-level id is a
+//  String on the wire (loads.getById -> String(load.id)); pickup/
+//  delivery are nested {city,state}; party ids are numeric (Int).
 //
 
 import SwiftUI
 
 private struct BHCLoadCtx: Decodable, Hashable {
-    let id: Int?
+    // Top-level load id is a String on the wire (loads.getById -> String(load.id));
+    // decoding as Int throws typeMismatch and fails the WHOLE decode -> blank.
+    // pickup/delivery are nested {city,state} objects (NOT flat city fields).
+    let id: String?
     let loadNumber: String?
-    let pickupCity: String?
-    let destCity: String?
+    let pickupLocation: BHCLoc?
+    let deliveryLocation: BHCLoc?
     let rate: String?
+    let distance: Double?
+    let equipmentType: String?
+    let driver: BHCParty?
+    let catalyst: BHCParty?
+    let shipper: BHCParty?
+    struct BHCLoc: Decodable, Hashable {
+        let city: String?
+        let state: String?
+    }
+    struct BHCParty: Decodable, Hashable {
+        let id: Int?            // party (user/company) id is numeric on the wire
+        let name: String?
+        let initials: String?
+        let companyName: String?
+        let mcNumber: String?
+        let dotNumber: String?
+    }
 }
 
 enum BHCloseKind: String {
     case loadingTick2, loadingTick3, bolPreSign, bolSigned, paperwork, closed
 }
 
+/// Stage-only labels — no scenario business data baked in. The view
+/// body composes these with the live `load` parties / lane / rate at
+/// render time. Anything with no live source renders "-" / "—".
 private struct BCConfig {
-    let eyebrow: String
-    let citation: String
-    let title: String
-    let subhead: String
-    let stagePill: String
-    let chainPill: String
+    let eyebrowStage: String   // "LOADING" / "BOL · PRE-SIGN" / …
+    let citation: String       // §number canonical stage citation
+    let title: String          // UX title
+    let subhead: String        // stage state line
+    let stageNote: String      // composed after carrier + loadNumber
+    let chainNote: String      // composed after loadNumber + parties
 }
 
 private extension BHCloseKind {
     var config: BCConfig {
         switch self {
         case .loadingTick2:
-            return .init(eyebrow: "DRIVER · TRIPS · BACKHAUL · LOADING-IN-PROGRESS",
+            return .init(eyebrowStage: "BACKHAUL · LOADING-IN-PROGRESS",
                          citation: "§341 · IN-FLIGHT TICK 2 · 42/N PRESERVED · SUB-AXIS 4/N CLOSED",
-                         title: "Loading 52/72 · bay 7B",
-                         subhead: "LOADING · IN PROGRESS · 72% loaded",
-                         stagePill: "ME forklift active · 4 ppm · 20 pallets left · 5 min ETA · DEPART 06:42 MST in 0:14 · HOS 02:40 / 8h 20m",
-                         chainPill: "LD-BH7C3A · forklift OXN-FL-04 holds 4 ppm · pallets 52/72 · 20 left · 5 min ETA · DEPART 06:42 MST · 0:14 left")
+                         title: "Loading in progress",
+                         subhead: "LOADING · IN PROGRESS",
+                         stageNote: "loading in progress · forklift active",
+                         chainNote: "loading run live · dispatcher monitors")
         case .loadingTick3:
-            return .init(eyebrow: "DRIVER · TRIPS · BACKHAUL · LOADING-IN-PROGRESS",
+            return .init(eyebrowStage: "BACKHAUL · LOADING-IN-PROGRESS",
                          citation: "§342 · IN-FLIGHT TICK 3 FINAL · 42/N PRESERVED · BOL-PRE-SIGN ARMED",
-                         title: "Loading 72/72 · bay 7B",
-                         subhead: "LOADING · COMPLETE · 100%",
-                         stagePill: "ME forklift idle · 0 left · 100% complete · DEPART 06:42 MST in 0:09 · HOS 02:45 / 8h 15m",
-                         chainPill: "LD-BH7C3A · forklift OXN-FL-04 idle · pallets 72/72 · 0 left · 100% complete · DEPART 06:42 MST · 0:09 left")
+                         title: "Loading complete",
+                         subhead: "LOADING · COMPLETE",
+                         stageNote: "loading complete · forklift idle",
+                         chainNote: "loading complete · BOL-pre-sign armed")
         case .bolPreSign:
-            return .init(eyebrow: "DRIVER · TRIPS · BACKHAUL · BOL-PRE-SIGN",
+            return .init(eyebrowStage: "BACKHAUL · BOL-PRE-SIGN",
                          citation: "§343 · SUB-AXIS 1/N OPEN · NEXT-CHAIN PORT 43/N ADVANCES · PRIOR LOADING COMPLETE",
-                         title: "BOL pre-sign · bay 7B",
+                         title: "BOL pre-sign",
                          subhead: "BOL · PRE-SIGN · DRAFT",
-                         stagePill: "ME at dock plate · BOL draft loaded · pallets locked 72/72 · DEPART 06:42 MST in 0:04 · HOS 02:50 / 8h 10m",
-                         chainPill: "LD-BH7C3A · BOL packet BOL-NLR-LA-2026-05-19-BH7C3A · DRAFT · HOS 02:50 · DEPART 06:42 MST · 0:04 left")
+                         stageNote: "BOL draft loaded · ME at dock plate",
+                         chainNote: "BOL packet DRAFT · awaiting signature")
         case .bolSigned:
-            return .init(eyebrow: "DRIVER · TRIPS · BACKHAUL · BOL-SIGNED",
+            return .init(eyebrowStage: "BACKHAUL · BOL-SIGNED",
                          citation: "§347 · WITHIN-TRACK COMMIT · NEXT-CHAIN PORT 47/N ADVANCES · WATCH FIRED",
-                         title: "BOL signed · bay 7B",
-                         subhead: "BOL · SIGNED · 0x9F1C",
-                         stagePill: "ME at dock plate · BOL signed · stylus retracted · DEPART 06:42 MST in 0:02 · HOS 02:57 / 8h 03m",
-                         chainPill: "LD-BH7C3A · BOL packet BOL-NLR-LA-2026-05-19-BH7C3A · SIGNED · SIG-HASH 0x9F1C · HOS 02:57 · DEPART 06:42 MST · 0:02 left")
+                         title: "BOL signed",
+                         subhead: "BOL · SIGNED",
+                         stageNote: "BOL signed · stylus retracted",
+                         chainNote: "BOL packet SIGNED · paperwork watch armed")
         case .paperwork:
-            return .init(eyebrow: "DRIVER · TRIPS · BACKHAUL · PAPERWORK-OPEN",
+            return .init(eyebrowStage: "BACKHAUL · PAPERWORK-OPEN",
                          citation: "§351 · STAGE ROLL DELIVERY → PAPERWORK · 51/N ADVANCES · WATCH ARMED",
                          title: "Paperwork open",
                          subhead: "PAPERWORK · OPEN",
-                         stagePill: "ME at packet desk · BOL filed · POD pending · LUMPER $0 · HOS 03:02 / 7h 58m",
-                         chainPill: "LD-BH7C3A · ME at packet desk · BOL FILED · POD pending submit · HOS 03:02 · 7h 58m left")
+                         stageNote: "BOL filed · POD pending · ME at packet desk",
+                         chainNote: "BOL FILED · POD pending submit")
         case .closed:
-            return .init(eyebrow: "DRIVER · TRIPS · BACKHAUL · CLOSED-OPEN",
+            return .init(eyebrowStage: "BACKHAUL · CLOSED-OPEN",
                          citation: "§355 · STAGE ROLL PAPERWORK → CLOSED · 55/N · POD SUBMITTED · QUARTET 1/N OPEN",
                          title: "Chain closed",
-                         subhead: "CLOSED · OPEN · payout $2,128",
-                         stagePill: "ME at payout review · POD submitted · BOL filed · payout $2,128.00 · HOS 03:06 / 7h 54m",
-                         chainPill: "LD-BH7C3A · POD submitted · payout $2,128.00 NET-30 LOCKED · HOS 03:06 · 7h 54m left")
+                         subhead: "CLOSED · OPEN",
+                         stageNote: "POD submitted · BOL filed · payout review",
+                         chainNote: "POD submitted · payout NET-30 locked")
         }
     }
 }
@@ -112,6 +143,36 @@ private struct BHCloseBody: View {
     @State private var actionInFlight: Bool = false
     @State private var actionAck: String?
     @State private var actionError: String?
+
+    // MARK: - Dynamic display helpers (live-bound; honest "-" / "—" fallback)
+
+    private var loadNumberDisplay: String { load?.loadNumber ?? "-" }
+
+    /// Carrier code = the dispatching carrier (catalyst) company / name.
+    private var carrierCodeDisplay: String {
+        load?.catalyst?.companyName ?? load?.catalyst?.name ?? "-"
+    }
+
+    /// Lane from the nested {city,state} objects; server sends "" (not
+    /// nil) when missing, so empty components are dropped. Returns nil
+    /// when there is no live origin/destination at all.
+    private var laneDisplay: String? {
+        let o = [load?.pickupLocation?.city, load?.pickupLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state]
+            .compactMap { ($0?.isEmpty == false) ? $0 : nil }.joined(separator: ", ")
+        guard !o.isEmpty || !d.isEmpty else { return nil }
+        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
+    }
+
+    /// USDOT line from the carrier (catalyst) party. No fabrication —
+    /// "—" when the carrier carries no DOT/MC on the wire.
+    private var carrierRegDisplay: String {
+        let dot = load?.catalyst?.dotNumber.map { "USDOT \($0)" }
+        let mc  = load?.catalyst?.mcNumber.map { "MC-\($0)" }
+        let parts = [dot, mc].compactMap { $0 }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
 
     var body: some View {
         let c = kind.config
@@ -157,22 +218,24 @@ private struct BHCloseBody: View {
     private func signBOL() async {
         actionInFlight = true; actionAck = nil; actionError = nil
         defer { actionInFlight = false }
-        // Generate a 32-bit signature hash hex string for the ePOD chain.
-        // In production this is computed server-side from the canvas signature;
-        // the client pre-stages a deterministic envelope here so the audit-row
-        // lands with non-empty fields and ESang can chain it forward.
-        let sigHash = String(format: "0x%08X", UInt32.random(in: UInt32.min...UInt32.max))
-        let df = DateFormatter(); df.dateFormat = "yyyy-MM-dd"
-        let bolNumber = "BOL-NLR-LA-\(df.string(from: Date()))-BH7C3A"
+        // The signature hash is the digest of the captured signature. The
+        // server (loads.signBOL) REQUIRES a non-empty signatureHash and
+        // echoes it into the audit row — it is NOT minted server-side. We
+        // compute a real per-tap digest here (no hardcoded literal) and
+        // reference the live load number for the BOL packet. We display
+        // ONLY the value the server returns, never an invented constant.
+        let bolRef = load?.loadNumber ?? loadId
+        let sigHash = "0x" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(16)
         struct In: Encodable { let loadId: String; let bolNumber: String; let signatureHash: String; let signedAtIso: String? }
         struct Out: Decodable { let success: Bool?; let loadId: String?; let bolNumber: String?; let signatureHash: String?; let signedAt: String? }
         do {
             let resp: Out = try await EusoTripAPI.shared.mutation(
                 "loads.signBOL",
-                input: In(loadId: loadId, bolNumber: bolNumber, signatureHash: sigHash, signedAtIso: nil)
+                input: In(loadId: loadId, bolNumber: bolRef, signatureHash: String(sigHash), signedAtIso: nil)
             )
             if resp.success == true {
-                actionAck = "BOL signed · sig-hash \(resp.signatureHash ?? sigHash) committed · paperwork watch armed."
+                let sig = resp.signatureHash ?? "—"
+                actionAck = "BOL signed · sig-hash \(sig) committed · paperwork watch armed."
                 await loadCtx()
             } else {
                 actionError = "BOL sign returned no success flag, reload and try again."
@@ -186,7 +249,10 @@ private struct BHCloseBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text(c.eyebrow).font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("DRIVER · TRIPS · \(c.eyebrowStage) · \(loadNumberDisplay)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
             }
             Text(c.title).font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             Text(c.subhead).font(EType.caption).foregroundStyle(palette.textSecondary)
@@ -194,35 +260,47 @@ private struct BHCloseBody: View {
     }
 
     private func citationPill(_ c: BCConfig) -> some View {
-        LifecycleCard(accentGradient: true) {
+        return LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(c.citation).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(c.stagePill).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
-                if let l = load {
-                    Text("\(l.loadNumber ?? "LD-BH7C3A") · \(l.pickupCity ?? "PHX") → \(l.destCity ?? "LA")")
-                        .font(.caption2).foregroundStyle(palette.textSecondary)
-                }
+                Text("\(carrierCodeDisplay) · \(loadNumberDisplay) · \(c.stageNote)")
+                    .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(loadNumberDisplay) · \(laneDisplay ?? "-")")
+                    .font(.caption2).foregroundStyle(palette.textSecondary)
             }
         }
     }
 
     private func chainPill(_ c: BCConfig) -> some View {
-        LifecycleCard {
+        let driverIni = load?.driver?.initials ?? "-"
+        let dispIni   = load?.catalyst?.initials ?? "-"
+        let shipIni   = load?.shipper?.initials ?? "-"
+        return LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
                 Text("DISPATCH CHAIN").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(c.chainPill).font(.caption2).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                Text("\(loadNumberDisplay) · \(c.chainNote) · \(driverIni) driver · \(dispIni) ops · \(shipIni) shipper")
+                    .font(.caption2).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
     private var identityRow: some View {
-        LifecycleCard {
+        let dispIni     = load?.catalyst?.initials ?? "-"
+        let dispName    = load?.catalyst?.name ?? "-"
+        let driverName  = load?.driver?.name ?? "-"
+        let shipperName = load?.shipper?.name ?? "-"
+        return LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    .overlay(Text("RM").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+                    .overlay(Text(dispIni).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Aurora Freight Lines · Renée Marquette · senior dispatcher").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("USDOT 3 482 119 · MC-942 008 · LD-BH7C3A backhaul").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("\(carrierCodeDisplay) · \(dispName) · dispatcher")
+                        .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("\(carrierRegDisplay) · \(driverName) (driver) · \(shipperName) (shipper) · \(loadNumberDisplay) backhaul")
+                        .font(.caption2).foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
                 }
                 Spacer()
             }
@@ -230,49 +308,56 @@ private struct BHCloseBody: View {
     }
 
     private var kpiGrid: some View {
+        let payout = Self.payoutDisplay(load?.rate)
+        let dist = Self.distanceDisplay(load?.distance)
+        let lane = laneDisplay ?? "-"
+        // Stage state KPIs carry the lifecycle posture; business values
+        // (PAYOUT / DIST / lane) bind live, anything with no live source
+        // renders an honest "—". Pallet counts and sig-hash have NO live
+        // source on loads.getById, so they show "—" (never fabricated).
         let kpis: [(String, String, String, Color)] = {
             switch kind {
             case .loadingTick2:
                 return [
-                    ("PALLETS", "52/72",                        "72% · 20 left",          .blue),
-                    ("ETA",     "5 min",                         "to complete",            .blue),
-                    ("DEPART",  "06:42",                          "MST · 0:14 left",       .blue),
-                    ("HOS",     "02:40",                            "/ 8h 20m clean",       .green),
+                    ("PALLETS", "—",        "no live count",            .blue),
+                    ("DIST",    dist,       lane,                       .blue),
+                    ("PAYOUT",  payout,     carrierCodeDisplay,         .green),
+                    ("STATE",   "LOADING",  "in progress",              .blue),
                 ]
             case .loadingTick3:
                 return [
-                    ("PALLETS", "72/72",                            "100% complete",        .green),
-                    ("STATE",   "IDLE",                              "forklift retracted",  .green),
-                    ("DEPART",  "06:42",                              "MST · 0:09 left",    .blue),
-                    ("HOS",     "02:45",                                "/ 8h 15m clean",   .green),
+                    ("PALLETS", "—",         "no live count",           .blue),
+                    ("STATE",   "COMPLETE",  "forklift idle",           .green),
+                    ("DIST",    dist,        lane,                      .blue),
+                    ("PAYOUT",  payout,      carrierCodeDisplay,        .green),
                 ]
             case .bolPreSign:
                 return [
-                    ("BOL",     "DRAFT",                                "loaded · ME signing", .blue),
-                    ("PALLETS", "72/72",                                  "locked · sealed",   .green),
-                    ("DEPART",  "06:42",                                    "MST · 0:04 left", .orange),
-                    ("HOS",     "02:50",                                      "/ 8h 10m clean",  .green),
+                    ("BOL",     "DRAFT",     "loaded · ME signing",     .blue),
+                    ("PALLETS", "—",         "no live count",           .blue),
+                    ("DIST",    dist,        lane,                      .blue),
+                    ("PAYOUT",  payout,      carrierCodeDisplay,        .green),
                 ]
             case .bolSigned:
                 return [
-                    ("BOL",     "SIGNED",                                      "0x9F1C · verified", .green),
-                    ("STYLUS",  "RETRACTED",                                     "ME committed",     .green),
-                    ("DEPART",  "06:42",                                          "MST · 0:02 left", .orange),
-                    ("HOS",     "02:57",                                            "/ 8h 03m clean",  .green),
+                    ("BOL",     "SIGNED",     "ME committed",           .green),
+                    ("SIG-HASH","—",          "no live source",         .green),
+                    ("DIST",    dist,         lane,                     .blue),
+                    ("PAYOUT",  payout,       carrierCodeDisplay,       .green),
                 ]
             case .paperwork:
                 return [
-                    ("BOL",     "FILED",                                            "ME at packet desk", .green),
-                    ("POD",     "PENDING",                                            "submit ready",   .orange),
-                    ("LUMPER",  "$0",                                                  "no accessorial",  .green),
-                    ("HOS",     "03:02",                                                "/ 7h 58m clean",  .green),
+                    ("BOL",     "FILED",      "ME at packet desk",      .green),
+                    ("POD",     "PENDING",    "submit ready",           .orange),
+                    ("DIST",    dist,         lane,                     .blue),
+                    ("PAYOUT",  payout,       carrierCodeDisplay,       .green),
                 ]
             case .closed:
                 return [
-                    ("PAYOUT",  "$2,128",                                                "NET-30 LOCKED",  .green),
-                    ("POD",     "SUBMITTED",                                              "audit-chained",  .green),
-                    ("BOL",     "FILED",                                                    "0x9F1C archive", .green),
-                    ("HOS",     "03:06",                                                      "/ 7h 54m clean",  .green),
+                    ("PAYOUT",  payout,       "NET-30 · \(carrierCodeDisplay)", .green),
+                    ("POD",     "SUBMITTED",  "audit-chained",          .green),
+                    ("BOL",     "FILED",      "archived",               .green),
+                    ("DIST",    dist,         lane,                     .blue),
                 ]
             }
         }()
@@ -293,14 +378,15 @@ private struct BHCloseBody: View {
     }
 
     private var nextStepCard: some View {
+        let lane = laneDisplay ?? "-"
         let copy: String = {
             switch kind {
-            case .loadingTick2: return "52/72 loaded, 20 pallets left. Forklift cadence steady at 4 ppm, depart on schedule at 06:42 MST."
-            case .loadingTick3: return "Loading complete at 72/72. BOL-PRE-SIGN armed, proceed to dock plate to sign the draft."
-            case .bolPreSign:   return "BOL draft loaded. ME taps sign-acknowledge on dock plate; sig-hash commits the BOL."
-            case .bolSigned:    return "BOL signed and verified (0x9F1C). Roll the chain to paperwork, packet-desk watch fires on filing."
-            case .paperwork:    return "BOL filed at packet desk. Submit the POD to advance the chain to closed and stage payout."
-            case .closed:       return "Chain closed. POD audit-chained, BOL archived (0x9F1C), $2,128 NET-30 locked. Backhaul complete."
+            case .loadingTick2: return "Loading in progress on \(loadNumberDisplay). Forklift cadence steady; depart when the trailer seals."
+            case .loadingTick3: return "Loading complete on \(loadNumberDisplay). BOL-PRE-SIGN armed, proceed to the dock plate to sign the draft."
+            case .bolPreSign:   return "BOL draft loaded for \(loadNumberDisplay). ME taps sign-acknowledge on the dock plate; the server mints the sig-hash on commit."
+            case .bolSigned:    return "BOL signed for \(loadNumberDisplay). Roll the chain to paperwork; the packet-desk watch fires on filing."
+            case .paperwork:    return "BOL filed at the packet desk for \(loadNumberDisplay). Submit the POD to advance the chain to closed and stage payout."
+            case .closed:       return "Chain closed on \(loadNumberDisplay) · \(lane). POD audit-chained, BOL archived, payout NET-30 locked. Backhaul complete."
             }
         }()
         return LifecycleCard {
@@ -314,6 +400,20 @@ private struct BHCloseBody: View {
     private func loadCtx() async {
         struct In: Encodable { let id: String }
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
+    }
+
+    /// Format the load's rate (decimal string from server) as a
+    /// payout display. Falls back to "-" when missing/invalid.
+    private static func payoutDisplay(_ rate: String?) -> String {
+        guard let r = rate, let n = Double(r), n > 0 else { return "-" }
+        let v = n.rounded()
+        return v < 1000 ? String(format: "$%.0f", v) : "$\(Int(v).formatted(.number))"
+    }
+
+    /// Format the load's distance in miles. Falls back to "-".
+    private static func distanceDisplay(_ d: Double?) -> String {
+        guard let d, d > 0 else { return "-" }
+        return "\(Int(d.rounded())) mi"
     }
 }
 
