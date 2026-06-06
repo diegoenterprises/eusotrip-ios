@@ -6,33 +6,60 @@
 //  Catalyst-vantage AWARDED-confirmed receipt — the consumer side of
 //  the §368 shipper AWARD-COMMIT. The shipper accepted CEL's winning
 //  bid; this surface receives the tender via the loadLifecycle
-//  BIDDING→AWARDED fan-out, surfaces the locked economics, the 24h
-//  tender-accept window, the post-award roster (CEL awarded · the three
-//  losers), and a CEL-fleet driver-assign candidate strip (≤ 24h).
+//  BIDDING→AWARDED fan-out, surfaces the locked economics, the post-award
+//  roster (the awarded carrier + every losing competitor), and a CEL-fleet
+//  driver-assign candidate strip.
 //
-//  Server wiring (no stubs / no fake data — every visible award value
-//  binds to a real tRPC proc or paints "-" until it resolves):
-//    • `catalysts.getAcceptedBid` ({ loadId }) → the catalyst-side
-//      winning-bid envelope ({ id, loadId, amount, status, notes,
-//      submittedAt, loadNumber, rate }) or null. MCP-confirmed at
-//      catalysts.ts:1108. `amount` is CEL's awarded bid; `rate` is the
-//      shipper's posted target — `rate - amount` = the win headroom.
+//  Server wiring (no stubs / no fake data — EVERY visible business value
+//  binds to a real tRPC proc, or paints "-"/"—" / a real EusoEmptyState
+//  until it resolves). The figma-anchor `private let` constants
+//  (originCity, destinationCity, laneMiles, equipmentLabel, catalystName,
+//  catalystShortCode, lost2/3/4, driverCandidates) are DELETED — there is
+//  no hardcoded display data left on this surface.
 //
-//  STUB CTAs (no backing mutation this fire — both are PROPOSED /
-//  NOT IN ROUTER per the §369 wiring manifest, symmetric to
-//  shippers.acceptTender / dispatch.assignDriver which exist on their
-//  own domains):
-//    • ACKNOWLEDGE TENDER → would call a future catalysts.acceptTender
-//    • ASSIGN DRIVER      → would call a future catalysts.assignDriver
-//  Both are wired as no-op taps and labeled STUB until those verbs land.
+//    • `loads.getById` ({ id }) → LoadsAPI.LoadDetail
+//        Lane (pickupLocation/deliveryLocation.cityState · laneDisplay),
+//        miles (distance · distanceDisplay), equipment (equipmentType),
+//        commodity (commodityName ?? commodity ?? cargoType label),
+//        lifecycle status, pickup coords for driver-proximity haversine.
+//    • `catalysts.getAcceptedBid` ({ loadId }) → AcceptedBid_373 or null
+//        CEL's winning bid amount + the shipper's posted target `rate`;
+//        `rate - amount` = the win headroom. Spine of the screen.
+//    • `catalysts.getBidsForLoad` ({ loadId }) → [BidRow_373]
+//        Every bid on the load. Losers = rows whose stripped "bid_" id
+//        != the accepted-bid id; CEL rank = price-sorted index + 1.
+//    • `catalysts.getMyDrivers` ({ limit }) → [CatalystAPI.FleetDriver]
+//        CEL-fleet driver-assign candidates: name, HOS hours remaining,
+//        honest availability (drivers.status), GPS for proximity miles.
+//    • `catalysts.getProfile` (no input) → CelIdentity_373
+//        CEL session carrier identity (company name; DOT/MC available).
+//        Short code derived client-side from the company-name initials.
+//
+//  Honest backend gaps (rendered as "—", never fabricated):
+//    • Driver ETA-to-pickup — no routed-ETA proc → "ETA —".
+//    • Tender accept-by deadline / 24h window — no column / no proc →
+//      "Tender window: pending".
+//    • Driver "TENTATIVE" availability — no such drivers.status value;
+//      mapped honestly to AVAILABLE / ON LOAD / OFF DUTY.
+//  Driver proximity miles are computed client-side via haversine when
+//  BOTH the driver GPS fix and the pickup coords exist, else "—".
+//
+//  STUB CTAs (no iOS wrapper this fire — the server procs
+//  catalysts.acceptTender / catalysts.assignDriver EXIST but have no
+//  typed Swift binding; left as labeled no-ops, no fake success):
+//    • ACKNOWLEDGE TENDER → future catalysts.acceptTender wrapper
+//    • ASSIGN DRIVER      → future catalysts.assignDriver wrapper
 //
 //  Powered by ESANG AI™.
 //
 
 import SwiftUI
 
-// MARK: - tRPC decode shape (catalysts.getAcceptedBid envelope)
+// MARK: - tRPC decode shapes
 
+/// `catalysts.getAcceptedBid` envelope (server catalysts.ts:1122). `id`
+/// is a BARE numeric bid id ("42") — NOT "bid_42"; strip the "bid_"
+/// prefix off `BidRow_373.id` before matching it against this.
 private struct AcceptedBid_373: Decodable {
     let id: String?
     let loadId: String?
@@ -44,26 +71,40 @@ private struct AcceptedBid_373: Decodable {
     let rate: Double?         // shipper's posted target rate
 }
 
-// MARK: - Driver candidate (top-3 from CEL fleet · pre-assignment strip)
-
-private struct DriverCandidate_373: Equatable {
-    let usdot: String
-    let initials: String
-    let nameLastFirst: String
-    let hosDriveHoursLeft: Int
-    let proximityMiles: Int
-    let etaToPickupHHmm: String
-    let availabilityFlag: String     // "AVAILABLE" or "TENTATIVE"
-    let preference: Int              // 1 = first pick · 2 · 3
+/// One bid row from `catalysts.getBidsForLoad` (server catalysts.ts:3528).
+/// Field-identical to ShipperAPI.Bid; decoded file-locally because the
+/// shipped wrapper targets the shipper-gated `shippers.getBidsForLoad`.
+private struct BidRow_373: Decodable, Identifiable, Hashable {
+    let id: String            // "bid_<n>" — strip "bid_" to match getAcceptedBid.id
+    let catalystId: String    // "car_<n>"
+    let catalystName: String
+    let dotNumber: String
+    let safetyScore: Double    // server honest-empty 0
+    let amount: Double
+    let transitTime: String    // server honest-empty ""
+    let submittedAt: String
+    let message: String
+    let recommended: Bool
 }
+
+/// CEL session carrier identity from `catalysts.getProfile` (server
+/// catalysts.ts:1334). Decodes only the fields this surface uses; the
+/// server returns a wider envelope (Decodable ignores the rest).
+private struct CelIdentity_373: Decodable, Hashable {
+    let companyName: String?
+    let dotNumber: String?
+    let mcNumber: String?
+}
+
+// File-local tRPC inputs.
+private struct LoadIdInput_373: Encodable { let loadId: String }
+private struct EmptyInput_373: Encodable {}
 
 // MARK: - Identity-row rank (catalyst-vantage AWARDED-confirmed roster)
 
 private enum IdentityRowRank_373: Equatable {
-    case ourselvesAwarded     // CEL · filled gradient disc · AWARDED chip · 100%
-    case competitorLostFinal2 // 88% opacity
-    case competitorLostFinal3 // 72% opacity
-    case competitorLostFinal4 // 60% opacity
+    case ourselvesAwarded     // awarded carrier · filled gradient disc · AWARDED chip · 100%
+    case competitorLost(Int)  // losing competitor · descending opacity by position
 }
 
 // MARK: - Local gradients (file-private · in-module symbols only)
@@ -116,38 +157,79 @@ private struct CatalystAwardedCelM04Body: View {
     let loadId: String
     @Environment(\.palette) private var palette
 
+    // Live server-bound state — no hardcoded display anchors remain.
     @State private var award: AcceptedBid_373? = nil
+    @State private var load: LoadsAPI.LoadDetail? = nil
+    @State private var bids: [BidRow_373] = []
+    @State private var drivers: [CatalystAPI.FleetDriver] = []
+    @State private var identity: CelIdentity_373? = nil
+
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
 
-    // CEL identity + lane envelope (cel anchors — display copy only, not
-    // server-bound; the live money/award values come from getAcceptedBid).
-    private let catalystShortCode = "CEL"
-    private let catalystName = "Carolina Express Logistics"
-    private let originCity = "Atlanta GA"
-    private let destinationCity = "Charlotte NC"
-    private let laneMiles = 245
-    private let equipmentLabel = "53' Dry Van"
+    // MARK: Derived — CEL identity (from catalysts.getProfile)
 
-    // Post-award roster (catalyst-side reflection of the §368 commit; the
-    // loser amounts are display-anchored from the M-04 quartet).
-    private let lost2 = ("SCC", "Southern Crescent Carriers", 1_615)
-    private let lost3 = ("PFC", "Piedmont Freight Co", 1_625)
-    private let lost4 = ("AUR", "Aurora Freight Lines", 1_640)
+    /// Real company name, or "-" when the session has no resolved company.
+    private var catalystName: String {
+        let n = identity?.companyName?.trimmingCharacters(in: .whitespaces) ?? ""
+        return n.isEmpty ? "-" : n
+    }
 
-    private let driverCandidates: [DriverCandidate_373] = [
-        DriverCandidate_373(usdot: "CEL-D-014", initials: "JR", nameLastFirst: "Reyes, J.",
-                            hosDriveHoursLeft: 10, proximityMiles: 78, etaToPickupHHmm: "07:45",
-                            availabilityFlag: "AVAILABLE", preference: 1),
-        DriverCandidate_373(usdot: "CEL-D-022", initials: "AT", nameLastFirst: "Tanaka, A.",
-                            hosDriveHoursLeft: 9, proximityMiles: 142, etaToPickupHHmm: "07:55",
-                            availabilityFlag: "AVAILABLE", preference: 2),
-        DriverCandidate_373(usdot: "CEL-D-006", initials: "BK", nameLastFirst: "Kowalski, B.",
-                            hosDriveHoursLeft: 11, proximityMiles: 211, etaToPickupHHmm: "08:10",
-                            availabilityFlag: "TENTATIVE", preference: 3),
-    ]
+    /// Short code derived from the company-name initials (first letter of
+    /// up to 3 leading words). No short-code column exists. "-" when blank.
+    private var catalystShortCode: String {
+        let n = identity?.companyName?.trimmingCharacters(in: .whitespaces) ?? ""
+        guard !n.isEmpty else { return "-" }
+        let initials = n
+            .split(separator: " ")
+            .prefix(3)
+            .compactMap { $0.first.map(String.init) }
+            .joined()
+            .uppercased()
+        return initials.isEmpty ? "-" : initials
+    }
 
-    // MARK: Derived display
+    // MARK: Derived — lane / miles / equipment / commodity (from loads.getById)
+
+    /// The real "<origin city, ST> → <destination city, ST>" lane from
+    /// loads.getDetail; em-dash forms ("Origin → —" / "—") when ungeocoded.
+    private var laneHeadline: String {
+        load?.laneDisplay ?? "—"
+    }
+    private var originCityState: String { load?.pickupLocation?.cityState ?? "" }
+    private var destinationCityState: String { load?.deliveryLocation?.cityState ?? "" }
+
+    /// Lane miles as Int (server haversine ×1.2 road factor). nil when no
+    /// DB miles and no geocodable coords.
+    private var laneMiles: Int? {
+        guard let d = load?.distance, d > 0 else { return nil }
+        return Int(d.rounded())
+    }
+    /// "245 mi" / "—".
+    private var laneMilesDisplay: String { load?.distanceDisplay ?? "—" }
+
+    /// Equipment / trailer type — "—" when the shipper never specified.
+    private var equipmentDisplay: String {
+        let eq = load?.equipmentType?.trimmingCharacters(in: .whitespaces) ?? ""
+        return eq.isEmpty ? "—" : eq
+    }
+    /// Lifecycle header equipment suffix — empty when unknown.
+    private var equipmentSuffix: String {
+        let eq = load?.equipmentType?.trimmingCharacters(in: .whitespaces) ?? ""
+        return eq.isEmpty ? "" : " · \(eq.uppercased())"
+    }
+
+    /// Commodity / cargo — prefer the specific name; treat the server's
+    /// forced "general" cargoType with no name as the empty case ("—").
+    private var commodityDisplay: String {
+        if let c = load?.commodityName?.trimmingCharacters(in: .whitespaces), !c.isEmpty { return c }
+        if let c = load?.commodity?.trimmingCharacters(in: .whitespaces), !c.isEmpty { return c }
+        let cargo = load?.cargoType?.trimmingCharacters(in: .whitespaces).lowercased() ?? ""
+        if cargo.isEmpty || cargo == "general" { return "—" }
+        return cargo.capitalized
+    }
+
+    // MARK: Derived — economics (from getAcceptedBid + loads.getById)
 
     private var awardedAmount: Double? {
         guard let a = award?.amount, a > 0 else { return nil }
@@ -171,16 +253,50 @@ private struct CatalystAwardedCelM04Body: View {
         guard let t = targetRate else { return "vs target" }
         return "vs $\(Int(t.rounded()).formatted(.number)) target"
     }
+    /// $/mi = awarded amount ÷ real lane miles. "-" when either is absent.
     private var rpmDisplay: String {
-        guard let a = awardedAmount, laneMiles > 0 else { return "-" }
-        return String(format: "$%.2f/mi", a / Double(laneMiles))
+        guard let a = awardedAmount, let d = load?.distance, d > 0 else { return "-" }
+        return String(format: "$%.2f/mi", a / d)
     }
     private var loadNumberDisplay: String {
         if let n = award?.loadNumber, !n.isEmpty { return n }
+        if let n = load?.loadNumber, !n.isEmpty { return n }
         return "-"
     }
     private var awardConfirmed: Bool {
         (award?.status ?? "").lowercased() == "accepted"
+    }
+
+    // MARK: Derived — losing bids + CEL rank (from getBidsForLoad + getAcceptedBid)
+
+    /// Bare numeric id of CEL's accepted bid ("42"); used to filter the
+    /// "bid_42" prefixed rows out of the loser set.
+    private var acceptedBidId: String? {
+        let raw = award?.id?.trimmingCharacters(in: .whitespaces) ?? ""
+        return raw.isEmpty ? nil : raw
+    }
+    private func strippedBidId(_ id: String) -> String {
+        id.hasPrefix("bid_") ? String(id.dropFirst("bid_".count)) : id
+    }
+    /// Every competing bid that is NOT CEL's accepted bid, price-sorted
+    /// ascending (lowest first).
+    private var loserBids: [BidRow_373] {
+        bids
+            .filter { strippedBidId($0.id) != acceptedBidId }
+            .sorted { $0.amount < $1.amount }
+    }
+    /// CEL bid rank "1/4": total = all bids; rank = price-sorted index+1.
+    /// nil-rank ("—") when the accepted bid isn't in the list; whole
+    /// segment omitted when there are no bids.
+    private var rankSegment: String? {
+        let total = bids.count
+        guard total > 0 else { return nil }
+        let sorted = bids.sorted { $0.amount < $1.amount }
+        if let aid = acceptedBidId,
+           let idx = sorted.firstIndex(where: { strippedBidId($0.id) == aid }) {
+            return "CEL bid was rank \(idx + 1)/\(total)"
+        }
+        return "CEL bid was rank —/\(total)"
     }
 
     var body: some View {
@@ -254,7 +370,7 @@ private struct CatalystAwardedCelM04Body: View {
                     .foregroundStyle(palette.textPrimary)
             }
             .buttonStyle(.plain)
-            Text("\(originCity) → \(destinationCity)")
+            Text(laneHeadline)
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
@@ -301,19 +417,32 @@ private struct CatalystAwardedCelM04Body: View {
 
     // MARK: - Eyebrow row (gradient wash · founder DU pin)
 
+    /// Trailing tokens for the mono detail line — equipment, commodity,
+    /// awarded amount, CEL rank, tender window — joined with " · ", each
+    /// segment omitted when its underlying value is empty.
+    private var eyebrowDetailLine: String {
+        var parts: [String] = []
+        parts.append(equipmentDisplay)                       // "—" when unknown
+        if commodityDisplay != "—" { parts.append(commodityDisplay) }
+        parts.append("awarded \(awardedAmountDisplay)")
+        if let rank = rankSegment { parts.append(rank) }
+        parts.append("Tender window: pending")               // no real deadline source
+        return parts.joined(separator: " · ")
+    }
+
     private var eyebrowRow: some View {
         ZStack(alignment: .topTrailing) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("AWARDED TO CEL · \(loadNumberDisplay) · WIN \(winDisplay) \(winVsTargetLine)")
+                Text("AWARDED TO \(catalystShortCode) · \(loadNumberDisplay) · WIN \(winDisplay) \(winVsTargetLine)")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.5)
                     .foregroundStyle(LinearGradient.diagonal)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                Text("\(originCity) → \(destinationCity) · \(laneMiles) mi")
+                Text("\(laneHeadline) · \(laneMilesDisplay)")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("\(equipmentLabel) · awarded \(awardedAmountDisplay) · CEL bid was rank 1/4 · 24h tender accept window armed")
+                Text(eyebrowDetailLine)
                     .font(.system(size: 9, design: .monospaced))
                     .tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
@@ -346,7 +475,7 @@ private struct CatalystAwardedCelM04Body: View {
         HStack(spacing: 8) {
             kpiCell(eyebrow: "TENDER", value: awardedAmountDisplay, footer: "CEL accepted")
             kpiCell(eyebrow: "WIN", value: winDisplay, footer: winVsTargetLine)
-            kpiCell(eyebrow: "DRIVER ASSIGN", value: "≤ 24h", footer: "Naomi → fleet")
+            kpiCell(eyebrow: "DRIVER ASSIGN", value: "pending", footer: "Naomi → fleet")
             kpiCell(eyebrow: "ARM PICKUP", value: "ARMED", footer: rpmDisplay)
         }
     }
@@ -381,11 +510,31 @@ private struct CatalystAwardedCelM04Body: View {
 
     // MARK: - Lifecycle strip (AWARDED ringed-active · 8 nodes)
 
+    /// Map the live loads.getById status onto the 8-node lifecycle index.
+    /// Defaults to AWARDED (2) for this awarded-state surface when the
+    /// status is unrecognized.
+    private var lifecycleIdx: Int {
+        switch (load?.status ?? "").lowercased() {
+        case "posted", "draft":                       return 0
+        case "bidding":                               return 1
+        case "awarded", "assigned", "accepted":       return 2
+        case "en_route_pickup", "at_pickup", "loading", "picked_up":
+            return 3
+        case "in_transit", "en_route", "en_route_delivery":
+            return 4
+        case "delivered", "at_delivery", "unloading": return 5
+        case "pod", "paperwork", "documents":         return 6
+        case "complete", "completed", "paid", "closed", "settled":
+            return 7
+        default:                                      return 2
+        }
+    }
+
     private var lifecycleStrip: some View {
         let labels = ["POST", "BID", "AWRD", "PICK", "TRAN", "DELV", "PAPR", "CLSD"]
-        let currentIdx = 2  // AWARDED — bound to award.status == accepted
+        let currentIdx = lifecycleIdx
         return VStack(alignment: .leading, spacing: 10) {
-            Text("LIFECYCLE · \(equipmentLabel.uppercased())")
+            Text("LIFECYCLE\(equipmentSuffix)")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
@@ -417,7 +566,7 @@ private struct CatalystAwardedCelM04Body: View {
                 }
             }
 
-            Text("Awarded · CEL receives tender · arm pickup · assign driver ≤ 24h")
+            Text("Awarded · CEL receives tender · arm pickup · assign driver")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(palette.textPrimary)
                 .frame(maxWidth: .infinity)
@@ -459,10 +608,23 @@ private struct CatalystAwardedCelM04Body: View {
 
     // MARK: - Lane map (solid post-award route · LANE LOCKED banner)
 
+    /// Origin pin label — city/state when geocoded, else "Pickup".
+    private var originPinLabel: String {
+        originCityState.isEmpty ? "Pickup" : originCityState
+    }
+    /// Destination pin label — city/state when geocoded, else "Dest".
+    private var destPinLabel: String {
+        destinationCityState.isEmpty ? "Dest" : destinationCityState
+    }
+    /// LANE LOCKED banner — real miles when present, em-dash otherwise.
+    private var laneLockedBanner: String {
+        "LANE LOCKED · \(laneMilesDisplay) · Tender window: pending"
+    }
+
     private var laneMap: some View {
         ZStack(alignment: .topLeading) {
             Canvas { ctx, size in
-                // Solid route line ATL → CLT (post-award flip from dashed).
+                // Solid route line origin → destination (post-award flip).
                 var route = Path()
                 route.move(to: CGPoint(x: size.width * 0.16, y: size.height * 0.62))
                 route.addQuadCurve(to: CGPoint(x: size.width * 0.80, y: size.height * 0.40),
@@ -472,7 +634,7 @@ private struct CatalystAwardedCelM04Body: View {
                     startPoint: .zero, endPoint: CGPoint(x: size.width, y: 0)),
                     lineWidth: 2.4)
 
-                // Dashed dispatch route from CEL GSO hub to ATL pickup.
+                // Dashed dispatch route from the CEL hub to the pickup.
                 var hub = Path()
                 hub.move(to: CGPoint(x: size.width * 0.66, y: size.height * 0.26))
                 hub.addQuadCurve(to: CGPoint(x: size.width * 0.16, y: size.height * 0.62),
@@ -482,7 +644,7 @@ private struct CatalystAwardedCelM04Body: View {
             }
             .frame(height: 120)
 
-            // Origin pin (solid) — placed in the same proportional spot.
+            // Pins (solid) — placed in the same proportional spots.
             GeometryReader { geo in
                 let w = geo.size.width
                 let h: CGFloat = 120
@@ -494,15 +656,19 @@ private struct CatalystAwardedCelM04Body: View {
                     Circle().strokeBorder(LinearGradient.diagonal, lineWidth: 1.4)
                         .frame(width: 14, height: 14)
                         .position(x: w * 0.66, y: h * 0.26)
-                    Text("ATL pickup")
+                    Text(originPinLabel)
                         .font(.system(size: 8, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
-                        .position(x: w * 0.16 + 24, y: h * 0.62 + 12)
-                    Text("CLT")
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .position(x: w * 0.16 + 30, y: h * 0.62 + 12)
+                    Text(destPinLabel)
                         .font(.system(size: 8, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                         .position(x: w * 0.80, y: h * 0.40 - 14)
-                    Text("GSO hub")
+                    Text("CEL hub")
                         .font(.system(size: 7))
                         .foregroundStyle(palette.textSecondary)
                         .position(x: w * 0.66, y: h * 0.26 + 14)
@@ -527,10 +693,12 @@ private struct CatalystAwardedCelM04Body: View {
             // LANE LOCKED banner (bottom-left)
             VStack {
                 Spacer(minLength: 0)
-                Text("LANE LOCKED · \(laneMiles) mi · tender accept ≤ 24h")
+                Text(laneLockedBanner)
                     .font(.system(size: 8, weight: .heavy))
                     .tracking(0.3)
                     .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
             .padding(12)
         }
@@ -544,31 +712,85 @@ private struct CatalystAwardedCelM04Body: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    // MARK: - Roster card (CEL awarded + 3 losers)
+    // MARK: - Roster card (awarded CEL + every losing competitor)
 
     private var rosterCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("POST-AWARD ROSTER · M-04 · 4 BIDS")
+            Text("POST-AWARD ROSTER · \(bids.count) BID\(bids.count == 1 ? "" : "S")")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             VStack(spacing: 6) {
-                identityRow(shortCode: catalystShortCode, displayName: catalystName,
-                            amount: Int((awardedAmount ?? 0).rounded()), rank: .ourselvesAwarded)
-                identityRow(shortCode: lost2.0, displayName: lost2.1, amount: lost2.2, rank: .competitorLostFinal2)
-                identityRow(shortCode: lost3.0, displayName: lost3.1, amount: lost3.2, rank: .competitorLostFinal3)
-                identityRow(shortCode: lost4.0, displayName: lost4.1, amount: lost4.2, rank: .competitorLostFinal4)
+                // The awarded CEL row (always rendered when there is an
+                // accepted award; amount from the live getAcceptedBid).
+                if award != nil {
+                    identityRow(shortCode: catalystShortCode,
+                                displayName: catalystName,
+                                amount: Int((awardedAmount ?? 0).rounded()),
+                                rank: .ourselvesAwarded)
+                }
+
+                // Losing competitors — real rows, price-sorted ascending.
+                // Render ONLY as many as actually exist; never pad to 3.
+                ForEach(Array(loserBids.enumerated()), id: \.element.id) { idx, bid in
+                    identityRow(shortCode: shortCode(for: bid.catalystName),
+                                displayName: bid.catalystName,
+                                amount: Int(bid.amount.rounded()),
+                                rank: .competitorLost(idx))
+                }
+
+                // Honest empty state — sole bidder / no competing bids.
+                if loserBids.isEmpty {
+                    competingBidsEmptyRow
+                }
             }
         }
+    }
+
+    /// Compact, branded empty-row for the "no competing bids" case — reads
+    /// as a real EusoEmptyState within the tight roster-row chrome.
+    private var competingBidsEmptyRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "person.2.slash")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(palette.textTertiary)
+            Text(award == nil ? "No bids on this load yet" : "No competing bids — sole bidder")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 44)
+        .frame(maxWidth: .infinity)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Initials short code from a competitor name (first letter of up to
+    /// 3 leading words). "-" when blank.
+    private func shortCode(for name: String) -> String {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard !n.isEmpty else { return "-" }
+        let initials = n
+            .split(separator: " ")
+            .prefix(3)
+            .compactMap { $0.first.map(String.init) }
+            .joined()
+            .uppercased()
+        return initials.isEmpty ? "-" : initials
     }
 
     private func identityRow(shortCode: String, displayName: String, amount: Int, rank: IdentityRowRank_373) -> some View {
         let opacity: Double = {
             switch rank {
             case .ourselvesAwarded:     return 1.00
-            case .competitorLostFinal2: return 0.88
-            case .competitorLostFinal3: return 0.72
-            case .competitorLostFinal4: return 0.60
+            case .competitorLost(let i): return max(0.55, 0.88 - Double(i) * 0.14)
             }
         }()
         let isOurselves = rank == .ourselvesAwarded
@@ -630,53 +852,149 @@ private struct CatalystAwardedCelM04Body: View {
         .opacity(opacity)
     }
 
-    // MARK: - Driver-assign candidate strip (top-3 CEL fleet)
+    // MARK: - Driver-assign candidate strip (CEL fleet · live getMyDrivers)
 
     private var driverAssignStrip: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("DRIVER ASSIGN · CEL FLEET CANDIDATES · ≤ 24h")
+            Text("DRIVER ASSIGN · CEL FLEET CANDIDATES")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(0.5)
                 .foregroundStyle(palette.textTertiary)
-            HStack(spacing: 8) {
-                ForEach(driverCandidates, id: \.usdot) { c in
-                    candidateCell(c)
+
+            if drivers.isEmpty {
+                driversEmptyRow
+            } else {
+                HStack(spacing: 8) {
+                    ForEach(Array(drivers.enumerated()), id: \.element.id) { idx, d in
+                        candidateCell(d, isFirst: idx == 0)
+                    }
                 }
             }
         }
     }
 
-    private func candidateCell(_ c: DriverCandidate_373) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+    /// Honest empty state — no fleet drivers. A real branded empty-row,
+    /// not three fabricated candidate cells.
+    private var driversEmptyRow: some View {
+        EusoEmptyState(
+            systemImage: "person.crop.circle.badge.exclamationmark",
+            title: "No fleet drivers available",
+            subtitle: "Add drivers to the CEL fleet to assign this tender."
+        )
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Driver availability chip mapped honestly from drivers.status.
+    /// No "TENTATIVE" — that value does not exist in the schema.
+    private func availabilityLabel(_ status: String) -> String {
+        switch status.lowercased() {
+        case "available", "active": return "AVAILABLE"
+        case "driving", "on_load", "in_transit", "assigned": return "ON LOAD"
+        case "off_duty": return "OFF DUTY"
+        case "inactive", "suspended": return status.uppercased()
+        case "": return "—"
+        default: return status.uppercased()
+        }
+    }
+
+    private func isAvailable(_ status: String) -> Bool {
+        let s = status.lowercased()
+        return s == "available" || s == "active"
+    }
+
+    /// Initials from a real driver name ("Last, F." → "LF" / "Jane Doe" → "JD").
+    private func driverInitials(_ name: String) -> String {
+        let cleaned = name.replacingOccurrences(of: ",", with: " ")
+        let initials = cleaned
+            .split(separator: " ")
+            .prefix(2)
+            .compactMap { $0.first.map(String.init) }
+            .joined()
+            .uppercased()
+        return initials.isEmpty ? "—" : initials
+    }
+
+    /// HOS slug — "HOS 10h" / "HOS —" when no HOS event logged today.
+    private func hosSlug(_ hours: Double?) -> String {
+        guard let h = hours else { return "HOS —" }
+        // Show one decimal only when fractional, else integer hours.
+        if h == h.rounded() { return "HOS \(Int(h))h" }
+        return String(format: "HOS %.1fh", h)
+    }
+
+    /// Client-side proximity miles via haversine, marrying the driver GPS
+    /// fix (FleetDriver.location "lat, lng") to the pickup coords. Returns
+    /// "— mi" when either coord pair is absent (no fabrication).
+    private func proximitySlug(_ location: String) -> String {
+        guard
+            let drv = parseLatLng(location),
+            let plat = load?.pickupLocation?.lat,
+            let plng = load?.pickupLocation?.lng,
+            plat != 0 || plng != 0
+        else { return "— mi" }
+        let miles = haversineMiles(lat1: drv.lat, lng1: drv.lng, lat2: plat, lng2: plng)
+        return "\(Int(miles.rounded())) mi"
+    }
+
+    /// Parse "33.75, -84.39" → (lat, lng). Returns nil for "Unknown"/blank.
+    private func parseLatLng(_ s: String) -> (lat: Double, lng: Double)? {
+        let parts = s.split(separator: ",").map {
+            $0.trimmingCharacters(in: .whitespaces)
+        }
+        guard parts.count == 2,
+              let lat = Double(parts[0]),
+              let lng = Double(parts[1]),
+              (lat != 0 || lng != 0)
+        else { return nil }
+        return (lat, lng)
+    }
+
+    /// Great-circle distance in statute miles.
+    private func haversineMiles(lat1: Double, lng1: Double, lat2: Double, lng2: Double) -> Double {
+        let R = 3958.8 // Earth radius, miles
+        let dLat = (lat2 - lat1) * .pi / 180
+        let dLng = (lng2 - lng1) * .pi / 180
+        let a = sin(dLat / 2) * sin(dLat / 2)
+            + cos(lat1 * .pi / 180) * cos(lat2 * .pi / 180)
+            * sin(dLng / 2) * sin(dLng / 2)
+        let c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return R * c
+    }
+
+    private func candidateCell(_ d: CatalystAPI.FleetDriver, isFirst: Bool) -> some View {
+        let available = isAvailable(d.status)
+        return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
                 ZStack {
-                    if c.preference == 1 {
+                    if isFirst {
                         Circle().fill(LinearGradient.diagonal).frame(width: 16, height: 16)
                     } else {
                         Circle().fill(palette.borderFaint).frame(width: 16, height: 16)
                     }
-                    Text(c.initials)
+                    Text(driverInitials(d.name))
                         .font(.system(size: 7, weight: .heavy))
-                        .foregroundStyle(c.preference == 1 ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textPrimary))
+                        .foregroundStyle(isFirst ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textPrimary))
                 }
-                Text(c.nameLastFirst)
+                Text(d.name)
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
             }
-            Text("HOS \(c.hosDriveHoursLeft)h · \(c.proximityMiles) mi")
+            // Proximity miles via client haversine ("—" when no coords).
+            Text("\(hosSlug(d.hoursRemaining)) · \(proximitySlug(d.location))")
                 .font(.system(size: 8, design: .monospaced))
                 .foregroundStyle(palette.textSecondary)
-            Text("ETA \(c.etaToPickupHHmm) · \(c.availabilityFlag)")
+            // ETA has no real routed-ETA source — render "ETA —".
+            Text("ETA — · \(availabilityLabel(d.status))")
                 .font(.system(size: 7))
-                .foregroundStyle(c.availabilityFlag == "AVAILABLE" ? palette.textSecondary : palette.textTertiary)
+                .foregroundStyle(available ? palette.textSecondary : palette.textTertiary)
         }
         .padding(6)
         .frame(maxWidth: .infinity, minHeight: 56, alignment: .topLeading)
         .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(c.preference == 1 ? AnyShapeStyle(eusoFaint_373) : AnyShapeStyle(palette.borderFaint), lineWidth: 1)
+                .strokeBorder(isFirst ? AnyShapeStyle(eusoFaint_373) : AnyShapeStyle(palette.borderFaint), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
@@ -685,9 +1003,10 @@ private struct CatalystAwardedCelM04Body: View {
 
     private var actionRibbon: some View {
         HStack(spacing: 8) {
-            // STUB — no catalysts.acceptTender verb in the router yet.
+            // STUB — catalysts.acceptTender EXISTS on the server but has
+            // no iOS wrapper yet; labeled no-op (no fake success).
             Button {
-                // no-op until catalysts.acceptTender lands
+                // no-op until a catalysts.acceptTender wrapper lands
             } label: {
                 Text("ACKNOWLEDGE TENDER")
                     .font(.system(size: 9, weight: .heavy))
@@ -700,10 +1019,10 @@ private struct CatalystAwardedCelM04Body: View {
             }
             .buttonStyle(.plain)
 
-            // STUB — no catalysts.assignDriver verb (dispatch.assignDriver
-            // exists on the dispatch domain; catalyst wrapper not wired).
+            // STUB — catalysts.assignDriver EXISTS on the server but has
+            // no iOS wrapper yet; labeled no-op (no fake success).
             Button {
-                // no-op until catalysts.assignDriver lands
+                // no-op until a catalysts.assignDriver wrapper lands
             } label: {
                 Text("ASSIGN DRIVER")
                     .font(.system(size: 9, weight: .heavy))
@@ -791,18 +1110,31 @@ private struct CatalystAwardedCelM04Body: View {
         loadError = nil
         defer { loading = false }
         guard !loadId.isEmpty, loadId != "0" else {
-            // No id — leave award nil; honest empty values render as "-".
+            // No load context — leave all @State nil/[]; every value
+            // renders "-"/"—". No fabrication.
             return
         }
-        struct In: Encodable { let loadId: String }
+        let api = EusoTripAPI.shared
         do {
-            // catalysts.getAcceptedBid → the catalyst-side winning-bid
-            // envelope (or null if no accepted bid for this catalyst on
-            // this load). MCP-confirmed at catalysts.ts:1108.
-            self.award = try await EusoTripAPI.shared.query(
-                "catalysts.getAcceptedBid",
-                input: In(loadId: loadId)
-            )
+            // Fire all five reads concurrently — independent (same loadId /
+            // session): award + load + bids + driver roster + CEL identity.
+            async let awardTask: AcceptedBid_373?           = api.query("catalysts.getAcceptedBid", input: LoadIdInput_373(loadId: loadId))
+            async let loadTask:  LoadsAPI.LoadDetail?        = api.loads.getDetail(id: loadId)
+            async let bidsTask:  [BidRow_373]                = api.query("catalysts.getBidsForLoad", input: LoadIdInput_373(loadId: loadId))
+            async let driversTask: [CatalystAPI.FleetDriver] = api.catalyst.getMyDrivers(limit: 5)
+            async let identityTask: CelIdentity_373?         = api.query("catalysts.getProfile", input: EmptyInput_373())
+
+            // Award is the spine of the screen — if it throws, surface the
+            // error banner (the existing Retry path).
+            self.award = try await awardTask
+
+            // The other four are enrichment: a failure on any one must NOT
+            // blank the whole surface — it degrades that section to its
+            // honest empty-state ("—" / empty row).
+            self.load     = (try? await loadTask)     ?? nil
+            self.bids     = (try? await bidsTask)     ?? []
+            self.drivers  = (try? await driversTask)  ?? []
+            self.identity = (try? await identityTask) ?? nil
         } catch {
             self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
