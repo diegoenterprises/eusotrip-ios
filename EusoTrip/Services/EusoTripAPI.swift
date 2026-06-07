@@ -1302,6 +1302,40 @@ struct LoadsAPI {
         return try await api.query("loads.getById", input: Input(id: id))
     }
 
+    // MARK: - GatePass (Driver · 038 At Receiver Gate · PIN credential)
+    //
+    // 1:1 mirror of `loadsRouter.getGatePass` (server/routers/loads.ts).
+    // The proc mints a server-side, server-verifiable gate PIN (via
+    // crypto.randomInt) keyed to the assigned driver of an active load and
+    // stores it in MySQL `load_gate_passes` (drizzle `loadGatePasses` — the
+    // load-driver PIN credential, distinct from the terminal-appointment QR
+    // `gate_passes` table). It is SELF-SCOPED: only the load's assigned
+    // driver gets a real pass, and only while the load is active. On
+    // no-db / not-the-driver / inactive-load / no-load it returns the
+    // honest EMPTY shape (hasPass:false, all nulls) — never a seeded PIN.
+    //
+    //   empty:  { hasPass:false, gateCode:nil,    status:nil,      expiresAt:nil }
+    //   active: { hasPass:true,  gateCode:"<PIN>", status:"issued", expiresAt:"<ISO now+12h>" }
+    struct GatePass: Decodable {
+        let hasPass: Bool
+        let gateCode: String?
+        let status: String?
+        let expiresAt: String?
+    }
+
+    /// `loadsRouter.getGatePass` — server-minted, self-scoped gate-PIN
+    /// credential for the 038 At Receiver Gate screen. MUTATION taking
+    /// `{ loadId: number }` (server input is `z.coerce.number()`). Returns
+    /// the empty shape (hasPass:false) for any caller who isn't the load's
+    /// assigned driver, any inactive load, or a no-db backend — so a nil /
+    /// empty result is the HONEST state, and the screen falls through to the
+    /// "PIN · ISSUED AT THE GATE" em-dash copy until the migration is
+    /// applied in prod. Never echoes a fabricated code.
+    func getGatePass(loadId: Int) async throws -> GatePass {
+        struct Input: Encodable { let loadId: Int }
+        return try await api.mutation("loads.getGatePass", input: Input(loadId: loadId))
+    }
+
     // MARK: - CloseoutSummary (Driver · 025 Paperwork close-out)
     //
     // Verbatim 1:1 mirror of `loadsRouter.getCloseoutSummary`

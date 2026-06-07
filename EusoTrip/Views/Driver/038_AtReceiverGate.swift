@@ -25,6 +25,7 @@ struct AtReceiverGateFull: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
     @State private var cred: DriverQualificationAPI.DriverCredentials?
+    @State private var gatePass: LoadsAPI.GatePass?
     @State private var isShowing: Bool = false
 
     enum Register { case night, afternoon }
@@ -75,6 +76,26 @@ struct AtReceiverGateFull: View {
         if let a = activeLoad?.deliveryLocation?.address, !a.isEmpty { return a }
         if let cs = activeLoad?.deliveryLocation?.cityState, !cs.isEmpty { return cs }
         return dash
+    }
+
+    // MARK: - Real gate PIN (server-minted)
+    //
+    // A live pass exists only when `loads.getGatePass` confirms hasPass==true
+    // AND returns a non-empty server-minted code. Until the migration is
+    // applied in prod the proc returns the empty shape (or the read fails ⇒
+    // try? ⇒ nil), so `livePIN` is nil and the PIN block keeps the honest
+    // "ISSUED AT THE GATE" em-dash. We NEVER render a seeded PIN.
+    private var livePIN: String? {
+        guard gatePass?.hasPass == true,
+              let code = gatePass?.gateCode, !code.isEmpty else { return nil }
+        return code
+    }
+
+    // Digit-spaced rendering of the real PIN — e.g. "8273" → "8-2-7-3" so a
+    // driver can read it aloud at the guard hut.
+    private var pinDisplay: String {
+        guard let code = livePIN else { return dash }
+        return code.map(String.init).joined(separator: "-")
     }
 
     var body: some View {
@@ -263,12 +284,16 @@ struct AtReceiverGateFull: View {
             // QR + PIN block
             //
             // SECURITY: a gate PIN is a credential a guard verifies at the
-            // hut. There is NO client-side proc that issues one, so we MUST
-            // NOT seed digits (the prior "8-2-7-3" was a forged credential).
-            // The QR tile keeps its chrome as a generic placeholder glyph —
-            // it does NOT encode a real pass and must not imply a seeded
-            // code; the digits read the honest dash and the copy states the
-            // PIN is issued at the gate.
+            // hut. The server now mints a REAL, server-verifiable PIN via
+            // `loads.getGatePass` (self-scoped to the assigned driver of an
+            // active load), stored in MySQL `load_gate_passes`. When a live
+            // pass is present (`livePIN != nil`) we render the real digits
+            // digit-spaced under "PIN · READ ALOUD AT GATE". Otherwise — and
+            // until the migration is applied in prod (proc returns empty ⇒
+            // try? ⇒ nil) — we keep the HONEST "ISSUED AT THE GATE" em-dash
+            // copy. We NEVER seed digits (the prior "8-2-7-3" was a forge).
+            // The QR tile is chrome only — a generic placeholder glyph that
+            // does NOT encode a scannable pass.
             HStack(alignment: .center, spacing: Space.s3) {
                 ZStack {
                     RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
@@ -280,14 +305,17 @@ struct AtReceiverGateFull: View {
                         .foregroundStyle(palette.textTertiary)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("PIN · ISSUED AT THE GATE")
+                    let hasLivePIN = livePIN != nil
+                    Text(hasLivePIN ? "PIN · READ ALOUD AT GATE" : "PIN · ISSUED AT THE GATE")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(palette.textTertiary)
-                    Text(dash)
+                        .foregroundStyle(hasLivePIN ? palette.textSecondary : palette.textTertiary)
+                    Text(pinDisplay)
                         .font(.system(size: 26, weight: .heavy, design: .rounded))
-                        .foregroundStyle(palette.textTertiary)
+                        .foregroundStyle(hasLivePIN ? palette.textPrimary : palette.textTertiary)
                         .monospacedDigit()
-                    Text("The receiver issues your PIN at the gate.")
+                    Text(hasLivePIN
+                         ? "Read this PIN aloud to security at the gate."
+                         : "The receiver issues your PIN at the gate.")
                         .font(EType.mono(.micro)).tracking(0.3)
                         .foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -502,6 +530,12 @@ struct AtReceiverGateFull: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // Server-minted, self-scoped gate PIN for this active load. The proc
+        // mints/returns a real PIN only for the load's assigned driver while
+        // the load is active; everyone else / no-db / unapplied migration
+        // ⇒ honest empty (or try? ⇒ nil) ⇒ the PIN block keeps the em-dash
+        // "ISSUED AT THE GATE" copy. We never render a seeded PIN.
+        gatePass = try? await EusoTripAPI.shared.loads.getGatePass(loadId: n)
     }
 
     private func showPass() async {
