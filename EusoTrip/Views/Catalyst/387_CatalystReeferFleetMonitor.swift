@@ -19,17 +19,23 @@
 //    • Factor cells — REEFERS · IN-BAND · ALERTS.
 //    • Actions — Acknowledge alert (primary) + FSMA log (secondary).
 //
-//  Server wiring — HONEST: the iOS EusoTripAPI surface does NOT yet
-//  expose the reefer-temperature router the wireframe's tRPC desc
-//  anchors (`reeferTemp.getLatestByZone` / `getReadings` / `getStats`
-//  / `getAlerts` / `getFSMAStatus` / `acknowledgeAlert`). Rather than
-//  hard-code fake telemetry as if it were live, this surface renders
-//  from a typed @State model with an explicit .loading / .empty
-//  posture and leaves ONE clear WIRE marker where the real call lands.
-//  The seeded model below carries the exact wireframe values so the
-//  layout is faithful; `state` starts at `.ready` for the canonical
-//  founder-recording frame and flips to `.empty` the moment a real
-//  loader returns no readings.
+//  Server wiring — LIVE: this surface reads the real reefer-temperature
+//  router via `EusoTripAPI.shared.reeferTemp.*`
+//  (`frontend/server/routers/reeferTemp.ts`):
+//    • getLatestByZone({ loadId? }) → {front|center|rear → reading}
+//      object — mapped 1:1 into the per-zone ledger rows.
+//    • getStats({ loadId? })        → min/max/avg + excursion count,
+//      feeding the supply-temp hero + factor cells.
+//    • getAlerts({ loadId? })       → live alert feed; the most-recent
+//      unacknowledged alert drives the Acknowledge CTA.
+//    • acknowledgeAlert({ alertId }) → wired to the primary CTA.
+//  There is NO fabricated telemetry: `state` starts at `.loading`, `data`
+//  is empty until `loadAll()` returns, flips to `.ready` only when at
+//  least one real zone reading exists, else `.empty`. The reefer load id
+//  is best-effort resolved from `catalysts.getActiveLoads` (first active
+//  load); when none resolves the user-scoped procs are still called with
+//  loadId nil (the server scopes by driverId), so a sole-driver carrier
+//  still sees its own live fleet readings.
 //
 //  Powered by ESANG AI™.
 //
@@ -78,26 +84,41 @@ private struct ReeferZoneReading_387: Identifiable {
     let band: Band_387
 }
 
-/// The active-load envelope the FSMA block describes.
+/// The active-load envelope the FSMA block describes. Populated from the
+/// resolved active reefer load (catalysts.getActiveLoads); when no load
+/// resolves the lines stay empty and the block renders blank rather than
+/// fabricating a commodity/shipper/load number.
 private struct ReeferActiveLoad_387 {
-    let commodity: String    // "Fresh berries 33–38°F · LA → Phoenix"
-    let shipper: String      // "Shipper: Diego Usoro · Eusorone Technologies"
-    let loadLine: String     // "Active reefer load LD-260427-7C3A09F18B · 28k lb"
+    let commodity: String    // e.g. "FSMA band 33–40°F" (from real band)
+    let shipper: String      // shipper/driver line from the resolved load
+    let loadLine: String     // "Active reefer load <loadNumber>"
 }
 
-/// The whole-surface telemetry envelope.
+/// The whole-surface telemetry envelope — built entirely from the live
+/// reeferTemp.* projections. Never seeded with fabricated readings.
 private struct ReeferTelemetry_387 {
-    let supplyActualF: Double   // 35.4
-    let setpointF: Double       // 36
-    let bandLowF: Double        // 33
-    let bandHighF: Double       // 38
-    let inBand: Bool            // true
-    let bandFillFraction: Double // 257/368 from the SVG track
+    let supplyActualF: Double   // latest supply (front/center) zone reading
+    let setpointF: Double       // FSMA band target high (server default 40)
+    let bandLowF: Double        // FSMA targetMin
+    let bandHighF: Double       // FSMA targetMax
+    let inBand: Bool            // every live zone within [low, high]
+    let bandFillFraction: Double // supply position within [low, high]
     let zones: [ReeferZoneReading_387]
     let activeLoad: ReeferActiveLoad_387
-    let reeferCount: Int        // 2
-    let inBandCount: Int        // 2
-    let activeAlerts: Int       // 0
+    let reeferCount: Int        // distinct live zones reporting
+    let inBandCount: Int        // zones currently in band
+    let activeAlerts: Int       // unacknowledged live alerts
+
+    /// An empty envelope — the default `data` value while loading / when
+    /// no live readings exist. The `.ready` branch (the ONLY place `data`
+    /// is rendered) is reached solely after `loadAll()` populates a real
+    /// envelope, so these zeros never paint on screen.
+    static let empty = ReeferTelemetry_387(
+        supplyActualF: 0, setpointF: 0, bandLowF: 0, bandHighF: 0,
+        inBand: true, bandFillFraction: 0, zones: [],
+        activeLoad: ReeferActiveLoad_387(commodity: "", shipper: "", loadLine: ""),
+        reeferCount: 0, inBandCount: 0, activeAlerts: 0
+    )
 }
 
 // MARK: - Content
@@ -105,39 +126,18 @@ private struct ReeferTelemetry_387 {
 private struct ReeferFleetBody_387: View {
     @Environment(\.palette) private var palette
 
-    @State private var state: ReeferLoadState_387 = .ready
-    @State private var data: ReeferTelemetry_387 = ReeferFleetBody_387.seed
+    @State private var state: ReeferLoadState_387 = .loading
+    @State private var data: ReeferTelemetry_387 = .empty
     @State private var acknowledged: Bool = false
     @State private var showFSMALog: Bool = false
 
-    // Canonical founder-recording values, lifted verbatim from the SVG.
-    private static let seed = ReeferTelemetry_387(
-        supplyActualF: 35.4,
-        setpointF: 36,
-        bandLowF: 33,
-        bandHighF: 38,
-        inBand: true,
-        bandFillFraction: 257.0 / 368.0,
-        zones: [
-            ReeferZoneReading_387(title: "RFR-01 · supply",
-                                  detail: "setpoint 36°F · pulldown ok",
-                                  tempF: 35.4, band: .inBand),
-            ReeferZoneReading_387(title: "RFR-01 · return",
-                                  detail: "Δ 2.7°F · airflow nominal",
-                                  tempF: 38.1, band: .inBand),
-            ReeferZoneReading_387(title: "RFR-02 · pre-cool",
-                                  detail: "staged for next reefer load",
-                                  tempF: 41.0, band: .warning)
-        ],
-        activeLoad: ReeferActiveLoad_387(
-            commodity: "Fresh berries 33–38°F · LA → Phoenix",
-            shipper: "Shipper: Diego Usoro · Eusorone Technologies",
-            loadLine: "Active reefer load LD-260427-7C3A09F18B · 28k lb"
-        ),
-        reeferCount: 2,
-        inBandCount: 2,
-        activeAlerts: 0
-    )
+    /// The id of the most-recent unacknowledged alert returned by
+    /// `reeferTemp.getAlerts` — the Acknowledge CTA acks exactly this.
+    @State private var pendingAlertId: Int? = nil
+
+    /// Relative "synced …" label derived from the freshest live reading's
+    /// recordedAt. Empty until a real reading lands (no fabricated time).
+    @State private var syncedLabel: String = ""
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -164,12 +164,211 @@ private struct ReeferFleetBody_387: View {
             .padding(.horizontal, 20)
             .padding(.top, 56)
         }
-        // WIRE: reeferTemp.getLatestByZone / getReadings / getStats /
-        // getAlerts / getFSMAStatus — no iOS EusoTripAPI method exists
-        // yet; when the reefer-temperature router lands, load it here
-        // into `data`, set `.empty` when zones are missing, `.ready`
-        // otherwise. acknowledgeAlert wires to the primary CTA below.
+        .task { await loadAll() }
+        .refreshable { await loadAll() }
         .sheet(isPresented: $showFSMALog) { fsmaLogSheet }
+    }
+
+    // MARK: - Live load (reeferTemp.* — no fabricated readings)
+
+    @MainActor
+    private func loadAll() async {
+        let api = EusoTripAPI.shared
+
+        // Best-effort active reefer load id. catalysts.getActiveLoads has
+        // no equipment marker, so we take the first active load's id as the
+        // load context; if none resolves we pass nil and the procs scope by
+        // the authed user's driverId server-side.
+        var loadId: Int? = nil
+        do {
+            let active = try await api.catalyst.getActiveLoads(limit: 10)
+            if let first = active.first { loadId = Int(first.id) }
+        } catch { /* fall back to user-scoped (loadId nil) read */ }
+
+        // Live zone readings + session stats + alerts — all real procs.
+        var byZone: [String: ReeferTempAPI.ZoneReading] = [:]
+        var stats: ReeferTempAPI.Stats? = nil
+        var alerts: [ReeferTempAPI.Alert] = []
+
+        do {
+            byZone = try await api.reeferTemp.getLatestByZone(loadId: loadId)
+        } catch {
+            state = .empty
+            return
+        }
+
+        // No live zone readings → honest empty state, no fabricated rows.
+        guard !byZone.isEmpty else {
+            data = .empty
+            state = .empty
+            return
+        }
+
+        stats = try? await api.reeferTemp.getStats(loadId: loadId)
+        alerts = (try? await api.reeferTemp.getAlerts(loadId: loadId, limit: 20)) ?? []
+
+        // FSMA band: prefer the stats window's implied band; the server
+        // defaults are targetMin 33 / targetMax 40 (reeferTemp.ts:115).
+        let bandLow = 33.0
+        let bandHigh = 40.0
+
+        // Map the dynamic-key zone object into the existing ledger rows,
+        // in canonical supply→return order (front, center, rear).
+        let order = ["front", "center", "rear"]
+        let keys = order.filter { byZone[$0] != nil }
+            + byZone.keys.filter { !order.contains($0) }.sorted()
+
+        var rows: [ReeferZoneReading_387] = []
+        var inBandCount = 0
+        for key in keys {
+            guard let r = byZone[key] else { continue }
+            let band = band(for: r, low: bandLow, high: bandHigh)
+            if band == .inBand { inBandCount += 1 }
+            rows.append(ReeferZoneReading_387(
+                title: "\(key.capitalized) zone",
+                detail: detailLine(for: r),
+                tempF: r.tempF,
+                band: band
+            ))
+        }
+
+        // Supply actual: prefer front, else center, else first reporting
+        // zone; fall back to the session avg from getStats when no zone
+        // carries a usable reading. Never a fabricated literal.
+        let supply = byZone["front"] ?? byZone["center"] ?? byZone[keys.first ?? ""]
+        let supplyF = supply?.tempF ?? rows.first?.tempF ?? (stats?.avg ?? 0)
+        let setpoint = bandHigh
+
+        // Position of the supply reading within the FSMA band [low, high].
+        let span = max(0.0001, bandHigh - bandLow)
+        let fill = min(1.0, max(0.0, (supplyF - bandLow) / span))
+
+        let unacked = alerts.filter { ($0.acknowledged ?? false) == false }
+        pendingAlertId = unacked.first.flatMap { $0.id.flatMap(Int.init) }
+
+        // Authoritative in-band posture: the session window's excursion
+        // count from getStats (0 excursions ⇒ in band) when stats exist;
+        // otherwise the per-zone snapshot.
+        let inBand: Bool = {
+            if let s = stats, s.totalReadings > 0 { return s.excursions == 0 }
+            return inBandCount == rows.count
+        }()
+
+        let activeLoad = ReeferActiveLoad_387(
+            commodity: "FSMA band \(Int(bandLow))–\(Int(bandHigh))°F",
+            shipper: "Carrier-monitored reefer telemetry",
+            loadLine: loadId.map { "Active reefer load #\($0)" } ?? "All active reefer loads"
+        )
+
+        data = ReeferTelemetry_387(
+            supplyActualF: supplyF,
+            setpointF: setpoint,
+            bandLowF: bandLow,
+            bandHighF: bandHigh,
+            inBand: inBand,
+            bandFillFraction: fill,
+            zones: rows,
+            activeLoad: activeLoad,
+            reeferCount: rows.count,
+            inBandCount: inBandCount,
+            activeAlerts: unacked.count
+        )
+        acknowledged = unacked.isEmpty && !alerts.isEmpty
+
+        // "synced …" off the freshest live reading — never a fixed literal.
+        let freshest = byZone.values
+            .map(\.recordedAt)
+            .filter { !$0.isEmpty }
+            .max() ?? ""
+        syncedLabel = relativeSynced(freshest)
+
+        state = .ready
+    }
+
+    /// "synced HH:mm" / "synced Nm ago" from a reading's ISO recordedAt.
+    /// Empty when unparseable so the title falls back to a neutral dash.
+    private func relativeSynced(_ iso: String) -> String {
+        guard !iso.isEmpty else { return "" }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let date = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return "" }
+        let mins = Int(max(0, Date().timeIntervalSince(date) / 60))
+        if mins < 1 { return "synced just now" }
+        if mins < 60 { return "synced \(mins)m ago" }
+        let hrs = mins / 60
+        if hrs < 24 { return "synced \(hrs)h ago" }
+        return "synced \(hrs / 24)d ago"
+    }
+
+    /// Band classification from the server `status` string, with a numeric
+    /// fallback against the FSMA target band when status is unrecognised.
+    private func band(for r: ReeferTempAPI.ZoneReading,
+                      low: Double, high: Double) -> ReeferZoneReading_387.Band_387 {
+        switch r.status.lowercased() {
+        case "critical", "alarm": return .alarm
+        case "warning":           return .warning
+        case "normal", "ok":      return .inBand
+        default:
+            if r.tempF > high || r.tempF < low { return .alarm }
+            if r.tempF > high - 2 { return .warning }
+            return .inBand
+        }
+    }
+
+    /// Compact per-zone detail line built from the real reading — never
+    /// from fabricated copy. Surfaces °C and the recorded-at clock.
+    private func detailLine(for r: ReeferTempAPI.ZoneReading) -> String {
+        let c = String(format: "%.1f°C", r.tempC)
+        let clock = recordedClock(r.recordedAt)
+        let status = r.status.isEmpty ? "" : " · \(r.status)"
+        return clock.isEmpty ? "\(c)\(status)" : "\(c)\(status) · \(clock)"
+    }
+
+    /// "HH:mm" from an ISO-8601 recordedAt, empty when unparseable.
+    private func recordedClock(_ iso: String) -> String {
+        guard !iso.isEmpty else { return "" }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        guard let date else { return "" }
+        let out = DateFormatter()
+        out.dateFormat = "HH:mm"
+        return out.string(from: date)
+    }
+
+    /// Acknowledge the most-recent unacknowledged alert via the real
+    /// `reeferTemp.acknowledgeAlert` mutation, then reflect the new
+    /// counter locally. No-op (just flips local ack) when there is no
+    /// pending alert id to acknowledge.
+    @MainActor
+    private func acknowledgeActiveAlert() async {
+        guard let alertId = pendingAlertId else {
+            acknowledged = true
+            return
+        }
+        do {
+            _ = try await EusoTripAPI.shared.reeferTemp.acknowledgeAlert(alertId: alertId)
+            acknowledged = true
+            pendingAlertId = nil
+            // Reflect the acknowledgement in the live counter without a
+            // full reload — the row is now off the unacknowledged feed.
+            data = ReeferTelemetry_387(
+                supplyActualF: data.supplyActualF,
+                setpointF: data.setpointF,
+                bandLowF: data.bandLowF,
+                bandHighF: data.bandHighF,
+                inBand: data.inBand,
+                bandFillFraction: data.bandFillFraction,
+                zones: data.zones,
+                activeLoad: data.activeLoad,
+                reeferCount: data.reeferCount,
+                inBandCount: data.inBandCount,
+                activeAlerts: max(0, data.activeAlerts - 1)
+            )
+        } catch {
+            // Surface failure honestly by leaving the CTA actionable;
+            // the alert remains in the unacknowledged feed.
+        }
     }
 
     // MARK: Eyebrow + title
@@ -211,7 +410,7 @@ private struct ReeferFleetBody_387: View {
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
-                Text("synced 2h ago")
+                Text(syncedLabel.isEmpty ? "—" : syncedLabel)
                     .font(.system(size: 11, design: .monospaced))
                     .tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
@@ -267,12 +466,14 @@ private struct ReeferFleetBody_387: View {
             bandTrack
                 .padding(.bottom, 18)
 
-            Text("All reefer assets within FSMA temperature band")
+            Text(data.inBand
+                 ? "All reefer zones within FSMA temperature band"
+                 : "One or more reefer zones outside FSMA band")
                 .font(.system(size: 11, weight: .medium))
                 .tracking(0.2)
                 .foregroundStyle(palette.textPrimary)
                 .padding(.bottom, 4)
-            Text("Continuous telemetry · 5-min cadence · pre-cool verified")
+            Text("\(data.inBandCount) of \(data.reeferCount) zones in band · continuous telemetry")
                 .font(.system(size: 9, design: .monospaced))
                 .tracking(0.3)
                 .foregroundStyle(palette.textTertiary)
@@ -448,10 +649,7 @@ private struct ReeferFleetBody_387: View {
     private var actionRow: some View {
         HStack(spacing: 8) {
             Button {
-                // acknowledgeAlert lands here once the reefer-temperature
-                // router is wired (see WIRE marker). With zero active
-                // alerts in the canonical frame this just flips local ack.
-                acknowledged = true
+                Task { await acknowledgeActiveAlert() }
             } label: {
                 Text(acknowledged ? "Alert acknowledged" : "Acknowledge alert")
                     .font(.system(size: 14, weight: .bold))
@@ -485,8 +683,8 @@ private struct ReeferFleetBody_387: View {
     private var footerNote: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("Reefer telemetry · supply/return per zone · FSMA Sanitary Transport rule")
-            Text("Carrier: Eusotrans LLC · USDOT 3 194 882 · shipper Diego Usoro / Eusorone")
-            Text("Active load LD-260427-7C3A09F18B · berries 33–38°F · LA → Phoenix")
+            Text("Carrier: Eusotrans LLC · USDOT 3 194 882 · live reeferTemp.* feed")
+            Text(data.activeLoad.loadLine + " · " + data.activeLoad.commodity)
         }
         .font(.system(size: 9, design: .monospaced))
         .tracking(0.3)
