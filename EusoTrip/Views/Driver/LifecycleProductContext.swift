@@ -621,7 +621,7 @@ struct LifecycleProductContext {
     var preHaulChecklist: [PreHaulItem] {
         switch product {
         case .hazmatTanker, .vesselTanker:
-            let un = load?.unNumber ?? "UN1005"
+            let un = load?.unNumber ?? LiveLoadFacets.dash
             return [
                 .init(id: "placards", title: "Placards verified · \(un)", subtitle: "All 4 sides · Class 2.2 · non-flam gas"),
                 .init(id: "ppe",      title: "PPE staged at driver door", subtitle: "Gloves · splash hood · face shield · SCBA 30 min"),
@@ -839,10 +839,10 @@ struct LifecycleProductContext {
         switch product {
         case .hazmatTanker, .vesselTanker, .railBulk, .vesselBulk:
             return [
-                .init(id: "sealed", title: "Transfer valves sealed", subtitle: "Scale-confirmed · NH3 placards still up"),
+                .init(id: "sealed", title: "Transfer valves sealed", subtitle: "Confirm transfer valves sealed · placards present"),
                 .init(id: "bol",    title: "BOL on file · 3 copies", subtitle: "Carrier · consignee · receiver"),
                 .init(id: "dashcam", title: "Dash-cam armed on entry", subtitle: "Auto-arms at 0.3 mi geofence"),
-                .init(id: "chem",   title: "CHEMTREC on speed-dial", subtitle: "424-424-9300 · UN1005"),
+                .init(id: "chem",   title: "CHEMTREC on speed-dial", subtitle: "424-424-9300 · \(facets.unNumber)"),
             ]
         case .dryVan:
             // 133rd firing M2 retrofit: the "sealed" row previously
@@ -855,19 +855,19 @@ struct LifecycleProductContext {
                 .init(id: "sealed", title: "Load sealed", subtitle: "Seal logged at gate close"),
                 .init(id: "bol",    title: "BOL on file · 3 copies", subtitle: "Carrier · shipper · receiver"),
                 .init(id: "dashcam", title: "Dash-cam armed on entry", subtitle: "Auto-arms at 0.3 mi geofence"),
-                .init(id: "lumper", title: "Unload lumper", subtitle: "Not required - receiver unloads"),
+                .init(id: "lumper", title: "Unload lumper", subtitle: "Confirm lumper requirement with receiver"),
             ]
         case .reefer:
             return [
-                .init(id: "setpoint", title: "Set-point log clean", subtitle: "-18°F held throughout · no excursions"),
+                .init(id: "setpoint", title: "Set-point log clean", subtitle: "Set-point trace per load spec · review for excursions"),
                 .init(id: "bol",      title: "BOL + temp trace on file", subtitle: "Thermograph tape + digital trace"),
                 .init(id: "dashcam",  title: "Dash-cam armed on entry", subtitle: "Auto-arms at 0.3 mi geofence"),
-                .init(id: "lumper",   title: "Unload lumper", subtitle: "Cold crew · $75 per receiver policy"),
+                .init(id: "lumper",   title: "Unload lumper", subtitle: "Cold crew · lumper fee per receiver policy"),
             ]
         case .flatbed:
             return [
-                .init(id: "tarps",    title: "Tarps + straps inspected", subtitle: "No shift since loading · intact"),
-                .init(id: "bol",      title: "BOL + load-securement doc", subtitle: "DOT 393 · WLL within spec"),
+                .init(id: "tarps",    title: "Tarps + straps inspected", subtitle: "Re-inspect tarps + straps for shift"),
+                .init(id: "bol",      title: "BOL + load-securement doc", subtitle: "DOT 393 · confirm WLL meets spec"),
                 .init(id: "dashcam",  title: "Dash-cam armed on entry", subtitle: "Auto-arms at 0.3 mi geofence"),
                 .init(id: "crane",    title: "Crane unload notified", subtitle: "Receiver's rigger on call-forward"),
             ]
@@ -883,7 +883,7 @@ struct LifecycleProductContext {
                 .init(id: "edi",      title: "EDI 322 gate-in armed", subtitle: "Port advance notice on file"),
                 .init(id: "manifest", title: "Manifest + BOL match", subtitle: "ISO + seal against release"),
                 .init(id: "dashcam",  title: "Dash-cam armed on entry", subtitle: "Auto-arms at 0.3 mi geofence"),
-                .init(id: "customs",  title: "CBP 7512 + ISF cleared", subtitle: "Entry filed · release active"),
+                .init(id: "customs",  title: "CBP 7512 + ISF cleared", subtitle: "CBP 7512 + ISF status pending"),
             ]
         }
     }
@@ -896,17 +896,17 @@ struct LifecycleProductContext {
     var guardCheckNote: String {
         switch product {
         case .hazmatTanker, .vesselTanker, .railBulk, .vesselBulk:
-            return "Seal intact. Guard is checking hazmat manifest against the receiver's transfer window. Expect a bay push once cleared, typically 15 – 25 min at this facility."
+            return "Confirm seal is intact. Guard is checking hazmat manifest against the receiver's transfer window. Expect a bay push once cleared; wait time varies by facility queue."
         case .dryVan:
-            return "Seal intact. Guard is checking BOL against receiving schedule. You'll get a dock number push when cleared, typically 10 – 22 min at this DC."
+            return "Confirm seal is intact. Guard is checking BOL against receiving schedule. You'll get a dock number push when cleared; dock-number push follows once cleared."
         case .reefer:
-            return "Seal + temp trace intact. Guard is pulling cold-chain schedule; expect a cold-door push, typically 10 – 18 min at this DC."
+            return "Confirm seal + temp trace. Guard is pulling cold-chain schedule; cold-door push follows once cleared."
         case .flatbed:
-            return "Securement intact. Guard is checking load-sheet for the yard lane. Expect a staging row push, typically 5 – 15 min."
+            return "Re-check securement. Guard is checking load-sheet for the yard lane. Staging-row push follows once cleared."
         case .container, .railIntermodal:
-            return "Seal intact. Guard is matching container + chassis IDs against the SSL release. Expect a ramp lane push, typically 10 – 20 min."
+            return "Confirm seal is intact. Guard is matching container + chassis IDs against the SSL release. Expect a ramp lane push once cleared."
         case .vesselContainer:
-            return "Seal intact. Stevedore operations clearing you into the gate, typically 15 – 40 min depending on berth windows."
+            return "Confirm seal is intact. Stevedore operations clearing you into the gate."
         }
     }
 
@@ -968,32 +968,35 @@ struct LifecycleProductContext {
         // 138th firing M2 retrofit — extends the 133rd's dry-van em-dash
         // pattern across the remaining 7 product cases. Every value is
         // sourced from `facets`; backend stub gaps collapse to "-".
+        // Labels name the field/document type to record at fill, never
+        // a completed "signed/applied/locked/on-manifest" verdict — the
+        // close-out state isn't fed to this row.
         let f = facets
-        let bol = "SIGNED · \(bolShortId)"
+        let bol = "BOL · \(bolShortId)"
         switch product {
         case .hazmatTanker, .vesselTanker:
             return [
-                .init(icon: "drop.fill",      label: "LOADED · NET AT FILL",         value: f.loadedGallons),
+                .init(icon: "drop.fill",      label: "LOAD · NET AT FILL",           value: f.loadedGallons),
                 .init(icon: "waveform.path",  label: "SPECTRA-MATCH · FINAL SAMPLE", value: f.spectraMatchPurity),
-                .init(icon: "doc.fill",       label: "BOL · \(bol)",                 value: bolShortId),
+                .init(icon: "doc.fill",       label: bol,                            value: bolShortId),
             ]
         case .dryVan:
             return [
-                .init(icon: "shippingbox.fill", label: "LOADED · PALLETS",          value: f.palletSummary),
-                .init(icon: "seal.fill",         label: "SEAL APPLIED",               value: f.sealNumber),
-                .init(icon: "doc.fill",          label: "BOL · \(bol)",               value: bolShortId),
+                .init(icon: "shippingbox.fill", label: "LOAD · PALLETS",            value: f.palletSummary),
+                .init(icon: "seal.fill",         label: "SEAL",                       value: f.sealNumber),
+                .init(icon: "doc.fill",          label: bol,                          value: bolShortId),
             ]
         case .reefer:
             return [
-                .init(icon: "thermometer.snowflake", label: "LOADED · PALLETS",      value: f.palletSummary),
-                .init(icon: "thermometer",            label: "SET-POINT LOCKED",     value: f.setPointDisplay),
+                .init(icon: "thermometer.snowflake", label: "LOAD · PALLETS",        value: f.palletSummary),
+                .init(icon: "thermometer",            label: "SET-POINT",            value: f.setPointDisplay),
                 .init(icon: "doc.fill",               label: "BOL + TEMP TRACE ·",    value: bolShortId),
             ]
         case .flatbed:
             return [
-                .init(icon: "scalemass.fill",    label: "LOADED · WEIGHT",             value: f.netWeight),
+                .init(icon: "scalemass.fill",    label: "LOAD · WEIGHT",               value: f.netWeight),
                 .init(icon: "link",              label: "SECUREMENT · \(f.securementShort)", value: f.securementWithinWLL),
-                .init(icon: "doc.fill",          label: "BOL · \(bol)",                value: bolShortId),
+                .init(icon: "doc.fill",          label: bol,                           value: bolShortId),
             ]
         case .container, .railIntermodal:
             return [
@@ -1003,13 +1006,13 @@ struct LifecycleProductContext {
             ]
         case .vesselContainer:
             return [
-                .init(icon: "ferry.fill",        label: "CONTAINER ON VESSEL MANIFEST", value: f.containerNumber),
+                .init(icon: "ferry.fill",        label: "CONTAINER · VESSEL MANIFEST", value: f.containerNumber),
                 .init(icon: "seal.fill",         label: "SEAL",                         value: f.sealNumber),
                 .init(icon: "doc.fill",          label: "BOL + VGM ·",                  value: bolShortId),
             ]
         case .railBulk, .vesselBulk:
             return [
-                .init(icon: "drop.fill",         label: "LOADED · NET",                 value: f.bulkNetDisplay),
+                .init(icon: "drop.fill",         label: "LOAD · NET",                   value: f.bulkNetDisplay),
                 .init(icon: "waveform.path",     label: "SAMPLE CERT",                  value: f.bulkSampleCert),
                 .init(icon: "doc.fill",          label: "WAYBILL · AAR ·",              value: bolShortId),
             ]
@@ -1100,9 +1103,11 @@ struct LifecycleProductContext {
 
     /// Hazmat-only advisory shown on 037 (amber strip). Empty
     /// string for non-hazmat products so the UI hides the strip.
+    /// States the protocol to run, not a verified live-monitoring
+    /// state — no ammonia-sensor stream is wired to this row.
     var receiverHazmatStrip: String {
         guard isHazmat else { return "" }
-        return "Ammonia sensor monitoring active during transfer."
+        return "Stage the ammonia sensor and monitor through the transfer."
     }
 
     // MARK: - 040-045 Discharge / disconnect
@@ -1187,36 +1192,36 @@ struct LifecycleProductContext {
         switch product {
         case .hazmatTanker, .vesselTanker, .railBulk, .vesselBulk:
             return [
-                .init(title: "Depressurize line to scrubber", timestamp: "21:46:02", state: "done"),
-                .init(title: "Spin off coupler ring",          timestamp: nil,        state: "now"),
+                .init(title: "Depressurize line to scrubber", timestamp: nil, state: "next"),
+                .init(title: "Spin off coupler ring",          timestamp: nil,        state: "next"),
                 .init(title: "Cap stub & stow hose",           timestamp: nil,        state: "next"),
                 .init(title: "Walk-around · scrubber + plates", timestamp: nil,       state: "next"),
             ]
         case .reefer:
             return [
-                .init(title: "Close cold door at receiver",    timestamp: "21:46:00", state: "done"),
-                .init(title: "Pull thermograph + sign trace",   timestamp: nil,       state: "now"),
+                .init(title: "Close cold door at receiver",    timestamp: nil,        state: "next"),
+                .init(title: "Pull thermograph + sign trace",   timestamp: nil,       state: "next"),
                 .init(title: "Seal cold-door + photograph",     timestamp: nil,       state: "next"),
                 .init(title: "Walk-around · reefer + bay",      timestamp: nil,       state: "next"),
             ]
         case .flatbed:
             return [
-                .init(title: "Final tie-downs released",        timestamp: "21:46:00", state: "done"),
-                .init(title: "Crane / forklift lifting",         timestamp: nil,       state: "now"),
+                .init(title: "Final tie-downs released",        timestamp: nil,        state: "next"),
+                .init(title: "Crane / forklift lifting",         timestamp: nil,       state: "next"),
                 .init(title: "Tarps + corner pads stowed",       timestamp: nil,       state: "next"),
                 .init(title: "Walk-around · deck + straps",      timestamp: nil,       state: "next"),
             ]
         case .container, .railIntermodal, .vesselContainer:
             return [
-                .init(title: "Twistlocks released",             timestamp: "21:46:00", state: "done"),
-                .init(title: "Crane lift-off",                   timestamp: nil,       state: "now"),
+                .init(title: "Twistlocks released",             timestamp: nil,        state: "next"),
+                .init(title: "Crane lift-off",                   timestamp: nil,       state: "next"),
                 .init(title: "Pull chassis from under can",      timestamp: nil,       state: "next"),
                 .init(title: "Ramp / port out · gate-out scan",  timestamp: nil,       state: "next"),
             ]
         case .dryVan:
             return [
-                .init(title: "Last pallets off dock plate",     timestamp: "21:46:00", state: "done"),
-                .init(title: "Dock plate raised, door pulled",  timestamp: nil,       state: "now"),
+                .init(title: "Last pallets off dock plate",     timestamp: nil,        state: "next"),
+                .init(title: "Dock plate raised, door pulled",  timestamp: nil,       state: "next"),
                 .init(title: "Seal applied for return",          timestamp: nil,       state: "next"),
                 .init(title: "Walk-around · trailer + locks",    timestamp: nil,       state: "next"),
             ]
@@ -1301,23 +1306,23 @@ struct LifecycleProductContext {
         let trailerSweep: YardCheck = {
             switch product {
             case .hazmatTanker, .vesselTanker:
-                return .init(title: "MC-331 trailer sweep - decon verified", subtitle: "Spectra · residual 0 ppm · scrubber clear", tail: "CLOSED")
+                return .init(title: "MC-331 trailer sweep",                  subtitle: "check residual gas · scrubber",               tail: "PENDING")
             case .reefer:
-                return .init(title: "Reefer unit sweep - fuel + temp ok",   subtitle: "Set-point clean · door seal good",            tail: "CLOSED")
+                return .init(title: "Reefer unit sweep",                     subtitle: "check fuel + temp · door seal",               tail: "PENDING")
             case .flatbed:
-                return .init(title: "Flatbed deck sweep - securement back", subtitle: "12 straps · 2 chains · corner pads",          tail: "CLOSED")
+                return .init(title: "Flatbed deck sweep - securement back", subtitle: "Straps · chains · corner pads stowed",        tail: "PENDING")
             case .container, .railIntermodal, .vesselContainer:
-                return .init(title: "Chassis sweep - pins + tires + lights", subtitle: "DOT pre-trip clean · twistlocks oiled",       tail: "CLOSED")
+                return .init(title: "Chassis sweep - pins + tires + lights", subtitle: "DOT pre-trip · oil twistlocks",               tail: "PENDING")
             case .railBulk, .vesselBulk:
-                return .init(title: "Bulk trailer sweep - grounding stowed", subtitle: "Hatches sealed · bond cable in box",           tail: "CLOSED")
+                return .init(title: "Bulk trailer sweep - grounding stowed", subtitle: "Seal hatches · stow bond cable",               tail: "PENDING")
             case .dryVan:
-                return .init(title: "Trailer sweep - seal logged",          subtitle: "Interior dry · doors latched",                 tail: "CLOSED")
+                return .init(title: "Trailer sweep - seal logged",          subtitle: "Check interior · latch doors",                 tail: "PENDING")
             }
         }()
 
         let placardsRow: YardCheck = {
             if isHazmat {
-                return .init(title: "Placards + ERG 125 copy under visor", subtitle: "4 sides verified · ERG cab clean", tail: "VERIFY")
+                return .init(title: "Placards + ERG 125 copy under visor", subtitle: "4 sides · ERG 125 in cab", tail: "VERIFY")
             }
             switch product {
             case .reefer:
@@ -1327,14 +1332,14 @@ struct LifecycleProductContext {
             case .container, .railIntermodal, .vesselContainer:
                 return .init(title: "Chassis ID + plate match",            subtitle: "Photographed for pool return",      tail: "VERIFY")
             case .railBulk, .vesselBulk:
-                return .init(title: "Waybill + grounding log signed",      subtitle: "AAR closed · ohms cap recorded",     tail: "VERIFY")
+                return .init(title: "Waybill + grounding log signed",      subtitle: "AAR waybill · grounding ohms to record",     tail: "VERIFY")
             default:
                 return .init(title: "Trailer seal photo logged",          subtitle: "Receiver-side seal photographed",   tail: "VERIFY")
             }
         }()
 
         return [
-            .init(title: "Tractor walkaround (brakes, lights, tires)", subtitle: "49 CFR 396.11 · ESANG over cab",   tail: "READY"),
+            .init(title: "Tractor walkaround (brakes, lights, tires)", subtitle: "49 CFR 396.11 · ESANG over cab",   tail: "PENDING"),
             trailerSweep,
             placardsRow,
             .init(title: "Sign + submit DVIR to open sleeper bay",     subtitle: "Driver signature required · 30-min slot",   tail: "PENDING"),
@@ -1547,23 +1552,23 @@ struct LifecycleProductContext {
 
     // MARK: - 040 / 041 Discharge audit — product-flavored caption strings
 
-    /// Eyebrow subtitle on 040 ("EUSOSHIELD DISCHARGE LIVE ·
-    /// CLOSED-LOOP TRANSFER" for hazmat, equivalent for other
-    /// products).
+    /// Eyebrow subtitle on 040 — names the discharge type and
+    /// transfer method for the product, without asserting a live or
+    /// grounded state (no sensor/transfer feed is wired to this row).
     var dischargeKickerSubtitle: String {
         switch product {
         case .hazmatTanker, .vesselTanker:
-            return "EUSOSHIELD DISCHARGE LIVE · CLOSED-LOOP TRANSFER"
+            return "EUSOSHIELD DISCHARGE · CLOSED-LOOP TRANSFER"
         case .reefer:
-            return "EUSOSHIELD COLD-CHAIN LIVE · DOCK SEAL OPEN"
+            return "EUSOSHIELD COLD-CHAIN · DOCK SEAL"
         case .flatbed:
-            return "EUSOSHIELD UNLOAD LIVE · CRANE SIDE"
+            return "EUSOSHIELD UNLOAD · CRANE SIDE"
         case .container, .vesselContainer, .railIntermodal:
-            return "EUSOSHIELD LIFT LIVE · CHASSIS HANDOFF"
+            return "EUSOSHIELD LIFT · CHASSIS HANDOFF"
         case .railBulk, .vesselBulk:
-            return "EUSOSHIELD BULK DROP LIVE · GROUNDED"
+            return "EUSOSHIELD BULK DROP · GROUNDING"
         case .dryVan:
-            return "EUSOSHIELD UNLOAD LIVE · DOCK PLATE DOWN"
+            return "EUSOSHIELD UNLOAD · DOCK PLATE"
         }
     }
 
@@ -1584,68 +1589,72 @@ struct LifecycleProductContext {
     }
 
     /// BOL summary chip on 041's hero (e.g. "BOL #YRA-77419 ·
-    /// UN1005 · CLASS 2.2 · ACCEPTED +6 GAL"). Builds from the
-    /// load when available + product-specific manifest hints.
+    /// UN1005 · CLASS 2.2"). Builds from the load when available +
+    /// product-specific document-type descriptors. No close-out
+    /// verdict (accepted/filed/clean) is asserted — that state is a
+    /// per-load record the close-out backend doesn't ship yet.
     var dischargeBolSummary: String {
         // 138th firing M2 retrofit — BOL summary chip composes from live
         // facets. Each segment that resolves to em-dash is dropped from
-        // the line so the chip stays readable; only the BOL id and
-        // ACCEPTED tail are guaranteed.
+        // the line so the chip stays readable. Only the BOL id is
+        // guaranteed; trailing labels name the document type, not an
+        // accepted/filed/clean verdict.
         let id = bolShortId
         let f = facets
         let dash = LiveLoadFacets.dash
         func seg(_ s: String) -> String? { s == dash ? nil : s }
         switch product {
         case .hazmatTanker, .vesselTanker:
-            let parts = ["BOL #\(id)", seg(f.unNumber), seg(f.hazardClass), "ACCEPTED \(f.closeoutDelta)"]
+            let parts = ["BOL #\(id)", seg(f.unNumber), seg(f.hazardClass)]
                 .compactMap { $0 }
             return parts.joined(separator: " · ")
         case .reefer:
-            let parts = ["BOL #\(id)", seg(f.palletCount).map { "\($0) PALLETS" }, "COLD-CHAIN", "ACCEPTED"]
+            let parts = ["BOL #\(id)", seg(f.palletCount).map { "\($0) PALLETS" }, "COLD-CHAIN"]
                 .compactMap { $0 }
             return parts.joined(separator: " · ")
         case .flatbed:
-            let parts = ["BOL #\(id)", seg(f.netWeightUpper), "WLL CLEAN", "ACCEPTED"]
+            let parts = ["BOL #\(id)", seg(f.netWeightUpper), "WLL"]
                 .compactMap { $0 }
             return parts.joined(separator: " · ")
         case .container, .railIntermodal:
-            let parts = ["BOL #\(id)", seg(f.containerNumber), "VGM FILED", "ACCEPTED"]
+            let parts = ["BOL #\(id)", seg(f.containerNumber), "VGM"]
                 .compactMap { $0 }
             return parts.joined(separator: " · ")
         case .vesselContainer:
-            let parts = ["BOL #\(id)", seg(f.containerNumber), "VGM FILED", "ACCEPTED"]
+            let parts = ["BOL #\(id)", seg(f.containerNumber), "VGM"]
                 .compactMap { $0 }
             return parts.joined(separator: " · ")
         case .railBulk, .vesselBulk:
-            let parts = ["BOL #\(id)", seg(f.netWeightUpper), "AAR WAYBILL", "ACCEPTED"]
+            let parts = ["BOL #\(id)", seg(f.netWeightUpper), "AAR WAYBILL"]
                 .compactMap { $0 }
             return parts.joined(separator: " · ")
         case .dryVan:
-            let parts = ["BOL #\(id)", seg(f.palletCount).map { "\($0) PALLETS" }, "ACCEPTED"]
+            let parts = ["BOL #\(id)", seg(f.palletCount).map { "\($0) PALLETS" }]
                 .compactMap { $0 }
             return parts.joined(separator: " · ")
         }
     }
 
-    /// Sub-line under the discharge-complete header on 041.
-    /// Hazmat says vapor purged + closed-loop sealed; non-hazmat
-    /// says doors sealed / lift-off complete / etc.
+    /// Sub-line under the discharge-complete header on 041 — names
+    /// the discharge type for the product. No close-out outcome
+    /// (sealed/purged/clear/updated/released/swept) is asserted; the
+    /// per-load close-out state isn't wired to this row.
     var dischargeCompleteSubtitle: String {
         switch product {
         case .hazmatTanker, .vesselTanker:
-            return "NH3 CLOSED-LOOP SEALED · VAPOR PURGED"
+            return "NH3 CLOSED-LOOP TRANSFER"
         case .reefer:
-            return "COLD DOOR CLOSED · TEMP TRACE SEALED"
+            return "COLD-CHAIN DROP"
         case .flatbed:
-            return "DECK CLEAR · SECUREMENT RETURNED"
+            return "FLATBED DECK + SECUREMENT"
         case .container, .railIntermodal:
-            return "CONTAINER LIFTED OFF · CHASSIS CLEAR"
+            return "CONTAINER LIFT-OFF"
         case .vesselContainer:
-            return "BOX ABOARD VESSEL · MANIFEST UPDATED"
+            return "VESSEL LOAD-ABOARD"
         case .railBulk, .vesselBulk:
-            return "BULK DROPPED · GROUNDING RELEASED"
+            return "BULK DROP"
         case .dryVan:
-            return "DOORS SEALED · TRAILER SWEPT"
+            return "DRY-VAN UNLOAD"
         }
     }
 
@@ -1670,39 +1679,39 @@ struct LifecycleProductContext {
         switch product {
         case .hazmatTanker, .vesselTanker:
             return [
-                ("Pump off · motor cooled",         "21:45:54"),
-                ("Valve closed · ESD bond live",    "21:46:02"),
-                ("Vapor purged · scrubber clear",   "21:46:14"),
+                ("Pump off · cool motor",           LiveLoadFacets.dash),
+                ("Close valve · confirm ESD bond",  LiveLoadFacets.dash),
+                ("Purge vapor · clear scrubber",    LiveLoadFacets.dash),
             ]
         case .reefer:
             return [
-                ("Last cold pallet off dock",       "21:45:54"),
-                ("Cold door closed · seal applied", "21:46:02"),
-                ("Reefer set-point logged + signed", "21:46:14"),
+                ("Last cold pallet off dock",       LiveLoadFacets.dash),
+                ("Close cold door · apply seal",    LiveLoadFacets.dash),
+                ("Log + sign reefer set-point",     LiveLoadFacets.dash),
             ]
         case .flatbed:
             return [
-                ("Last tie-down released",          "21:45:54"),
-                ("Crane lift complete · deck clear", "21:46:02"),
-                ("Tarps + corner pads stowed",       "21:46:14"),
+                ("Release last tie-down",           LiveLoadFacets.dash),
+                ("Complete crane lift · clear deck", LiveLoadFacets.dash),
+                ("Stow tarps + corner pads",         LiveLoadFacets.dash),
             ]
         case .container, .railIntermodal, .vesselContainer:
             return [
-                ("Twistlocks released",             "21:45:54"),
-                ("Container lifted off chassis",    "21:46:02"),
-                ("Chassis pulled out · ramp-out",    "21:46:14"),
+                ("Release twistlocks",              LiveLoadFacets.dash),
+                ("Lift container off chassis",      LiveLoadFacets.dash),
+                ("Pull chassis out · ramp-out",      LiveLoadFacets.dash),
             ]
         case .railBulk, .vesselBulk:
             return [
-                ("Last bulk hatched out",           "21:45:54"),
-                ("Hatches sealed · grounding stowed", "21:46:02"),
-                ("Waybill closed · AAR signed",      "21:46:14"),
+                ("Hatch out last bulk",             LiveLoadFacets.dash),
+                ("Seal hatches · stow grounding",   LiveLoadFacets.dash),
+                ("Close waybill · AAR sign",         LiveLoadFacets.dash),
             ]
         case .dryVan:
             return [
-                ("Last pallet off dock plate",      "21:45:54"),
-                ("Door closed · seal applied",       "21:46:02"),
-                ("Walk-around · trailer verified",   "21:46:14"),
+                ("Last pallet off dock plate",      LiveLoadFacets.dash),
+                ("Close door · apply seal",          LiveLoadFacets.dash),
+                ("Walk-around · verify trailer",     LiveLoadFacets.dash),
             ]
         }
     }
@@ -1897,11 +1906,12 @@ struct LifecycleProductContext {
             Trailer seal recorded at pickup — we'll log a photo at the gate.
             """
         case .reefer:
-            // Reefer fuel "%" reading omitted — needs a fleet telematics
-            // backend that doesn't ship yet.
+            // Reefer fuel "%" + set-point readings omitted — needs a fleet
+            // telematics backend that doesn't ship yet, so we cue the
+            // action rather than assert a verified pre-cool state.
             return """
-            Four miles out. Reefer pre-cool steady at set-point.
-            I'll notify cold-chain receiving at two so the cold door opens on arrival.
+            Four miles out. Check the reefer set-point against the load spec before the gate.
+            I'll notify cold-chain receiving at two so the cold door is ready on arrival.
             """
         case .flatbed:
             return """
@@ -1921,14 +1931,19 @@ struct LifecycleProductContext {
             lines.append("EDI 322 gate-in message armed; I'll fire at the scanner.")
             return lines.joined(separator: "\n")
         case .railBulk:
+            // Grounding-ohms reading omitted — sensor stream not wired,
+            // so verify the grounding rig before transfer rather than
+            // narrating a "within cap" state.
             return """
-            Four miles out. Spur + track dispatched. Grounding ohms within cap — transfer-ready.
-            Trainmaster notified at two; AAR waybill on my tablet.
+            Four miles out. Confirm the spur + track assignment and check grounding ohms against the cap before transfer.
+            I'll cue the trainmaster at two; have the AAR waybill ready on your tablet.
             """
         case .vesselContainer, .vesselBulk:
+            // Berthing/VGM/EDI states omitted — no live port feed, so
+            // cue the protocol steps rather than assert they're on file.
             return """
-            Four miles out. EDI 322 + VGM on file. Berthing ch. 16 raised.
-            Harbormaster logging inbound — stevedores standing by on call-forward.
+            Four miles out. Have the EDI 322 + VGM ready and raise berthing on ch. 16.
+            I'll cue the harbormaster at two so the stevedores can stage for call-forward.
             """
         }
     }
@@ -2004,14 +2019,15 @@ struct LifecycleProductContext {
     /// Three close-out rows for screen 041's hero strip. Carries
     /// the BOL number, the regulatory class line (UN/Class for
     /// hazmat; ISO for container; AAR for rail bulk; etc.), and
-    /// the endorsed-delta (signed-vs-net difference). Activated
+    /// the close-out delta (signed-vs-net difference). Activated
     /// when an active load is hydrated; otherwise the screen
     /// falls back to the Figma-verbatim register copy.
     var dischargeCompleteSummary: [ComplianceRow] {
         // 138th firing M2 retrofit — close-out triplet sources from
-        // facets. The "sealed" suffix on the BOL row and the ENDORSED
-        // delta both collapse to em-dash until the close-out backend
-        // (`loadLifecycle.closeoutDelta`) wires through.
+        // facets. The BOL-row value and the close-out delta both
+        // collapse to em-dash until the close-out backend
+        // (`loadLifecycle.closeoutDelta`) wires through. The third row
+        // labels the close-out delta to record, not an endorsed verdict.
         let f = facets
         let dash = LiveLoadFacets.dash
         let bol = "BOL #\(bolShortId)"
@@ -2027,45 +2043,45 @@ struct LifecycleProductContext {
                 }
             }()
             return [
-                .init(icon: "doc.text.fill",  label: bol,        value: dash),
-                .init(icon: "flame.fill",     label: regulatory, value: dash),
-                .init(icon: "checkmark.seal", label: "ENDORSED", value: f.closeoutDelta),
+                .init(icon: "doc.text.fill",   label: bol,              value: dash),
+                .init(icon: "flame.fill",      label: regulatory,       value: dash),
+                .init(icon: "arrow.left.arrow.right", label: "CLOSE-OUT DELTA", value: f.closeoutDelta),
             ]
         case .dryVan:
             return [
-                .init(icon: "doc.text.fill",     label: bol,        value: dash),
-                .init(icon: "shippingbox.fill",  label: "PALLETS",  value: f.palletSummary),
-                .init(icon: "checkmark.seal",    label: "ENDORSED", value: f.closeoutDelta),
+                .init(icon: "doc.text.fill",     label: bol,               value: dash),
+                .init(icon: "shippingbox.fill",  label: "PALLETS",         value: f.palletSummary),
+                .init(icon: "arrow.left.arrow.right", label: "CLOSE-OUT DELTA", value: f.closeoutDelta),
             ]
         case .reefer:
             return [
-                .init(icon: "doc.text.fill",         label: bol,           value: dash),
-                .init(icon: "thermometer.snowflake", label: "TEMP TRACE",  value: f.tempTraceCloseout),
-                .init(icon: "checkmark.seal",        label: "ENDORSED",    value: f.closeoutDelta),
+                .init(icon: "doc.text.fill",         label: bol,              value: dash),
+                .init(icon: "thermometer.snowflake", label: "TEMP TRACE",     value: f.tempTraceCloseout),
+                .init(icon: "arrow.left.arrow.right", label: "CLOSE-OUT DELTA", value: f.closeoutDelta),
             ]
         case .flatbed:
             return [
-                .init(icon: "doc.text.fill",  label: bol,        value: dash),
-                .init(icon: "scalemass.fill", label: "WEIGHT",   value: f.netWeight),
-                .init(icon: "checkmark.seal", label: "ENDORSED", value: f.closeoutDelta),
+                .init(icon: "doc.text.fill",   label: bol,              value: dash),
+                .init(icon: "scalemass.fill",  label: "WEIGHT",         value: f.netWeight),
+                .init(icon: "arrow.left.arrow.right", label: "CLOSE-OUT DELTA", value: f.closeoutDelta),
             ]
         case .container, .railIntermodal:
             return [
-                .init(icon: "doc.text.fill",  label: bol,                 value: dash),
-                .init(icon: "cube.box.fill",  label: f.containerNumber,   value: f.containerIsoType),
-                .init(icon: "checkmark.seal", label: "ENDORSED",          value: f.closeoutDelta),
+                .init(icon: "doc.text.fill",   label: bol,               value: dash),
+                .init(icon: "cube.box.fill",   label: f.containerNumber, value: f.containerIsoType),
+                .init(icon: "arrow.left.arrow.right", label: "CLOSE-OUT DELTA", value: f.closeoutDelta),
             ]
         case .vesselContainer:
             return [
-                .init(icon: "doc.text.fill",  label: bol,                value: dash),
-                .init(icon: "ferry.fill",     label: f.containerNumber,  value: f.containerIsoType),
-                .init(icon: "checkmark.seal", label: "ENDORSED",         value: f.closeoutDelta),
+                .init(icon: "doc.text.fill",   label: bol,               value: dash),
+                .init(icon: "ferry.fill",      label: f.containerNumber, value: f.containerIsoType),
+                .init(icon: "arrow.left.arrow.right", label: "CLOSE-OUT DELTA", value: f.closeoutDelta),
             ]
         case .railBulk, .vesselBulk:
             return [
-                .init(icon: "doc.text.fill",  label: "WAYBILL · \(bolShortId)", value: f.waybillRegistry),
-                .init(icon: "drop.fill",      label: "NET",                     value: f.bulkNetDisplay),
-                .init(icon: "checkmark.seal", label: "ENDORSED",                value: f.closeoutDelta),
+                .init(icon: "doc.text.fill",   label: "WAYBILL · \(bolShortId)", value: f.waybillRegistry),
+                .init(icon: "drop.fill",       label: "NET",                     value: f.bulkNetDisplay),
+                .init(icon: "arrow.left.arrow.right", label: "CLOSE-OUT DELTA",   value: f.closeoutDelta),
             ]
         }
     }
@@ -2084,7 +2100,7 @@ struct LifecycleProductContext {
     var disconnectChecklist: [PreHaulItem] {
         switch product {
         case .hazmatTanker:
-            let un = load?.unNumber ?? "UN1005"
+            let un = load?.unNumber ?? LiveLoadFacets.dash
             return [
                 .init(id: "purge",    title: "Purge NH\u{2083} vapor line",  subtitle: "Close ball-valve · vent residual to scrubber · confirm 0 psi"),
                 .init(id: "cap",      title: "Cap liquid product port",      subtitle: "Dry-break collar retract · thread cap · witness seat"),
@@ -2092,7 +2108,7 @@ struct LifecycleProductContext {
                 .init(id: "placard",  title: "Document placard state",       subtitle: "\(un) placards 4/4 · photograph · log dock hash"),
             ]
         case .vesselTanker:
-            let un = load?.unNumber ?? "UN1268"
+            let un = load?.unNumber ?? LiveLoadFacets.dash
             return [
                 .init(id: "esd",      title: "Arm emergency shutoff",        subtitle: "ESD hardwired · dead-man held · ORV closed"),
                 .init(id: "flange",   title: "Flange-cap loading arm",       subtitle: "Manifold blanked · witness seat · grounding bond held"),
@@ -2115,10 +2131,10 @@ struct LifecycleProductContext {
             ]
         case .flatbed:
             return [
-                .init(id: "unstrap",  title: "Unstrap sequence · 12-strap",  subtitle: "Release front-to-rear · witness each · strap condition logged"),
+                .init(id: "unstrap",  title: "Unstrap sequence · front-to-rear",  subtitle: "Release front-to-rear · witness each · strap condition logged"),
                 .init(id: "tarp",     title: "Fold tarp · corner protectors", subtitle: "Dry-fold · vent-grommets up · corner protectors stowed"),
                 .init(id: "dunnage",  title: "Stow dunnage + edge-pro",      subtitle: "Bunks + 4x4 blocks · wet-tape residue scraped"),
-                .init(id: "chains",   title: "Chain + binder inventory",     subtitle: "8 chains · 4 ratchets · WLL stamp photographed"),
+                .init(id: "chains",   title: "Chain + binder inventory",     subtitle: "Chains + ratchets per securement plan · WLL stamp photographed"),
             ]
         case .container, .railIntermodal, .vesselContainer:
             return [
@@ -2216,7 +2232,7 @@ struct LifecycleProductContext {
     /// driver never sees a "tunnel skipped" banner that doesn't apply.
     var enRouteHazmatBand: String {
         guard isHazmat else { return "" }
-        return "HAZMAT · TUNNEL / VIADUCT REROUTE ACTIVE"
+        return "HAZMAT · TUNNEL / VIADUCT RESTRICTIONS"
     }
 
     /// Pill-sized in-transit binder summary surfaced on the bottom
@@ -2226,13 +2242,13 @@ struct LifecycleProductContext {
     /// until the live binder service streams the actual coverage.
     var enRouteBinderValue: String {
         switch product {
-        case .hazmatTanker, .vesselTanker:    return "$5M HAZMAT BINDER"
-        case .reefer:                         return "COLD-CHAIN TRACE LIVE"
-        case .flatbed:                        return "SECUREMENT BINDER · WLL OK"
+        case .hazmatTanker, .vesselTanker:    return "HAZMAT BINDER · PENDING"
+        case .reefer:                         return "COLD-CHAIN TRACE · PENDING"
+        case .flatbed:                        return "SECUREMENT BINDER · PENDING"
         case .container, .railIntermodal, .vesselContainer:
-            return "SSL COVERAGE LIVE"
-        case .railBulk, .vesselBulk:          return "BULK BINDER · GROUNDED"
-        case .dryVan:                         return "$1M LINEHAUL BINDER"
+            return "SSL COVERAGE · PENDING"
+        case .railBulk, .vesselBulk:          return "BULK BINDER · PENDING"
+        case .dryVan:                         return "LINEHAUL BINDER · PENDING"
         }
     }
 
@@ -2254,19 +2270,19 @@ struct LifecycleProductContext {
         case .hazmatTanker, .vesselTanker:
             return .init(
                 icon: "exclamationmark.triangle.fill",
-                title: "Hazmat-class spaces confirmed at this lot tonight",
+                title: "Filters for hazmat-class spaces",
                 chip: "Class 3 / PG II"
             )
         case .reefer:
             return .init(
                 icon: "thermometer.snowflake",
-                title: "Shore-power outlets + reefer-fuel pumps on site",
+                title: "Filters for shore-power + reefer-fuel",
                 chip: "Cold-rated"
             )
         case .flatbed:
             return .init(
                 icon: "rectangle.portrait.arrowtriangle.2.outward",
-                title: "Wide-body lanes + tarped-load lanes available",
+                title: "Filters for wide-body lanes",
                 chip: "Heavy-haul ok"
             )
         case .container, .railIntermodal, .vesselContainer:
