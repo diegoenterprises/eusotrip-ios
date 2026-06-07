@@ -19,15 +19,33 @@
 //  (permissions.kind = "vessel_shipment_tracking", reads vesselShipments).
 //  Cross-mode sibling of Vessel 694 Consignee Tracking Link.
 //
+//  De-fabrication (2026-06-07): the CONSIGNEE-VIEW rows are structurally
+//  unbacked for rail — publicTrack is vessel-scoped, so `track` is always
+//  nil here. The Figma literals that had leaked onto the rendered path —
+//  consignee "Midwest Imports Co." / "ops@midwestimports.example", the
+//  "Logistics Park" destination, container "TCNU7693120", the "last gate-in
+//  ICTF" sub, the "today" recipient value, the ETA "MAY 27 / 09:00", the 40'
+//  default size, the asserting "LIVE" pill, and the default "RAIL-260523-…"
+//  load number — now resolve from the live publicTrack row when it lands, or
+//  fall through to an honest em-dash "-" (the sentinel this file already
+//  uses for expires/state). No seeded figure remains on any rendered path.
+//  The hero EXPIRES/STATE/SCOPE (live shareTrackingLink.expiresAt), the Copy
+//  CTA (live trackingUrl), the local Revoke flip, and issuedLabel stay live.
+//  Mirrors the 020 Approaching-Delivery honest-floor grammar.
+//
 
 import SwiftUI
 
 struct RailConsigneeTrackingLinkScreen: View {
     let theme: Theme.Palette
     /// Rail load number the share link is scoped to (RAIL-YYMMDD-XXXXX).
-    var loadNumber: String = "RAIL-260523-7C3A0B12D4"
-    /// Container in scope (TCNU 7693120 on the wireframe).
-    var containerNumber: String = "TCNU7693120"
+    /// Honest em-dash floor when no real route passes a load number — the
+    /// header caption shows "-" rather than a fabricated RAIL-… string, and
+    /// the share mutation is skipped until a real load number is in scope.
+    var loadNumber: String = "-"
+    /// Container in scope. Em-dash floor until a real route passes the
+    /// container number (the share token is rail-load-scoped, not container).
+    var containerNumber: String = "-"
 
     var body: some View {
         Shell(theme: theme) {
@@ -101,12 +119,16 @@ private struct RailConsigneeTrackingLinkBody: View {
     @State private var revoked = false
     @State private var actionError: String? = nil
 
-    // Wireframe-true representative recipient context (publicTrack is
-    // vessel-scoped on the server — see PORT-GAP — so the consignee
-    // identity surfaces from the issuing carrier side here).
-    private let consigneeName  = "Midwest Imports Co."
-    private let consigneeEmail = "ops@midwestimports.example"
-    private let destination    = "Logistics Park"
+    /// Honest em-dash sentinel for every consignee-view field that has no
+    /// live proc behind it. `consigneePortal.publicTrack` is VESSEL-scoped
+    /// on the server (PORT-GAP — permissions.kind = "vessel_shipment_tracking",
+    /// reads vesselShipments), so a rail share token resolves no rows: `track`
+    /// is structurally nil for rail. Rather than fabricate a recipient name,
+    /// email, destination, milestone or ETA, every unbacked field falls through
+    /// to this dash. The moment the server adds a rail-scoped share-token kind
+    /// ('rail_shipment_tracking'), `track` populates and these resolve live with
+    /// no client change. Mirrors the 020 Approaching-Delivery honest-floor pattern.
+    private let dash = "-"
 
     // MARK: Derived
 
@@ -125,12 +147,70 @@ private struct RailConsigneeTrackingLinkBody: View {
 
     private var expiresLabel: String {
         if let d = expiresInDays { return "\(d)d" }
-        return "-"
+        return dash
     }
 
     private var stateLabel: String {
-        guard link != nil else { return "-" }
+        guard link != nil else { return dash }
         return revoked ? "Revoked" : "Active"
+    }
+
+    // MARK: Consignee-view derived (live `track` row → honest em-dash)
+    //
+    // `track` is nil for rail (vessel-scoped publicTrack, PORT-GAP), so each
+    // of these reads the live field when present and falls through to `dash`
+    // — never a seeded name/email/place. They flip live automatically when a
+    // rail-scoped share-token kind lands and `publicTrack` resolves rows.
+
+    /// Live booking/consignee reference from publicTrack, else em-dash.
+    /// The vessel-scoped publicTrack projection carries no recipient name or
+    /// email column, so the recipient identity rows render the honest dash
+    /// until a rail-scoped consignee read backs them.
+    private var consigneeName: String {
+        if let b = track?.bookingNumber, !b.isEmpty { return b }
+        return dash
+    }
+
+    /// No email column on the publicTrack projection — honest em-dash.
+    private var consigneeEmail: String { dash }
+
+    /// Destination from the latest live milestone location, else em-dash.
+    /// Never the fabricated "Logistics Park".
+    private var destination: String {
+        if let loc = track?.milestones?.last?.location, !loc.isEmpty { return loc }
+        return dash
+    }
+
+    /// Live last-event location for the container row sub-line ("last gate-in
+    /// <yard>"), else honest em-dash. No fabricated "ICTF".
+    private var lastEventLocation: String {
+        if let loc = track?.milestones?.last?.location, !loc.isEmpty { return loc }
+        return dash
+    }
+
+    /// Recipient row right-value: live last-milestone day, else em-dash.
+    /// Never the fabricated "today".
+    private var lastEventDayLabel: String {
+        guard let ts = track?.milestones?.last?.timestamp,
+              let d = Self.parseISO(ts) else { return dash }
+        let f = DateFormatter(); f.dateFormat = "MMM dd"
+        return f.string(from: d)
+    }
+
+    /// Live container number in scope: prefers the publicTrack row, then the
+    /// route-passed `containerNumber` (already em-dashed when absent).
+    private var containerInScope: String {
+        if let live = track?.containers?.first?.containerNumber, !live.isEmpty { return live }
+        return containerNumber
+    }
+
+    /// Lenient ISO-8601 parse (with and without fractional seconds).
+    private static func parseISO(_ s: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s)
     }
 
     var body: some View {
@@ -272,8 +352,15 @@ private struct RailConsigneeTrackingLinkBody: View {
                 trackingRow(
                     icon: "shippingbox", iconTint: Brand.info,
                     title: "Container \(containerDisplay)",
-                    sub: "\(containerSize) · last gate-in ICTF",
-                    pillText: "LIVE", pillKind: .info,
+                    // "last gate-in <yard>" only when a live milestone backs it;
+                    // otherwise the honest em-dash — never a fabricated "ICTF".
+                    sub: "\(containerSize) · last gate-in \(lastEventLocation)",
+                    // The "LIVE" pill asserted a connected feed that does not
+                    // exist for rail (publicTrack is vessel-scoped). It only
+                    // reads LIVE when a real milestone feed resolved; until then
+                    // the honest dash. Goes LIVE automatically once rail rows land.
+                    pillText: track?.milestones?.isEmpty == false ? "LIVE" : dash,
+                    pillKind: track?.milestones?.isEmpty == false ? .info : .neutral,
                     value: containerSize
                 )
                 Divider().overlay(palette.borderFaint).padding(.horizontal, Space.s4)
@@ -282,7 +369,7 @@ private struct RailConsigneeTrackingLinkBody: View {
                     title: consigneeName,
                     sub: consigneeEmail,
                     pillText: "SCOPED", pillKind: .neutral,
-                    value: "today"
+                    value: lastEventDayLabel
                 )
             }
             .background(palette.bgCard)
@@ -385,9 +472,11 @@ private struct RailConsigneeTrackingLinkBody: View {
     // MARK: - Display helpers
 
     private var containerDisplay: String {
-        // "TCNU7693120" → "TCNU 7693120" matching the wireframe spacing.
+        // Live container (spaced "TCNU 7693120") or route-passed number; both
+        // already em-dash to "-" when no real source exists. The dash is not a
+        // letter, so spacedContainer returns it untouched.
         guard let live = track?.containers?.first?.containerNumber, !live.isEmpty else {
-            return spacedContainer(containerNumber)
+            return spacedContainer(containerInScope)
         }
         return spacedContainer(live)
     }
@@ -399,29 +488,34 @@ private struct RailConsigneeTrackingLinkBody: View {
     }
 
     private var containerSize: String {
+        // Live sizeType from the publicTrack container row, else honest
+        // em-dash — never a defaulted 40'. Normalizes 40/20 to the wireframe
+        // foot mark when the live value carries it.
         let st = track?.containers?.first?.sizeType ?? ""
         if st.contains("40") || st.uppercased().hasPrefix("40") { return "40'" }
         if st.contains("20") { return "20'" }
-        return st.isEmpty ? "40'" : st
+        return st.isEmpty ? dash : st
     }
 
     private var etaDayLabel: String {
-        guard let eta = track?.eta else { return "MAY 27" }
-        let iso = ISO8601DateFormatter()
-        guard let d = iso.date(from: eta) else { return "MAY 27" }
+        // Live publicTrack ETA day, else honest em-dash — never "MAY 27".
+        guard let eta = track?.eta, let d = Self.parseISO(eta) else { return dash }
         let f = DateFormatter(); f.dateFormat = "MMM dd"
         return f.string(from: d).uppercased()
     }
 
     private var etaTimeLabel: String {
-        guard let eta = track?.eta else { return "09:00" }
-        let iso = ISO8601DateFormatter()
-        guard let d = iso.date(from: eta) else { return "09:00" }
+        // Live publicTrack ETA clock, else honest em-dash — never "09:00".
+        guard let eta = track?.eta, let d = Self.parseISO(eta) else { return dash }
         let f = DateFormatter(); f.dateFormat = "HH:mm"
         return f.string(from: d)
     }
 
     private var issuedLabel: String {
+        // Real local issuance wall-clock — but only once a live share link
+        // actually exists. With no link in scope (em-dashed load number),
+        // there is nothing issued yet, so the recipient strip reads "-".
+        guard link != nil else { return dash }
         let f = DateFormatter(); f.dateFormat = "HH:mm"
         return "today \(f.string(from: Date()))"
     }
@@ -430,6 +524,18 @@ private struct RailConsigneeTrackingLinkBody: View {
 
     private func load() async {
         loading = true; loadError = nil
+        // Honest guard: with no real load number passed from a route, the
+        // header caption is em-dashed and there is nothing to scope a share
+        // token to. We do NOT issue a share link against a "-" load (that
+        // would fabricate a live-looking hero); the hero/KPIs read their
+        // own "-" floor (expiresLabel / stateLabel) until a real route opens
+        // this screen with a load number.
+        guard loadNumber != dash, !loadNumber.isEmpty else {
+            link = nil
+            track = nil
+            loading = false
+            return
+        }
         do {
             // Issue / refresh the rail share link via the REAL endpoint.
             struct ShareIn: Encodable { let loadNumber: String; let expiresIn: Int }
@@ -448,8 +554,8 @@ private struct RailConsigneeTrackingLinkBody: View {
                 // public read will not resolve a rail shipment. We still
                 // attempt it against the live token so the moment the
                 // server adds the rail kind the rows populate with no
-                // client change; failure leaves the wireframe-true
-                // representative rows in place.
+                // client change; failure leaves every consignee field on
+                // its honest em-dash floor.
                 struct TrackIn: Encodable { let token: String }
                 do {
                     let t: PublicTrack591 = try await EusoTripAPI.shared.query(
@@ -457,7 +563,8 @@ private struct RailConsigneeTrackingLinkBody: View {
                     self.track = t
                 } catch {
                     // Rail token not yet honored by the vessel-scoped
-                    // public read — keep representative rows, no hard error.
+                    // public read — every consignee row stays em-dashed,
+                    // no hard error.
                     self.track = nil
                 }
             }
