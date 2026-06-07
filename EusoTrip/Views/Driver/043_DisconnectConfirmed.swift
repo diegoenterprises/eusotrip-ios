@@ -24,6 +24,16 @@ struct DisconnectConfirmed: View {
     @State private var activeLoad: Load?
     @State private var isDeparting: Bool = false
 
+    /// Driver-tapped ladder rows. Completion comes ONLY from a tap —
+    /// no row is seeded done on appear (mirrors the merged 046 fix).
+    /// The header count, the per-row checkmark, and the per-row label
+    /// all derive from this set.
+    @State private var completed: Set<String> = []
+
+    /// Device wall clock for the header timestamp — refreshed on
+    /// appear. Never a seeded "21:54" literal.
+    @State private var nowDate = Date()
+
     enum Register { case night, afternoon }
     let register: Register
     init(register: Register = .night) { self.register = register }
@@ -32,8 +42,26 @@ struct DisconnectConfirmed: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    private let fallbackClock = "21:54"
-    private let fallbackElapsed = "06:54"
+    private let emDash = "—"
+
+    /// Live device clock "HH:mm" — replaces the seeded fallbackClock.
+    private var nowClockText: String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: nowDate)
+    }
+
+    /// "N OF M CONFIRMED" computed from the real driver-tap count.
+    /// Never a hardcoded "4 OF 4".
+    private var confirmedCountText: String {
+        "\(completed.count) OF \(ctx.disconnectLadder.count) CONFIRMED"
+    }
+
+    /// True once every ladder row has been tapped complete. Gates the
+    /// "binder closed" / "stowed" assertions and the elapsed display.
+    private var allConfirmed: Bool {
+        !ctx.disconnectLadder.isEmpty && completed.count == ctx.disconnectLadder.count
+    }
 
     /// Disconnect-confirmed headline — composes "Disconnect
     /// confirmed · <cityState>" with em-dash sentinels for the
@@ -103,17 +131,24 @@ struct DisconnectConfirmed: View {
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
-                Text("ALL 4 STEPS VERIFIED · BINDER CLOSED")
+                Text(allConfirmed
+                     ? "ALL \(ctx.disconnectLadder.count) STEPS VERIFIED · BINDER CLOSED"
+                     : "DISCONNECT LADDER · \(confirmedCountText)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(fallbackElapsed)
+                // No elapsed-timer source on this read — em-dash rather
+                // than a seeded "06:54". The live wall clock sits below it.
+                Text(emDash)
                     .font(EType.mono(.caption)).fontWeight(.semibold)
                     .foregroundStyle(palette.textPrimary)
                 Text("ELAPSED")
                     .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Text(nowClockText)
+                    .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textTertiary)
             }
         }
@@ -127,20 +162,23 @@ struct DisconnectConfirmed: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("✓ STOWED")
+                // Gated: the "stowed" assertion only shows once the
+                // driver has tapped every ladder row complete; until
+                // then it reads a neutral "PENDING".
+                Text(allConfirmed ? "✓ STOWED" : "PENDING")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(Brand.success)
+                    .foregroundStyle(allConfirmed ? Brand.success : palette.textTertiary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .overlay(Capsule().stroke(Brand.success.opacity(0.5), lineWidth: 1))
+                    .overlay(Capsule().stroke((allConfirmed ? Brand.success : palette.borderSoft).opacity(0.5), lineWidth: 1))
             }
             ZStack {
                 RoundedRectangle(cornerRadius: Radius.md).fill(Color.black.opacity(0.7))
                 GeometryReader { geo in
                     HStack(spacing: 4) {
                         Capsule().fill(palette.textSecondary).frame(width: geo.size.width * 0.35, height: 12)
-                        Image(systemName: "checkmark.shield.fill")
+                        Image(systemName: allConfirmed ? "checkmark.shield.fill" : "shield")
                             .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(Brand.success)
+                            .foregroundStyle(allConfirmed ? Brand.success : palette.textSecondary)
                         Capsule().fill(palette.textSecondary).frame(width: geo.size.width * 0.35, height: 12)
                     }
                     .frame(maxHeight: .infinity, alignment: .center)
@@ -175,10 +213,13 @@ struct DisconnectConfirmed: View {
     }
 
     private var metricRow: some View {
+        // No live pressure/vapor/ESD-bond sensor feed reaches this
+        // screen — every reading is an honest em-dash and the status
+        // note stays neutral (never a seeded "VENTED"/"AMBIENT"/"STOWED").
         HStack(spacing: Space.s2) {
-            metric(label: "PRESSURE", value: "0", unit: "psi", note: "VENTED")
-            metric(label: "VAPOR", value: "0", unit: "ppm", note: "AMBIENT")
-            metric(label: "ESD BOND", value: "Released", unit: "", note: "STOWED")
+            metric(label: "PRESSURE", value: emDash, unit: "psi", note: emDash)
+            metric(label: "VAPOR", value: emDash, unit: "ppm", note: emDash)
+            metric(label: "ESD BOND", value: emDash, unit: "", note: emDash)
         }
     }
 
@@ -199,7 +240,7 @@ struct DisconnectConfirmed: View {
             }
             Text(note)
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(Brand.success)
+                .foregroundStyle(palette.textTertiary)
         }
         .padding(Space.s2)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -218,58 +259,80 @@ struct DisconnectConfirmed: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("4 OF 4 CONFIRMED")
+                // Real completed-count from the driver-tap set — never
+                // a hardcoded "4 OF 4".
+                Text(confirmedCountText)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(Brand.success)
+                    .foregroundStyle(allConfirmed ? Brand.success : palette.textTertiary)
             }
             ForEach(ctx.disconnectLadder) { step in
-                HStack(spacing: Space.s3) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(Brand.success)
-                    Text(step.title)
-                        .font(EType.caption.weight(.semibold))
-                        .foregroundStyle(palette.textPrimary)
-                    Spacer()
-                    Text(step.timestamp ?? "21:46:14")
-                        .font(EType.mono(.micro)).tracking(0.3)
-                        .foregroundStyle(palette.textTertiary)
+                Button {
+                    if completed.contains(step.id) {
+                        completed.remove(step.id)
+                    } else {
+                        completed.insert(step.id)
+                    }
+                } label: {
+                    HStack(spacing: Space.s3) {
+                        // Checkmark gated on the driver having tapped THIS
+                        // row complete — never unconditionally green.
+                        Image(systemName: completed.contains(step.id) ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(completed.contains(step.id) ? Brand.success : palette.textTertiary)
+                        Text(step.title)
+                            .font(EType.caption.weight(.semibold))
+                            .foregroundStyle(palette.textPrimary)
+                        Spacer()
+                        // No per-row timestamp source (ctx returns nil) —
+                        // honest em-dash, never a seeded "21:46:14".
+                        Text(step.timestamp ?? emDash)
+                            .font(EType.mono(.micro)).tracking(0.3)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    .padding(.horizontal, Space.s3)
+                    .padding(.vertical, 9)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
                 }
-                .padding(.horizontal, Space.s3)
-                .padding(.vertical, 9)
-                .background(palette.bgCard)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                        .strokeBorder(palette.borderFaint)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                .buttonStyle(.plain)
             }
         }
     }
 
     private var receiptRow: some View {
+        // HONEST EMPTY STATE: there is no live dock-receipt / receiver-
+        // acknowledgement source on this screen. The card chrome is
+        // preserved, but the receipt number, the receiver-supervisor
+        // identity, and the acknowledgement clock are all em-dash — no
+        // fabricated "YRA-77419-DR" / "Wendell Suh" / "21:53:48".
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("DOCK RECEIPT · YRA-77419-DR")
+                Text("DOCK RECEIPT · \(emDash)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("ACKNOWLEDGED")
+                Text("AWAITING DOCK RECEIPT")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(Brand.success)
+                    .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: 8) {
                 ZStack {
-                    Circle().fill(LinearGradient.diagonal).frame(width: 26, height: 26)
-                    Text("WS").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white)
+                    Circle().strokeBorder(palette.borderSoft, lineWidth: 1.5).frame(width: 26, height: 26)
+                    Image(systemName: "person")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
                 }
-                Text("Wendell Suh · receiver supervisor")
+                Text("No receiver acknowledgement on file")
                     .font(EType.caption.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                Spacer()
-                Text("21:53:48")
-                    .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
+                Spacer()
+                Text(emDash)
+                    .font(EType.mono(.micro)).tracking(0.3)
+                    .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: 8) {
                 ZStack {
@@ -280,7 +343,7 @@ struct DisconnectConfirmed: View {
                     .font(EType.caption.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
                 Spacer()
-                Text("HASH")
+                Text(emDash)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -322,6 +385,7 @@ struct DisconnectConfirmed: View {
     }
 
     private func hydrateLiveTrip() async {
+        nowDate = Date()
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }

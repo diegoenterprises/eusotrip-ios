@@ -25,6 +25,15 @@ struct ArrivalGateTaskActive: View {
     @State private var activeLoad: Load?
     @State private var isConfirming: Bool = false
 
+    /// Gates the driver has actually tapped complete. Completion comes
+    /// ONLY from a driver tap (mirrors the merged 046 fix) — no row is
+    /// seeded done, nothing auto-marks on appear.
+    @State private var completed: Set<String> = []
+
+    /// Device wall clock for the header timestamp — refreshed on appear.
+    /// Never a seeded literal.
+    @State private var nowDate = Date()
+
     enum Register { case night, afternoon }
     let register: Register
     init(register: Register = .night) { self.register = register }
@@ -33,9 +42,24 @@ struct ArrivalGateTaskActive: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    private let fallbackClock     = "23:19"
-    private let fallbackElapsed   = "3:42"
-    private let fallbackStepIndex = "STEP 3 OF 4"
+    /// Universal em-dash sentinel — matches `LiveLoadFacets.dash`; used
+    /// for the telemetry tiles, which have no live sensor feed.
+    private let dash = LiveLoadFacets.dash
+
+    private static func clock(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
+    }
+
+    /// Live device clock for the header, e.g. "22:58". Never seeded.
+    private var nowClockText: String { Self.clock(nowDate) }
+
+    /// "N OF M CONFIRMED" computed from the REAL tapped-row count —
+    /// never a hardcoded full-count.
+    private var stepIndexText: String {
+        "\(completed.count) OF \(ctx.walkaroundGates.count) CONFIRMED"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -81,7 +105,7 @@ struct ArrivalGateTaskActive: View {
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
-                Text("\(ctx.headerKicker) · \(fallbackStepIndex)")
+                Text("\(ctx.headerKicker) · \(stepIndexText)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
                     // EUSOTRIP-MODE-BADGE-2026-05-17 — mode chip on lifecycle screen
@@ -91,11 +115,15 @@ struct ArrivalGateTaskActive: View {
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 0) {
-                Text(fallbackElapsed)
+                // No live walkaround-elapsed timer source on this screen
+                // (no per-task start timestamp is fed to the view), so the
+                // hero shows the live device clock rather than a fabricated
+                // "3:42" elapsed figure.
+                Text(nowClockText)
                     .font(.system(size: 22, weight: .heavy, design: .rounded))
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
-                Text("ELAPSED")
+                Text("NOW")
                     .font(.system(size: 8, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -296,29 +324,40 @@ struct ArrivalGateTaskActive: View {
         }
     }
 
+    /// Task copy for the current walkaround step. HONESTY: load facts
+    /// (UN number, set-point, strap count) come from the live
+    /// `LifecycleProductContext` facets — each is already em-dash when
+    /// the backend hasn't shipped the column — never a seeded
+    /// "UN1005" / "-18°F" / "12 straps". The instruction text names the
+    /// task + governing standard, which is a fixed regulatory constant.
     private var stepBody: String {
+        let f = ctx.facets
         if ctx.isHazmat {
-            return "Verify all four sides show the UN1005 ammonia placard (non-flammable gas, green). Confirm the ERG 125 copy is legible and pinned under the driver-side visor. Photograph each side on tap. ESANG archives to the DVIR sheet."
+            return "Verify all four sides show the placard for \(f.commodityWithUN) (hazard class \(f.hazardClass)). Confirm the ERG 125 copy is legible and pinned under the driver-side visor. Photograph each side on tap. ESANG archives to the DVIR sheet."
         }
         switch ctx.product {
         case .reefer:
-            return "Confirm reefer set-point reads −18°F, return-air within 1°. Pull thermograph trace and stamp into BOL. Photograph the cold-seal before breaking it."
+            return "Confirm reefer set-point reads \(f.setPointDisplay), return-air within spec. Pull thermograph trace and stamp into BOL. Photograph the cold-seal before breaking it."
         case .flatbed:
-            return "Walk the deck, account for all 12 straps + 2 chains. Audit working load + return securement to crib. Photograph deck condition for DVIR."
+            return "Walk the deck, account for all securement (\(f.securementSummary)). Audit working load + return securement to crib. Photograph deck condition for DVIR."
         case .container, .railIntermodal, .vesselContainer:
-            return "Photograph container ID + chassis plate. Check twistlocks closed, gladhands stowed, lights working. EDI 322 ready to fire on gate-out."
+            return "Photograph container ID (\(f.containerNumber)) + chassis plate (\(f.chassisNumber)). Check twistlocks closed, gladhands stowed, lights working. EDI 322 ready to fire on gate-out."
         case .railBulk, .vesselBulk:
-            return "Hatches sealed, grounding rod stowed, ohms cap recorded. Sign + close AAR waybill. Photograph trailer for DVIR."
+            return "Hatches sealed, grounding rod stowed, ohms cap recorded. Sign + close AAR waybill (\(f.waybillRegistry)). Photograph trailer for DVIR."
         default:
-            return "Photograph driver-side seal in place + log seal number. Sweep trailer interior dry. Close + lock both rear doors."
+            return "Photograph driver-side seal in place + log seal number (\(f.sealNumber)). Sweep trailer interior dry. Close + lock both rear doors."
         }
     }
 
     private var telemetryRow: some View {
+        // HONESTY: there is NO live sensor feed wired to this screen, so
+        // every reading collapses to the em-dash sentinel. The sub lines
+        // stay as the metric's spec/limit (a regulatory constant, not a
+        // fabricated reading) — mirrors LifecycleProductContext.loadingMetrics.
         HStack(spacing: Space.s2) {
-            telemetry(label: "AIR-LOSS", primary: "0.8", sub: "1 PSI / 2 MIN")
-            telemetry(label: "TIRES", primary: "10/10", sub: "4-6/32\" TREAD")
-            telemetry(label: "LIGHTS", primary: "22/22", sub: "MARKER + TURN")
+            telemetry(label: "AIR-LOSS", primary: dash, sub: "1 PSI / 2 MIN")
+            telemetry(label: "TIRES", primary: dash, sub: "4-6/32\" TREAD")
+            telemetry(label: "LIGHTS", primary: dash, sub: "MARKER + TURN")
         }
     }
 
@@ -349,27 +388,39 @@ struct ArrivalGateTaskActive: View {
             Text("WALKAROUND GATES")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
+            // HONESTY (mirrors merged 046 fix): rows start UNCHECKED. The
+            // green checkmark + "VERIFIED" badge gate ONLY on actual driver
+            // completion (the `completed` set), NEVER on the row's tail
+            // string. The placards/seal/securement row ships with a "VERIFY"
+            // tail (an outstanding task) and must NOT render green until the
+            // driver taps it. Tail shows the task's pending verb otherwise.
             ForEach(ctx.walkaroundGates) { row in
-                HStack(spacing: Space.s3) {
-                    Image(systemName: row.tail == "PENDING" ? "circle" : "checkmark.circle.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(row.tail == "PENDING" ? palette.textTertiary : Brand.success)
-                    Text(row.title)
-                        .font(EType.caption.weight(.semibold))
-                        .foregroundStyle(row.tail == "PENDING" ? palette.textSecondary : palette.textPrimary)
-                    Spacer()
-                    Text(row.tail)
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(row.tail == "PENDING" ? palette.textTertiary : palette.textSecondary)
+                let done = completed.contains(row.id)
+                Button {
+                    if done { completed.remove(row.id) } else { completed.insert(row.id) }
+                } label: {
+                    HStack(spacing: Space.s3) {
+                        Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(done ? Brand.success : palette.textTertiary)
+                        Text(row.title)
+                            .font(EType.caption.weight(.semibold))
+                            .foregroundStyle(done ? palette.textPrimary : palette.textSecondary)
+                        Spacer()
+                        Text(done ? "VERIFIED" : row.tail)
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(done ? Brand.success : palette.textTertiary)
+                    }
+                    .padding(.horizontal, Space.s3)
+                    .padding(.vertical, 9)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
                 }
-                .padding(.horizontal, Space.s3)
-                .padding(.vertical, 9)
-                .background(palette.bgCard)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                        .strokeBorder(palette.borderFaint)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                .buttonStyle(.plain)
             }
         }
     }
@@ -379,7 +430,11 @@ struct ArrivalGateTaskActive: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(LinearGradient.diagonal)
-            Text("ESANG · SUBMIT UNLOCKS BAY 14 · 34-HOUR RESET STARTS · BREAKFAST 06:30 SLOT MGR")
+            // HONESTY: no live yardManagement source feeds a sleeper-bay
+            // assignment or breakfast-slot to this screen, so the copy
+            // states the universal post-trip outcome (DVIR submit → reset
+            // begins) without a fabricated "BAY 14" / "06:30" number.
+            Text("ESANG · SUBMIT DVIR UNLOCKS YOUR SLEEPER BAY · 34-HOUR RESET BEGINS")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2)
@@ -431,6 +486,7 @@ struct ArrivalGateTaskActive: View {
     }
 
     private func hydrateLiveTrip() async {
+        nowDate = Date()
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }

@@ -37,7 +37,6 @@ struct DisconnectAndVerify: View {
     // (eusotrip-killers ledger-hygiene pass). Live readings come from
     // `tankMonitor.getDisconnectSnapshot` once the bay-ops sensor stack
     // ships — until then, em-dashes only.
-    private let fallbackClock = "-"
     private let fallbackPressure = "-"
     private let fallbackVapor    = "-"
     private let fallbackBond     = "-"
@@ -79,7 +78,7 @@ struct DisconnectAndVerify: View {
                     Image(systemName: ctx.product.symbol)
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text("STEP 2 OF 4 · \(ctx.headerKicker)")
+                    Text(ctx.headerKicker)
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(LinearGradient.diagonal)
                     // EUSOTRIP-MODE-BADGE-2026-05-17 — mode chip on lifecycle screen
@@ -87,19 +86,25 @@ struct DisconnectAndVerify: View {
                                   multiVehicleCount: activeLoad?.multiVehicleCount,
                                   compact: true)
                 }
-                Text("Disconnecting \(ctx.isHazmat ? "NH3 line" : "trailer") · Dock 3")
+                Text("Disconnecting \(ctx.isHazmat ? "NH3 line" : "trailer")")
                     .font(.system(size: 18, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
-                Text("COUPLER UNHOOK · SPOTTER ON WATCH")
+                Text("COUPLER UNHOOK")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer(minLength: 0)
-            Text(fallbackClock)
-                .font(EType.mono(.caption)).fontWeight(.semibold)
-                .foregroundStyle(palette.textPrimary)
+            // Live device clock — the header time is the driver's wall
+            // clock, not a seeded literal. There is no event/elapsed
+            // source on this screen, so we render the real `Date()`
+            // (HH:mm, refreshed each minute) rather than a stub.
+            TimelineView(.everyMinute) { tl in
+                Text(tl.date, format: .dateTime.hour().minute())
+                    .font(EType.mono(.caption)).fontWeight(.semibold)
+                    .foregroundStyle(palette.textPrimary)
+            }
         }
         .padding(.top, 4)
     }
@@ -111,9 +116,12 @@ struct DisconnectAndVerify: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("LIVE")
+                // No live coupler-ring sensor feed — neutral em-dash, not
+                // a green "LIVE" assertion. The ring graphic below is an
+                // illustrative reference, not a telemetry readout.
+                Text(fallbackBond)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(Brand.success)
+                    .foregroundStyle(palette.textTertiary)
             }
             ZStack {
                 RoundedRectangle(cornerRadius: Radius.md)
@@ -205,9 +213,13 @@ struct DisconnectAndVerify: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("STEP 1 OF 4 GO")
+                // No per-row completion model on this static ladder (every
+                // step is "next" until a real step-progress source lands) —
+                // neutral em-dash, never a hardcoded "STEP 1 OF 4" count or
+                // a "GO" assertion.
+                Text(fallbackBond)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(palette.textSecondary)
+                    .foregroundStyle(palette.textTertiary)
             }
             ForEach(ctx.disconnectLadder) { step in
                 HStack(spacing: Space.s3) {
@@ -249,29 +261,33 @@ struct DisconnectAndVerify: View {
         }
     }
 
+    // Honest empty state. There is no live supervisor-mic feed wired to
+    // this screen (no dock-side spotter session, no transcript stream),
+    // so we render neutral card chrome with a "No supervisor connected"
+    // label — never an invented person, avatar, "LIVE MIC", or transcript
+    // quote. When a real spotter/supervisor session backend lands, this
+    // card surfaces that participant + their live captions.
     private var supervisorMic: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             ZStack {
-                Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                Text("RH").font(.system(size: 11, weight: .heavy)).foregroundStyle(.white)
+                Circle().fill(palette.bgCardSoft).frame(width: 32, height: 32)
+                Image(systemName: "person.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text("Reg Hammond")
+                    Text("No supervisor connected")
                         .font(EType.caption.weight(.semibold))
-                        .foregroundStyle(palette.textPrimary)
+                        .foregroundStyle(palette.textSecondary)
                     Spacer()
-                    HStack(spacing: 3) {
-                        Circle().fill(Brand.danger).frame(width: 5, height: 5)
-                        Text("LIVE MIC")
-                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(Brand.danger)
-                    }
+                    Text(fallbackBond)
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
                 }
-                Text("\"Two more turns and she's clear, keep your face out of the gap.\"")
+                Text("Supervisor / spotter mic not connected for this disconnect.")
                     .font(EType.body)
-                    .foregroundStyle(palette.textPrimary)
-                    .italic()
+                    .foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -280,7 +296,7 @@ struct DisconnectAndVerify: View {
         .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
+                .strokeBorder(palette.borderFaint)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }

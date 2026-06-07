@@ -185,7 +185,6 @@ struct ApproachingDelivery: View {
         }
         .task {
             await hydrateLiveTrip()
-            seedDefaults()
         }
         .screenTileRoot()
     }
@@ -337,29 +336,44 @@ struct ApproachingDelivery: View {
         VStack(spacing: 6) {
             ForEach(ctx.deliveryPreCheck) { item in
                 let state = state(for: item)
-                HStack(spacing: Space.s3) {
-                    statusDot(state)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(item.title)
-                            .font(EType.body.weight(.semibold))
-                            .foregroundStyle(palette.textPrimary)
-                        Text(item.subtitle)
-                            .font(EType.mono(.micro)).tracking(0.3)
-                            .foregroundStyle(palette.textSecondary)
+                // De-fabrication (2026-06-06): rows start unchecked and
+                // turn READY only on a real driver tap (mirrors the merged
+                // 046 yard-in pattern). The lumper row stays a non-toggling
+                // N/A — it's a receiver-side decision, not the driver's.
+                Button {
+                    guard item.id != "lumper" else { return }
+                    if completed.contains(item.id) {
+                        completed.remove(item.id)
+                    } else {
+                        completed.insert(item.id)
                     }
-                    Spacer(minLength: 0)
-                    Text(tail(state))
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                        .foregroundStyle(tailColor(state))
+                } label: {
+                    HStack(spacing: Space.s3) {
+                        statusDot(state)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.title)
+                                .font(EType.body.weight(.semibold))
+                                .foregroundStyle(palette.textPrimary)
+                            Text(item.subtitle)
+                                .font(EType.mono(.micro)).tracking(0.3)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                        Spacer(minLength: 0)
+                        Text(tail(state))
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                            .foregroundStyle(tailColor(state))
+                    }
+                    .padding(.horizontal, Space.s3)
+                    .padding(.vertical, 10)
+                    .background(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
-                .padding(.horizontal, Space.s3)
-                .padding(.vertical, 10)
-                .background(palette.bgCard)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderFaint)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .buttonStyle(.plain)
+                .disabled(item.id == "lumper")
             }
         }
     }
@@ -410,16 +424,6 @@ struct ApproachingDelivery: View {
         case .pending: return palette.textTertiary
         case .na:      return palette.textTertiary
         case .next:    return Brand.warning
-        }
-    }
-
-    private func seedDefaults() {
-        guard completed.isEmpty else { return }
-        // Start with sealed + BOL already confirmed; dashcam auto-
-        // arms at the geofence (so it's pending until crossed).
-        let list = ctx.deliveryPreCheck
-        if list.count >= 2 {
-            completed = Set(list.prefix(2).map { $0.id })
         }
     }
 
