@@ -8,10 +8,30 @@
 //  card (closed leg → open off-duty), driver-yard facts, and a
 //  4-row product-aware yard-in checklist.
 //
+//  FOUNDER BAR (2026-06-06 · de-fabrication sweep):
+//    Every HUD figure on this screen is now computed from a real
+//    source — the HERE-routed leg from the driver's live GPS fix
+//    to the home-yard coordinate (mirrors 013_ActiveEnroute) — or
+//    from the active load's own record. There are NO seeded
+//    constants. When a source isn't available (no active load, no
+//    GPS fix, no home-yard coord, no appointment) the field renders
+//    an honest em-dash.
+//
+//    Target coord chain for the approach leg: a carrier home-yard
+//    coordinate is not first-class on the wire, so we route to the
+//    load's `deliveryLocation` (the terminal this screen already
+//    carries). When neither a GPS fix nor a delivery coord exists,
+//    the hero shows "—".
+//
+//    Yard gate / spot / bay cells are governed by `yardManagement`
+//    (a separate wiring item) and currently have no live source, so
+//    they render "—" rather than a fabricated gate/row/bay.
+//
 //  Powered by ESANG AI™.
 //
 
 import SwiftUI
+import CoreLocation
 
 struct SequencedLegApproach: View {
     @Environment(\.palette) private var palette
@@ -23,6 +43,29 @@ struct SequencedLegApproach: View {
     @State private var activeLoad: Load?
     @State private var completed: Set<String> = []
 
+    // MARK: - Live nav state (HERE Routing v8 · current fix → home yard)
+    //
+    // Mirrors 013_ActiveEnroute: the HERE-routed leg from the
+    // driver's live GPS fix to the home-yard (delivery) coordinate.
+    // Every value is a real measurement; on any failure (no fix, no
+    // coord, HERE error) the cached values stay nil and the HUD
+    // renders an honest em-dash.
+
+    /// Remaining distance to the home yard, meters (HERE summary).
+    @State private var remainingMeters: Double?
+    /// Remaining drive time to the home yard, seconds (HERE summary).
+    @State private var remainingSeconds: Double?
+    /// ISO-8601 arrival time HERE computed for the home yard.
+    @State private var etaISO: String?
+
+    /// Most-recent appointment for the active load — supplies the
+    /// honest scheduled-arrival time when one is on file.
+    @State private var appointment: AppointmentsAPI.ByLoadAppointment?
+
+    /// Device wall clock for the header timestamp — refreshed on
+    /// appear. Never a seeded literal.
+    @State private var nowDate = Date()
+
     enum Register { case night, afternoon }
     let register: Register
     init(register: Register = .night) { self.register = register }
@@ -31,12 +74,116 @@ struct SequencedLegApproach: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    private let fallbackClock      = "22:58"
-    private let fallbackHero       = "5.4"
-    private let fallbackEtaMin     = "16 min"
-    private let fallbackArriveBy   = "23:14"
-    private let fallbackYard       = "-"
-    private let fallbackYardAddr   = "3608 HAWKINS POINT RD · BALTIMORE MD 21226"
+    private static let metersPerMile = 1609.344
+
+    private static func parseISO(_ s: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s)
+    }
+
+    private static func clock(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
+    }
+
+    // MARK: - Live data bindings (honest em-dash when no source)
+
+    /// "5.4" — live HERE remaining length in miles (numeric only,
+    /// the "mi" suffix is rendered separately in the hero), else "—".
+    private var heroMilesText: String {
+        guard let m = remainingMeters else { return "—" }
+        return String(format: "%.1f", m / Self.metersPerMile)
+    }
+
+    /// "16 min" — live HERE remaining drive time, else "—".
+    private var etaMinText: String {
+        guard let s = remainingSeconds, s.isFinite, s >= 0 else { return "—" }
+        let mins = Int((s / 60).rounded())
+        return "\(mins) min"
+    }
+
+    /// "23:14" — HERE arrival clock for the home yard, else "—".
+    private var arriveByText: String {
+        guard let iso = etaISO, let date = Self.parseISO(iso) else { return "—" }
+        return Self.clock(date)
+    }
+
+    /// Header device clock, e.g. "22:58". Live wall time, never seeded.
+    private var nowClockText: String { Self.clock(nowDate) }
+
+    /// Scheduled appointment clock for the yard arrival, else "—".
+    private var apptClockText: String {
+        guard let iso = appointment?.scheduledAt, let date = Self.parseISO(iso) else { return "—" }
+        return Self.clock(date)
+    }
+
+    /// Home-yard name — the delivery/terminal facility on the load.
+    /// City+state when present, else "—". No fabricated yard name.
+    private var yardName: String {
+        if let loc = activeLoad?.deliveryLocation,
+           !(loc.lat == 0 && loc.lng == 0) || !loc.cityState.isEmpty {
+            if !loc.cityState.isEmpty { return loc.cityState }
+        }
+        return "—"
+    }
+
+    /// Home-yard address composed from the delivery location, else "—".
+    private var yardAddress: String {
+        guard let loc = activeLoad?.deliveryLocation else { return "—" }
+        var parts: [String] = []
+        if !loc.address.isEmpty  { parts.append(loc.address.uppercased()) }
+        if !loc.city.isEmpty     { parts.append(loc.city.uppercased()) }
+        if !loc.state.isEmpty    { parts.append(loc.state.uppercased()) }
+        if !loc.zipCode.isEmpty  { parts.append(loc.zipCode) }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    /// First letter of the home-yard city for the avatar monogram,
+    /// else a neutral dot. Never a hardcoded "C".
+    private var yardMonogram: String {
+        if let c = activeLoad?.deliveryLocation?.city.first { return String(c).uppercased() }
+        return "·"
+    }
+
+    /// Closed-leg title — the real pickup→delivery city pair from the
+    /// active load, prefixed by the product word. "—" when no load.
+    private var closedLegTitle: String {
+        guard let load = activeLoad else { return "—" }
+        let origin = load.pickupLocation?.cityState ?? ""
+        let dest   = load.deliveryLocation?.cityState ?? ""
+        let lane: String
+        if !origin.isEmpty && !dest.isEmpty { lane = "\(origin) → \(dest)" }
+        else if !origin.isEmpty             { lane = origin }
+        else if !dest.isEmpty               { lane = dest }
+        else                                { return "—" }
+        return "\(productWord) · \(lane)"
+    }
+
+    /// Product word for the closed-leg title prefix.
+    private var productWord: String {
+        switch ctx.product {
+        case .hazmatTanker, .vesselTanker:  return "Tanker"
+        case .reefer:                       return "Cold"
+        case .flatbed:                      return "Flatbed"
+        case .container, .railIntermodal:   return "Container"
+        case .vesselContainer:              return "Vessel box"
+        case .railBulk, .vesselBulk:        return "Bulk"
+        case .dryVan:                       return "Dry"
+        }
+    }
+
+    /// Closed-leg distance sub-line — the load's own routed distance
+    /// when the wire carries it, else "—". No fabricated mileage.
+    private var closedLegSub: String {
+        guard let raw = activeLoad?.distance, let d = Double(raw), d > 0 else { return "—" }
+        let unit = (activeLoad?.distanceUnit ?? "mi").lowercased()
+        let suffix = unit.contains("km") ? "km" : "mi"
+        return String(format: "%.0f %@", d, suffix)
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -54,7 +201,6 @@ struct SequencedLegApproach: View {
         }
         .task {
             await hydrateLiveTrip()
-            seedDefaults()
         }
         .screenTileRoot()
     }
@@ -79,12 +225,12 @@ struct SequencedLegApproach: View {
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(LinearGradient.diagonal)
                 }
-                Text("Arriving at Curtis Bay yard by \(fallbackArriveBy)")
+                Text(headerTitle)
                     .font(.system(size: 18, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
-                Text("\(ctx.headerKicker) · 1/1 DAY DONE")
+                Text(ctx.headerKicker)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
                     // EUSOTRIP-MODE-BADGE-2026-05-17 — mode chip on lifecycle screen
@@ -93,26 +239,42 @@ struct SequencedLegApproach: View {
                                   compact: true)
             }
             Spacer(minLength: 0)
-            Text(fallbackClock)
+            Text(nowClockText)
                 .font(EType.mono(.caption)).fontWeight(.semibold)
                 .foregroundStyle(palette.textPrimary)
         }
         .padding(.top, 4)
     }
 
+    /// Header line — live arrival clock against the home-yard name.
+    /// "Arriving at <yard> by <clock>" when both are known; degrades
+    /// honestly to the clock-only or yard-only or em-dash forms.
+    private var headerTitle: String {
+        let name = yardName == "—" ? "home yard" : "\(yardName) yard"
+        let by = arriveByText
+        return by == "—"
+            ? "Arriving at \(name)"
+            : "Arriving at \(name) by \(by)"
+    }
+
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(fallbackHero)
+                Text(heroMilesText)
                     .font(.system(size: 50, weight: .heavy, design: .rounded))
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
                 Text("mi")
                     .font(.system(size: 18, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("· \(fallbackEtaMin)")
+                Text("· \(etaMinText)")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textSecondary)
+                if apptClockText != "—" {
+                    Text("· APPT \(apptClockText)")
+                        .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                }
                 Spacer()
             }
             GeometryReader { geo in
@@ -139,20 +301,8 @@ struct SequencedLegApproach: View {
 
     private var legHandoff: some View {
         HStack(alignment: .top, spacing: Space.s2) {
-            handoffBlock(state: "CLOSED · LEG 1", title: closedLegTitle, sub: "78 mi · 0.3 defect alerts en route", color: Brand.success)
-            handoffBlock(state: "OPEN · POST-TRIP DVIR", title: "34-hour reset begins", sub: "Cycle resets 49 CFR 395.3(c) · MC-331", color: Brand.warning)
-        }
-    }
-
-    private var closedLegTitle: String {
-        switch ctx.product {
-        case .hazmatTanker, .vesselTanker:  return "NH3 · Baltimore → York PA"
-        case .reefer:                       return "Cold · Baltimore → York PA"
-        case .flatbed:                      return "Flatbed · Baltimore → York PA"
-        case .container, .railIntermodal:   return "Container · Baltimore → York PA"
-        case .vesselContainer:              return "Vessel box · Baltimore → York PA"
-        case .railBulk, .vesselBulk:        return "Bulk · Baltimore → York PA"
-        case .dryVan:                       return "Dry · Baltimore → York PA"
+            handoffBlock(state: "CLOSED · LEG 1", title: closedLegTitle, sub: closedLegSub, color: Brand.success)
+            handoffBlock(state: "OPEN · POST-TRIP DVIR", title: "34-hour reset begins", sub: "Cycle resets 49 CFR 395.3(c)", color: Brand.warning)
         }
     }
 
@@ -186,23 +336,27 @@ struct SequencedLegApproach: View {
             HStack(spacing: 8) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    Text("C").font(.system(size: 13, weight: .heavy)).foregroundStyle(.white)
+                    Text(yardMonogram).font(.system(size: 13, weight: .heavy)).foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(fallbackYard)
+                    Text(yardName)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Text(fallbackYardAddr)
+                    Text(yardAddress)
                         .font(EType.mono(.micro)).tracking(0.3)
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1)
                 }
             }
+            // Yard gate / spot / bay assignments are owned by the
+            // `yardManagement` wiring (a separate item) — no live
+            // source on this load read, so every cell renders an
+            // honest em-dash rather than a fabricated gate/row/bay.
             HStack(spacing: Space.s2) {
-                yardCell(label: "ENTRY",         value: "Gate C (badge)")
-                yardCell(label: "ASSIGNED SPOT", value: "Row 4 · S-14")
-                yardCell(label: "PARKED",        value: "Bay 14 · shower + laundry")
-                yardCell(label: "SLEEPER BAY",   value: "24/7 · lane 2")
+                yardCell(label: "ENTRY",         value: "—")
+                yardCell(label: "ASSIGNED SPOT", value: "—")
+                yardCell(label: "PARKED",        value: "—")
+                yardCell(label: "SLEEPER BAY",   value: "—")
             }
         }
         .padding(Space.s3)
@@ -285,14 +439,6 @@ struct SequencedLegApproach: View {
         .frame(width: 22, height: 22)
     }
 
-    private func seedDefaults() {
-        guard completed.isEmpty else { return }
-        let items = ctx.yardInChecklist
-        if items.count >= 3 {
-            completed = Set(items.prefix(3).map { $0.id })
-        }
-    }
-
     private var esangFooter: some View {
         HStack(spacing: 6) {
             Image(systemName: "sparkles")
@@ -314,10 +460,69 @@ struct SequencedLegApproach: View {
     }
 
     private func hydrateLiveTrip() async {
+        nowDate = Date()
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
-        activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        let load = try? await EusoTripAPI.shared.loads.getById(n)
+        activeLoad = load
+        // Appointment (scheduled-arrival window) for this load — honest
+        // nil when none is on file. No fabricated appt clock.
+        appointment = try? await EusoTripAPI.shared.appointments.getByLoad(loadId: lifecycle.loadId)
+        if let load { await refreshLiveNav(for: load) }
+    }
+
+    /// Computes the live remaining leg from the driver's current GPS
+    /// fix to the home-yard coordinate via HERE Routing v8 (truck-aware),
+    /// and caches the summary numbers that drive the hero. The target is
+    /// the load's `deliveryLocation` (the terminal this screen carries)
+    /// because no first-class carrier home-yard coordinate exists on the
+    /// wire. Every value is a real HERE measurement; on any failure (no
+    /// fix, no coord, HERE error) the cached values stay nil and the hero
+    /// renders an honest em-dash. Mirrors 013_ActiveEnroute:~208.
+    @MainActor
+    private func refreshLiveNav(for load: Load) async {
+        // Home-yard target coord: the delivery/terminal coordinate.
+        guard let dest = load.deliveryLocation,
+              !(dest.lat == 0 && dest.lng == 0) else {
+            remainingMeters = nil
+            remainingSeconds = nil
+            etaISO = nil
+            return
+        }
+
+        // Live GPS fix. nil when denied / timed out → hero reads "—".
+        guard let fix = await DriverLocationResolver.shared.currentCoordinate() else {
+            remainingMeters = nil
+            remainingSeconds = nil
+            etaISO = nil
+            return
+        }
+
+        let stops = HereStops(
+            origin: fix,
+            destination: CLLocationCoordinate2D(latitude: dest.lat, longitude: dest.lng)
+        )
+        let profile = TruckProfile.from(load: load)
+        do {
+            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
+            guard let section = resp.routes.first?.sections.first,
+                  let summary = section.summary else {
+                remainingMeters = nil
+                remainingSeconds = nil
+                etaISO = nil
+                return
+            }
+            remainingMeters = Double(summary.length)
+            remainingSeconds = Double(summary.duration)
+            etaISO = section.arrival.time
+        } catch {
+            // Honest failure: leave the numbers nil so the hero shows
+            // "—" rather than a stale or fabricated figure.
+            remainingMeters = nil
+            remainingSeconds = nil
+            etaISO = nil
+        }
     }
 }
 

@@ -1237,48 +1237,56 @@ struct LifecycleProductContext {
         let tail: String
     }
 
+    /// Static yard-in task checklist (driver works through it on arrival).
+    /// HONESTY: every row is a TASK label + the standard/cite that governs
+    /// it — never a measured reading, count, or asserted positive state.
+    /// The app has no live source for the per-task completion state, so the
+    /// tail stays "PENDING" and the row dot stays empty until the DRIVER
+    /// taps the row (the view's `completed` set drives the green "VERIFIED"
+    /// + filled dot). No row is seeded done. Titles name the task to do;
+    /// subtitles carry the governing standard, never a fabricated value.
     var yardInChecklist: [YardCheck] {
         switch product {
         case .hazmatTanker, .vesselTanker:
             return [
-                .init(title: "MC-331 decon-sweep cleared at receiver", subtitle: "Spectra · residual 0 ppm",                  tail: "VERIFIED"),
-                .init(title: "EusoShield binder auto-closes at yard-in", subtitle: "Binder · 21:46 to yard-in",               tail: "ARMED"),
-                .init(title: "HOS 34-hour reset primed in ELD",         subtitle: "Cycle reset · 49 CFR 395.3(c)",            tail: "PRIMED"),
-                .init(title: "Post-trip DVIR (tractor + trailer)",      subtitle: "49 CFR 396.11 · 30-min slot scheduled",   tail: "PENDING"),
+                .init(title: "MC-331 decon sweep at receiver",          subtitle: "Decon sweep · residual check",            tail: "PENDING"),
+                .init(title: "EusoShield binder auto-closes at yard-in", subtitle: "Binder · auto-closes at yard-in",          tail: "PENDING"),
+                .init(title: "HOS 34-hour reset in ELD",                subtitle: "Cycle reset · 49 CFR 395.3(c)",            tail: "PENDING"),
+                .init(title: "Post-trip DVIR (tractor + trailer)",      subtitle: "49 CFR 396.11 · post-trip inspection",    tail: "PENDING"),
             ]
         case .reefer:
             return [
-                .init(title: "Thermograph download cleared",             subtitle: "USDA cold-chain · trace appended to BOL",  tail: "VERIFIED"),
-                .init(title: "EusoShield binder auto-closes at yard-in", subtitle: "Binder · 21:46 to yard-in",               tail: "ARMED"),
-                .init(title: "HOS 34-hour reset primed in ELD",          subtitle: "Cycle reset · 49 CFR 395.3(c)",            tail: "PRIMED"),
+                .init(title: "Thermograph download",                     subtitle: "USDA cold-chain · thermograph to BOL",     tail: "PENDING"),
+                .init(title: "EusoShield binder auto-closes at yard-in", subtitle: "Binder · auto-closes at yard-in",          tail: "PENDING"),
+                .init(title: "HOS 34-hour reset in ELD",                 subtitle: "Cycle reset · 49 CFR 395.3(c)",            tail: "PENDING"),
                 .init(title: "Post-trip DVIR (tractor + reefer unit)",   subtitle: "49 CFR 396.11 · reefer maintenance log",   tail: "PENDING"),
             ]
         case .flatbed:
             return [
-                .init(title: "Deck cleared + securement returned",       subtitle: "12 straps · 2 chains stowed",              tail: "VERIFIED"),
-                .init(title: "EusoShield binder auto-closes at yard-in", subtitle: "Binder · 21:46 to yard-in",               tail: "ARMED"),
-                .init(title: "HOS 34-hour reset primed in ELD",          subtitle: "Cycle reset · 49 CFR 395.3(c)",            tail: "PRIMED"),
+                .init(title: "Clear deck + return securement",           subtitle: "Straps + chains stowed",                   tail: "PENDING"),
+                .init(title: "EusoShield binder auto-closes at yard-in", subtitle: "Binder · auto-closes at yard-in",          tail: "PENDING"),
+                .init(title: "HOS 34-hour reset in ELD",                 subtitle: "Cycle reset · 49 CFR 395.3(c)",            tail: "PENDING"),
                 .init(title: "Post-trip DVIR (tractor + flatbed)",       subtitle: "49 CFR 396.11 · deck + WLL audit",         tail: "PENDING"),
             ]
         case .container, .railIntermodal, .vesselContainer:
             return [
-                .init(title: "Container returned · gate-out scanned",    subtitle: "EDI 322 confirmation",                     tail: "VERIFIED"),
-                .init(title: "Chassis returned to pool",                  subtitle: "Pool ID · DOT pre-trip clean",             tail: "ARMED"),
-                .init(title: "HOS 34-hour reset primed in ELD",          subtitle: "Cycle reset · 49 CFR 395.3(c)",            tail: "PRIMED"),
+                .init(title: "Return container · gate-out scan",         subtitle: "EDI 322 gate-out",                         tail: "PENDING"),
+                .init(title: "Return chassis to pool",                   subtitle: "Chassis pool · DOT pre-trip",              tail: "PENDING"),
+                .init(title: "HOS 34-hour reset in ELD",                 subtitle: "Cycle reset · 49 CFR 395.3(c)",            tail: "PENDING"),
                 .init(title: "Post-trip DVIR (tractor + chassis)",       subtitle: "49 CFR 396.11 · ramp pre-trip",            tail: "PENDING"),
             ]
         case .railBulk, .vesselBulk:
             return [
-                .init(title: "Spur clear · waybill closed at yard-in",   subtitle: "AAR signed · interchange done",            tail: "VERIFIED"),
-                .init(title: "EusoShield binder auto-closes at yard-in", subtitle: "Binder · 21:46 to yard-in",               tail: "ARMED"),
-                .init(title: "HOS 34-hour reset primed in ELD",          subtitle: "Cycle reset · 49 CFR 395.3(c)",            tail: "PRIMED"),
+                .init(title: "Clear spur · close waybill at yard-in",    subtitle: "Waybill close · AAR interchange",          tail: "PENDING"),
+                .init(title: "EusoShield binder auto-closes at yard-in", subtitle: "Binder · auto-closes at yard-in",          tail: "PENDING"),
+                .init(title: "HOS 34-hour reset in ELD",                 subtitle: "Cycle reset · 49 CFR 395.3(c)",            tail: "PENDING"),
                 .init(title: "Post-trip DVIR (tractor + bulk trailer)",  subtitle: "49 CFR 396.11 · grounding equipment audit", tail: "PENDING"),
             ]
         case .dryVan:
             return [
-                .init(title: "Trailer wash + sweep cleared",             subtitle: "Trailer interior dry · seal logged",       tail: "VERIFIED"),
-                .init(title: "EusoShield binder auto-closes at yard-in", subtitle: "Binder · 21:46 to yard-in",               tail: "ARMED"),
-                .init(title: "HOS 34-hour reset primed in ELD",          subtitle: "Cycle reset · 49 CFR 395.3(c)",            tail: "PRIMED"),
+                .init(title: "Trailer wash + sweep",                     subtitle: "Trailer interior · seal check",            tail: "PENDING"),
+                .init(title: "EusoShield binder auto-closes at yard-in", subtitle: "Binder · auto-closes at yard-in",          tail: "PENDING"),
+                .init(title: "HOS 34-hour reset in ELD",                 subtitle: "Cycle reset · 49 CFR 395.3(c)",            tail: "PENDING"),
                 .init(title: "Post-trip DVIR (tractor + trailer)",       subtitle: "49 CFR 396.11 · van condition + locks",   tail: "PENDING"),
             ]
         }

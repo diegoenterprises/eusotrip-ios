@@ -41,6 +41,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 struct ApproachingPickup: View {
     @Environment(\.palette) private var palette
@@ -61,11 +62,25 @@ struct ApproachingPickup: View {
     @State private var completed: Set<String> = []
     @State private var isConfirming: Bool = false
 
-    // MARK: - Figma-verbatim fallback (used only while the backend
-    // hasn't hydrated a real load — matches the 2026-04-24 frame).
-    private let fallbackFacility = "-"
-    private let fallbackAppt     = "APPT 09:00 CDT"
-    private let fallbackMiles    = "4.2"
+    // MARK: - Live nav + appointment state
+    //
+    // FOUNDER BAR: every numeric on this header is computed from a
+    // real source — the HERE-routed leg from the driver's live GPS
+    // fix to the pickup coordinate, and the appointment row's
+    // `scheduledAt`. There are NO seeded constants. When a source
+    // isn't available (no active load, no GPS fix, no pickup coord,
+    // no appointment) the field renders an honest em-dash.
+
+    /// Remaining distance to the pickup gate, in meters, from the
+    /// last HERE route between the live GPS fix and the pickup
+    /// coordinate. nil → "TO GATE" numeric reads "-".
+    @State private var remainingMeters: Double?
+    /// Most-recent appointment row for the active load
+    /// (`appointments.getByLoad`) — drives the "APPT" cartouche from
+    /// the real `scheduledAt`, never a fabricated clock.
+    @State private var appointment: AppointmentsAPI.ByLoadAppointment?
+
+    private static let metersPerMile = 1609.344
 
     enum Register { case night, morning }
     let register: Register
@@ -88,26 +103,49 @@ struct ApproachingPickup: View {
             let brand = loc.address.isEmpty ? loc.cityState : loc.address
             return "\(brand.uppercased()) · \(loc.cityState.uppercased())"
         }
-        return fallbackFacility
+        return "—"
     }
 
+    /// "APPT 09:00 CDT" cartouche, sourced from the appointment row's
+    /// real `scheduledAt` (`appointments.getByLoad`). Renders an
+    /// honest "APPT —" until the appointment lands — never a
+    /// fabricated clock.
     private var apptLine: String {
-        return fallbackAppt
+        guard let raw = appointment?.scheduledAt,
+              let date = Self.parseISO(raw) else { return "APPT —" }
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        let tz = TimeZone.current.abbreviation() ?? ""
+        let time = f.string(from: date)
+        return tz.isEmpty ? "APPT \(time)" : "APPT \(time) \(tz)"
     }
 
+    /// "4.2" — the TO-GATE numeric, computed LIVE from the HERE
+    /// remaining length between the driver's GPS fix and the pickup
+    /// coordinate (meters → miles). Renders an honest em-dash when no
+    /// live leg is on file (no load, no GPS fix, no pickup coord, HERE
+    /// error). Never a seeded reference value.
     private var milesToGate: String {
-        // Live ETA distance would come from a HERE routing call vs
-        // the pickup coord; until that's wired, render the Figma
-        // reference value so the top-right numeric isn't blank.
-        return fallbackMiles
+        guard let m = remainingMeters else { return "—" }
+        return String(format: "%.1f", m / Self.metersPerMile)
+    }
+
+    /// Lenient ISO-8601 parse (with and without fractional seconds).
+    private static func parseISO(_ s: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s)
     }
 
     private var dispatchLine: String {
         // Dispatch line adapts to the vertical (DISPATCH /
-        // TRAINMASTER / HARBORMASTER). Ext number isn't on the
-        // Load row today — keep the Figma-reference "EXT 12" until
-        // the server adds a broker contact field.
-        return "\(ctx.dispatchLabel) · EXT 12"
+        // TRAINMASTER / HARBORMASTER). The dispatch extension isn't
+        // a field on the Load row or the appointment projection — no
+        // live source — so the EXT renders an honest em-dash rather
+        // than a fabricated "EXT 12".
+        return "\(ctx.dispatchLabel) · EXT —"
     }
 
     /// Product-specific 6-row checklist — sourced from the shared
@@ -511,7 +549,54 @@ struct ApproachingPickup: View {
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
-        activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        let load = try? await EusoTripAPI.shared.loads.getById(n)
+        activeLoad = load
+        // APPT cartouche source — the most recent appointment row for
+        // this load. `scheduledAt` drives the "APPT HH:mm TZ" stamp;
+        // stays nil (→ "APPT —") when no appointment exists yet.
+        appointment = try? await EusoTripAPI.shared.appointments
+            .getByLoad(loadId: lifecycle.loadId)
+        // TO-GATE numeric source — the live HERE-routed remaining leg
+        // from the driver's GPS fix to the pickup coordinate.
+        if let load { await refreshLiveNav(for: load) }
+    }
+
+    /// Computes the live remaining leg from the driver's current GPS
+    /// fix to the pickup coordinate via HERE Routing v8 (truck-aware)
+    /// and caches the remaining length that drives the TO-GATE
+    /// numeric. Mirrors 013's `refreshLiveNav`. Every value is a real
+    /// measurement; on any failure (no fix, no pickup coord, HERE
+    /// error) `remainingMeters` stays nil and the header shows "—".
+    @MainActor
+    private func refreshLiveNav(for load: Load) async {
+        guard let pickup = load.pickupLocation,
+              pickup.lat != 0 || pickup.lng != 0 else {
+            remainingMeters = nil
+            return
+        }
+        // Live GPS fix. nil when denied / timed out → numeric reads "—".
+        guard let fix = await DriverLocationResolver.shared.currentCoordinate() else {
+            remainingMeters = nil
+            return
+        }
+        let stops = HereStops(
+            origin: fix,
+            destination: CLLocationCoordinate2D(latitude: pickup.lat, longitude: pickup.lng)
+        )
+        let profile = TruckProfile.from(load: load)
+        do {
+            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
+            guard let section = resp.routes.first?.sections.first,
+                  let summary = section.summary else {
+                remainingMeters = nil
+                return
+            }
+            remainingMeters = Double(summary.length)
+        } catch {
+            // Honest failure: leave the value nil so the header shows
+            // "—" rather than a stale or fabricated figure.
+            remainingMeters = nil
+        }
     }
 
     private func confirmNotify() async {
