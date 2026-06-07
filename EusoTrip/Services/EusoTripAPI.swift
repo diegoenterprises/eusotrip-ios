@@ -10781,6 +10781,69 @@ struct DriverQualificationAPI {
         )
     }
 
+    // MARK: - My Credentials (self-scoped, 056 Driver Profile)
+
+    /// Self-scoped credential snapshot for 056 Driver Profile's
+    /// CREDENTIALS card. No input — server resolves the signed-in
+    /// driver from `ctx.user.id`.
+    ///
+    /// CONTRACT — `driverQualification.getMyCredentials` (self-scoped,
+    /// no input) returns JSON:
+    ///   { cdlNumber: string|null, cdlState: string|null,
+    ///     cdlExpiry: string|null (ISO), medicalCardExpiry: string|null (ISO),
+    ///     hazmatEndorsement: boolean, hazmatExpiry: string|null (ISO),
+    ///     twicExpiry: string|null (ISO) }
+    /// Source: the `drivers` row WHERE drivers.userId = ctx.user.id
+    /// (columns licenseNumber, licenseState, licenseExpiry,
+    /// medicalCardExpiry, hazmatEndorsement, hazmatExpiry, twicExpiry).
+    /// Honest nulls when no driver row / null columns — never a
+    /// fabricated credential.
+    struct DriverCredentials: Decodable, Equatable {
+        let cdlNumber: String?
+        let cdlState: String?
+        let cdlExpiry: String?
+        let medicalCardExpiry: String?
+        let hazmatEndorsement: Bool
+        let hazmatExpiry: String?
+        let twicExpiry: String?
+    }
+
+    /// `driverQualification.getMyCredentials` — self-scoped, no input.
+    func getMyCredentials() async throws -> DriverCredentials {
+        try await api.queryNoInput("driverQualification.getMyCredentials")
+    }
+
+    // MARK: - My Pool Tier (self-scoped, 056 Driver Profile)
+
+    /// Self-scoped driver-pool tier snapshot for 056 Driver Profile's
+    /// POOL TIER card. No input — server resolves the signed-in driver.
+    ///
+    /// CONTRACT — `driverQualification.getMyPoolTier` (self-scoped,
+    /// no input) returns JSON:
+    ///   { tierNumber: int(1-4), tierLabel: string, progress: number(0..1),
+    ///     nextTierLabel: string|null, nextTierRequirement: string|null,
+    ///     loadsCompleted: int, totalMiles: number, safetyScore: int,
+    ///     onTimeRate: number(0..1), isTopTier: boolean }
+    /// Honest record — the card renders the REAL tier when present and an
+    /// em-dash placeholder when nil; never a fabricated tier/badge.
+    struct DriverPoolTier: Decodable, Equatable {
+        let tierNumber: Int
+        let tierLabel: String
+        let progress: Double
+        let nextTierLabel: String?
+        let nextTierRequirement: String?
+        let loadsCompleted: Int
+        let totalMiles: Double
+        let safetyScore: Int
+        let onTimeRate: Double
+        let isTopTier: Bool
+    }
+
+    /// `driverQualification.getMyPoolTier` — self-scoped, no input.
+    func getMyPoolTier() async throws -> DriverPoolTier {
+        try await api.queryNoInput("driverQualification.getMyPoolTier")
+    }
+
     // MARK: - Documents
 
     struct DQDocument: Decodable, Equatable, Identifiable {

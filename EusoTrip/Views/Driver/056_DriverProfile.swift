@@ -40,11 +40,29 @@ struct DriverProfile: View {
     @State private var showEditProfile: Bool = false
     @State private var showLogoutConfirm: Bool = false
 
+    /// Self-scoped DQ credentials (CDL / medical / hazmat / TWIC) for
+    /// the CREDENTIALS card. nil until fetched / when the server has no
+    /// driver row — the card renders honest em-dash + unknown rows.
+    @State private var cred: DriverQualificationAPI.DriverCredentials?
+
+    /// Self-scoped driver-pool tier (tier number/label, progress to the
+    /// next tier, next-tier requirement). nil until fetched / when the
+    /// server has no pool record — the card renders an honest em-dash
+    /// placeholder instead of a fabricated tier.
+    @State private var poolTier: DriverQualificationAPI.DriverPoolTier?
+
     private var ctx: LifecycleProductContext {
         LifecycleProductContext.forRole(session.user?.role)
     }
 
-    private let fallbackClock = "22:10"
+    /// Live device wall-clock for the header (ticks via TimelineView) —
+    /// never a seeded literal.
+    private static func clockString(_ d: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f.string(from: d)
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -65,6 +83,8 @@ struct DriverProfile: View {
             async let a: () = identityStore.refresh()
             async let b: () = reputationStore.refresh()
             _ = await (a, b)
+            cred = try? await EusoTripAPI.shared.dq.getMyCredentials()
+            poolTier = try? await EusoTripAPI.shared.dq.getMyPoolTier()
         }
         .sheet(isPresented: $showEditProfile) {
             ProfileEditView()
@@ -94,9 +114,11 @@ struct DriverProfile: View {
                     .clipShape(Circle())
             }
             Spacer()
-            Text(fallbackClock)
-                .font(EType.mono(.caption)).fontWeight(.semibold)
-                .foregroundStyle(palette.textPrimary)
+            TimelineView(.everyMinute) { ctxClock in
+                Text(Self.clockString(ctxClock.date))
+                    .font(EType.mono(.caption)).fontWeight(.semibold)
+                    .foregroundStyle(palette.textPrimary)
+            }
         }
         .padding(.top, 4)
     }
@@ -120,7 +142,7 @@ struct DriverProfile: View {
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
-                Text(ctx.identityCredentialLine)
+                Text(ctx.identityCredentialLine(cred))
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(2)
@@ -200,7 +222,15 @@ struct DriverProfile: View {
         HStack(spacing: Space.s2) {
             statCell(label: "ON-TIME",  value: onTimeText,  sub: "90-DAY", color: Brand.success)
             statCell(label: "SAFETY",   value: safetyText,  sub: "0 INCIDENTS", color: Brand.success)
-            statCell(label: "TIER",     value: "T\(ctx.poolTierNumber)", sub: "UNLOCKED DAY 8", color: Brand.warning)
+            // POOL/TIER cell now reads the live driverQualification pool
+            // record (driverQualification.getMyPoolTier). Real "T{n}" +
+            // tier label when present; honest em-dash + program name when
+            // the server has no pool record yet (poolTier == nil).
+            if let t = poolTier {
+                statCell(label: "POOL", value: "T\(t.tierNumber)", sub: t.tierLabel, color: Brand.success)
+            } else {
+                statCell(label: "POOL", value: "—", sub: ctx.poolTierProgram, color: palette.textTertiary)
+            }
         }
     }
 
@@ -250,24 +280,42 @@ struct DriverProfile: View {
     // MARK: - Credentials card
 
     private var credentialsCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        // Real DQ credentials drive the rows; the header count is
+        // computed off the resolved row statuses (no hard-coded
+        // "4 OF 4 ACTIVE").
+        let rows = ctx.credentialsRows(cred)
+        let activeCount = rows.filter { $0.status == .active }.count
+        let total = rows.count
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("CREDENTIALS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("4 OF 4 ACTIVE")
+                Text("\(activeCount) OF \(total) ACTIVE")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(Brand.success)
             }
-            ForEach(ctx.credentialsRows) { row in
+            ForEach(rows) { row in
                 credentialRow(row)
             }
         }
     }
 
     private func credentialRow(_ row: LifecycleProductContext.CredentialRow) -> some View {
-        HStack(spacing: Space.s3) {
+        // Status chip: .active → "ACTIVE" (success), .expiring →
+        // "EXPIRING" (warning), .unknown → "—" (neutral tertiary).
+        let chipText: String
+        let chipColor: Color
+        switch row.status {
+        case .active:
+            chipText = "ACTIVE";   chipColor = Brand.success
+        case .expiring:
+            chipText = "EXPIRING"; chipColor = Brand.warning
+        case .unknown:
+            chipText = "—";        chipColor = palette.textTertiary
+        }
+        return HStack(spacing: Space.s3) {
             ZStack {
                 RoundedRectangle(cornerRadius: Radius.sm)
                     .fill(LinearGradient.diagonal.opacity(0.18))
@@ -285,11 +333,11 @@ struct DriverProfile: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            Text(row.active ? "ACTIVE" : "EXPIRING")
+            Text(chipText)
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(row.active ? Brand.success : Brand.warning)
+                .foregroundStyle(chipColor)
                 .padding(.horizontal, 6).padding(.vertical, 2)
-                .overlay(Capsule().stroke((row.active ? Brand.success : Brand.warning).opacity(0.5), lineWidth: 1))
+                .overlay(Capsule().stroke(chipColor.opacity(0.5), lineWidth: 1))
         }
         .padding(.horizontal, Space.s3)
         .padding(.vertical, 9)
@@ -304,38 +352,67 @@ struct DriverProfile: View {
     // MARK: - Pool tier card (product-aware)
 
     private var poolTierCard: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
+        // Reads the live driverQualification pool record
+        // (driverQualification.getMyPoolTier). When poolTier != nil the
+        // card renders the REAL tier number/label, the real progress
+        // fraction on the rail, and an honest next-tier requirement line.
+        // When nil it stays an honest placeholder: program name + "—"
+        // progress + an em-dash next line. Never fabricates a tier/badge.
+        let progress = poolTier?.progress ?? 0
+        return VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
-                Text("\(ctx.poolTierProgram) TIER")
+                // Lane pool program name (left) — neutral.
+                Text(ctx.poolTierProgram)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("\(Int(ctx.poolTierProgress * 100))%")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(LinearGradient.diagonal)
+                // Real progress percent (right) — "—" when nil.
+                Text(poolTier != nil ? "\(Int(progress * 100))%" : "—")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textSecondary)
+                    .monospacedDigit()
             }
-            HStack(alignment: .firstTextBaseline) {
-                Text("Tier \(ctx.poolTierNumber)")
-                    .font(.system(size: 32, weight: .heavy, design: .rounded))
+            // Hero line — "Tier N" + the real tier label badge (e.g.
+            // "Elite"); "Tier —" when nil. NOT a hardcoded "PROMOTED".
+            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                Text(poolTier != nil ? "Tier \(poolTier!.tierNumber)" : "Tier —")
+                    .font(.system(size: 22, weight: .heavy, design: .rounded))
                     .foregroundStyle(palette.textPrimary)
-                Text("PROMOTED")
-                    .font(.system(size: 10, weight: .heavy)).tracking(1.0)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6).padding(.vertical, 3)
-                    .background(Capsule().fill(LinearGradient.diagonal))
+                if let label = poolTier?.tierLabel {
+                    Text(label.uppercased())
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(
+                            Capsule().fill(LinearGradient.diagonal)
+                        )
+                }
                 Spacer()
             }
-            // Progress rail
+            // Progress rail — width bound to the real fraction.
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(palette.bgCardSoft).frame(height: 5)
-                    Capsule().fill(LinearGradient.diagonal)
-                        .frame(width: geo.size.width * CGFloat(ctx.poolTierProgress), height: 5)
+                    Capsule()
+                        .fill(palette.textTertiary.opacity(0.22))
+                    Capsule()
+                        .fill(LinearGradient.diagonal)
+                        .frame(width: max(0, min(1, progress)) * geo.size.width)
                 }
             }
-            .frame(height: 5)
+            .frame(height: 6)
+            // Honest next-tier line — "Top tier reached" when isTopTier,
+            // else the real next-tier requirement (with the next-tier
+            // label when present); "—" when nil.
+            Text(nextTierLine)
+                .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(2)
             // Benefits
             VStack(alignment: .leading, spacing: 4) {
+                Text("PROGRAM BENEFITS")
+                    .font(.system(size: 8, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.bottom, 2)
                 ForEach(ctx.poolBenefits, id: \.self) { benefit in
                     HStack(spacing: 6) {
                         Image(systemName: "sparkle")
@@ -364,6 +441,29 @@ struct DriverProfile: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
+    /// Honest next-tier copy under the progress rail. "Top tier reached"
+    /// when the driver is at the highest pool tier; otherwise the real
+    /// server-provided next-tier requirement (e.g. "75 more loads ·
+    /// safety 88+ to Preferred"), optionally prefixed with the next-tier
+    /// label when the requirement string doesn't already carry it. "—"
+    /// when no pool record has loaded yet.
+    private var nextTierLine: String {
+        guard let t = poolTier else { return "—" }
+        if t.isTopTier { return "Top tier reached" }
+        guard let req = t.nextTierRequirement, !req.isEmpty else {
+            // No requirement string — fall back to just the next label.
+            if let next = t.nextTierLabel { return "Next: \(next)" }
+            return "—"
+        }
+        // If the requirement already mentions the next tier (server
+        // composed "… to Preferred"), use it verbatim; else prefix the
+        // next-tier label for context.
+        if let next = t.nextTierLabel, !req.localizedCaseInsensitiveContains(next) {
+            return "\(next): \(req)"
+        }
+        return req
+    }
+
     // MARK: - ESANG strip
 
     private var esangStrip: some View {
@@ -371,7 +471,7 @@ struct DriverProfile: View {
             Image(systemName: "sparkles")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(LinearGradient.diagonal)
-            Text(ctx.pooleSangNote)
+            Text("ESANG · \(poolTier?.tierLabel ?? ctx.poolTierProgram) · benefits apply on qualifying lanes")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2)

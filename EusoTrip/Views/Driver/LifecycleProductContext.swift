@@ -1414,31 +1414,28 @@ struct LifecycleProductContext {
         }
     }
 
-    /// ESANG strip under the pool card — explains how the tier
-    /// promotion shows up on the next tender.
+    /// ESANG strip under the pool card — a NEUTRAL program note. The
+    /// previous per-product copy asserted a live "+$NN ALREADY PRICED
+    /// IN" / "APPLIED" / "SECURED" promotion state that no loyalty/
+    /// pricing source feeds to this client; those were fabricated
+    /// per-driver assertions and were removed. This now states only
+    /// that the program's benefits apply on qualifying lanes — no
+    /// dollar figure, no asserted applied/priced/secured state.
     var pooleSangNote: String {
-        switch product {
-        case .hazmatTanker, .vesselTanker:
-            return "ESANG · TIER 3 PROMOTION APPLIED TO DAY-2 TENDER · +$60 ALREADY PRICED IN"
-        case .reefer:
-            return "ESANG · COLDLANE TIER APPLIED · +$50 ALREADY PRICED IN"
-        case .flatbed:
-            return "ESANG · HEAVYHAUL TIER APPLIED · +$45 ALREADY PRICED IN"
-        case .container, .railIntermodal, .vesselContainer:
-            return "ESANG · CONTAINER TIER APPLIED · CHASSIS PICK SECURED"
-        case .railBulk, .vesselBulk:
-            return "ESANG · BULK TIER APPLIED · SPUR PRIORITY ON YORK PA"
-        case .dryVan:
-            return "ESANG · FREIGHTLANE TIER APPLIED · +$30 ALREADY PRICED IN"
-        }
+        "ESANG · \(poolTierProgram) benefits apply on qualifying lanes"
     }
 
-    /// Tier number rendered on the card. Live profile would carry
-    /// this; we surface "Tier 3" by default to match the Figma.
-    var poolTierNumber: Int { 3 }
+    /// Pool loyalty tier number. NEUTRALIZED to 0 — there is no live
+    /// loyalty/tier source wired to this client, so any non-zero tier
+    /// (the prior hard-coded "Tier 3") was a fabricated per-driver
+    /// assertion. Returns 0 until a real loyalty store ships.
+    var poolTierNumber: Int { 0 }
 
-    /// Tier progress percentage. 100% = next tier unlocked.
-    var poolTierProgress: Double { 1.0 }
+    /// Pool tier progress (0.0-1.0). NEUTRALIZED to 0.0 — no live
+    /// loyalty source feeds tier progress to this client, so the prior
+    /// hard-coded 1.0 ("100% · next tier unlocked") was fabricated.
+    /// Returns 0.0 until a real loyalty store ships.
+    var poolTierProgress: Double { 0.0 }
 
     // MARK: - 056 · 4-row credentials grid
 
@@ -1446,57 +1443,149 @@ struct LifecycleProductContext {
     /// CDL + HAZMAT/Tanker + DOT Med + TWIC; non-hazmat drivers
     /// see CDL + product-specific endorsement + DOT Med + TWIC
     /// (or other relevant credential).
+
+    /// Status of a single credential row. `.active` = the credential's
+    /// expiry parses to a FUTURE date (current). `.expiring` = it parses
+    /// to a PAST date (lapsed). `.unknown` = no expiry datum at all
+    /// (null column / no `drivers` row / a credential TYPE with no
+    /// backing `drivers` column). Honest — never assert ACTIVE without
+    /// a real future-dated expiry.
+    enum CredentialStatus { case active, expiring, unknown }
+
     struct CredentialRow: Identifiable, Hashable {
         var id: String { title }
         let icon: String
         let title: String
         let subtitle: String
-        let active: Bool
+        let status: CredentialStatus
     }
 
-    var credentialsRows: [CredentialRow] {
+    /// Parse an ISO-8601 date string and return `(yyyy-MM-dd display,
+    /// isFuture)`. Returns nil when the string is nil/empty/unparseable
+    /// so the caller can collapse to em-dash + `.unknown`.
+    private static func credentialDate(_ iso: String?) -> (display: String, isFuture: Bool)? {
+        guard let iso = iso, !iso.isEmpty else { return nil }
+        let date: Date
+        if let d = ISO8601DateFormatter().date(from: iso) {
+            date = d
+        } else {
+            // Tolerate bare "yyyy-MM-dd" (no time component).
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd"
+            f.timeZone = TimeZone(identifier: "UTC")
+            guard let d = f.date(from: String(iso.prefix(10))) else { return nil }
+            date = d
+        }
+        let out = DateFormatter()
+        out.locale = Locale(identifier: "en_US_POSIX")
+        out.dateFormat = "yyyy-MM-dd"
+        out.timeZone = TimeZone(identifier: "UTC")
+        return (out.string(from: date), date > Date())
+    }
+
+    /// Build a CDL/Medical/TWIC-style "EXP <date>" row from an ISO
+    /// expiry. Future date → `.active`, past date → `.expiring`, nil →
+    /// em-dash + `.unknown`.
+    private static func expiryRow(
+        icon: String,
+        title: String,
+        iso: String?
+    ) -> CredentialRow {
+        if let (display, isFuture) = credentialDate(iso) {
+            return CredentialRow(
+                icon: icon,
+                title: title,
+                subtitle: "EXP \(display)",
+                status: isFuture ? .active : .expiring
+            )
+        }
+        return CredentialRow(icon: icon, title: title, subtitle: LiveLoadFacets.dash, status: .unknown)
+    }
+
+    /// Build the 4-row credentials grid from the driver's REAL DQ
+    /// credentials (`driverQualification.getMyCredentials`). The row
+    /// SET (icons + titles per product) is identical to the catalog;
+    /// only the subtitle + status are data-driven. Credential TYPES
+    /// with no backing `drivers` column (Cold-Chain Cert, Securement
+    /// Cert, the Port-Access list, Customs/C-TPAT, Defensive Driving,
+    /// Bulk Handling Cert) collapse to em-dash + `.unknown` — we never
+    /// fabricate a compliance state for a credential the backend can't
+    /// confirm. `cred == nil` (no driver row / fetch failed) → every
+    /// row honest-unknown.
+    func credentialsRows(_ cred: DriverQualificationAPI.DriverCredentials?) -> [CredentialRow] {
+        let dash = LiveLoadFacets.dash
+
+        // CDL row — shared across every product.
+        let cdlRow = Self.expiryRow(icon: "creditcard.fill", title: "CDL Class A", iso: cred?.cdlExpiry)
+
+        // DOT Medical Card — shared (medicalCardExpiry column).
+        let medRow = Self.expiryRow(icon: "cross.case.fill", title: "DOT Medical Card", iso: cred?.medicalCardExpiry)
+
+        // TWIC — shared on most products (twicExpiry column).
+        let twicRow = Self.expiryRow(icon: "lock.shield.fill", title: "TWIC & TSA Pre-Check", iso: cred?.twicExpiry)
+
+        // HAZMAT & Tanker — endorsement flag + optional hazmatExpiry.
+        let hazRow: CredentialRow = {
+            let endorsed = cred?.hazmatEndorsement ?? false
+            guard endorsed else {
+                return CredentialRow(icon: "exclamationmark.shield.fill", title: "HAZMAT & Tanker", subtitle: dash, status: .unknown)
+            }
+            if let (display, isFuture) = Self.credentialDate(cred?.hazmatExpiry) {
+                return CredentialRow(
+                    icon: "exclamationmark.shield.fill",
+                    title: "HAZMAT & Tanker",
+                    subtitle: "Endorsed · EXP \(display)",
+                    status: isFuture ? .active : .expiring
+                )
+            }
+            // Endorsed, no expiry datum — honest unknown on the date.
+            return CredentialRow(icon: "exclamationmark.shield.fill", title: "HAZMAT & Tanker", subtitle: "Endorsed", status: .unknown)
+        }()
+
+        // Credential TYPES with no backing `drivers` column — subtitle
+        // em-dash, status .unknown (never fabricated).
+        func noColumnRow(icon: String, title: String) -> CredentialRow {
+            CredentialRow(icon: icon, title: title, subtitle: dash, status: .unknown)
+        }
+
         switch product {
         case .hazmatTanker, .vesselTanker:
-            return [
-                .init(icon: "creditcard.fill",      title: "CDL Class A",         subtitle: "P5 · EXP 2028-04-14",        active: true),
-                .init(icon: "exclamationmark.shield.fill", title: "HAZMAT & Tanker", subtitle: "X · NH3 · ENDORSED",       active: true),
-                .init(icon: "cross.case.fill",      title: "DOT Medical Card",     subtitle: "EXP 2026-09-01",            active: true),
-                .init(icon: "lock.shield.fill",     title: "TWIC & TSA Pre-Check", subtitle: "CLEARED 2026-04-01",         active: true),
-            ]
+            return [cdlRow, hazRow, medRow, twicRow]
         case .reefer:
             return [
-                .init(icon: "creditcard.fill",       title: "CDL Class A",         subtitle: "EXP 2028-04-14",             active: true),
-                .init(icon: "thermometer.snowflake", title: "Cold-Chain Cert",     subtitle: "USDA · EXP 2027-02",        active: true),
-                .init(icon: "cross.case.fill",       title: "DOT Medical Card",     subtitle: "EXP 2026-09-01",             active: true),
-                .init(icon: "lock.shield.fill",      title: "TWIC & TSA Pre-Check", subtitle: "CLEARED 2026-04-01",         active: true),
+                cdlRow,
+                noColumnRow(icon: "thermometer.snowflake", title: "Cold-Chain Cert"),
+                medRow,
+                twicRow,
             ]
         case .flatbed:
             return [
-                .init(icon: "creditcard.fill",       title: "CDL Class A",         subtitle: "EXP 2028-04-14",             active: true),
-                .init(icon: "link",                   title: "Securement Cert",     subtitle: "DOT 393 · EXP 2027-05",      active: true),
-                .init(icon: "cross.case.fill",       title: "DOT Medical Card",     subtitle: "EXP 2026-09-01",             active: true),
-                .init(icon: "lock.shield.fill",      title: "TWIC & TSA Pre-Check", subtitle: "CLEARED 2026-04-01",         active: true),
+                cdlRow,
+                noColumnRow(icon: "link", title: "Securement Cert"),
+                medRow,
+                twicRow,
             ]
         case .container, .railIntermodal, .vesselContainer:
             return [
-                .init(icon: "creditcard.fill",       title: "CDL Class A",         subtitle: "EXP 2028-04-14",             active: true),
-                .init(icon: "cube.box.fill",          title: "TWIC + Port Access",   subtitle: "Long Beach + Norfolk",       active: true),
-                .init(icon: "cross.case.fill",       title: "DOT Medical Card",     subtitle: "EXP 2026-09-01",             active: true),
-                .init(icon: "doc.text.fill",         title: "Customs broker ref",   subtitle: "C-TPAT pre-vetted",          active: true),
+                cdlRow,
+                noColumnRow(icon: "cube.box.fill", title: "TWIC + Port Access"),
+                medRow,
+                noColumnRow(icon: "doc.text.fill", title: "Customs broker ref"),
             ]
         case .railBulk, .vesselBulk:
             return [
-                .init(icon: "creditcard.fill",       title: "CDL Class A",         subtitle: "EXP 2028-04-14",             active: true),
-                .init(icon: "circle.hexagongrid.fill", title: "Bulk Handling Cert", subtitle: "AAR · EXP 2027-06",          active: true),
-                .init(icon: "cross.case.fill",       title: "DOT Medical Card",     subtitle: "EXP 2026-09-01",             active: true),
-                .init(icon: "lock.shield.fill",      title: "TWIC & TSA Pre-Check", subtitle: "CLEARED 2026-04-01",         active: true),
+                cdlRow,
+                noColumnRow(icon: "circle.hexagongrid.fill", title: "Bulk Handling Cert"),
+                medRow,
+                twicRow,
             ]
         case .dryVan:
             return [
-                .init(icon: "creditcard.fill",       title: "CDL Class A",         subtitle: "EXP 2028-04-14",             active: true),
-                .init(icon: "shippingbox.fill",       title: "Defensive Driving",   subtitle: "Smith System · 2027",        active: true),
-                .init(icon: "cross.case.fill",       title: "DOT Medical Card",     subtitle: "EXP 2026-09-01",             active: true),
-                .init(icon: "lock.shield.fill",      title: "TWIC & TSA Pre-Check", subtitle: "CLEARED 2026-04-01",         active: true),
+                cdlRow,
+                noColumnRow(icon: "shippingbox.fill", title: "Defensive Driving"),
+                medRow,
+                twicRow,
             ]
         }
     }
@@ -1533,21 +1622,21 @@ struct LifecycleProductContext {
     ///        + (catalystStore.identity?.dotNumber.map { " · DOT \($0)" } ?? "")
     ///   3. Drop this TODO after wiring lands and verifying no
     ///      placeholder strings render in the .empty store state.
-    var identityCredentialLine: String {
-        switch product {
-        case .hazmatTanker, .vesselTanker:
-            return "HAZMAT CLASS A · MC-331 ENDORSED"
-        case .reefer:
-            return "CLASS A · COLD-CHAIN"
-        case .flatbed:
-            return "CLASS A · SECUREMENT CERT"
-        case .container, .railIntermodal, .vesselContainer:
-            return "CLASS A · TWIC + PORT"
-        case .railBulk, .vesselBulk:
-            return "CLASS A · BULK CERT"
-        case .dryVan:
-            return "CLASS A"
-        }
+    /// One-line credential summary under the driver's name on 056,
+    /// composed ONLY from live `drivers` credential data: the CDL (with
+    /// licensing state when present) plus the HAZMAT endorsement when the
+    /// driver actually holds it. The `drivers` table carries no CDL-class
+    /// or lane-cert column, so we never assert "CLASS A" / "MC-331
+    /// ENDORSED" / a lane cert the client cannot verify (the prior
+    /// product-keyed copy asserted an endorsement every hazmat driver saw
+    /// regardless of whether they held it). Renders "CDL" alone when no
+    /// record is on file — never a fabricated credential.
+    func identityCredentialLine(_ cred: DriverQualificationAPI.DriverCredentials?) -> String {
+        var parts: [String] = []
+        if let st = cred?.cdlState, !st.isEmpty { parts.append("CDL · \(st)") }
+        else { parts.append("CDL") }
+        if cred?.hazmatEndorsement == true { parts.append("HAZMAT ENDORSED") }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: - 040 / 041 Discharge audit — product-flavored caption strings
