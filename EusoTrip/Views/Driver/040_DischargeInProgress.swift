@@ -29,6 +29,14 @@ struct DischargeInProgress: View {
     @State private var pauseToast: String? = nil
     @State private var eStopInflight: Bool = false
 
+    // 040 is now hydrated from `loadLifecycleTanker.getDischargeProgress`
+    // (aggregated meter telemetry off `bay_ops_events`). `progress`
+    // is `nil` while loading and carries the honest-zero / live shape
+    // once the proc returns. No fabricated transferred/remaining/total/
+    // flow/elapsed/ETA literals remain — when there are no meter rows
+    // the screen renders "—" / "-" rather than a seeded reading.
+    @State private var progress: LoadLifecycleTankerAPI.DischargeProgress?
+
     enum Register { case night, afternoon }
     let register: Register
     init(register: Register = .night) { self.register = register }
@@ -37,29 +45,79 @@ struct DischargeInProgress: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    // Figma fallback (product-aware; routes through ctx)
-    private let fallbackClock      = "21:34"
-    private let fallbackElapsed    = "00:16:24"
-    private let fallbackTransferred = 4_250
-    private let fallbackRemaining   = 2_550
-    private let fallbackTotal       = 6_800
-    private let fallbackEtaRemain   = "ETA 15 MIN"
-    private let fallbackFlowRate    = "165"
+    private let emDash = "—"
 
+    /// True once the proc has returned real meter telemetry. While
+    /// `false`, hero / gauges / flow / elapsed / ETA render "—" / "-".
+    private var hasMeter: Bool { progress?.hasMeterData == true }
+
+    // Transferred fraction of the planned total (0…1). Honest 0 while
+    // loading or when no meter rows / no planned total exist.
     private var transferredPct: Double {
-        guard fallbackTotal > 0 else { return 0 }
-        return min(1, max(0, Double(fallbackTransferred) / Double(fallbackTotal)))
+        guard let p = progress, p.totalGallons > 0 else { return 0 }
+        return min(1, max(0, p.transferredGallons / p.totalGallons))
     }
 
     // Both gauges express ONE physical truth: product is flowing
     // truck → receiver. The receiver-side gauge rises with the
     // transferred fraction; the truck-side (inverted) gauge falls
-    // with the remaining fraction. Wiring both to `transferredPct`
-    // (loaded/total from the data model) keeps the inverted-bar
-    // animation honest instead of using the old decorative
-    // `fallbackTruckPct` / `fallbackRecvPct` constants.
+    // with the remaining fraction. Both bind to the real
+    // transferred/total fraction from the proc.
     private var receiverFillPct: Double { transferredPct * 100 }
     private var truckRemainPct: Double { (1 - transferredPct) * 100 }
+
+    /// Hero "transferred" gallons, formatted, or "—" when no meter rows.
+    private var transferredDisplay: String {
+        guard hasMeter, let p = progress else { return emDash }
+        return Int(p.transferredGallons.rounded()).formatted()
+    }
+
+    /// Hero "remaining" gallons + unit, or "—" when no meter rows.
+    private var remainingDisplay: String {
+        guard hasMeter, let p = progress else { return emDash }
+        return "\(Int(p.remainingGallons.rounded()).formatted()) \(ctx.dischargeUnit)"
+    }
+
+    /// Remaining gallons as a bare number string (gauge subline).
+    private var remainingShort: String {
+        guard hasMeter, let p = progress else { return emDash }
+        return Int(p.remainingGallons.rounded()).formatted()
+    }
+
+    /// Live flow rate, integer string, or "-" when no meter rows.
+    private var flowRateDisplay: String {
+        guard hasMeter, let p = progress else { return "-" }
+        return String(Int(p.currentFlowRateGpm.rounded()))
+    }
+
+    /// Live flow rate as Int for the gauge rate badge (0 when no data).
+    private var flowRateValue: Int {
+        guard hasMeter, let p = progress else { return 0 }
+        return Int(p.currentFlowRateGpm.rounded())
+    }
+
+    /// Elapsed `HH:MM:SS` from the proc, or "—" when no meter rows.
+    private var elapsedDisplay: String {
+        guard hasMeter, let p = progress else { return emDash }
+        let total = Int(max(0, p.elapsedSeconds.rounded()))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        return String(format: "%02d:%02d:%02d", h, m, s)
+    }
+
+    /// "ETA NN MIN" from the proc's ETA seconds, or "—" when no data.
+    private var etaDisplay: String {
+        guard hasMeter, let p = progress, p.etaSeconds > 0 else { return emDash }
+        let minutes = Int((p.etaSeconds / 60).rounded())
+        return "ETA \(minutes) MIN"
+    }
+
+    /// Percent-complete label. "—" until real telemetry lands.
+    private var pctCompleteDisplay: String {
+        guard hasMeter else { return emDash }
+        return "\(Int((transferredPct * 100).rounded()))% COMPLETE"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -145,7 +203,7 @@ struct DischargeInProgress: View {
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(fallbackElapsed)
+                Text(elapsedDisplay)
                     .font(EType.mono(.caption)).fontWeight(.semibold)
                     .foregroundStyle(palette.textPrimary)
                 Text("ELAPSED")
@@ -163,7 +221,7 @@ struct DischargeInProgress: View {
                     Text("TRANSFERRED")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
-                    Text("\(fallbackTransferred.formatted())")
+                    Text(transferredDisplay)
                         .font(.system(size: 38, weight: .heavy, design: .rounded))
                         .foregroundStyle(LinearGradient.diagonal)
                         .monospacedDigit()
@@ -176,7 +234,7 @@ struct DischargeInProgress: View {
                     Text("REMAINING")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
-                    Text("\(fallbackRemaining.formatted()) \(ctx.dischargeUnit)")
+                    Text(remainingDisplay)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                 }
@@ -196,11 +254,11 @@ struct DischargeInProgress: View {
             }
             .frame(height: 6)
             HStack {
-                Text("\(Int((transferredPct * 100).rounded()))% COMPLETE")
+                Text(pctCompleteDisplay)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text(fallbackEtaRemain)
+                Text(etaDisplay)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -224,7 +282,7 @@ struct DischargeInProgress: View {
                 .foregroundStyle(palette.textTertiary)
             Spacer()
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(fallbackFlowRate)
+                Text(flowRateDisplay)
                     .font(.system(size: 22, weight: .heavy, design: .rounded))
                     .foregroundStyle(palette.textPrimary)
                     .monospacedDigit()
@@ -243,9 +301,18 @@ struct DischargeInProgress: View {
     }
 
     private var gaugePair: some View {
-        let badge = ctx.dischargeRateBadge(value: 165)
-        let truckSub = "\(badge) · \(fallbackRemaining.formatted()) \(ctx.dischargeUnit) LEFT"
-        let recvSub  = "\(badge) · \(Int(receiverFillPct.rounded()))% FILLED"
+        // Sublines render the em-dash honestly until the proc returns
+        // real meter telemetry — no seeded "+165 · 2,550 LEFT" literal.
+        let truckSub: String
+        let recvSub: String
+        if hasMeter {
+            let badge = ctx.dischargeRateBadge(value: flowRateValue)
+            truckSub = "\(badge) · \(remainingShort) \(ctx.dischargeUnit) LEFT"
+            recvSub  = "\(badge) · \(Int(receiverFillPct.rounded()))% FILLED"
+        } else {
+            truckSub = emDash
+            recvSub  = emDash
+        }
         return HStack(spacing: Space.s2) {
             gauge(label: truckGaugeLabel,    value: truckRemainPct,   sub: truckSub, invert: true)
             gauge(label: receiverGaugeLabel, value: receiverFillPct,  sub: recvSub,  invert: false)
@@ -429,6 +496,13 @@ struct DischargeInProgress: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // Live discharge telemetry — aggregated meter frames off
+        // `bay_ops_events`. Honest-zero shape when no meter rows exist
+        // (the view then renders "—" / "-" via `hasMeter`). `progress`
+        // stays `nil` while the proc is in flight, which also renders
+        // the em-dash, so the loading and empty states read identically.
+        progress = try? await EusoTripAPI.shared.loadLifecycleTanker
+            .getDischargeProgress(loadId: n)
     }
 
     /// Pause / resume the discharge — same pattern as 030 + 032.

@@ -654,6 +654,17 @@ final class EusoTripAPI: ObservableObject {
     /// screens 013–051 (per gap analysis 2026-04-24).
     lazy var loadLifecycle: LoadLifecycleAPI = LoadLifecycleAPI(api: self)
 
+    /// `loadLifecycleTankerRouter` — tanker discharge meter telemetry
+    /// surface backing lifecycle screen 040 (Discharge in Progress).
+    /// `recordMeterFrame` appends one append-only meter frame per
+    /// reading (DRIVER write); `getDischargeProgress` aggregates the
+    /// `phase="meter"` rows on `bay_ops_events` into live
+    /// transferred/remaining/total/flow/elapsed/ETA (honest-zero when
+    /// no meter rows). MCP-verified at
+    /// `frontend/server/routers/loadLifecycleTanker.ts` (mounted at
+    /// `routers.ts:2225` under namespace `loadLifecycleTanker`).
+    lazy var loadLifecycleTanker: LoadLifecycleTankerAPI = LoadLifecycleTankerAPI(api: self)
+
     /// `spectraMatchRouter` — crude-oil + product identification
     /// surface backing lifecycle screens 030 (Loading in Progress)
     /// and 031 (Spectra-Match Verdict). Backend procedures live at
@@ -970,6 +981,24 @@ final class EusoTripAPI: ObservableObject {
     /// No fabricated telemetry — every numeric is OPTIONAL Double so a null /
     /// offline field renders as an honest "—" rather than a fake gauge value.
     lazy var tankMonitor: TankMonitorAPI = TankMonitorAPI(api: self)
+
+    /// `railTenderWorkflowRouter` — EDI 404/990 rail load-tender surface backing
+    /// 008 Rail Shipper Tender Workflow (and 569 carrier). Server at
+    /// `frontend/server/routers/railTenderWorkflow.ts` (mounted as
+    /// `railTenderWorkflow` in `routers.ts:3276`). The 008 view already calls
+    /// `tenderHistory`/`submitTender`/`cancelTender` directly; this namespace
+    /// adds the §0-fallback acceptance-rate read used to de-fabricate the ESANG
+    /// advisory band:
+    ///   • `carrierAcceptanceRate({ carrier, commodityStcc?, windowDays? })`
+    ///     → `{ carrier, acceptanceRate (0-100, one decimal), accepted, total,
+    ///       windowDays }`. Computed live from the decided tender lifecycle
+    ///     events (`tender_accepted` / `tender_declined` / `tender_cancelled`)
+    ///     persisted on `rail_shipment_events`, scoped by `metadata.carrier`
+    ///     (+ `metadata.commodityStcc` when given) within the rolling window.
+    ///     Honest-zero (`acceptanceRate:0, accepted:0, total:0`) when the
+    ///     carrier has no decided tenders in the window — the 008 view renders
+    ///     an em-dash for the rate rather than the old hardcoded 94%.
+    lazy var railTenderWorkflow: RailTenderWorkflowAPI = RailTenderWorkflowAPI(api: self)
 
     /// `bolReviewRouter` — field-level BOL-vs-tendered mismatch detail backing
     /// the Dispatcher 411/722 BOL Mismatch surface (`DispatcherBOLMismatchScreen`,
@@ -12851,6 +12880,159 @@ struct LoadLifecycleAPI {
     }
 }
 
+// MARK: - loadLifecycleTankerRouter
+//
+// Tanker discharge meter telemetry. Backed verbatim by
+// `frontend/server/routers/loadLifecycleTanker.ts`. Today's iOS
+// callsites:
+//
+//   • `040_DischargeInProgress` → `getDischargeProgress(loadId:)` to
+//     hydrate the live transferred / remaining / total / flow-rate /
+//     elapsed / ETA telemetry from the load's `phase="meter"` rows on
+//     `bay_ops_events`. Honest-zero (no meter rows) renders "—".
+//   • `recordMeterFrame(...)` appends one append-only meter frame per
+//     reading (DRIVER write).
+//
+// Field names mirror the server return shape verbatim (decoder uses
+// `.useDefaultKeys` — camelCase, no conversion). Gallon / second
+// counters are decoded as `Double` to stay robust against
+// superjson's numeric serialization; `transferredPct` is a one-
+// decimal float 0–100.
+struct LoadLifecycleTankerAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - getDischargeProgress
+
+    /// Live progress for an in-flight tanker discharge. Mirrors the
+    /// server return shape field-for-field. When the load has no meter
+    /// rows the server returns the honest-zero object
+    /// (`totalGallons` may carry the planned volume, everything else 0,
+    /// `startedAt == nil`, `status == "idle"`).
+    struct DischargeProgress: Decodable, Equatable {
+        let totalGallons: Double
+        let transferredGallons: Double
+        let remainingGallons: Double
+        /// 0–100, one decimal (server rounds to one place).
+        let transferredPct: Double
+        let currentFlowRateGpm: Double
+        let elapsedSeconds: Double
+        let etaSeconds: Double
+        /// ISO-8601 timestamp of the first meter frame, or `nil` when
+        /// no meter rows exist yet.
+        let startedAt: String?
+        /// `"idle"` (no meter rows) · `"in_progress"` · `"complete"`.
+        let status: String
+
+        /// True when the proc returned the honest-zero shape — no meter
+        /// frames have landed, so the UI must render "—" / loading
+        /// rather than a real reading. `totalGallons` may still be the
+        /// planned volume, so it's excluded from the emptiness test.
+        var hasMeterData: Bool {
+            transferredGallons > 0 || elapsedSeconds > 0 || startedAt != nil
+        }
+    }
+
+    /// `loadLifecycleTanker.getDischargeProgress` — aggregates the
+    /// `phase="meter"` rows on `bay_ops_events` for the load into live
+    /// discharge telemetry. DRIVER + DISPATCH read. Honest-zero when no
+    /// meter rows exist.
+    func getDischargeProgress(loadId: Int) async throws -> DischargeProgress {
+        struct Input: Encodable { let loadId: Int }
+        return try await api.query(
+            "loadLifecycleTanker.getDischargeProgress",
+            input: Input(loadId: loadId)
+        )
+    }
+
+    // MARK: - recordMeterFrame
+
+    struct RecordMeterResult: Decodable, Equatable { let success: Bool? }
+
+    /// `loadLifecycleTanker.recordMeterFrame` — append one meter frame
+    /// (flow rate + cumulative gallons + fill %, optional pressure /
+    /// temperature) to the load's append-only meter telemetry.
+    /// DRIVER-only write.
+    func recordMeterFrame(
+        loadId: Int,
+        flowRateGpm: Double,
+        cumulativeGallons: Double,
+        fillPct: Double,
+        pressurePsi: Double? = nil,
+        temperatureC: Double? = nil
+    ) async throws -> RecordMeterResult {
+        struct Input: Encodable {
+            let loadId: Int
+            let flowRateGpm: Double
+            let cumulativeGallons: Double
+            let fillPct: Double
+            let pressurePsi: Double?
+            let temperatureC: Double?
+        }
+        return try await api.mutation(
+            "loadLifecycleTanker.recordMeterFrame",
+            input: Input(
+                loadId: loadId,
+                flowRateGpm: flowRateGpm,
+                cumulativeGallons: cumulativeGallons,
+                fillPct: fillPct,
+                pressurePsi: pressurePsi,
+                temperatureC: temperatureC
+            )
+        )
+    }
+
+    // MARK: - getDischargeSummary
+
+    /// Post-discharge summary aggregated over the same `phase="meter"`
+    /// rows on `bay_ops_events` (MAX cumulative gallons, peak/avg flow,
+    /// first/last meter-frame timestamps, final receiver fill %). Mirrors
+    /// the server return shape field-for-field
+    /// (`loadLifecycleTanker.ts` `getDischargeSummary`). When the load has
+    /// no meter frames the server returns the honest-empty object
+    /// (`totalGallons:0`, `startedAt == nil`, `endedAt == nil`,
+    /// `elapsedSeconds:0`, `peakFlowRateGpm:0`, `avgFlowRateGpm:0`,
+    /// `receiverFillPct:0`) — the 041 view renders "—" rather than a
+    /// fabricated reading. Gallon / second / rate counters are decoded as
+    /// `Double` to stay robust against superjson's numeric serialization.
+    struct DischargeSummary: Decodable, Equatable {
+        let totalGallons: Double
+        /// ISO-8601 timestamp of the first meter frame, or `nil` when no
+        /// meter rows exist yet.
+        let startedAt: String?
+        /// ISO-8601 timestamp of the last meter frame, or `nil` when no
+        /// meter rows exist yet.
+        let endedAt: String?
+        let elapsedSeconds: Double
+        let peakFlowRateGpm: Double
+        /// One-decimal average flow (server rounds to one place).
+        let avgFlowRateGpm: Double
+        /// Final receiver fill from the last meter frame, 0–100.
+        let receiverFillPct: Double
+
+        /// True when the proc returned a real summary — both the first
+        /// (`startedAt`) and last (`endedAt`) meter-frame timestamps are
+        /// present, which the server only emits when at least one meter
+        /// frame exists. When `false` the UI must render "—" rather than a
+        /// fabricated reading. Timestamp presence (not `totalGallons`) is
+        /// the gate because the server emits null timestamps on the
+        /// honest-empty path.
+        var hasSummary: Bool {
+            startedAt != nil && endedAt != nil
+        }
+    }
+
+    /// `loadLifecycleTanker.getDischargeSummary` — post-discharge roll-up
+    /// over the `phase="meter"` rows on `bay_ops_events` for the load.
+    /// DRIVER + DISPATCH read. Honest-empty when no meter rows exist.
+    func getDischargeSummary(loadId: Int) async throws -> DischargeSummary {
+        struct Input: Encodable { let loadId: Int }
+        return try await api.query(
+            "loadLifecycleTanker.getDischargeSummary",
+            input: Input(loadId: loadId)
+        )
+    }
+}
+
 // MARK: - spectraMatchRouter
 //
 // Driver-facing surface for crude-oil + product identification.
@@ -21650,6 +21832,70 @@ struct TankMonitorAPI {
         try await api.query("tankMonitor.getTankAlerts",
                             input: AlertsInput(terminalId: terminalId,
                                                severityFilter: severityFilter))
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// MARK: - railTenderWorkflowRouter (008 Rail Shipper Tender Workflow)
+// ════════════════════════════════════════════════════════════════════════
+//
+// Mirrors `frontend/server/routers/railTenderWorkflow.ts`. The 008 view drives
+// `tenderHistory`/`submitTender`/`cancelTender` directly with string paths; this
+// namespace wraps the §0-fallback `carrierAcceptanceRate` read so the ESANG
+// advisory band reflects the REAL acceptance rate instead of a hardcoded 94%.
+//
+//   carrierAcceptanceRate({ carrier, commodityStcc?, windowDays? })
+//     → { carrier, acceptanceRate, accepted, total, windowDays }
+//
+// The server computes the rate from the DECIDED tender lifecycle events
+// (`tender_accepted` / `tender_declined` / `tender_cancelled`) on
+// `rail_shipment_events`, scoped by `metadata.carrier` (+ `metadata.commodityStcc`
+// when given) within the rolling `windowDays` (server default 180). `acceptanceRate`
+// is `accepted / decided × 100`, rounded to one decimal (`Math.round(x*1000)/10`),
+// so it is emitted as a JSON number with up to one fractional digit — decoded
+// here as a `Double`. `accepted`/`total` are integer counts. When the carrier has
+// no decided tenders in the window the server returns the honest-zero envelope
+// (`acceptanceRate:0, accepted:0, total:0`); the 008 view treats `total == 0` as
+// "no data" and renders an em-dash rather than "0%".
+
+struct RailTenderWorkflowAPI {
+    unowned let api: EusoTripAPI
+
+    /// `carrierAcceptanceRate` return shape — field-for-field with the server
+    /// proc (`railTenderWorkflow.ts:554`). `acceptanceRate` is 0-100 with one
+    /// decimal (JSON number) → `Double`; `accepted`/`total`/`windowDays` are
+    /// integer counts → `Int`. `total == 0` is the honest no-data signal.
+    struct AcceptanceRate: Decodable, Hashable {
+        let carrier: String
+        let acceptanceRate: Double
+        let accepted: Int
+        let total: Int
+        let windowDays: Int
+    }
+
+    // Server input fields verbatim: carrier (required), commodityStcc (optional),
+    // windowDays (optional; server default 180).
+    private struct AcceptanceRateInput: Encodable {
+        let carrier: String
+        let commodityStcc: String?
+        let windowDays: Int?
+    }
+
+    /// `railTenderWorkflow.carrierAcceptanceRate` — live carrier tender
+    /// acceptance rate over the rolling window, optionally narrowed to one
+    /// commodity (STCC). Pass `windowDays: nil` to take the server default
+    /// (180). The envelope is always returned (honest-zero when no decided
+    /// tenders) — the caller inspects `total == 0` to render an em-dash.
+    func carrierAcceptanceRate(
+        carrier: String,
+        commodityStcc: String? = nil,
+        windowDays: Int? = nil
+    ) async throws -> AcceptanceRate {
+        try await api.query(
+            "railTenderWorkflow.carrierAcceptanceRate",
+            input: AcceptanceRateInput(carrier: carrier,
+                                       commodityStcc: commodityStcc,
+                                       windowDays: windowDays))
     }
 }
 
