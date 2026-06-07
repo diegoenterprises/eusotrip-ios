@@ -26,7 +26,10 @@ struct Unloading: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
-    @State private var activeLoad: Load?
+    // Server-shaped projection (id String, nested {city,state}) — the legacy
+    // `Load` (id Int, full LoadLocation) does NOT decode the loads.getById
+    // response and silently leaves this nil.
+    @State private var activeLoad: LoadsAPI.LoadDetail?
     @State private var showBol: Bool = false
 
     /// Real-time anchor for the detention accrual ticker — set to the
@@ -48,13 +51,32 @@ struct Unloading: View {
     /// animation carries it. Off under reduce-motion.
     @State private var billingPulse: Bool = false
 
+    /// Real dock door, resolved from `appointments.getByLoad.dockNumber`
+    /// for this load. Nil until the appointment hydrates (or when the
+    /// appointment carries no assigned door) → the door slots render an
+    /// honest em-dash sentinel, never the prior fabricated "12".
+    @State private var dockDoor: String?
+
+    /// Live detention math from `detentionAccessorials.calculateDetention`,
+    /// fed the real `arrivalAnchor` ISO + the load's cargo type. Drives the
+    /// running charge ($) and the active $/hr tier rate. Nil until the proc
+    /// returns (no arrival anchor / empty result) → the charge + rate lines
+    /// render em-dash sentinels rather than invented "$60/hr" / "$..." copy.
+    @State private var detentionCalc: DetentionAPI.DetentionCalc?
+
     enum Register { case night, afternoon }
     let register: Register
 
     init(register: Register = .night) { self.register = register }
 
     private var ctx: LifecycleProductContext {
-        LifecycleProductContext(load: activeLoad, role: session.user?.role)
+        // LoadDetail (not Load) — resolve the product context from the live
+        // cargo/hazmat strings via forCargo (same helper 050 uses).
+        LifecycleProductContext.forCargo(
+            cargoType: activeLoad?.cargoType,
+            hazmatClass: activeLoad?.hazmatClass,
+            role: session.user?.role
+        )
     }
 
     /// Transport mode of the active load (truck fallback) — drives the
@@ -64,18 +86,87 @@ struct Unloading: View {
     }
 
     // MARK: - Figma fallback
-    private let fallbackDoor      = "12"
+    //
+    // 2026-06-06 de-fabrication: door "12" / detention "2:47" / the
+    // "door 12" receiver-sub leak excised. Door now reads from the live
+    // appointment (`appointments.getByLoad.dockNumber`), detention from
+    // the live calc proc, receiver from `activeLoad.deliveryLocation`.
+    // Sentinels below are honest em-dashes, not invented figures.
     private let fallbackOff       = 4
     private let fallbackTotal     = 26
     private let fallbackTrailer   = "-"
     private let fallbackStarted   = "00:32"
     private let fallbackEtaRemain = "3:15"
     private let fallbackRate      = "2"
-    private let fallbackDetention = "2:47"
-    private let fallbackDetRate   = "-"
-    private let fallbackDetCharge = "-"
-    private let fallbackReceiver  = "-"
-    private let fallbackReceiverSub = "dispatch bell · door 12"
+
+    // MARK: - Honest live displays
+
+    /// Dock door for the header / pallet-map / receiver slots. The real
+    /// `appointments.getByLoad.dockNumber` when present; an em-dash
+    /// sentinel otherwise. Never the prior hardcoded "12".
+    private var doorDisplay: String {
+        guard let d = dockDoor?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !d.isEmpty else { return "—" }
+        return d
+    }
+
+    /// Receiver name line — the delivery city/state from the load's
+    /// `deliveryLocation`. Em-dash when no delivery location is on the
+    /// load. No fabricated facility brand.
+    private var receiverName: String {
+        guard let loc = activeLoad?.deliveryLocation,
+              !loc.cityState.isEmpty else { return "—" }
+        return loc.cityState
+    }
+
+    /// Receiver sub line — the delivery street address, then the live
+    /// dock door when assigned. Em-dash when neither is known. Replaces
+    /// the prior "dispatch bell · door 12" fabrication.
+    private var receiverSub: String {
+        let addr = (activeLoad?.deliveryLocation?.address ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        var parts: [String] = []
+        if !addr.isEmpty { parts.append(addr) }
+        if let d = dockDoor?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !d.isEmpty {
+            parts.append("door \(d)")
+        }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    /// "2:00" free-window label, derived from the live calc's
+    /// `freeTimeMinutes` (server default 120) — not a hardcoded string.
+    private var freeWindowLabel: String {
+        let mins = detentionCalc?.freeTimeMinutes ?? Int(freeTimeWindow / 60)
+        return String(format: "%d:%02d", mins / 60, mins % 60)
+    }
+
+    /// Live $/hr — the active escalation tier's rate from the calc proc
+    /// (`tierBreakdown.first?.rate`). Em-dash until the proc returns or
+    /// when no billable tier has opened yet.
+    private var detentionRateLabel: String {
+        guard let rate = detentionCalc?.tierBreakdown.first?.rate, rate > 0 else {
+            return "—"
+        }
+        return "\(currency(rate))/hr"
+    }
+
+    /// Live running detention charge — the calc proc's `totalCharge`.
+    /// Em-dash until the proc returns; "$0" honestly once it returns
+    /// inside the free window.
+    private var detentionChargeLabel: String {
+        guard let calc = detentionCalc else { return "—" }
+        return currency(calc.totalCharge)
+    }
+
+    /// USD currency formatter for the detention $ + $/hr labels.
+    private func currency(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 2
+        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
+    }
 
     // MARK: - Real-logic bindings
     //
@@ -188,7 +279,7 @@ struct Unloading: View {
                                   multiVehicleCount: activeLoad?.multiVehicleCount,
                                   compact: true)
                 }
-                Text("Door \(fallbackDoor) · \(unloadedNow) of \(unloadTotal) \(ctx.unloadUnitLabel) off")
+                Text("Door \(doorDisplay) · \(unloadedNow) of \(unloadTotal) \(ctx.unloadUnitLabel) off")
                     .font(.system(size: 20, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
@@ -243,7 +334,7 @@ struct Unloading: View {
                         .foregroundStyle(palette.textTertiary)
                         .accessibilityLabel(fallbackTrailer == "-" ? "Trailer pending" : "Trailer \(fallbackTrailer)")
                     Spacer()
-                    Text("DOOR \(fallbackDoor)")
+                    Text("DOOR \(doorDisplay)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -393,7 +484,7 @@ struct Unloading: View {
         return TimelineView(.periodic(from: .now, by: tick)) { timeline in
             let now = timeline.date
             let elapsed = detentionElapsed(at: now)
-            let display = elapsed.map(formatDetention) ?? fallbackDetention
+            let display = elapsed.map(formatDetention) ?? "—"
             let isAccruing = (elapsed ?? 0) > 0
 
             return VStack(alignment: .leading, spacing: Space.s2) {
@@ -428,7 +519,7 @@ struct Unloading: View {
                     .contentTransition(.numericText())
                     .accessibilityLabel("Detention time accrued")
                     .accessibilityValue(display)
-                Text("Free time ended at 2:00. \(fallbackDetRate) since. Running charge: \(fallbackDetCharge)")
+                Text("Free time ended at \(freeWindowLabel). \(detentionRateLabel) since. Running charge: \(detentionChargeLabel)")
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -468,11 +559,11 @@ struct Unloading: View {
             }
             .frame(width: 34, height: 34)
             VStack(alignment: .leading, spacing: 2) {
-                Text(fallbackReceiver)
+                Text(receiverName)
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
-                Text(fallbackReceiverSub)
+                Text(receiverSub)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -481,7 +572,7 @@ struct Unloading: View {
             Text("BACK")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            Text(fallbackDoor)
+            Text(doorDisplay)
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
         }
@@ -570,8 +661,8 @@ struct Unloading: View {
     private func hydrateLiveTrip() async {
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
-        guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
-        activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        guard !lifecycle.loadId.isEmpty, Int(lifecycle.loadId) != nil else { return }
+        activeLoad = (try? await EusoTripAPI.shared.loads.getDetail(id: lifecycle.loadId)) ?? nil
 
         // Detention anchor — the REAL arrival timestamp. Free time runs
         // from the moment the driver hit the receiver, so the detention
@@ -580,6 +671,20 @@ struct Unloading: View {
         // Stays nil if no arrival row exists → the Figma reference clock
         // renders instead, never a fake live tick.
         resolveArrivalAnchor(from: lifecycle.history)
+
+        // Live detention math — `detentionAccessorials.calculateDetention`
+        // fed the REAL arrival anchor ISO + the load's cargo type. No
+        // departureTime → server computes against `now`, returning the
+        // running charge + the active $/hr tier. Stays nil (→ em-dash
+        // charge/rate) until a real arrival anchor resolves.
+        if let anchor = arrivalAnchor {
+            let arrivalISO = ISO8601DateFormatter().string(from: anchor)
+            detentionCalc = try? await EusoTripAPI.shared.detention
+                .calculateDetention(
+                    arrivalTime: arrivalISO,
+                    cargoType: activeLoad?.cargoType ?? "general"
+                )
+        }
 
         // Live unloaded count — derived honestly from lifecycle state.
         // The load envelope doesn't yet ship a granular unloaded-unit
@@ -604,11 +709,18 @@ struct Unloading: View {
             }
         }
 
-        // Phase 10 closure: appointment status -> unloading.
-        // (Server marks completed when the lifecycle store
-        // transitions to 025 / Paperwork.) Best-effort.
+        // Live dock door + Phase 10 closure from the SAME appointment
+        // read. `appointments.getByLoad` carries the real `dockNumber`
+        // assigned shipper-side (205 dock-assign) → the door slots read
+        // it honestly. Then mark the appointment `unloading` (server
+        // marks completed when the lifecycle store transitions to 025 /
+        // Paperwork). Both best-effort.
         if let appt = try? await EusoTripAPI.shared.appointments
             .getByLoad(loadId: lifecycle.loadId) {
+            if let door = appt.dockNumber?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !door.isEmpty {
+                dockDoor = door
+            }
             _ = try? await EusoTripAPI.shared.appointments
                 .updateStatus(id: appt.id, status: "unloading")
         }

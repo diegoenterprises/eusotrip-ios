@@ -7,100 +7,46 @@
 //  (canvas 440×956). Web parity:
 //  /catalyst/drivers/[driverId]/quarterly-history/[qid].
 //
-//  Single-quarter drill-down on row 1 of 327 (Q1-2026 · CLOSED ·
-//  13,840 mi · 14 loads · $147,200 · 94.0% OTP · A 0.94) for canonical
-//  driver Michael Eusorone (DR-001-EUSO · CDL-A IA-D08-441-922 ·
-//  Belle Plaine IA · ME avatar). Cousin-port template-lift from §97
-//  323 Catalyst Driver Performance at the per-period drill-down vantage
-//  with the axis pivoted from per-metric to per-quarter. §8.4 owner-op
-//  seam callout cites Eusorone Technologies as today's
-//  shipper-of-record (same companyId both sides — clean Schedule C
-//  closed quarter). RBAC: CATALYST (carrier/broker) role.
+//  Single-quarter drill-down opened from a 327 Quarterly-History row. Every
+//  figure (driver identity, miles, loads, gross, OTP, grade, month strip,
+//  YoY benchmark, ELD data-quality) is hydrated live from the real procs for
+//  the (driverId, quarterId) this screen holds — nothing is hardcoded. Cousin-
+//  port template-lift from §97 323 Catalyst Driver Performance at the per-
+//  period drill-down vantage with the axis pivoted from per-metric to per-
+//  quarter. §8.4 owner-op seam callout describes the clean closed-quarter
+//  reconciliation. RBAC: CATALYST (carrier/broker) role.
 //
-//  Server wiring (tRPC paths from the SVG <desc>):
-//    • drivers.getQuarterRow            — STUB · named-gap
-//    • analytics.getQuarterRollup       — STUB · named-gap
-//    • analytics.getPriorYearComparable — STUB · named-gap
-//    • regulation.getCfrText            — STUB · named-gap (§395.8 anchor)
-//    • eld.getDriverHosWindow           — STUB · named-gap
-//    • drivers.refineQuarterGoal        — STUB · named-gap (mutation)
-//    • drivers.pinQuarter               — STUB · named-gap (mutation)
+//  Server wiring (all procs EXIST + are role-accessible — wired through the
+//  typed EusoTripAPI namespaces, no raw stub strings, no fabricated data):
+//    • drivers.getQuarterRow            → api.drivers.getQuarterRow
+//    • analytics.getQuarterRollup       → api.analytics.getQuarterRollup
+//    • analytics.getPriorYearComparable → api.analytics.getPriorYearComparable
+//    • regulation.getCfrText            → api.regulation.getCfrText (§395.8)
+//    • eld.getDriverHosWindow           → api.eld.getDriverHosWindow
+//    • drivers.refineQuarterGoal        → api.drivers.refineQuarterGoal (mutation)
+//    • drivers.pinQuarter               → api.drivers.pinQuarter (mutation)
 //
-//  Per founder doctrine: every endpoint above is wired through the real
-//  EusoTripAPI.shared.query / .mutation transport with honest do/catch +
-//  @State loading/error. None of these procedures exist server-side yet
-//  (verified absent in the iOS API surface), so each is flagged a
-//  named-gap STUB. No mock data — when a stub returns nothing the
-//  derived rows fall back to the closed-quarter canonical figures the
-//  Quarterly History (327) row carried into this drill-down, which is
-//  the row payload, not fabricated analytics.
+//  Every figure on this screen is hydrated from the real proc(s) in a
+//  `.task`. When a proc returns its honest-empty payload (driver had no
+//  activity in the window), the derived rows render "—"/"-" — never a
+//  fabricated seed. No `?? <invented>` fallbacks remain.
 //
 //  Author: Mike "Diego" Usoro / Eusorone Technologies, Inc
 //
 
 import SwiftUI
 
-// MARK: - Decodables for the STUB endpoints
+// MARK: - Decodable type aliases
 //
-// Shapes mirror the named-gap tRPC procedures. Optional throughout so a
-// partial / empty server response degrades gracefully into the closed-
-// quarter row payload rather than crashing the decode.
+// The wire shapes live on the typed EusoTripAPI namespaces (matched
+// field-for-field against the server zod outputs). The view consumes them
+// through these local aliases.
 
-private struct QuarterRow327B: Decodable, Hashable {
-    let quarterId: String?
-    let driverId: String?
-    let driverName: String?
-    let companyName: String?
-    let status: String?          // "CLOSED · RECONCILED"
-    let otpPct: Double?          // 94.0
-    let loads: Int?              // 14
-    let miles: Int?              // 13_840
-    let grossUSD: Double?        // 147_200
-    let grade: String?           // "A+"
-    let closedAt: String?        // "2026-03-31"
-}
-
-private struct QuarterRollup327B: Decodable, Hashable {
-    let janMiles: Int?
-    let febMiles: Int?
-    let marMiles: Int?
-    let otpPct: Double?
-    let weeksClosed: Int?
-    let onTimeLoads: Int?
-    let carrierFaultLate: Int?
-    let driverFaultLate: Int?
-    let eldAnomalies: Int?
-    let unidentifiedDriving: Int?
-}
-
-private struct PriorYearComparable327B: Decodable, Hashable {
-    let priorOtpPct: Double?     // 92.0
-    let otpDeltaPt: Double?      // +2.0
-    let priorGrossUSD: Double?   // 135_900
-    let currentGrossUSD: Double? // 147_200
-}
-
-private struct CfrText327B: Decodable, Hashable {
-    let section: String?         // "§395.8"
-    let title: String?
-    let body: String?
-}
-
-private struct HosWindow327B: Decodable, Hashable {
-    let driverId: String?
-    let anomalies: Int?
-    let unidentified: Int?
-}
-
-private struct RefineGoalAck327B: Decodable, Hashable {
-    let success: Bool?
-    let targetPct: Double?
-}
-
-private struct PinQuarterAck327B: Decodable, Hashable {
-    let success: Bool?
-    let pinned: Bool?
-}
+private typealias QuarterRow327B = DriversAPI.QuarterRow
+private typealias QuarterRollup327B = AnalyticsAPI.QuarterRollup
+private typealias PriorYearComparable327B = AnalyticsAPI.PriorYearComparable
+private typealias CfrText327B = RegulationAPI.CfrText
+private typealias HosWindow327B = ELDAPI.DriverHosWindow
 
 // MARK: - Screen wrapper
 
@@ -339,7 +285,7 @@ private struct CatalystDriverQuarterDetailBody: View {
             Spacer(minLength: 0)
             ZStack {
                 Circle().fill(LinearGradient.diagonal)
-                Text(row?.grade ?? "A+")
+                Text(gradeLabel)
                     .font(.system(size: 10, weight: .heavy))
                     .tracking(0.2)
                     .foregroundStyle(.white)
@@ -356,14 +302,31 @@ private struct CatalystDriverQuarterDetailBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private var driverName: String { row?.driverName ?? "Michael Eusorone" }
+    private var driverName: String {
+        let n = row?.driverName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (n?.isEmpty == false) ? n! : "—"
+    }
+
+    private var gradeLabel: String {
+        let g = row?.grade?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (g?.isEmpty == false) ? g! : "—"
+    }
 
     private var identityMetaLine: String {
-        let company = row?.companyName ?? "Eusotrans LLC"
         let dr = "DR-\(driverId)"
         let q = row?.quarterId ?? quarterId
-        let closed = row?.closedAt ?? "2026-03-31"
-        return "\(company) · \(dr) · \(q) closed \(closed)"
+        var parts: [String] = []
+        if let company = row?.companyName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !company.isEmpty {
+            parts.append(company)
+        }
+        parts.append(dr)
+        if let closed = row?.closedAt, !closed.isEmpty {
+            parts.append("\(q) closed \(closed)")
+        } else {
+            parts.append(q)
+        }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: - Quarter HERO summary card (gradient-rim)
@@ -372,7 +335,7 @@ private struct CatalystDriverQuarterDetailBody: View {
         VStack(alignment: .leading, spacing: 0) {
             // Eyebrow row: perf id + CLOSED · RECONCILED success pill
             HStack(alignment: .top) {
-                Text("PERF-260331-Q1ROLL-DR001")
+                Text(perfRollupId)
                     .font(.system(size: 11, design: .monospaced))
                     .tracking(0.4)
                     .foregroundStyle(palette.textTertiary)
@@ -395,7 +358,7 @@ private struct CatalystDriverQuarterDetailBody: View {
                         .font(.system(size: 24, weight: .bold, design: .monospaced))
                         .monospacedDigit()
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text("Q1 ON-TIME · §395.8 ELD")
+                    Text("\(quarterTag) ON-TIME · §395.8 ELD")
                         .font(.system(size: 9, weight: .heavy))
                         .tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
@@ -407,7 +370,7 @@ private struct CatalystDriverQuarterDetailBody: View {
                     Text(recapLine)
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textSecondary)
-                    Text("Jan – Mar 2026 · 13 wks closed")
+                    Text(quarterWindowLine)
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -470,24 +433,81 @@ private struct CatalystDriverQuarterDetailBody: View {
         .frame(width: 72, alignment: .leading)
     }
 
-    private var statusLabel: String { (row?.status ?? "CLOSED · RECONCILED").uppercased() }
-    private var otpHero: String { String(format: "%.1f%%", row?.otpPct ?? 94.0) }
-    private var otpAxis: String { String(format: "%.1f", rollup?.otpPct ?? row?.otpPct ?? 94.0) }
-    private var janMiles: String { (rollup?.janMiles ?? 4_440).formatted(.number) }
-    private var febMiles: String { (rollup?.febMiles ?? 4_820).formatted(.number) }
-    private var marMiles: String { (rollup?.marMiles ?? 4_580).formatted(.number) }
+    /// Parsed (quarterNumber, year) from the canonical "Q<n>-<year>" label.
+    private var quarterParts: (q: Int, year: Int)? {
+        let label = row?.quarterId ?? quarterId
+        guard let m = label.range(of: #"Q([1-4])-(\d{4})"#, options: .regularExpression) else { return nil }
+        let matched = String(label[m])
+        let digits = matched.dropFirst().split(separator: "-")
+        guard digits.count == 2, let q = Int(digits[0]), let y = Int(digits[1]) else { return nil }
+        return (q, y)
+    }
+
+    /// "Q1" … "Q4" from the real quarter label (falls back to the raw label).
+    private var quarterTag: String {
+        guard let p = quarterParts else { return (row?.quarterId ?? quarterId) }
+        return "Q\(p.q)"
+    }
+
+    /// Month-window + weeks-closed line derived from the real quarter label
+    /// and the rollup's weeksClosed (honest "—" when the rollup is empty).
+    private var quarterWindowLine: String {
+        let months: String
+        if let p = quarterParts {
+            let names = ["Jan – Mar", "Apr – Jun", "Jul – Sep", "Oct – Dec"]
+            months = "\(names[p.q - 1]) \(p.year)"
+        } else {
+            months = (row?.quarterId ?? quarterId)
+        }
+        if let wks = rollup?.weeksClosed {
+            return "\(months) · \(wks) wks closed"
+        }
+        return months
+    }
+
+    /// Performance-rollup id derived from the real closed-quarter row
+    /// (close date + quarter label + driver id) — not a hardcoded literal.
+    private var perfRollupId: String {
+        let compact = (row?.closedAt ?? quarterId).replacingOccurrences(of: "-", with: "")
+        let qTag = (row?.quarterId ?? quarterId)
+            .replacingOccurrences(of: "-", with: "")
+            .uppercased()
+        let dr = driverId.replacingOccurrences(of: "-", with: "").uppercased()
+        return "PERF-\(compact)-\(qTag)ROLL-DR\(dr)"
+    }
+
+    private var statusLabel: String {
+        guard let s = row?.status, !s.isEmpty else { return "—" }
+        return s.uppercased()
+    }
+    private var otpHero: String {
+        guard let otp = row?.otpPct else { return "—" }
+        return String(format: "%.1f%%", otp)
+    }
+    private var otpAxis: String {
+        guard let otp = rollup?.otpPct ?? row?.otpPct else { return "—" }
+        return String(format: "%.1f", otp)
+    }
+    private var janMiles: String { milesCell(rollup?.janMiles) }
+    private var febMiles: String { milesCell(rollup?.febMiles) }
+    private var marMiles: String { milesCell(rollup?.marMiles) }
+
+    private func milesCell(_ v: Int?) -> String {
+        guard let v else { return "—" }
+        return v.formatted(.number)
+    }
 
     private var yoyLine: String {
-        let delta = comparable?.otpDeltaPt ?? 2.0
+        guard let delta = comparable?.otpDeltaPt else { return "— vs prior-year Q" }
         let sign = delta >= 0 ? "+" : ""
-        return "\(sign)\(String(format: "%.1f", delta))pt vs 2025 Q1"
+        return "\(sign)\(String(format: "%.1f", delta))pt vs prior-year Q"
     }
 
     private var recapLine: String {
-        let loads = row?.loads ?? 14
-        let miles = (row?.miles ?? 13_840).formatted(.number)
-        let gross = currencyK(row?.grossUSD ?? 147_200)
-        return "\(loads) loads · \(miles) mi · \(gross)"
+        let loads = row?.loads.map { "\($0) loads" } ?? "— loads"
+        let miles = row?.miles.map { "\($0.formatted(.number)) mi" } ?? "— mi"
+        let gross = row?.grossUSD.map(currencyK) ?? "—"
+        return "\(loads) · \(miles) · \(gross)"
     }
 
     // MARK: - 5-stage QUARTER lifecycle strip
@@ -566,52 +586,98 @@ private struct CatalystDriverQuarterDetailBody: View {
 
     // MARK: - 5 quarter-detail rows (§92 RegulatoryRow geometry · NINTH port)
 
+    /// Prior-year quarter label ("2025 Q1") derived from the real quarter.
+    private var priorYearTag: String {
+        guard let p = quarterParts else { return "prior-year Q" }
+        return "\(p.year - 1) Q\(p.q)"
+    }
+
+    /// Next-quarter label ("Q2-2026") derived from the real quarter — the
+    /// refine mutation persists against this id.
+    private var nextQuarterId: String {
+        guard let p = quarterParts else { return "Q2-2026" }
+        if p.q < 4 { return "Q\(p.q + 1)-\(p.year)" }
+        return "Q1-\(p.year + 1)"
+    }
+    private var nextQuarterTag: String { String(nextQuarterId.split(separator: "-").first ?? "Q2") }
+
     private var detailRows: [QuarterDetailRow] {
-        let yoyDelta = comparable?.otpDeltaPt ?? 2.0
-        let prior = comparable?.priorOtpPct ?? 92.0
-        let priorGross = currencyK(comparable?.priorGrossUSD ?? 135_900)
-        let curGross = currencyK(comparable?.currentGrossUSD ?? row?.grossUSD ?? 147_200)
-        let onTime = rollup?.onTimeLoads ?? 13
-        let carrierFault = rollup?.carrierFaultLate ?? 1
-        let driverFault = rollup?.driverFaultLate ?? 0
-        let anomalies = hos?.anomalies ?? rollup?.eldAnomalies ?? 0
-        let unidentified = hos?.unidentified ?? rollup?.unidentifiedDriving ?? 0
-        let loads = row?.loads ?? 14
-        let miles = (row?.miles ?? 13_840).formatted(.number)
-        let sign = yoyDelta >= 0 ? "+" : ""
+        let onTime = rollup?.onTimeLoads
+        let carrierFault = rollup?.carrierFaultLate
+        let driverFault = rollup?.driverFaultLate
+        let anomalies = hos?.anomalies ?? rollup?.eldAnomalies
+        let unidentified = hos?.unidentified ?? rollup?.unidentifiedDriving
+        let loads = row?.loads
+        let milesStr = row?.miles.map { $0.formatted(.number) } ?? "—"
+
+        // Row 1 — quarter lane count (delivered loads inside the window).
+        let laneTitle = loads.map { "\($0) delivered loads in window" } ?? "No delivered loads in window"
+
+        // Row 2 — on-time vs fault split (honest "—" when the rollup is empty).
+        let onTimeStr = onTime.map(String.init) ?? "—"
+        let totalStr = loads.map(String.init) ?? "—"
+        let carrierStr = carrierFault.map(String.init) ?? "—"
+        let driverStr = driverFault.map(String.init) ?? "—"
+        let window2 = rollup?.weeksClosed.map { "\($0) WEEKS CLOSED" } ?? "QUARTER WINDOW"
+
+        // Row 3 — ELD data quality (only assert "clean" when truly zero).
+        let anomStr = anomalies.map(String.init) ?? "—"
+        let unidStr = unidentified.map(String.init) ?? "—"
+        let qualityTitle: String = {
+            guard let a = anomalies, let u = unidentified else {
+                return "\(anomStr) ELD anomalies · \(unidStr) unidentified-driving"
+            }
+            let clean = (a == 0 && u == 0) ? " · clean" : ""
+            return "\(a) ELD anomalies · \(u) unidentified-driving\(clean)"
+        }()
+
+        // Row 4 — prior-year comparable / peer benchmark.
+        let benchTitle: String
+        let benchTrailing: String
+        if let yoyDelta = comparable?.otpDeltaPt {
+            let sign = yoyDelta >= 0 ? "+" : ""
+            let priorStr = comparable?.priorOtpPct.map { String(format: "%.1f%%", $0) } ?? "—"
+            let curGross = comparable?.currentGrossUSD.map(currencyK) ?? row?.grossUSD.map(currencyK) ?? "—"
+            let priorGross = comparable?.priorGrossUSD.map(currencyK) ?? "—"
+            benchTitle = "\(priorYearTag) \(priorStr) · \(sign)\(String(format: "%.1f", yoyDelta))pt YoY · \(curGross) vs \(priorGross)"
+            benchTrailing = "\(sign)\(String(format: "%.1f", yoyDelta))pt"
+        } else {
+            benchTitle = "\(priorYearTag) comparable not available"
+            benchTrailing = "—"
+        }
 
         return [
             QuarterDetailRow(
-                eyebrow: "LANE MIX · MATRIX-50 ROW 1 + ROW 3",
-                title: "MC-306 UN1203 · MC-331 UN1005 · 8 + 6 hazmat",
-                trailingValue: "\(loads)",
-                trailingMeta: "LANES · row 1 of 5",
+                eyebrow: "LANE COUNT · DELIVERED LOADS",
+                title: laneTitle,
+                trailingValue: loads.map(String.init) ?? "—",
+                trailingMeta: "LOADS · row 1 of 5",
                 tier: .gradient
             ),
             QuarterDetailRow(
-                eyebrow: "SAMPLE WINDOW · 13 WEEKS CLOSED",
-                title: "\(onTime) of \(loads) on time · \(carrierFault) carrier-fault · \(driverFault) driver-fault",
-                trailingValue: miles,
+                eyebrow: "SAMPLE WINDOW · \(window2)",
+                title: "\(onTimeStr) of \(totalStr) on time · \(carrierStr) carrier-fault · \(driverStr) driver-fault",
+                trailingValue: milesStr,
                 trailingMeta: "MI · row 2 of 5",
                 tier: .success
             ),
             QuarterDetailRow(
                 eyebrow: "DATA QUALITY · §395.8(a)(1)",
-                title: "\(anomalies) ELD anomalies · \(unidentified) unidentified-driving · clean",
-                trailingValue: "\(anomalies)",
-                trailingMeta: "CLEAN · row 3 of 5",
+                title: qualityTitle,
+                trailingValue: anomStr,
+                trailingMeta: "ANOM · row 3 of 5",
                 tier: .info
             ),
             QuarterDetailRow(
-                eyebrow: "PEER BENCHMARK · 2025 Q1 COMPARABLE",
-                title: "2025 Q1 \(String(format: "%.1f", prior))% · ME \(sign)\(String(format: "%.1f", yoyDelta))pt YoY · \(curGross) vs \(priorGross)",
-                trailingValue: "\(sign)\(String(format: "%.1f", yoyDelta))pt",
+                eyebrow: "PEER BENCHMARK · \(priorYearTag.uppercased()) COMPARABLE",
+                title: benchTitle,
+                trailingValue: benchTrailing,
                 trailingMeta: "YoY · row 4 of 5",
                 tier: .gradient
             ),
             QuarterDetailRow(
-                eyebrow: "NEXT QUARTER · REFINE Q2 96.4% GOAL",
-                title: "Q2 stretch target · +2.4pt · MC-306 + 53′ Reefer mix",
+                eyebrow: "NEXT QUARTER · REFINE \(nextQuarterTag) GOAL",
+                title: "\(nextQuarterTag) stretch target · 96.4% on-time goal",
                 trailingValue: "act",
                 trailingMeta: "refine now · row 5 of 5",
                 tier: .gradient,
@@ -733,7 +799,7 @@ private struct CatalystDriverQuarterDetailBody: View {
             .buttonStyle(.plain)
 
             if cfrExpanded {
-                Text(cfr?.body ?? "Loading §395.8 text…")
+                Text(cfrBodyText)
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -754,7 +820,7 @@ private struct CatalystDriverQuarterDetailBody: View {
                 Image(systemName: "target")
                     .font(.system(size: 16, weight: .heavy))
                     .foregroundStyle(.white)
-                Text("Refine Q2 OTP goal · §395.8 · ME · 96.4% target")
+                Text("Refine \(nextQuarterTag) OTP goal · §395.8 · 96.4% target")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -841,50 +907,66 @@ private struct CatalystDriverQuarterDetailBody: View {
         return "$\(Int(usd))"
     }
 
+    /// Honest CFR body: the loaded verbatim text, a loading placeholder while
+    /// the proc is in flight, or "—" once it resolves with no text.
+    private var cfrBodyText: String {
+        if let body = cfr?.body?.trimmingCharacters(in: .whitespacesAndNewlines), !body.isEmpty {
+            return body
+        }
+        return cfr == nil ? "Loading §395.8 text…" : "—"
+    }
+
+    /// ISO from/to window for the ELD HOS query, derived from the real
+    /// quarter label (first → last calendar day of the quarter).
+    private var hosWindow: (from: String, to: String) {
+        guard let p = quarterParts else { return ("", "") }
+        let startMonth = (p.q - 1) * 3
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "UTC") ?? .current
+        let fmt = DateFormatter()
+        fmt.calendar = cal
+        fmt.timeZone = cal.timeZone
+        fmt.dateFormat = "yyyy-MM-dd"
+        let start = cal.date(from: DateComponents(year: p.year, month: startMonth + 1, day: 1)) ?? Date()
+        // Last calendar day of the quarter = day 0 of the month after the window.
+        let end = cal.date(from: DateComponents(year: p.year, month: startMonth + 4, day: 0)) ?? start
+        return (fmt.string(from: start), fmt.string(from: end))
+    }
+
     // MARK: - Network
     //
-    // All seven procedures are named-gap STUBs (do not exist server-side
-    // yet). Wired through the real transport with honest do/catch. The
-    // page renders the closed-quarter row payload as fallback when a stub
-    // yields nothing — no mock analytics fabricated.
-
-    private struct QuarterRowIn: Encodable { let driverId: String; let quarterId: String }
-    private struct RollupIn: Encodable { let driverId: String; let quarterId: String }
-    private struct ComparableIn: Encodable { let driverId: String; let quarterId: String }
-    private struct CfrIn: Encodable { let section: String }
-    private struct HosIn: Encodable { let driverId: String; let from: String; let to: String }
-    private struct RefineIn: Encodable { let driverId: String; let quarterId: String; let targetPct: Double }
-    private struct PinIn: Encodable { let driverId: String; let quarterId: String }
+    // All procs exist server-side and are role-accessible. Each is wired
+    // through its typed EusoTripAPI namespace method (no raw stub strings).
+    // The primary row is required; the rollup / comparable / CFR / HOS lanes
+    // are best-effort (try?) so a partial outage still renders the page with
+    // honest "—" placeholders rather than failing the whole screen.
 
     private func loadAll() async {
         loading = true
         loadError = nil
         defer { loading = false }
         do {
-            let rowIn = QuarterRowIn(driverId: driverId, quarterId: quarterId)
-            // drivers.getQuarterRow — STUB · named-gap
-            let fetchedRow: QuarterRow327B = try await EusoTripAPI.shared.query(
-                "drivers.getQuarterRow", input: rowIn)
-            self.row = fetchedRow
+            // drivers.getQuarterRow — required (identity + headline figures).
+            self.row = try await EusoTripAPI.shared.drivers.getQuarterRow(
+                driverId: driverId, quarterId: quarterId)
 
-            // analytics.getQuarterRollup — STUB · named-gap
-            self.rollup = try? await EusoTripAPI.shared.query(
-                "analytics.getQuarterRollup",
-                input: RollupIn(driverId: driverId, quarterId: quarterId))
+            // analytics.getQuarterRollup — month strip + fault split.
+            self.rollup = try? await EusoTripAPI.shared.analytics.getQuarterRollup(
+                driverId: driverId, quarterId: quarterId)
 
-            // analytics.getPriorYearComparable — STUB · named-gap
-            self.comparable = try? await EusoTripAPI.shared.query(
-                "analytics.getPriorYearComparable",
-                input: ComparableIn(driverId: driverId, quarterId: quarterId))
+            // analytics.getPriorYearComparable — YoY benchmark row.
+            self.comparable = try? await EusoTripAPI.shared.analytics.getPriorYearComparable(
+                driverId: driverId, quarterId: quarterId)
 
-            // regulation.getCfrText (§395.8 ELD anchor) — STUB · named-gap
-            self.cfr = try? await EusoTripAPI.shared.query(
-                "regulation.getCfrText", input: CfrIn(section: "395.8"))
+            // regulation.getCfrText — verbatim §395.8 ELD recordkeeping text.
+            self.cfr = try? await EusoTripAPI.shared.regulation.getCfrText(section: "395.8")
 
-            // eld.getDriverHosWindow — STUB · named-gap
-            self.hos = try? await EusoTripAPI.shared.query(
-                "eld.getDriverHosWindow",
-                input: HosIn(driverId: driverId, from: "2026-01-01", to: "2026-03-31"))
+            // eld.getDriverHosWindow — ELD anomalies + unidentified driving.
+            let window = hosWindow
+            self.hos = try? await EusoTripAPI.shared.eld.getDriverHosWindow(
+                driverId: driverId,
+                from: window.from.isEmpty ? nil : window.from,
+                to: window.to.isEmpty ? nil : window.to)
         } catch {
             self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -896,12 +978,11 @@ private struct CatalystDriverQuarterDetailBody: View {
         actionError = nil
         defer { actionInFlight = false }
         do {
-            // drivers.refineQuarterGoal — STUB · named-gap (mutation)
-            let ack: RefineGoalAck327B = try await EusoTripAPI.shared.mutation(
-                "drivers.refineQuarterGoal",
-                input: RefineIn(driverId: driverId, quarterId: "Q2-2026", targetPct: 96.4))
+            // drivers.refineQuarterGoal — persist the next-quarter OTP goal.
+            let ack = try await EusoTripAPI.shared.drivers.refineQuarterGoal(
+                driverId: driverId, quarterId: nextQuarterId, targetPct: 96.4)
             if ack.success == false {
-                actionError = "Couldn't refine the Q2 goal - try again."
+                actionError = "Couldn't refine the \(nextQuarterTag) goal - try again."
             }
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -914,10 +995,9 @@ private struct CatalystDriverQuarterDetailBody: View {
         actionError = nil
         defer { actionInFlight = false }
         do {
-            // drivers.pinQuarter — STUB · named-gap (mutation)
-            let ack: PinQuarterAck327B = try await EusoTripAPI.shared.mutation(
-                "drivers.pinQuarter",
-                input: PinIn(driverId: driverId, quarterId: row?.quarterId ?? quarterId))
+            // drivers.pinQuarter — idempotent pin/unpin toggle.
+            let ack = try await EusoTripAPI.shared.drivers.pinQuarter(
+                driverId: driverId, quarterId: row?.quarterId ?? quarterId)
             if ack.success == false {
                 actionError = "Couldn't pin the quarter - try again."
             }

@@ -317,6 +317,14 @@ final class EusoTripAPI: ObservableObject {
     lazy var nrc: NRCAPI = NRCAPI(api: self)
     lazy var notifications: NotificationsAPI = NotificationsAPI(api: self)
     lazy var drivers: DriversAPI = DriversAPI(api: self)
+    /// Analytics router (`frontend/server/routers/analytics.ts`) — quarter
+    /// rollups, prior-year comparables, vehicle composite breakdowns. Backs
+    /// Catalyst 327B Driver Quarter Detail.
+    lazy var analytics: AnalyticsAPI = AnalyticsAPI(api: self)
+    /// Regulation router (`frontend/server/routers/regulation.ts`) — verbatim
+    /// 49 CFR reference text (read-only federal public record). Backs the
+    /// §395.8 CFR chip on Catalyst 327B.
+    lazy var regulation: RegulationAPI = RegulationAPI(api: self)
     lazy var news: NewsAPI = NewsAPI(api: self)
     lazy var messaging: MessagingAPI = MessagingAPI(api: self)
     lazy var hotZones: HotZonesAPI = HotZonesAPI(api: self)
@@ -943,6 +951,36 @@ final class EusoTripAPI: ObservableObject {
     /// accepts an OPTIONAL `loadId` (`z.coerce.number().optional()`); with
     /// no loadId it returns the user's latest-per-zone fleet readings.
     lazy var reeferTemp: ReeferTempAPI = ReeferTempAPI(api: self)
+
+    /// `bolReviewRouter` — field-level BOL-vs-tendered mismatch detail backing
+    /// the Dispatcher 411/722 BOL Mismatch surface (`DispatcherBOLMismatchScreen`,
+    /// `Dpch720_DispatcherSVGTrio.swift`). Server at
+    /// `frontend/server/routers/bolReview.ts`: `getMismatchDetail`
+    /// (`dispatchProcedure`, input `{loadId?, bolId?}`) returns the exact
+    /// `BolMismatchDetail` contract — loadId/loadNumber, carrierContactInitials,
+    /// priority ("P0"|"P1"|null), slaSecondsRemaining, driverAwaiting, and the
+    /// per-field `discrepancies` diff. Empty `discrepancies` + null priority is
+    /// the honest "no mismatch" state.
+    lazy var bolReview: BolReviewAPI = BolReviewAPI(api: self)
+
+    /// `vehiclesRouter` (plural — distinct from the driver-facing singular
+    /// `vehicle: VehicleAPI`, which hits `vehicle.*`). Backs the Catalyst
+    /// 330/330B vehicle-scorecard surface. Server at
+    /// `frontend/server/routers/vehicles.ts`, companyId-scoped:
+    ///   • `getScorecardAxis({vehicleId, axisId?})` → single-axis composite
+    ///     headline (`ScorecardAxis`); returns `null` when the vehicle is not
+    ///     owned by the caller's company.
+    ///   • `getFormulaSpec({section?})` → verbatim §9.4 spec prose
+    ///     (`FormulaSpec`). NOTE: the iOS view previously called this on a
+    ///     nonexistent `scoring.*` path — the real proc lives here.
+    ///   • `refineCompositeGoal({vehicleId, axisId?, stretchTarget})` MUTATION
+    ///     → `{success, stretchTarget}` ack.
+    ///   • `pinScorecardAxis({vehicleId, axisId})` MUTATION → `{success,
+    ///     pinned}` ack.
+    /// Added 2026-06-06 to de-fabricate `330B_CatalystVehicleScorecardAxisDetail`.
+    /// (The `analytics: AnalyticsAPI` namespace already exists above — the
+    /// 330B composite-breakdown procs are added to that existing struct.)
+    lazy var vehicles: VehiclesAPI = VehiclesAPI(api: self)
 
     // MARK: Low-level tRPC invocation
 
@@ -3427,6 +3465,56 @@ struct PODAPI {
     }
 }
 
+// MARK: - bolReviewRouter
+//
+// Mirrors `frontend/server/routers/bolReview.ts` field-for-field. Backs the
+// Dispatcher 411/722 BOL Mismatch surface. `getMismatchDetail` is a
+// `dispatchProcedure` (role-gated) that diffs the tendered `loads` row against
+// the most-recent driver-uploaded BOL-class document and returns the per-field
+// disagreement set the dispatcher accepts or rejects. Input accepts either a
+// `loadId` (preferred for the routed-from-load case) or a `bolId`.
+
+struct BolReviewAPI {
+    unowned let api: EusoTripAPI
+
+    /// One disagreeing field — matches the server `BolDiscrepancy`
+    /// (`bolReview.ts:49-54`) and the iOS `BOLDiscrepancy` view contract.
+    struct Discrepancy: Decodable, Hashable {
+        let field: String
+        let tendered: String?
+        let uploaded: String?
+        let delta: String?
+    }
+
+    /// Field-level mismatch detail — exact mirror of the server
+    /// `BolMismatchDetail` return (`bolReview.ts:56-64` /
+    /// `getMismatchDetail` :307-315). `priority` is "P0"|"P1" or null,
+    /// `discrepancies` is empty + `priority` null when nothing disagrees.
+    struct MismatchDetail: Decodable, Hashable {
+        let loadId: Int?
+        let loadNumber: String?
+        let carrierContactInitials: String?
+        let priority: String?            // "P0" | "P1" | null
+        let slaSecondsRemaining: Int?
+        let driverAwaiting: Bool?
+        let discrepancies: [Discrepancy]
+    }
+
+    /// `bolReview.getMismatchDetail` — pass the routed `loadId` (or a
+    /// `bolId`). Returns the honest field-level diff; empty
+    /// `discrepancies` means tendered and uploaded agree.
+    func getMismatchDetail(loadId: Int? = nil, bolId: Int? = nil) async throws -> MismatchDetail {
+        struct Input: Encodable {
+            let loadId: Int?
+            let bolId: Int?
+        }
+        return try await api.query(
+            "bolReview.getMismatchDetail",
+            input: Input(loadId: loadId, bolId: bolId)
+        )
+    }
+}
+
 // MARK: - disputesRouter
 //
 // Mirrors `frontend/server/routers/disputes.ts`. Unified dispute
@@ -4438,6 +4526,203 @@ struct DriversAPI {
             )
         )
     }
+
+    // MARK: - Catalyst 327B · Driver Quarter Detail
+    //
+    // Wire shapes match `drivers.getQuarterRow` / `drivers.refineQuarterGoal`
+    // / `drivers.pinQuarter` (frontend/server/routers/drivers.ts) field-for-
+    // field. All optional so a partial/empty server response degrades to the
+    // honest empty state rather than crashing the decode.
+
+    /// One closed-quarter performance row for a driver, computed server-side
+    /// from delivered loads inside the quarter window. `drivers.getQuarterRow`.
+    struct QuarterRow: Decodable, Hashable {
+        let quarterId: String?
+        let driverId: String?
+        let driverName: String?
+        let companyName: String?
+        let status: String?       // "CLOSED · RECONCILED"
+        let otpPct: Double?
+        let loads: Int?
+        let miles: Int?
+        let grossUSD: Double?
+        let grade: String?        // "A+" … "D"
+        let closedAt: String?     // "2026-03-31"
+    }
+
+    /// `drivers.getQuarterRow` — derive one driver's closed-quarter row.
+    /// `driverId` may arrive as "001-EUSO" / "DR-001-EUSO"; server strips to
+    /// the numeric pk. `quarterId` is the canonical label ("Q1-2026").
+    func getQuarterRow(driverId: String, quarterId: String) async throws -> QuarterRow {
+        struct Input: Encodable { let driverId: String; let quarterId: String }
+        return try await api.query(
+            "drivers.getQuarterRow",
+            input: Input(driverId: driverId, quarterId: quarterId)
+        )
+    }
+
+    /// Ack for `drivers.refineQuarterGoal`.
+    struct RefineQuarterGoalAck: Decodable {
+        let success: Bool?
+        let targetPct: Double?
+    }
+
+    /// `drivers.refineQuarterGoal` — upsert a driver's next-quarter OTP goal.
+    @discardableResult
+    func refineQuarterGoal(
+        driverId: String,
+        quarterId: String,
+        targetPct: Double
+    ) async throws -> RefineQuarterGoalAck {
+        struct Input: Encodable { let driverId: String; let quarterId: String; let targetPct: Double }
+        return try await api.mutation(
+            "drivers.refineQuarterGoal",
+            input: Input(driverId: driverId, quarterId: quarterId, targetPct: targetPct)
+        )
+    }
+
+    /// Ack for `drivers.pinQuarter`.
+    struct PinQuarterAck: Decodable {
+        let success: Bool?
+        let pinned: Bool?
+    }
+
+    /// `drivers.pinQuarter` — idempotent pin/unpin toggle for a quarter.
+    @discardableResult
+    func pinQuarter(driverId: String, quarterId: String) async throws -> PinQuarterAck {
+        struct Input: Encodable { let driverId: String; let quarterId: String }
+        return try await api.mutation(
+            "drivers.pinQuarter",
+            input: Input(driverId: driverId, quarterId: quarterId)
+        )
+    }
+}
+
+// MARK: - AnalyticsAPI
+//
+// Backs Catalyst 327B Driver Quarter Detail. Shapes mirror
+// `analytics.getQuarterRollup` / `analytics.getPriorYearComparable`
+// (frontend/server/routers/analytics.ts) field-for-field; every field is
+// optional because the server returns an all-null "honest-empty" object when
+// the driver had no activity in the quarter window.
+
+struct AnalyticsAPI {
+    unowned let api: EusoTripAPI
+
+    /// Month-by-month quarter rollup. `analytics.getQuarterRollup`.
+    struct QuarterRollup: Decodable, Hashable {
+        let janMiles: Int?
+        let febMiles: Int?
+        let marMiles: Int?
+        let otpPct: Double?
+        let weeksClosed: Int?
+        let onTimeLoads: Int?
+        let carrierFaultLate: Int?
+        let driverFaultLate: Int?
+        let eldAnomalies: Int?
+        let unidentifiedDriving: Int?
+    }
+
+    /// `analytics.getQuarterRollup` — JAN/FEB/MAR miles, quarter OTP, on-time
+    /// vs carrier/driver-fault late counts, ELD data-quality signals.
+    func getQuarterRollup(driverId: String, quarterId: String) async throws -> QuarterRollup {
+        struct Input: Encodable { let driverId: String; let quarterId: String }
+        return try await api.query(
+            "analytics.getQuarterRollup",
+            input: Input(driverId: driverId, quarterId: quarterId)
+        )
+    }
+
+    /// Prior-year comparable / peer benchmark. `analytics.getPriorYearComparable`.
+    struct PriorYearComparable: Decodable, Hashable {
+        let priorOtpPct: Double?
+        let otpDeltaPt: Double?
+        let priorGrossUSD: Double?
+        let currentGrossUSD: Double?
+    }
+
+    /// `analytics.getPriorYearComparable` — prior-year OTP, the OTP point
+    /// delta, and prior vs current gross USD from real delivered loads.
+    func getPriorYearComparable(driverId: String, quarterId: String) async throws -> PriorYearComparable {
+        struct Input: Encodable { let driverId: String; let quarterId: String }
+        return try await api.query(
+            "analytics.getPriorYearComparable",
+            input: Input(driverId: driverId, quarterId: quarterId)
+        )
+    }
+
+    // MARK: - Vehicle composite breakdown (Catalyst 330B Axis Detail)
+
+    /// Shape returned by `analytics.getCompositeBreakdown` (analytics.ts:1800).
+    /// `mpg` / `mpgValue` / `mpgTarget` are an HONEST GAP — the server always
+    /// returns `null` for them (no per-asset fuel-burn column). The "empty"
+    /// branch returns the same shape with `util/volume/total/utilPct/loads = 0`.
+    struct CompositeBreakdown: Decodable, Hashable {
+        let util: Double
+        let mpg: Double?
+        let volume: Double
+        let total: Double
+        let utilPct: Double
+        let mpgValue: Double?
+        let mpgTarget: Double?
+        let loads: Int
+    }
+
+    /// `analytics.getCompositeBreakdown` — per-axis composite contributions
+    /// for one vehicle. companyId-scoped.
+    func getCompositeBreakdown(vehicleId: String, axisId: String) async throws -> CompositeBreakdown {
+        struct Input: Encodable { let vehicleId: String; let axisId: String }
+        return try await api.query(
+            "analytics.getCompositeBreakdown",
+            input: Input(vehicleId: vehicleId, axisId: axisId)
+        )
+    }
+
+    /// Shape returned by `analytics.getPeerCompositeBenchmark`
+    /// (analytics.ts:1881). Real peer RPM delta scaled into the composite's
+    /// util band; `windowDays` echoes the requested window (default 90).
+    struct PeerCompositeBenchmark: Decodable, Hashable {
+        let laneAvgDelta: Double
+        let windowDays: Int
+    }
+
+    /// `analytics.getPeerCompositeBenchmark` — real peer RPM delta vs the
+    /// company fleet over `windowDays` (server default 90).
+    func getPeerCompositeBenchmark(vehicleId: String, windowDays: Int? = nil) async throws -> PeerCompositeBenchmark {
+        struct Input: Encodable { let vehicleId: String; let windowDays: Int? }
+        return try await api.query(
+            "analytics.getPeerCompositeBenchmark",
+            input: Input(vehicleId: vehicleId, windowDays: windowDays)
+        )
+    }
+}
+
+// MARK: - RegulationAPI
+//
+// Read-only verbatim 49 CFR reference text. `regulation.getCfrText` returns
+// { section, title, text, url, body } — `body` aliases `text` for the iOS
+// decoder. Backs the §395.8 CFR chip on Catalyst 327B.
+
+struct RegulationAPI {
+    unowned let api: EusoTripAPI
+
+    /// One 49 CFR section's verbatim text. `regulation.getCfrText`.
+    struct CfrText: Decodable, Hashable {
+        let section: String?
+        let title: String?
+        let body: String?     // aliases server `text`
+        let url: String?
+    }
+
+    /// `regulation.getCfrText` — verbatim federal reference text for a
+    /// section, e.g. "395.8".
+    func getCfrText(section: String) async throws -> CfrText {
+        struct Input: Encodable { let section: String }
+        return try await api.query(
+            "regulation.getCfrText",
+            input: Input(section: section)
+        )
+    }
 }
 
 // MARK: - AnyEncodable (erased encodable for dictionary inputs)
@@ -5359,6 +5644,33 @@ struct ELDAPI {
         return try await api.mutation(
             "eld.disconnectProvider",
             input: Input(providerSlug: providerSlug)
+        )
+    }
+
+    // MARK: - Catalyst 327B · Driver Quarter Detail (ELD/HOS data-quality)
+
+    /// ELD/HOS data-quality window for one driver, computed from the real
+    /// `hos_logs` event ledger (49 CFR 395.8(a)(1)). `eld.getDriverHosWindow`.
+    struct DriverHosWindow: Decodable, Hashable {
+        let driverId: String?
+        let anomalies: Int?
+        let unidentified: Int?
+        let totalEvents: Int?
+        let provider: String?
+    }
+
+    /// `eld.getDriverHosWindow` — ELD log anomalies + unidentified-driving
+    /// counts over an optional date window. `driverId` may be "001-EUSO"; the
+    /// server resolves it to the userId the ledger keys on.
+    func getDriverHosWindow(
+        driverId: String,
+        from: String? = nil,
+        to: String? = nil
+    ) async throws -> DriverHosWindow {
+        struct Input: Encodable { let driverId: String; let from: String?; let to: String? }
+        return try await api.query(
+            "eld.getDriverHosWindow",
+            input: Input(driverId: driverId, from: from, to: to)
         )
     }
 }
@@ -7772,6 +8084,104 @@ struct VehicleAPI {
     }
 }
 
+// MARK: - VehiclesAPI (plural · vehicles.* router)
+//
+// Catalyst-facing vehicle scorecard surface backing the 330/330B Axis
+// Detail screen. Distinct from the driver-facing singular `VehicleAPI`
+// (`vehicle.*`). Every method maps field-for-field to the real
+// `frontend/server/routers/vehicles.ts` return shapes (verified
+// 2026-06-06). companyId-scoped, RBAC-gated by `protectedProcedure`.
+
+struct VehiclesAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: Decoded shapes
+
+    /// Shape returned by `vehicles.getScorecardAxis` (vehicles.ts:592).
+    /// The whole object is `null` when the vehicle is not owned by the
+    /// caller's company (or DB unavailable) — hence the call site decodes
+    /// `ScorecardAxis?`. `companyName` / `titledAt` are independently
+    /// nullable (no company row / no createdAt). `composite` / `laneAvgDelta`
+    /// are derived (volume+util only; mpg untelemetered) — real, not seeded.
+    struct ScorecardAxis: Decodable, Hashable {
+        let axisId: String
+        let vehicleId: String
+        let scoreId: String
+        let vehicleName: String
+        let companyName: String?
+        let assetCode: String
+        let titledAt: String?
+        let status: String
+        let grade: String
+        let composite: Double
+        let laneAvgDelta: Double
+    }
+
+    /// Shape returned by `vehicles.getFormulaSpec` (vehicles.ts:618). All
+    /// three fields are nullable — the server returns `{section:null,
+    /// title:null, body:null}` on its error path.
+    struct FormulaSpec: Decodable, Hashable {
+        let section: String?
+        let title: String?
+        let body: String?
+    }
+
+    /// Ack from `vehicles.refineCompositeGoal` MUTATION (vehicles.ts:655).
+    /// `stretchTarget` is `null` when the mutation fails the ownership gate.
+    struct RefineCompositeAck: Decodable, Hashable {
+        let success: Bool
+        let stretchTarget: Double?
+    }
+
+    /// Ack from `vehicles.pinScorecardAxis` MUTATION (vehicles.ts:694).
+    struct PinScorecardAxisAck: Decodable, Hashable {
+        let success: Bool
+        let pinned: Bool
+    }
+
+    // MARK: Procedures
+
+    /// `vehicles.getScorecardAxis` — single-axis composite headline. Returns
+    /// `nil` when the server yields its `null` sentinel (vehicle not owned /
+    /// DB down), which the 330B view renders as the honest empty state.
+    func getScorecardAxis(vehicleId: String, axisId: String? = nil) async throws -> ScorecardAxis? {
+        struct Input: Encodable { let vehicleId: String; let axisId: String? }
+        return try await api.query(
+            "vehicles.getScorecardAxis",
+            input: Input(vehicleId: vehicleId, axisId: axisId)
+        )
+    }
+
+    /// `vehicles.getFormulaSpec` — verbatim §9.4 spec prose for the FORMULA
+    /// chip. (The view previously hit a nonexistent `scoring.*` path.)
+    func getFormulaSpec(section: String? = nil) async throws -> FormulaSpec {
+        struct Input: Encodable { let section: String? }
+        return try await api.query(
+            "vehicles.getFormulaSpec",
+            input: Input(section: section)
+        )
+    }
+
+    /// `vehicles.refineCompositeGoal` MUTATION — set a stretch composite
+    /// target. `stretchTarget` is `0..1`.
+    func refineCompositeGoal(vehicleId: String, axisId: String? = nil, stretchTarget: Double) async throws -> RefineCompositeAck {
+        struct Input: Encodable { let vehicleId: String; let axisId: String?; let stretchTarget: Double }
+        return try await api.mutation(
+            "vehicles.refineCompositeGoal",
+            input: Input(vehicleId: vehicleId, axisId: axisId, stretchTarget: stretchTarget)
+        )
+    }
+
+    /// `vehicles.pinScorecardAxis` MUTATION — pin an axis on the scorecard.
+    func pinScorecardAxis(vehicleId: String, axisId: String) async throws -> PinScorecardAxisAck {
+        struct Input: Encodable { let vehicleId: String; let axisId: String }
+        return try await api.mutation(
+            "vehicles.pinScorecardAxis",
+            input: Input(vehicleId: vehicleId, axisId: axisId)
+        )
+    }
+}
+
 // MARK: - SafetyAPI
 //
 // Driver-facing safety score + contributing-factor breakdown + recent
@@ -10071,6 +10481,68 @@ struct DetentionAPI {
         return try await api.query(
             "detentionAccessorials.getDetentionHistory",
             input: Input(status: status, facilityName: facilityName, limit: limit, offset: 0)
+        )
+    }
+
+    // MARK: - Calculate detention (live ticker)
+
+    /// One escalation tier of the server's detention math.
+    /// Mirrors `detentionAccessorials.ts:380` field-for-field:
+    /// `{ tier, hours, rate, subtotal }`.
+    struct DetentionTier: Decodable, Equatable {
+        let tier: String
+        let hours: Double
+        let rate: Double
+        let subtotal: Double
+    }
+
+    /// Result of `detentionAccessorials.calculateDetention`. Mirrors the
+    /// router return shape verbatim (`detentionAccessorials.ts:393-403`):
+    /// echoed arrival/departure ISO + the computed dwell math + the
+    /// per-tier rate breakdown. The driver lifecycle 024 Unloading
+    /// screen reads `totalCharge` as the running $ and
+    /// `tierBreakdown.first?.rate` as the live $/hr.
+    struct DetentionCalc: Decodable, Equatable {
+        let arrivalTime: String
+        let departureTime: String
+        let totalMinutes: Int
+        let freeTimeMinutes: Int
+        let billableMinutes: Int
+        let billableHours: Double
+        let totalCharge: Double
+        let tierBreakdown: [DetentionTier]
+        let cargoType: String
+    }
+
+    /// `detentionAccessorials.calculateDetention` - pure server-side
+    /// detention math (free time -> billable hours -> escalation tiers).
+    /// No DB write; a stateless calculator the 024 Unloading ticker
+    /// calls with the real arrival anchor + the load's cargo type.
+    /// `departureTime` omitted -> server uses `now`, so passing only
+    /// `arrivalTime` yields the live running charge.
+    func calculateDetention(
+        arrivalTime: String,
+        departureTime: String? = nil,
+        freeTimeMinutes: Int = 120,
+        cargoType: String = "general",
+        customRatePerHour: Double? = nil
+    ) async throws -> DetentionCalc {
+        struct Input: Encodable {
+            let arrivalTime: String
+            let departureTime: String?
+            let freeTimeMinutes: Int
+            let cargoType: String
+            let customRatePerHour: Double?
+        }
+        return try await api.query(
+            "detentionAccessorials.calculateDetention",
+            input: Input(
+                arrivalTime: arrivalTime,
+                departureTime: departureTime,
+                freeTimeMinutes: freeTimeMinutes,
+                cargoType: cargoType,
+                customRatePerHour: customRatePerHour
+            )
         )
     }
 
