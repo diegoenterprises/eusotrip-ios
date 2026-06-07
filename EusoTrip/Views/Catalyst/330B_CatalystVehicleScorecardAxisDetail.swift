@@ -7,87 +7,35 @@
 //  (canvas 440×956). Web parity:
 //  /catalyst/fleet/vehicle/[vehicleId]/scorecard/[axisId].
 //
-//  Single-axis drill-down on row 1 of 330 (SCORE-260427-COMPOSITE-PB579 ·
-//  §9.4 vehicle-composite formula · A 0.93 · all-lanes 90-day · PUBLISHED ·
-//  LIVE) for canonical asset Peterbilt 579 · 2022 · VIN
-//  1FUJGLDR8GLGT1842 · IA·87231-T · TRK-001-PB579 · titled 2024-08-04.
-//  §8.4 owner-op seam callout cites Diego Usoro / Eusorone Technologies as
-//  today's shipper-of-record (same companyId both sides — clean §9.4
-//  vehicle-composite books). RBAC: CATALYST (carrier/broker) role.
+//  Single-axis drill-down on the §9.4 vehicle-composite formula for the
+//  selected asset. The composite, grade, lane-avg delta, and per-axis
+//  contributions are DERIVED server-side at read time from real delivered-
+//  load throughput on this vehicle over a 90-day all-lanes window — there is
+//  no stored scorecard table. RBAC: CATALYST (carrier/broker) role,
+//  companyId-scoped (the proc returns null for vehicles the caller's company
+//  does not own).
 //
-//  Server wiring (tRPC paths from the SVG <desc>):
-//    • vehicles.getScorecardAxis        — STUB · named-gap
-//    • analytics.getCompositeBreakdown  — STUB · named-gap
-//    • analytics.getPeerCompositeBenchmark — STUB · named-gap
-//    • scoring.getFormulaSpec           — STUB · named-gap (§9.4 spec)
-//    • vehicles.refineCompositeGoal     — STUB · named-gap (mutation)
-//    • vehicles.pinScorecardAxis        — STUB · named-gap (mutation)
+//  Server wiring (real, role-accessible — verified 2026-06-06):
+//    • vehicles.getScorecardAxis        — vehicles.ts:532 (companyId-scoped)
+//    • analytics.getCompositeBreakdown  — analytics.ts:1751
+//    • analytics.getPeerCompositeBenchmark — analytics.ts:1827
+//    • vehicles.getFormulaSpec          — vehicles.ts:618 (§9.4 spec prose;
+//      NOTE: the verbatim spec lives on the `vehicles.*` router, NOT
+//      `scoring.*` — there is no scoring router server-side)
+//    • vehicles.refineCompositeGoal     — vehicles.ts:655 (MUTATION)
+//    • vehicles.pinScorecardAxis        — vehicles.ts:694 (MUTATION)
 //
-//  Per founder doctrine: every endpoint above is wired through the real
-//  EusoTripAPI.shared.query / .mutation transport with honest do/catch +
-//  @State loading/error. None of these procedures exist server-side yet
-//  (verified absent in the iOS API surface), so each is flagged a
-//  named-gap STUB. No mock data — when a stub returns nothing the derived
-//  rows fall back to the canonical composite figures the Scorecard (330)
-//  row carried into this drill-down, which is the row payload, not
-//  fabricated analytics.
+//  HONESTY: every figure on this screen is hydrated from the real procs in a
+//  `.task`. There are NO seeded composite/grade/delta numbers. When the axis
+//  proc returns null (vehicle not owned / no data) the screen renders an
+//  EusoEmptyState. MPG telemetry is an explicit server-side gap (no per-asset
+//  fuel-burn column) — the breakdown proc returns `null` for mpg/mpgValue/
+//  mpgTarget, and the screen renders "—" for those, never a fabricated mpg.
 //
 //  Author: Mike "Diego" Usoro / Eusorone Technologies, Inc
 //
 
 import SwiftUI
-
-// MARK: - Decodables for the STUB endpoints
-//
-// Shapes mirror the named-gap tRPC procedures. Optional throughout so a
-// partial / empty server response degrades gracefully into the composite
-// row payload rather than crashing the decode.
-
-private struct ScorecardAxis330B: Decodable, Hashable {
-    let axisId: String?
-    let vehicleId: String?
-    let scoreId: String?         // "SCORE-260427-COMPOSITE-PB579"
-    let vehicleName: String?     // "Peterbilt 579 · 2022"
-    let companyName: String?     // "Eusotrans LLC"
-    let assetCode: String?       // "TRK-001-PB579"
-    let titledAt: String?        // "2024-08-04"
-    let status: String?          // "PUBLISHED · LIVE"
-    let grade: String?           // "A"
-    let composite: Double?       // 0.93
-    let laneAvgDelta: Double?    // +0.05
-}
-
-private struct CompositeBreakdown330B: Decodable, Hashable {
-    let util: Double?            // 0.338
-    let mpg: Double?             // 0.288
-    let volume: Double?          // 0.297
-    let total: Double?           // 0.93
-    let utilPct: Double?         // 84.6
-    let mpgValue: Double?        // 7.2
-    let mpgTarget: Double?       // 7.5
-    let loads: Int?              // 47
-}
-
-private struct PeerCompositeBenchmark330B: Decodable, Hashable {
-    let laneAvgDelta: Double?    // +0.05
-    let windowDays: Int?         // 90
-}
-
-private struct FormulaSpec330B: Decodable, Hashable {
-    let section: String?         // "§9.4"
-    let title: String?
-    let body: String?
-}
-
-private struct RefineCompositeAck330B: Decodable, Hashable {
-    let success: Bool?
-    let stretchTarget: Double?
-}
-
-private struct PinScorecardAxisAck330B: Decodable, Hashable {
-    let success: Bool?
-    let pinned: Bool?
-}
 
 // MARK: - Screen wrapper
 
@@ -96,9 +44,13 @@ struct CatalystVehicleScorecardAxisDetailScreen: View {
     let vehicleId: String
     let axisId: String
 
+    /// `vehicleId` / `axisId` are routing arguments — the screen resolves all
+    /// figures from the server by these IDs (or shows the empty state). The
+    /// defaults exist only so the screen catalog can present it without a
+    /// concrete vehicle context; they are not fabricated display data.
     init(theme: Theme.Palette = Theme.dark,
-         vehicleId: String = "001-PB579",
-         axisId: String = "COMPOSITE-PB579") {
+         vehicleId: String = "1",
+         axisId: String = "COMPOSITE-1") {
         self.theme = theme
         self.vehicleId = vehicleId
         self.axisId = axisId
@@ -161,10 +113,13 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
     @State private var actionInFlight: Bool = false
     @State private var formulaExpanded: Bool = false
 
-    @State private var axis: ScorecardAxis330B? = nil
-    @State private var breakdown: CompositeBreakdown330B? = nil
-    @State private var benchmark: PeerCompositeBenchmark330B? = nil
-    @State private var formula: FormulaSpec330B? = nil
+    @State private var axis: VehiclesAPI.ScorecardAxis? = nil
+    @State private var breakdown: AnalyticsAPI.CompositeBreakdown? = nil
+    @State private var benchmark: AnalyticsAPI.PeerCompositeBenchmark? = nil
+    @State private var formula: VehiclesAPI.FormulaSpec? = nil
+
+    /// Em-dash placeholder for honestly-absent values. No fabrication.
+    private let dash = "—"
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -178,6 +133,8 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
                     skeletonBody
                 } else if let err = loadError {
                     errorBanner(err)
+                } else if axis == nil {
+                    emptyState
                 } else {
                     identityStrip
                     heroSummaryCard
@@ -222,7 +179,7 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
     }
 
     private var kickerLabel: String {
-        let code = axis?.assetCode ?? "TRK-\(vehicleId)"
+        guard let code = axis?.assetCode else { return "§9.4 · LIVE" }
         return "\(code) · §9.4 · LIVE"
     }
 
@@ -300,13 +257,25 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
+    // MARK: - Empty state (axis proc returned null — not owned / no data)
+
+    private var emptyState: some View {
+        EusoEmptyState(
+            systemImage: "chart.bar.doc.horizontal",
+            title: "No composite for this asset yet",
+            subtitle: "This vehicle has no §9.4 composite in the 90-day all-lanes window, or it isn't in your fleet.",
+            comingSoon: false
+        )
+        .padding(.top, 24)
+    }
+
     // MARK: - Vehicle identity strip (compact · ELEVENTH consecutive port)
 
     private var identityStrip: some View {
         HStack(spacing: 12) {
             ZStack {
                 Circle().fill(LinearGradient.diagonal)
-                Text("PB")
+                Text(avatarInitials)
                     .font(.system(size: 13, weight: .bold))
                     .tracking(0.3)
                     .foregroundStyle(.white)
@@ -324,7 +293,7 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
             Spacer(minLength: 0)
             ZStack {
                 Circle().fill(LinearGradient.diagonal)
-                Text(axis?.grade ?? "A")
+                Text(gradeHero)
                     .font(.system(size: 11, weight: .heavy))
                     .tracking(0.2)
                     .foregroundStyle(.white)
@@ -341,20 +310,28 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private var vehicleName: String { axis?.vehicleName ?? "Peterbilt 579 · 2022" }
+    private var vehicleName: String { axis?.vehicleName ?? dash }
+
+    /// Two-letter avatar from the vehicle make (no canonical "PB" seed).
+    private var avatarInitials: String {
+        let name = axis?.vehicleName ?? ""
+        let letters = name.filter { $0.isLetter }
+        guard !letters.isEmpty else { return "—" }
+        return String(letters.prefix(2)).uppercased()
+    }
 
     private var identityMetaLine: String {
-        let company = axis?.companyName ?? "Eusotrans LLC"
-        let code = axis?.assetCode ?? "TRK-\(vehicleId)"
-        let titled = axis?.titledAt ?? "2024-08-04"
-        return "\(company) · \(code) · titled \(titled)"
+        let parts = [axis?.companyName, axis?.assetCode,
+                     axis?.titledAt.map { "titled \($0)" }]
+            .compactMap { $0 }
+        return parts.isEmpty ? dash : parts.joined(separator: " · ")
     }
 
     // MARK: - Composite HERO summary card (gradient-rim)
 
     private var heroSummaryCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Eyebrow row: composite id + PUBLISHED · LIVE success pill
+            // Eyebrow row: composite id + status pill
             HStack(alignment: .top) {
                 Text(scoreIdLabel)
                     .font(.system(size: 11, design: .monospaced))
@@ -391,7 +368,7 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
                     Text("90-day all-lanes window")
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textSecondary)
-                    Text("Sole asset · §8.4 owner-op fleet")
+                    Text("§8.4 owner-op fleet")
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -454,21 +431,35 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
         .frame(width: 72, alignment: .leading)
     }
 
-    private var scoreIdLabel: String { axis?.scoreId ?? "SCORE-260427-COMPOSITE-PB579" }
-    private var statusLabel: String { (axis?.status ?? "PUBLISHED · LIVE").uppercased() }
-    private var gradeHero: String { axis?.grade ?? "A" }
+    private var scoreIdLabel: String { axis?.scoreId ?? dash }
+    private var statusLabel: String { (axis?.status ?? dash).uppercased() }
+    private var gradeHero: String { axis?.grade ?? dash }
+
     private var compositeKicker: String {
-        "COMPOSITE \(String(format: "%.2f", axis?.composite ?? breakdown?.total ?? 0.93)) · §9.4 EUSOTRIP"
+        guard let c = axis?.composite ?? breakdown?.total else {
+            return "COMPOSITE \(dash) · §9.4 EUSOTRIP"
+        }
+        return "COMPOSITE \(String(format: "%.2f", c)) · §9.4 EUSOTRIP"
     }
+
     private var laneDeltaLine: String {
-        let delta = benchmark?.laneAvgDelta ?? axis?.laneAvgDelta ?? 0.05
+        guard let delta = benchmark?.laneAvgDelta ?? axis?.laneAvgDelta else {
+            return "\(dash) vs lane avg"
+        }
         let sign = delta >= 0 ? "+" : ""
         return "\(sign)\(String(format: "%.2f", delta)) vs lane avg"
     }
-    private var utilStr: String { String(format: "%.3f", breakdown?.util ?? 0.338) }
-    private var mpgStr: String { String(format: "%.3f", breakdown?.mpg ?? 0.288) }
-    private var volumeStr: String { String(format: "%.3f", breakdown?.volume ?? 0.297) }
-    private var totalStr: String { String(format: "%.2f", breakdown?.total ?? axis?.composite ?? 0.93) }
+
+    // Per-axis contributions — only rendered from the real breakdown proc.
+    // mpg is an honest server gap (always null), so it shows "—".
+    private var utilStr: String   { breakdown.map { String(format: "%.3f", $0.util) } ?? dash }
+    private var mpgStr: String    { breakdown?.mpg.map { String(format: "%.3f", $0) } ?? dash }
+    private var volumeStr: String { breakdown.map { String(format: "%.3f", $0.volume) } ?? dash }
+    private var totalStr: String {
+        if let t = breakdown?.total { return String(format: "%.2f", t) }
+        if let c = axis?.composite { return String(format: "%.2f", c) }
+        return dash
+    }
 
     // MARK: - 5-stage scoring pipeline lifecycle strip
     // SAMPLED · WEIGHTED · NORMALIZED · COMPOSITED · GRADED.
@@ -545,15 +536,28 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
     }
 
     // MARK: - 5 axis-detail rows (§92 RegulatoryRow geometry · TENTH port)
+    //
+    // Every numeric in these rows is sourced from the real breakdown proc.
+    // The MPG row honestly reads "—" because the server has no per-asset
+    // fuel-burn column (mpg/mpgValue/mpgTarget are null). The volume-row
+    // load count comes from the proc's `loads`.
 
     private var detailRows: [AxisDetailRow] {
         let util = utilStr
         let mpg = mpgStr
         let volume = volumeStr
-        let utilPct = breakdown?.utilPct ?? 84.6
-        let mpgValue = breakdown?.mpgValue ?? 7.2
-        let mpgTarget = breakdown?.mpgTarget ?? 7.5
-        let loads = breakdown?.loads ?? 47
+        let utilPctStr = breakdown.map { String(format: "%.1f", $0.utilPct) } ?? dash
+        let loadsStr = breakdown.map { String($0.loads) } ?? dash
+
+        // MPG sub-row title: only show the ratio math when mpgValue + target
+        // are present (they are not, server-side, today) — otherwise honest "—".
+        let mpgTitle: String = {
+            if let v = breakdown?.mpgValue, let t = breakdown?.mpgTarget, t > 0 {
+                let ratio = v / t
+                return "\(String(format: "%.1f", v)) mpg · \(String(format: "%.1f", v))/\(String(format: "%.1f", t)) = \(String(format: "%.2f", ratio)) × 0.3 = \(mpg)"
+            }
+            return "MPG not telemetered per-asset · sub-score omitted from composite"
+        }()
 
         return [
             AxisDetailRow(
@@ -565,28 +569,28 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
             ),
             AxisDetailRow(
                 eyebrow: "UTILIZATION COMPONENT · WEIGHT 0.4",
-                title: "\(String(format: "%.1f", utilPct))% · 0.846 × 0.4 = \(util) · largest contributor",
+                title: "\(utilPctStr)% utilization · contribution \(util) · largest driver",
                 trailingValue: util,
                 trailingMeta: "CONTRIB · row 2 of 5",
                 tier: .success
             ),
             AxisDetailRow(
                 eyebrow: "MPG COMPONENT · WEIGHT 0.3",
-                title: "\(String(format: "%.1f", mpgValue)) mpg · \(String(format: "%.1f", mpgValue))/\(String(format: "%.1f", mpgTarget)) = 0.96 × 0.3 = \(mpg) · target \(String(format: "%.1f", mpgTarget))",
+                title: mpgTitle,
                 trailingValue: mpg,
                 trailingMeta: "CONTRIB · row 3 of 5",
                 tier: .info
             ),
             AxisDetailRow(
                 eyebrow: "VOLUME COMPONENT · LOG-NORMALIZED",
-                title: "\(loads) loads · log₁₀(48)/log₁₀(50) × 0.3 = \(volume)",
+                title: "\(loadsStr) delivered loads · contribution \(volume)",
                 trailingValue: volume,
                 trailingMeta: "CONTRIB · row 4 of 5",
                 tier: .gradient
             ),
             AxisDetailRow(
                 eyebrow: "NEXT ACTION · REFINE 0.95 STRETCH",
-                title: "Q3 stretch · +0.02 composite · target 7.4 mpg gap +0.2",
+                title: "Set a 0.95 composite stretch target for this asset",
                 trailingValue: "act",
                 trailingMeta: "refine now · row 5 of 5",
                 tier: .gradient,
@@ -708,7 +712,7 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
             .buttonStyle(.plain)
 
             if formulaExpanded {
-                Text(formula?.body ?? "Loading §9.4 vehicle-composite scoring spec…")
+                Text(formulaBody)
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -716,6 +720,10 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
                     .padding(.bottom, 4)
             }
         }
+    }
+
+    private var formulaBody: String {
+        formula?.body ?? "The §9.4 vehicle-composite scoring spec is unavailable right now."
     }
 
     // MARK: - Action ribbon (single-row refinement port #16 · Refine·stretch)
@@ -729,7 +737,7 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
                 Image(systemName: "target")
                     .font(.system(size: 16, weight: .heavy))
                     .foregroundStyle(.white)
-                Text("Refine 0.95 stretch · §9.4 · PB579 · 7.4 mpg target")
+                Text(refineLabel)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(.white)
                     .lineLimit(1)
@@ -744,6 +752,11 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
         }
         .buttonStyle(.plain)
         .disabled(actionInFlight)
+    }
+
+    private var refineLabel: String {
+        guard let code = axis?.assetCode else { return "Refine 0.95 stretch · §9.4" }
+        return "Refine 0.95 stretch · §9.4 · \(code)"
     }
 
     private func actionErrorNote(_ msg: String) -> some View {
@@ -805,42 +818,31 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
 
     // MARK: - Network
     //
-    // All six procedures are named-gap STUBs (do not exist server-side
-    // yet). Wired through the real transport with honest do/catch. The
-    // page renders the composite row payload as fallback when a stub
-    // yields nothing — no mock analytics fabricated.
-
-    private struct AxisIn: Encodable { let vehicleId: String; let axisId: String }
-    private struct BreakdownIn: Encodable { let vehicleId: String; let axisId: String }
-    private struct BenchmarkIn: Encodable { let vehicleId: String; let windowDays: Int }
-    private struct FormulaIn: Encodable { let section: String }
-    private struct RefineIn: Encodable { let vehicleId: String; let axisId: String; let stretchTarget: Double }
-    private struct PinIn: Encodable { let vehicleId: String; let axisId: String }
+    // All procedures are REAL and role-accessible (companyId-scoped). The
+    // axis proc returns null for vehicles outside the caller's fleet → the
+    // screen shows the empty state. The breakdown / benchmark / formula
+    // procs degrade independently (try?) so a transient miss on any one
+    // doesn't blank the page; the affected cells render "—".
 
     private func loadAll() async {
         loading = true
         loadError = nil
         defer { loading = false }
         do {
-            let axisIn = AxisIn(vehicleId: vehicleId, axisId: axisId)
-            // vehicles.getScorecardAxis — STUB · named-gap
-            let fetchedAxis: ScorecardAxis330B = try await EusoTripAPI.shared.query(
-                "vehicles.getScorecardAxis", input: axisIn)
-            self.axis = fetchedAxis
+            // vehicles.getScorecardAxis — companyId-scoped headline.
+            self.axis = try await EusoTripAPI.shared.vehicles.getScorecardAxis(
+                vehicleId: vehicleId, axisId: axisId)
 
-            // analytics.getCompositeBreakdown — STUB · named-gap
-            self.breakdown = try? await EusoTripAPI.shared.query(
-                "analytics.getCompositeBreakdown",
-                input: BreakdownIn(vehicleId: vehicleId, axisId: axisId))
+            // analytics.getCompositeBreakdown — per-axis contributions.
+            self.breakdown = try? await EusoTripAPI.shared.analytics.getCompositeBreakdown(
+                vehicleId: vehicleId, axisId: axisId)
 
-            // analytics.getPeerCompositeBenchmark — STUB · named-gap
-            self.benchmark = try? await EusoTripAPI.shared.query(
-                "analytics.getPeerCompositeBenchmark",
-                input: BenchmarkIn(vehicleId: vehicleId, windowDays: 90))
+            // analytics.getPeerCompositeBenchmark — real peer RPM delta.
+            self.benchmark = try? await EusoTripAPI.shared.analytics.getPeerCompositeBenchmark(
+                vehicleId: vehicleId, windowDays: 90)
 
-            // scoring.getFormulaSpec (§9.4 anchor) — STUB · named-gap
-            self.formula = try? await EusoTripAPI.shared.query(
-                "scoring.getFormulaSpec", input: FormulaIn(section: "9.4"))
+            // vehicles.getFormulaSpec (§9.4 anchor) — verbatim spec prose.
+            self.formula = try? await EusoTripAPI.shared.vehicles.getFormulaSpec(section: "9.4")
         } catch {
             self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -852,11 +854,10 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
         actionError = nil
         defer { actionInFlight = false }
         do {
-            // vehicles.refineCompositeGoal — STUB · named-gap (mutation)
-            let ack: RefineCompositeAck330B = try await EusoTripAPI.shared.mutation(
-                "vehicles.refineCompositeGoal",
-                input: RefineIn(vehicleId: vehicleId, axisId: axisId, stretchTarget: 0.95))
-            if ack.success == false {
+            // vehicles.refineCompositeGoal — MUTATION.
+            let ack = try await EusoTripAPI.shared.vehicles.refineCompositeGoal(
+                vehicleId: vehicleId, axisId: axisId, stretchTarget: 0.95)
+            if !ack.success {
                 actionError = "Couldn't refine the 0.95 stretch goal - try again."
             }
         } catch {
@@ -870,11 +871,10 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
         actionError = nil
         defer { actionInFlight = false }
         do {
-            // vehicles.pinScorecardAxis — STUB · named-gap (mutation)
-            let ack: PinScorecardAxisAck330B = try await EusoTripAPI.shared.mutation(
-                "vehicles.pinScorecardAxis",
-                input: PinIn(vehicleId: vehicleId, axisId: axis?.axisId ?? axisId))
-            if ack.success == false {
+            // vehicles.pinScorecardAxis — MUTATION.
+            let ack = try await EusoTripAPI.shared.vehicles.pinScorecardAxis(
+                vehicleId: vehicleId, axisId: axis?.axisId ?? axisId)
+            if !ack.success {
                 actionError = "Couldn't pin the axis - try again."
             }
         } catch {
@@ -886,13 +886,13 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
 // MARK: - Previews
 
 #Preview("330B · Catalyst · Vehicle Scorecard Axis Detail · Night") {
-    CatalystVehicleScorecardAxisDetailScreen(theme: Theme.dark, vehicleId: "001-PB579", axisId: "COMPOSITE-PB579")
+    CatalystVehicleScorecardAxisDetailScreen(theme: Theme.dark, vehicleId: "1", axisId: "COMPOSITE-1")
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
 }
 
 #Preview("330B · Catalyst · Vehicle Scorecard Axis Detail · Afternoon") {
-    CatalystVehicleScorecardAxisDetailScreen(theme: Theme.light, vehicleId: "001-PB579", axisId: "COMPOSITE-PB579")
+    CatalystVehicleScorecardAxisDetailScreen(theme: Theme.light, vehicleId: "1", axisId: "COMPOSITE-1")
         .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
 }

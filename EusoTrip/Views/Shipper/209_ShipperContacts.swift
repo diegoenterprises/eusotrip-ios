@@ -12,17 +12,18 @@
 //  card with hazmat-diamond / reefer glyph rows, gradient Add-contact
 //  ribbon at the bottom.
 //
-//  Real data preserved: ShipperFavoriteCatalystsStore +
-//  shippers.getFavoriteCatalysts. Catalyst rows hydrate from the live
-//  store when present; facility rows + dispatcher contact details
-//  fall back to §11.2 / §11.4 canon anchor copy until contacts.list
-//  + facilities.list ship.
+//  Live data (no fabrication): CATALYST · DISPATCHERS hydrates from
+//  ShipperFavoriteCatalystsStore (shippers.getFavoriteCatalysts), with
+//  per-row phone/email back-filled from `contacts.list`. FACILITY · OPS
+//  hydrates from `contacts.list` (users × companies join), filtered to
+//  the terminal / vendor contact types. Empty surfaces render honest
+//  "—" / empty copy — no seeded names, phones, gate-pins, or temps.
 //
-//  Persona canon (§11): Diego Usoro · Eusorone Technologies (companyId 1).
-//  §11 dispatcher canon: Renee Marsh (Eusotrans LLC favorited),
-//  Daniel Kim (Test Carrier Services), Carla Brown (Plainview Petroleum).
-//  §11.2 / §11.4 facility canon: Gulf Coast Petroleum Terminal /
-//  Heartland NH₃ Co-op / Phoenix Cold Chain Receiver.
+//  De-fabricated 2026-06-06 (oath wire-and-defabricate sweep): the
+//  prior hardcoded facilityContacts seed (Gulf Coast Petroleum Terminal
+//  / +1 713 555-0117 / gate-pin 4821, Heartland NH₃ Co-op, Phoenix Cold
+//  Chain) and the §11 catalyst fallback (Renee Marsh / Daniel Kim /
+//  Carla Brown) were removed in favor of the real `contacts.list` proc.
 //
 //  Web peer: Contacts.tsx (`/shipper/contacts`).
 //  Notification names: eusoShipperContactSearch, eusoShipperContactAdd,
@@ -55,6 +56,11 @@ private struct ContactRow: Identifiable {
 private enum FacilityKind {
     case hazmatDiamond(unClass: String)
     case reeferTemp(label: String)
+    /// Neutral terminal / vendor POC — no hazmat class or reefer temp
+    /// is known from `contacts.list` (it returns name/company/email/
+    /// phone only), so we render a generic building glyph rather than
+    /// fabricate a UN class or set-point.
+    case terminal
 }
 
 private struct FacilityRow: Identifiable {
@@ -88,6 +94,13 @@ struct ShipperContacts: View {
 
     @StateObject private var store = ShipperFavoriteCatalystsStore()
 
+    /// Live contact directory — `contacts.list` (users × companies join,
+    /// real name/company/email/phone/type). Hydrates the FACILITY · OPS
+    /// card and back-fills dispatcher phone/email on the favorite-catalyst
+    /// rows. Replaces the prior fabricated `facilityContacts` seed
+    /// (Gulf Coast Petroleum / +1 713 555-0117 / gate-pin 4821, …).
+    @StateObject private var contactsStore = ContactsStore()
+
     @State private var query: String = ""
     @State private var filter: ContactsFilter = .all
     @State private var lastToast: String?
@@ -102,36 +115,37 @@ struct ShipperContacts: View {
     /// real in-app form that calls `contacts.create`.
     @State private var showAddContactSheet: Bool = false
 
-    /// §11 / §11.2 / §11.4 facility canon — three flagship facility POCs
-    /// that mirror the §11.2 MATRIX-50 lanes (Houston tanker, KC NH₃,
-    /// LA→Phoenix berries). Until `facilities.list` ships, these are the
-    /// canonical anchors per the wireframe Code/ port.
-    private let facilityContacts: [FacilityRow] = [
-        FacilityRow(
-            id: "fac_gulf_coast_petroleum",
-            kind: .hazmatDiamond(unClass: "3"),
-            name: "Gulf Coast Petroleum Terminal · Houston",
-            sub: "Loading dock 7 · 1234 Industrial Blvd",
-            phone: "+1 (713) 555-0117",
-            extra: "gate-pin 4821"
-        ),
-        FacilityRow(
-            id: "fac_heartland_nh3",
-            kind: .hazmatDiamond(unClass: "2.2"),
-            name: "Heartland NH₃ Co-op · Kansas City",
-            sub: "MC-331 fill rack · escort dispatch on site",
-            phone: "+1 (816) 555-0240",
-            extra: "pre-arrival 30 min"
-        ),
-        FacilityRow(
-            id: "fac_phoenix_cold_chain",
-            kind: .reeferTemp(label: "38°"),
-            name: "Phoenix Cold Chain Receiver",
-            sub: nil,
-            phone: "+1 (602) 555-0388",
-            extra: "dock 14 · reefer cold-stage"
-        )
-    ]
+    /// FACILITY · OPS rows — hydrated live from `contacts.list`, filtered
+    /// to the terminal / vendor contact types (the facility POCs in the
+    /// `users` × `companies` directory). No fabricated terminals, phones,
+    /// gate-pins, or temps — every field is the real database value, with
+    /// honest "—" where the column is empty.
+    private var facilityContacts: [FacilityRow] {
+        contactsStore.contacts
+            .filter { facilityTypes.contains($0.type.lowercased()) }
+            .map { c in
+                let cityState: String? = {
+                    if let city = c.address?.city, !city.isEmpty {
+                        if let st = c.address?.state, !st.isEmpty { return "\(city), \(st)" }
+                        return city
+                    }
+                    return nil
+                }()
+                return FacilityRow(
+                    id: c.id,
+                    kind: .terminal,
+                    name: facilityDisplayName(c),
+                    sub: cityState,
+                    phone: (c.phone?.isEmpty == false ? c.phone! : "—"),
+                    extra: (c.email?.isEmpty == false ? c.email! : "—")
+                )
+            }
+    }
+
+    /// `contacts.list` `type` values that surface on the FACILITY · OPS
+    /// card. `type` is `users.role` lowercased server-side
+    /// (contacts.ts:57), so terminal/vendor map here.
+    private let facilityTypes: Set<String> = ["terminal", "vendor", "facility"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -162,8 +176,14 @@ struct ShipperContacts: View {
                 }
             }
         }
-        .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .task {
+            await store.refresh()
+            await contactsStore.refresh()
+        }
+        .refreshable {
+            await store.refresh()
+            await contactsStore.refresh()
+        }
         .confirmationDialog(
             pendingContactAction?.name ?? "Contact",
             isPresented: Binding(
@@ -193,7 +213,10 @@ struct ShipperContacts: View {
         .sheet(isPresented: $showAddContactSheet) {
             AddContactSheet(onCreated: { name in
                 showAddContactSheet = false
-                Task { await store.refresh() }
+                Task {
+                    await store.refresh()
+                    await contactsStore.refresh()
+                }
                 flashToast("Saved \(name)")
             })
             .eusoSheetX()
@@ -353,58 +376,47 @@ struct ShipperContacts: View {
     }
 
     private var catalystRows: [ContactRow] {
-        // Hydrate from live store when available
-        if case .loaded(let rows) = store.state, !rows.isEmpty {
-            return rows.map { fc in
-                ContactRow(
-                    id: fc.id,
-                    initials: monogram(fc.name),
-                    name: fc.name.isEmpty ? "-" : fc.name,
-                    org: dispatcherOrg(for: fc),
-                    role: dispatcherRole(for: fc),
-                    phone: dispatcherPhone(for: fc),
-                    email: dispatcherEmail(for: fc),
-                    favorited: fc.loadsCompleted >= 5,
-                    callable: !fc.dotNumber.isEmpty
-                )
-            }
+        // Hydrate from the live favorite-catalysts store. Phone/email are
+        // back-filled from `contacts.list` (matched by company name) so
+        // the call/text/email CTAs hit real numbers. No fabricated
+        // fallback — an empty store renders the honest empty state.
+        guard case .loaded(let rows) = store.state, !rows.isEmpty else {
+            return []
         }
-        // Fallback: §11 canon anchor
-        return [
-            ContactRow(
-                id: "ctc_renee_marsh",
-                initials: "RM",
-                name: "Renee Marsh",
-                org: "Eusotrans LLC",
-                role: "Dispatch · Belle Plaine IA",
-                phone: "+1 (319) 555-1842",
-                email: "dispatch@eusotrans.com",
-                favorited: true,
-                callable: true
-            ),
-            ContactRow(
-                id: "ctc_daniel_kim",
-                initials: "DK",
-                name: "Daniel Kim",
-                org: "Test Carrier Services LLC",
-                role: "Ops manager · Houston TX",
-                phone: "+1 (713) 555-0100",
-                email: "dispatch@testcarrier.com",
-                favorited: false,
-                callable: true
-            ),
-            ContactRow(
-                id: "ctc_carla_brown",
-                initials: "CB",
-                name: "Carla Brown",
-                org: "Plainview Petroleum",
-                role: nil,
-                phone: "+1 (602) 555-0042",
-                email: "dispatch@plainviewpet.com",
-                favorited: true,
-                callable: false
-            ),
-        ]
+        return rows.map { fc in
+            let reach = contactReach(forCompany: fc.name)
+            let phone = reach?.phone?.isEmpty == false ? reach!.phone! : "—"
+            let email = reach?.email?.isEmpty == false ? reach!.email! : "—"
+            return ContactRow(
+                id: fc.id,
+                initials: monogram(fc.name),
+                name: fc.name.isEmpty ? "—" : fc.name,
+                org: dispatcherOrg(for: fc),
+                role: dispatcherRole(for: fc),
+                phone: phone,
+                email: email,
+                favorited: fc.loadsCompleted >= 5,
+                callable: phone != "—"
+            )
+        }
+    }
+
+    /// Match a favorite-catalyst record (carries the company name) to a
+    /// real `contacts.list` row so the dispatcher row can surface the
+    /// directory's phone/email. Matches on company name first, then a
+    /// loose name contains. Returns nil when the directory has no row —
+    /// the caller renders "—" rather than inventing a number.
+    private func contactReach(forCompany company: String) -> ContactsAPI.Contact? {
+        let needle = company.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return nil }
+        let pool = contactsStore.contacts
+        if let byCompany = pool.first(where: {
+            ($0.company ?? "").lowercased() == needle
+        }) { return byCompany }
+        return pool.first(where: {
+            let co = ($0.company ?? "").lowercased()
+            return !co.isEmpty && (co.contains(needle) || needle.contains(co))
+        })
     }
 
     private var visibleCatalystRows: [ContactRow] {
@@ -429,13 +441,16 @@ struct ShipperContacts: View {
                 catalystSkeleton
                     .padding(.horizontal, 20).padding(.vertical, 14)
             case .empty, .error:
-                ForEach(visibleCatalystRows.indices, id: \.self) { idx in
-                    catalystRow(visibleCatalystRows[idx])
-                        .padding(.horizontal, 20).padding(.vertical, 14)
-                    if idx < visibleCatalystRows.count - 1 {
-                        Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 20)
-                    }
-                }
+                // No favorite catalysts yet (or the surface is
+                // unreachable). Honest message — no fabricated dispatcher
+                // rows backfill an empty store.
+                Text(store.state.error != nil
+                     ? "Couldn't reach your catalyst dispatchers. Pull to retry."
+                     : "No favorite catalysts yet. Dispatchers you work with pin here as you complete loads together.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20).padding(.vertical, 18)
             case .loaded:
                 if visibleCatalystRows.isEmpty {
                     Text("No matches in catalyst dispatchers.")
@@ -515,7 +530,14 @@ struct ShipperContacts: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .contain)
-        .onTapGesture { tapContactRow(row.id) }
+        .onTapGesture {
+            tapContactRow(
+                row.id,
+                name: row.name,
+                phone: row.phone == "—" ? "" : row.phone,
+                email: row.email == "—" ? "" : row.email
+            )
+        }
     }
 
     private var catalystSkeleton: some View {
@@ -557,17 +579,26 @@ struct ShipperContacts: View {
 
     private var facilityCard: some View {
         VStack(spacing: 0) {
-            ForEach(visibleFacilityRows.indices, id: \.self) { idx in
-                facilityRow(visibleFacilityRows[idx])
+            if contactsStore.isLoading && facilityContacts.isEmpty {
+                facilitySkeleton
                     .padding(.horizontal, 20).padding(.vertical, 14)
-                if idx < visibleFacilityRows.count - 1 {
-                    Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 20)
+            } else if !visibleFacilityRows.isEmpty {
+                ForEach(visibleFacilityRows.indices, id: \.self) { idx in
+                    facilityRow(visibleFacilityRows[idx])
+                        .padding(.horizontal, 20).padding(.vertical, 14)
+                    if idx < visibleFacilityRows.count - 1 {
+                        Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.horizontal, 20)
+                    }
                 }
-            }
-            if visibleFacilityRows.isEmpty {
-                Text("No matches in facility ops.")
+            } else {
+                // Distinguish "no directory rows" from "no search match"
+                // — both honest, neither fabricated.
+                Text(facilityContacts.isEmpty
+                     ? "No facility contacts yet. Terminal and vendor POCs land here as you add them."
+                     : "No matches in facility ops.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 20).padding(.vertical, 18)
             }
         }
@@ -575,6 +606,18 @@ struct ShipperContacts: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.lg)
                     .strokeBorder(palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    private var facilitySkeleton: some View {
+        VStack(spacing: Space.s2) {
+            ForEach(0..<2, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.bgCardSoft)
+                    .frame(height: 56)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderFaint))
+            }
+        }
     }
 
     private func facilityRow(_ row: FacilityRow) -> some View {
@@ -635,6 +678,13 @@ struct ShipperContacts: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(Brand.info.opacity(0.12))
                 ReeferGlyph(label: label).frame(width: 24, height: 20)
+            }
+        case .terminal:
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(palette.textPrimary.opacity(0.06))
+                TerminalGlyph(stroke: palette.textSecondary)
+                    .frame(width: 22, height: 22)
             }
         }
     }
@@ -759,12 +809,11 @@ struct ShipperContacts: View {
         return m.isEmpty ? "??" : m
     }
 
-    /// Compose the dispatcher's org line — `name` is already the
-    /// company name from `getFavoriteCatalysts`. Until contacts.list
-    /// ships per-dispatcher rows, treat the catalyst record as the
-    /// dispatcher row, with the company echoed as the org.
+    /// Compose the dispatcher's org line — `name` is already the real
+    /// company name from `getFavoriteCatalysts`. The favorite-catalyst
+    /// record is the dispatcher row; the company is echoed as the org.
     private func dispatcherOrg(for fc: ShipperAPI.FavoriteCatalyst) -> String {
-        fc.name.isEmpty ? "-" : fc.name
+        fc.name.isEmpty ? "—" : fc.name
     }
 
     private func dispatcherRole(for fc: ShipperAPI.FavoriteCatalyst) -> String? {
@@ -774,14 +823,17 @@ struct ShipperContacts: View {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    private func dispatcherPhone(for fc: ShipperAPI.FavoriteCatalyst) -> String {
-        // contacts.list will surface phone — em-dash for now
-        "-"
-    }
-
-    private func dispatcherEmail(for fc: ShipperAPI.FavoriteCatalyst) -> String {
-        // contacts.list will surface email — em-dash for now
-        "-"
+    /// Compose the facility row's display name from the real contact —
+    /// "Name · Company" when both are present, else whichever exists.
+    private func facilityDisplayName(_ c: ContactsAPI.Contact) -> String {
+        let name = c.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let company = (c.company ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        if !name.isEmpty, !company.isEmpty, name.lowercased() != company.lowercased() {
+            return "\(name) · \(company)"
+        }
+        if !name.isEmpty { return name }
+        if !company.isEmpty { return company }
+        return "—"
     }
 
     private func formatCurrency(_ value: Double) -> String {
@@ -844,6 +896,30 @@ private struct ReeferGlyph: View {
                 .font(.system(size: 8, weight: .heavy))
                 .foregroundStyle(Brand.info)
                 .offset(x: 3)
+        }
+    }
+}
+
+private struct TerminalGlyph: View {
+    let stroke: Color
+    var body: some View {
+        GeometryReader { geo in
+            let s = min(geo.size.width, geo.size.height) / 22
+            Path { p in
+                // Warehouse / terminal silhouette — roofline + body + door.
+                p.move(to: CGPoint(x: 2 * s, y: 9 * s))
+                p.addLine(to: CGPoint(x: 11 * s, y: 3 * s))
+                p.addLine(to: CGPoint(x: 20 * s, y: 9 * s))
+                p.addLine(to: CGPoint(x: 20 * s, y: 20 * s))
+                p.addLine(to: CGPoint(x: 2 * s, y: 20 * s))
+                p.closeSubpath()
+                // Roll-up door.
+                p.move(to: CGPoint(x: 8 * s, y: 20 * s))
+                p.addLine(to: CGPoint(x: 8 * s, y: 13 * s))
+                p.addLine(to: CGPoint(x: 14 * s, y: 13 * s))
+                p.addLine(to: CGPoint(x: 14 * s, y: 20 * s))
+            }
+            .stroke(stroke, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
         }
     }
 }

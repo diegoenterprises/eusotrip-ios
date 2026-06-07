@@ -687,11 +687,13 @@ private struct BOLBody: View {
                             Text(init0).font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)
                         }
                     }
-                    Text(d.priority ?? "P1")
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(((d.priority ?? "") == "P0" ? Color.red : Color.orange).opacity(0.18)))
-                        .foregroundStyle((d.priority ?? "") == "P0" ? .red : .orange)
+                    if let pr = d.priority, !pr.isEmpty {
+                        Text(pr)
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill((pr == "P0" ? Color.red : Color.orange).opacity(0.18)))
+                            .foregroundStyle(pr == "P0" ? .red : .orange)
+                    }
                     Spacer()
                     if let sla = d.slaSecondsRemaining {
                         let m = sla / 60; let s = sla % 60
@@ -700,7 +702,7 @@ private struct BOLBody: View {
                             .foregroundStyle(.red)
                     }
                 }
-                Text("\(d.discrepancies.count) of 4 fields disagree · driver awaiting")
+                Text("\(d.discrepancies.count) field\(d.discrepancies.count == 1 ? "" : "s") disagree\(d.driverAwaiting == true ? " · driver awaiting" : "")")
                     .font(EType.body.weight(.semibold)).foregroundStyle(palette.textPrimary)
             }
         }
@@ -708,7 +710,7 @@ private struct BOLBody: View {
 
     private func discrepanciesSection(_ rows: [BOLDiscrepancy]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("DISCREPANCIES · \(rows.count) OF 4 FIELDS")
+            Text("DISCREPANCIES · \(rows.count) FIELD\(rows.count == 1 ? "" : "S")")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
             ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
                 LifecycleCard {
@@ -788,27 +790,29 @@ private struct BOLBody: View {
 
     private func load() async {
         loading = true; defer { loading = false }
-        // Wire to a real BOL mismatch endpoint when shipped; for now
-        // synthesize a minimum-info row from loads.getById so the
-        // surface renders end-to-end without fabricating field-level
-        // disagreement data.
-        struct In: Encodable { let id: String }
-        struct LoadLite: Decodable {
-            let id: Int?
-            let loadNumber: String?
-        }
+        // Real field-level diff from bolReview.getMismatchDetail — the
+        // tendered load record vs. the driver-uploaded BOL document. No
+        // synthesized contact/priority/SLA/discrepancy rows: every field
+        // below is exactly what the server computed. Empty discrepancies
+        // + null priority is the honest "nothing disagrees" state.
+        guard let lid = Int(loadId) else { data = nil; return }
         do {
-            let load: LoadLite = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId))
+            let detail = try await EusoTripAPI.shared.bolReview.getMismatchDetail(loadId: lid)
             data = BOLMismatchData(
-                loadId: load.id,
-                loadNumber: load.loadNumber,
-                carrierContactInitials: "CH",
-                priority: "P1",
-                slaSecondsRemaining: 522,
-                driverAwaiting: true,
-                discrepancies: [] // populated when bolReview.getMismatchDetail ships
+                loadId: detail.loadId,
+                loadNumber: detail.loadNumber,
+                carrierContactInitials: detail.carrierContactInitials,
+                priority: detail.priority,
+                slaSecondsRemaining: detail.slaSecondsRemaining,
+                driverAwaiting: detail.driverAwaiting,
+                discrepancies: detail.discrepancies.map {
+                    BOLDiscrepancy(field: $0.field, tendered: $0.tendered, uploaded: $0.uploaded, delta: $0.delta)
+                }
             )
-        } catch { /* */ }
+        } catch {
+            // Honest empty — surface no fabricated mismatch if the proc errors.
+            data = nil
+        }
     }
 }
 
