@@ -81,6 +81,22 @@ private struct SubmitResult008: Decodable {
     let tenderId: String?; let controlNumber: String?; let status: String?; let submittedAt: String?
 }
 
+// railTenderWorkflow.carrierAcceptanceRate return shape — field-for-field with
+// the server proc (`railTenderWorkflow.ts:554`). `acceptanceRate` is 0-100 with
+// one decimal (JSON number) → Double; `accepted`/`total`/`windowDays` are integer
+// counts → Int. `total == 0` is the honest no-data signal (renders an em-dash).
+private struct RailAcceptanceRate008: Decodable, Hashable {
+    let carrier: String
+    let acceptanceRate: Double
+    let accepted: Int
+    let total: Int
+    let windowDays: Int
+
+    /// True only when the window held at least one decided tender for this
+    /// carrier. When false the advisory shows "—" instead of a fabricated rate.
+    var hasData: Bool { total > 0 }
+}
+
 // MARK: - Screen
 
 struct RailShipperTenderWorkflow_008: View {
@@ -92,6 +108,12 @@ struct RailShipperTenderWorkflow_008: View {
 
     // Live data
     @State private var rows: [RailTenderHistoryRow008] = []
+
+    // Live carrier tender-acceptance rate (railTenderWorkflow.carrierAcceptanceRate),
+    // keyed on the active tender's carrier + commodity STCC. `nil` = not yet loaded
+    // or unavailable; `total == 0` = honest no-data (renders an em-dash, never 94%).
+    @State private var acceptance: RailAcceptanceRate008? = nil
+    @State private var acceptanceCarrier: String? = nil   // carrier the rate is for
 
     // Async state (honest — no try?-collapse)
     @State private var loading = true
@@ -138,6 +160,38 @@ struct RailShipperTenderWorkflow_008: View {
     private var subLine: String {
         if let a = active { return "EDI 404 sent · awaiting EDI 990 response from \(a.carrier ?? "carrier")" }
         return "No active tender · send an EDI 404 to a Class I railroad"
+    }
+
+    /// Commodity label for the advisory copy, derived from the active tender's
+    /// STCC. STCC 0113310 = grain (the canonical 008 load); fall back to a
+    /// neutral "tenders" when no/other commodity so the copy never lies.
+    private var commodityLabel: String {
+        let stcc = (active?.commodityStcc ?? "").trimmingCharacters(in: .whitespaces)
+        if stcc.hasPrefix("0113") { return "grain tenders" }   // 0113xxx = farm grains
+        return "tenders"
+    }
+
+    /// ESANG advisory headline, bound to the LIVE carrierAcceptanceRate.
+    /// Honest "—" when there is no active carrier or no decided tenders in the
+    /// window (was a hardcoded "94%").
+    private var advisoryHeadline: String {
+        guard let carrier = active?.carrier, !carrier.isEmpty else {
+            return "ESang: — acceptance data unavailable"
+        }
+        // Only trust the rate if it was fetched for THIS carrier and has data.
+        guard let rate = acceptance,
+              acceptanceCarrier == carrier,
+              rate.hasData else {
+            return "ESang: \(carrier) accepts — of \(commodityLabel)"
+        }
+        let pct = formatRate(rate.acceptanceRate)
+        return "ESang: \(carrier) accepts \(pct) of \(commodityLabel)"
+    }
+
+    /// 0-100 one-decimal rate → "94%" / "92.5%" (drop a trailing ".0").
+    private func formatRate(_ r: Double) -> String {
+        if r == r.rounded() { return "\(Int(r))%" }
+        return String(format: "%.1f%%", r)
     }
 
     var body: some View {
@@ -417,7 +471,7 @@ struct RailShipperTenderWorkflow_008: View {
                     .offset(x: -5, y: -5)
             }
             VStack(alignment: .leading, spacing: 4) {
-                Text("ESang: \(heroCarrier) accepts 94% of grain tenders")
+                Text(advisoryHeadline)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -522,6 +576,37 @@ struct RailShipperTenderWorkflow_008: View {
                 ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
         loading = false
+        await loadAcceptance()
+    }
+
+    /// Hydrate the ESANG advisory's acceptance rate from the REAL
+    /// `railTenderWorkflow.carrierAcceptanceRate` proc, keyed on the active
+    /// tender's carrier (+ commodity STCC). No active carrier → clear it
+    /// (advisory shows "—"). A failed read leaves the prior value cleared so the
+    /// advisory degrades to "—" rather than a stale/fabricated figure.
+    private func loadAcceptance() async {
+        guard let carrier = active?.carrier, !carrier.isEmpty else {
+            acceptance = nil; acceptanceCarrier = nil
+            return
+        }
+        let stcc = active?.commodityStcc?.trimmingCharacters(in: .whitespaces)
+        do {
+            let rate = try await EusoTripAPI.shared.railTenderWorkflow.carrierAcceptanceRate(
+                carrier: carrier,
+                commodityStcc: (stcc?.isEmpty == false) ? stcc : nil)
+            // Re-decode into the view-local shape (1:1 fields) so the view owns
+            // its render contract independent of the API namespace struct.
+            self.acceptance = RailAcceptanceRate008(
+                carrier: rate.carrier,
+                acceptanceRate: rate.acceptanceRate,
+                accepted: rate.accepted,
+                total: rate.total,
+                windowDays: rate.windowDays)
+            self.acceptanceCarrier = carrier
+        } catch {
+            // Honest degrade — advisory renders "—" (never the old 94%).
+            acceptance = nil; acceptanceCarrier = nil
+        }
     }
 
     /// Re-tender the active load to the next Class I carrier (submitTender). Real write.
