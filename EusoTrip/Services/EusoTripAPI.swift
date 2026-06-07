@@ -952,6 +952,25 @@ final class EusoTripAPI: ObservableObject {
     /// no loadId it returns the user's latest-per-zone fleet readings.
     lazy var reeferTemp: ReeferTempAPI = ReeferTempAPI(api: self)
 
+    /// `tankMonitorRouter` — real-time bulk/cargo tank-level + pressure
+    /// telemetry surface backing 388 Catalyst Tanker Fleet Monitor (and the
+    /// driver tanker monitor). MCP-verified at
+    /// `frontend/server/routers/tankMonitor.ts`:
+    ///   • `getMultiTerminalOverview({ terminalIds? })` → `{ terminals:
+    ///     [TerminalSummary], totals }` company-scoped fleet roll-up.
+    ///   • `getTankReadings({ terminalId })` → `{ readings: [TankReading],
+    ///     summary }`; each reading surfaces the latest persisted
+    ///     `tank_readings` row (level / percentFull / temperatureF /
+    ///     pressurePsi / mawpPsi / status), or an honest `offline` reading
+    ///     when no gauge row exists. `pressurePsi`/`mawpPsi` arrive with the
+    ///     paired server change — decoded OPTIONAL so the client compiles +
+    ///     works whether or not that change is deployed yet.
+    ///   • `getTankAlerts({ terminalId?, severityFilter })` → `[TankAlert]`
+    ///     (bare array, severity-sorted). Empty array on no-db / no alerts.
+    /// No fabricated telemetry — every numeric is OPTIONAL Double so a null /
+    /// offline field renders as an honest "—" rather than a fake gauge value.
+    lazy var tankMonitor: TankMonitorAPI = TankMonitorAPI(api: self)
+
     /// `bolReviewRouter` — field-level BOL-vs-tendered mismatch detail backing
     /// the Dispatcher 411/722 BOL Mismatch surface (`DispatcherBOLMismatchScreen`,
     /// `Dpch720_DispatcherSVGTrio.swift`). Server at
@@ -21449,6 +21468,188 @@ struct ReeferTempAPI {
     func acknowledgeAlert(alertId: Int) async throws -> AckResult {
         try await api.mutation("reeferTemp.acknowledgeAlert",
                                input: AcknowledgeInput(alertId: alertId))
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// MARK: - tankMonitorRouter (388 Catalyst Tanker Fleet Monitor)
+// ════════════════════════════════════════════════════════════════════════
+//
+// Mirrors `frontend/server/routers/tankMonitor.ts` 1:1 (the carrier-vantage
+// 388 surface + driver tanker monitor). Every read is company/terminal
+// scoped server-side. The reading projection is `generateTankReading`
+// (`services/TankLevelMonitor.ts`): it surfaces the latest persisted
+// `tank_readings` row, or an honest OFFLINE reading (zeros + status
+// "offline") when no gauge row exists yet.
+//
+//   getMultiTerminalOverview({ terminalIds? })
+//        → { terminals: [TerminalSummary], totals: { totalTanks,
+//            totalCapacity, totalInventory, overallUtilization,
+//            alerts: { critical, warning, info } } }
+//   getTankReadings({ terminalId })
+//        → { readings: [TankReading {tankNumber, product, currentLevelGallons?,
+//            percentFull?, temperatureF?, pressurePsi?, mawpPsi?, status, …}],
+//            summary: TerminalSummary? }
+//   getTankAlerts({ terminalId?, severityFilter })
+//        → [TankAlert]  (BARE array, severity-sorted; [] on no-db/no alerts)
+//
+// EVERY numeric telemetry field is decoded as OPTIONAL Double. The server
+// emits them as numbers today, but `pressurePsi`/`mawpPsi` only carry real
+// values once the paired schema change is deployed; an offline tank reports
+// zeros and a null/absent field must render as an honest "—", never a
+// fabricated gauge value. Optional decoding makes the client correct whether
+// or not the server change has shipped.
+
+struct TankMonitorAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: Decoders (1:1 with the server projections)
+
+    /// One tank's latest reading as projected by `getTankReadings`
+    /// (`tankMonitor.ts:50` → `generateTankReading`, `TankLevelMonitor.ts:237`).
+    /// All physical-measurement numbers are OPTIONAL Double: the server emits
+    /// them as numbers, but a field may be 0/absent for an offline tank, and
+    /// `pressurePsi`/`mawpPsi` only carry real values once the paired schema
+    /// change ships. `tankNumber`/`product`/`status` always present.
+    struct TankReading: Decodable, Hashable, Identifiable {
+        let tankId: String?
+        let terminalId: Int?
+        let terminalName: String?
+        let tankNumber: Int
+        let product: String
+        let capacityGallons: Double?
+        let currentLevelGallons: Double?
+        let percentFull: Double?
+        let gaugeFeet: Int?
+        let gaugeInches: Int?
+        let temperatureF: Double?
+        let pressurePsi: Double?     // vapor/blanket pressure (PSIG) — paired-change field
+        let mawpPsi: Double?         // max allowable working pressure (PSIG) — paired-change field
+        let apiGravity: Double?
+        let bswPercent: Double?
+        let ullageGallons: Double?
+        let status: String
+        let lastGaugedAt: String?
+
+        var id: String { tankId ?? "\(terminalId ?? 0)-T\(tankNumber)" }
+    }
+
+    /// One product roll-up inside a `TerminalSummary.productBreakdown`
+    /// (`TankLevelMonitor.ts:476`).
+    struct ProductBreakdown: Decodable, Hashable {
+        let product: String?
+        let tankCount: Int?
+        let totalCapacity: Double?
+        let totalInventory: Double?
+        let utilization: Int?
+        let status: String?
+    }
+
+    /// Per-terminal alert tallies (`TankLevelMonitor.ts:115`).
+    struct AlertCounts: Decodable, Hashable {
+        let critical: Int?
+        let warning: Int?
+        let info: Int?
+    }
+
+    /// A `TerminalInventorySummary` (`TankLevelMonitor.ts:446`) — the
+    /// `summary` on `getTankReadings` and each element of
+    /// `getMultiTerminalOverview.terminals`.
+    struct TerminalSummary: Decodable, Hashable, Identifiable {
+        let terminalId: Int
+        let terminalName: String?
+        let totalTanks: Int?
+        let totalCapacity: Double?
+        let totalInventory: Double?
+        let overallUtilization: Int?
+        let productBreakdown: [ProductBreakdown]?
+        let alerts: AlertCounts?
+        let lastUpdated: String?
+
+        var id: Int { terminalId }
+    }
+
+    /// The `getTankReadings` envelope (`tankMonitor.ts:63`). `summary` is null
+    /// when the terminal has no tanks / no DB. `readings` is empty in the same
+    /// case — the honest empty state, never seeded.
+    struct ReadingsEnvelope: Decodable {
+        let readings: [TankReading]
+        let summary: TerminalSummary?
+    }
+
+    /// The `getMultiTerminalOverview.totals` roll-up (`tankMonitor.ts:293`).
+    struct OverviewTotals: Decodable, Hashable {
+        let totalTanks: Int?
+        let totalCapacity: Double?
+        let totalInventory: Double?
+        let overallUtilization: Int?
+        let alerts: AlertCounts?
+    }
+
+    /// The `getMultiTerminalOverview` envelope (`tankMonitor.ts:291`). Empty
+    /// `terminals` + zeroed `totals` when the caller has no active terminals.
+    struct OverviewEnvelope: Decodable {
+        let terminals: [TerminalSummary]
+        let totals: OverviewTotals
+    }
+
+    /// One `TankAlert` as projected by `getTankAlerts`
+    /// (`tankMonitor.ts:167` → `generateTankAlerts`, `TankLevelMonitor.ts:313`).
+    /// Decoded leniently; `getTankAlerts` returns a BARE array (no envelope).
+    struct Alert: Decodable, Hashable, Identifiable {
+        let id: String?
+        let tankId: String?
+        let terminalId: Int?
+        let terminalName: String?
+        let tankNumber: Int?
+        let product: String?
+        let severity: String?
+        let type: String?
+        let message: String?
+        let currentLevel: Double?
+        let threshold: Double?
+        let triggeredAt: String?
+        let acknowledged: Bool?
+    }
+
+    // MARK: Inputs (server fields verbatim)
+
+    private struct OverviewInput: Encodable { let terminalIds: [Int]? }
+    private struct ReadingsInput: Encodable { let terminalId: Int }
+    private struct AlertsInput: Encodable {
+        let terminalId: Int?
+        let severityFilter: String
+    }
+
+    // MARK: Procedures
+
+    /// `tankMonitor.getMultiTerminalOverview` — company-scoped multi-terminal
+    /// dashboard roll-up. Pass explicit `terminalIds` to scope to specific
+    /// terminals; nil reads the caller's active terminals (server scopes by
+    /// companyId). Empty terminals + zeroed totals on no-db / no terminals.
+    func getMultiTerminalOverview(terminalIds: [Int]? = nil) async throws -> OverviewEnvelope {
+        try await api.query("tankMonitor.getMultiTerminalOverview",
+                            input: OverviewInput(terminalIds: terminalIds))
+    }
+
+    /// `tankMonitor.getTankReadings` — per-tank latest readings + the
+    /// terminal summary for one terminal. `readings` empty + `summary` nil
+    /// when the terminal has no tanks (honest empty), each reading offline
+    /// (zeros, status "offline") until a real gauge row is ingested.
+    func getTankReadings(terminalId: Int) async throws -> ReadingsEnvelope {
+        try await api.query("tankMonitor.getTankReadings",
+                            input: ReadingsInput(terminalId: terminalId))
+    }
+
+    /// `tankMonitor.getTankAlerts` — tank alerts across the caller's
+    /// terminals (or one when `terminalId` is set), severity-sorted
+    /// (emergency→info). `severityFilter` ∈ {all, emergency, critical,
+    /// warning, info}; default "all". Returns a BARE array; [] on no-db.
+    func getTankAlerts(terminalId: Int? = nil,
+                       severityFilter: String = "all") async throws -> [Alert] {
+        try await api.query("tankMonitor.getTankAlerts",
+                            input: AlertsInput(terminalId: terminalId,
+                                               severityFilter: severityFilter))
     }
 }
 
