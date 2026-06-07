@@ -30,20 +30,18 @@ struct Paperwork: View {
 
     // MARK: - Live close-out sources (real procs only; honest em-dash otherwise)
     //
-    // De-fabrication (2026-06-07): the BOL "SIGNED BY", the close-out
-    // "DETENTION $" charge + its caption were Figma literals that leaked
-    // onto the live path. They now resolve from real backend procs —
-    // `pod.getPODForLoad` (receiver who signed + the delivered stamp) and
-    // `detentionAccessorials.calculateDetention` fed the REAL arrival
-    // anchor read off the lifecycle audit trail (mirrors the 024 Unloading
-    // ticker). Anything without a live source renders the honest em-dash
-    // sentinel the file already uses ("-") — never a seeded figure.
-
-    /// Live POD packet for this load (`pod.getPODForLoad`). Binds the BOL
-    /// "SIGNED BY" row to the real `receiverName` + the delivered
-    /// `submittedAt`. Nil until the driver actually submits the POD —
-    /// no baked persona, no baked "4:48 PM".
-    @State private var pod: PODAPI.PODPacket?
+    // De-fabrication (2026-06-07): the BOL header (#, shipper/consignee,
+    // seal), the trip START / END pair, the "SIGNED BY" row, and the
+    // close-out "DETENTION $" charge were Figma literals that leaked onto
+    // the live path. They now resolve from one real backend proc —
+    // `loads.getCloseoutSummary` — which composes BOL #, shipper/consignee
+    // name + address, the real trip departed/arrived stamps, the recorded
+    // detention claim total, and the POD-derived signer server-side. The
+    // detention $/hr · free-time CAPTION still draws from the richer live
+    // `detentionAccessorials.calculateDetention` calc (the summary carries
+    // only the flat charge). Anything without a live source renders the
+    // honest em-dash sentinel the file already uses ("-") — never a seeded
+    // figure.
 
     /// The real arrival timestamp at the receiver, read off the lifecycle
     /// audit trail (transition into `at_delivery`, else `unloading`). Free
@@ -55,6 +53,15 @@ struct Paperwork: View {
     /// close-out "DETENTION $" charge + the $/hr · free-time caption. Nil
     /// (→ em-dash) until a real arrival anchor resolves and the proc returns.
     @State private var detentionCalc: DetentionAPI.DetentionCalc?
+
+    /// Live close-out packet for this load (`loads.getCloseoutSummary`).
+    /// The single source of truth for the BOL header (#, shipper/consignee
+    /// name + address), the trip START / END wall-clock pair (departedAt /
+    /// arrivedAt ?? actualDeliveryDate), the seal numbers, the detention $
+    /// charge, and the SIGNED-BY row. Every field on it is nullable and the
+    /// screen renders the honest em-dash sentinel for any nil. Stays nil
+    /// (try? → nil) until the proc returns — never a seeded Figma literal.
+    @State private var closeout: LoadsAPI.CloseoutSummary?
     /// Driver rates the shipper after delivery. Closes Phase 18
     /// (Rating / review) of the 8000-scenario parity audit
     /// (docs/parity-2026/EXECUTIVE_VERDICT.md §4.5). Backend
@@ -90,39 +97,58 @@ struct Paperwork: View {
     // honest em-dash sentinel "-" the file already uses. None of these
     // emit a fabricated figure.
     //
-    // EM-DASH (no live source on the wire today):
-    //   • dock door — no live dock column reaches this close-out screen.
+    // LIVE (from `loads.getCloseoutSummary`): BOL #, shipper/consignee
+    // name + address, trip START (departedAt) / END (arrivedAt ??
+    // actualDeliveryDate), seal numbers, detention $, and SIGNED-BY. Each
+    // renders the honest em-dash below when the matching field is null.
+    //
+    // EM-DASH (no live source on the wire today — server returns null):
+    //   • dock door / DOOR TIME — no billed door-time projection or dock
+    //     column reaches this close-out screen (proc returns null).
     //   • pieces delivered — the load envelope ships no granular
     //     unloaded-unit column (LiveLoadFacets.palletCount is a backend
     //     gap), so neither the "N of N" header nor the "N / N" BOL row can
-    //     assert a real count.
-    //   • trip START / END / DOOR TIME — no on-/off-dock wall-clock pair
-    //     reaches this screen; the lifecycle history carries transitions
-    //     but not a billed door-time duration projection.
+    //     assert a real count (proc returns null).
     //   • break / overflow-lot guidance — there is no yard-occupancy /
-    //     overflow-slot / next-brief feed; the entire string was authored.
+    //     overflow-slot / next-brief feed; the entire string was authored
+    //     (proc returns null).
     private let dash               = "-"
     private let fallbackTrailer    = "-"
-    private let fallbackBolNumber  = "-"
-    private let fallbackShipperN   = "-"
-    private let fallbackShipperA   = "-"
-    private let fallbackConsignN   = "-"
-    private let fallbackConsignA   = "-"
+    /// BOL # — real `loads.bolNumber` off the close-out packet; em-dash
+    /// until the proc returns or when the column is null.
+    private var fallbackBolNumber: String { nonEmpty(closeout?.bolNumber) ?? dash }
+    /// SHIPPER name / address — real `users.name` (shipperId JOIN) +
+    /// composed `loads.pickupLocation` address off the close-out packet.
+    private var fallbackShipperN: String { nonEmpty(closeout?.shipperName) ?? dash }
+    private var fallbackShipperA: String { nonEmpty(closeout?.shipperAddress) ?? dash }
+    /// CONSIGNEE name / address — name is ALWAYS null server-side (no
+    /// consignee column on loads → honest em-dash); address composes from
+    /// the real `loads.deliveryLocation` JSON.
+    private var fallbackConsignN: String { nonEmpty(closeout?.consigneeName) ?? dash }
+    private var fallbackConsignA: String { nonEmpty(closeout?.consigneeAddress) ?? dash }
     // M2 doctrine (110th→111th hygiene firing): seal IDs are PII and must
-    // hydrate from the live Load. Em-dash sentinels render until activeLoad
-    // surfaces the assigned seal pair; sealFactValue collapses the row to "-"
-    // when either side is unhydrated rather than fabricating an identifier.
-    // Same fix pattern landed on 018_ActiveEnrouteLoaded.swift:75 (fallbackSealID).
-    private let fallbackSealBefore = "-"
-    private let fallbackSealAfter  = "-"
+    // hydrate from the live close-out packet. The server types `sealNumbers`
+    // as `string | null` and currently always returns null (no
+    // `loads.sealNumbers` column), so sealFactValue collapses the row to "-"
+    // rather than fabricating an identifier. Same PII-collapse pattern landed
+    // on 018_ActiveEnrouteLoaded.swift:75 (fallbackSealID).
     private var sealFactValue: String {
-        (fallbackSealBefore == "-" || fallbackSealAfter == "-")
-            ? "-"
-            : "\(fallbackSealBefore) → \(fallbackSealAfter) intact"
+        guard let seal = nonEmpty(closeout?.sealNumbers) else { return "-" }
+        return "\(seal) intact"
     }
     private let fallbackDoor       = "-"
-    private let fallbackStart      = "-"
-    private let fallbackEnd        = "-"
+    /// Trip START — real `departedAt` (first load_stops.departedAt ??
+    /// loads.pickupDate) off the close-out packet, formatted local; em-dash
+    /// until the proc returns or when null.
+    private var fallbackStart: String { closeoutTime(closeout?.departedAt) }
+    /// Trip END — real `arrivedAt` (last load_stops.arrivedAt ??
+    /// loads.actualDeliveryDate), falling back to `actualDeliveryDate`;
+    /// em-dash until either resolves.
+    private var fallbackEnd: String {
+        closeoutTime(closeout?.arrivedAt ?? closeout?.actualDeliveryDate)
+    }
+    /// DOOR TIME — no billed door-time projection reaches this screen
+    /// (server returns null — no source). Honest em-dash.
     private let fallbackDoorTime   = "-"
 
     /// Free-time window before detention starts billing — the regulatory /
@@ -138,25 +164,28 @@ struct Paperwork: View {
     // MARK: - Live computed getters (real proc/model → honest em-dash)
 
     /// BOL "SIGNED BY" — the real receiver who signed the POD at the dock
-    /// (`pod.getPODForLoad.receiverName`), with the delivered timestamp
-    /// (`submittedAt`, formatted local) appended when present. Honest "-"
-    /// until a POD packet is read — no authored persona, no baked time.
+    /// (`loads.getCloseoutSummary.signedBy`, sourced from the latest POD
+    /// document meta server-side), with the delivered timestamp
+    /// (`signedAt`, formatted local) appended when present. Honest "-"
+    /// until the close-out proc returns a signer — no authored persona,
+    /// no baked time.
     private var signedByValue: String {
-        guard let name = pod?.receiverName, !name.isEmpty else { return dash }
-        if let raw = pod?.submittedAt, !raw.isEmpty,
+        guard let name = nonEmpty(closeout?.signedBy) else { return dash }
+        if let raw = nonEmpty(closeout?.signedAt),
            let stamp = Self.formatPODTime(raw) {
             return "\(name) · \(stamp)"
         }
         return name
     }
 
-    /// Close-out "DETENTION $" — the live running charge from
-    /// `detentionAccessorials.calculateDetention` (`totalCharge`). Em-dash
-    /// until a real arrival anchor resolves and the proc returns; honest
-    /// "$0" once it returns inside the free window.
+    /// Close-out "DETENTION $" — the real recorded charge from
+    /// `loads.getCloseoutSummary.detentionCharge`
+    /// (SUM of type='detention' detention_claims, dollars). The server
+    /// returns null when no real detention claim exists (never a fabricated
+    /// 0), so this stays an honest em-dash until a claim is on file.
     private var detChargeValue: String {
-        guard let calc = detentionCalc else { return dash }
-        return currency(calc.totalCharge)
+        guard let charge = closeout?.detentionCharge else { return dash }
+        return currency(charge)
     }
 
     /// DETENTION $ caption — composed from the live calc: the active
@@ -181,6 +210,23 @@ struct Paperwork: View {
     /// ("row C · 14 open slots · 06:55 · 17:03") are dropped entirely.
     private var breakInfoText: String {
         "Your 10-hour break starts now."
+    }
+
+    /// Trim + nil-collapse a nullable server string: returns nil for nil,
+    /// empty, or whitespace-only values so every close-out getter renders
+    /// the honest em-dash sentinel rather than a blank/whitespace string.
+    private func nonEmpty(_ s: String?) -> String? {
+        guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !t.isEmpty else { return nil }
+        return t
+    }
+
+    /// Parse a nullable ISO-8601 close-out timestamp → a short local time
+    /// (e.g. "4:48 PM"); honest em-dash when nil/empty/unparseable. Drives
+    /// the trip START / END metric values.
+    private func closeoutTime(_ iso: String?) -> String {
+        guard let raw = nonEmpty(iso), let out = Self.formatPODTime(raw) else { return dash }
+        return out
     }
 
     /// USD currency formatter for the detention $ + $/hr labels. Mirrors
@@ -577,10 +623,12 @@ struct Paperwork: View {
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
 
-        // SIGNED BY + delivered stamp — the real POD packet the driver
-        // submitted at the dock (`pod.getPODForLoad`). Nil until a POD is
-        // actually on file → the row stays an honest em-dash.
-        pod = (try? await EusoTripAPI.shared.pod.getPODForLoad(loadId: n)) ?? nil
+        // Live close-out packet (`loads.getCloseoutSummary`) — the single
+        // source for BOL #, shipper/consignee name + address, trip
+        // START / END, seal numbers, detention $, and SIGNED-BY. Every
+        // field is nullable; try? → nil keeps the screen on honest em-dash
+        // sentinels until the proc returns real values.
+        closeout = try? await EusoTripAPI.shared.loads.getCloseoutSummary(loadId: n)
 
         // Detention anchor — the REAL arrival timestamp read off the
         // lifecycle audit trail. Free time runs from the moment the driver

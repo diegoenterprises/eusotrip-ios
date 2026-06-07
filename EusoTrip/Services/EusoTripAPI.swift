@@ -1000,6 +1000,19 @@ final class EusoTripAPI: ObservableObject {
     ///     an em-dash for the rate rather than the old hardcoded 94%.
     lazy var railTenderWorkflow: RailTenderWorkflowAPI = RailTenderWorkflowAPI(api: self)
 
+    /// `railShipmentsRouter` — rail shipment reads (waybill / detail / consignee
+    /// preview). Server at `frontend/server/routers/railShipments.ts` (mounted
+    /// as `railShipments` in routers.ts). This namespace exposes the
+    /// consignee-facing projection backing 591 Rail Consignee Tracking Link:
+    ///   • `getConsigneePreview({ shipmentNumber })`
+    ///     → `{ shipmentNumber, consigneeName?, consigneeEmail?, destinationName?,
+    ///       destinationCity?, destinationState?, railcarNumber?, status?, eta?,
+    ///       lastEventLocation?, lastEventAt? }`. Resolve-only-real-columns
+    ///     (latest rail_waybills → users for consignee/railcar, railYards for
+    ///     destination, latest rail_shipment_events for eta/last-event). Honest-
+    ///     empty all-null envelope on no-db / no-row; same key set both ways.
+    lazy var railShipments: RailShipmentsAPI = RailShipmentsAPI(api: self)
+
     /// `bolReviewRouter` — field-level BOL-vs-tendered mismatch detail backing
     /// the Dispatcher 411/722 BOL Mismatch surface (`DispatcherBOLMismatchScreen`,
     /// `Dpch720_DispatcherSVGTrio.swift`). Server at
@@ -1287,6 +1300,60 @@ struct LoadsAPI {
     func getById(_ id: Int) async throws -> Load {
         struct Input: Encodable { let id: Int }
         return try await api.query("loads.getById", input: Input(id: id))
+    }
+
+    // MARK: - CloseoutSummary (Driver · 025 Paperwork close-out)
+    //
+    // Verbatim 1:1 mirror of `loadsRouter.getCloseoutSummary`
+    // (frontend/server/routers/loads.ts:1413). The proc returns a FLAT
+    // 17-key object, NOT wrapped, with EVERY value nullable — on no-db /
+    // bad loadId / no-row / any thrown error it returns the full skeleton
+    // with every field null, so this struct's shape is invariant. Every
+    // property is therefore Optional and the close-out screen renders the
+    // honest em-dash sentinel for any nil.
+    //
+    // Provenance (all real columns, see server proc):
+    //   • bolNumber          → loads.bolNumber                    (REAL)
+    //   • shipperName        → users.name via shipperId JOIN      (REAL)
+    //   • shipperAddress     → composed from loads.pickupLocation (REAL)
+    //   • consigneeName      → ALWAYS null (no column on loads)
+    //   • consigneeAddress   → composed from loads.deliveryLocation (REAL)
+    //   • departedAt         → first load_stops.departedAt ?? loads.pickupDate (ISO)
+    //   • arrivedAt          → last load_stops.arrivedAt ?? loads.actualDeliveryDate (ISO)
+    //   • actualDeliveryDate → loads.actualDeliveryDate           (ISO)
+    //   • sealNumbers        → ALWAYS null (no loads.sealNumbers column)
+    //   • detentionCharge    → SUM(detention_claims.totalAmount) type='detention'
+    //                          (number dollars, rounded to cents; null when no claim)
+    //   • signedBy / signedAt → latest documents type='pod' meta (POD logic)
+    //   • piecesDelivered / piecesTotal / dockDoor / doorTime / breakGuidance
+    //                        → EXPLICIT nulls (no producer — never invented)
+    struct CloseoutSummary: Decodable, Hashable {
+        let bolNumber: String?
+        let shipperName: String?
+        let shipperAddress: String?
+        let consigneeName: String?
+        let consigneeAddress: String?
+        let departedAt: String?
+        let arrivedAt: String?
+        let actualDeliveryDate: String?
+        let sealNumbers: String?
+        let detentionCharge: Double?
+        let signedBy: String?
+        let signedAt: String?
+        let piecesDelivered: Double?
+        let piecesTotal: Double?
+        let dockDoor: String?
+        let doorTime: String?
+        let breakGuidance: String?
+    }
+
+    /// `loadsRouter.getCloseoutSummary` — REAL load close-out / paperwork
+    /// data for the 025 Paperwork screen. `.query` taking
+    /// `{ loadId: number }`; flat single-object response (all fields
+    /// nullable). Lane = protectedProcedure (logged-in + approved user).
+    func getCloseoutSummary(loadId: Int) async throws -> CloseoutSummary {
+        struct Input: Encodable { let loadId: Int }
+        return try await api.query("loads.getCloseoutSummary", input: Input(loadId: loadId))
     }
 
     // MARK: - LoadDetail (Shipper · 205 surface)
@@ -21959,6 +22026,78 @@ struct RailTenderWorkflowAPI {
             input: AcceptanceRateInput(carrier: carrier,
                                        commodityStcc: commodityStcc,
                                        windowDays: windowDays))
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// MARK: - RailShipments · consignee preview (additive, isolated)
+// ════════════════════════════════════════════════════════════════════════
+//
+// Wraps the real `railShipments.getConsigneePreview` tRPC procedure
+// (frontend/server/routers/railShipments.ts, inserted after `getWaybill`,
+// ~line 1772). It is a `railProcedure` (self/authenticated + rail-mode
+// gated) that resolves a rail_shipments row by shipmentNumber and projects
+// the consignee-facing read used by 591 Rail Consignee Tracking Link:
+//
+//   getConsigneePreview({ shipmentNumber })
+//     → { shipmentNumber, consigneeName, consigneeEmail, destinationName,
+//         destinationCity, destinationState, railcarNumber, status, eta,
+//         lastEventLocation, lastEventAt }
+//
+// Resolve-only-real-columns (mirrors `getWaybill` / `getRailShipmentDetail`):
+//   • consigneeName / consigneeEmail → latest rail_waybills row (desc id) →
+//     users.name / users.email (rail_shipments has NO consigneeId).
+//   • railcarNumber → same latest rail_waybills.railcarNumber.
+//   • destinationName / destinationCity / destinationState → railYards join
+//     on rail_shipments.destinationYardId.
+//   • eta → latest rail_shipment_events.timestamp (no eta column on the row).
+//   • lastEventLocation → latest rail_shipment_events.location.description
+//     (falls back to that event's eventType); lastEventAt → its timestamp.
+//   • status → rail_shipments.status enum.
+//
+// Honest-empty: the server returns an ALL-NULL object (with shipmentNumber
+// echoed) on no-db and on no matching row — identical key set to the success
+// shape, so this Decodable is 1:1 in both cases. Every field except
+// shipmentNumber is optional (string | null on the wire; `eta` / `lastEventAt`
+// are JS Date → ISO-8601 strings over superjson, decoded as String here and
+// parsed view-side). No fabricated default leaks onto any rendered path —
+// 591 em-dashes every nil. Until the server deploys, the view's `try? → nil`
+// keeps the CONSIGNEE VIEW rows on their honest em-dash floor.
+
+/// `railShipments.getConsigneePreview` return shape — field-for-field with
+/// the server proc. All eleven keys are ALWAYS present in every return path
+/// (success + honest-empty); `shipmentNumber` is the only non-null. `eta`
+/// and `lastEventAt` arrive as ISO-8601 date strings (JS Date over superjson).
+struct RailConsigneePreview: Decodable, Hashable {
+    let shipmentNumber: String
+    let consigneeName: String?
+    let consigneeEmail: String?
+    let destinationName: String?
+    let destinationCity: String?
+    let destinationState: String?
+    let railcarNumber: String?
+    let status: String?
+    let eta: String?
+    let lastEventLocation: String?
+    let lastEventAt: String?
+}
+
+struct RailShipmentsAPI {
+    unowned let api: EusoTripAPI
+
+    private struct ConsigneePreviewInput: Encodable {
+        let shipmentNumber: String
+    }
+
+    /// `railShipments.getConsigneePreview` — the consignee-facing projection
+    /// for a rail shipment (name / email / destination / railcar / status /
+    /// eta / last-event), resolved from the real columns only. Always returns
+    /// the full envelope (all-null honest-empty when no db / no matching row),
+    /// so callers em-dash each nil rather than branch on a thrown error.
+    func getConsigneePreview(shipmentNumber: String) async throws -> RailConsigneePreview {
+        try await api.query(
+            "railShipments.getConsigneePreview",
+            input: ConsigneePreviewInput(shipmentNumber: shipmentNumber))
     }
 }
 
