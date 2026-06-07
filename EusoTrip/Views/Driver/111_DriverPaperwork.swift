@@ -97,6 +97,14 @@ struct DriverPaperwork: View {
     @State private var didLoadDocs: Bool = false
     @State private var isLoadingDocs: Bool = false
 
+    /// Live POD packet for this load, fetched from `pod.getPODForLoad`.
+    /// The hero "POD SIGNED" pill binds its `submittedAt` (formatted) and
+    /// the receiver name binds `receiverName` when present. Nil until a
+    /// successful read returns a packet — no authored stand-in, no baked
+    /// "4:48 PM" / persona name. The packet is honestly absent (nil) until
+    /// the driver actually submits the POD.
+    @State private var pod: PODAPI.PODPacket?
+
     @State private var isSubmitting: Bool = false
     @State private var actionError: String?
 
@@ -135,6 +143,43 @@ struct DriverPaperwork: View {
     private var distanceCaption: String {
         guard let d = activeLoad?.distance, d > 0 else { return "—" }
         return "\(Int(d.rounded())) mi · ON DOCK"
+    }
+
+    /// Hero POD-signed pill — "POD SIGNED <formatted submittedAt>" from
+    /// the live POD packet, honest "POD SIGNED —" when no packet (or no
+    /// timestamp) is present. No baked "4:48 PM".
+    private var podSignedDisplay: String {
+        guard let raw = pod?.submittedAt, !raw.isEmpty,
+              let formatted = Self.formatPODTime(raw) else {
+            return "POD SIGNED —"
+        }
+        return "POD SIGNED \(formatted)"
+    }
+
+    /// Parse the server ISO-8601 `submittedAt` and render a short local
+    /// time (e.g. "4:48 PM"). Returns nil when the string can't be parsed
+    /// so the pill stays honestly em-dashed rather than echoing raw text.
+    private static func formatPODTime(_ iso: String) -> String? {
+        let parsers: [ISO8601DateFormatter] = {
+            let withFrac = ISO8601DateFormatter()
+            withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let plain = ISO8601DateFormatter()
+            plain.formatOptions = [.withInternetDateTime]
+            return [withFrac, plain]
+        }()
+        let date = parsers.lazy.compactMap { $0.date(from: iso) }.first
+        guard let d = date else { return nil }
+        let out = DateFormatter()
+        out.dateFormat = "h:mm a"
+        return out.string(from: d)
+    }
+
+    /// Receiver name — bound from the live POD packet's `receiverName`
+    /// when present, else honest "—". The receiver is who signed the POD
+    /// at the dock; no authored persona.
+    private var receiverNameDisplay: String {
+        if let n = pod?.receiverName, !n.isEmpty { return n }
+        return "—"
     }
 
     /// Documents uploaded for this driver. Reads live; no authored stand-in.
@@ -240,9 +285,11 @@ struct DriverPaperwork: View {
     private var heroPersistenceCard: some View {
         VStack(spacing: 0) {
             HStack {
-                // POD-signed success pill — no POD-signed timestamp source
-                // on the load record, so the time reads an honest "—".
-                Text("POD SIGNED —")
+                // POD-signed success pill — live `submittedAt` from the
+                // POD packet (pod.getPODForLoad), formatted to local time;
+                // honest "POD SIGNED —" until a packet with a timestamp
+                // is read.
+                Text(podSignedDisplay)
                     .font(.system(size: 11, weight: .heavy)).tracking(0.4)
                     .monospacedDigit()
                     .foregroundStyle(Brand.success)
@@ -540,9 +587,12 @@ struct DriverPaperwork: View {
                 }
             }
 
-            // Receiver POC — no live source for the receiver contact /
-            // extension on the load record, so the line reads honest "—".
-            Text("Receiver POC: —")
+            // Receiver POC — the receiver who signed the POD at the dock.
+            // The name binds from the live POD packet's `receiverName`
+            // (pod.getPODForLoad); honest "—" until a packet is read.
+            // No driver-accessible delivery-stop phone source exists on
+            // the load record, so the phone reads honest "—".
+            Text("Receiver POC: \(receiverNameDisplay)")
                 .font(EType.mono(.caption)).tracking(0.2)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 8)
@@ -692,7 +742,27 @@ struct DriverPaperwork: View {
         } catch {
             actionError = "Couldn't load the trip: \((error as NSError).localizedDescription)"
         }
+        await loadPOD()
         await loadDocs()
+    }
+
+    /// Fetch the POD packet for this load so the hero "POD SIGNED" pill
+    /// binds the real `submittedAt` and the Receiver POC binds the real
+    /// `receiverName`. The packet is nil until the driver has actually
+    /// submitted the POD — that absence renders the honest "—" pill, not
+    /// a fabricated time. Errors surface honestly; nothing is invented on
+    /// failure.
+    private func loadPOD() async {
+        guard let n = Int(lifecycle.loadId) else { return }
+        do {
+            pod = try await EusoTripAPI.shared.pod.getPODForLoad(loadId: n)
+        } catch {
+            // Don't clobber a load-level error banner with a POD read
+            // miss; the pill simply stays honestly em-dashed.
+            if actionError == nil {
+                actionError = "Couldn't load the POD: \((error as NSError).localizedDescription)"
+            }
+        }
     }
 
     /// Pull this driver's documents so the hero "DOC UPLOAD" pill and the
