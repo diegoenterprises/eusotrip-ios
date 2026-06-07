@@ -23,6 +23,10 @@ struct ArrivalCheckpoint: View {
     @State private var activeLoad: Load?
     @State private var completed: Set<String> = []
 
+    /// Device wall clock for the header / on-site timestamps — refreshed
+    /// on appear. Never a seeded literal.
+    @State private var nowDate = Date()
+
     enum Register { case night, afternoon }
     let register: Register
     init(register: Register = .night) { self.register = register }
@@ -31,11 +35,63 @@ struct ArrivalCheckpoint: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    private let fallbackClock      = "23:16"
-    private let fallbackOnSite     = "0:02"
-    private let fallbackParked     = "-"
-    private let fallbackYard       = "-"
-    private let fallbackYardAddr   = "3608 HAWKINS POINT RD · BALTIMORE MD 21226"
+    private static func clock(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
+    }
+
+    /// Honest em-dash for any field with no live source.
+    private let dash = "—"
+
+    // MARK: - Live data bindings (honest em-dash when no source)
+
+    /// Header / on-site "now" clock — live device wall time.
+    private var nowClockText: String { Self.clock(nowDate) }
+
+    /// True only when the load's own status says the rig has reached
+    /// the delivery/terminal. Gates the green "ARRIVED" chip; never
+    /// asserted unconditionally.
+    private var hasArrived: Bool {
+        guard let s = activeLoad?.status.lowercased() else { return false }
+        return ["at_delivery", "unloading", "delivered"].contains(s)
+    }
+
+    /// Home-yard name — the delivery/terminal facility city+state on the
+    /// load, else em-dash. No fabricated yard name.
+    private var yardName: String {
+        let cs = activeLoad?.deliveryLocation?.cityState ?? ""
+        return cs.isEmpty ? dash : cs
+    }
+
+    /// Home-yard address composed from the delivery location, else
+    /// em-dash. No fabricated street literal.
+    private var yardAddress: String {
+        guard let loc = activeLoad?.deliveryLocation else { return dash }
+        var parts: [String] = []
+        if !loc.address.isEmpty { parts.append(loc.address.uppercased()) }
+        if !loc.city.isEmpty    { parts.append(loc.city.uppercased()) }
+        if !loc.state.isEmpty   { parts.append(loc.state.uppercased()) }
+        if !loc.zipCode.isEmpty { parts.append(loc.zipCode) }
+        return parts.isEmpty ? dash : parts.joined(separator: " · ")
+    }
+
+    /// First letter of the home-yard city for the avatar monogram,
+    /// else a neutral dot. Never a hardcoded "C".
+    private var yardMonogram: String {
+        if let c = activeLoad?.deliveryLocation?.city.first { return String(c).uppercased() }
+        return "·"
+    }
+
+    /// Closed-leg distance sub-line — the load's own routed distance
+    /// when the wire carries it, else em-dash. No fabricated mileage
+    /// and no fabricated defect count.
+    private var closedLegSub: String {
+        guard let raw = activeLoad?.distance, let d = Double(raw), d > 0 else { return dash }
+        let unit = (activeLoad?.distanceUnit ?? "mi").lowercased()
+        let suffix = unit.contains("km") ? "km" : "mi"
+        return String(format: "%.0f %@", d, suffix)
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -53,7 +109,6 @@ struct ArrivalCheckpoint: View {
         }
         .task {
             await hydrateLiveTrip()
-            seedDefaults()
         }
         .screenTileRoot()
     }
@@ -88,7 +143,7 @@ struct ArrivalCheckpoint: View {
                 }
             }
             Spacer(minLength: 0)
-            Text(fallbackClock)
+            Text(nowClockText)
                 .font(EType.mono(.caption)).fontWeight(.semibold)
                 .foregroundStyle(palette.textPrimary)
         }
@@ -102,14 +157,18 @@ struct ArrivalCheckpoint: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("ARRIVED")
+                // Green "ARRIVED" chip only when the load status actually
+                // says the rig reached the delivery/terminal; otherwise a
+                // neutral "EN ROUTE" chip. Never asserted unconditionally.
+                Text(hasArrived ? "ARRIVED" : "EN ROUTE")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(Brand.success)
+                    .foregroundStyle(hasArrived ? Brand.success : palette.textTertiary)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .overlay(Capsule().stroke(Brand.success.opacity(0.5), lineWidth: 1))
+                    .overlay(Capsule().stroke((hasArrived ? Brand.success : palette.textTertiary).opacity(0.5), lineWidth: 1))
             }
             HStack(alignment: .firstTextBaseline) {
-                Text(fallbackOnSite)
+                // On-site elapsed timer has no live source — em-dash.
+                Text(dash)
                     .font(.system(size: 38, weight: .heavy, design: .rounded))
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
@@ -117,11 +176,12 @@ struct ArrivalCheckpoint: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
-                Text("@ \(fallbackClock)")
+                Text("@ \(nowClockText)")
                     .font(EType.mono(.caption)).fontWeight(.semibold)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("Parked at \(fallbackParked)")
+            // Parked spot has no wired yard-management source — em-dash.
+            Text("Parked at \(dash)")
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -140,21 +200,36 @@ struct ArrivalCheckpoint: View {
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             HStack(spacing: Space.s2) {
-                checkpointCol(state: "CLOSED · DEADHEAD", title: deadheadTitle, sub: "78 mi · 0.3 defect alerts en route", color: Brand.success)
+                checkpointCol(state: "CLOSED · DEADHEAD", title: deadheadTitle, sub: closedLegSub, color: Brand.success)
                 checkpointCol(state: "OPEN · POST-TRIP DVIR", title: openLegTitle, sub: "49 CFR 396.11 · MC-331 + tractor", color: Brand.warning)
             }
         }
     }
 
+    /// Closed-deadhead title — the real pickup→delivery city pair from
+    /// the active load, prefixed by the product-aware return word. No
+    /// fabricated mileage or endpoints; em-dash when no load lane.
     private var deadheadTitle: String {
+        let origin = activeLoad?.pickupLocation?.cityState ?? ""
+        let dest   = activeLoad?.deliveryLocation?.cityState ?? ""
+        let lane: String
+        if !origin.isEmpty && !dest.isEmpty { lane = "\(origin) → \(dest)" }
+        else if !dest.isEmpty               { lane = "→ \(dest)" }
+        else if !origin.isEmpty             { lane = origin }
+        else                                { return dash }
+        return "\(deadheadWord) \(lane)"
+    }
+
+    /// Product-aware word for the closed-deadhead return leg.
+    private var deadheadWord: String {
         switch ctx.product {
-        case .hazmatTanker, .vesselTanker:  return "78 mi Yara York → Curtis Bay"
-        case .reefer:                       return "78 mi cold return → home yard"
-        case .flatbed:                      return "78 mi flatbed return → home yard"
-        case .container, .railIntermodal:   return "78 mi chassis return → ramp"
-        case .vesselContainer:              return "78 mi box return → port"
-        case .railBulk, .vesselBulk:        return "78 mi bulk return → spur"
-        case .dryVan:                       return "78 mi return → home yard"
+        case .hazmatTanker, .vesselTanker:  return "Tanker return"
+        case .reefer:                       return "Cold return"
+        case .flatbed:                      return "Flatbed return"
+        case .container, .railIntermodal:   return "Chassis return"
+        case .vesselContainer:              return "Box return"
+        case .railBulk, .vesselBulk:        return "Bulk return"
+        case .dryVan:                       return "Return"
         }
     }
 
@@ -200,22 +275,24 @@ struct ArrivalCheckpoint: View {
             HStack(spacing: 8) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                    Text("C").font(.system(size: 13, weight: .heavy)).foregroundStyle(.white)
+                    Text(yardMonogram).font(.system(size: 13, weight: .heavy)).foregroundStyle(.white)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(fallbackYard)
+                    Text(yardName)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Text(fallbackYardAddr)
+                    Text(yardAddress)
                         .font(EType.mono(.micro)).tracking(0.3)
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1)
                 }
             }
+            // No wired yard-management source — gate/row/spot/timer render
+            // an honest em-dash rather than a fabricated assignment.
             HStack(spacing: Space.s2) {
-                yardCell(label: "ENTRY",     value: "Gate C · badge OK")
-                yardCell(label: "PARKED",    value: "Row 4 · Spot S-14")
-                yardCell(label: "GYM TIMER", value: "Started \(fallbackClock)")
+                yardCell(label: "ENTRY",     value: dash)
+                yardCell(label: "PARKED",    value: dash)
+                yardCell(label: "GYM TIMER", value: dash)
             }
             Text("Sleeper \(ctx.vertical.bayWord) 14 keyed · shower + laundry")
                 .font(EType.mono(.micro)).tracking(0.3)
@@ -301,14 +378,6 @@ struct ArrivalCheckpoint: View {
         .frame(width: 22, height: 22)
     }
 
-    private func seedDefaults() {
-        guard completed.isEmpty else { return }
-        let items = ctx.walkaroundGates
-        if items.count >= 2 {
-            completed = Set(items.prefix(2).map { $0.id })
-        }
-    }
-
     private var esangFooter: some View {
         HStack(spacing: 6) {
             Image(systemName: "sparkles")
@@ -330,6 +399,7 @@ struct ArrivalCheckpoint: View {
     }
 
     private func hydrateLiveTrip() async {
+        nowDate = Date()
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }

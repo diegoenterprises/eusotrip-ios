@@ -4,10 +4,11 @@
 //
 //  Pixel-matched to the 2026-04-24 Figma frame
 //  `041 Discharge Complete.png`. Pump off, valve closed, scrubber
-//  vented. Hero shows total transferred + 100% gauge, flow rate
-//  averages, settled gauge pair, post-flow checklist (3 of 3
-//  confirmed), ESANG custody seal hash row, Share / Disconnect &
-//  verify CTAs.
+//  vented. Hero shows total transferred + real receiver-fill gauge,
+//  flow rate averages, settled gauge pair, post-flow checklist (rows
+//  start unchecked; confirmed-count derives from real driver taps),
+//  ESANG custody row (honest empty until a seal record lands), Share /
+//  Disconnect & verify CTAs.
 //
 //  Powered by ESANG AI™.
 //
@@ -24,6 +25,12 @@ struct DischargeComplete: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
     @State private var isAdvancing: Bool = false
+
+    // Post-flow checklist rows start UNCHECKED; completion is driven only
+    // by a real driver tap (mirrors the merged 046 fix — no seedDefaults /
+    // auto-mark-on-appear). The header confirmed-count + each row's green
+    // checkmark gate on membership in this set.
+    @State private var completed: Set<String> = []
 
     // 041 is now hydrated from `loadLifecycleTanker.getDischargeSummary`
     // (post-discharge roll-up over the `phase="meter"` rows on
@@ -334,9 +341,12 @@ struct DischargeComplete: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("3 OF 3 CONFIRMED")
+                // Confirmed-count derives from the REAL tapped-row set, not
+                // a hardcoded full count. Goes green only once every row is
+                // actually confirmed by the driver; otherwise neutral.
+                Text("\(completed.count) OF \(ctx.dischargePostFlow.count) CONFIRMED")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(Brand.success)
+                    .foregroundStyle(allConfirmed ? Brand.success : palette.textTertiary)
             }
             ForEach(Array(ctx.dischargePostFlow.enumerated()), id: \.offset) { _, row in
                 postRow(title: row.title, time: row.time)
@@ -344,48 +354,69 @@ struct DischargeComplete: View {
         }
     }
 
+    /// True only when every post-flow row has been confirmed by a real
+    /// driver tap (drives the header's green state + the SIGNED badge gate).
+    private var allConfirmed: Bool {
+        let count = ctx.dischargePostFlow.count
+        return count > 0 && completed.count >= count
+    }
+
     private func postRow(title: String, time: String) -> some View {
-        HStack(spacing: Space.s3) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Brand.success)
-            Text(title)
-                .font(EType.caption.weight(.semibold))
-                .foregroundStyle(palette.textPrimary)
-            Spacer()
-            Text(time)
-                .font(EType.mono(.micro)).tracking(0.3)
-                .foregroundStyle(palette.textSecondary)
+        let done = completed.contains(title)
+        return Button {
+            if done { completed.remove(title) } else { completed.insert(title) }
+        } label: {
+            HStack(spacing: Space.s3) {
+                // Checkmark gates on the REAL tapped-row set — an empty
+                // open circle until the driver confirms the row, never an
+                // unconditional green fill.
+                Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(done ? Brand.success : palette.textTertiary)
+                Text(title)
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                Text(time)
+                    .font(EType.mono(.micro)).tracking(0.3)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            .padding(.horizontal, Space.s3)
+            .padding(.vertical, 9)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                    .strokeBorder(palette.borderFaint)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
         }
-        .padding(.horizontal, Space.s3)
-        .padding(.vertical, 9)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        .buttonStyle(.plain)
     }
 
     private var custodyRow: some View {
+        // There is no live custody-receipt / seal-hash / signature feed on
+        // this screen — honest empty state: keep the card chrome, em-dash
+        // the hash, and neutral the header until a real custody record
+        // lands. The status badge gates on real post-flow confirmation
+        // (allConfirmed) instead of an unconditional "SIGNED".
         HStack(spacing: Space.s3) {
             Image(systemName: "key.horizontal.fill")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(LinearGradient.diagonal)
             VStack(alignment: .leading, spacing: 1) {
-                Text("ESANG CUSTODY · BOL SEALED")
+                Text("ESANG CUSTODY · AWAITING SEAL RECORD")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
-                Text("YRA-77419 · A8E2 · 91D0")
+                Text(emDash)
                     .font(EType.mono(.caption)).fontWeight(.semibold)
                     .foregroundStyle(palette.textPrimary)
             }
             Spacer()
-            Text("SIGNED")
+            Text(allConfirmed ? "CONFIRMED" : "PENDING")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                .foregroundStyle(Brand.success)
+                .foregroundStyle(allConfirmed ? Brand.success : palette.textTertiary)
                 .padding(.horizontal, 6).padding(.vertical, 2)
-                .overlay(Capsule().stroke(Brand.success.opacity(0.5), lineWidth: 1))
+                .overlay(Capsule().stroke((allConfirmed ? Brand.success : palette.textTertiary).opacity(0.5), lineWidth: 1))
         }
         .padding(Space.s3)
         .background(palette.bgCard)
