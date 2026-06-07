@@ -27,6 +27,34 @@ struct Paperwork: View {
     @State private var activeLoad: Load?
     @State private var showBol: Bool = false
     @State private var isStartingBreak: Bool = false
+
+    // MARK: - Live close-out sources (real procs only; honest em-dash otherwise)
+    //
+    // De-fabrication (2026-06-07): the BOL "SIGNED BY", the close-out
+    // "DETENTION $" charge + its caption were Figma literals that leaked
+    // onto the live path. They now resolve from real backend procs —
+    // `pod.getPODForLoad` (receiver who signed + the delivered stamp) and
+    // `detentionAccessorials.calculateDetention` fed the REAL arrival
+    // anchor read off the lifecycle audit trail (mirrors the 024 Unloading
+    // ticker). Anything without a live source renders the honest em-dash
+    // sentinel the file already uses ("-") — never a seeded figure.
+
+    /// Live POD packet for this load (`pod.getPODForLoad`). Binds the BOL
+    /// "SIGNED BY" row to the real `receiverName` + the delivered
+    /// `submittedAt`. Nil until the driver actually submits the POD —
+    /// no baked persona, no baked "4:48 PM".
+    @State private var pod: PODAPI.PODPacket?
+
+    /// The real arrival timestamp at the receiver, read off the lifecycle
+    /// audit trail (transition into `at_delivery`, else `unloading`). Free
+    /// time accrues from this instant; nil until a real arrival row exists.
+    @State private var arrivalAnchor: Date?
+
+    /// Live detention math (`detentionAccessorials.calculateDetention`)
+    /// fed the real `arrivalAnchor` ISO + the load's cargo type. Drives the
+    /// close-out "DETENTION $" charge + the $/hr · free-time caption. Nil
+    /// (→ em-dash) until a real arrival anchor resolves and the proc returns.
+    @State private var detentionCalc: DetentionAPI.DetentionCalc?
     /// Driver rates the shipper after delivery. Closes Phase 18
     /// (Rating / review) of the 8000-scenario parity audit
     /// (docs/parity-2026/EXECUTIVE_VERDICT.md §4.5). Backend
@@ -54,9 +82,26 @@ struct Paperwork: View {
         TransportMode(rawValue: activeLoad?.transportMode ?? "truck") ?? .truck
     }
 
-    // MARK: - Figma fallback
-    private let fallbackDoor       = "12"
-    private let fallbackTotal      = 26
+    // MARK: - Honest sentinels + reference constants
+    //
+    // De-fabrication (2026-06-07): every value that was a seeded Figma
+    // literal on a RENDERED path is now either a live computed getter
+    // (when a real proc/model backs it — see the getters below) or the
+    // honest em-dash sentinel "-" the file already uses. None of these
+    // emit a fabricated figure.
+    //
+    // EM-DASH (no live source on the wire today):
+    //   • dock door — no live dock column reaches this close-out screen.
+    //   • pieces delivered — the load envelope ships no granular
+    //     unloaded-unit column (LiveLoadFacets.palletCount is a backend
+    //     gap), so neither the "N of N" header nor the "N / N" BOL row can
+    //     assert a real count.
+    //   • trip START / END / DOOR TIME — no on-/off-dock wall-clock pair
+    //     reaches this screen; the lifecycle history carries transitions
+    //     but not a billed door-time duration projection.
+    //   • break / overflow-lot guidance — there is no yard-occupancy /
+    //     overflow-slot / next-brief feed; the entire string was authored.
+    private let dash               = "-"
     private let fallbackTrailer    = "-"
     private let fallbackBolNumber  = "-"
     private let fallbackShipperN   = "-"
@@ -75,13 +120,92 @@ struct Paperwork: View {
             ? "-"
             : "\(fallbackSealBefore) → \(fallbackSealAfter) intact"
     }
-    private let fallbackSignedBy   = "-"
-    private let fallbackStart      = "00:33"
-    private let fallbackEnd        = "07:03"
-    private let fallbackDoorTime   = "6h 30m"
-    private let fallbackDetCharge  = "-"
-    private let fallbackDetDetail  = "$60/hr past 2h · 4h 30m past 2h free · billed to shipper"
-    private let fallbackBreakInfo  = "10-hour break starts now. Park in row C of the overflow lot, 14 open slots as of 06:55. Next load brief unlocks at 17:03."
+    private let fallbackDoor       = "-"
+    private let fallbackStart      = "-"
+    private let fallbackEnd        = "-"
+    private let fallbackDoorTime   = "-"
+
+    /// Free-time window before detention starts billing — the regulatory /
+    /// contract 2-hour standard (matches the close-out caption), not a
+    /// fabricated per-load figure. Mirrors 024_Unloading.freeTimeWindow.
+    private let freeTimeMinutesDefault = 120
+
+    /// "N of N delivered" + the BOL "PIECES DELIVERED" row. No live
+    /// unloaded-unit count reaches this screen, so the count collapses to
+    /// the honest em-dash sentinel rather than a seeded "26".
+    private var piecesDeliveredText: String { dash }
+
+    // MARK: - Live computed getters (real proc/model → honest em-dash)
+
+    /// BOL "SIGNED BY" — the real receiver who signed the POD at the dock
+    /// (`pod.getPODForLoad.receiverName`), with the delivered timestamp
+    /// (`submittedAt`, formatted local) appended when present. Honest "-"
+    /// until a POD packet is read — no authored persona, no baked time.
+    private var signedByValue: String {
+        guard let name = pod?.receiverName, !name.isEmpty else { return dash }
+        if let raw = pod?.submittedAt, !raw.isEmpty,
+           let stamp = Self.formatPODTime(raw) {
+            return "\(name) · \(stamp)"
+        }
+        return name
+    }
+
+    /// Close-out "DETENTION $" — the live running charge from
+    /// `detentionAccessorials.calculateDetention` (`totalCharge`). Em-dash
+    /// until a real arrival anchor resolves and the proc returns; honest
+    /// "$0" once it returns inside the free window.
+    private var detChargeValue: String {
+        guard let calc = detentionCalc else { return dash }
+        return currency(calc.totalCharge)
+    }
+
+    /// DETENTION $ caption — composed from the live calc: the active
+    /// escalation tier's $/hr rate, the free-time window, and the
+    /// billed-to-shipper note. Em-dash until the proc returns — never the
+    /// authored "$60/hr … 4h 30m …" string.
+    private var detDetailValue: String {
+        guard let calc = detentionCalc else { return dash }
+        var parts: [String] = []
+        if let rate = calc.tierBreakdown.first?.rate, rate > 0 {
+            parts.append("\(currency(rate))/hr past free time")
+        }
+        let freeMins = calc.freeTimeMinutes
+        parts.append(String(format: "%d:%02d free", freeMins / 60, freeMins % 60))
+        parts.append("billed to shipper")
+        return parts.joined(separator: " · ")
+    }
+
+    /// Break / overflow-lot guidance. The yard-occupancy, overflow-slot,
+    /// and next-brief feeds do not exist on the wire, so the only honest
+    /// rendering is the static doctrine line — the authored figures
+    /// ("row C · 14 open slots · 06:55 · 17:03") are dropped entirely.
+    private var breakInfoText: String {
+        "Your 10-hour break starts now."
+    }
+
+    /// USD currency formatter for the detention $ + $/hr labels. Mirrors
+    /// 024_Unloading.currency.
+    private func currency(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = value.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 2
+        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
+    }
+
+    /// Parse the server ISO-8601 `submittedAt` → a short local time
+    /// (e.g. "4:48 PM"). Returns nil when unparseable so the SIGNED-BY
+    /// row stays honest rather than echoing raw text. Mirrors 111.
+    private static func formatPODTime(_ iso: String) -> String? {
+        let withFrac = ISO8601DateFormatter()
+        withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        guard let d = withFrac.date(from: iso) ?? plain.date(from: iso) else { return nil }
+        let out = DateFormatter()
+        out.dateFormat = "h:mm a"
+        return out.string(from: d)
+    }
 
     // MARK: - Body
 
@@ -156,7 +280,7 @@ struct Paperwork: View {
                                   multiVehicleCount: activeLoad?.multiVehicleCount,
                                   compact: true)
                 }
-                Text("\(fallbackTotal) of \(fallbackTotal) delivered · door \(fallbackDoor)")
+                Text("\(piecesDeliveredText) delivered · door \(fallbackDoor)")
                     .font(.system(size: 20, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
@@ -210,8 +334,10 @@ struct Paperwork: View {
             VStack(spacing: 0) {
                 factRow(
                     label: "PIECES DELIVERED",
-                    value: "\(fallbackTotal) / \(fallbackTotal) \(ctx.unloadUnitLabel)",
-                    affirm: true
+                    value: piecesDeliveredText == dash
+                        ? dash
+                        : "\(piecesDeliveredText) \(ctx.unloadUnitLabel)",
+                    affirm: piecesDeliveredText != dash
                 )
                 divider
                 factRow(
@@ -220,7 +346,7 @@ struct Paperwork: View {
                     affirm: sealFactValue != "-"
                 )
                 divider
-                factRow(label: "SIGNED BY", value: fallbackSignedBy, affirm: false)
+                factRow(label: "SIGNED BY", value: signedByValue, affirm: false)
                 divider
                 factRow(label: "OS&D", value: "No over / short / damage", affirm: true)
             }
@@ -280,7 +406,7 @@ struct Paperwork: View {
             metric(label: "START",      value: fallbackStart,      color: palette.textPrimary)
             metric(label: "END",        value: fallbackEnd,        color: palette.textPrimary)
             metric(label: "DOOR TIME",  value: fallbackDoorTime,   color: palette.textPrimary)
-            metric(label: "\(TransportLexicon.short(.detention, mode: resolvedMode).uppercased()) $", value: fallbackDetCharge, color: Brand.warning, caption: fallbackDetDetail)
+            metric(label: "\(TransportLexicon.short(.detention, mode: resolvedMode).uppercased()) $", value: detChargeValue, color: Brand.warning, caption: detDetailValue)
         }
     }
 
@@ -324,7 +450,7 @@ struct Paperwork: View {
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(.white)
             }
-            Text(fallbackBreakInfo)
+            Text(breakInfoText)
                 .font(EType.body)
                 .foregroundStyle(palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -450,6 +576,53 @@ struct Paperwork: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+
+        // SIGNED BY + delivered stamp — the real POD packet the driver
+        // submitted at the dock (`pod.getPODForLoad`). Nil until a POD is
+        // actually on file → the row stays an honest em-dash.
+        pod = (try? await EusoTripAPI.shared.pod.getPODForLoad(loadId: n)) ?? nil
+
+        // Detention anchor — the REAL arrival timestamp read off the
+        // lifecycle audit trail. Free time runs from the moment the driver
+        // hit the receiver, so the detention math accrues against the
+        // actual `at_delivery` (falling back to `unloading`) transition.
+        // Stays nil if no arrival row exists → the charge/caption em-dash.
+        resolveArrivalAnchor(from: lifecycle.history)
+
+        // Live detention math — `detentionAccessorials.calculateDetention`
+        // fed the REAL arrival anchor ISO + the load's cargo type. No
+        // departureTime → server computes against `now`, returning the
+        // running charge + the active $/hr tier. Stays nil (→ em-dash
+        // charge/caption) until a real arrival anchor resolves.
+        if let anchor = arrivalAnchor {
+            let arrivalISO = ISO8601DateFormatter().string(from: anchor)
+            detentionCalc = try? await EusoTripAPI.shared.detention
+                .calculateDetention(
+                    arrivalTime: arrivalISO,
+                    freeTimeMinutes: freeTimeMinutesDefault,
+                    cargoType: activeLoad?.cargoType ?? "general"
+                )
+        }
+    }
+
+    /// Find the real arrival timestamp from the lifecycle audit trail and
+    /// set `arrivalAnchor`. Prefers the transition INTO `at_delivery`
+    /// (arrival at the receiver); falls back to the first `unloading`
+    /// transition. Parses the ISO-8601 `createdAt` server stamp. Mirrors
+    /// 024_Unloading.resolveArrivalAnchor.
+    private func resolveArrivalAnchor(from history: [LoadLifecycleAPI.StateTransition]) {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoPlain = ISO8601DateFormatter()
+        func parse(_ s: String?) -> Date? {
+            guard let s = s, !s.isEmpty else { return nil }
+            return iso.date(from: s) ?? isoPlain.date(from: s)
+        }
+        let arrival = history.first(where: { ($0.toState ?? "").lowercased() == "at_delivery" })
+            ?? history.first(where: { ($0.toState ?? "").lowercased() == "unloading" })
+        if let stamp = parse(arrival?.createdAt) {
+            arrivalAnchor = stamp
+        }
     }
 
     /// Origin → Destination shorthand for the rating prompt. Falls

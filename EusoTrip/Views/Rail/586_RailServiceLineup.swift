@@ -21,11 +21,16 @@
 //  Wiring (real railShipments router on disk — frontend/server/routers/railShipments.ts):
 //    railShipments.getRailShipmentDetail (EXISTS :209, input {id})        → train header, origin/dest yards, car count, status
 //    railShipments.getRailTracking       (EXISTS :554, input {shipmentId}) → events → derive per-call status (departed/current/scheduled)
-//  The lineup-specific fields (per-call arr/dep clock times, dwell minutes,
-//  set-out/pick-up counts, next-departure countdown) are not yet served by a
-//  single procedure — they would come from a `getServiceLineup` rollup. Until
-//  that lands those figures are representative seed (house 0%-mock, overwritten
-//  on hydrate of the live detail/tracking pair). See the WIRE marker in load().
+//    railShipments.getServiceLineup       (input {railId})                  → the consolidated rollup: train header (symbol/cars/status), the next-departure countdown + next-call yard, and the ordered per-call list (yard/status/clock).
+//
+//  De-fabrication (2026-06-07): every lineup figure now resolves from the
+//  live getServiceLineup rollup (refined by getRailShipmentDetail/Tracking) or
+//  renders an honest em-dash "-". The screen carries NO seeded values — the
+//  old "Q-LACCHI1-23" / "8,940 ft" / "14,210 t" / "1h 20m" / "Barstow BNSF"
+//  hero, the fixed LAX→BAR→KCK→GAL→CHI spine, the LA→Chicago figma call
+//  timeline, and the "Hold 4 min at Barstow" ESANG advisory were all Figma
+//  literals and are gone. No lineup on file → em-dash header + honest empty
+//  timeline state, never a fabricated rotation.
 //
 
 import SwiftUI
@@ -248,75 +253,97 @@ private struct RailServiceLineupBody: View {
     @State private var loadError: String? = nil
     @State private var notifyArmed = false
 
-    // ───────── Representative seed (house 0%-mock, overwritten on hydrate) ─────────
+    // ───────── Honest floor (no seeded figures) ─────────
     //
-    // The whole-journey lineup the SVG draws. Live detail/tracking refines the
-    // train header + per-call status; the clock times / dwell / countdown are
-    // seed until getServiceLineup lands (see WIRE marker in load()).
+    // De-fabrication (2026-06-07): the whole-journey lineup the SVG draws was
+    // representative seed (train symbol, car length/tons, countdown, next-call,
+    // the LAX→BAR→KCK→GAL→CHI spine, and the LA→Chicago figma call timeline).
+    // None of it was a real measurement. Every value now resolves from the live
+    // railShipments.getServiceLineup rollup (+ getRailShipmentDetail/Tracking
+    // refinement) or renders an honest em-dash. There are NO seeded constants.
+    // When the server has no lineup (calls == [], header nulls), the screen
+    // degrades to em-dashes + an honest empty timeline state, never a fake train.
 
-    private let seedTrainSymbol  = "Q-LACCHI1-23"
-    private let seedCars         = 132
-    private let seedLengthFt     = "8,940 ft"
-    private let seedTons         = "14,210 t"
-    private let seedCountdown    = "1h 20m"
-    private let seedNextCall     = "Barstow BNSF"
-    private let seedDeltaMin     = 0          // on-plan +0 min
-
-    // Horizontal lane ribbon nodes: code · progress 0…1 · semantic state.
-    private let laneNodes: [LaneNode586] = [
-        LaneNode586(code: "LAX", progress: 0.01, state: .done),
-        LaneNode586(code: "BAR", progress: 0.12, state: .current),
-        LaneNode586(code: "KCK", progress: 0.46, state: .future),
-        LaneNode586(code: "GAL", progress: 0.69, state: .future),
-        LaneNode586(code: "CHI", progress: 0.99, state: .onEta)
-    ]
-
-    // Ordered calls (the vertical timeline).
-    private var seedCalls: [LineupCall586] {
-        [
-            LineupCall586(id: "c1", station: "LA Long Beach ICTF",
-                          detail: "origin ramp · BNSF · 132 cars built",
-                          timeLabel: "dep 06:10", state: .done, statusLabel: "DEPARTED"),
-            LineupCall586(id: "c2", station: "Barstow BNSF",
-                          detail: "crew change · 12 min dwell · arr 14:35 · dep 14:47",
-                          timeLabel: "in 1h 20m", state: .current, statusLabel: "NEXT"),
-            LineupCall586(id: "c3", station: "Kansas City Argentine",
-                          detail: "interchange · set out 18 · pick up 6",
-                          timeLabel: "Tue 09:20", state: .future, statusLabel: "SCHEDULED"),
-            LineupCall586(id: "c4", station: "Galesburg IL",
-                          detail: "fuel + roll-by inspection · 25 min",
-                          timeLabel: "Tue 19:05", state: .future, statusLabel: "SCHEDULED"),
-            LineupCall586(id: "c5", station: "Chicago Logistics Park",
-                          detail: "destination ramp · final · ETA holds",
-                          timeLabel: "Wed 02:40", state: .done, statusLabel: "ON ETA")
-        ]
-    }
+    private let dash = "-"
 
     // ───────── Derived (live-refined where the API serves it) ─────────
 
-    private var trainSymbol: String { lineup?.trainSymbol ?? detail?.shipmentNumber ?? seedTrainSymbol }
-    private var carCount: Int        { lineup?.carCount ?? detail?.numberOfCars ?? seedCars }
+    private var trainSymbol: String { lineup?.trainSymbol ?? detail?.shipmentNumber ?? dash }
+    /// Live car count, nil when neither the lineup nor the detail serves one.
+    private var carCount: Int? { lineup?.carCount ?? detail?.numberOfCars }
     private var statusOk: Bool {
-        let s = (detail?.status ?? "in_transit").lowercased()
+        // No live status → make no green/ok claim.
+        let s = (detail?.status ?? "").lowercased()
         return s == "in_transit" || s == "en_route"
     }
     private var statusLabel: String {
-        switch (detail?.status ?? "en_route").lowercased() {
+        switch (detail?.status ?? "").lowercased() {
         case "delayed":    return "DELAYED"
         case "terminated": return "TERMINATED"
         case "in_transit": return "EN ROUTE"
-        default:           return "EN ROUTE"
+        case "en_route":   return "EN ROUTE"
+        default:           return dash
         }
     }
-    private var consistLine: String {
-        let delta = seedDeltaMin
-        let plan  = delta == 0 ? "on plan +0 min" : (delta > 0 ? "ahead \(delta) min" : "late \(-delta) min")
-        return "\(plan)  ·  \(carCount) cars · \(seedLengthFt) · \(seedTons)"
+
+    /// Hero countdown to the next departure — the live `nextCallLabel`, else "-".
+    private var countdownText: String { lineup?.nextCallLabel ?? dash }
+    /// Hero NEXT CALL yard — the live `nextCallYardName`, else "-".
+    private var nextCallText: String { lineup?.nextCallYardName ?? dash }
+
+    /// ESANG advisory headline. No live next-best-action / meet-pass source is
+    /// on the wire, so when the lineup names a next call we surface that honest
+    /// fact; otherwise an em-dash. Never a fabricated "hold N min" instruction.
+    private var advisoryPrimary: String {
+        if let next = lineup?.nextCallYardName, !next.isEmpty { return "Next service call: \(next)." }
+        return dash
+    }
+    private var advisorySecondary: String {
+        "No active advisory \(dash) live optimization pending."
     }
 
-    // Live-refined calls. Prefer the consolidated getServiceLineup rollup when
-    // the server served real calls; fall back to advancing the seed states off
-    // tracking events; otherwise show the representative seed lineup.
+    /// Consist line: live car count only. The proc serves no on-plan delta,
+    /// length-feet, or tonnage column, so those carry honest em-dashes rather
+    /// than the old "8,940 ft" / "14,210 t" / "+0 min" figma figures.
+    private var consistLine: String {
+        let cars = carCount.map { "\($0) cars" } ?? "\(dash) cars"
+        return "on plan \(dash)  ·  \(cars) · \(dash) ft · \(dash) t"
+    }
+
+    // Horizontal lane ribbon nodes derived from the live calls. The SVG drew a
+    // fixed LAX→BAR→KCK→GAL→CHI spine; here each node is a real call (code from
+    // the yard name) evenly spaced, with the state mapped off the call state.
+    // Empty when there are no live calls → the spine renders blank, not a fake.
+    private var laneNodes: [LaneNode586] {
+        let live = calls
+        guard !live.isEmpty else { return [] }
+        let n = live.count
+        return live.enumerated().map { idx, call in
+            let progress: CGFloat = n <= 1 ? 0.5 : CGFloat(idx) / CGFloat(n - 1)
+            let state: LaneNodeState586 = {
+                switch call.state {
+                case .done:    return idx == n - 1 ? .onEta : .done
+                case .current: return .current
+                default:       return .future
+                }
+            }()
+            return LaneNode586(code: yardCode(call.station), progress: progress, state: state)
+        }
+    }
+
+    /// 3-letter code from a yard name, e.g. "Barstow BNSF" → "BAR". Em-dash
+    /// placeholder when the station is the dash sentinel / empty.
+    private func yardCode(_ station: String) -> String {
+        let trimmed = station.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed != dash else { return dash }
+        let letters = trimmed.uppercased().filter { $0.isLetter }
+        return letters.isEmpty ? dash : String(letters.prefix(3))
+    }
+
+    // Live calls. Prefer the consolidated getServiceLineup rollup when the
+    // server served real calls; otherwise refine state off tracking events when
+    // present; otherwise empty — the UI shows an honest empty timeline state,
+    // NOT a seeded LA→Chicago rotation.
     private var calls: [LineupCall586] {
         if let live = lineup?.calls, !live.isEmpty {
             return live.enumerated().map { idx, c in
@@ -327,27 +354,17 @@ private struct RailServiceLineupBody: View {
                     : .future
                 return LineupCall586(
                     id: "live-\(idx)",
-                    station: c.yardName ?? "-",
+                    station: c.yardName ?? dash,
                     detail: c.detail ?? "",
                     timeLabel: c.timeLabel ?? "",
                     state: state,
                     statusLabel: st.isEmpty ? "SCHEDULED" : st)
             }
         }
-        guard let events = tracking?.events, !events.isEmpty else { return seedCalls }
-        // Map known event types onto call states without fabricating times we
-        // don't have — keep the seed clock labels, refine only the state/chip.
-        let departedCount = events.filter {
-            let t = ($0.eventType ?? "").lowercased()
-            return t.contains("depart") || t.contains("arriv") || t.contains("scan")
-        }.count
-        return seedCalls.enumerated().map { idx, call in
-            if idx < departedCount {
-                return LineupCall586(id: call.id, station: call.station, detail: call.detail,
-                                     timeLabel: call.timeLabel, state: .done, statusLabel: "DEPARTED")
-            }
-            return call
-        }
+        // No consolidated lineup. We have no per-call clock times / dwell to
+        // honestly fabricate from bare tracking events, so we render nothing
+        // rather than invent a rotation. (Tracking still refines the header.)
+        return []
     }
 
     // MARK: View
@@ -370,7 +387,7 @@ private struct RailServiceLineupBody: View {
                 } else {
                     if let err = loadError {
                         LifecycleCard(accentWarning: true) {
-                            Text("Live lineup unavailable - \(err). Showing scheduled rotation.")
+                            Text("Live lineup unavailable - \(err).")
                                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                         }
                     }
@@ -459,14 +476,14 @@ private struct RailServiceLineupBody: View {
 
                 // Countdown + next-call
                 HStack(alignment: .firstTextBaseline, spacing: Space.s4) {
-                    Text(seedCountdown)
+                    Text(countdownText)
                         .font(.system(size: 34, weight: .bold).monospacedDigit())
                         .foregroundStyle(LinearGradient.diagonal)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("TO DEPART · NEXT CALL")
                             .font(.system(size: 9, weight: .black)).kerning(0.8)
                             .foregroundColor(palette.textTertiary)
-                        Text(seedNextCall)
+                        Text(nextCallText)
                             .font(.system(size: 15, weight: .bold))
                             .foregroundColor(palette.textPrimary)
                             .lineLimit(1)
@@ -481,10 +498,13 @@ private struct RailServiceLineupBody: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
 
-                // Horizontal lane spine
-                LaneRibbonSpine586(nodes: laneNodes, palette: palette)
-                    .frame(height: 30)
-                    .padding(.top, 2)
+                // Horizontal lane spine — only when the live lineup served
+                // calls; no calls → no fabricated LAX→CHI ribbon.
+                if !laneNodes.isEmpty {
+                    LaneRibbonSpine586(nodes: laneNodes, palette: palette)
+                        .frame(height: 30)
+                        .padding(.top, 2)
+                }
             }
             .padding(Space.s4)
         }
@@ -495,7 +515,7 @@ private struct RailServiceLineupBody: View {
     private var callTimelineSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .firstTextBaseline) {
-                Text("CALL TIMELINE · \(calls.count) ORDERED CALLS")
+                Text("CALL TIMELINE · \(calls.isEmpty ? dash : "\(calls.count)") ORDERED CALLS")
                     .font(.system(size: 9, weight: .black)).kerning(1.0)
                     .foregroundColor(palette.textTertiary)
                 Spacer()
@@ -503,19 +523,34 @@ private struct RailServiceLineupBody: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(palette.textSecondary)
             }
-            TimelineEventRail(
-                events: calls.map { call in
-                    TimelineEventNode(
-                        id: call.id,
-                        title: call.station,
-                        detail: call.detail,
-                        timestamp: call.timeLabel,
-                        state: call.state,
-                        statusLabel: call.statusLabel
-                    )
-                },
-                showSpine: true
-            )
+            if calls.isEmpty {
+                // Honest empty state — the server served no per-call rotation.
+                // We do NOT draw the figma LA→Chicago train here.
+                LifecycleCard {
+                    HStack(spacing: Space.s3) {
+                        Image(systemName: "calendar.badge.clock")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(palette.textTertiary)
+                        Text("No service lineup on file for this train.")
+                            .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        Spacer(minLength: 0)
+                    }
+                }
+            } else {
+                TimelineEventRail(
+                    events: calls.map { call in
+                        TimelineEventNode(
+                            id: call.id,
+                            title: call.station,
+                            detail: call.detail,
+                            timestamp: call.timeLabel,
+                            state: call.state,
+                            statusLabel: call.statusLabel
+                        )
+                    },
+                    showSpine: true
+                )
+            }
         }
     }
 
@@ -538,10 +573,15 @@ private struct RailServiceLineupBody: View {
                     Text("ESANG AI")
                         .font(.system(size: 9, weight: .black)).kerning(1.0)
                         .foregroundStyle(LinearGradient.primary)
-                    Text("Hold 4 min at Barstow to take the Cajon meet.")
+                    // De-fabrication (2026-06-07): the "Hold 4 min at Barstow"
+                    // / "avoids a 35-min wait at MP 56" advisory was figma copy
+                    // with no live AI source. No meet-pass / next-best-action
+                    // proc is on the wire, so we state the honest neutral status
+                    // rather than a fabricated recommendation.
+                    Text(advisoryPrimary)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(palette.textPrimary)
-                    Text("avoids a 35-min wait at MP 56, protects the CHI ETA.")
+                    Text(advisorySecondary)
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(palette.textSecondary)
                 }
@@ -592,8 +632,8 @@ private struct RailServiceLineupBody: View {
             "railShipments.getServiceLineup", input: RailIdIn586(railId: railId))
 
         guard numericId > 0 else {
-            // No resolvable numeric id — the lineup above (if any) plus the
-            // scheduled seed rotation carry the screen.
+            // No resolvable numeric id — the lineup above (if any) carries the
+            // screen; with no lineup the UI shows honest em-dashes + empty state.
             loading = false
             return
         }

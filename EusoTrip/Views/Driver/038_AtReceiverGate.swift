@@ -24,6 +24,7 @@ struct AtReceiverGateFull: View {
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
+    @State private var cred: DriverQualificationAPI.DriverCredentials?
     @State private var isShowing: Bool = false
 
     enum Register { case night, afternoon }
@@ -34,17 +35,47 @@ struct AtReceiverGateFull: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    // MARK: - Figma fallback
-    private let fallbackClock   = "21:15"
-    private let fallbackGeofenceClock = "21:13"
-    private let fallbackArrivalLine   = "-"
-    private let fallbackAddress       = "7600 N ROOSEVELT HWY · GATE B-2"
-    private let fallbackDeskState     = "RECEIVER DESK PINGED"
-    private let fallbackDriverName    = "-"
-    private let fallbackCDL           = "CDL X-XX"
-    private let fallbackHazmatBadge   = "HAZMAT + TANK"
-    private let fallbackPin           = "8-2-7-3"
-    private let fallbackGuardTip      = "-"
+    // MARK: - Honest sentinel
+    //
+    // De-fabrication (2026-06-06): every field on this gate-credentials
+    // screen is SECURITY-CRITICAL, so each rendered literal is either a
+    // live field (driver name / CDL / hazmat endorsement / delivery
+    // address) or the honest em-dash sentinel below — NEVER a seeded
+    // figure. The Figma frame's clocks (21:15 / 21:13 / 21:14), the
+    // "RECEIVER DESK PINGED" desk-state, the "QUEUE · 1 of 1" /
+    // "EUSOSHIELD · Handoff arming" status copy, the "EUSO-PA-776" BOL
+    // id, and — above all — the gate PIN "8-2-7-3" were fabricated. A
+    // PIN is a credential read aloud at a guard hut; seeding one is a
+    // forge. There is no client-side proc that issues a gate PIN, so the
+    // PIN block renders the honest dash and states the PIN is issued AT
+    // the gate. No source on the wire ⇒ dash; never an invented value.
+    private let dash = LiveLoadFacets.dash
+
+    // Live driver name from the signed-in session (auth.me payload),
+    // else the honest dash. Never a Figma fixture name.
+    private var driverNameText: String {
+        let n = session.user?.name ?? ""
+        return n.isEmpty ? dash : n
+    }
+
+    // Real CDL credential from `driverQualification.getMyCredentials`
+    // (cdlNumber, optionally prefixed by the licensing state). "CDL"
+    // alone when the driver row has no number on file — never the
+    // "CDL X-XX" placeholder.
+    private var cdlText: String {
+        guard let num = cred?.cdlNumber, !num.isEmpty else { return "CDL" }
+        if let st = cred?.cdlState, !st.isEmpty { return "CDL \(st)-\(num)" }
+        return "CDL \(num)"
+    }
+
+    // Delivery / gate address from the live load. Falls through to the
+    // delivery city/state, then the honest dash. Never the Figma
+    // "7600 N ROOSEVELT HWY · GATE B-2" fixture.
+    private var addressText: String {
+        if let a = activeLoad?.deliveryLocation?.address, !a.isEmpty { return a }
+        if let cs = activeLoad?.deliveryLocation?.cityState, !cs.isEmpty { return cs }
+        return dash
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -88,19 +119,23 @@ struct AtReceiverGateFull: View {
                                   multiVehicleCount: activeLoad?.multiVehicleCount,
                                   compact: true)
                 }
-                Text(fallbackArrivalLine)
+                Text(activeLoad?.deliveryLocation?.cityState.isEmpty == false
+                     ? activeLoad!.deliveryLocation!.cityState
+                     : dash)
                     .font(.system(size: 18, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
-                Text(fallbackAddress)
+                Text(addressText)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(fallbackClock)
+                // Geofence wall-clock is a device-side telemetry stamp not
+                // on the wire here; honest dash rather than a Figma "21:15".
+                Text(dash)
                     .font(EType.mono(.caption)).fontWeight(.semibold)
                     .foregroundStyle(palette.textPrimary)
                 Text("GEOFENCE")
@@ -115,21 +150,28 @@ struct AtReceiverGateFull: View {
         HStack(spacing: 8) {
             Image(systemName: "mappin.and.ellipse")
                 .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(Brand.success)
-            Text(fallbackDeskState)
+                .foregroundStyle(palette.textSecondary)
+            // "RECEIVER DESK PINGED" asserted a live notification event no
+            // proc confirms; the green success styling implied a verified
+            // hand-off. Render the screen's own (true) arrival precondition
+            // as a neutral static label — never a fabricated ping event.
+            Text("AT RECEIVER \(ctx.vertical.gateWord.uppercased()) PERIMETER")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                .foregroundStyle(Brand.success)
+                .foregroundStyle(palette.textSecondary)
             Spacer()
-            Text(fallbackGeofenceClock)
+            // Ping wall-clock is not on the wire; honest dash, not "21:13".
+            Text(dash)
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textSecondary)
         }
         .padding(.horizontal, Space.s3)
         .padding(.vertical, 8)
-        .background(Brand.success.opacity(0.12))
+        // Neutral chrome: the perimeter strip no longer asserts a verified
+        // green "PINGED" hand-off, so it must not wear the success color.
+        .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                .strokeBorder(Brand.success.opacity(0.3), lineWidth: 1)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
     }
@@ -197,16 +239,20 @@ struct AtReceiverGateFull: View {
                     Text("ME").font(.system(size: 12, weight: .heavy)).foregroundStyle(palette.textPrimary)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(fallbackDriverName)
+                    Text(driverNameText)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Text(fallbackCDL)
+                    Text(cdlText)
                         .font(EType.mono(.micro)).tracking(0.3)
                         .foregroundStyle(palette.textSecondary)
                 }
                 Spacer()
-                if ctx.isHazmat {
-                    Text(fallbackHazmatBadge)
+                // HAZMAT badge gates on the driver's REAL endorsement flag
+                // (`getMyCredentials().hazmatEndorsement`), NOT the load's
+                // product type — a hazmat product does not mean THIS driver
+                // is endorsed. No badge when the driver isn't endorsed.
+                if cred?.hazmatEndorsement == true {
+                    Text("HAZMAT ENDORSED")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(Brand.success)
                         .padding(.horizontal, 6).padding(.vertical, 2)
@@ -215,40 +261,38 @@ struct AtReceiverGateFull: View {
             }
 
             // QR + PIN block
+            //
+            // SECURITY: a gate PIN is a credential a guard verifies at the
+            // hut. There is NO client-side proc that issues one, so we MUST
+            // NOT seed digits (the prior "8-2-7-3" was a forged credential).
+            // The QR tile keeps its chrome as a generic placeholder glyph —
+            // it does NOT encode a real pass and must not imply a seeded
+            // code; the digits read the honest dash and the copy states the
+            // PIN is issued at the gate.
             HStack(alignment: .center, spacing: Space.s3) {
                 ZStack {
                     RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                        .fill(palette.textPrimary)
+                        .fill(palette.bgCardSoft)
                         .frame(width: 72, height: 72)
-                    // Stylized QR
-                    let tiles = 6
-                    VStack(spacing: 1) {
-                        ForEach(0..<tiles, id: \.self) { r in
-                            HStack(spacing: 1) {
-                                ForEach(0..<tiles, id: \.self) { c in
-                                    Rectangle()
-                                        .fill(((r * tiles + c) % 3 == 0) ? palette.bgPage : palette.textPrimary)
-                                        .frame(width: 6, height: 6)
-                                }
-                            }
-                        }
-                    }
+                    // Placeholder glyph (NOT a scannable pass) — chrome only.
+                    Image(systemName: "qrcode")
+                        .font(.system(size: 40, weight: .regular))
+                        .foregroundStyle(palette.textTertiary)
                 }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("PIN · READ ALOUD AT GATE")
+                    Text("PIN · ISSUED AT THE GATE")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
-                    Text(fallbackPin)
+                    Text(dash)
                         .font(.system(size: 26, weight: .heavy, design: .rounded))
-                        .foregroundStyle(LinearGradient.diagonal)
+                        .foregroundStyle(palette.textTertiary)
                         .monospacedDigit()
+                    Text("The receiver issues your PIN at the gate.")
+                        .font(EType.mono(.micro)).tracking(0.3)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-
-            Text(fallbackGuardTip)
-                .font(EType.mono(.micro)).tracking(0.3)
-                .foregroundStyle(palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(Space.s4)
         .background(palette.bgCard)
@@ -289,7 +333,11 @@ struct AtReceiverGateFull: View {
         switch ctx.product {
         case .hazmatTanker, .vesselTanker:
             return [
-                .init(icon: "doc.fill",            title: "BOL packet",      sub: "EUSO-PA-776"),
+                // BOL id "EUSO-PA-776" was a Figma fixture — no BOL-number
+                // field hydrates here, so the subtitle reads the generic
+                // "wallet" copy every other product variant uses, never a
+                // seeded document id.
+                .init(icon: "doc.fill",            title: "BOL packet",      sub: "wallet"),
                 .init(icon: "exclamationmark.triangle.fill", title: "Hazmat manifest", sub: "UN1005"),
                 .init(icon: "calendar.badge.clock", title: "Sched window",   sub: "pinned"),
                 .init(icon: "book.fill",           title: "ERG card",         sub: "Anhydrous NH3"),
@@ -378,14 +426,21 @@ struct AtReceiverGateFull: View {
 
     private var statusChips: some View {
         HStack(spacing: Space.s2) {
-            Text("QUEUE · 1 of 1 · straight to dock")
+            // "QUEUE · 1 of 1 · straight to dock" asserted a live queue
+            // position no proc feeds; the green success styling implied a
+            // verified clear-to-dock. Neutral static label, honest dash for
+            // the position — never a fabricated "1 of 1".
+            Text("QUEUE · \(dash)")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                .foregroundStyle(Brand.success)
+                .foregroundStyle(palette.textTertiary)
                 .padding(.horizontal, 8).padding(.vertical, 5)
-                .background(Brand.success.opacity(0.12))
-                .overlay(Capsule().stroke(Brand.success.opacity(0.35), lineWidth: 1))
+                .background(palette.bgCard)
+                .overlay(Capsule().stroke(palette.borderFaint, lineWidth: 1))
                 .clipShape(Capsule())
-            Text("EUSOSHIELD · Handoff arming · 21:14")
+            // "Handoff arming · 21:14" carried a fabricated wall-clock. The
+            // EusoShield label stays (it names the hand-off escrow feature),
+            // but the time it claimed to be arming at reads the honest dash.
+            Text("EUSOSHIELD · Handoff · \(dash)")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(LinearGradient.diagonal)
                 .padding(.horizontal, 8).padding(.vertical, 5)
@@ -437,6 +492,12 @@ struct AtReceiverGateFull: View {
     }
 
     private func hydrateLiveTrip() async {
+        // Self-scoped driver credentials (CDL number/state + hazmat
+        // endorsement) for the credentials card — same self-scoped
+        // `driverQualification.getMyCredentials` read 056 Driver Profile
+        // hydrates. nil-tolerant: no driver row / fetch failure → the
+        // card reads "CDL" + no hazmat badge, never a fabricated value.
+        cred = try? await EusoTripAPI.shared.dq.getMyCredentials()
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
