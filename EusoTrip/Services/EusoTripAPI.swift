@@ -934,6 +934,16 @@ final class EusoTripAPI: ObservableObject {
     /// getContainerPositions:950, liveTrackOceanShipment:1132).
     lazy var vesselTrack: VesselTrackAPI = VesselTrackAPI(api: self)
 
+    /// `reeferTempRouter` — FSMA-compliant reefer temperature telemetry
+    /// surface backing 387 Catalyst Reefer Fleet Monitor (and the driver
+    /// reefer log). MCP-verified at `frontend/server/routers/reeferTemp.ts`:
+    /// `getLatestByZone` (returns a {front|center|rear → reading} object),
+    /// `getStats`, `getAlerts`, and the `acknowledgeAlert` mutation. The
+    /// router scopes every read by the authenticated user's driverId and
+    /// accepts an OPTIONAL `loadId` (`z.coerce.number().optional()`); with
+    /// no loadId it returns the user's latest-per-zone fleet readings.
+    lazy var reeferTemp: ReeferTempAPI = ReeferTempAPI(api: self)
+
     // MARK: Low-level tRPC invocation
 
     /// GET /api/trpc/<path>?input=<url-encoded-JSON>
@@ -13989,6 +13999,32 @@ struct CatalystAPI {
         )
     }
 
+    /// One active load on the catalyst's plate (status in_transit /
+    /// assigned / loading / at_pickup), scoped server-side to the
+    /// catalyst's company. Backed by `catalysts.getActiveLoads`
+    /// (frontend/server/routers/catalysts.ts:510). The `id` is the
+    /// stringified `loads.id`. Used by 387 Reefer Fleet Monitor to
+    /// resolve a load context for the reeferTemp.* telemetry reads.
+    struct ActiveLoad: Decodable, Identifiable, Hashable {
+        let id: String
+        let loadNumber: String?
+        let status: String?
+        let origin: String?
+        let destination: String?
+        let driver: String?
+        let eta: String?
+        let rate: Double?
+    }
+
+    struct GetActiveLoadsInput: Encodable { let limit: Int }
+
+    func getActiveLoads(limit: Int = 10) async throws -> [ActiveLoad] {
+        try await api.query(
+            "catalysts.getActiveLoads",
+            input: GetActiveLoadsInput(limit: limit)
+        )
+    }
+
     /// One driver row on the Catalyst fleet roster. Backed by
     /// `catalysts.getMyDrivers` (frontend/server/routers/catalysts.ts:382)
     /// — server resolves the catalyst's companyId from the auth ctx,
@@ -20826,6 +20862,121 @@ struct VesselTrackAPI {
     func getContainerPositions(status: String? = nil, limit: Int = 100) async throws -> ContainerPositionsResult {
         try await api.query("vesselShipments.getContainerPositions",
                             input: ContainerPositionsInput(status: status, limit: limit))
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// MARK: - reeferTempRouter (387 Catalyst Reefer Fleet Monitor)
+// ════════════════════════════════════════════════════════════════════════
+//
+// Mirrors `frontend/server/routers/reeferTemp.ts` 1:1. The carrier-vantage
+// 387 surface reads the active reefer load's live zone telemetry; the same
+// procs back the driver reefer log. Every read scopes by the authed user's
+// driverId server-side and takes an OPTIONAL `loadId`
+// (`z.coerce.number().optional()`) — pass nil to read the user's latest
+// readings across all of their reefer loads.
+//
+//   getLatestByZone({ loadId? })  → OBJECT keyed by zone:
+//        { "front": {tempF,tempC,status,recordedAt}, "center": {...}, ... }
+//        (zones with no reading are simply absent from the object)
+//   getStats({ loadId?, hours, targetMin, targetMax })
+//        → { min, max, avg, totalReadings, excursions }
+//   getAlerts({ loadId?, limit })
+//        → [{ id, severity, message, zone, tempF?, acknowledged, createdAt }]
+//   acknowledgeAlert({ alertId })  (mutation) → { success }
+
+struct ReeferTempAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: Decoders (1:1 with the server projections)
+
+    /// One zone's latest reading, as projected by `getLatestByZone`
+    /// (`reeferTemp.ts:93`). The server emits `tempF`/`tempC` as parsed
+    /// decimals, `status` as the string band ("normal" | "warning" |
+    /// "critical"), and `recordedAt` as an ISO-8601 string.
+    struct ZoneReading: Decodable, Hashable {
+        let tempF: Double
+        let tempC: Double
+        let status: String
+        let recordedAt: String
+    }
+
+    /// `getStats` envelope (`reeferTemp.ts:139`). `min`/`max`/`avg` are
+    /// °F; `excursions` counts readings outside [targetMin, targetMax].
+    struct Stats: Decodable, Hashable {
+        let min: Double
+        let max: Double
+        let avg: Double
+        let totalReadings: Int
+        let excursions: Int
+    }
+
+    /// One `reeferAlerts` row as projected by `getAlerts`
+    /// (`reeferTemp.ts:255`). The server emits `id`/`zone`/`tempF` from a
+    /// freeform row, so every field is decoded leniently to stay nimble.
+    struct Alert: Decodable, Hashable, Identifiable {
+        let id: String?
+        let zone: String?
+        let severity: String?
+        let message: String?
+        let tempF: Double?
+        let acknowledged: Bool?
+        let createdAt: String?
+    }
+
+    // MARK: Inputs (server fields verbatim — loadId is z.coerce.number().optional())
+
+    private struct LatestByZoneInput: Encodable { let loadId: Int? }
+    private struct StatsInput: Encodable {
+        let loadId: Int?
+        let hours: Int
+        let targetMin: Double
+        let targetMax: Double
+    }
+    private struct AlertsInput: Encodable { let loadId: Int?; let limit: Int }
+    private struct AcknowledgeInput: Encodable { let alertId: Int }
+
+    // MARK: Procedures
+
+    /// `reeferTemp.getLatestByZone` — latest reading per zone as a
+    /// dynamic-key OBJECT keyed by "front"/"center"/"rear". Decoded into
+    /// a `[String: ZoneReading]`; zones with no reading are absent. Empty
+    /// dictionary when the load has no telemetry (server returns `{}`).
+    func getLatestByZone(loadId: Int? = nil) async throws -> [String: ZoneReading] {
+        try await api.query("reeferTemp.getLatestByZone",
+                            input: LatestByZoneInput(loadId: loadId))
+    }
+
+    /// `reeferTemp.getStats` — session min/max/avg + excursion count over
+    /// the trailing `hours` window against the FSMA band [targetMin,
+    /// targetMax]. Server defaults: hours 24, targetMin 33, targetMax 40.
+    func getStats(
+        loadId: Int? = nil,
+        hours: Int = 24,
+        targetMin: Double = 33,
+        targetMax: Double = 40
+    ) async throws -> Stats {
+        try await api.query("reeferTemp.getStats",
+                            input: StatsInput(loadId: loadId, hours: hours,
+                                              targetMin: targetMin, targetMax: targetMax))
+    }
+
+    /// `reeferTemp.getAlerts` — most-recent reefer alerts (server default
+    /// limit 20), newest first. Empty array on no-db / no alerts.
+    func getAlerts(loadId: Int? = nil, limit: Int = 20) async throws -> [Alert] {
+        try await api.query("reeferTemp.getAlerts",
+                            input: AlertsInput(loadId: loadId, limit: limit))
+    }
+
+    /// `reeferTemp.acknowledgeAlert` — mark an alert acknowledged (sets
+    /// acknowledgedAt/acknowledgedBy server-side, scoped to the caller's
+    /// own alerts). Returns `{ success }`.
+    struct AckResult: Decodable, Hashable { let success: Bool? }
+
+    @discardableResult
+    func acknowledgeAlert(alertId: Int) async throws -> AckResult {
+        try await api.mutation("reeferTemp.acknowledgeAlert",
+                               input: AcknowledgeInput(alertId: alertId))
     }
 }
 
