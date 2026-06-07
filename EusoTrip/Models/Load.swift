@@ -155,6 +155,330 @@ struct Load: Codable, Identifiable, Hashable {
         let kLbs = Int((weightValue / 1000.0).rounded())
         return "\(cargo) · \(kLbs)k lb"
     }
+
+    // MARK: - Memberwise init
+    //
+    // Declaring a custom `init(from decoder:)` below suppresses the
+    // synthesized memberwise initializer, so we restore it explicitly here.
+    // Used by the demo fixtures (`Load.demoActive()`) and any future direct
+    // construction. Field order/optionality is unchanged from the original.
+    init(
+        id: Int,
+        shipperId: Int?,
+        driverId: Int?,
+        loadNumber: String,
+        status: String,
+        cargoType: String?,
+        hazmatClass: String?,
+        unNumber: String?,
+        weight: String?,
+        weightUnit: String?,
+        pickupLocation: LoadLocation?,
+        deliveryLocation: LoadLocation?,
+        pickupDate: String?,
+        deliveryDate: String?,
+        distance: String?,
+        distanceUnit: String?,
+        rate: String?,
+        currency: String?,
+        commodityName: String?,
+        requiresEscort: Bool?,
+        escortCount: Int?,
+        originState: String?,
+        destState: String?,
+        brokerChainDepth: Int?,
+        version: Int?,
+        transportMode: String?,
+        vesselClass: String?,
+        multiVehicleCount: Int?,
+        permitType: String?,
+        originPort: String?,
+        destPort: String?,
+        worldscalePct: String?,
+        worldscaleFlat: String?,
+        rateUnit: String?
+    ) {
+        self.id = id
+        self.shipperId = shipperId
+        self.driverId = driverId
+        self.loadNumber = loadNumber
+        self.status = status
+        self.cargoType = cargoType
+        self.hazmatClass = hazmatClass
+        self.unNumber = unNumber
+        self.weight = weight
+        self.weightUnit = weightUnit
+        self.pickupLocation = pickupLocation
+        self.deliveryLocation = deliveryLocation
+        self.pickupDate = pickupDate
+        self.deliveryDate = deliveryDate
+        self.distance = distance
+        self.distanceUnit = distanceUnit
+        self.rate = rate
+        self.currency = currency
+        self.commodityName = commodityName
+        self.requiresEscort = requiresEscort
+        self.escortCount = escortCount
+        self.originState = originState
+        self.destState = destState
+        self.brokerChainDepth = brokerChainDepth
+        self.version = version
+        self.transportMode = transportMode
+        self.vesselClass = vesselClass
+        self.multiVehicleCount = multiVehicleCount
+        self.permitType = permitType
+        self.originPort = originPort
+        self.destPort = destPort
+        self.worldscalePct = worldscalePct
+        self.worldscaleFlat = worldscaleFlat
+        self.rateUnit = rateUnit
+    }
+
+    // MARK: - Custom decode (loads.getById / get_load_details)
+    //
+    // The tRPC `loads.getById` shape (loads.ts ~1338-1380) does NOT line up
+    // with the synthesized Codable for this struct:
+    //   • `id`        → STRING  (`String(load.id)`)            — declared Int
+    //   • `distance`  → NUMBER  (`resolvedDistance`)           — declared String?
+    //   • rate/weight/worldscalePct/worldscaleFlat → raw DECIMAL columns that
+    //     may serialize as EITHER String or Number depending on the driver.
+    //   • `pickupLocation`/`deliveryLocation` → `{city,state}` ONLY (no
+    //     address/zip/lat/lng) — `LoadLocation` requires all six keys.
+    //   • The REAL coords live in top-level `pickupCoord`/`deliveryCoord`
+    //     ({lat,lng}|null); the street address + zip live in top-level
+    //     `origin`/`destination` ({address,city,state,zip}).
+    //
+    // This decoder is tolerant of all of the above and MERGES the four
+    // location sources into the existing `LoadLocation?` fields so every
+    // caller (rateValue / distanceValue / pickupLocation.cityState / …)
+    // keeps working unchanged. The synthesized memberwise init (used by the
+    // demo fixtures) and Hashable conformance are unaffected.
+
+    private enum CodingKeys: String, CodingKey {
+        case id, shipperId, driverId, loadNumber, status, cargoType
+        case hazmatClass, unNumber, weight, weightUnit
+        case pickupLocation, deliveryLocation
+        case pickupDate, deliveryDate
+        case distance, distanceUnit, rate, currency
+        case commodityName
+        case requiresEscort, escortCount
+        case originState, destState
+        case brokerChainDepth, version
+        case transportMode, vesselClass, multiVehicleCount, permitType
+        case originPort, destPort
+        case worldscalePct, worldscaleFlat, rateUnit
+        // Sidecar keys the server emits that we merge into LoadLocation:
+        case pickupCoord, deliveryCoord
+        case origin, destination
+    }
+
+    /// City/state echo emitted by the server (`{city, state}` only).
+    private struct CityStateEcho: Codable {
+        let city: String?
+        let state: String?
+    }
+
+    /// Top-level `{lat,lng}|null` route anchor.
+    private struct CoordEcho: Codable {
+        let lat: Double?
+        let lng: Double?
+    }
+
+    /// Top-level `origin`/`destination` = `{address,city,state,zip}`.
+    private struct AddressEcho: Codable {
+        let address: String?
+        let city: String?
+        let state: String?
+        let zip: String?
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+
+        // 1) id — accepts String | Int | Double. Server sends String(load.id);
+        //    prefer Int(string) and fall back to a bare numeric.
+        self.id = try Self.flexInt(c, .id) ?? 0
+
+        self.shipperId = Self.flexIntIfPresent(c, .shipperId)
+        self.driverId  = Self.flexIntIfPresent(c, .driverId)
+
+        self.loadNumber = try c.decodeIfPresent(String.self, forKey: .loadNumber) ?? ""
+        self.status     = try c.decodeIfPresent(String.self, forKey: .status) ?? ""
+        self.cargoType  = try c.decodeIfPresent(String.self, forKey: .cargoType)
+        self.hazmatClass = try c.decodeIfPresent(String.self, forKey: .hazmatClass)
+        self.unNumber    = try c.decodeIfPresent(String.self, forKey: .unNumber)
+
+        // weight — DECIMAL, may be String or Number → keep as String?
+        self.weight     = Self.flexStringIfPresent(c, .weight)
+        self.weightUnit = try c.decodeIfPresent(String.self, forKey: .weightUnit)
+
+        // 3) Merge the 4 location sources into LoadLocation?.
+        let pickupEcho   = try c.decodeIfPresent(CityStateEcho.self, forKey: .pickupLocation)
+        let deliveryEcho = try c.decodeIfPresent(CityStateEcho.self, forKey: .deliveryLocation)
+        let pickupCoord   = try c.decodeIfPresent(CoordEcho.self, forKey: .pickupCoord)
+        let deliveryCoord = try c.decodeIfPresent(CoordEcho.self, forKey: .deliveryCoord)
+        let originAddr = try c.decodeIfPresent(AddressEcho.self, forKey: .origin)
+        let destAddr   = try c.decodeIfPresent(AddressEcho.self, forKey: .destination)
+
+        self.pickupLocation = Self.mergeLocation(
+            echo: pickupEcho, coord: pickupCoord, addr: originAddr
+        )
+        self.deliveryLocation = Self.mergeLocation(
+            echo: deliveryEcho, coord: deliveryCoord, addr: destAddr
+        )
+
+        self.pickupDate   = try c.decodeIfPresent(String.self, forKey: .pickupDate)
+        self.deliveryDate = try c.decodeIfPresent(String.self, forKey: .deliveryDate)
+
+        // distance — NUMBER on the wire, declared String? → coerce to String.
+        self.distance     = Self.flexStringIfPresent(c, .distance)
+        self.distanceUnit = try c.decodeIfPresent(String.self, forKey: .distanceUnit)
+
+        // rate — DECIMAL, String or Number → keep as String?
+        self.rate     = Self.flexStringIfPresent(c, .rate)
+        self.currency = try c.decodeIfPresent(String.self, forKey: .currency)
+
+        self.commodityName = try c.decodeIfPresent(String.self, forKey: .commodityName)
+
+        self.requiresEscort = try c.decodeIfPresent(Bool.self, forKey: .requiresEscort)
+        self.escortCount    = Self.flexIntIfPresent(c, .escortCount)
+
+        self.originState = try c.decodeIfPresent(String.self, forKey: .originState)
+        self.destState   = try c.decodeIfPresent(String.self, forKey: .destState)
+
+        self.brokerChainDepth = Self.flexIntIfPresent(c, .brokerChainDepth)
+        self.version          = Self.flexIntIfPresent(c, .version)
+
+        self.transportMode     = try c.decodeIfPresent(String.self, forKey: .transportMode)
+        self.vesselClass       = try c.decodeIfPresent(String.self, forKey: .vesselClass)
+        self.multiVehicleCount = Self.flexIntIfPresent(c, .multiVehicleCount)
+        self.permitType        = try c.decodeIfPresent(String.self, forKey: .permitType)
+        self.originPort        = try c.decodeIfPresent(String.self, forKey: .originPort)
+        self.destPort          = try c.decodeIfPresent(String.self, forKey: .destPort)
+
+        // worldscalePct / worldscaleFlat — DECIMAL, String or Number → String?
+        self.worldscalePct  = Self.flexStringIfPresent(c, .worldscalePct)
+        self.worldscaleFlat = Self.flexStringIfPresent(c, .worldscaleFlat)
+        self.rateUnit       = try c.decodeIfPresent(String.self, forKey: .rateUnit)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        // Encode id back as a String to mirror the server contract.
+        try c.encode(String(id), forKey: .id)
+        try c.encodeIfPresent(shipperId, forKey: .shipperId)
+        try c.encodeIfPresent(driverId, forKey: .driverId)
+        try c.encode(loadNumber, forKey: .loadNumber)
+        try c.encode(status, forKey: .status)
+        try c.encodeIfPresent(cargoType, forKey: .cargoType)
+        try c.encodeIfPresent(hazmatClass, forKey: .hazmatClass)
+        try c.encodeIfPresent(unNumber, forKey: .unNumber)
+        try c.encodeIfPresent(weight, forKey: .weight)
+        try c.encodeIfPresent(weightUnit, forKey: .weightUnit)
+        // Re-emit the city/state echoes + sidecar coord/address fields so a
+        // round-trip is lossless against the server shape.
+        if let p = pickupLocation {
+            try c.encode(CityStateEcho(city: p.city, state: p.state), forKey: .pickupLocation)
+            try c.encode(CoordEcho(lat: p.lat, lng: p.lng), forKey: .pickupCoord)
+            try c.encode(AddressEcho(address: p.address, city: p.city, state: p.state, zip: p.zipCode), forKey: .origin)
+        }
+        if let d = deliveryLocation {
+            try c.encode(CityStateEcho(city: d.city, state: d.state), forKey: .deliveryLocation)
+            try c.encode(CoordEcho(lat: d.lat, lng: d.lng), forKey: .deliveryCoord)
+            try c.encode(AddressEcho(address: d.address, city: d.city, state: d.state, zip: d.zipCode), forKey: .destination)
+        }
+        try c.encodeIfPresent(pickupDate, forKey: .pickupDate)
+        try c.encodeIfPresent(deliveryDate, forKey: .deliveryDate)
+        try c.encodeIfPresent(distance, forKey: .distance)
+        try c.encodeIfPresent(distanceUnit, forKey: .distanceUnit)
+        try c.encodeIfPresent(rate, forKey: .rate)
+        try c.encodeIfPresent(currency, forKey: .currency)
+        try c.encodeIfPresent(commodityName, forKey: .commodityName)
+        try c.encodeIfPresent(requiresEscort, forKey: .requiresEscort)
+        try c.encodeIfPresent(escortCount, forKey: .escortCount)
+        try c.encodeIfPresent(originState, forKey: .originState)
+        try c.encodeIfPresent(destState, forKey: .destState)
+        try c.encodeIfPresent(brokerChainDepth, forKey: .brokerChainDepth)
+        try c.encodeIfPresent(version, forKey: .version)
+        try c.encodeIfPresent(transportMode, forKey: .transportMode)
+        try c.encodeIfPresent(vesselClass, forKey: .vesselClass)
+        try c.encodeIfPresent(multiVehicleCount, forKey: .multiVehicleCount)
+        try c.encodeIfPresent(permitType, forKey: .permitType)
+        try c.encodeIfPresent(originPort, forKey: .originPort)
+        try c.encodeIfPresent(destPort, forKey: .destPort)
+        try c.encodeIfPresent(worldscalePct, forKey: .worldscalePct)
+        try c.encodeIfPresent(worldscaleFlat, forKey: .worldscaleFlat)
+        try c.encodeIfPresent(rateUnit, forKey: .rateUnit)
+    }
+
+    // MARK: Flexible decode helpers
+
+    /// Merge the city/state echo + {lat,lng} coord + {address,zip} into a
+    /// `LoadLocation`. Returns nil only when NEITHER city/state nor a coord
+    /// is present (so an all-empty echo doesn't fabricate a 0,0 location).
+    private static func mergeLocation(
+        echo: CityStateEcho?,
+        coord: CoordEcho?,
+        addr: AddressEcho?
+    ) -> LoadLocation? {
+        let city  = echo?.city  ?? addr?.city  ?? ""
+        let state = echo?.state ?? addr?.state ?? ""
+        let address = addr?.address ?? ""
+        let zip     = addr?.zip ?? ""
+        let lat = coord?.lat ?? 0
+        let lng = coord?.lng ?? 0
+
+        let hasPlace = !city.isEmpty || !state.isEmpty
+        let hasCoord = lat != 0 || lng != 0
+        guard hasPlace || hasCoord else { return nil }
+
+        return LoadLocation(
+            address: address,
+            city: city,
+            state: state,
+            zipCode: zip,
+            lat: lat,
+            lng: lng
+        )
+    }
+
+    /// Decode an Int from String | Int | Double; nil if the key is absent/null.
+    private static func flexInt(
+        _ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys
+    ) throws -> Int? {
+        guard c.contains(key) else { return nil }
+        if let i = try? c.decode(Int.self, forKey: key) { return i }
+        if let d = try? c.decode(Double.self, forKey: key) { return Int(d) }
+        if let s = try? c.decode(String.self, forKey: key) {
+            if let i = Int(s) { return i }
+            if let d = Double(s) { return Int(d) }
+            return nil
+        }
+        return nil   // explicit null
+    }
+
+    private static func flexIntIfPresent(
+        _ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys
+    ) -> Int? {
+        (try? flexInt(c, key)) ?? nil
+    }
+
+    /// Decode a String from String | Int | Double | Bool; nil if absent/null.
+    /// Numbers are coerced to their canonical string form so the declared
+    /// `String?` fields (distance/rate/weight/worldscale*) decode cleanly.
+    private static func flexStringIfPresent(
+        _ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys
+    ) -> String? {
+        guard c.contains(key) else { return nil }
+        if let s = try? c.decode(String.self, forKey: key) { return s }
+        if let i = try? c.decode(Int.self, forKey: key) { return String(i) }
+        if let d = try? c.decode(Double.self, forKey: key) {
+            // Render whole numbers without a trailing ".0" so "620" not "620.0".
+            return d == d.rounded() ? String(Int(d)) : String(d)
+        }
+        if let b = try? c.decode(Bool.self, forKey: key) { return String(b) }
+        return nil   // explicit null
+    }
 }
 
 // MARK: - Demo fixtures (used by DriverHomeViewModel when the backend is
