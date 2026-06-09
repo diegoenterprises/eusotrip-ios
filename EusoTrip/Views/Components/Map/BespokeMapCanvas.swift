@@ -67,10 +67,18 @@ import UIKit
 /// everything else to the flat shipper / catalyst board. `.ocean` forces the
 /// Vessel 003 "Live Tracking" great-circle register (`.ocean` dark /
 /// `.lightOcean` light) — the AIS orb, port pins, latitude grid, coast hints,
-/// and the speed/heading/coords callout chip.
-public enum BespokeMapStyleHint {
+/// and the speed/heading/coords callout chip. `.rail` forces the Rail 003
+/// hero registers (`.darkRail` / `.lightRail` — flat-gray [2,6] remaining).
+/// `.nav` forces the driver turn-by-turn register (035/116 — w9 route over a
+/// w16 casing, road ribbons, maneuver node, heading-arrow puck).
+/// `.portApproach` forces the Vessel 660 port-approach chart (deep navy in
+/// BOTH modes — #15233A landmass, history wake, container-vessel AIS hull).
+public enum BespokeMapStyleHint: Hashable {
     case auto
     case ocean
+    case rail
+    case nav
+    case portApproach
 }
 
 // MARK: - Public entry (drop-in for HereMapWebViewRepresentable)
@@ -141,6 +149,10 @@ public struct BespokeMapCanvas: View {
     @State private var zoomDelta: Double = 0
     @State private var liveZoom: Double = 0
 
+    // Canon motion (puck pulse / route flow) honors the system setting — the
+    // TimelineView pauses and the painters fall back to the authored statics.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     // Precomputed scene — the projected, simplified, culled geometry that the
     // per-frame draw closure rasterizes. Rebuilt ONLY when the cache key flips
     // (layers / committed camera / register / size change), never per frame.
@@ -154,27 +166,37 @@ public struct BespokeMapCanvas: View {
             // The committed (non-gesture) viewport. Live pan/zoom is folded in
             // at DRAW time as a cheap affine — NOT by re-fitting here.
             let baseViewport = makeBaseViewport(size: size)
-            let key = Self.cacheKey(layers: layers, viewport: baseViewport, isOcean: Self.isOcean(style))
+            let key = Self.cacheKey(layers: layers, viewport: baseViewport,
+                                    isOcean: Self.isOcean(style), hint: self.style)
+            // Canon motion shell (same 30fps TimelineView discipline as
+            // EquipmentAnimation): drives the 2.2s/2.4s puck pulse + the 1.4s
+            // route-flow dash offset. Paused — one static frame — whenever
+            // reduce-motion is on or the scene carries no live motion, so a
+            // static board never burns frames.
+            let motionPaused = reduceMotion || !model.hasLiveMotion
 
             ZStack {
-                Canvas { context, canvasSize in
-                    // Apply the live-gesture affine (pan + pinch) about the
-                    // canvas center to the cached base scene. Committed pan/zoom
-                    // is already baked into `baseViewport`/`model`; only the
-                    // in-flight delta is applied here so a drag/pinch costs one
-                    // matrix concat, not a full re-projection.
-                    if liveDrag != .zero || liveZoom != 0 {
-                        let s = pow(2.0, liveZoom)
-                        let cx = canvasSize.width / 2
-                        let cy = canvasSize.height / 2
-                        context.translateBy(x: liveDrag.width, y: liveDrag.height)
-                        context.translateBy(x: cx, y: cy)
-                        context.scaleBy(x: CGFloat(s), y: CGFloat(s))
-                        context.translateBy(x: -cx, y: -cy)
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: motionPaused)) { timeline in
+                    Canvas { context, canvasSize in
+                        // Apply the live-gesture affine (pan + pinch) about the
+                        // canvas center to the cached base scene. Committed pan/zoom
+                        // is already baked into `baseViewport`/`model`; only the
+                        // in-flight delta is applied here so a drag/pinch costs one
+                        // matrix concat, not a full re-projection.
+                        if liveDrag != .zero || liveZoom != 0 {
+                            let s = pow(2.0, liveZoom)
+                            let cx = canvasSize.width / 2
+                            let cy = canvasSize.height / 2
+                            context.translateBy(x: liveDrag.width, y: liveDrag.height)
+                            context.translateBy(x: cx, y: cy)
+                            context.scaleBy(x: CGFloat(s), y: CGFloat(s))
+                            context.translateBy(x: -cx, y: -cy)
+                        }
+                        let phase = motionPaused ? PulsePhase.still : Self.pulsePhase(at: timeline.date)
+                        Self.paint(context: &context, size: canvasSize, model: model, phase: phase)
                     }
-                    Self.paint(context: &context, size: canvasSize, model: model)
+                    .background(Color.clear)
                 }
-                .background(Color.clear)
             }
             .frame(width: size.width, height: size.height)
             .contentShape(Rectangle())
@@ -211,7 +233,8 @@ public struct BespokeMapCanvas: View {
     ) {
         guard key != modelKey else { return }
         modelKey = key
-        model = RenderModel.build(size: size, style: style, viewport: viewport, layers: layers)
+        model = RenderModel.build(size: size, style: style, viewport: viewport,
+                                  layers: layers, hint: self.style)
     }
 
     // MARK: Style resolution
@@ -221,10 +244,14 @@ public struct BespokeMapCanvas: View {
     ///             → `.cosmos` (dark) / `.lightDriver` (light)
     ///   otherwise ⇒ flat shipper / catalyst board → `.dark` / `.light`.
     private var resolvedStyle: BespokeMapStyle {
-        // Explicit ocean hint wins over the tilt heuristic — the Vessel 003
-        // great-circle surface is a flat board with no first-person tilt.
-        if case .ocean = style {
-            return BespokeMapStyle.ocean(isDark: isDark)
+        // Explicit register hints win over the tilt heuristic — each of these
+        // surfaces is selected deliberately by its screen, never inferred.
+        switch style {
+        case .ocean:        return BespokeMapStyle.ocean(isDark: isDark)
+        case .rail:         return BespokeMapStyle.rail(isDark: isDark)
+        case .nav:          return BespokeMapStyle.nav(isDark: isDark)
+        case .portApproach: return BespokeMapStyle.portApproach
+        case .auto:         break
         }
         if tilt > 0 {
             return BespokeMapStyle.driver(isDark: isDark)
@@ -268,11 +295,16 @@ public struct BespokeMapCanvas: View {
     }
 
     /// A cheap, collision-resistant cache key over the inputs that change the
-    /// projected scene: the layer data, the committed viewport, and whether the
-    /// ocean register is active. Hashes the viewport's center/zoom/size so a new
-    /// camera invalidates the cache; hashes `layers` (Hashable) so new route /
-    /// marker data does too.
-    static func cacheKey(layers: [HereMapLayer], viewport: BespokeMapViewport, isOcean: Bool) -> Int {
+    /// projected scene: the layer data, the committed viewport, the register
+    /// hint, and whether the ocean register is active. Hashes the viewport's
+    /// center/zoom/size so a new camera invalidates the cache; hashes `layers`
+    /// (Hashable) so new route / marker data does too.
+    static func cacheKey(
+        layers: [HereMapLayer],
+        viewport: BespokeMapViewport,
+        isOcean: Bool,
+        hint: BespokeMapStyleHint = .auto
+    ) -> Int {
         var h = Hasher()
         h.combine(layers)
         h.combine(viewport.center.lat)
@@ -281,6 +313,7 @@ public struct BespokeMapCanvas: View {
         h.combine(viewport.size.width)
         h.combine(viewport.size.height)
         h.combine(isOcean)
+        h.combine(hint)
         return h.finalize()
     }
 
@@ -396,12 +429,22 @@ extension BespokeMapCanvas {
         var style: BespokeMapStyle = .standard(isDark: false)
         var isOcean: Bool = false
         var isDriverGrid: Bool = false
+        // Register flags resolved from the caller's style hint: the nav
+        // register swaps the grid/ribbon grammar (035), the port-approach
+        // register swaps the basemap + grid grammar (660).
+        var isNav: Bool = false
+        var isPortApproach: Bool = false
+        // Whether the scene carries renderer-driven motion (puck pulse /
+        // route flow) — used to pause the TimelineView when there is nothing
+        // to animate, so static boards never burn frames.
+        var hasLiveMotion: Bool = false
 
         // Basemap — projected continent rings (screen space), pre-culled to the
         // viewport, with their derived land + coast colors.
         var basemapRings: [[CGPoint]] = []
         var landColor: Color = .clear
         var coastColor: Color = .clear
+        var coastWidth: CGFloat = 0.9
 
         // Heatmap blobs (screen-space centers + weights), pre-culled.
         var heatBlobs: [(center: CGPoint, weight: Double)] = []
@@ -439,20 +482,30 @@ extension BespokeMapCanvas {
             size: CGSize,
             style: BespokeMapStyle,
             viewport: BespokeMapViewport,
-            layers: [HereMapLayer]
+            layers: [HereMapLayer],
+            hint: BespokeMapStyleHint = .auto
         ) -> RenderModel {
             var m = RenderModel()
             m.size = size
             m.style = style
             m.isOcean = BespokeMapCanvas.isOcean(style)
             m.isDriverGrid = style.ping != nil
+            m.isNav = hint == .nav
+            m.isPortApproach = hint == .portApproach
             let rect = CGRect(origin: .zero, size: size)
 
             // ── 1b — basemap (skipped on the open-water ocean register) ──
             if !m.isOcean {
-                let isDarkRegister = BespokeMapCanvas.gridIsLight(style.grid.color)
-                if isDarkRegister {
-                    let a = style.ping != nil ? 0.10 : 0.16
+                if m.isPortApproach {
+                    // 660 chart: landmass #15233A, coastline #27406A w1.3.
+                    m.landColor = Color(hex: 0x15233A)
+                    m.coastColor = Color(hex: 0x27406A)
+                    m.coastWidth = 1.3
+                } else if BespokeMapCanvas.gridIsLight(style.grid.color) {
+                    // Driver surfaces (013 ping / 035 nav puck) take the
+                    // fainter land wash; boards take the fuller one.
+                    let isDriverSurface = style.ping != nil || style.truckMarker?.glyph == .navArrow
+                    let a = isDriverSurface ? 0.10 : 0.16
                     m.landColor = Color.white.opacity(a)
                     m.coastColor = Color.white.opacity(a + 0.14)
                 } else {
@@ -572,6 +625,16 @@ extension BespokeMapCanvas {
                 m.scalePillText = "\(BespokeMapCanvas.trimmed(nice)) MI"
             }
 
+            // ── motion eligibility — a live puck pulses; a board route
+            //    carries the 222 flow overlay. Anything else stays static
+            //    and pauses the TimelineView entirely. ──
+            let hasLivePuck = m.markers.contains { $0.kind == .truck }
+            let flowEligible = m.hasRoute
+                && style.ping == nil
+                && style.truckMarker?.glyph == .cabBox
+                && style.routePending.stops != nil
+            m.hasLiveMotion = hasLivePuck || flowEligible
+
             return m
         }
 
@@ -665,15 +728,51 @@ extension BespokeMapCanvas {
 
 extension BespokeMapCanvas {
 
+    /// Per-frame canon motion phases, derived from the shared wall clock so
+    /// every map on screen pulses in lockstep with the brand rhythm.
+    /// `.still` paints the wireframes' authored static geometry
+    /// (reduce-motion / paused timeline).
+    struct PulsePhase {
+        /// 0…1 sawtooth over the 2.2 s board-puck pulse period (222).
+        var pulse22: Double = 0
+        /// 0…1 sawtooth over the 2.4 s AIS / port-approach pulse period (660).
+        var pulse24: Double = 0
+        /// Animated route-flow dash offset: 0 → −20 over 1.4 s (222).
+        var flowDashOffset: CGFloat = 0
+        /// false ⇒ static frame — painters skip the pulse math entirely.
+        var animated: Bool = false
+
+        static let still = PulsePhase()
+    }
+
+    /// Resolve the motion phases for a timeline tick. Pure arithmetic on the
+    /// wall clock — no allocation, no state.
+    static func pulsePhase(at date: Date) -> PulsePhase {
+        let t = date.timeIntervalSinceReferenceDate
+        var p = PulsePhase()
+        p.pulse22 = (t / 2.2).truncatingRemainder(dividingBy: 1)
+        p.pulse24 = (t / 2.4).truncatingRemainder(dividingBy: 1)
+        p.flowDashOffset = CGFloat(-20.0 * (t / 1.4).truncatingRemainder(dividingBy: 1))
+        p.animated = true
+        return p
+    }
+
+    /// 0→1→0 triangle wave over a 0…1 sawtooth — the canon pulse easing
+    /// (r12→22→12 / opacity 0.9→0.3→0.9 read as one out-and-back sweep).
+    static func pulseTriangle(_ saw: Double) -> Double {
+        1.0 - abs(2.0 * saw - 1.0)
+    }
+
     /// The full draw pipeline. Static + value-typed so the `Canvas` closure
     /// holds nothing referential. Consumes the PRECOMPUTED `RenderModel` — it
     /// only re-emits cheap chrome (background / grid / silhouettes) and
     /// rasterizes already-projected geometry. No projection, no simplify, no
-    /// smoothing happens here.
+    /// smoothing happens here. `phase` carries the canon motion clock.
     static func paint(
         context: inout GraphicsContext,
         size: CGSize,
-        model: RenderModel
+        model: RenderModel,
+        phase: PulsePhase = .still
     ) {
         let rect = CGRect(origin: .zero, size: size)
         let style = model.style
@@ -687,10 +786,12 @@ extension BespokeMapCanvas {
         }
 
         // 2 — faint grid.
-        paintGrid(&context, rect: rect, grid: style.grid, isDriver: model.isDriverGrid, isOcean: model.isOcean)
+        paintGrid(&context, rect: rect, grid: style.grid, isDriver: model.isDriverGrid,
+                  isOcean: model.isOcean, isNav: model.isNav, isPortApproach: model.isPortApproach)
 
         // 3 — abstract silhouettes.
-        paintSilhouettes(&context, rect: rect, silhouettes: style.silhouettes, isOcean: model.isOcean)
+        paintSilhouettes(&context, rect: rect, silhouettes: style.silhouettes,
+                         isOcean: model.isOcean, isNav: model.isNav)
 
         // 4a — heatmap.
         for blob in model.heatBlobs {
@@ -702,7 +803,7 @@ extension BespokeMapCanvas {
         }
         // 4c — route (pre-smoothed paths).
         if model.hasRoute {
-            paintRoutePaths(&context, model: model)
+            paintRoutePaths(&context, model: model, phase: phase)
         }
         // 4d — endpoints.
         for ep in model.endpoints {
@@ -710,7 +811,7 @@ extension BespokeMapCanvas {
         }
         // 4e — generic markers (culled + capped).
         for mk in model.markers {
-            paintMarker(&context, at: mk.at, kind: mk.kind, style: style)
+            paintMarker(&context, at: mk.at, kind: mk.kind, style: style, phase: phase)
         }
 
         // 5 — callout pills (culled + capped) + scale pill.
@@ -782,7 +883,7 @@ extension BespokeMapCanvas {
             context.stroke(
                 path,
                 with: .color(model.coastColor),
-                style: StrokeStyle(lineWidth: 0.9, lineCap: .round, lineJoin: .round)
+                style: StrokeStyle(lineWidth: model.coastWidth, lineCap: .round, lineJoin: .round)
             )
         }
     }
@@ -808,7 +909,9 @@ extension BespokeMapCanvas {
         rect: CGRect,
         grid: BespokeMapStyle.Grid,
         isDriver: Bool,
-        isOcean: Bool = false
+        isOcean: Bool = false,
+        isNav: Bool = false,
+        isPortApproach: Bool = false
     ) {
         // OCEAN (003 Vessel): the SVG authors ONLY 3 horizontal latitude lines
         // (no longitude verticals). Paint exactly those — never the board crosshatch.
@@ -825,8 +928,18 @@ extension BespokeMapCanvas {
         // VERBATIM: straight authored graticule at FIXED spacing — NO
         // foreshorten / warp on horizontals. Driver register: 44pt square grid.
         // Shipper board: 60pt vertical columns / 80pt horizontal rows.
-        let hSpacing: CGFloat = isDriver ? 44 : 60   // vertical line spacing (columns)
-        let vSpacing: CGFloat = isDriver ? 44 : 80   // horizontal line spacing (rows)
+        // Nav (035): 73pt columns / 96pt rows. Port approach (660): 72/32.
+        let hSpacing: CGFloat   // vertical line spacing (columns)
+        let vSpacing: CGFloat   // horizontal line spacing (rows)
+        if isPortApproach {
+            hSpacing = 72; vSpacing = 32
+        } else if isNav {
+            hSpacing = 73; vSpacing = 96
+        } else if isDriver {
+            hSpacing = 44; vSpacing = 44
+        } else {
+            hSpacing = 60; vSpacing = 80
+        }
 
         var path = Path()
         var x: CGFloat = 0
@@ -850,10 +963,33 @@ extension BespokeMapCanvas {
         _ context: inout GraphicsContext,
         rect: CGRect,
         silhouettes: BespokeMapStyle.Silhouettes?,
-        isOcean: Bool = false
+        isOcean: Bool = false,
+        isNav: Bool = false
     ) {
         guard let s = silhouettes else { return }
         let w0 = rect.width, h0 = rect.height
+        // NAV (035): TWO secondary-road ribbons at authored positions, each
+        // stroked with EVERY silhouette pass on the SAME geometry (light:
+        // #FFFFFF w9 then the #000000@0.05 w9 tint that greys the ribbon;
+        // dark: a single #161B27 w9 pass). Normalized off the 440×956 frame:
+        //   A: M-20 612 L210 540 L470 600 · B: M340 -20 L300 230 L360 470.
+        if isNav {
+            var roadA = Path()
+            roadA.move(to: CGPoint(x: -0.045 * w0, y: 0.640 * h0))
+            roadA.addLine(to: CGPoint(x: 0.477 * w0, y: 0.565 * h0))
+            roadA.addLine(to: CGPoint(x: 1.068 * w0, y: 0.628 * h0))
+            var roadB = Path()
+            roadB.move(to: CGPoint(x: 0.773 * w0, y: -0.021 * h0))
+            roadB.addLine(to: CGPoint(x: 0.682 * w0, y: 0.241 * h0))
+            roadB.addLine(to: CGPoint(x: 0.818 * w0, y: 0.492 * h0))
+            let passes = Swift.min(s.colors.count, s.widths.count)
+            for i in 0..<passes {
+                let st = StrokeStyle(lineWidth: s.widths[i], lineCap: .round, lineJoin: .round)
+                context.stroke(roadA, with: .color(s.colors[i]), style: st)
+                context.stroke(roadB, with: .color(s.colors[i]), style: st)
+            }
+            return
+        }
         // OCEAN (003 Vessel): the SVG hugs TWO discrete VERTICAL coast squiggles
         // at the left + right card margins (not a horizontal horizon sweep).
         if isOcean, s.colors.count > 0, s.widths.count > 0 {
@@ -914,16 +1050,35 @@ extension BespokeMapCanvas {
         maxWeight: Double
     ) {
         let weight = rawWeight / maxWeight
+        // Radius ∝ the normalized demand weight (load-to-truck ratio).
         let radius = CGFloat(28 + 46 * weight)
-        let coreOpacity = 0.10 + 0.34 * weight
         let blob = Path(ellipseIn: CGRect(
             x: center.x - radius, y: center.y - radius,
             width: radius * 2, height: radius * 2))
-        let g = Gradient(stops: [
-            Gradient.Stop(color: Brand.magenta.opacity(coreOpacity), location: 0.0),
-            Gradient.Stop(color: Brand.blue.opacity(coreOpacity * 0.7), location: 0.45),
-            Gradient.Stop(color: Brand.blue.opacity(0.0), location: 1.0)
-        ])
+        // VERBATIM 544 Dispatcher Demand Map intensity ramp (NOT the brand
+        // sweep) — keyed hot / warm / soft by the normalized weight:
+        //   hot  ≥ 0.66 : #F44336@0.60 → #FF7043@0.28 → clear
+        //   warm ≥ 0.33 : #FFA726@0.52 → clear
+        //   soft        : #2196F3@0.34 → clear  (surplus / cold)
+        let g: Gradient
+        if weight >= 0.66 {
+            let ember = Color(hex: 0xFF7043)
+            g = Gradient(stops: [
+                Gradient.Stop(color: Brand.danger.opacity(0.60), location: 0.0),
+                Gradient.Stop(color: ember.opacity(0.28), location: 0.55),
+                Gradient.Stop(color: ember.opacity(0.0), location: 1.0)
+            ])
+        } else if weight >= 0.33 {
+            g = Gradient(stops: [
+                Gradient.Stop(color: Brand.warning.opacity(0.52), location: 0.0),
+                Gradient.Stop(color: Brand.warning.opacity(0.0), location: 1.0)
+            ])
+        } else {
+            g = Gradient(stops: [
+                Gradient.Stop(color: Brand.info.opacity(0.34), location: 0.0),
+                Gradient.Stop(color: Brand.info.opacity(0.0), location: 1.0)
+            ])
+        }
         context.fill(
             blob,
             with: .radialGradient(g, center: center, startRadius: 0, endRadius: radius)
@@ -951,10 +1106,24 @@ extension BespokeMapCanvas {
 
     /// Stroke the PRE-smoothed active + pending route Paths from the model.
     /// No simplify / smoothing here — that ran once in `RenderModel.build`.
-    static func paintRoutePaths(_ context: inout GraphicsContext, model: RenderModel) {
+    /// `phase` drives the 222 flow overlay (boards only).
+    static func paintRoutePaths(
+        _ context: inout GraphicsContext,
+        model: RenderModel,
+        phase: PulsePhase = .still
+    ) {
         let style = model.style
         let gradStart = model.routeGradStart
         let gradEnd = model.routeGradEnd
+
+        // Casing — flat road bed stroked UNDER the whole route (nav register:
+        // #FFFFFF w16 light / #05060A w16 dark per 035). Both legs share it.
+        if let casing = style.routeActive.casing, style.routeActive.casingWidth > 0 {
+            let casingStyle = StrokeStyle(
+                lineWidth: style.routeActive.casingWidth, lineCap: .round, lineJoin: .round)
+            context.stroke(model.routeActivePath, with: .color(casing), style: casingStyle)
+            context.stroke(model.routePendingPath, with: .color(casing), style: casingStyle)
+        }
 
         // Active — iridescent gradient, solid, round caps.
         let routeGradient = GraphicsContext.Shading.linearGradient(
@@ -989,6 +1158,33 @@ extension BespokeMapCanvas {
                 dash: style.routePending.dashPattern
             )
         )
+
+        // CANON FLOW (222 boards): the active leg carries an eusoPrimary dash
+        // [3,7] overlay whose dashoffset runs 0 → −20 over a 1.4 s loop. The
+        // wireframe authors the flow as full-opacity dashes over a faded base;
+        // over the engine's full-opacity active leg the same-hue dashes are
+        // lifted additively (plusLighter @0.35) so the motion reads without
+        // re-tinting the verified-no-drift static route. Boards only — the
+        // driver / ocean / rail / nav wireframes author no flow.
+        if phase.animated,
+           style.ping == nil,
+           style.truckMarker?.glyph == .cabBox,
+           let flowStops = style.routePending.stops, !flowStops.isEmpty {
+            var flow = context
+            flow.blendMode = .plusLighter
+            flow.opacity = 0.35
+            flow.stroke(
+                model.routeActivePath,
+                with: routeGradient,
+                style: StrokeStyle(
+                    lineWidth: style.routeActive.width,
+                    lineCap: .round,
+                    lineJoin: .round,
+                    dash: [3, 7],
+                    dashPhase: phase.flowDashOffset
+                )
+            )
+        }
 
         // Light decoration: breadcrumbs sprinkled along the traveled portion.
         for pt in model.breadcrumbDots {
@@ -1132,6 +1328,10 @@ extension BespokeMapCanvas {
             x: c.x - marker.outerRadius, y: c.y - marker.outerRadius,
             width: marker.outerRadius * 2, height: marker.outerRadius * 2))
         context.fill(outer, with: .color(marker.outerFill))
+        // Optional outer hairline (035 maneuver node / 660 dest halo ring).
+        if let stroke = marker.outerStroke, marker.outerStrokeWidth > 0 {
+            context.stroke(outer, with: .color(stroke), lineWidth: marker.outerStrokeWidth)
+        }
 
         // Inner core — gradient if provided, else solid fill. Gradient is fixed
         // map-space bottom-leading → top-trailing across the inner disc.
@@ -1191,15 +1391,16 @@ extension BespokeMapCanvas {
         _ context: inout GraphicsContext,
         at c: CGPoint,
         kind: HereMarker.Kind,
-        style: BespokeMapStyle
+        style: BespokeMapStyle,
+        phase: PulsePhase = .still
     ) {
         switch kind {
         case .truck:
             // Exactly ONE puck per register: truck on standard, ping on driver.
             if let truck = style.truckMarker {
-                paintTruck(&context, at: c, truck: truck)
+                paintTruck(&context, at: c, truck: truck, phase: phase)
             } else if let ping = style.ping {
-                paintPing(&context, at: c, ping: ping)
+                paintPing(&context, at: c, ping: ping, phase: phase)
             }
         case .pickup:
             paintEndpoint(&context, at: c, marker: style.originMarker)
@@ -1220,22 +1421,126 @@ extension BespokeMapCanvas {
     }
 
     /// STANDARD-register live puck (.dark / .light): halo + ring + a cab+box
-    /// two-rect truck silhouette. NO green status dot anywhere.
+    /// two-rect truck silhouette. NO green status dot anywhere. `phase`
+    /// drives the canon halo pulse (222: r12→22→12 / opacity 0.9→0.3→0.9
+    /// over 2.2 s; AIS surfaces keep their 2.4 s rhythm).
     static func paintTruck(
         _ context: inout GraphicsContext,
         at c: CGPoint,
-        truck: BespokeMapStyle.TruckMarker
+        truck: BespokeMapStyle.TruckMarker,
+        phase: PulsePhase = .still
     ) {
-        // Halo — radial gradient out to haloRadius at haloOpacity.
-        let halo = Path(ellipseIn: CGRect(
-            x: c.x - truck.haloRadius, y: c.y - truck.haloRadius,
-            width: truck.haloRadius * 2, height: truck.haloRadius * 2))
-        let haloGrad = Gradient(stops: [
-            Gradient.Stop(color: (truck.haloStops.first ?? Brand.blue).opacity(truck.haloOpacity), location: 0.0),
-            Gradient.Stop(color: (truck.haloStops.last ?? Brand.magenta).opacity(truck.haloOpacity * 0.6), location: 0.6),
-            Gradient.Stop(color: (truck.haloStops.last ?? Brand.magenta).opacity(0.0), location: 1.0)
-        ])
-        context.fill(halo, with: .radialGradient(haloGrad, center: c, startRadius: 0, endRadius: truck.haloRadius))
+        switch truck.glyph {
+        case .navArrow:
+            // 035 own-truck halo: a FLAT eusoDiagonal disc at haloOpacity —
+            // the wireframe authors it static (no pulse on the nav puck).
+            let halo = Path(ellipseIn: CGRect(
+                x: c.x - truck.haloRadius, y: c.y - truck.haloRadius,
+                width: truck.haloRadius * 2, height: truck.haloRadius * 2))
+            let stops = truck.haloStops.map { $0.opacity(truck.haloOpacity) }
+            context.fill(
+                halo,
+                with: .linearGradient(
+                    Gradient(colors: stops),
+                    startPoint: CGPoint(x: c.x - truck.haloRadius, y: c.y + truck.haloRadius),
+                    endPoint: CGPoint(x: c.x + truck.haloRadius, y: c.y - truck.haloRadius)
+                )
+            )
+        case .vesselTopDown:
+            // 660 AIS pulse: a FLAT #2BE0B0 disc breathing r7→15 / opacity
+            // 0.35→0 over 2.4 s. The static frame is the authored r7 @0.35.
+            let minFrac = 7.0 / 15.0
+            let tri = phase.animated ? pulseTriangle(phase.pulse24) : 0
+            let r = truck.haloRadius * CGFloat(minFrac + (1 - minFrac) * tri)
+            let op = truck.haloOpacity * (1 - tri)
+            let pulse = Path(ellipseIn: CGRect(
+                x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+            context.fill(pulse, with: .color((truck.haloStops.first ?? Color(hex: 0x2BE0B0)).opacity(op)))
+        case .cabBox, .aisHull:
+            // Halo — radial gradient out to the pulsing radius. Canon pulse
+            // (222): r12→22→12 with the layer fading 0.9→0.3→0.9 over 2.2 s
+            // (AIS orb: 2.4 s). The static frame keeps the full authored halo.
+            let minFrac = 12.0 / 22.0
+            let saw = truck.glyph == .aisHull ? phase.pulse24 : phase.pulse22
+            let tri = phase.animated ? pulseTriangle(saw) : 1.0
+            let fade = phase.animated ? (0.9 - 0.6 * tri) : 1.0
+            let haloR = truck.haloRadius * CGFloat(minFrac + (1 - minFrac) * tri)
+            let halo = Path(ellipseIn: CGRect(
+                x: c.x - haloR, y: c.y - haloR,
+                width: haloR * 2, height: haloR * 2))
+            let haloGrad = Gradient(stops: [
+                Gradient.Stop(color: (truck.haloStops.first ?? Brand.blue).opacity(truck.haloOpacity * fade), location: 0.0),
+                Gradient.Stop(color: (truck.haloStops.last ?? Brand.magenta).opacity(truck.haloOpacity * 0.6 * fade), location: 0.6),
+                Gradient.Stop(color: (truck.haloStops.last ?? Brand.magenta).opacity(0.0), location: 1.0)
+            ])
+            context.fill(halo, with: .radialGradient(haloGrad, center: c, startRadius: 0, endRadius: haloR))
+        }
+
+        // NAV own-truck puck (VERBATIM 035): r17 disc + hairline ring + the
+        // eusoDiagonal heading-up arrowhead `M0 -9 L8 9 L0 4 L-8 9 Z`.
+        if truck.glyph == .navArrow {
+            let ring = Path(ellipseIn: CGRect(
+                x: c.x - truck.ringRadius, y: c.y - truck.ringRadius,
+                width: truck.ringRadius * 2, height: truck.ringRadius * 2))
+            context.fill(ring, with: .color(truck.ringFill))
+            context.stroke(ring, with: .color(truck.ringStroke), lineWidth: truck.ringWidth)
+            let u = truck.ringRadius / 17.0
+            var arrow = Path()
+            arrow.move(to: CGPoint(x: c.x, y: c.y - 9 * u))
+            arrow.addLine(to: CGPoint(x: c.x + 8 * u, y: c.y + 9 * u))
+            arrow.addLine(to: CGPoint(x: c.x, y: c.y + 4 * u))
+            arrow.addLine(to: CGPoint(x: c.x - 8 * u, y: c.y + 9 * u))
+            arrow.closeSubpath()
+            context.fill(
+                arrow,
+                with: .linearGradient(
+                    Gradient(colors: truck.coreGradient ?? BespokeMapStyle.routeGradientStops),
+                    startPoint: CGPoint(x: c.x - 8 * u, y: c.y + 9 * u),
+                    endPoint: CGPoint(x: c.x + 8 * u, y: c.y - 9 * u)
+                )
+            )
+            return
+        }
+
+        // PORT-APPROACH AIS vessel (VERBATIM 660): the canonical container-
+        // vessel top-down hull `M-14 -4 H6 L14 0 L6 4 H-14 Z` (ringFill body,
+        // ringStroke outline) + the canon container-slot fills + the bridge.
+        if truck.glyph == .vesselTopDown {
+            let u = truck.ringRadius / 14.0
+            var hull = Path()
+            hull.move(to: CGPoint(x: c.x - 14 * u, y: c.y - 4 * u))
+            hull.addLine(to: CGPoint(x: c.x + 6 * u, y: c.y - 4 * u))
+            hull.addLine(to: CGPoint(x: c.x + 14 * u, y: c.y))
+            hull.addLine(to: CGPoint(x: c.x + 6 * u, y: c.y + 4 * u))
+            hull.addLine(to: CGPoint(x: c.x - 14 * u, y: c.y + 4 * u))
+            hull.closeSubpath()
+            context.fill(hull, with: .color(truck.ringFill))
+            context.stroke(hull, with: .color(truck.ringStroke),
+                           style: StrokeStyle(lineWidth: truck.ringWidth, lineJoin: .round))
+            // Container slots — canon hue row #1473FF · #9C27B0 · #E2A33C ·
+            // #2BB673 (660 §3b), authored at (x, w): (-12, 3.8) (-7.6, 3.8)
+            // (-3.2, 3.8) (1.2, 3.0), y -3 h6 rx0.6.
+            let slots: [(x: CGFloat, w: CGFloat, hue: UInt32)] = [
+                (-12.0, 3.8, 0x1473FF),
+                (-7.6, 3.8, 0x9C27B0),
+                (-3.2, 3.8, 0xE2A33C),
+                (1.2, 3.0, 0x2BB673)
+            ]
+            for s in slots {
+                let rect = CGRect(x: c.x + s.x * u, y: c.y - 3 * u, width: s.w * u, height: 6 * u)
+                context.fill(
+                    Path(roundedRect: rect, cornerRadius: 0.6 * u, style: .continuous),
+                    with: .color(Color(hex: s.hue))
+                )
+            }
+            // Bridge block at the stern-side, glyph-tinted (#F5F5F7).
+            let bridge = CGRect(x: c.x + 4.8 * u, y: c.y - 2.2 * u, width: 2.2 * u, height: 4.4 * u)
+            context.fill(
+                Path(roundedRect: bridge, cornerRadius: 0.6 * u, style: .continuous),
+                with: .color(truck.glyphColor)
+            )
+            return
+        }
 
         // OCEAN AIS orb (VERBATIM 003): r11 eusoDiagonal core disc (NO ring
         // stroke) + a white hull chevron (`M-7 -1 H7 L4 5 H-4 Z`) with a small
@@ -1293,20 +1598,29 @@ extension BespokeMapCanvas {
 
     /// DRIVER-register live puck (.cosmos / .lightDriver): a soft radial halo
     /// (pulse) + gradient core disc + two concentric rings. NO chevron, NO dot.
+    /// `phase` drives the canon halo pulse (same 2.2 s out-and-back sweep as
+    /// the board puck, scaled to the register's halo radius).
     static func paintPing(
         _ context: inout GraphicsContext,
         at c: CGPoint,
-        ping: BespokeMapStyle.PingMarker
+        ping: BespokeMapStyle.PingMarker,
+        phase: PulsePhase = .still
     ) {
-        // Pulse halo — radial center color fading to clear at the rim.
+        // Pulse halo — radial center color fading to clear at the rim. The
+        // canon pulse breathes the radius (12/22 → full) with the layer
+        // fading 0.9→0.3→0.9; the static frame keeps the authored full halo.
+        let minFrac = 12.0 / 22.0
+        let tri = phase.animated ? pulseTriangle(phase.pulse22) : 1.0
+        let fade = phase.animated ? (0.9 - 0.6 * tri) : 1.0
+        let haloR = ping.haloRadius * CGFloat(minFrac + (1 - minFrac) * tri)
         let halo = Path(ellipseIn: CGRect(
-            x: c.x - ping.haloRadius, y: c.y - ping.haloRadius,
-            width: ping.haloRadius * 2, height: ping.haloRadius * 2))
+            x: c.x - haloR, y: c.y - haloR,
+            width: haloR * 2, height: haloR * 2))
         let haloGrad = Gradient(stops: [
-            Gradient.Stop(color: ping.haloColor.opacity(ping.haloOpacity), location: 0.0),
+            Gradient.Stop(color: ping.haloColor.opacity(ping.haloOpacity * fade), location: 0.0),
             Gradient.Stop(color: ping.haloColor.opacity(0.0), location: 1.0)
         ])
-        context.fill(halo, with: .radialGradient(haloGrad, center: c, startRadius: 0, endRadius: ping.haloRadius))
+        context.fill(halo, with: .radialGradient(haloGrad, center: c, startRadius: 0, endRadius: haloR))
 
         // Core disc — eusoDiagonal gradient (fixed map-space sweep).
         let core = Path(ellipseIn: CGRect(
