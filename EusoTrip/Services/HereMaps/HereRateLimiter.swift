@@ -102,12 +102,28 @@ actor HereRateLimiter {
         var maxCooldownLevel: Int = 6
 
         static let basicTier = Limits()
+
+        /// Enterprise profile (2026-06-09 migration): the account no
+        /// longer has the basic RPM ceiling that froze the demo, so the
+        /// pacer opens up — 8 concurrent, 60 ms spacing (≤ ~1000
+        /// grants/min) — while every 429 defense (backoff, cooldown,
+        /// circuit breaker) stays armed because enterprise tiers still
+        /// have *some* ceiling and a regression here must degrade
+        /// gracefully, never freeze.
+        static let enterpriseTier: Limits = {
+            var l = Limits()
+            l.maxConcurrent = 8
+            l.minIntervalNanos = 60_000_000
+            return l
+        }()
     }
 
-    /// Live limits. Mutable so a future enterprise-migration hook can
-    /// raise the ceiling at runtime without restarting; defaults to the
-    /// conservative basic-tier profile.
-    private var limits: Limits = .basicTier
+    /// Live limits. Mutable (`configure(_:)`) so the ceiling can move
+    /// at runtime; the default follows `HereMapsConfig.activeTier` so
+    /// flipping the tier seam re-tunes the pacer with no second switch
+    /// to forget.
+    private var limits: Limits =
+        HereMapsConfig.activeTier == .enterprise ? .enterpriseTier : .basicTier
 
     /// Swap in a new ceiling (e.g. after the enterprise migration hands
     /// over higher-tier keys). Safe to call any time; in-flight waiters

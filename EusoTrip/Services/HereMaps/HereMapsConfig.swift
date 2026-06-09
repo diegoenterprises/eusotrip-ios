@@ -69,11 +69,15 @@ enum HereMapsConfig {
 
     /// The HERE service tier all REST clients route through.
     ///
-    /// ENTERPRISE SWAP: when HERE provides enterprise endpoints + keys,
-    /// change this to `.enterprise` (after populating `enterpriseHosts`
-    /// and the `HERE_*` xcconfig credentials). Leave at `.basic` today so
-    /// every accessor resolves to the current public hosts unchanged.
-    static let activeTier: HereTier = .basic
+    /// 2026-06-09 ENTERPRISE SWAP EXECUTED: HERE handed over the enterprise
+    /// apiKey (now in `HERE_JS_API_KEY` xcconfig) and upgraded the account
+    /// in place — live-probed same day: `explore.night` / `logistics.night`
+    /// raster tiles now return 200 over Bearer (403'd on basic), and the
+    /// existing OAuth client-credentials still mint (HTTP 200, 24 h expiry).
+    /// HERE did NOT issue dedicated per-service hosts — the public
+    /// `*.hereapi.com` hosts carry the enterprise entitlements — so
+    /// `enterpriseHosts` stays empty and resolves to the public hosts.
+    static let activeTier: HereTier = .enterprise
 
     // MARK: - Info.plist keys
 
@@ -335,12 +339,11 @@ enum HereMapsError: Error, LocalizedError {
 
 /// HERE map tile styles matching EusoTrip's dark / light registers.
 ///
-/// IMPORTANT — both registers use `explore.day` because every
-/// `*.night` YAML returns HTTP 403 on our HERE plan tier
-/// (verified against `api.here.com` 2026-04-29 — see web commit
-/// `3fc9d77e` for the full probe table). When the HERE plan
-/// upgrades to a night-licensed tier, swap `dark.rawValue` back
-/// to `explore.night`.
+/// 2026-06-09 — ENTERPRISE: `explore.night` and `logistics.night`
+/// verified 200 over Bearer on the upgraded account (the basic-tier
+/// 403s are history). Dark register renders HERE's real night raster;
+/// the 403-adaptive `nightStyleAvailable` gate stays as a safety net
+/// in case entitlements ever regress.
 ///
 /// Dark-register feel comes from a SwiftUI tint overlay on the
 /// MKMapView host (see `HereMapView.applyDarkOverlay(...)`) —
@@ -393,12 +396,15 @@ enum HereTileStyle {
     /// 403 is observed.
     nonisolated(unsafe) static var nightStyleAvailable: Bool = true
 
-    /// HERE accepts 72 / 100 / 200 / 250 / 320 / 400 / 500. We pair
-    /// `ppi=250` with `size=512` so labels render at a normal-map size
-    /// on iPhone retina (~14–16 pt physical) instead of the oversized
-    /// 30–50 pt blocks you got with `ppi=400` (those were sized for a
-    /// hypothetical 400-PPI desktop display, not iOS retina).
-    var ppi: Int { 250 }
+    /// HERE Raster Tile v3 now accepts ONLY 100 / 200 / 400 — the older
+    /// 72/250/320/500 levels were dropped from the OpenAPI schema and
+    /// return HTTP 400 `E622002` ("parameter does not match schema").
+    /// That rejection hit EVERY tile request while this was 250, which
+    /// is why no basemap rendered anywhere (verified live 2026-06-09:
+    /// ppi=250 → 400, ppi=200 → 200 image/png). 200 keeps labels at the
+    /// same readable ~14–16 pt physical size the 250 setting targeted —
+    /// 400 re-creates the oversized-label problem, 100 is too small.
+    var ppi: Int { 200 }
 
     /// HERE PNG dimension in PIXELS. We request 512 px so the asset is
     /// 2× the on-screen point-size MKTileOverlay paints (256 pt). That

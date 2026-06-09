@@ -5,8 +5,8 @@
 //  Endpoint:
 //      GET https://fuel.hereapi.com/v3/stations
 //
-//  Required params:
-//      - prox=<lat>,<lng>,<radius-meters>
+//  Required params (2026-06 schema — `prox` was retired):
+//      - in=circle:<lat>,<lng>;r=<radius-meters>
 //      - apiKey=<KEY>    OR    Authorization: Bearer <token>
 //
 //  Optional params used here:
@@ -35,12 +35,24 @@ import CoreLocation
 
 // MARK: - Response wire types
 
-/// Raw decoded shape of `GET /v3/stations`. The server returns a
-/// top-level `fuelStations` array; each element is a `HereFuelStation`.
-/// We keep the wire names verbatim so the decoder doesn't need a
-/// `CodingKeys` override — HERE uses camelCase which matches Swift.
+/// Raw decoded shape of `GET /v3/stations`.
+///
+/// 2026-06-09 wire-shape drift (live-probed on the enterprise key —
+/// the old names were silently killing this decode, which the fail-soft
+/// add-on layer masked as "no fuel pins"):
+///   top-level `fuelStations` → `stations`
+///   station `fuelPrice`      → `prices`
+///   station/price `lastUpdateTimestamp` → `modified`
+///   address `streetNumber`   → `houseNumber`
+///   position `latitude/longitude` → `lat/lng`
+/// Swift property names stay stable for the 8 consumer screens;
+/// `CodingKeys` absorb the rename.
 struct HereFuelStationsResponse: Decodable {
     let fuelStations: [HereFuelStation]
+
+    private enum CodingKeys: String, CodingKey {
+        case fuelStations = "stations"
+    }
 }
 
 /// One station + its current per-fuel-type prices.
@@ -55,6 +67,12 @@ struct HereFuelStation: Decodable, Identifiable, Hashable {
     let open24x7: Bool?
     let fuelPrice: [HereFuelPrice]?
     let lastUpdateTimestamp: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, brand, brandIcon, position, address, distance, open24x7
+        case fuelPrice = "prices"
+        case lastUpdateTimestamp = "modified"
+    }
 
     /// Convenience — the cheapest diesel-family price at this station,
     /// or nil when HERE returned no diesel entries. Filters by the
@@ -73,9 +91,36 @@ struct HereFuelStation: Decodable, Identifiable, Hashable {
     static let dieselFuelCodes: Set<String> = ["1", "11", "46", "48", "50", "55", "62", "63"]
 }
 
+/// Shared position wire type for the Fuel v3 + Browse-backed clients
+/// (EV / parking / safety cameras). HERE is split-brained on this:
+/// Browse and Fuel v3 send `{lat, lng}`, older products send
+/// `{latitude, longitude}`. Decoding ONLY the long names silently
+/// zeroed every Browse-backed add-on layer (keyNotFound swallowed by
+/// the fail-soft fetchers) — so this decoder accepts BOTH spellings.
 struct HerePosition: Decodable, Hashable {
     let latitude: Double
     let longitude: Double
+
+    init(latitude: Double, longitude: Double) {
+        self.latitude = latitude
+        self.longitude = longitude
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case latitude, longitude, lat, lng
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let la = try c.decodeIfPresent(Double.self, forKey: .latitude),
+           let lo = try c.decodeIfPresent(Double.self, forKey: .longitude) {
+            latitude = la
+            longitude = lo
+        } else {
+            latitude = try c.decode(Double.self, forKey: .lat)
+            longitude = try c.decode(Double.self, forKey: .lng)
+        }
+    }
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
@@ -89,6 +134,11 @@ struct HereFuelAddress: Decodable, Hashable {
     let postalCode: String?
     let countryCode: String?
     let state: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case city, street, postalCode, countryCode, state
+        case streetNumber = "houseNumber"
+    }
 
     /// One-line presentation (street + city). Skips nils so a station
     /// with only a partial address still renders cleanly.
@@ -109,6 +159,11 @@ struct HereFuelPrice: Decodable, Hashable {
     let fuelType: String
     let currency: String
     let lastUpdateTimestamp: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case price, fuelType, currency
+        case lastUpdateTimestamp = "modified"
+    }
 }
 
 // MARK: - Client
@@ -128,9 +183,15 @@ final class HereFuelPricesClient {
         self.session = session
     }
 
-    /// `GET /v3/stations?prox=<lat>,<lng>,<radius>` — stations within
-    /// `radiusMeters` of `center`, optionally filtered to a specific
-    /// set of fuel-type codes.
+    /// `GET /v3/stations?in=circle:<lat>,<lng>;r=<radius>` — stations
+    /// within `radiusMeters` of `center`, optionally filtered to a
+    /// specific set of fuel-type codes.
+    ///
+    /// 2026-06-09: HERE made `in=` MANDATORY on Fuel Prices v3 — the
+    /// older `prox=lat,lng,radius` shape now 400s with `E612015`
+    /// "Mandatory parameter 'in' is missing" (live-probed: `in=circle:`
+    /// returns real stations on the enterprise key). Same circle
+    /// semantics, new spelling.
     ///
     /// Defaults are tuned for a long-haul truck Home glance:
     /// 25 mi (~40 km) radius, diesel-family codes only, 20 results.
@@ -143,8 +204,8 @@ final class HereFuelPricesClient {
 
         var items: [URLQueryItem] = [
             URLQueryItem(
-                name: "prox",
-                value: "\(center.latitude),\(center.longitude),\(radiusMeters)"
+                name: "in",
+                value: "circle:\(center.latitude),\(center.longitude);r=\(radiusMeters)"
             )
         ]
         if !fuelTypes.isEmpty {
