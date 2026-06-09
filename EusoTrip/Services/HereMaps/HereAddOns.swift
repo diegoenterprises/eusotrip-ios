@@ -111,23 +111,29 @@ enum HereMarkerStyle {
         case .hotZone: return "H"
         }
     }
+    /// Wireframe-canon Brand accents (§3d _MAP_DESIGN_LANGUAGE_2026-06-09).
+    /// The Tailwind set this replaced appears in ZERO wireframes — every hex
+    /// below is read out of the Design Authority corpus. Pickup/delivery
+    /// render as concentric endpoint discs (white shell + eusoDiagonal /
+    /// #BE01FF core) in the map renderers; the single hex here keys the
+    /// legend chips + detail cards off the matching sweep end.
     static func color(_ k: HereMarker.Kind) -> String {
         switch k {
-        case .truck: return "#1473FF"
-        case .pickup: return "#16A34A"
-        case .delivery: return "#DC2626"
-        case .stop: return "#6B7280"
-        case .fuel: return "#F59E0B"
-        case .charger: return "#10B981"
-        case .parking: return "#2563EB"
-        case .alert: return "#EF4444"
-        case .weather: return "#38BDF8"
-        case .mission: return "#A855F7"
-        case .adZone: return "#EC4899"
-        case .truckStop: return "#B45309"
-        case .weigh: return "#0EA5E9"
-        case .camera: return "#6366F1"
-        case .hotZone: return "#F97316"
+        case .truck: return "#1473FF"      // live puck — eusoPrimary head
+        case .pickup: return "#1473FF"     // origin disc = white + eusoDiagonal core (222/003)
+        case .delivery: return "#BE01FF"   // dest disc core — eusoDiagonal tail (222/013)
+        case .stop: return "#607D8B"       // idle slate (536 idle pin)
+        case .fuel: return "#E8731C"       // 119 Fuel Stops orange
+        case .charger: return "#00C48C"    // live-green (222 escort/charger)
+        case .parking: return "#2196F3"    // brand blue — parking signage
+        case .alert: return "#F44336"      // incident red (536/544/118)
+        case .weather: return "#2196F3"    // 413 weather blue
+        case .mission: return "#9C27B0"    // purple accents (660 berth row)
+        case .adZone: return "#9C27B0"     // sponsored = purple-accent family
+        case .truckStop: return "#E8731C"  // fuel-amenity family (119)
+        case .weigh: return "#607D8B"      // mandated-stop slate
+        case .camera: return "#FFA726"     // speed-enforcement amber (536 ISA)
+        case .hotZone: return "#FF7A00"    // hotFade tail (544/225 hot zones)
         }
     }
     static func title(_ k: HereMarker.Kind) -> String {
@@ -244,11 +250,11 @@ public final class HereAddOnsModel: ObservableObject {
                     id: id, kind: .mission,
                     title: m.label ?? "Haul mission",
                     subtitle: "Tap to view this mission",
-                    glyph: "M", colorHex: "#A855F7", at: m.at
+                    glyph: "M", colorHex: HereMarkerStyle.color(.mission), at: m.at
                 )
             }
             newLayers.append(.missionPins(mp))
-            newLegend.append(.init(glyph: "M", colorHex: "#A855F7", text: "\(mp.count) missions"))
+            newLegend.append(.init(glyph: "M", colorHex: HereMarkerStyle.color(.mission), text: "\(mp.count) missions"))
         }
 
         self.layers = newLayers
@@ -278,10 +284,10 @@ public final class HereAddOnsModel: ObservableObject {
                 out.details.append(HereAddOnDetail(
                     id: id, kind: .fuel, title: name,
                     subtitle: subs.isEmpty ? nil : subs.joined(separator: " · "),
-                    glyph: "F", colorHex: "#F59E0B", at: at))
+                    glyph: "F", colorHex: HereMarkerStyle.color(.fuel), at: at))
             }
             if let cheapest = stations.compactMap({ $0.cheapestDieselPrice }).min(by: { $0.price < $1.price }) {
-                out.chip = .init(glyph: "F", colorHex: "#F59E0B",
+                out.chip = .init(glyph: "F", colorHex: HereMarkerStyle.color(.fuel),
                                  text: "Diesel from \(cheapest.currency) \(String(format: "%.2f", cheapest.price))")
             }
         } catch {}
@@ -307,10 +313,10 @@ public final class HereAddOnsModel: ObservableObject {
                 out.details.append(HereAddOnDetail(
                     id: id, kind: .charger, title: item.title,
                     subtitle: subs.isEmpty ? nil : subs.joined(separator: " · "),
-                    glyph: "E", colorHex: "#10B981", at: at))
+                    glyph: "E", colorHex: HereMarkerStyle.color(.charger), at: at))
             }
             if !out.markers.isEmpty {
-                out.chip = .init(glyph: "E", colorHex: "#10B981", text: "\(out.markers.count) chargers")
+                out.chip = .init(glyph: "E", colorHex: HereMarkerStyle.color(.charger), text: "\(out.markers.count) chargers")
             }
         } catch {}
         return out
@@ -331,8 +337,8 @@ public final class HereAddOnsModel: ObservableObject {
             out.markers.append(HereMarker(at: at, kind: .weather, label: chip, id: id))
             out.details.append(HereAddOnDetail(
                 id: id, kind: .weather, title: "Weather", subtitle: subs.joined(separator: " · "),
-                glyph: "W", colorHex: "#38BDF8", at: at))
-            out.chip = .init(glyph: "W", colorHex: "#38BDF8", text: chip)
+                glyph: "W", colorHex: HereMarkerStyle.color(.weather), at: at))
+            out.chip = .init(glyph: "W", colorHex: HereMarkerStyle.color(.weather), text: chip)
         } catch {}
         return out
     }
@@ -350,10 +356,10 @@ public final class HereAddOnsModel: ObservableObject {
                 out.markers.append(HereMarker(at: at, kind: .alert, label: subtitle ?? title, id: id))
                 out.details.append(HereAddOnDetail(
                     id: id, kind: .alert, title: title, subtitle: subtitle,
-                    glyph: "!", colorHex: "#EF4444", at: at))
+                    glyph: "!", colorHex: HereMarkerStyle.color(.alert), at: at))
             }
             if !out.markers.isEmpty {
-                out.chip = .init(glyph: "!", colorHex: "#EF4444", text: "\(out.markers.count) alerts")
+                out.chip = .init(glyph: "!", colorHex: HereMarkerStyle.color(.alert), text: "\(out.markers.count) alerts")
             }
         } catch {}
         return out
@@ -371,10 +377,10 @@ public final class HereAddOnsModel: ObservableObject {
                 out.details.append(HereAddOnDetail(
                     id: id, kind: .parking, title: item.title,
                     subtitle: item.address?.label ?? "Truck parking",
-                    glyph: "P", colorHex: "#2563EB", at: at))
+                    glyph: "P", colorHex: HereMarkerStyle.color(.parking), at: at))
             }
             if !out.markers.isEmpty {
-                out.chip = .init(glyph: "P", colorHex: "#2563EB", text: "\(out.markers.count) parking")
+                out.chip = .init(glyph: "P", colorHex: HereMarkerStyle.color(.parking), text: "\(out.markers.count) parking")
             }
         } catch {}
         return out
@@ -395,10 +401,10 @@ public final class HereAddOnsModel: ObservableObject {
                 out.details.append(HereAddOnDetail(
                     id: id, kind: .camera, title: item.title,
                     subtitle: subs.isEmpty ? "Safety camera" : subs.joined(separator: " · "),
-                    glyph: "C", colorHex: "#6366F1", at: at))
+                    glyph: "C", colorHex: HereMarkerStyle.color(.camera), at: at))
             }
             if !out.markers.isEmpty {
-                out.chip = .init(glyph: "C", colorHex: "#6366F1", text: "\(out.markers.count) cameras")
+                out.chip = .init(glyph: "C", colorHex: HereMarkerStyle.color(.camera), text: "\(out.markers.count) cameras")
             }
         } catch {}
         return out
@@ -466,7 +472,7 @@ public final class HereAddOnsModel: ObservableObject {
             for z in zones {
                 guard let poly = z.polygon, poly.count > 2 else { continue }
                 let ring = poly.map { HereLatLng($0.lat, $0.lng) }
-                out.polygons.append(HerePolygon(ring: ring, fillHex: "#EC4899", opacity: 0.18, label: z.name))
+                out.polygons.append(HerePolygon(ring: ring, fillHex: HereMarkerStyle.color(.adZone), opacity: 0.18, label: z.name))
                 let cLat = ring.map { $0.lat }.reduce(0, +) / Double(ring.count)
                 let cLng = ring.map { $0.lng }.reduce(0, +) / Double(ring.count)
                 let at = HereLatLng(cLat, cLng)
@@ -479,10 +485,10 @@ public final class HereAddOnsModel: ObservableObject {
                 out.details.append(HereAddOnDetail(
                     id: id, kind: .adZone, title: title,
                     subtitle: subs.isEmpty ? "Sponsored / SAE-ODD zone" : subs.joined(separator: " · "),
-                    glyph: "$", colorHex: "#EC4899", at: at))
+                    glyph: "$", colorHex: HereMarkerStyle.color(.adZone), at: at))
             }
             if !out.polygons.isEmpty {
-                out.chip = .init(glyph: "$", colorHex: "#EC4899", text: "\(out.polygons.count) sponsored")
+                out.chip = .init(glyph: "$", colorHex: HereMarkerStyle.color(.adZone), text: "\(out.polygons.count) sponsored")
             }
         } catch {}
         return out
@@ -508,7 +514,8 @@ public final class HereAddOnsModel: ObservableObject {
                 text = "Limit \(Int((kph * 0.621371).rounded())) mph"
             }
             let schoolSuffix = (isa.inSchoolZone == true) ? " · school zone" : ""
-            out.chip = .init(glyph: "L", colorHex: "#0EA5E9", text: text + schoolSuffix)
+            // Speed-limit / ISA chip — canon enforcement amber (§3d, 536 ISA chip).
+            out.chip = .init(glyph: "L", colorHex: "#FFA726", text: text + schoolSuffix)
         } catch {}
         return out
     }
@@ -770,7 +777,7 @@ public struct HereAddOnDetailCard: View {
                     .padding(.vertical, 9)
                     .background(
                         LinearGradient(
-                            colors: [Color(hex: "#A855F7"), Color(hex: detail.colorHex)],
+                            colors: [Color(hex: HereMarkerStyle.color(.mission)), Color(hex: detail.colorHex)],
                             startPoint: .leading, endPoint: .trailing),
                         in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
