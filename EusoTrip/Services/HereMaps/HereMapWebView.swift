@@ -23,9 +23,17 @@
 //      night tiles return 200.
 //
 //  Layer model: a screen declares what it wants via `[HereMapLayer]`
-//  (heatmap / markers / route polyline / ad-zone polygons / mission pins).
-//  Swift pushes the layer data into the live map via `evaluateJavaScript`
-//  whenever `layers` changes — no WebView reload, no flicker.
+//  (heatmap / markers / route polyline / ad-zone polygons / mission pins /
+//  geofence rings / traffic-flow ribbons). Swift pushes the layer data into
+//  the live map via `evaluateJavaScript` whenever `layers` changes — no
+//  WebView reload, no flicker.
+//
+//  2026-06-09: render grammar recut to the wireframe canon
+//  (_MAP_DESIGN_LANGUAGE_2026-06-09): the Google-style teardrop pins and
+//  the Tailwind palette are gone — concentric endpoint discs, the 013
+//  glass-pill destination flag, the live-ping puck, Brand-accent POI
+//  discs, the eusoPrimary route sweep with dashed remaining, §3c dashed
+//  geofence rings (+ pulse + breach node), and §2 traffic-flow ribbons.
 //
 //  Powered by ESANG AI™.
 //
@@ -74,6 +82,27 @@ public struct HerePolygon: Hashable, Codable, Sendable {
     }
 }
 
+/// Which canon fence grammar a `geofenceRing` layer renders — §3c of
+/// _MAP_DESIGN_LANGUAGE_2026-06-09: every fence is a dashed circle, and
+/// each kind carries its own wireframe-verbatim ring color + dash cadence.
+public enum HereGeofenceKind: String, Codable, Sendable {
+    case receiver          // #F44336 w1.6 dash [6,5] — receiver fence (536)
+    case railRamp          // #00C48C w1.4 dash [3,4] + fencePulse (003-rail)
+    case pilotGround       // #3FA9F5 @0.65 w1.4 dash [5,5], animated dashoffset (660)
+    case destinationPort   // #1473FF @0.55 w1.6 dash [4,5] — dest-port fence (vessel 003)
+}
+
+/// One congestion ribbon for a `trafficFlow` layer — §2: jam = #FFA726 w6
+/// round @0.9, severe = #F44336 w6 @0.85, painted over the road network (536).
+public struct HereTrafficSegment: Hashable, Codable, Sendable {
+    public let polyline: [HereLatLng]
+    public let severity: Severity
+    public enum Severity: String, Codable, Sendable { case jam, severe }
+    public init(polyline: [HereLatLng], severity: Severity) {
+        self.polyline = polyline; self.severity = severity
+    }
+}
+
 /// What a screen wants drawn on the shared map.
 public enum HereMapLayer: Hashable {
     case heatmap(points: [HereLatLng])
@@ -83,6 +112,11 @@ public enum HereMapLayer: Hashable {
     case adZones([HerePolygon])
     /// Gamified mission pins (Haul Missions) — geofence-anchored.
     case missionPins([HereMarker])
+    /// Dashed geofence circle (+ optional breach/EXIT node riding the rim)
+    /// per §3c — receiver / rail-ramp / pilot-ground / dest-port grammars.
+    case geofenceRing(center: HereLatLng, radiusMeters: Double, kind: HereGeofenceKind, breachAt: HereLatLng?)
+    /// Congestion ribbons over the road network (536 fleet map) — §2.
+    case trafficFlow([HereTrafficSegment])
 }
 
 // MARK: - SwiftUI entry point
@@ -257,6 +291,8 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         var markers: [[String: Any]] = []
         var routes: [[String: Any]] = []
         var polygons: [[String: Any]] = []
+        var fences: [[String: Any]] = []
+        var traffic: [[String: Any]] = []
 
         for layer in layers {
             switch layer {
@@ -279,9 +315,20 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                     ["fill": p.fillHex, "opacity": p.opacity, "label": p.label ?? "",
                      "ring": p.ring.map { ["lat": $0.lat, "lng": $0.lng] }]
                 })
+            case .geofenceRing(let center, let radius, let kind, let breach):
+                var f: [String: Any] = ["lat": center.lat, "lng": center.lng,
+                                        "radius": radius, "kind": kind.rawValue]
+                if let b = breach { f["breachLat"] = b.lat; f["breachLng"] = b.lng }
+                fences.append(f)
+            case .trafficFlow(let segs):
+                traffic.append(contentsOf: segs.map { s in
+                    ["severity": s.severity.rawValue,
+                     "pts": s.polyline.map { ["lat": $0.lat, "lng": $0.lng] }]
+                })
             }
         }
-        let obj: [String: Any] = ["heatmap": heatmap, "markers": markers, "routes": routes, "polygons": polygons]
+        let obj: [String: Any] = ["heatmap": heatmap, "markers": markers, "routes": routes,
+                                  "polygons": polygons, "fences": fences, "traffic": traffic]
         guard let data = try? JSONSerialization.data(withJSONObject: obj),
               let s = String(data: data, encoding: .utf8) else { return "{}" }
         return s
@@ -325,6 +372,18 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
           function log(m){ try{ window.webkit.messageHandlers.hzLog.postMessage(String(m)); }catch(e){} }
           var map, behavior, platform, heatLayer=null, objLayer=null;
           var dark = \(isDark ? "true" : "false");
+          // Animated map fx (fence pulses / breach exitPulse / pilot-ground
+          // dashoffset) — one shared timer, rebuilt on every __applyLayers.
+          var fx = [], fxTimer = null;
+          function stopFx(){ if(fxTimer){ clearInterval(fxTimer); fxTimer=null; } fx = []; }
+          function startFx(){
+            if(fxTimer || !fx.length) return;
+            var t = 0;
+            fxTimer = setInterval(function(){
+              t += 0.08;
+              for(var i=0;i<fx.length;i++){ try{ fx[i](t); }catch(e){} }
+            }, 80);
+          }
 
           function styleUrl(d){
             return d ? "https://js.api.here.com/v3/3.1/styles/omv/normal.night.yaml"
@@ -367,6 +426,7 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
 
             window.__applyLayers = function(L){
               try{
+                stopFx();
                 // heatmap
                 if(heatLayer){ map.removeLayer(heatLayer); heatLayer=null; }
                 if(L.heatmap && L.heatmap.length){
@@ -375,14 +435,53 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                   heatLayer = new H.map.layer.TileLayer(hp);
                   map.addLayer(heatLayer);
                 }
-                // vector objects (markers, routes, polygons)
+                // vector objects (routes, traffic, polygons, fences, markers)
                 map.removeObjects(map.getObjects());
                 var grp = new H.map.Group();
+
+                // The live truck pin (when present) splits every route into
+                // traveled / remaining — same rule as BespokeMapCanvas.
+                var live = null;
+                (L.markers||[]).forEach(function(m){ if(!live && m.kind==="truck") live = m; });
+
+                // Route grammar (§2 _MAP_DESIGN_LANGUAGE_2026-06-09):
+                // traveled = solid eusoPrimary sweep (#1473FF→#BE01FF) w4
+                // round caps; remaining = the same sweep @0.70 dash [2,8].
+                // Split at the vertex nearest the live truck pin, else the
+                // authored 0.62 fraction (mirrors BespokeMapCanvas.buildRoute).
+                // r.color is intentionally ignored — law 1: ONE gradient
+                // rules every route.
                 (L.routes||[]).forEach(function(r){
-                  var ls = new H.geo.LineString();
-                  (r.pts||[]).forEach(function(p){ ls.pushPoint({lat:p.lat,lng:p.lng}); });
-                  grp.addObject(new H.map.Polyline(ls, { style:{ lineWidth:5, strokeColor:r.color||"#1473FF" } }));
+                  var pts = r.pts||[];
+                  if(pts.length<2) return;
+                  var b = routeBounds(pts);
+                  var frac = 0.62;
+                  if(live){
+                    var best=0, bd=Infinity;
+                    for(var i=0;i<pts.length;i++){
+                      var dla=pts[i].lat-live.lat, dlo=pts[i].lng-live.lng;
+                      var d=dla*dla+dlo*dlo;
+                      if(d<bd){ bd=d; best=i; }
+                    }
+                    frac = best/(pts.length-1);
+                  }
+                  var split = Math.max(1, Math.min(pts.length-1, Math.round((pts.length-1)*frac)));
+                  addSweepLine(grp, pts.slice(0, split+1), b, 4, 1.0, null);   // traveled — solid sweep
+                  addSweepLine(grp, pts.slice(split),     b, 4, 0.70, [2,8]); // remaining — dashed @0.70
                 });
+
+                // Traffic-flow ribbons over the road network (536, §2):
+                // jam = #FFA726 w6 round @0.9 · severe = #F44336 w6 @0.85.
+                (L.traffic||[]).forEach(function(s){
+                  var pts = s.pts||[];
+                  if(pts.length<2) return;
+                  var spec = (s.severity==="severe") ? {c:"#F44336",a:0.85} : {c:"#FFA726",a:0.90};
+                  var ls = new H.geo.LineString();
+                  pts.forEach(function(p){ ls.pushPoint({lat:p.lat,lng:p.lng}); });
+                  grp.addObject(new H.map.Polyline(ls, { style:{
+                    lineWidth:6, strokeColor:hexA(spec.c, spec.a), lineCap:"round", lineJoin:"round" } }));
+                });
+
                 (L.polygons||[]).forEach(function(pg){
                   var ring = pg.ring||[];
                   var ls = new H.geo.LineString();
@@ -393,9 +492,14 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                     //  separate marker by HereAddOnsModel, so none here.)
                   }
                 });
+
+                // Geofence rings (§3c): dashed circle fences, per-kind color
+                // + dash cadence, plus pulse fx and the breach/EXIT node.
+                (L.fences||[]).forEach(function(f){ try{ addFence(grp, f); }catch(e){ log("fence "+e); } });
+
                 (L.markers||[]).forEach(function(m){
                   try{
-                    var ic = iconFor(m.kind);
+                    var ic = iconFor(m.kind, m.label);
                     var mk = ic ? new H.map.Marker({lat:m.lat,lng:m.lng},{icon:ic})
                                 : new H.map.Marker({lat:m.lat,lng:m.lng});
                     // Tappable pin → bubble the id back to Swift (onSelectMarker).
@@ -409,6 +513,7 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                   }catch(e){ grp.addObject(new H.map.Marker({lat:m.lat,lng:m.lng})); }
                 });
                 if(grp.getObjects().length){ map.addObject(grp); }
+                startFx();
               }catch(e){ log("applyLayers "+e); }
             };
 
@@ -417,28 +522,172 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                    return "rgba("+r+","+g+","+b+","+(a||0.25)+")"; }catch(e){ return "rgba(20,115,255,0.25)"; }
             }
 
-            // Kind-specific teardrop pins so every add-on reads at a glance:
-            // fuel / EV / weather / traffic-alert / mission / ad-zone, plus the
-            // load primitives (truck / pickup / delivery / stop / parking).
-            var ICONS = {};
-            function svgPin(bg, glyph){
-              return '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="38" viewBox="0 0 30 38">'
-                + '<path d="M15 0C7 0 1 6 1 14c0 9 14 24 14 24s14-15 14-24C29 6 23 0 15 0z" fill="'+bg+'" stroke="#ffffff" stroke-width="2"/>'
-                + '<circle cx="15" cy="14" r="8" fill="#ffffff" fill-opacity="0.95"/>'
-                + '<text x="15" y="17.5" font-size="9" font-family="-apple-system,Helvetica,Arial,sans-serif" font-weight="700" text-anchor="middle" fill="'+bg+'">'+glyph+'</text>'
+            // ── Route sweep (§2) ─────────────────────────────────────────
+            // HERE JS polylines have no gradient strokes, so the eusoPrimary
+            // sweep is faked per-chunk: lerp #1473FF→#BE01FF along the FIXED
+            // map-space diagonal (bottom-leading → top-trailing) of the full
+            // route bounds — the same gradient frame BespokeMapCanvas uses.
+            function routeBounds(pts){
+              var mnLa=90,mxLa=-90,mnLo=180,mxLo=-180;
+              pts.forEach(function(p){
+                if(p.lat<mnLa)mnLa=p.lat; if(p.lat>mxLa)mxLa=p.lat;
+                if(p.lng<mnLo)mnLo=p.lng; if(p.lng>mxLo)mxLo=p.lng;
+              });
+              return { minLat:mnLa, minLng:mnLo, h:(mxLa-mnLa), w:(mxLo-mnLo) };
+            }
+            function sweepColor(t, a){
+              t = Math.max(0, Math.min(1, t));
+              var r = Math.round(0x14 + (0xBE-0x14)*t);
+              var g = Math.round(0x73 + (0x01-0x73)*t);
+              return "rgba("+r+","+g+",255,"+a+")";
+            }
+            function addSweepLine(grp, pts, b, width, alpha, dash){
+              if(!pts || pts.length<2) return;
+              var chunks = Math.min(16, pts.length-1);
+              var per = Math.max(1, Math.floor((pts.length-1)/chunks));
+              for(var i=0;i<pts.length-1;i+=per){
+                var end = Math.min(pts.length-1, i+per);
+                var ls = new H.geo.LineString();
+                for(var j=i;j<=end;j++){ ls.pushPoint({lat:pts[j].lat,lng:pts[j].lng}); }
+                var mid = pts[Math.floor((i+end)/2)];
+                var nx = b.w>0 ? (mid.lng-b.minLng)/b.w : 0.5;
+                var ny = b.h>0 ? (mid.lat-b.minLat)/b.h : 0.5;
+                var style = { lineWidth:width, strokeColor:sweepColor((nx+ny)/2, alpha),
+                              lineCap:"round", lineJoin:"round" };
+                if(dash){ style.lineDash = dash; }
+                grp.addObject(new H.map.Polyline(ls, { style:style }));
+              }
+            }
+
+            // ── Geofence rings (§3c) ─────────────────────────────────────
+            // Dashed circle fences, per-kind canon color/dash. railRamp gets
+            // the fencePulse halo, pilotGround animates its dashoffset, and a
+            // breach point gets the #F44336 EXIT node + exitPulse.
+            var FENCES = {
+              receiver:        { ring:"#F44336", ringA:0.85, w:1.6, dash:[6,5], fillA:0.08, fillHex:"#F44336" },
+              railRamp:        { ring:"#00C48C", ringA:0.85, w:1.4, dash:[3,4], fillA:0.07, fillHex:"#00C48C" },
+              pilotGround:     { ring:"#3FA9F5", ringA:0.65, w:1.4, dash:[5,5], fillA:0.05, fillHex:"#1473FF" },
+              destinationPort: { ring:"#1473FF", ringA:0.55, w:1.6, dash:[4,5], fillA:0.0,  fillHex:"#1473FF" }
+            };
+            function addFence(grp, f){
+              var spec = FENCES[f.kind] || FENCES.receiver;
+              var ringStyle = { strokeColor:hexA(spec.ring, spec.ringA),
+                                fillColor:hexA(spec.fillHex, spec.fillA),
+                                lineWidth:spec.w, lineDash:spec.dash };
+              var ring = new H.map.Circle({lat:f.lat,lng:f.lng}, f.radius, { style:ringStyle });
+              grp.addObject(ring);
+              if(f.kind==="pilotGround"){
+                // 660: the pilot-boarding fence marches its dash.
+                fx.push(function(t){
+                  ring.setStyle(new H.map.SpatialStyle({ strokeColor:ringStyle.strokeColor,
+                    fillColor:ringStyle.fillColor, lineWidth:spec.w, lineDash:spec.dash,
+                    lineDashOffset: Math.round(t*10)%10 }));
+                });
+              }
+              if(f.kind==="railRamp"){
+                // 003-rail fencePulse: a breathing #00C48C halo fading out.
+                var halo = new H.map.Circle({lat:f.lat,lng:f.lng}, f.radius,
+                  { style:{ strokeColor:"rgba(0,0,0,0)", fillColor:hexA("#00C48C",0.4), lineWidth:0 } });
+                grp.addObject(halo);
+                fx.push(function(t){
+                  var ph = (t % 2.4) / 2.4;
+                  halo.setRadius(f.radius * (1 + 0.3*ph));
+                  halo.setStyle(new H.map.SpatialStyle({ strokeColor:"rgba(0,0,0,0)",
+                    fillColor:hexA("#00C48C", 0.4*(1-ph)), lineWidth:0 }));
+                });
+              }
+              if(typeof f.breachLat==="number" && typeof f.breachLng==="number"){
+                // Breach/EXIT node riding the fence (536): #F44336 r5 disc,
+                // white stroke 1.5, with the exitPulse halo behind it.
+                var pulse = new H.map.Circle({lat:f.breachLat,lng:f.breachLng}, f.radius*0.08,
+                  { style:{ strokeColor:"rgba(0,0,0,0)", fillColor:hexA("#F44336",0.55), lineWidth:0 } });
+                grp.addObject(pulse);
+                fx.push(function(t){
+                  var ph = (t % 2.0) / 2.0;
+                  pulse.setRadius(f.radius * (0.08 + 0.16*ph));
+                  pulse.setStyle(new H.map.SpatialStyle({ strokeColor:"rgba(0,0,0,0)",
+                    fillColor:hexA("#F44336", 0.55*(1-ph)), lineWidth:0 }));
+                });
+                var node = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">'
+                  + '<circle cx="8" cy="8" r="5" fill="#F44336" stroke="#F5F5F7" stroke-width="1.5"/></svg>';
+                try{ grp.addObject(new H.map.Marker({lat:f.breachLat,lng:f.breachLng},
+                  { icon:new H.map.Icon(node, { anchor:{x:8,y:8} }) })); }catch(e){}
+              }
+            }
+
+            // ── Canon marker grammar (§3) — NO teardrops ────────────────
+            // Three families, mirroring BespokeMapCanvas.paintMarker:
+            //  • endpoints — concentric discs: white shell r6, eusoDiagonal
+            //    core r4 (pickup) / #BE01FF core (delivery); a LABELLED
+            //    delivery gets the 013 glass-pill flag (SF-Mono label +
+            //    12×12 rx2 eusoDiagonal diamond rotated −45°, hung below).
+            //  • live truck — the 013 ping: radial halo + white ring +
+            //    eusoDiagonal r9 core.
+            //  • add-on POIs — tinted disc r7 + white core, in the Brand
+            //    accent set (the Tailwind set appears in ZERO wireframes).
+            var EG = '<defs><linearGradient id="eg" x1="0" y1="1" x2="1" y2="0">'
+              + '<stop offset="0" stop-color="#1473FF"/><stop offset="1" stop-color="#BE01FF"/>'
+              + '</linearGradient></defs>';
+            function xmlEsc(s){
+              return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+            }
+            function svgEndpoint(coreFill){
+              return '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">' + EG
+                + '<circle cx="12" cy="12" r="6" fill="#FFFFFF" stroke="rgba(13,17,23,0.12)" stroke-width="1"/>'
+                + '<circle cx="12" cy="12" r="4" fill="'+coreFill+'"/></svg>';
+            }
+            function svgPuck(){
+              return '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">'
+                + '<defs><radialGradient id="halo"><stop offset="0" stop-color="#1473FF" stop-opacity="0.55"/>'
+                + '<stop offset="1" stop-color="#1473FF" stop-opacity="0"/></radialGradient>'
+                + '<linearGradient id="eg" x1="0" y1="1" x2="1" y2="0">'
+                + '<stop offset="0" stop-color="#1473FF"/><stop offset="1" stop-color="#BE01FF"/></linearGradient></defs>'
+                + '<circle cx="24" cy="24" r="22" fill="url(#halo)"/>'
+                + '<circle cx="24" cy="24" r="11" fill="#FFFFFF"/>'
+                + '<circle cx="24" cy="24" r="9" fill="url(#eg)"/>'
+                + '<circle cx="24" cy="24" r="11.5" fill="none" stroke="#1473FF" stroke-opacity="0.45" stroke-width="0.5"/>'
                 + '</svg>';
             }
-            function iconFor(kind){
-              if(ICONS[kind]) return ICONS[kind];
-              var spec = {
-                truck:["#1473FF","T"], pickup:["#16A34A","P"], delivery:["#DC2626","D"],
-                stop:["#6B7280","S"], fuel:["#F59E0B","F"], charger:["#10B981","E"],
-                parking:["#2563EB","P"], alert:["#EF4444","!"], weather:["#38BDF8","W"],
-                mission:["#A855F7","M"], adZone:["#EC4899","$"],
-                truckStop:["#B45309","T"], weigh:["#0EA5E9","S"], camera:["#6366F1","C"],
-                hotZone:["#F97316","H"]
-              }[kind] || ["#1473FF","●"];
-              try{ var ic = new H.map.Icon(svgPin(spec[0], spec[1]), { anchor:{x:15,y:38} }); ICONS[kind]=ic; return ic; }
+            function svgDisc(tint){
+              return '<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22">'
+                + '<circle cx="11" cy="11" r="7" fill="'+tint+'" stroke="rgba(255,255,255,0.85)" stroke-width="1.4"/>'
+                + '<circle cx="11" cy="11" r="3.5" fill="rgba(255,255,255,0.92)"/></svg>';
+            }
+            function svgFlag(label){
+              var raw = String(label).toUpperCase().slice(0,18);
+              var text = xmlEsc(raw);
+              var w = Math.max(46, Math.round(raw.length*6.2)+20);
+              var cx = w/2;
+              return '<svg xmlns="http://www.w3.org/2000/svg" width="'+w+'" height="52" viewBox="0 0 '+w+' 52">' + EG
+                + '<rect x="1" y="1" width="'+(w-2)+'" height="22" rx="11" fill="rgba(255,255,255,0.78)" stroke="rgba(13,17,23,0.12)" stroke-width="1"/>'
+                + '<text x="'+cx+'" y="15.5" font-size="9" font-weight="700" letter-spacing="0.4" font-family="ui-monospace,Menlo,monospace" text-anchor="middle" fill="#0D1117">'+text+'</text>'
+                + '<rect x="'+(cx-6)+'" y="34" width="12" height="12" rx="2" fill="url(#eg)" transform="rotate(-45 '+cx+' 40)"/>'
+                + '</svg>';
+            }
+            // Canon Brand accents for POI discs (§3d) — keep in lockstep
+            // with HereMarkerStyle.color (HereAddOns.swift).
+            var POI = {
+              stop:"#607D8B", fuel:"#E8731C", charger:"#00C48C", parking:"#2196F3",
+              alert:"#F44336", weather:"#2196F3", mission:"#9C27B0", adZone:"#9C27B0",
+              truckStop:"#E8731C", weigh:"#607D8B", camera:"#FFA726", hotZone:"#FF7A00"
+            };
+            var ICONS = {};
+            function iconFor(kind, label){
+              var key = kind, svg, anchor;
+              if(kind==="delivery" && label){
+                key = "flag:"+label;
+                if(ICONS[key]) return ICONS[key];
+                svg = svgFlag(label);
+                var w = Math.max(46, Math.round(Math.min(String(label).length,18)*6.2)+20);
+                anchor = { x:w/2, y:40 };   // the diamond marks the geo point
+              } else {
+                if(ICONS[key]) return ICONS[key];
+                if(kind==="truck"){ svg = svgPuck(); anchor = {x:24,y:24}; }
+                else if(kind==="pickup"){ svg = svgEndpoint("url(#eg)"); anchor = {x:12,y:12}; }
+                else if(kind==="delivery"){ svg = svgEndpoint("#BE01FF"); anchor = {x:12,y:12}; }
+                else { svg = svgDisc(POI[kind]||"#1473FF"); anchor = {x:11,y:11}; }
+              }
+              try{ var ic = new H.map.Icon(svg, { anchor:anchor }); ICONS[key]=ic; return ic; }
               catch(e){ return null; }
             }
 
