@@ -42,11 +42,12 @@
 //  a gesture COMMITS (onEnded → panOffset/zoomDelta) does the model recompute,
 //  exactly once.
 //
-//  Draw order (matches the SVG ground truth):
+//  Draw order (matches the SVG ground truth + the JS __applyLayers z-order):
 //    1. background  (linear vertical gradient, or radial cosmos)
 //    2. faint grid  (straight authored lines at fixed spacing — no warp)
 //    3. layered horizon silhouettes (abstract — NOT real streets)
-//    4. per layer:  heatmap → adZones → route (active + pending) →
+//    4. per layer:  heatmap → adZones → traffic-flow ribbons → route
+//                   (active + pending) → geofence rings (+ breach node) →
 //                   endpoints (origin / dest) → live puck (truck OR ping)
 //    5. callout pills (authored marker labels + a computed scale pill)
 //
@@ -434,6 +435,9 @@ extension BespokeMapCanvas {
         // register swaps the basemap + grid grammar (660).
         var isNav: Bool = false
         var isPortApproach: Bool = false
+        // Dark-backdrop register (white-tinted grid) — picks the §2/§3c dark
+        // fence + traffic opacities, same probe as the basemap land wash.
+        var isDarkRegister: Bool = false
         // Whether the scene carries renderer-driven motion (puck pulse /
         // route flow) — used to pause the TimelineView when there is nothing
         // to animate, so static boards never burn frames.
@@ -460,6 +464,14 @@ extension BespokeMapCanvas {
         var routeGradEnd: CGPoint = .zero
         var breadcrumbDots: [CGPoint] = []
         var hasRoute: Bool = false
+
+        // Geofence rings (§3c) — screen-space center + POINT radius (meters
+        // projected through the committed camera) + kind, with the optional
+        // breach/EXIT node pre-projected onto the rim.
+        var fences: [(center: CGPoint, radius: CGFloat, kind: HereGeofenceKind, breach: CGPoint?)] = []
+
+        // Traffic-flow ribbons (§2, 536) — pre-smoothed screen Paths + severity.
+        var traffic: [(path: Path, severity: HereTrafficSegment.Severity)] = []
 
         // Endpoint pins (origin / dest) — screen-space anchors.
         var endpoints: [(at: CGPoint, marker: BespokeMapStyle.EndpointMarker)] = []
@@ -492,6 +504,7 @@ extension BespokeMapCanvas {
             m.isDriverGrid = style.ping != nil
             m.isNav = hint == .nav
             m.isPortApproach = hint == .portApproach
+            m.isDarkRegister = BespokeMapCanvas.gridIsLight(style.grid.color)
             let rect = CGRect(origin: .zero, size: size)
 
             // ── 1b — basemap (skipped on the open-water ocean register) ──
@@ -545,6 +558,20 @@ extension BespokeMapCanvas {
                 }
             }
 
+            // ── 4b2 — traffic-flow ribbons (project + simplify once, cull) ──
+            let trafficCull = rect.insetBy(dx: -120, dy: -120)
+            for layer in layers {
+                if case .trafficFlow(let segs) = layer {
+                    for seg in segs where seg.polyline.count >= 2 {
+                        let pts = seg.polyline.map { viewport.screenPoint($0) }
+                        guard BespokeMapCanvas.boundingBox(pts).intersects(trafficCull) else { continue }
+                        let simplified = BespokeMapCanvas.simplify(
+                            pts, tolerance: 1.5, cap: BespokeMapCanvas.maxRoutePoints)
+                        m.traffic.append((BespokeMapCanvas.smoothPath(simplified), seg.severity))
+                    }
+                }
+            }
+
             // ── 4c — route (simplify → smooth, once) ──
             let liveCoord = BespokeMapCanvas.liveMarkerCoord(layers)
             for layer in layers {
@@ -553,6 +580,23 @@ extension BespokeMapCanvas {
                     // Endpoints derived from route geometry.
                     m.endpoints.append((viewport.screenPoint(poly.first!), style.originMarker))
                     m.endpoints.append((viewport.screenPoint(poly.last!), style.destMarker))
+                }
+            }
+
+            // ── 4c2 — geofence rings (§3c). The fence radius arrives in
+            //    METERS and is projected to points through the committed
+            //    camera's Web-Mercator ground resolution (`metersPerPoint`),
+            //    so the ring tracks real-world scale across zoom levels —
+            //    same rule as the scale pill. ──
+            let fenceCull = rect.insetBy(dx: -160, dy: -160)
+            let mpp = Swift.max(viewport.metersPerPoint, 0.000_1)
+            for layer in layers {
+                if case .geofenceRing(let fc, let radiusMeters, let kind, let breach) = layer {
+                    let c = viewport.screenPoint(fc)
+                    let r = Swift.max(1, CGFloat(radiusMeters / mpp))
+                    let bb = CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)
+                    guard bb.intersects(fenceCull) else { continue }
+                    m.fences.append((c, r, kind, breach.map { viewport.screenPoint($0) }))
                 }
             }
 
@@ -626,14 +670,20 @@ extension BespokeMapCanvas {
             }
 
             // ── motion eligibility — a live puck pulses; a board route
-            //    carries the 222 flow overlay. Anything else stays static
-            //    and pauses the TimelineView entirely. ──
+            //    carries the 222 flow overlay; an animated fence (the
+            //    pilot-ground dash march, the rail-ramp fencePulse, any
+            //    breach exitPulse) keeps the timeline running even on an
+            //    otherwise static board. Anything else stays static and
+            //    pauses the TimelineView entirely. ──
             let hasLivePuck = m.markers.contains { $0.kind == .truck }
             let flowEligible = m.hasRoute
                 && style.ping == nil
                 && style.truckMarker?.glyph == .cabBox
                 && style.routePending.stops != nil
-            m.hasLiveMotion = hasLivePuck || flowEligible
+            let fenceMotion = m.fences.contains {
+                $0.kind == .pilotGround || $0.kind == .railRamp || $0.breach != nil
+            }
+            m.hasLiveMotion = hasLivePuck || flowEligible || fenceMotion
 
             return m
         }
@@ -737,8 +787,13 @@ extension BespokeMapCanvas {
         var pulse22: Double = 0
         /// 0…1 sawtooth over the 2.4 s AIS / port-approach pulse period (660).
         var pulse24: Double = 0
+        /// 0…1 sawtooth over the 2.0 s breach exitPulse period (536).
+        var pulse20: Double = 0
         /// Animated route-flow dash offset: 0 → −20 over 1.4 s (222).
         var flowDashOffset: CGFloat = 0
+        /// Pilot-ground fence dash march (660): dashPhase 0 → 10 over 1 s —
+        /// one full [5,5] cadence per second, the legacy JS fx clock verbatim.
+        var fenceDashOffset: CGFloat = 0
         /// false ⇒ static frame — painters skip the pulse math entirely.
         var animated: Bool = false
 
@@ -752,7 +807,9 @@ extension BespokeMapCanvas {
         var p = PulsePhase()
         p.pulse22 = (t / 2.2).truncatingRemainder(dividingBy: 1)
         p.pulse24 = (t / 2.4).truncatingRemainder(dividingBy: 1)
+        p.pulse20 = (t / 2.0).truncatingRemainder(dividingBy: 1)
         p.flowDashOffset = CGFloat(-20.0 * (t / 1.4).truncatingRemainder(dividingBy: 1))
+        p.fenceDashOffset = CGFloat((t * 10.0).truncatingRemainder(dividingBy: 10.0))
         p.animated = true
         return p
     }
@@ -801,9 +858,22 @@ extension BespokeMapCanvas {
         for z in model.adZones {
             paintAdZone(&context, pts: z.pts, fill: z.fill, opacity: z.opacity)
         }
+        // 4b2 — traffic-flow ribbons: ABOVE the basemap road grammar, BELOW
+        // the route + every pin.
+        for seg in model.traffic {
+            paintTrafficSegment(&context, path: seg.path, severity: seg.severity,
+                                isDark: model.isDarkRegister)
+        }
         // 4c — route (pre-smoothed paths).
         if model.hasRoute {
             paintRoutePaths(&context, model: model, phase: phase)
+        }
+        // 4c2 — geofence rings (+ breach node): above the route, below pins
+        // (the JS __applyLayers z-order — fences before markers).
+        for fence in model.fences {
+            paintFence(&context, center: fence.center, radius: fence.radius,
+                       kind: fence.kind, breach: fence.breach,
+                       isDark: model.isDarkRegister, phase: phase)
         }
         // 4d — endpoints.
         for ep in model.endpoints {
@@ -1102,6 +1172,29 @@ extension BespokeMapCanvas {
         context.stroke(path, with: .color(fill.opacity(Swift.min(1.0, opacity + 0.35))), lineWidth: 1.4)
     }
 
+    // MARK: 4b2 — Traffic-flow ribbons (§2 — 536 congestion segments)
+
+    /// One congestion ribbon over the road grammar, under the route: jam =
+    /// #FFA726 w6 round @0.9 (L) / 0.95 (D) · severe = #F44336 w6 @0.85 (L) /
+    /// 0.9 (D). The Path was projected + smoothed once in `RenderModel.build`.
+    static func paintTrafficSegment(
+        _ context: inout GraphicsContext,
+        path: Path,
+        severity: HereTrafficSegment.Severity,
+        isDark: Bool
+    ) {
+        let tint: Color
+        let alpha: Double
+        switch severity {
+        case .jam:    tint = Brand.warning; alpha = isDark ? 0.95 : 0.90
+        case .severe: tint = Brand.danger;  alpha = isDark ? 0.90 : 0.85
+        }
+        context.stroke(
+            path,
+            with: .color(tint.opacity(alpha)),
+            style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+    }
+
     // MARK: 4c — Route (solid traveled + dashed remaining; NO glow underlay)
 
     /// Stroke the PRE-smoothed active + pending route Paths from the model.
@@ -1194,6 +1287,103 @@ extension BespokeMapCanvas {
                 width: BespokeMapStyle.lightBreadcrumbRadius * 2,
                 height: BespokeMapStyle.lightBreadcrumbRadius * 2))
             context.fill(dot, with: .color(BespokeMapStyle.lightBreadcrumbColor))
+        }
+    }
+
+    // MARK: 4c2 — Geofence rings (§3c — dashed circle fences + breach node)
+
+    /// One canon geofence: a dashed circle in the kind's wireframe-verbatim
+    /// ring color / dash cadence over its authored fill — receiver (536) /
+    /// rail ramp (003-rail, + fencePulse) / pilot ground (660, marching
+    /// dashoffset) / dest port (vessel 003) — plus the breach/EXIT node +
+    /// exitPulse riding the rim when a breach coordinate is present. The
+    /// radius arrives already projected to points; `phase` carries the canon
+    /// motion clock (the static frame paints the authored geometry, so
+    /// reduce-motion / paused boards stay wireframe-true).
+    static func paintFence(
+        _ context: inout GraphicsContext,
+        center c: CGPoint,
+        radius r: CGFloat,
+        kind: HereGeofenceKind,
+        breach: CGPoint?,
+        isDark: Bool,
+        phase: PulsePhase = .still
+    ) {
+        let circle = Path(ellipseIn: CGRect(
+            x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+
+        switch kind {
+        case .receiver:
+            // 536 receiver fence: #F44336 w1.6 dash [6,5] @0.8 (L) / 0.85 (D)
+            // over a #F44336 @0.05 (L) / 0.08 (D) wash.
+            context.fill(circle, with: .color(Brand.danger.opacity(isDark ? 0.08 : 0.05)))
+            context.stroke(
+                circle,
+                with: .color(Brand.danger.opacity(isDark ? 0.85 : 0.80)),
+                style: StrokeStyle(lineWidth: 1.6, lineCap: .round, dash: [6, 5]))
+
+        case .railRamp:
+            // 003-rail ramp fence: #00C48C w1.4 dash [3,4] @0.85; the fill IS
+            // the fencePulse — a radial #00C48C @0.40 (L) / 0.45 (D) → 0 halo
+            // swelling r → 1.3 r as it fades out, on the 2.4 s sawtooth.
+            let saw = phase.animated ? phase.pulse24 : 0
+            let pulseR = r * CGFloat(1.0 + 0.3 * saw)
+            let pulseA = (isDark ? 0.45 : 0.40) * (1.0 - saw)
+            let halo = Path(ellipseIn: CGRect(
+                x: c.x - pulseR, y: c.y - pulseR, width: pulseR * 2, height: pulseR * 2))
+            let haloGrad = Gradient(stops: [
+                Gradient.Stop(color: Brand.success.opacity(pulseA), location: 0.0),
+                Gradient.Stop(color: Brand.success.opacity(0.0), location: 1.0)
+            ])
+            context.fill(halo, with: .radialGradient(haloGrad, center: c, startRadius: 0, endRadius: pulseR))
+            context.stroke(
+                circle,
+                with: .color(Brand.success.opacity(0.85)),
+                style: StrokeStyle(lineWidth: 1.4, lineCap: .round, dash: [3, 4]))
+
+        case .pilotGround:
+            // 660 pilot ground: #3FA9F5 @0.65 w1.4 dash [5,5] marching its
+            // dashoffset (one full cadence per second), #1473FF @0.05 fill.
+            context.fill(circle, with: .color(Brand.blue.opacity(0.05)))
+            context.stroke(
+                circle,
+                with: .color(Color(hex: 0x3FA9F5).opacity(0.65)),
+                style: StrokeStyle(
+                    lineWidth: 1.4, lineCap: .round, dash: [5, 5],
+                    dashPhase: phase.animated ? phase.fenceDashOffset : 0))
+
+        case .destinationPort:
+            // Vessel 003 dest-port fence: #1473FF @0.55 w1.6 dash [4,5], no fill.
+            context.stroke(
+                circle,
+                with: .color(Brand.blue.opacity(0.55)),
+                style: StrokeStyle(lineWidth: 1.6, lineCap: .round, dash: [4, 5]))
+        }
+
+        // Breach/EXIT node riding the rim (536, §3b): the exitPulse — a
+        // radial #F44336 @0.55 (L) / 0.6 (D) → 0 halo swelling 0.08 r →
+        // 0.24 r over 2.0 s — under a #F44336 r5 disc with the #FFFFFF (L) /
+        // #F5F5F7 (D) stroke 1.5. The static frame is the authored seed.
+        if let b = breach {
+            let saw = phase.animated ? phase.pulse20 : 0
+            let pulseR = Swift.max(3, r * CGFloat(0.08 + 0.16 * saw))
+            let pulseA = (isDark ? 0.60 : 0.55) * (1.0 - saw)
+            let pulse = Path(ellipseIn: CGRect(
+                x: b.x - pulseR, y: b.y - pulseR, width: pulseR * 2, height: pulseR * 2))
+            let pulseGrad = Gradient(stops: [
+                Gradient.Stop(color: Brand.danger.opacity(pulseA), location: 0.0),
+                Gradient.Stop(color: Brand.danger.opacity(0.0), location: 1.0)
+            ])
+            context.fill(pulse, with: .radialGradient(pulseGrad, center: b, startRadius: 0, endRadius: pulseR))
+
+            let nodeR: CGFloat = 5
+            let node = Path(ellipseIn: CGRect(
+                x: b.x - nodeR, y: b.y - nodeR, width: nodeR * 2, height: nodeR * 2))
+            context.fill(node, with: .color(Brand.danger))
+            context.stroke(
+                node,
+                with: .color(isDark ? Color(hex: 0xF5F5F7) : .white),
+                lineWidth: 1.5)
         }
     }
 
