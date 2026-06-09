@@ -62,13 +62,16 @@ final class HereParkingClient {
     private let decoder = JSONDecoder()
 
     /// Canonical HERE category ids for off-street parking + truck
-    /// stops. We omit `on-street` by default because truck drivers
-    /// rarely park on-street for HOS breaks; callers that want the
-    /// full inventory can pass a custom `categories` list.
+    /// parking. 2026-06-09: the previous ids (800-8400-*, 400-4100-0199)
+    /// belong to retired families — Browse answers them with a silent
+    /// `{"items":[]}` (no error!), which is why the parking layer never
+    /// showed a single pin. Live-probed canon: 800-8500 is the parking
+    /// family (0178 Parking Lot et al.), 700-7900-0131 is Truck &
+    /// Trailer Parking, 700-7900-0132 is Truck Stop/Plaza.
     static let defaultCategories: [String] = [
-        "800-8400-0141", // Parking Lot
-        "800-8400-0135", // Parking Garage
-        "400-4100-0199", // Truck Stop / Truck Parking
+        "800-8500",      // Parking family (lot / garage / on+off street)
+        "700-7900-0131", // Truck & Trailer Parking
+        "700-7900-0132", // Truck Stop - Plaza
     ]
 
     init(session: URLSession = .shared) {

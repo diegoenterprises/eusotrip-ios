@@ -17,8 +17,9 @@
 //    - explore.night  → HERE's dark vector style
 //    - explore.day    → HERE's light vector style
 //
-//  HERE PPI levels: 72, 100, 200, 250, 320, 400, 500.
-//  400 ppi + tile size 512 is retina-friendly on iPhone.
+//  HERE PPI levels (v3 schema as of 2026-06): 100, 200, 400 ONLY —
+//  other values 400-reject with E622002. 200 ppi + tile size 512 is
+//  retina-friendly on iPhone.
 //
 //  Docs: https://developer.here.com/documentation/maps-api-for-javascript/dev_guide/topics/map-tile-service.html
 //
@@ -70,9 +71,11 @@ final class HereTileOverlay: MKTileOverlay {
     /// `size` and `ppi` are query parameters — putting `size` in the path
     /// (the previous shape) returns HTTP 404 with code `E622000`
     /// "requested path is not supported", which is why the HERE basemap
-    /// never rendered on iOS until this build. The `style` value
-    /// `explore.day` is the only style our HERE plan tier serves over
-    /// raster — every `*.night` style 403s on the same tier.
+    /// never rendered on iOS until this build. 2026-06-09 enterprise:
+    /// `explore.night` / `logistics.night` / `satellite.day` all serve
+    /// 200 on this account now — style selection lives in
+    /// `HereTileStyle`, and the 403-adaptive fallback below remains as
+    /// a safety net only.
     override func url(forTilePath path: MKTileOverlayPath) -> URL {
         var comps = URLComponents()
         comps.scheme = "https"

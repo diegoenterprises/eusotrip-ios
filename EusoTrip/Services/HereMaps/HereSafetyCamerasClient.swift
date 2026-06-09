@@ -55,6 +55,14 @@ final class HereSafetyCamerasClient {
     private let decoder = JSONDecoder()
 
     /// HERE category id for Speed Camera / Safety Camera POIs.
+    ///
+    /// 2026-06-09 reality check (live-probed ATL / DC / CDMX / London):
+    /// Browse has NO populated safety-camera POI category — this id
+    /// returns `{"items":[]}` everywhere, and the 900-9300 family is
+    /// unrelated POIs. Cameras ship in HERE's dedicated Safety Cameras
+    /// data product (separate entitlement), not Places. Until that
+    /// product is wired, this layer stays honestly empty (the add-on
+    /// fail-soft hides the pins + chip rather than faking them).
     static let categoryIdSafetyCamera = "900-9300-0001"
 
     init(session: URLSession = .shared) {
