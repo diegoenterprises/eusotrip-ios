@@ -15,7 +15,9 @@
 //  inbox for those open offers + their resolution state.
 //
 //  Wires:
-//    • `loadBidding.getMyBids(limit:)` — list.
+//    • `loadBidding.getMyBids(status:limit:)` — list; server ALWAYS
+//      envelopes as `{ bids, total }` (loadBidding.ts:88-116), the
+//      status chip filters server-side.
 //    • `loadBidding.withdraw(bidId:)` — drop a still-pending bid.
 //
 
@@ -54,14 +56,14 @@ final class MyBidsStore: ObservableObject {
     func load() async {
         phase = .loading
         do {
-            let rows = try await api.loadBidding.getMyBids(limit: 100)
-            let visible: [LoadBiddingAPI.MyBid]
-            if let f = statusFilter {
-                visible = rows.filter { $0.status.lowercased() == f }
-            } else {
-                visible = rows
-            }
-            phase = .loaded(visible)
+            // Server envelopes as { bids, total } on every path —
+            // decode the envelope and read .bids. The status chip
+            // filters server-side via the zod-optional `status` input.
+            let envelope = try await api.loadBidding.getMyBids(
+                status: statusFilter,
+                limit: 100
+            )
+            phase = .loaded(envelope.bids)
         } catch {
             phase = .error("Couldn't reach bid service.")
         }

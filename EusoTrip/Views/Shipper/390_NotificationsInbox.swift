@@ -27,6 +27,11 @@ struct NotificationsInboxScreen: View {
     }
 }
 
+/// One row of `notifications.list`. The server never emits
+/// body/readAt/deepLink — it emits message / isRead+read /
+/// actionUrl (notifications.ts:120-136) — so the wire keys are
+/// remapped here while the Swift-facing surface the rest of this
+/// screen consumes (body, readAt, deepLink) stays stable.
 private struct InboxItem: Decodable, Identifiable, Hashable {
     let id: String
     let title: String?
@@ -35,6 +40,41 @@ private struct InboxItem: Decodable, Identifiable, Hashable {
     let createdAt: String?
     let readAt: String?
     let deepLink: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, category, createdAt, timestamp
+        case body = "message"
+        case isRead, read
+        case deepLink = "actionUrl"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Server stringifies the id (`String(n.id)`); stay tolerant
+        // of a raw Int from older deploys. markAsRead needs the real
+        // id, so a row without one fails this row's decode.
+        if let s = try? c.decode(String.self, forKey: .id) {
+            id = s
+        } else {
+            id = String(try c.decode(Int.self, forKey: .id))
+        }
+        title = try c.decodeIfPresent(String.self, forKey: .title)
+        body = try c.decodeIfPresent(String.self, forKey: .body)
+        category = try c.decodeIfPresent(String.self, forKey: .category)
+        let created = try c.decodeIfPresent(String.self, forKey: .createdAt)
+            ?? c.decodeIfPresent(String.self, forKey: .timestamp)
+        createdAt = created
+        // readAt ← isRead + timestamp: the server tracks a boolean
+        // only, so a read row carries its created timestamp as the
+        // best-known read marker. This screen only branches on
+        // nil-vs-non-nil (unread badge, drag gating) — it never
+        // renders readAt as a date.
+        let isRead = try c.decodeIfPresent(Bool.self, forKey: .isRead)
+            ?? c.decodeIfPresent(Bool.self, forKey: .read)
+            ?? false
+        readAt = isRead ? (created ?? "") : nil
+        deepLink = try c.decodeIfPresent(String.self, forKey: .deepLink)
+    }
 }
 
 private struct InboxBody: View {
@@ -235,9 +275,20 @@ private struct InboxBody: View {
 
     private func load() async {
         loading = true; loadError = nil
+        // Server ALWAYS envelopes: { notifications, total, hasMore }
+        // (notifications.ts:78/139-146) — same Page pattern as the
+        // Driver 010 NotificationsWidget against the same proc. The
+        // screen renders a single page (server default limit 50);
+        // there is no pagination UI here, so hasMore is decoded but
+        // unused until one exists.
+        struct Page: Decodable {
+            let notifications: [InboxItem]
+            let total: Int?
+            let hasMore: Bool?
+        }
         do {
-            let r: [InboxItem] = try await EusoTripAPI.shared.queryNoInput("notifications.list")
-            items = r
+            let page: Page = try await EusoTripAPI.shared.queryNoInput("notifications.list")
+            items = page.notifications
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
