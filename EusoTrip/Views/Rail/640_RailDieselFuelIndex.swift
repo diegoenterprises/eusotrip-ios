@@ -16,11 +16,15 @@
 //    national index + PADD rows → fuelSurchargeIndex.currentDieselIndex
 //        EXISTS · fuelSurchargeIndex.ts:56
 //        returns { source, weekOf, nationalAverage, padd1..padd5, note }
+//        (the server's source string is surfaced verbatim in the footnote so
+//         a mock feed can never masquerade as live EIA data)
+//    FSC peg → fscEngine.getSchedules  EXISTS · fscEngine.ts:27
+//        returns { schedules: [{ basePrice, cpmRate, method, isActive, … }] }
+//        — the peg band binds to the company's active cpm schedule. LIVE OR
+//        EM-DASH: an ESANG READS label NEVER sits on a hardcoded number.
 //    8-week trend series → fscEngine.getFSCHistory  EXISTS · fscEngine.ts:333
-//        BUT requires a scheduleId: Int — this index surface has no schedule
-//        binding, and the live PADD history feed seed is flagged STUB·data-seed
-//        in the wireframe desc. So the trend SERIES is not retrievable here →
-//        the chart hero renders a real empty state. // PORT-GAP (see load()).
+//        requires a scheduleId — now bound via the resolved schedule above;
+//        when no schedule/history exists the chart renders its honest empty.
 //    Update prices write → fscEngine.updatePaddPrices  EXISTS · fscEngine.ts:172
 //        (mutation; writes fscIndex rows + blockchainAuditTrail; broadcasts
 //         WS_CHANNELS.PRICING / WS_EVENTS.FSC_UPDATED)
@@ -78,6 +82,31 @@ private struct FscHistory640: Decodable {
     let history: [Point]?
 }
 
+/// A decimal column that MySQL/drizzle serializes as either a JSON number or
+/// a "1.2500"-style string — decode both, silently fail to nil on neither.
+private struct FlexDouble640: Decodable {
+    let value: Double?
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let d = try? c.decode(Double.self) { value = d }
+        else if let s = try? c.decode(String.self) { value = Double(s) }
+        else { value = nil }
+    }
+}
+
+/// One fsc_schedules row from `fscEngine.getSchedules` (raw drizzle select).
+private struct FscSchedule640: Decodable {
+    let id: Int
+    let scheduleName: String?
+    let method: String?
+    let basePrice: FlexDouble640?
+    let cpmRate: FlexDouble640?
+    let isActive: Int?
+}
+private struct FscSchedulesPage640: Decodable {
+    let schedules: [FscSchedule640]?
+}
+
 // MARK: - Body
 
 private struct RailDieselFuelIndexBody: View {
@@ -86,6 +115,9 @@ private struct RailDieselFuelIndexBody: View {
     @State private var index: DieselIndex640? = nil
     @State private var series: [Double] = []          // 8-week price series (real, may be empty)
     @State private var seriesDates: [String] = []     // matching x-axis labels
+    /// The company's active cpm FSC schedule — the LIVE source of the peg
+    /// band. nil → every peg figure renders as an em-dash.
+    @State private var pegSchedule: FscSchedule640? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var isUpdating = false
@@ -93,7 +125,15 @@ private struct RailDieselFuelIndexBody: View {
     // MARK: Derived
 
     private var heroPriceLabel: String {
-        index?.nationalAverage.map { String(format: "$%.2f", $0) } ?? "-"
+        index?.nationalAverage.map { String(format: "$%.2f", $0) } ?? "—"
+    }
+    /// Live FSC peg ($/mi) from the active cpm schedule — em-dash otherwise.
+    private var pegRateLabel: String {
+        pegSchedule?.cpmRate?.value.map { String(format: "$%.2f", $0) } ?? "—"
+    }
+    /// Live peg base diesel price from the schedule — em-dash otherwise.
+    private var pegBaseLabel: String {
+        pegSchedule?.basePrice?.value.map { String(format: "$%.2f", $0) } ?? "—"
     }
     /// Hi / lo across the live 8-week series when present.
     private var hiLoLabel: String {
@@ -175,7 +215,9 @@ private struct RailDieselFuelIndexBody: View {
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(palette.textSecondary)
             }
-            Text("EIA #2 ULSD natl avg · FSC peg $1.25/mi")
+            // Peg suffix is LIVE (active cpm schedule) or an em-dash — never a
+            // hardcoded figure.
+            Text("EIA #2 ULSD natl avg · FSC peg \(pegRateLabel)/mi")
                 .font(.system(size: 12))
                 .foregroundStyle(palette.textSecondary)
         }
@@ -215,11 +257,9 @@ private struct RailDieselFuelIndexBody: View {
                 }
                 .padding(.top, 6)
             } else {
-                // PORT-GAP: fscEngine.getFSCHistory requires a scheduleId this
-                // index surface has no binding for, and the live PADD history
-                // feed seed is flagged STUB·data-seed. No real 8-week series is
-                // retrievable here, so we render a real empty state rather than
-                // fabricate chart points.
+                // Honest empty: the series is schedule-bound (fscEngine.
+                // getFSCHistory via the resolved peg schedule) and no real
+                // history rows exist yet — never fabricated chart points.
                 trendEmpty
             }
         }
@@ -314,17 +354,22 @@ private struct RailDieselFuelIndexBody: View {
     // MARK: - FSC peg conversion band
 
     private var fscPegBand: some View {
+        // ZERO-FALLBACK: an "ESANG READS" label may never sit on a hardcoded
+        // number. The peg binds to the company's active cpm FSC schedule
+        // (fscEngine.getSchedules → basePrice + cpmRate) or renders em-dashes.
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("FSC PEG · ESANG READS")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(.white.opacity(0.85))
-                Text("$1.25 / mi over $1.20 base diesel")
+                Text(pegSchedule != nil
+                     ? "\(pegRateLabel) / mi over \(pegBaseLabel) base diesel"
+                     : "— / mi · no active FSC schedule on file")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
             }
             Spacer()
-            Text("$1.25")
+            Text(pegRateLabel)
                 .font(.system(size: 26, weight: .bold)).monospacedDigit()
                 .foregroundStyle(.white)
         }
@@ -373,24 +418,26 @@ private struct RailDieselFuelIndexBody: View {
     }
 
     /// Rows are driven by the LIVE PADD figures returned by
-    /// `currentDieselIndex`. The day-delta / WoW chips are representative
-    /// EIA framing (the endpoint returns the spot price only, not deltas —
-    /// // PORT-GAP on per-region deltas, flagged in the footnote).
+    /// `currentDieselIndex`. WIRE-GAP: the endpoint returns the weekly spot
+    /// price only — no per-region day/WoW deltas exist anywhere on the
+    /// server, so no delta chip is rendered (zero-fallback: a fabricated
+    /// "+1.3% WoW" is worse than no chip).
     private var paddRows: [PaddRow] {
-        [
-            PaddRow(id: "1", title: "PADD 1 · East Coast", detail: "+5c day · +1.3% WoW",
-                    wow: "+1.3% WoW", wowUp: true,  price: index?.padd1, carb: false),
-            PaddRow(id: "3", title: "PADD 3 · Gulf Coast", detail: "+3c day · benchmark hub",
-                    wow: "+0.8% WoW", wowUp: true,  price: index?.padd3, carb: false),
-            PaddRow(id: "5", title: "PADD 5 · West Coast", detail: "-2c day · CARB diesel",
-                    wow: "-0.5% WoW", wowUp: false, price: index?.padd5, carb: true),
+        let week = index?.weekOf.map { "week of \($0)" } ?? "—"
+        return [
+            PaddRow(id: "1", title: "PADD 1 · East Coast", detail: week,
+                    wow: "", wowUp: false, price: index?.padd1, carb: false),
+            PaddRow(id: "3", title: "PADD 3 · Gulf Coast", detail: week,
+                    wow: "", wowUp: false, price: index?.padd3, carb: false),
+            PaddRow(id: "5", title: "PADD 5 · West Coast", detail: "\(week) · CARB diesel",
+                    wow: "", wowUp: false, price: index?.padd5, carb: true),
         ]
     }
 
     private func paddRow(_ row: PaddRow) -> some View {
         let glyphTint: Color = row.carb ? Brand.success : Brand.hazmat
         let chipColor: Color = row.wowUp ? Brand.warning : Brand.success
-        let priceStr: String = row.price.map { String(format: "$%.2f", $0) } ?? "-"
+        let priceStr: String = row.price.map { String(format: "$%.2f", $0) } ?? "—"
         return HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -411,11 +458,15 @@ private struct RailDieselFuelIndexBody: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 6) {
-                Text(row.wow)
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(chipColor)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Capsule().fill(chipColor.opacity(0.16)))
+                // Delta chip renders ONLY when a real delta exists (WIRE-GAP:
+                // none does today — the index returns weekly spot only).
+                if !row.wow.isEmpty {
+                    Text(row.wow)
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(chipColor)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(chipColor.opacity(0.16)))
+                }
                 Text(priceStr)
                     .font(.system(size: 14, weight: .bold)).monospacedDigit()
                     .foregroundStyle(palette.textPrimary)
@@ -427,7 +478,9 @@ private struct RailDieselFuelIndexBody: View {
     // MARK: - Footnote
 
     private var footnote: some View {
-        Text("+ PADD 2 · 4 · national composite · representative EIA figures, live feed pending")
+        // The server's own source string is surfaced verbatim — if the feed
+        // is a mock, the screen says so instead of dressing it up as EIA.
+        Text("source: \(index?.source ?? "—") · day/WoW deltas pending (spot only)")
             .font(.system(size: 10))
             .foregroundStyle(palette.textTertiary)
     }
@@ -474,13 +527,40 @@ private struct RailDieselFuelIndexBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
 
-        // 8-week trend series — best-effort. fscEngine.getFSCHistory needs a
-        // scheduleId this index surface has no binding for, so this normally
-        // yields no series and the chart hero falls back to its empty state.
-        // We still attempt the wire so the chart lights up the moment a
-        // schedule-bound history feed becomes available. // PORT-GAP.
+        // FSC peg — bind to the company's active cpm schedule. Best-effort:
+        // a failed read leaves the peg band at its honest em-dash state.
+        self.pegSchedule = nil
+        do {
+            let page: FscSchedulesPage640 = try await EusoTripAPI.shared.query(
+                "fscEngine.getSchedules", input: EmptyIn())
+            let rows = page.schedules ?? []
+            self.pegSchedule = rows.first(where: {
+                ($0.method ?? "") == "cpm" && ($0.isActive ?? 0) == 1 && $0.cpmRate?.value != nil
+            }) ?? rows.first(where: { $0.cpmRate?.value != nil })
+        } catch {
+            // Honest em-dash peg; the index error (if any) is already surfaced.
+        }
+
+        // 8-week trend series — now schedule-bound via the resolved peg
+        // schedule. Real history points only; otherwise the chart keeps its
+        // honest empty state.
         self.series = []
         self.seriesDates = []
+        if let sid = pegSchedule?.id {
+            struct HistIn: Encodable { let scheduleId: Int }
+            do {
+                let hist: FscHistory640 = try await EusoTripAPI.shared.query(
+                    "fscEngine.getFSCHistory", input: HistIn(scheduleId: sid))
+                let aligned = (hist.history ?? []).suffix(8).compactMap { p -> (Double, String)? in
+                    guard let v = p.paddPrice, let d = p.date else { return nil }
+                    return (v, String(d.prefix(10)))
+                }
+                self.series = aligned.map(\.0)
+                self.seriesDates = aligned.map(\.1)
+            } catch {
+                // No history rows yet — honest empty chart.
+            }
+        }
         loading = false
     }
 

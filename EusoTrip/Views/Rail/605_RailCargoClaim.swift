@@ -11,18 +11,26 @@
 //  file-claim CTA.
 //
 //  Endpoint (REAL · tRPC freightClaims.ts, protectedProcedure):
+//    • freightClaims.getClaims     — resolves the newest real claim when the
+//      navigator injects no claimId (zero-fallback: no invented case id).
 //    • freightClaims.getClaimById  — case header + parties + evidence +
 //      workflow step (returns null when not found). Wired below.
 //
-//  PORT-GAPs (server fields the case-file needs but getClaimById does NOT
-//  return — surfaced as real fallbacks, never fabricated):
-//    • freightClaims.getClaimById.cargoValue       — cargo declared value
-//    • freightClaims.getClaimById.estRecovery      — recovery estimate
-//    • freightClaims.getClaimById.carmackDeadline  — statutory notice window
-//      (no carmackDeadline field; the 270-day countdown is derived
-//      client-side from filedDate per the wireframe <desc> STUB note)
-//    • freightClaims.getClaimById.insurer          — all-risk insurer party
-//    • claims.subscribeStatus                      — proposed WS channel
+//  ZERO-FALLBACK (2026-06-09): every cell renders live server data or an
+//  em-dash. No invented amounts, lanes, parties, or evidence tiles.
+//
+//  WIRE-GAPs (server fields the case-file needs but getClaimById does NOT
+//  return — every one renders as an em-dash, never a fabrication):
+//    • freightClaims.getClaimById.amount        — hardcoded 0 server-side
+//    • freightClaims.getClaimById.load.*        — loadNumber "-", empty lane
+//    • freightClaims.getClaimById.shipper/carrier.name — hardcoded "-"
+//    • freightClaims.getClaimById.evidence      — hardcoded []
+//    • freightClaims.getClaimById.cargoValue    — field does not exist
+//    • freightClaims.getClaimById.estRecovery   — field does not exist
+//    • freightClaims.getClaimById.carmackDeadline — no field; the 270-day
+//      countdown is derived client-side from filedDate (real createdAt)
+//    • freightClaims.getClaimById.insurer       — no insurer party
+//    • claims.subscribeStatus                   — proposed WS channel
 //      Subscription<{claimId,status,estRecovery,daysToDeadline}> (not built)
 //
 
@@ -31,10 +39,11 @@ import SwiftUI
 struct RailCargoClaimScreen: View {
     let theme: Theme.Palette
 
-    /// Claim id the case-file is opened against. Defaults to the wireframe
-    /// featured claim CLM-RX7M2 on load RAIL-260514-7C3A09F18B so the screen
-    /// renders standalone; injected by the navigator in production.
-    var claimId: String = "CLM-RX7M2"
+    /// Claim id the case-file is opened against. Empty by default: the body
+    /// resolves the newest REAL claim via freightClaims.getClaims so the
+    /// screen never opens against an invented case id. Injected by the
+    /// navigator when pushed from a claim row.
+    var claimId: String = ""
 
     var body: some View {
         Shell(theme: theme) { RailCargoClaimBody(claimId: claimId) } nav: {
@@ -110,6 +119,7 @@ private struct RailCargoClaimBody: View {
 
     @Environment(\.palette) private var palette
     @State private var claim: RailClaimDetail? = nil
+    @State private var resolvedClaimId: String? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var filing = false
@@ -139,24 +149,36 @@ private struct RailCargoClaimBody: View {
     }
 
     private var deadlineLabel: String {
-        guard let d = deadlineDate else { return "-" }
+        guard let d = deadlineDate else { return "—" }
         let f = DateFormatter(); f.dateFormat = "MMM d yyyy"
         return f.string(from: d)
     }
 
     private var burndownFraction: CGFloat {
-        guard carmackWindowDays > 0 else { return 0 }
+        guard carmackWindowDays > 0, filedDate != nil else { return 0 }
         return min(1, max(0, CGFloat(daysElapsed) / CGFloat(carmackWindowDays)))
     }
 
-    private var claimNumber: String { claim?.claimNumber ?? claimId }
+    private var claimNumber: String {
+        claim?.claimNumber ?? resolvedClaimId ?? (claimId.isEmpty ? "—" : claimId)
+    }
 
+    /// Live money or em-dash. The server hardcodes amount: 0 on getClaimById
+    /// (WIRE-GAP), so a zero is "the server can't answer" — em-dash, never a
+    /// fabricated figure.
     private func money(_ v: Double?) -> String {
-        guard let v else { return "-" }
+        guard let v, v > 0 else { return "—" }
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
         return "$" + (f.string(from: NSNumber(value: v)) ?? String(Int(v)))
+    }
+
+    /// Maps the server's "-" / "" stub sentinels to nil so stubs render as
+    /// em-dashes instead of leaking sentinel hyphens into the case file.
+    private func real(_ s: String?) -> String? {
+        guard let s, !s.isEmpty, s != "-" else { return nil }
+        return s
     }
 
     var body: some View {
@@ -175,8 +197,10 @@ private struct RailCargoClaimBody: View {
                 .padding(.top, Space.s4)
             } else if claim == nil {
                 EusoEmptyState(systemImage: "doc.text.magnifyingglass",
-                               title: "Claim not found",
-                               subtitle: "No case file matches \(claimNumber).")
+                               title: claimNumber == "—" ? "No claims on file" : "Claim not found",
+                               subtitle: claimNumber == "—"
+                                   ? "File a cargo claim from a shipment to open a case file."
+                                   : "No case file matches \(claimNumber).")
                     .padding(.top, Space.s7)
             } else {
                 VStack(alignment: .leading, spacing: Space.s4) {
@@ -244,20 +268,25 @@ private struct RailCargoClaimBody: View {
     // MARK: - Case header
 
     private var caseHeaderCard: some View {
-        let subject = claim?.description?.isEmpty == false
-            ? claim!.description!
-            : "Water damage + 6-ctn shortage"
+        // Live or em-dash. The server stubs load.loadNumber to "-" and the
+        // lane to "" on getClaimById (WIRE-GAP) — those render as em-dashes.
+        let subject = real(claim?.description) ?? "—"
         let load = claim?.load
         let lane: String = {
-            let o = load?.origin ?? ""
-            let d = load?.destination ?? ""
-            if !o.isEmpty || !d.isEmpty { return "\(o) → \(d)" }
-            return "Memphis → Atlanta"
+            let o = real(load?.origin)
+            let d = real(load?.destination)
+            if o == nil && d == nil { return "—" }
+            return "\(o ?? "—") → \(d ?? "—")"
         }()
-        let loadNumber = (load?.loadNumber).flatMap { $0 == "-" ? nil : $0 } ?? "RAIL-260514-7C3A09F18B"
-        let statusText = (claim?.status ?? "filed").uppercased()
-        let workflowStep = claim?.workflow?.currentStep ?? 2
-        let workflowTotal = claim?.workflow?.steps?.count ?? 5
+        let loadNumber = real(load?.loadNumber) ?? "—"
+        let statusText = (real(claim?.status) ?? "—").uppercased()
+        let workflowStepLabel: String = {
+            guard let wf = claim?.workflow,
+                  let step = wf.currentStep,
+                  let steps = wf.steps, !steps.isEmpty else { return "WORKFLOW · —" }
+            let name = steps.first(where: { $0.step == step })?.name?.uppercased() ?? "STEP"
+            return "\(name) · \(step) OF \(steps.count)"
+        }()
 
         return HStack(alignment: .top, spacing: Space.s3) {
             // Amber accent bar
@@ -286,7 +315,7 @@ private struct RailCargoClaimBody: View {
                         .foregroundStyle(Brand.warning)
                         .padding(.horizontal, 14).padding(.vertical, 5)
                         .background(Capsule().fill(Brand.warning.opacity(0.18)))
-                    Text("DOCUMENTATION · \(workflowStep) OF \(workflowTotal)")
+                    Text(workflowStepLabel)
                         .font(.system(size: 10, weight: .bold)).tracking(0.4)
                         .foregroundStyle(palette.textSecondary)
                         .padding(.horizontal, 14).padding(.vertical, 5)
@@ -326,22 +355,25 @@ private struct RailCargoClaimBody: View {
 
             VStack(alignment: .leading, spacing: Space.s4) {
                 HStack(alignment: .top, spacing: 0) {
-                    ledgerCell(label: "CLAIMED", value: money(claim?.amount ?? 12_400),
+                    // Server hardcodes amount: 0 (WIRE-GAP) → em-dash via money().
+                    ledgerCell(label: "CLAIMED", value: money(claim?.amount),
                                gradient: true)
                     ledgerDivider
-                    // PORT-GAP: freightClaims.getClaimById.cargoValue — no
-                    // cargo declared value field; wireframe shows $86,000.
-                    ledgerCell(label: "CARGO VALUE", value: "$86,000",
+                    // WIRE-GAP: freightClaims.getClaimById.cargoValue — no
+                    // cargo declared value field on the server. Em-dash.
+                    ledgerCell(label: "CARGO VALUE", value: "—",
                                valueColor: palette.textPrimary)
                     ledgerDivider
-                    // PORT-GAP: freightClaims.getClaimById.estRecovery — no
-                    // recovery estimate field; wireframe shows $9,200.
-                    ledgerCell(label: "RECOVERY EST", value: "$9,200",
+                    // WIRE-GAP: freightClaims.getClaimById.estRecovery — no
+                    // recovery estimate field on the server. Em-dash.
+                    ledgerCell(label: "RECOVERY EST", value: "—",
                                valueColor: Brand.success)
                 }
 
                 VStack(alignment: .leading, spacing: Space.s2) {
-                    Text("\(daysLeft) of \(carmackWindowDays) days left to file · deadline \(deadlineLabel)")
+                    Text(filedDate != nil
+                         ? "\(daysLeft) of \(carmackWindowDays) days left to file · deadline \(deadlineLabel)"
+                         : "Filing window — · no filed date on record")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(palette.textSecondary)
                     GeometryReader { geo in
@@ -396,8 +428,9 @@ private struct RailCargoClaimBody: View {
     // MARK: - Party chain
 
     private var partiesSection: some View {
-        let claimant = (claim?.shipper?.name).flatMap { $0 == "-" ? nil : $0 } ?? "Eusorone"
-        let carrier  = (claim?.carrier?.name).flatMap { $0 == "-" ? nil : $0 } ?? "BNSF"
+        // Server stubs shipper/carrier name to "-" (WIRE-GAP) → em-dash.
+        let claimant = real(claim?.shipper?.name) ?? "—"
+        let carrier  = real(claim?.carrier?.name) ?? "—"
 
         return VStack(alignment: .leading, spacing: Space.s2) {
             Text("PARTIES")
@@ -419,10 +452,10 @@ private struct RailCargoClaimBody: View {
                             .foregroundStyle(.white))
                 }
                 chainArrow
-                // PORT-GAP: freightClaims.getClaimById.insurer — no insurer
-                // party on the server payload; wireframe shows the all-risk
-                // insurer on cert CIC-2026-0518.
-                partyNode(label: "INSURER", name: "All-Risk") {
+                // WIRE-GAP: freightClaims.getClaimById.insurer — no insurer
+                // party on the server payload. Em-dash, never an invented
+                // insurer or certificate number.
+                partyNode(label: "INSURER", name: "—") {
                     Circle().fill(Brand.info)
                         .overlay(Image(systemName: "checkmark.shield.fill")
                             .font(.system(size: 18, weight: .semibold))
@@ -463,10 +496,11 @@ private struct RailCargoClaimBody: View {
     }
 
     private func initials(_ s: String) -> String {
+        guard s != "—" else { return "—" }
         let parts = s.split(separator: " ").prefix(2)
         let chars = parts.compactMap { $0.first }.map { String($0) }
         let joined = chars.joined().uppercased()
-        return joined.isEmpty ? "DU" : joined
+        return joined.isEmpty ? "—" : joined
     }
 
     // MARK: - Evidence shelf
@@ -484,26 +518,33 @@ private struct RailCargoClaimBody: View {
                              detail: ev.uploadedAt.map { _ in "filed" } ?? "attached",
                              detailColor: Brand.success)
             }
-            // getClaimById returns evidence: [] for this case (PORT-GAP on
-            // the per-evidence detail), so the wireframe's canonical four
-            // tiles are shown as the document checklist when none attached.
-            let tiles: [EvidenceTile] = serverTiles.isEmpty ? canonicalEvidenceTiles : Array(serverTiles)
 
-            HStack(spacing: Space.s2) {
-                ForEach(Array(tiles.enumerated()), id: \.offset) { _, tile in
-                    tile
+            if serverTiles.isEmpty {
+                // WIRE-GAP: getClaimById hardcodes evidence: [] server-side.
+                // Honest empty shelf — never the wireframe's fabricated tiles.
+                HStack(spacing: Space.s3) {
+                    Image(systemName: "paperclip")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                    Text("No evidence attached yet")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+                .padding(Space.s3)
+                .frame(maxWidth: .infinity, minHeight: 74, alignment: .leading)
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            } else {
+                HStack(spacing: Space.s2) {
+                    ForEach(Array(serverTiles.enumerated()), id: \.offset) { _, tile in
+                        tile
+                    }
                 }
             }
         }
-    }
-
-    private var canonicalEvidenceTiles: [EvidenceTile] {
-        [
-            EvidenceTile(icon: "camera.fill",      tint: Color(hex: 0x5AB0FF), title: "Damage", detail: "8 photos",     detailColor: palette.textSecondary),
-            EvidenceTile(icon: "doc.text.fill",    tint: Brand.success,        title: "OS&D",   detail: "filed",       detailColor: Brand.success),
-            EvidenceTile(icon: "doc.plaintext.fill", tint: Brand.warning,      title: "BOL",    detail: "discrepancy", detailColor: Brand.warning),
-            EvidenceTile(icon: "checkmark.shield.fill", tint: Brand.success,   title: "Cert",   detail: "on file",     detailColor: Brand.success)
-        ]
     }
 
     private func evidenceIcon(_ type: String?) -> String {
@@ -533,10 +574,12 @@ private struct RailCargoClaimBody: View {
                 Text("ESANG")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
-                Text("File before the Carmack window closes - \(daysLeft)d left.")
+                Text(filedDate != nil
+                     ? "File before the Carmack window closes — \(daysLeft)d left."
+                     : "No filed date on record — filing window unknown.")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
-                Text("Attach the BOL discrepancy note to lift recovery to $9,200.")
+                Text("Attach BOL, OS&D, and damage photos to substantiate recovery.")
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -576,11 +619,32 @@ private struct RailCargoClaimBody: View {
     private func reload() async {
         loading = true; loadError = nil
         struct Input: Encodable { let id: String }
+        struct ListInput: Encodable { let limit: Int; let offset: Int }
+        struct ClaimRow: Decodable { let id: String? }
+        struct ClaimsPage: Decodable { let claims: [ClaimRow]? }
         do {
+            // Resolve a REAL claim id when none was injected: newest claim
+            // first (freightClaims.getClaims orders by createdAt desc). No
+            // invented case id, ever.
+            var targetId = claimId
+            if targetId.isEmpty {
+                let page: ClaimsPage = try await EusoTripAPI.shared.query(
+                    "freightClaims.getClaims", input: ListInput(limit: 1, offset: 0))
+                if let newest = page.claims?.first?.id, !newest.isEmpty {
+                    targetId = newest
+                } else {
+                    // Honest empty: no claims on file.
+                    self.claim = nil
+                    self.resolvedClaimId = nil
+                    loading = false
+                    return
+                }
+            }
+            self.resolvedClaimId = targetId
             // freightClaims.getClaimById — returns null when not found, so
             // decode as Optional to avoid a decode error on a missing case.
             let result: RailClaimDetail? = try await EusoTripAPI.shared.query(
-                "freightClaims.getClaimById", input: Input(id: claimId))
+                "freightClaims.getClaimById", input: Input(id: targetId))
             self.claim = result
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -592,6 +656,13 @@ private struct RailCargoClaimBody: View {
 
     private func fileClaim() async {
         guard let load = claim?.load else { return }
+        // Honest gate: the server stubs load.loadNumber to "-" on getClaimById
+        // (WIRE-GAP). Filing against an invented load id would fabricate a
+        // legal record — refuse with the real reason instead.
+        guard let loadNumber = real(load.loadNumber) else {
+            loadError = "No load is linked to this claim on the server — cannot file."
+            return
+        }
         filing = true; fileAck = nil
         struct Input: Encodable {
             let loadId: String
@@ -602,7 +673,6 @@ private struct RailCargoClaimBody: View {
             let damageExtent: String?
         }
         struct Result: Decodable { let id: Int?; let status: String?; let claimNumber: String? }
-        let loadNumber = (load.loadNumber).flatMap { $0 == "-" ? nil : $0 } ?? claimId
         do {
             let res: Result = try await EusoTripAPI.shared.mutation(
                 "freightClaims.fileClaim",
@@ -610,7 +680,7 @@ private struct RailCargoClaimBody: View {
                     loadId: loadNumber,
                     type: claim?.type ?? "damage",
                     amount: claim?.amount ?? 0,
-                    description: claim?.description ?? "Water damage + 6-ctn shortage",
+                    description: real(claim?.description) ?? "",
                     commodity: load.commodity,
                     damageExtent: claim?.severity
                 ))

@@ -18,20 +18,25 @@
 //    coverStrip  : insured / rate / certificate
 //    ledger      : QUOTE LINES — line-haul + drayage + COI, each a chip + label + mono
 //                  sub + status pill clear of the right money; a premium-total line
-//    policyNote  : shipper-of-record DU/Eusorone + bind terms
-//    ctaRow      : Purchase cover (primary · binds policy) + Clause (secondary)
+//    policyNote  : shipper-of-record = signed-in session user + bind terms
+//    ctaRow      : Get quote / Purchase cover (primary · two-stage, live procs)
+//                  + Clause (secondary)
 //
-//  WIRING MANIFEST (honest · MCP-confirmed insurance.ts):
+//  WIRING MANIFEST (honest · verified read-only against insurance.ts 2026-06-09):
 //    • insurance.getMyPerLoadPolicies EXISTS insurance.ts:1147  (query · live read seam)
 //        → on load(), maps the most-recent active per-load policy into the cover model
 //          (insured value = coverageAmount, premium, origin›destination quote line,
-//          policy-number COI line). Empty array → keep the bespoke quoted seed (honest:
-//          a fresh quote, not a bound policy). Error → keep seed, surface nothing fake.
+//          REAL policy-number COI line). Empty array → honest "no policy on file"
+//          em-dash state. Error → rendered error note. NEVER an invented certificate.
 //    • insurance.getPerLoadQuote     EXISTS insurance.ts:959   (mutation · cargoValue/
-//        commodity/coverage/origin/dest) — the "Purchase cover" re-price/bind path; not a
-//        safe on-load read, so it is NOT auto-fired. "Clause" opens the ICC(A) read sheet.
-//    RBAC: railProcedure / protectedProcedure (shipper-of-record DU/Eusorone anchor).
-//    transportMode RAIL · US (USD; per-load all-risk ICC(A)).
+//        commodity/coverage/origin/dest) — "Get quote" re-prices the user's own most
+//        recent declared inputs (coverage/commodity/lane from their latest policy row).
+//    • insurance.purchasePerLoad     EXISTS insurance.ts:1003  (mutation) — binds the
+//        fetched quote into a real perLoadInsurancePolicies row + wallet debit; the COI
+//        number shown afterwards is the SERVER-minted policyNumber.
+//    ZERO-FALLBACK (2026-06-09): live policy / live quote / em-dash. No fabricated
+//    CIC-2026-0518 certificate, no $86,000/$142/0.17%/$500 seed.
+//    RBAC: protectedProcedure. transportMode RAIL · US (USD; per-load all-risk ICC(A)).
 //
 //  No retired names, no emoji icons, one eyebrow, one iridescent hairline.
 //  — Sole author Mike "Diego" Usoro / Eusorone Technologies, Inc.
@@ -94,44 +99,48 @@ struct QuoteLine_606: Identifiable {
 }
 
 struct CargoCover_606 {
-    let insuredValue: String   // "$86,000"
-    let premium: String        // "$142"
-    let ratePct: String        // "0.17%"
-    let deductible: String     // "$500"
-    let insuredShort: String   // "$86K"
-    let certStatus: String     // "on file"
+    let insuredValue: String   // live money or "—"
+    let premium: String        // live money or "—"
+    let ratePct: String        // live rate or "—"
+    let deductible: String     // live money or "—"
+    let insuredShort: String   // live short money or "—"
+    let certStatus: String     // real policy status or "—"
+    let heroTag: String        // commodity/policy tag · "—" until live
     let lines: [QuoteLine_606]
     let premiumTotal: String
     let bindTerms: String
+
+    /// Honest empty cover — every cell an em-dash, no quote lines.
+    static let none = CargoCover_606(
+        insuredValue: "—", premium: "—", ratePct: "—", deductible: "—",
+        insuredShort: "—", certStatus: "—", heroTag: "—",
+        lines: [],
+        premiumTotal: "—",
+        bindTerms: "no policy on file · get a quote to bind ICC(A) cover")
 }
 
 // MARK: - View model (single live-read seam -> insurance.getMyPerLoadPolicies)
 
 @MainActor final class InsuranceVM_606: ObservableObject {
-    @Published var c: CargoCover_606
+    @Published var c: CargoCover_606 = .none
     @Published var isLoading = false
     @Published var error: String?
     /// true once a REAL bound policy has been mapped in; drives the policy-note wording
     /// (bound vs. fresh quote) so the screen never claims a binding it doesn't have.
     @Published var isBound = false
+    /// true while a live quote (insurance.getPerLoadQuote result) is on screen —
+    /// the CTA then binds it via insurance.purchasePerLoad.
+    @Published var hasQuote = false
+    @Published var isWorking = false
+    @Published var notice: String?
+
+    /// Most-recent policy row — the user's own declared inputs (coverage,
+    /// commodity, lane) that a re-quote re-prices. Never invented.
+    private var latestRow: PerLoadPolicy_606?
+    private var lastQuote: PerLoadQuote_606?
 
     private let info    = Color(red: 0.129, green: 0.588, blue: 0.953)
     private let success = Color(red: 0.0, green: 0.588, blue: 0.420)
-
-    init() {
-        let info = Color(red: 0.129, green: 0.588, blue: 0.953)
-        let success = Color(red: 0.0, green: 0.588, blue: 0.420)
-        self.c = .init(
-            insuredValue: "$86,000", premium: "$142", ratePct: "0.17%", deductible: "$500",
-            insuredShort: "$86K", certStatus: "on file",
-            lines: [
-                .init(glyph: "shield.lefthalf.filled", tint: info, title: "All-risk · line-haul", detail: "RAIL-260514 · Memphis › Atlanta", state: .quoted, stateColor: info, amount: "$108"),
-                .init(glyph: "shield.lefthalf.filled", tint: info, title: "All-risk · drayage", detail: "first + last mile leg", state: .quoted, stateColor: info, amount: "$34"),
-                .init(glyph: "doc.text", tint: success, title: "Certificate · COI", detail: "CIC-2026-0518 · Eusorone", state: .ready, stateColor: success, amount: "issued")
-            ],
-            premiumTotal: "$142",
-            bindTerms: "+ clause ICC(A) · binds on purchase · effective gate-in")
-    }
 
     func load() async {
         isLoading = true; error = nil
@@ -139,52 +148,159 @@ struct CargoCover_606 {
             // insurance.getMyPerLoadPolicies (query, optional input) — limit defaults to 20.
             let rows: [PerLoadPolicy_606] = try await EusoTripAPI.shared.query(
                 "insurance.getMyPerLoadPolicies", input: EmptyInput())
-            // Honest mapping: most-recent active policy first; fall back to most-recent row.
-            // Empty array → keep the bespoke quoted seed (a fresh quote, not a bound policy).
-            if let p = rows.first(where: { ($0.status ?? "").lowercased() == "active" }) ?? rows.first {
+            latestRow = rows.first(where: { ($0.status ?? "").lowercased() == "active" }) ?? rows.first
+            if let p = latestRow {
                 self.c = map(p)
-                self.isBound = true
+                self.isBound = ((p.status ?? "").lowercased() == "active")
+            } else {
+                // Honest empty: no per-load policy on file — em-dash ledger.
+                self.c = .none
+                self.isBound = false
             }
+            self.hasQuote = false
         } catch {
-            // Keep the seed; surface nothing fabricated. The error is recorded for the
-            // (already-bespoke) note line, never shown as fake coverage.
-            self.error = (error as? EusoTripAPIError)?.localizedDescription ?? error.localizedDescription
+            // Honest error: em-dash ledger + rendered error note. Never a
+            // fabricated certificate or premium.
+            self.c = .none
+            self.isBound = false
+            self.error = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         isLoading = false
     }
 
-    /// Map a real bound per-load policy row into the 606 cover ledger.
+    /// Map a real per-load policy row into the 606 cover ledger.
     private func map(_ p: PerLoadPolicy_606) -> CargoCover_606 {
         let coverage   = p.coverageAmount ?? 0
         let premiumVal = p.premium ?? 0
         let deductible = coverage * 0.01            // mirrors server: coverage * 0.01
         let rate       = coverage > 0 ? (premiumVal / coverage) * 100 : 0
-        let origin     = (p.origin ?? "-").uppercased()
-        let dest       = (p.destination ?? "-").uppercased()
-        let policyNo   = p.policyNumber ?? "-"
+        let origin     = (p.origin ?? "—").uppercased()
+        let dest       = (p.destination ?? "—").uppercased()
+        let policyNo   = p.policyNumber ?? "—"
         let kind       = p.policyType ?? "All-risk"
 
         return .init(
-            insuredValue: money(coverage),
-            premium:      money(premiumVal),
-            ratePct:      String(format: "%.2f%%", rate),
-            deductible:   money(deductible),
-            insuredShort: shortMoney(coverage),
-            certStatus:   ((p.status ?? "").lowercased() == "active") ? "on file" : (p.status ?? "-"),
+            insuredValue: coverage > 0 ? money(coverage) : "—",
+            premium:      premiumVal > 0 ? money(premiumVal) : "—",
+            ratePct:      rate > 0 ? String(format: "%.2f%%", rate) : "—",
+            deductible:   coverage > 0 ? money(deductible) : "—",
+            insuredShort: coverage > 0 ? shortMoney(coverage) : "—",
+            certStatus:   ((p.status ?? "").lowercased() == "active") ? "on file" : (p.status ?? "—"),
+            heroTag:      (p.commodityType ?? "per-load").uppercased(),
             lines: [
                 .init(glyph: "shield.lefthalf.filled", tint: info, title: "\(kind) · line-haul",
-                      detail: "\(origin) › \(dest)", state: .quoted, stateColor: info, amount: money(premiumVal)),
+                      detail: "\(origin) › \(dest)", state: .quoted, stateColor: info,
+                      amount: premiumVal > 0 ? money(premiumVal) : "—"),
                 .init(glyph: "doc.text", tint: success, title: "Certificate · COI",
                       detail: policyNo, state: .ready, stateColor: success, amount: "issued")
             ],
-            premiumTotal: money(premiumVal),
+            premiumTotal: premiumVal > 0 ? money(premiumVal) : "—",
             bindTerms: "clause ICC(A) · bound · \(expiryNote(p.expiresAt))")
     }
 
+    /// Map a LIVE quote (insurance.getPerLoadQuote result) over the declared
+    /// basis row. State = QUOTED; the COI line shows honestly unissued.
+    private func mapQuote(_ q: PerLoadQuote_606, basis p: PerLoadPolicy_606) -> CargoCover_606 {
+        let coverage = q.coverage ?? (p.coverageAmount ?? 0)
+        let total    = q.totalPremium ?? 0
+        let rate     = coverage > 0 && total > 0 ? (total / coverage) * 100 : 0
+        let origin   = (p.origin ?? "—").uppercased()
+        let dest     = (p.destination ?? "—").uppercased()
+        let kind     = q.policyType ?? "All-risk"
+
+        return .init(
+            insuredValue: coverage > 0 ? money(coverage) : "—",
+            premium:      total > 0 ? money(total) : "—",
+            ratePct:      rate > 0 ? String(format: "%.2f%%", rate) : "—",
+            deductible:   q.deductible.map { money($0) } ?? "—",
+            insuredShort: coverage > 0 ? shortMoney(coverage) : "—",
+            certStatus:   "quoted",
+            heroTag:      (p.commodityType ?? "per-load").uppercased(),
+            lines: [
+                .init(glyph: "shield.lefthalf.filled", tint: info, title: "\(kind) · line-haul",
+                      detail: "\(origin) › \(dest)", state: .quoted, stateColor: info,
+                      amount: total > 0 ? money(total) : "—"),
+                .init(glyph: "doc.text", tint: info, title: "Certificate · COI",
+                      detail: "issues on purchase", state: .quoted, stateColor: info, amount: "—")
+            ],
+            premiumTotal: total > 0 ? money(total) : "—",
+            bindTerms: "clause ICC(A) · binds on purchase · \(validityNote(q.validUntil))")
+    }
+
+    /// Primary CTA. Stage 1 (no live quote yet): re-price the user's own most
+    /// recent declared inputs via insurance.getPerLoadQuote. Stage 2 (a live
+    /// quote is on screen): bind it via insurance.purchasePerLoad — the COI
+    /// number rendered afterwards is the server-minted policyNumber.
     func purchase() async {
-        // Re-price/bind path: insurance.getPerLoadQuote (mutation, insurance.ts:959) ->
-        // insurance.purchasePerLoad -> perLoadInsurancePolicies row + audit + WS broadcast.
-        // Not auto-fired (mutation requires declared cargo/commodity/coverage input).
+        guard !isWorking else { return }
+        notice = nil
+        guard let basis = latestRow, let coverage = basis.coverageAmount, coverage > 0 else {
+            // Honest gap: per-load quoting needs declared cargo inputs and no
+            // load context is wired to this surface (WIRE-GAP).
+            notice = "No declared cargo on file — quote per-load cover from a load first."
+            return
+        }
+        isWorking = true
+        do {
+            if let q = lastQuote, hasQuote {
+                struct PurchaseIn: Encodable {
+                    let cargoValue: Double
+                    let coverageAmount: Double
+                    let deductible: Double
+                    let premium: Double
+                    let basePremium: Double
+                    let hazmatSurcharge: Double
+                    let reeferSurcharge: Double
+                    let highValueSurcharge: Double
+                    let commodityType: String
+                    let policyType: String
+                    let origin: String
+                    let destination: String
+                }
+                struct PurchaseOut: Decodable { let success: Bool?; let policyNumber: String? }
+                let out: PurchaseOut = try await EusoTripAPI.shared.mutation(
+                    "insurance.purchasePerLoad",
+                    input: PurchaseIn(
+                        cargoValue: coverage,
+                        coverageAmount: q.coverage ?? coverage,
+                        deductible: q.deductible ?? coverage * 0.01,
+                        premium: q.totalPremium ?? 0,
+                        basePremium: q.premium ?? 0,
+                        hazmatSurcharge: q.hazmatSurcharge ?? 0,
+                        reeferSurcharge: q.reeferSurcharge ?? 0,
+                        highValueSurcharge: q.highValueSurcharge ?? 0,
+                        commodityType: basis.commodityType ?? "general",
+                        policyType: q.policyType ?? "All-Risk Cargo",
+                        origin: basis.origin ?? "",
+                        destination: basis.destination ?? ""))
+                notice = out.policyNumber.map { "Cover bound · COI \($0)" } ?? "Cover bound"
+                lastQuote = nil
+                hasQuote = false
+                await load()   // re-read: the bound policy + REAL COI render from the server row
+            } else {
+                struct QuoteIn: Encodable {
+                    let cargoValue: Double
+                    let commodityType: String
+                    let coverageAmount: Double
+                    let origin: String
+                    let destination: String
+                }
+                let q: PerLoadQuote_606 = try await EusoTripAPI.shared.mutation(
+                    "insurance.getPerLoadQuote",
+                    input: QuoteIn(cargoValue: coverage,
+                                   commodityType: basis.commodityType ?? "general",
+                                   coverageAmount: coverage,
+                                   origin: basis.origin ?? "",
+                                   destination: basis.destination ?? ""))
+                lastQuote = q
+                hasQuote = true
+                isBound = false
+                c = mapQuote(q, basis: basis)
+            }
+        } catch {
+            notice = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        isWorking = false
     }
 
     // MARK: formatting
@@ -201,6 +317,24 @@ struct CargoCover_606 {
         guard let iso, iso.count >= 10 else { return "effective gate-in" }
         return "expires \(iso.prefix(10))"
     }
+    private func validityNote(_ iso: String?) -> String {
+        guard let iso, iso.count >= 10 else { return "valid 24h" }
+        return "valid until \(iso.prefix(10))"
+    }
+}
+
+/// insurance.getPerLoadQuote result (insurance.ts:959) — all optional so a
+/// rolling server shape never crashes the decode.
+private struct PerLoadQuote_606: Decodable {
+    let premium: Double?
+    let coverage: Double?
+    let deductible: Double?
+    let hazmatSurcharge: Double?
+    let reeferSurcharge: Double?
+    let highValueSurcharge: Double?
+    let totalPremium: Double?
+    let policyType: String?
+    let validUntil: String?
 }
 
 // MARK: - Palette (file-scoped · preserves the exact 606 look)
@@ -221,6 +355,7 @@ private struct Ink_606 {
 
 struct RailCargoInsurance_606: View {
     @Environment(\.colorScheme) private var scheme
+    @EnvironmentObject private var session: EusoTripSession
     @StateObject private var vm = InsuranceVM_606()
     private var ink: Ink_606 { Ink_606(scheme: scheme) }
     private let eusoPrimary  = LinearGradient(colors: [Color(red: 0.078, green: 0.451, blue: 1.0), Color(red: 0.745, green: 0.004, blue: 1.0)], startPoint: .leading, endPoint: .trailing)
@@ -230,11 +365,27 @@ struct RailCargoInsurance_606: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 16) {
                 topBar
+                if vm.isLoading {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading cover…").font(.system(size: 11)).foregroundColor(ink.sub)
+                    }
+                }
+                if let err = vm.error {
+                    Text(err)
+                        .font(.system(size: 11)).foregroundColor(ink.danger)
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(ink.danger.opacity(0.10)))
+                }
                 coverHero
                 coverStrip
                 ledger
                 policyNote
                 ctaRow
+                if let note = vm.notice {
+                    Text(note).font(.system(size: 11, weight: .semibold)).foregroundColor(ink.sub)
+                }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 20).padding(.top, 8)
@@ -250,7 +401,7 @@ struct RailCargoInsurance_606: View {
             HStack {
                 Text("\u{2726} RAIL ENGINEER · CARGO INSURANCE").font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundStyle(eusoPrimary)
                 Spacer()
-                Text("INS · BNSF").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundColor(ink.faint)
+                Text("INS · PER-LOAD").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundColor(ink.faint)
             }
             HStack(spacing: 10) {
                 Text("Cargo cover").font(.system(size: 28, weight: .bold)).kerning(-0.4)
@@ -265,7 +416,7 @@ struct RailCargoInsurance_606: View {
             HStack {
                 Text("ALL-RISK CARGO COVER · ICC(A)").font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundColor(ink.faint)
                 Spacer()
-                Text("BNSF").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundColor(ink.faint)
+                Text(vm.c.heroTag).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundColor(ink.faint)
             }
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -320,6 +471,20 @@ struct RailCargoInsurance_606: View {
                 Text("insurance.ts:959").font(.system(size: 11, design: .monospaced)).foregroundColor(ink.sub)
             }.padding(.bottom, 12)
             VStack(spacing: 0) {
+                if vm.c.lines.isEmpty {
+                    // Honest empty: no per-load policy on file, no quote
+                    // fetched — never a fabricated quote line or COI.
+                    HStack(spacing: 12) {
+                        Image(systemName: "shield.slash")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(ink.faint)
+                        Text("No policy on file · no quote lines yet")
+                            .font(.system(size: 12)).foregroundColor(ink.sub)
+                        Spacer()
+                    }
+                    .padding(16)
+                    Divider().overlay(ink.hair)
+                }
                 ForEach(vm.c.lines) { line in
                     lineRow(line)
                     Divider().overlay(ink.hair).padding(.leading, 84)
@@ -356,14 +521,25 @@ struct RailCargoInsurance_606: View {
     }
 
     private var policyNote: some View {
-        HStack(spacing: 12) {
+        // Shipper of record = the signed-in user (live session) — never a
+        // hardcoded party.
+        let holderName = session.user?.name ?? "—"
+        let holderInitials: String = {
+            guard let n = session.user?.name, !n.isEmpty else { return "—" }
+            let parts = n.split(separator: " ").prefix(2)
+            let joined = parts.compactMap { $0.first }.map(String.init).joined().uppercased()
+            return joined.isEmpty ? "—" : joined
+        }()
+        return HStack(spacing: 12) {
             ZStack {
                 Circle().fill(eusoDiagonal).frame(width: 20, height: 20)
-                Text("DU").font(.system(size: 9, weight: .bold)).foregroundColor(.white)
+                Text(holderInitials).font(.system(size: 9, weight: .bold)).foregroundColor(.white)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("Shipper of record · Eusorone Technologies").font(.system(size: 12, weight: .semibold))
-                Text(vm.isBound ? "getMyPerLoadPolicies · bound" : "getMyPerLoadPolicies · insurance.ts:1147").font(.system(size: 11, design: .monospaced)).foregroundColor(ink.sub)
+                Text("Shipper of record · \(holderName)").font(.system(size: 12, weight: .semibold))
+                Text(vm.isBound ? "getMyPerLoadPolicies · bound"
+                     : (vm.hasQuote ? "getPerLoadQuote · quoted" : "getMyPerLoadPolicies · no policy on file"))
+                    .font(.system(size: 11, design: .monospaced)).foregroundColor(ink.sub)
             }
             Spacer()
         }
@@ -372,11 +548,21 @@ struct RailCargoInsurance_606: View {
     }
 
     private var ctaRow: some View {
-        HStack(spacing: 8) {
+        // Two honest stages: quote first (re-prices the user's own declared
+        // inputs), then bind the live quote. Never a fake "purchased" state.
+        let ctaTitle = vm.hasQuote ? "Purchase cover" : (vm.isBound ? "Re-quote cover" : "Get quote")
+        return HStack(spacing: 8) {
             Button { Task { await vm.purchase() } } label: {
-                Text("Purchase cover").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                    .frame(maxWidth: .infinity).frame(height: 48).background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(eusoPrimary))
+                Group {
+                    if vm.isWorking {
+                        ProgressView().tint(.white)
+                    } else {
+                        Text(ctaTitle).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                    }
+                }
+                .frame(maxWidth: .infinity).frame(height: 48).background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(eusoPrimary))
             }
+            .disabled(vm.isWorking)
             Button { } label: {
                 Text("Clause").font(.system(size: 15, weight: .semibold)).foregroundColor(ink.text)
                     .frame(width: 116, height: 48).background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(ink.soft).overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).stroke(ink.hair, lineWidth: 1)))
