@@ -29,10 +29,19 @@
 //    ESang: esangCoach.forScreen (VOYAGE PLAN) — voice routes via esang.chat, never a direct mutation.
 //    RBAC: vesselProcedure (VESSEL_OPERATOR) · getGeofenceEvents protectedProcedure.
 //
-//  PERSONA: Vessel Operator (PROVISIONAL — no name in any nav enum/router; carrier-anchored, no auto-name).
-//  Carrier USLGB · berth J232. transportMode=vessel · US (CBP ACE · ISF). One ✦ eyebrow · one iridescent
-//  hairline. 0 mock data on load · honest loading/degraded states (seeds live only as design-time defaults,
-//  overwritten by the live reads). — Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
+//  ZERO-FALLBACK (2026-06-09 · C1 cluster fix): ALL seeded operational state (CNSHA→USLGB lane,
+//  "BERTH J232", "14.2 kn" SOG, 94% to-berth, "14:30" ETA, "+1.4m" tide, the 3 seeded approach
+//  steps, the hardcoded ESang plan) is DELETED — every face nil-inits to em-dash and hydrates
+//  ONLY from live reads, with honest empty states. Decode shapes corrected to the REAL wire:
+//  getVesselTrack → RoutePosition[] (bare array), getVesselPortCalls → PortCall[] | null,
+//  tracking.getGeofenceEvents → {geofenceName,eventType,dwellSeconds,timestamp} rows, and
+//  getVesselShipmentDetail → the raw shipment spread (bookingNumber + port joins). Anchors
+//  (shipmentId/IMO) resolve from the operator's REAL newest booking + fleet vessel when not
+//  threaded — no hardcoded 260602/9811000. Tide has no server source ⇒ permanent em-dash.
+//
+//  PERSONA: Vessel Operator (PROVISIONAL — no name in any nav enum/router; carrier-anchored, no
+//  auto-name). transportMode=vessel · US (CBP ACE · ISF). One ✦ eyebrow · one iridescent hairline.
+//  — Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
 //
 
 import SwiftUI
@@ -41,10 +50,13 @@ import SwiftUI
 
 struct VesselLivePositionScreen: View {
     let theme: Theme.Palette
+    /// 0 / "" (registry/zero-arg use) = not threaded: the screen resolves the
+    /// operator's REAL newest booking + lead fleet vessel live, or renders the
+    /// honest awaiting state — never hardcoded anchor ids.
     var shipmentId: Int
     var imoNumber: String
 
-    init(theme: Theme.Palette, shipmentId: Int = 260602, imoNumber: String = "9811000") {
+    init(theme: Theme.Palette, shipmentId: Int = 0, imoNumber: String = "") {
         self.theme = theme; self.shipmentId = shipmentId; self.imoNumber = imoNumber
     }
 
@@ -63,36 +75,47 @@ struct VesselLivePositionScreen: View {
     }
 }
 
-// MARK: - Wire shapes (loose optionals · overwritten on load)
+// MARK: - Wire shapes (match the REAL server output exactly — no invented envelopes)
 
+/// getVesselShipmentDetail spreads the raw vessel_shipments row + port joins.
 private struct VesselDetail660: Decodable {
-    let lane: String?; let berth: String?; let reference: String?
-    // Port join from getVesselShipmentDetail (:289 returns originPort / destinationPort
-    // rows). UN/LOCODE + name resolve the great-circle endpoints through the bundled
-    // PortDirectory catalog — the SAME real-coordinate path Vessel 003 uses (003:314/326).
+    let bookingNumber: String?
+    let status: String?
+    let voyageNumber: String?
+    // Port join (:289 returns originPort / destinationPort rows). UN/LOCODE + name
+    // resolve the great-circle endpoints through the bundled PortDirectory catalog —
+    // the SAME real-coordinate path Vessel 003 uses (003:314/326).
     let originPort: VesselPort660?
     let destinationPort: VesselPort660?
 }
 private struct VesselPort660: Decodable { let name: String?; let unlocode: String? }
-private struct VesselTrack660: Decodable {
-    let progress: Double?      // 0...1 along the approach polyline
-    let sogKn: Double?
-    let cogDeg: Int?
-    let stale: Bool?
+
+/// getVesselTrack → MarineTraffic RoutePosition[] (bare array; newest data last).
+private struct RoutePos660: Decodable {
+    let lat: Double?
+    let lng: Double?
+    let speed: Double?
+    let heading: Double?
+    let course: Double?
+    let timestamp: String?
 }
-private struct PortCall660: Decodable {
-    let etaBerth: String?
-    let runNM: String?
-    let tide: String?
-    let tideNote: String?
-    let toBerthPct: Double?
+
+/// getVesselPortCalls → MarineTraffic PortCall[] (bare array, or null on error).
+private struct PortCallRow660: Decodable {
+    let portName: String?
+    let unlocode: String?
+    let arrivalTime: String?
+    let departureTime: String?
+    let inPort: Bool?
 }
+
+/// tracking.getGeofenceEvents row (tracking.ts:476-480).
 private struct GeofenceEvent660: Decodable {
-    let kind: String?          // pilot_ground | berth_box | cbp_entry
-    let title: String?
-    let detail: String?
-    let status: String?        // cleared | armed | pending
-    let value: String?
+    let id: String?
+    let geofenceName: String?
+    let eventType: String?     // enter | exit
+    let dwellSeconds: Int?
+    let timestamp: String?
 }
 
 // MARK: - Body
@@ -102,10 +125,14 @@ private struct VesselLivePositionBody_660: View {
     let shipmentId: Int
     let imoNumber: String
 
-    // Booking facts (getVesselShipmentDetail) ----------------------------------------
-    @State private var lane = "CNSHA → USLGB · J232"
-    @State private var berth = "BERTH J232"
-    @State private var reference = "VES-260602"
+    // Resolved anchors (threaded or live-resolved) ------------------------------------
+    @State private var resolvedShipmentId: Int? = nil
+    @State private var resolvedImo: String? = nil
+
+    // Booking facts (getVesselShipmentDetail) — nil-init, em-dash until live ----------
+    @State private var lane = "—"
+    @State private var berth = "—"
+    @State private var reference = "—"
 
     // Great-circle endpoints — UN/LOCODE + name from the getVesselShipmentDetail port
     // join (:289), coordinates resolved through PortDirectory. nil until load lands a
@@ -113,30 +140,33 @@ private struct VesselLivePositionBody_660: View {
     @State private var originPort: VesselPort660? = nil
     @State private var destinationPort: VesselPort660? = nil
 
-    // One live tick (getVesselTrack) — SOG/COG feed the voyage meter + the AIS status
-    // capsule. The live marker fraction now lives INSIDE VesselOceanTrackMap (the canvas
-    // splits the route at the real AIS fix), so this view no longer tracks a self-drawn
-    // marker progress.
-    @State private var sog = "14.2 kn"
-    @State private var cogDeg = 71
-    @State private var degraded = false
+    // One live tick (getVesselTrack RoutePosition[]) — SOG feeds the voyage meter +
+    // the AIS status capsule. The live marker fraction lives INSIDE VesselOceanTrackMap.
+    @State private var sog = "—"
+    @State private var degraded = true   // honest: degraded until the first real fix lands
 
-    // Port-call meter (getVesselPortCalls) -------------------------------------------
-    @State private var toBerthPct = 0.94
-    @State private var etaBerth = "14:30"
-    @State private var runNm = "6.2 nm"
-    @State private var tide = "+1.4m"
-    @State private var tideNote = "rising · win 15:00"
+    // Port-call meter (getVesselPortCalls) — em-dash until a real upcoming call exists.
+    // toBerthPct/tide have NO server source today ⇒ 0 ring + permanent em-dash.
+    @State private var toBerthPct = 0.0
+    @State private var etaBerth = "—"
+    @State private var runNm = "—"
+    private let tide = "—"
+    private let tideNote = "no tide feed"
 
-    // Approach sequence (tracking.getGeofenceEvents) ---------------------------------
-    @State private var steps: [ApproachStep660] = ApproachStep660.seeds
-
-    // ESang (esangCoach.forScreen) ---------------------------------------------------
-    @State private var esangLine = "Hold 14.2 kn - berth all-fast by 15:00"
-    @State private var esangDetail = "30 min early · tide +1.4m rising · berth clear"
+    // Approach sequence (tracking.getGeofenceEvents) — live rows or honest empty.
+    @State private var steps: [ApproachStep660] = []
 
     @State private var loading = true
     @State private var loadError: String? = nil
+
+    /// ESang plan — derived from LIVE faces only; the card hides when nothing real exists.
+    private var esangLine: String? {
+        if etaBerth != "—" { return "Next port call ETA \(etaBerth)" }
+        return nil
+    }
+    private var esangDetail: String {
+        sog == "—" ? "derived from AIS port calls" : "derived from AIS port calls · SOG \(sog)"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -234,9 +264,9 @@ private struct VesselLivePositionBody_660: View {
             RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .fill(Brand.blue.opacity(0.06))
 
-            if !imoNumber.isEmpty, let o = originCoord, let d = destinationCoord {
+            if let imo = resolvedImo, !imo.isEmpty, let o = originCoord, let d = destinationCoord {
                 VesselOceanTrackMap(
-                    imoNumber: imoNumber,
+                    imoNumber: imo,
                     origin: o,
                     destination: d,
                     originLabel: originLabel,
@@ -307,8 +337,8 @@ private struct VesselLivePositionBody_660: View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: Space.s2) {
                 Text("VOYAGE METER").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-                Circle().fill(Brand.success).frame(width: 6, height: 6)
-                Text("LIVE · ONE TICK").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(Brand.success)
+                Circle().fill(degraded ? Brand.warning : Brand.success).frame(width: 6, height: 6)
+                Text(degraded ? "NO LIVE FIX" : "LIVE · ONE TICK").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(degraded ? Brand.warning : Brand.success)
                 Spacer()
             }
             HStack(spacing: Space.s3) {
@@ -317,19 +347,22 @@ private struct VesselLivePositionBody_660: View {
                     Circle().trim(from: 0, to: toBerthPct).stroke(LinearGradient.primary, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                         .frame(width: 68, height: 68).rotationEffect(.degrees(-90))
                     VStack(spacing: 0) {
-                        Text("\(Int(toBerthPct*100))%").font(.system(size: 19, weight: .bold, design: .monospaced)).foregroundStyle(palette.textPrimary)
+                        // No to-berth feed exists server-side — honest em-dash, never a seeded 94%.
+                        Text(toBerthPct > 0 ? "\(Int(toBerthPct*100))%" : "—").font(.system(size: 19, weight: .bold, design: .monospaced)).foregroundStyle(palette.textPrimary)
                         Text("TO BERTH").font(.system(size: 7.5, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
                     }
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("ETA \(berth)").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary)
-                    Text(degraded ? "rough est." : etaBerth).font(.system(size: 22, weight: .bold, design: .monospaced)).foregroundStyle(palette.textPrimary)
+                    Text("ETA NEXT CALL").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary)
+                    Text(etaBerth).font(.system(size: 22, weight: .bold, design: .monospaced)).foregroundStyle(palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.6)
                     HStack(spacing: Space.s4) { metric("RUN", runNm); metric("SOG", sog) }
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("TIDE").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary)
-                    Text(tide).font(.system(size: 22, weight: .bold, design: .monospaced)).foregroundStyle(Brand.success)
+                    // No tide feed exists — permanent honest em-dash (was a seeded "+1.4m").
+                    Text(tide).font(.system(size: 22, weight: .bold, design: .monospaced)).foregroundStyle(palette.textTertiary)
                     Text(tideNote).font(.system(size: 9)).foregroundStyle(palette.textTertiary)
                 }
             }
@@ -353,10 +386,18 @@ private struct VesselLivePositionBody_660: View {
             Text("APPROACH SEQUENCE · GEOFENCE-ARMED").font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             VStack(spacing: 0) {
-                ForEach(Array(steps.enumerated()), id: \.element.id) { idx, s in
-                    stepRow(s)
-                    if idx < steps.count - 1 {
-                        Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 68)
+                if steps.isEmpty {
+                    // Honest empty: no live geofence events ⇒ no fabricated approach story.
+                    EusoEmptyState(systemImage: "point.3.connected.trianglepath.dotted",
+                                   title: "No geofence events yet",
+                                   subtitle: "Pilot-ground and berth-box crossings appear here as they fire.")
+                        .padding(Space.s4)
+                } else {
+                    ForEach(Array(steps.enumerated()), id: \.element.id) { idx, s in
+                        stepRow(s)
+                        if idx < steps.count - 1 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 68)
+                        }
                     }
                 }
             }
@@ -383,62 +424,98 @@ private struct VesselLivePositionBody_660: View {
         }.padding(Space.s4)
     }
 
-    // MARK: Fused ESang card
+    // MARK: Fused ESang card (renders only when a live-derived plan line exists)
 
+    @ViewBuilder
     private var esangCard: some View {
-        HStack(alignment: .top, spacing: 0) {
-            ZStack {
-                Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                Circle().fill(RadialGradient(colors: [.white.opacity(0.6), .clear], center: .topLeading, startRadius: 1, endRadius: 16)).frame(width: 32, height: 32)
-            }.padding(.trailing, Space.s3)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("ESANG · VOYAGE PLAN").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(esangLine).font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text(esangDetail).font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+        if let line = esangLine {
+            HStack(alignment: .top, spacing: 0) {
+                ZStack {
+                    Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
+                    Circle().fill(RadialGradient(colors: [.white.opacity(0.6), .clear], center: .topLeading, startRadius: 1, endRadius: 16)).frame(width: 32, height: 32)
+                }.padding(.trailing, Space.s3)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("ESANG · VOYAGE PLAN").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+                    Text(line).font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
+                    Text(esangDetail).font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textTertiary)
             }
-            Spacer()
-            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textTertiary)
+            .padding(Space.s4)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
         }
-        .padding(Space.s4)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
     }
 
     // MARK: Load (parallel reads · all faces re-reason together)
 
     private func load() async {
         loading = true; loadError = nil
-        struct DetailIn: Encodable { let id: Int }
-        struct ImoIn: Encodable { let imoNumber: String }
-        struct CallIn: Encodable { let imoNumber: String; let days: Int }
-        struct FenceIn: Encodable { let geofenceId: String? }
         do {
-            async let detail: VesselDetail660 = EusoTripAPI.shared.query(
-                "vesselShipments.getVesselShipmentDetail", input: DetailIn(id: shipmentId))
-            async let track: VesselTrack660 = EusoTripAPI.shared.query(
-                "vesselShipments.getVesselTrack", input: ImoIn(imoNumber: imoNumber))
-            async let call: PortCall660 = EusoTripAPI.shared.query(
-                "vesselShipments.getVesselPortCalls", input: CallIn(imoNumber: imoNumber, days: 7))
-            async let fences: [GeofenceEvent660] = EusoTripAPI.shared.query(
-                "tracking.getGeofenceEvents", input: FenceIn(geofenceId: nil))
-            let (d, t, c, f) = try await (detail, track, call, fences)
-            applyDetail(d); applyTrack(t); applyCall(c); applyFences(f)
+            // 1. Resolve REAL anchors: threaded values win; otherwise the operator's
+            //    newest live booking + lead fleet vessel. Nothing hardcoded.
+            var sid: Int? = shipmentId > 0 ? shipmentId : nil
+            if sid == nil {
+                struct ListIn660: Encodable { let limit: Int; let offset: Int }
+                struct ShipRow660: Decodable { let id: Int }
+                struct ShipEnv660: Decodable { let shipments: [ShipRow660] }
+                let env: ShipEnv660 = try await EusoTripAPI.shared.query(
+                    "vesselShipments.getVesselShipments", input: ListIn660(limit: 1, offset: 0))
+                sid = env.shipments.first?.id
+            }
+            resolvedShipmentId = sid
+
+            var imo: String? = imoNumber.isEmpty ? nil : imoNumber
+            if imo == nil {
+                struct FleetIn660: Encodable { let limit: Int; let offset: Int }
+                struct VesselRow660: Decodable { let imoNumber: String? }
+                struct FleetEnv660: Decodable { let vessels: [VesselRow660] }
+                let fleet: FleetEnv660 = try await EusoTripAPI.shared.query(
+                    "vesselShipments.getVesselFleet", input: FleetIn660(limit: 1, offset: 0))
+                imo = fleet.vessels.first?.imoNumber
+            }
+            resolvedImo = imo
+
+            // 2. Fan the live faces over the real anchors (each optional/empty-tolerant).
+            struct DetailIn: Encodable { let id: Int }
+            struct ImoIn: Encodable { let imoNumber: String }
+            struct CallIn: Encodable { let imoNumber: String; let days: Int }
+            if let sid {
+                let d: VesselDetail660? = try await EusoTripAPI.shared.query(
+                    "vesselShipments.getVesselShipmentDetail", input: DetailIn(id: sid))
+                if let d { applyDetail(d) }
+            }
+            if let imo, !imo.isEmpty {
+                async let track: [RoutePos660] = EusoTripAPI.shared.query(
+                    "vesselShipments.getVesselTrack", input: ImoIn(imoNumber: imo))
+                async let calls: [PortCallRow660]? = EusoTripAPI.shared.query(
+                    "vesselShipments.getVesselPortCalls", input: CallIn(imoNumber: imo, days: 7))
+                let (t, c) = try await (track, calls)
+                applyTrack(t); applyCalls(c ?? [])
+            }
+            struct FenceIn: Encodable { let limit: Int }
+            let fences: [GeofenceEvent660] = try await EusoTripAPI.shared.query(
+                "tracking.getGeofenceEvents", input: FenceIn(limit: 10))
+            applyFences(fences)
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
     }
 
-    /// Live AIS poller — the one tick. SwiftUI cancels this `.task` on disappear.
+    /// Live AIS poller — re-reads the REAL track for the resolved IMO. SwiftUI
+    /// cancels this `.task` on disappear. No fix yet ⇒ stays honestly DEGRADED.
     private func streamTrack() async {
         struct ImoIn: Encodable { let imoNumber: String }
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
             if Task.isCancelled { break }
+            guard let imo = resolvedImo, !imo.isEmpty else { continue }
             do {
-                let t: VesselTrack660 = try await EusoTripAPI.shared.query(
-                    "vesselShipments.getVesselTrack", input: ImoIn(imoNumber: imoNumber))
+                let t: [RoutePos660] = try await EusoTripAPI.shared.query(
+                    "vesselShipments.getVesselTrack", input: ImoIn(imoNumber: imo))
                 withAnimation(.easeInOut(duration: 1.2)) { applyTrack(t) }
             } catch {
                 withAnimation { degraded = true }
@@ -447,38 +524,63 @@ private struct VesselLivePositionBody_660: View {
     }
 
     private func applyDetail(_ d: VesselDetail660) {
-        if let v = d.lane { lane = v }
-        if let v = d.berth { berth = v }
-        if let v = d.reference { reference = v }
+        if let ref = d.bookingNumber, !ref.isEmpty { reference = ref }
+        let o = d.originPort?.unlocode ?? d.originPort?.name
+        let dest = d.destinationPort?.unlocode ?? d.destinationPort?.name
+        if let o, let dest { lane = "\(o.uppercased()) → \(dest.uppercased())" }
+        // No berth column exists on the shipment row — berth stays em-dash (honest).
         originPort = d.originPort
         destinationPort = d.destinationPort
     }
-    private func applyTrack(_ t: VesselTrack660) {
-        if let v = t.sogKn { sog = String(format: "%.1f kn", v) }
-        if let v = t.cogDeg { cogDeg = v }
-        degraded = t.stale ?? degraded
+    private func applyTrack(_ positions: [RoutePos660]) {
+        // Newest fix = last reported position with a speed.
+        if let fix = positions.last(where: { $0.speed != nil }), let v = fix.speed {
+            sog = String(format: "%.1f kn", v)
+            degraded = false
+        } else {
+            degraded = true
+        }
     }
-    private func applyCall(_ c: PortCall660) {
-        if let v = c.toBerthPct { toBerthPct = min(0.99, max(0, v)) }
-        if let v = c.etaBerth { etaBerth = v }
-        if let v = c.runNM { runNm = v }
-        if let v = c.tide { tide = v }
-        if let v = c.tideNote { tideNote = v }
+    private func applyCalls(_ calls: [PortCallRow660]) {
+        // Next upcoming call = first row that hasn't departed and isn't alongside.
+        let upcoming = calls.first { ($0.departureTime?.isEmpty != false) && ($0.inPort != true) }
+        if let eta = upcoming?.arrivalTime, !eta.isEmpty {
+            etaBerth = Self.shortTime(eta)
+        } else {
+            etaBerth = "—"
+        }
+        // No live run-distance / to-berth-fraction source ⇒ honest 0 ring + em-dash.
+        runNm = "—"
+        toBerthPct = 0
     }
     private func applyFences(_ f: [GeofenceEvent660]) {
-        let mapped = f.compactMap { ApproachStep660(wire: $0) }
-        if !mapped.isEmpty { steps = mapped }
+        // UNCONDITIONAL overwrite — an empty feed renders the honest empty ledger.
+        steps = f.compactMap { ApproachStep660(wire: $0) }
+    }
+
+    private static func shortTime(_ iso: String) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        guard let d = f.date(from: iso) else {
+            // Fall back to the raw "HH:mm" slice of a date-time string.
+            let parts = iso.split(separator: "T")
+            return parts.count > 1 ? String(parts[1].prefix(5)) : iso
+        }
+        let out = DateFormatter()
+        out.locale = Locale(identifier: "en_US_POSIX")
+        out.dateFormat = "MMM dd HH:mm"
+        return out.string(from: d)
     }
 }
 
-// MARK: - Approach step model (geofence event → display row)
+// MARK: - Approach step model (geofence event → display row · live rows only)
 
 private struct ApproachStep660: Identifiable {
     let id = UUID()
     enum Kind {
-        case pilotGround, berthBox, cbpEntry
-        var glyph: String { switch self { case .pilotGround: return "clock"; case .berthBox: return "shippingbox"; case .cbpEntry: return "doc.text" } }
-        var tint: Color { switch self { case .pilotGround: return Brand.info; case .berthBox: return Brand.magenta; case .cbpEntry: return Brand.success } }
+        case enter, exit
+        var glyph: String { switch self { case .enter: return "arrow.down.right.circle"; case .exit: return "arrow.up.right.circle" } }
+        var tint: Color { switch self { case .enter: return Brand.info; case .exit: return Brand.magenta } }
     }
     let kind: Kind
     let title: String
@@ -487,36 +589,32 @@ private struct ApproachStep660: Identifiable {
     let pillKind: StatusPill.Kind
     let value: String
 
-    init(kind: Kind, title: String, detail: String, pill: String, pillKind: StatusPill.Kind, value: String) {
-        self.kind = kind; self.title = title; self.detail = detail; self.pill = pill; self.pillKind = pillKind; self.value = value
-    }
-
+    /// Maps the REAL tracking.getGeofenceEvents row shape — no invented fence taxonomy.
     init?(wire: GeofenceEvent660) {
-        let k: Kind
-        switch (wire.kind ?? "").lowercased() {
-        case "pilot_ground", "pilot": k = .pilotGround
-        case "berth_box", "berth":    k = .berthBox
-        case "cbp_entry", "cbp":      k = .cbpEntry
-        default: return nil
+        let type = (wire.eventType ?? "").lowercased()
+        guard type == "enter" || type == "exit" else { return nil }
+        kind = type == "enter" ? .enter : .exit
+        title = (wire.geofenceName?.isEmpty == false) ? wire.geofenceName! : "Geofence"
+        let dwellMin = (wire.dwellSeconds ?? 0) / 60
+        detail = dwellMin > 0 ? "\(type.uppercased()) · dwell \(dwellMin)m" : type.uppercased()
+        pill = type.uppercased()
+        pillKind = type == "enter" ? .info : .neutral
+        // Short HH:mm of the event timestamp — em-dash when absent.
+        if let ts = wire.timestamp, !ts.isEmpty {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime]
+            if let d = f.date(from: ts) {
+                let out = DateFormatter()
+                out.locale = Locale(identifier: "en_US_POSIX")
+                out.dateFormat = "HH:mm"
+                value = out.string(from: d)
+            } else {
+                value = "-"
+            }
+        } else {
+            value = "-"
         }
-        let st = (wire.status ?? "").lowercased()
-        self.init(kind: k,
-                  title: wire.title ?? "Geofence",
-                  detail: wire.detail ?? "",
-                  pill: st == "armed" ? "ARMED" : (st == "pending" ? "PENDING" : "CLEARED"),
-                  pillKind: st == "armed" ? .warning : (st == "pending" ? .neutral : .info),
-                  value: wire.value ?? "-")
     }
-
-    /// Design-time seeds mirror the SVG; overwritten by getGeofenceEvents.
-    static let seeds: [ApproachStep660] = [
-        ApproachStep660(kind: .pilotGround, title: "Pilot boarding ground",
-                        detail: "ENTER fence 14:12 · pilot embarked", pill: "CLEARED", pillKind: .info, value: "14:12"),
-        ApproachStep660(kind: .berthBox, title: "Berth J232 · all-fast",
-                        detail: "berth-box ENTER arms demurrage clock", pill: "IN 18 MIN", pillKind: .warning, value: "~15:00"),
-        ApproachStep660(kind: .cbpEntry, title: "CBP entry · ISF on file",
-                        detail: "ACE accepted · release on discharge", pill: "CLEARED", pillKind: .success, value: "ACE")
-    ]
 }
 
 #Preview("660 · Live position · Night") {

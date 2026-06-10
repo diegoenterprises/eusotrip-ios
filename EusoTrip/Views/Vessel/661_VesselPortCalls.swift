@@ -28,14 +28,18 @@
 //      DEPARTED (departureTime set) / ALONGSIDE (inPort) / NEXT (first upcoming) / SCHEDULED by
 //      time. Empty array when the IMO has no port-call history in range — the bespoke empty state
 //      renders honestly, no fabricated rows.
-//    Live rotation tick (next-call nm countdown + AIS-LIVE/DEGRADED) is the marine adaptation of
-//      WS_EVENTS.PORT_CALL_TICK (getRealtimePositions + getGeofenceEvents); today it streams the
-//      AIS distance closing client-side from the loaded next call. The status flip write
-//      (updateVesselShipmentStatus:289 — geofence SCHEDULED→ALONGSIDE) is NOT fired here (read-only
-//      board); "Full rotation" / "Berths" are navigation CTAs, no backing mutation.
+//    vesselShipments.getVesselFleet (EXISTS vesselShipments.ts:1377 · {limit,offset} ->
+//      {vessels:[raw vessels rows incl. name + imoNumber], total}) resolves the operator's REAL
+//      lead vessel when no IMO is threaded — the rotation identity (loop label + IMO) is live
+//      data or an honest empty state, never a hardcoded string.
 //
-//  0 mock data on load · honest empty/error states. Seed rotation lives ONLY in #Preview path
-//  (the VM's static .live). PortCall_661 / RotationTick_661 / IridescentHairline_661 / nm chips
+//  ZERO-FALLBACK (2026-06-09 · C1 fix): the fabricated RotationTick (6.2 nm / "14:30" / hardcoded
+//  ESang line), its fake-distance countdown stream, and the hardcoded loop "EUS-TPEB-07" / IMO
+//  "9839430" are DELETED. The hero's next-call ETA derives from the next upcoming call's REAL
+//  arrivalTime; there is no live-distance source today so no nm figure renders. The ESang card
+//  renders only when a real advisory exists (none today ⇒ hidden). The status flip write
+//  (updateVesselShipmentStatus:289) is NOT fired here (read-only board); "Full rotation" /
+//  "Berths" are navigation CTAs, no backing mutation. PortCall_661 / IridescentHairline_661
 //  are file-scoped bespoke helpers suffixed 661 to avoid cross-file private collisions.
 //
 //  — Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc. · 2026-06-02 EDT.
@@ -59,34 +63,25 @@ private struct PortCall_661: Identifiable {
     let coord: HereLatLng?
 }
 
-// MARK: - ONE live tick (the fusion source · WS_EVENTS.PORT_CALL_TICK)
-private struct RotationTick_661: Equatable {
-    var nextCallNm: Double         // distance to the next call (AIS, counts down)
-    var nextCallEta: String
-    var degraded: Bool
-    var esangLine: String          // esangCoach.forScreen, recomputed each tick
-
-    static let live = RotationTick_661(
-        nextCallNm: 6.2, nextCallEta: "14:30",
-        degraded: false,
-        esangLine: "Long Beach 15:00 - Oakland window tightens")
-}
-
 @MainActor
 private final class RotationVM_661: ObservableObject {
-    @Published private(set) var tick: RotationTick_661 = .live
-
     @Published var loading = true
     @Published var loadError: String? = nil
+    @Published var hasVessel = false
     @Published var hasCalls = false
 
-    @Published var loop = "EUS-TPEB-07"
+    /// Live rotation identity — the resolved vessel's name + IMO (getVesselFleet),
+    /// nil until a real vessel resolves. No hardcoded loop/IMO.
+    @Published var loop: String? = nil
+    @Published var imo: String? = nil
     @Published var rotation: [String] = []
     @Published var nextPort = "-"
     @Published var nextCode = "-"
+    /// REAL next-call ETA derived from the next upcoming call's arrivalTime — "-" when none.
+    @Published var nextEta = "-"
     @Published var calls: [PortCall_661] = []
-
-    private var streamTask: Task<Void, Never>?
+    /// Real advisory line only (no feed today ⇒ the ESang card stays hidden).
+    @Published var esangLine: String? = nil
 
     // MARK: derived map state — port pins + call sequence (real catalog coords)
 
@@ -125,36 +120,29 @@ private final class RotationVM_661: ObservableObject {
         }
     }
 
-    // MARK: live tick — closes the AIS distance to the loaded next call.
-    func startStream() {
-        streamTask?.cancel()
-        streamTask = Task { [weak self] in
-            for await next in Self.rotationStream(seed: self?.tick ?? .live) {
-                self?.tick = next
-            }
-        }
-    }
-    func stopStream() { streamTask?.cancel() }
-
-    private static func rotationStream(seed: RotationTick_661) -> AsyncStream<RotationTick_661> {
-        AsyncStream { continuation in
-            continuation.yield(seed)
-            let t = Task {
-                var p = seed
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 5_000_000_000)
-                    p.nextCallNm = max(0.0, (p.nextCallNm * 10 - 1).rounded() / 10)
-                    continuation.yield(p)
-                }
-            }
-            continuation.onTermination = { _ in t.cancel() }
-        }
-    }
-
-    // MARK: load — vesselShipments.getVesselPortCalls (MarineTraffic PortCall[])
-    func load() async {
+    // MARK: load — resolve the REAL vessel, then vesselShipments.getVesselPortCalls
+    func load(threadedImo: String?) async {
         loading = true; loadError = nil
         do {
+            // 1. Rotation identity: threaded IMO wins; otherwise the operator's real
+            //    lead vessel from getVesselFleet. No vessel ⇒ honest empty state.
+            var imoNumber = threadedImo
+            if imoNumber == nil || imoNumber?.isEmpty == true {
+                struct FleetIn661: Encodable { let limit: Int; let offset: Int }
+                struct VesselRow661: Decodable { let name: String?; let imoNumber: String? }
+                struct FleetEnv661: Decodable { let vessels: [VesselRow661] }
+                let fleet: FleetEnv661 = try await EusoTripAPI.shared.query(
+                    "vesselShipments.getVesselFleet", input: FleetIn661(limit: 1, offset: 0))
+                imoNumber = fleet.vessels.first?.imoNumber
+                loop = fleet.vessels.first?.name
+            }
+            guard let imoNumber, !imoNumber.isEmpty else {
+                hasVessel = false; calls = []; rotation = []; hasCalls = false; loading = false
+                return
+            }
+            hasVessel = true
+            imo = imoNumber
+
             struct Call: Decodable {
                 let portName: String?
                 let portId: String?
@@ -167,7 +155,7 @@ private final class RotationVM_661: ObservableObject {
             // Server returns a bare PortCall[] (or null on error).
             let r: [Call]? = try await EusoTripAPI.shared.query(
                 "vesselShipments.getVesselPortCalls",
-                input: PortCallsInput661(imoNumber: imoForLoop, days: 30))
+                input: PortCallsInput661(imoNumber: imoNumber, days: 30))
 
             guard let raw = r, !raw.isEmpty else {
                 calls = []; rotation = []; hasCalls = false; loading = false
@@ -223,9 +211,11 @@ private final class RotationVM_661: ObservableObject {
             if let ni = firstUpcoming {
                 nextPort = raw[ni].portName ?? rotation[ni]
                 nextCode = rotation[ni]
+                nextEta = Self.shortTime(raw[ni].arrivalTime)
             } else if let last = raw.last {
                 nextPort = last.portName ?? (last.unlocode ?? "-").uppercased()
                 nextCode = (last.unlocode ?? last.portId ?? "-").uppercased()
+                nextEta = "-"
             }
             hasCalls = true
         } catch {
@@ -234,10 +224,6 @@ private final class RotationVM_661: ObservableObject {
         }
         loading = false
     }
-
-    /// IMO for the active service loop. In production the loop's lead vessel IMO
-    /// is threaded from the journey hub; this board reads the rotation for it.
-    private let imoForLoop = "9839430"
 
     private static func shortTime(_ iso: String?) -> String {
         guard let iso, !iso.isEmpty else { return "-" }
@@ -268,10 +254,12 @@ private struct PortCallsInput661: Encodable {
 
 struct VesselPortCallsScreen: View {
     let theme: Theme.Palette
-    init(theme: Theme.Palette) { self.theme = theme }
+    /// IMO threaded from the journey hub; nil resolves the operator's lead vessel live.
+    var imoNumber: String? = nil
+    init(theme: Theme.Palette, imoNumber: String? = nil) { self.theme = theme; self.imoNumber = imoNumber }
     var body: some View {
         Shell(theme: theme) {
-            VesselPortCallsBody()
+            VesselPortCallsBody(imoNumber: imoNumber)
         } nav: {
             BottomNav(
                 leading: [NavSlot(label: "Home",      systemImage: "house",            isCurrent: false),
@@ -288,6 +276,7 @@ private struct VesselPortCallsBody: View {
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var colorScheme
     @StateObject private var vm = RotationVM_661()
+    let imoNumber: String?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -299,6 +288,10 @@ private struct VesselPortCallsBody: View {
                     LifecycleCard { Text("Loading rotation…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = vm.loadError {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                } else if !vm.hasVessel {
+                    EusoEmptyState(systemImage: "ferry",
+                                   title: "No vessel resolved",
+                                   subtitle: "getVesselFleet returned no vessels for this operator and no IMO was threaded. Nothing to plot, no fabricated rotation.")
                 } else if !vm.hasCalls {
                     EusoEmptyState(systemImage: "ferry",
                                    title: "No port calls in range",
@@ -307,16 +300,15 @@ private struct VesselPortCallsBody: View {
                     rotationHero
                     rotationMap
                     scheduleList
-                    esangCard
+                    if vm.esangLine != nil { esangCard }
                     ctaRow
                 }
                 Color.clear.frame(height: 8)
             }
             .padding(.horizontal, 20).padding(.top, 8)
         }
-        .task { await vm.load(); vm.startStream() }
-        .refreshable { await vm.load() }
-        .onDisappear { vm.stopStream() }
+        .task { await vm.load(threadedImo: imoNumber) }
+        .refreshable { await vm.load(threadedImo: imoNumber) }
     }
 
     // MARK: header
@@ -328,7 +320,8 @@ private struct VesselPortCallsBody: View {
                     Text("VESSEL OPERATOR · PORT CALLS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 }
                 Spacer()
-                Text(vm.loop).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
+                // Live rotation identity (vessel name · IMO) — em-dash until resolved.
+                Text(vm.loop ?? vm.imo.map { "IMO \($0)" } ?? "—").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: 10) {
                 Text("Port calls").font(.system(size: 28, weight: .bold)).kerning(-0.4).foregroundStyle(palette.textPrimary)
@@ -336,17 +329,16 @@ private struct VesselPortCallsBody: View {
         }
     }
 
-    // MARK: NEXT-CALL rotation hero (live nm + AIS pulse)
+    // MARK: NEXT-CALL rotation hero (real next-call ETA — no fabricated nm countdown)
     private var rotationHero: some View {
-        let liveColor = vm.tick.degraded ? Brand.warning : Brand.success
         let doneIdx = vm.rotation.firstIndex(of: vm.nextCode) ?? 0
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("NEXT CALL · ROTATION \(vm.loop)").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+                Text("NEXT CALL · ROTATION \(vm.loop ?? "—")").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                 Spacer()
                 HStack(spacing: 5) {
-                    Circle().fill(liveColor).frame(width: 6, height: 6)
-                    Text(vm.tick.degraded ? "DEGRADED" : "AIS LIVE").font(.system(size: 8.5, weight: .heavy)).tracking(0.6).foregroundStyle(liveColor)
+                    Circle().fill(Brand.success).frame(width: 6, height: 6)
+                    Text("AIS HISTORY").font(.system(size: 8.5, weight: .heavy)).tracking(0.6).foregroundStyle(Brand.success)
                 }
             }
             // rotation chip strip
@@ -370,9 +362,10 @@ private struct VesselPortCallsBody: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(vm.tick.degraded ? "rough est." : String(format: "in %.1f nm", vm.tick.nextCallNm))
+                    // Real next-call ETA from the AIS port-call row — em-dash when none.
+                    Text(vm.nextEta == "-" ? "—" : "ETA \(vm.nextEta)")
                         .font(.system(size: 16, weight: .bold)).monospacedDigit().foregroundStyle(palette.textPrimary)
-                    Text("ETA \(vm.tick.nextCallEta) · closes on tick").font(.system(size: 10)).foregroundStyle(palette.textSecondary)
+                    Text("getVesselPortCalls · arrivalTime").font(.system(size: 10)).foregroundStyle(palette.textSecondary)
                 }
             }
         }
@@ -480,9 +473,7 @@ private struct VesselPortCallsBody: View {
             : c.state == .departed ? "ferry"
             : c.state == .alongside ? "anchor"
             : "clock"
-        let pillText: String = (c.state == .next && !vm.tick.degraded)
-            ? "NEXT · \(String(format: "%.0f", vm.tick.nextCallNm))nm"
-            : c.pill
+        let pillText: String = c.pill
         return HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 10).fill(tint.opacity(0.14)).frame(width: 40, height: 40)
@@ -512,14 +503,13 @@ private struct VesselPortCallsBody: View {
         }
     }
 
-    // MARK: ESANG · ROTATION
+    // MARK: ESANG · ROTATION (renders only when a REAL advisory exists — hidden today)
     private var esangCard: some View {
         HStack(alignment: .top, spacing: 0) {
             orbMini.padding(.trailing, 12)
             VStack(alignment: .leading, spacing: 3) {
                 Text("ESANG · ROTATION").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text(vm.tick.esangLine).font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text("request an earlier downstream slot · rotation buffer eroding").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                Text(vm.esangLine ?? "—").font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
             }
             Spacer()
             Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textTertiary)
