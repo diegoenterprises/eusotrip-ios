@@ -42,6 +42,9 @@ private struct PodSignedBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             confirmationCard
+            // Wave A2 strip extension — equipment carries through the POD
+            // moment (echo-cel 272 M04).
+            LifecycleAnimationStrip(live: live, label: loadMode.atDeliveryLabel, height: 160)
             unloadWindowCard
             ctaRow
         }

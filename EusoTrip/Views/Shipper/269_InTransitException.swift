@@ -46,6 +46,9 @@ private struct ExceptionBody: View {
         VStack(alignment: .leading, spacing: Space.s4) {
             statusCard
             LifecycleMapCard(live: live, label: "EXCEPTION LOCATION", icon: "exclamationmark.triangle.fill", mode: .full)
+            // Wave A2 strip extension — the held equipment, live-bound, so
+            // the shipper reads exactly WHAT is stopped (echo-cel 269 M04).
+            LifecycleAnimationStrip(live: live, label: "EQUIPMENT · EXCEPTION", height: 180)
             timelineCard
             ctaRow
             if let err = actionError { errorBanner(err) }

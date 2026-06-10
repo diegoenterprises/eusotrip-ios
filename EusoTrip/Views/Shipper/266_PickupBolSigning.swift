@@ -43,6 +43,10 @@ private struct BolSigningBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             bolCard
+            // Wave A2 strip extension — the rig sits at the dock while the
+            // BOL is co-signed; the live equipment animation anchors the
+            // paperwork moment to the physical load (echo-cel 266 M04).
+            LifecycleAnimationStrip(live: live, label: loadMode.atPickupLabel, height: 160)
             signaturesCard
             if live.load.hazmatClass?.isEmpty == false { hazmatCard }
             ctaRow

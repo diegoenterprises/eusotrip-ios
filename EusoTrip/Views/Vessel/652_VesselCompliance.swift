@@ -40,6 +40,19 @@ private struct VesselCertificate652: Decodable, Identifiable {
     let status: String?
 }
 
+/// One probe row from `vesselShipments.getReeferTempLog` — the same
+/// `{ zone, temp/tempF, timestamp }` shape `reeferTemp.getReadings`
+/// returns for the truck surface. Tolerant decode: `temp` and `tempF`
+/// are both accepted so the proc can ship either column name.
+private struct ReeferLogRow652: Decodable, Hashable {
+    let zone: String?
+    let temp: Double?
+    let tempF: Double?
+    let timestamp: String?
+
+    var resolvedTempF: Double? { tempF ?? temp }
+}
+
 // MARK: - Body
 
 private struct VesselComplianceBody: View {
@@ -48,6 +61,13 @@ private struct VesselComplianceBody: View {
     @State private var certificates: [VesselCertificate652] = []
     @State private var loading = true
     @State private var loadError: String? = nil
+
+    /// Live reefer probe rows from `vesselShipments.getReeferTempLog`.
+    /// Stays empty when the proc hasn't shipped / returns nothing — the
+    /// Cold Chain tab then renders the honest seam card, never the prior
+    /// fabricated 13-sample probe arrays.
+    @State private var reeferLog: [ReeferLogRow652] = []
+    @State private var reeferLogLoaded = false
 
     enum Tab: String, CaseIterable {
         case inspections = "Inspections"
@@ -279,60 +299,98 @@ private struct VesselComplianceBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: - Cold chain (FSMA reefer temp log)
+    // MARK: - Cold chain (FSMA reefer temp log — LIVE rows only)
     //
     // FSMA Sanitary Transportation rule: reefer cargo must hold below the
-    // 40°F excursion ceiling; the commanded setpoint here is 34°F. The chart
-    // plots the front/center/rear probe traces against those two rails.
+    // 40°F excursion ceiling. The chart plots ONLY the real probe rows the
+    // `vesselShipments.getReeferTempLog` proc returns, grouped by zone.
+    // 2026-06-10 de-fabrication (Wave A2): the 13-sample hardcoded
+    // front/center/rear arrays are gone. The client decode is wired
+    // end-to-end; until the proc ships (or while it returns zero rows)
+    // the tab renders an explicit seam card — never a fabricated trace.
+    // No live commanded-setpoint source exists on this surface, so the
+    // SET rail is honestly omitted (setpointF: nil), and the labels read
+    // in °C (vessel-operator register).
 
-    /// FSMA Sanitary-Transportation excursion ceiling (°F).
+    /// FSMA Sanitary-Transportation excursion ceiling (°F). Regulatory
+    /// constant, not per-tenant data.
     private let fsmaCeilingF: Double = 40
-    /// Commanded reefer box temperature (°F).
-    private let reeferSetpointF: Double = 34
 
     @ViewBuilder
     private var coldChainContent: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            ReeferTempLogChart(
-                zones: reeferZones,
-                setpointF: reeferSetpointF,
-                ceilingF: fsmaCeilingF,
-                title: "REEFER COLD CHAIN"
-            )
-            Text("FSMA Sanitary-Transportation ceiling 40°F · setpoint 34°F.")
-                .font(EType.micro).foregroundStyle(palette.textTertiary)
-                .padding(.horizontal, Space.s1)
+        if reeferZones.isEmpty {
+            // Honest seam: decode path wired, no rows on the wire yet.
+            VStack(spacing: Space.s3) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(palette.bgCard)
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                    VStack(spacing: 8) {
+                        Image(systemName: "thermometer.snowflake")
+                            .font(.system(size: 26, weight: .semibold))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text("Awaiting reefer temp log")
+                            .font(.system(size: 14, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                        Text("Probe traces light up here the moment vesselShipments.getReeferTempLog returns real zone readings for this operator's reefer containers. No series is invented in the meantime.")
+                            .font(EType.caption).multilineTextAlignment(.center)
+                            .foregroundStyle(palette.textSecondary)
+                            .padding(.horizontal, Space.s4)
+                    }
+                    .padding(Space.s4)
+                }
+                .frame(height: 200)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                ReeferTempLogChart(
+                    zones: reeferZones,
+                    setpointF: nil,
+                    ceilingF: fsmaCeilingF,
+                    title: "REEFER COLD CHAIN",
+                    unit: .celsius
+                )
+                Text("FSMA Sanitary-Transportation ceiling 40°F (4.4°C) · \(reeferLog.count) live readings.")
+                    .font(EType.micro).foregroundStyle(palette.textTertiary)
+                    .padding(.horizontal, Space.s1)
+            }
         }
     }
 
-    /// Front/center/rear probe traces for the cold-chain chart.
-    ///
-    /// TODO(vessel-reefer): wire to a real vessel reefer temp-log endpoint
-    /// once exposed to iOS (the existing `reeferTemp.getReadings` is scoped to
-    /// the truck driver's `driverId`/`loadId`, not a vessel operator's reefer
-    /// containers, so it is not the correct source for this surface). When a
-    /// `vesselShipments.getReeferTempLog` (or equivalent) endpoint lands,
-    /// decode its `{ zone, temp/tempF, timestamp }` rows — the same shape
-    /// `reeferTemp.getReadings` already returns — group by `zone`, and map each
-    /// group into a `TempZone` exactly as below. Until then this renders the
-    /// component's reference series so the card is live (not preview-only) and
-    /// the swap is a drop-in. No fabricated tenant data is persisted.
+    /// Group the LIVE log rows by zone → TempZone traces, chronological.
+    /// Unknown zone names fold into extra center-position traces so a
+    /// proc that ships hold ids (not front/center/rear) still plots.
     private var reeferZones: [TempZone] {
-        let now = Date()
-        func mk(_ vals: [Double]) -> [TempZone.Reading] {
-            let n = vals.count
-            return vals.enumerated().map { i, v in
-                .init(t: now.addingTimeInterval(-Double(n - 1 - i) * 3600), tempF: v)
-            }
+        guard !reeferLog.isEmpty else { return [] }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoPlain = ISO8601DateFormatter()
+        func parse(_ s: String?) -> Date? {
+            guard let s, !s.isEmpty else { return nil }
+            return iso.date(from: s) ?? isoPlain.date(from: s)
         }
-        let front  = mk([34.1, 33.9, 34.0, 34.2, 33.8, 34.0, 34.1, 33.9, 34.0, 34.2, 34.0, 33.9, 34.1])
-        let center = mk([34.6, 34.4, 34.8, 35.1, 34.9, 35.2, 35.0, 35.3, 35.1, 35.4, 35.2, 35.5, 35.3])
-        let rear   = mk([34.8, 34.9, 35.2, 35.6, 35.9, 36.3, 36.6, 36.9, 37.2, 37.5, 37.8, 38.1, 38.4])
-        return [
-            TempZone(name: "Front",  position: .front,  color: Brand.success, readings: front),
-            TempZone(name: "Center", position: .center, color: Brand.blue,    readings: center),
-            TempZone(name: "Rear",   position: .rear,   color: Brand.warning, readings: rear),
-        ]
+        var grouped: [String: [TempZone.Reading]] = [:]
+        for row in reeferLog {
+            guard let f = row.resolvedTempF, let t = parse(row.timestamp) else { continue }
+            let key = (row.zone ?? "center").lowercased()
+            grouped[key, default: []].append(.init(t: t, tempF: f))
+        }
+        func zone(_ key: String, _ name: String, _ pos: TempZone.Position, _ color: Color) -> TempZone? {
+            guard let rs = grouped[key]?.sorted(by: { $0.t < $1.t }), rs.count >= 2 else { return nil }
+            return TempZone(name: name, position: pos, color: color, readings: rs)
+        }
+        var zones: [TempZone] = []
+        if let z = zone("front",  "Front",  .front,  Brand.success) { zones.append(z) }
+        if let z = zone("center", "Center", .center, Brand.blue)    { zones.append(z) }
+        if let z = zone("rear",   "Rear",   .rear,   Brand.warning) { zones.append(z) }
+        // Extra (non-canonical) zones, alphabetical, capped to keep legible.
+        let extras = grouped.keys
+            .filter { !["front", "center", "rear"].contains($0) }
+            .sorted().prefix(3)
+        for key in extras {
+            if let z = zone(key, key.capitalized, .center, Brand.info) { zones.append(z) }
+        }
+        return zones
     }
 
     // MARK: - Load
@@ -352,6 +410,19 @@ private struct VesselComplianceBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+
+        // Cold chain — best-effort: the proc is the named WIRE seam
+        // (`vesselShipments.getReeferTempLog`). Decode path is live; a
+        // missing proc / empty result leaves `reeferLog` empty and the
+        // tab shows the honest seam card. Never fabricated traces.
+        do {
+            let rows: [ReeferLogRow652] = try await EusoTripAPI.shared.query(
+                "vesselShipments.getReeferTempLog", input: ListIn(limit: 200))
+            self.reeferLog = rows
+        } catch {
+            self.reeferLog = []
+        }
+        reeferLogLoaded = true
     }
 }
 

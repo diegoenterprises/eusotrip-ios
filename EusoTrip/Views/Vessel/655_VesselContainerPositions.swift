@@ -84,6 +84,40 @@ private struct OceanContainerPos: Decodable, Identifiable {
     let currentLocation: ContainerLocationGeo?
     let currentPortUnlocode: String?
 
+    // ── Real stow-position carriers (Wave A2 — 655 stow geometry) ──
+    // The bay-plan elevation may only place a container in a bay the
+    // server actually assigned. Two wire shapes are decoded end-to-end:
+    //   • discrete `bayNumber` / `rowNumber` / `tierNumber` columns, or
+    //   • an ISO 9711 `stowPosition` "BBBRRTT" string (bay-row-tier).
+    // Until the stow-position fields land on `shipping_containers`, all
+    // four stay nil and the elevation renders the honest "awaiting stow
+    // plan" seam — never the prior synthetic `i % bayCount` spread.
+    let bayNumber: Int?
+    let rowNumber: Int?
+    let tierNumber: Int?
+    let stowPosition: String?
+
+    /// ISO 9711 split of `stowPosition` ("0340682" / "340682" →
+    /// bay 34, row 06, tier 82). Returns nil unless the string is a
+    /// clean 6–7 digit code.
+    private var iso9711: (bay: Int, row: Int, tier: Int)? {
+        guard let raw = stowPosition?.trimmingCharacters(in: .whitespaces),
+              raw.count == 6 || raw.count == 7,
+              raw.allSatisfy(\.isNumber) else { return nil }
+        let padded = raw.count == 6 ? "0" + raw : raw
+        guard let bay = Int(padded.prefix(3)),
+              let row = Int(padded.dropFirst(3).prefix(2)),
+              let tier = Int(padded.suffix(2)) else { return nil }
+        return (bay, row, tier)
+    }
+
+    /// The REAL bay this container is stowed in, or nil when the server
+    /// hasn't assigned one. Discrete column wins; ISO string second.
+    var resolvedBay: Int? { bayNumber ?? iso9711?.bay }
+    /// The REAL tier, when assigned. ISO 9711: deck tiers run 72+,
+    /// hold tiers below — drives the ON DECK / IN HOLD band split.
+    var resolvedTier: Int? { tierNumber ?? iso9711?.tier }
+
     /// A REAL, non-null-island fix for this container or nil. Primary path:
     /// the `currentLocation` JSON. Secondary path: the at-berth port's
     /// UN/LOCODE resolved through the in-house `PortDirectory` catalog
@@ -162,18 +196,17 @@ private struct VesselContainerPositionsBody: View {
         return HereLatLng(lat, lng)
     }
 
-    // MARK: Bay-plan elevation model (derived from the REAL loaded roster)
+    // MARK: Bay-plan elevation model (REAL stow positions only — Wave A2)
     //
-    // The container roster has no bay-number field of its own, so we bucket the
-    // loaded containers fore→aft into a fixed set of bays (deterministic, by
-    // index) and split each container into the ON DECK / IN HOLD band by status:
-    //   • on_board / on_water  → stowed ON DECK
-    //   • everything else (at_port / discharged / gate_out / unknown) → IN HOLD
-    // Each container's slot kind derives from the same real fields the roster
-    // chips already read — restow/relocation status → .restow, imdgClass present
-    // → .hazmat, isReefer → .reefer, else .dry. Open cells pad with .empty so
-    // bands stay rectangular. Lift count / conflict bay derive inside the
-    // component from the .restow slots; nothing is passed twice.
+    // 2026-06-10 de-fabrication: the prior `i % bayCount` bucketing painted
+    // containers into bays the server never assigned — synthetic stow
+    // geometry wearing a real bay plan's clothes. The elevation now renders
+    // ONLY containers carrying a real stow position (discrete bay/tier
+    // columns or an ISO 9711 `stowPosition` code), grouped by their TRUE
+    // bay. When zero containers carry stow data the slot renders an honest
+    // "awaiting stow plan" seam card — same pattern as the position-feed
+    // seam above. Slot kinds stay real: restow/relocation status → .restow,
+    // imdgClass → .hazmat, isReefer → .reefer, else .dry.
     private func slotKind(for c: OceanContainerPos) -> BayPlanSlot.Kind {
         let status = (c.status ?? "").lowercased()
         if status.contains("restow") || status.contains("relocat") { return .restow }
@@ -182,32 +215,40 @@ private struct VesselContainerPositionsBody: View {
         return .dry
     }
 
-    private var bayColumns: [BayColumn] {
-        guard !containers.isEmpty else { return [] }
-        // Fore→aft bay headers, descending like a real bay plan (34 30 … 06).
-        // Spread the roster across up to 8 bays so the elevation stays legible.
-        let bayCount = min(max(containers.count, 1), 8)
-        let headers = (0..<bayCount).map { 34 - $0 * 4 }   // 34,30,26,22,18,14,10,06
-        var buckets: [[OceanContainerPos]] = Array(repeating: [], count: bayCount)
-        for (i, c) in containers.enumerated() { buckets[i % bayCount].append(c) }
+    /// Containers the server has actually stowed (real bay assignment).
+    private var stowed: [OceanContainerPos] { containers.filter { $0.resolvedBay != nil } }
 
-        return zip(headers, buckets).map { header, group in
+    private var bayColumns: [BayColumn] {
+        let stowedNow = stowed
+        guard !stowedNow.isEmpty else { return [] }
+
+        // Group by the REAL bay, displayed descending fore→aft like a real
+        // bay plan header strip.
+        let byBay = Dictionary(grouping: stowedNow, by: { $0.resolvedBay! })
+        let bays = byBay.keys.sorted(by: >)
+
+        return bays.map { bay in
+            let group = byBay[bay] ?? []
             var onDeck: [BayPlanSlot] = []
             var inHold: [BayPlanSlot] = []
-            for c in group {
+            // Stack order: highest tier outermost in each band.
+            for c in group.sorted(by: { ($0.resolvedTier ?? 0) > ($1.resolvedTier ?? 0) }) {
                 let kind = slotKind(for: c)
-                let status = (c.status ?? "").lowercased()
-                if status == "on_board" || status == "on_water" {
-                    onDeck.append(BayPlanSlot(kind))
-                } else {
-                    inHold.append(BayPlanSlot(kind))
-                }
+                let band: Bool = {
+                    // ISO 9711 tier truth wins: deck tiers run 72 and up.
+                    if let tier = c.resolvedTier { return tier >= 72 }
+                    // No tier on the wire — band by the real load status.
+                    let status = (c.status ?? "").lowercased()
+                    return status == "on_board" || status == "on_water"
+                }()
+                if band { onDeck.append(BayPlanSlot(kind)) }
+                else    { inHold.append(BayPlanSlot(kind)) }
             }
-            // Pad to at least one tier per band with open (.empty) cells so the
-            // hull/hatch geometry reads cleanly even for sparse bays.
+            // Pad to at least one tier per band with open (.empty) cells so
+            // the hull/hatch geometry reads cleanly even for sparse bays.
             if onDeck.isEmpty { onDeck = [BayPlanSlot(.empty)] }
             if inHold.isEmpty { inHold = [BayPlanSlot(.empty)] }
-            return BayColumn(bayNumber: header, onDeck: onDeck, inHold: inHold)
+            return BayColumn(bayNumber: bay, onDeck: onDeck, inHold: inHold)
         }
     }
 
@@ -225,7 +266,7 @@ private struct VesselContainerPositionsBody: View {
                 } else {
                     summaryTiles
                     positionMapSection
-                    BayPlanStowElevation(columns: bayColumns)
+                    stowElevationSection
                     Text("CONTAINERS · getContainerPositions")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     VStack(spacing: Space.s2) { ForEach(containers) { containerRow($0) } }
@@ -287,6 +328,46 @@ private struct VesselContainerPositionsBody: View {
             } else {
                 awaitingFeedCard
             }
+        }
+    }
+
+    // MARK: Stow elevation — REAL bays only, else the honest seam
+
+    @ViewBuilder private var stowElevationSection: some View {
+        if !bayColumns.isEmpty {
+            BayPlanStowElevation(columns: bayColumns)
+            Text("\(stowed.count) of \(containers.count) containers carry a stow position")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+        } else {
+            awaitingStowPlanCard
+        }
+    }
+
+    /// Honest "awaiting stow plan" state — the elevation + ISO 9711 decode
+    /// path are wired end-to-end, but no container row carries a real bay/
+    /// tier assignment yet, so we say exactly that rather than painting
+    /// containers into invented bays (the retired `i % bayCount` spread).
+    private var awaitingStowPlanCard: some View {
+        VStack(spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.bgCard)
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                VStack(spacing: 8) {
+                    Image(systemName: "square.grid.3x3.middle.filled")
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("Awaiting stow plan")
+                        .font(.system(size: 14, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                    Text("The bay-plan elevation draws itself from real bay/row/tier stow positions (ISO 9711). None of the \(containers.count) tracked containers carry a stow assignment yet - no bay geometry is invented in the meantime.")
+                        .font(EType.caption).multilineTextAlignment(.center)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, Space.s4)
+                }
+                .padding(Space.s4)
+            }
+            .frame(height: 180)
         }
     }
 

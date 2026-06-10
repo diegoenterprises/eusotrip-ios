@@ -121,6 +121,14 @@ private struct ReeferTelemetry_387 {
     )
 }
 
+/// One history row from `reeferTemp.getReadings` — `{ zone, temp, timestamp }`,
+/// the identical projection Shipper 279 decodes.
+private struct ReeferHistoryRow_387: Decodable, Hashable {
+    let zone: String?
+    let temp: Double
+    let timestamp: String
+}
+
 // MARK: - Content
 
 private struct ReeferFleetBody_387: View {
@@ -139,6 +147,11 @@ private struct ReeferFleetBody_387: View {
     /// recordedAt. Empty until a real reading lands (no fabricated time).
     @State private var syncedLabel: String = ""
 
+    /// Session history rows from `reeferTemp.getReadings` (the same proc
+    /// Shipper 279 reads), scoped to the resolved active load. Feeds the
+    /// BandTrendChart trend mount; empty ⇒ the chart simply doesn't render.
+    @State private var historyRows: [ReeferHistoryRow_387] = []
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -154,6 +167,14 @@ private struct ReeferFleetBody_387: View {
                 case .ready:
                     supplyHero
                     zoneReadingsCard
+                    // Wave A2 — BandTrendChart de-orphaned onto its census
+                    // host: the REAL per-zone reading history (same
+                    // `reeferTemp.getReadings` rows 279 lists) against the
+                    // live FSMA band, with the kit's drag-to-scrub cursor.
+                    // Mounts only when ≥2 samples exist in some zone.
+                    if let chart = zoneTrendChart {
+                        chart
+                    }
                     factorRow
                     actionRow
                     footerNote
@@ -206,6 +227,18 @@ private struct ReeferFleetBody_387: View {
 
         stats = try? await api.reeferTemp.getStats(loadId: loadId)
         alerts = (try? await api.reeferTemp.getAlerts(loadId: loadId, limit: 20)) ?? []
+
+        // Session history for the trend chart — best-effort, load-scoped.
+        // No resolved load / no rows ⇒ empty ⇒ no chart, never a seeded
+        // series.
+        if let lid = loadId {
+            struct ReadingsIn: Encodable { let loadId: Int }
+            let rows: [ReeferHistoryRow_387]? = try? await api.query(
+                "reeferTemp.getReadings", input: ReadingsIn(loadId: lid))
+            historyRows = rows ?? []
+        } else {
+            historyRows = []
+        }
 
         // FSMA band: prefer the stats window's implied band; the server
         // defaults are targetMin 33 / targetMax 40 (reeferTemp.ts:115).
@@ -283,6 +316,90 @@ private struct ReeferFleetBody_387: View {
         syncedLabel = relativeSynced(freshest)
 
         state = .ready
+    }
+
+    // MARK: Trend chart (Wave A2 — BandTrendChart de-orphaned)
+
+    /// Build the per-zone trend chart from the REAL session history. Nil
+    /// when no zone carries ≥2 samples — the surface then simply shows the
+    /// latest-reading rows above, no invented polyline.
+    private var zoneTrendChart: BandTrendChart? {
+        guard !historyRows.isEmpty else { return nil }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoPlain = ISO8601DateFormatter()
+        func parse(_ s: String) -> Date? { iso.date(from: s) ?? isoPlain.date(from: s) }
+
+        var grouped: [String: [(Date, Double)]] = [:]
+        for r in historyRows {
+            guard let t = parse(r.timestamp) else { continue }
+            grouped[(r.zone ?? "supply").lowercased(), default: []].append((t, r.temp))
+        }
+        let allTimes = grouped.values.flatMap { $0.map(\.0) }
+        guard let t0 = allTimes.min(), let t1 = allTimes.max(), t1 > t0 else { return nil }
+        let span = t1.timeIntervalSince(t0)
+
+        func rank(_ key: String) -> Int {
+            switch key {
+            case "front":  return 0
+            case "center": return 1
+            case "rear":   return 2
+            default:        return 3
+            }
+        }
+        let tints: [String: Color] = [
+            "front": Brand.success, "center": Brand.blue, "rear": Brand.warning,
+        ]
+
+        var series: [BandTrendSeries] = []
+        var pid = 0
+        for key in grouped.keys.sorted(by: { (rank($0), $0) < (rank($1), $1) }) {
+            let samples = grouped[key]!.sorted { $0.0 < $1.0 }
+            guard samples.count >= 2 else { continue }
+            var pts: [BandTrendPoint] = []
+            for (t, v) in samples {
+                pts.append(BandTrendPoint(id: pid, x: t.timeIntervalSince(t0) / span, y: v))
+                pid += 1
+            }
+            let last = samples[samples.count - 1].1
+            let prev = samples[samples.count - 2].1
+            let rising = last > data.bandHighF - 2 && last > prev
+            series.append(BandTrendSeries(
+                id: key,
+                name: key.capitalized,
+                tint: tints[key] ?? Brand.info,
+                emphasis: rising ? .rising : .solid,
+                points: pts,
+                legendValue: String(format: "%.1f°F", last),
+                trend: last > prev ? "↑" : (last < prev ? "↓" : nil)
+            ))
+        }
+        guard !series.isEmpty else { return nil }
+
+        let clock = DateFormatter()
+        clock.locale = Locale(identifier: "en_US_POSIX")
+        clock.dateFormat = "HH:mm"
+        let mid = t0.addingTimeInterval(span / 2)
+        let ticks: [BandTrendTick] = [
+            BandTrendTick(id: 0, x: 0, label: clock.string(from: t0)),
+            BandTrendTick(id: 1, x: 0.5, label: clock.string(from: mid)),
+            BandTrendTick(id: 2, x: 1, label: clock.string(from: t1), isNow: true),
+        ]
+
+        return BandTrendChart(
+            series: series,
+            guides: [
+                BandTrendGuide(id: "ceiling", value: data.bandHighF,
+                               label: "\(Int(data.bandHighF))°F · FSMA ceiling", role: .ceiling),
+                BandTrendGuide(id: "floor", value: data.bandLowF,
+                               label: "\(Int(data.bandLowF))°F · floor", role: .floor),
+            ],
+            band: (low: data.bandLowF, high: data.bandHighF),
+            xTicks: ticks,
+            eyebrow: "ZONE TEMPERATURE · °F · SESSION",
+            trailingCaption: "FSMA BAND \(Int(data.bandLowF))–\(Int(data.bandHighF))°F",
+            valueFormat: { String(format: "%.1f", $0) }
+        )
     }
 
     /// "synced HH:mm" / "synced Nm ago" from a reading's ISO recordedAt.

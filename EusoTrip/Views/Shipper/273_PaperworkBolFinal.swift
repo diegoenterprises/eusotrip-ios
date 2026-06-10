@@ -42,6 +42,9 @@ private struct BolFinalBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             documentCard
+            // Wave A2 strip extension — the strip carries through the
+            // paperwork stage (echo-cel 273 M04).
+            LifecycleAnimationStrip(live: live, label: "EQUIPMENT · CLOSE-OUT", height: 160)
             attachmentsCard
             ctaRow
         }

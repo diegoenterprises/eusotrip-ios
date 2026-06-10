@@ -123,6 +123,42 @@ private struct RailSettlementSummaryBody: View {
         return "\(cycle) · \(open)"
     }
 
+    // MARK: Settlement bridge (Wave A2 — real aggregates only)
+
+    /// HOLD slice of the open AR (status == "hold").
+    private var holdTotal: Double {
+        settlements.filter { ($0.status ?? "").lowercased() == "hold" }
+            .reduce(0) { $0 + settlementAmount($1) }
+    }
+
+    private var settlementBridge: WaterfallBridgeModel? {
+        guard grossTotal > 0, openTotal > 0 else { return nil }
+        let openExHold = max(0, openTotal - holdTotal)
+        var steps: [WaterfallBridgeStep] = [
+            .init(id: "gross", label: "GROSS", delta: grossTotal,
+                  valueLabel: formatK(grossTotal), role: .start)
+        ]
+        if openExHold > 0 {
+            steps.append(.init(id: "open", label: "OPEN", delta: -openExHold,
+                               valueLabel: "−" + formatK(openExHold)))
+        }
+        if holdTotal > 0 {
+            steps.append(.init(id: "hold", label: "HOLD", delta: -holdTotal,
+                               valueLabel: "−" + formatK(holdTotal)))
+        }
+        steps.append(.init(id: "settled", label: "SETTLED", delta: settledTotal,
+                           valueLabel: settledTotal > 0 ? formatK(settledTotal) : "$0",
+                           role: .end))
+        return WaterfallBridgeModel(
+            eyebrow: "GROSS → SETTLED · MTD",
+            heroValue: settledLabel,
+            heroBadge: nil,
+            heroDelta: openCount > 0 ? "\(openCount) open invoice\(openCount == 1 ? "" : "s")" : nil,
+            heroSubline: "gross \(grossLabel) · open \(openLabel)",
+            steps: steps
+        )
+    }
+
     // MARK: Body
 
     var body: some View {
@@ -136,6 +172,15 @@ private struct RailSettlementSummaryBody: View {
                 } else {
                     heroCard
                     kpiStrip
+                    // Wave A2 — WaterfallBridge de-orphaned onto its census
+                    // host: GROSS steps down through the REAL open-AR /
+                    // hold sums and lands on SETTLED. Every figure is an
+                    // aggregate of the live settlement rows above; mounts
+                    // only when there is an actual decomposition to read
+                    // (gross > 0 with open AR outstanding).
+                    if let bridge = settlementBridge {
+                        WaterfallBridge(model: bridge)
+                    }
                     settlementsList
                     periodStatsStrip
                     ctaPair
