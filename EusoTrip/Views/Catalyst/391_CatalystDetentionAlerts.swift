@@ -65,23 +65,13 @@ private func catalystNavTrailing_391() -> [NavSlot] {
 private struct DetentionAlertsBody_391: View {
     @Environment(\.palette) private var palette
 
-    // Representative seeds — overwritten on hydrate (getActiveDetentions).
-    // loadId · facility line · right value · accrual color-key.
-    @State private var rows: [DetentionRow_391] = [
-        DetentionRow_391(loadId: "LD-260427-A38FB12C7E",
-                         facility: "Houston TX shipper dock · 2.4h over free · $45/hr",
-                         value: "$108", isOver: true),
-        DetentionRow_391(loadId: "LD-260427-7C3A09F18B",
-                         facility: "Phoenix WVDC dock 7B · to free expiry · $60/hr",
-                         value: "0.6h", isOver: false),
-        DetentionRow_391(loadId: "LD-260427-B41782FF02",
-                         facility: "Omaha NE consignee · 4.1h over · $75/hr · escort",
-                         value: "$307", isOver: true),
-    ]
-
-    // Hero seeds — overwritten on hydrate (getDetentionDashboard).
-    @State private var atRiskCount: Int = 3
-    @State private var exposureDollars: String = "$1,140"
+    // Live state — empty/em-dash until the real procs answer. No seeds.
+    @State private var rows: [DetentionRow_391] = []
+    @State private var atRiskCount: Int = 0
+    @State private var exposureDollars: String = "—"
+    @State private var worstFacility: WorstFacility_391? = nil
+    @State private var loading: Bool = true
+    @State private var loadError: String? = nil
 
     @State private var disputing: Bool = false
     @State private var disputeAck: String? = nil
@@ -147,13 +137,13 @@ private struct DetentionAlertsBody_391: View {
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                Text("AURORA FREIGHT LINES · USDOT 3 482 119")
+                Text("CARRIER DETENTION WATCH")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                Text("live · 2-min cadence")
+                Text(loading ? "loading…" : (loadError == nil ? "live" : "offline"))
                     .font(.system(size: 11, design: .monospaced))
                     .tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
@@ -229,27 +219,47 @@ private struct DetentionAlertsBody_391: View {
 
     private var detentionsCard: some View {
         VStack(spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack {
-                        Text(row.loadId)
-                            .font(.system(size: 11.5, weight: .heavy, design: .monospaced))
-                            .foregroundStyle(palette.textPrimary)
-                        Spacer(minLength: 0)
-                        Text(row.value)
-                            .font(.system(size: 11, weight: .heavy))
-                            .monospacedDigit()
-                            .foregroundStyle(Brand.warning)
+            if loading && rows.isEmpty {
+                Text("Loading active detentions…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 14)
+            } else if let err = loadError, rows.isEmpty {
+                Text(err)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Brand.danger)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 14)
+            } else if rows.isEmpty {
+                EusoEmptyState(
+                    systemImage: "clock.badge.checkmark",
+                    title: "No active detentions",
+                    subtitle: "Loads accruing dock detention appear here with their live exposure."
+                )
+            } else {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(row.loadId)
+                                .font(.system(size: 11.5, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(palette.textPrimary)
+                            Spacer(minLength: 0)
+                            Text(row.value)
+                                .font(.system(size: 11, weight: .heavy))
+                                .monospacedDigit()
+                                .foregroundStyle(Brand.warning)
+                        }
+                        Text(row.facility)
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(palette.textSecondary)
                     }
-                    Text(row.facility)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(palette.textSecondary)
-                }
-                .padding(.vertical, 9)
-                if index < rows.count - 1 {
-                    Rectangle()
-                        .fill(palette.borderFaint)
-                        .frame(height: 1)
+                    .padding(.vertical, 9)
+                    if index < rows.count - 1 {
+                        Rectangle()
+                            .fill(palette.borderFaint)
+                            .frame(height: 1)
+                    }
                 }
             }
         }
@@ -263,23 +273,26 @@ private struct DetentionAlertsBody_391: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: - Worst facility strip  (_391 inline · seeds kept, WIRE below)
+    // MARK: - Worst facility strip  (LIVE — detentionAccessorials.getDetentionByFacility)
 
     private var worstFacilityStrip: some View {
-        // WIRE: detentionAccessorials.getDetentionByFacility (detentionAccessorials.ts:401)
-        // WIRE: detentionAccessorials.getAccessorialAnalytics (detentionAccessorials.ts:1169)
-        // Not in iOS DetentionAPI client — seeds kept, overwritten when added.
         VStack(alignment: .leading, spacing: 4) {
-            Text("WORST FACILITY · getDetentionByFacility")
+            Text("WORST FACILITY · 30 DAYS")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
-            Text("Omaha NE consignee · avg 3.6h dwell · 5 loads this month")
-                .font(.system(size: 11))
-                .foregroundStyle(palette.textSecondary)
-            Text("getAccessorialAnalytics · flag for shipper review")
-                .font(.system(size: 11))
-                .foregroundStyle(palette.textSecondary)
+            if let w = worstFacility {
+                Text("\(w.facilityName) · avg \(String(format: "%.1f", Double(w.avgWaitMinutes) / 60.0))h dwell · \(w.eventCount) event\(w.eventCount == 1 ? "" : "s")")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                Text("\(formatCurrency_391(w.totalCharges)) charged · \(w.disputeCount) disputed")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+            } else {
+                Text(loading ? "Loading facility ranking…" : "No detention history by facility yet.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -291,14 +304,14 @@ private struct DetentionAlertsBody_391: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: - Load tie strip  (_391 inline · ME / DU pins)
+    // MARK: - Context strip (honest program copy — no fabricated personas)
 
     private var tieStrip: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("driver Michael Eusorone · ME · Eusotrans LLC on active legs")
+            Text("Detention accrues after the facility's free time expires (2h default)")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
-            Text("shipper-of-record Eusorone Technologies · DU")
+            Text("Reimbursable charges bill to the shipper-of-record on settlement")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
         }
@@ -344,16 +357,26 @@ private struct DetentionAlertsBody_391: View {
     }
 
     private func reload() async {
+        loading = true
+        loadError = nil
+        defer { loading = false }
+
+        var anySucceeded = false
+
         // Hero counters — detentionAccessorials.getDetentionDashboard (EXISTS).
-        if let dash = try? await EusoTripAPI.shared.detention.getDashboard() {
+        // Unconditional overwrite: a real zero renders as a real zero/em-dash.
+        do {
+            let dash = try await EusoTripAPI.shared.detention.getDashboard()
             atRiskCount = dash.activeDetentions
-            exposureDollars = formatCurrency_391(dash.billedAmount > 0 ? dash.billedAmount : dash.totalCharges)
-        }
+            let exposure = dash.billedAmount > 0 ? dash.billedAmount : dash.totalCharges
+            exposureDollars = exposure > 0 ? formatCurrency_391(exposure) : "—"
+            anySucceeded = true
+        } catch { /* fall through to the shared error below */ }
+
         // At-risk rows — detentionAccessorials.getActiveDetentions (EXISTS).
-        // calculateDetention accrual is folded into currentCharge server-side.
-        // WIRE: detentionAccessorials.calculateDetention (detentionAccessorials.ts:355)
-        if let active = try? await EusoTripAPI.shared.detention.getActive(limit: 25),
-           !active.detentions.isEmpty {
+        // Unconditional overwrite: an empty response clears the board honestly.
+        do {
+            let active = try await EusoTripAPI.shared.detention.getActive(limit: 25)
             rows = active.detentions.map { d in
                 DetentionRow_391(
                     loadId: d.loadId.map { "LD-\($0)" } ?? d.facilityName,
@@ -364,6 +387,26 @@ private struct DetentionAlertsBody_391: View {
                     isOver: d.billableMinutes > 0
                 )
             }
+            anySucceeded = true
+        } catch { /* fall through */ }
+
+        // Worst facility — detentionAccessorials.getDetentionByFacility (live bridge).
+        struct FacilityInput: Encodable { let limit: Int }
+        struct FacilitiesWire: Decodable { let facilities: [WorstFacility_391] }
+        if let wire: FacilitiesWire = try? await EusoTripAPI.shared.query(
+            "detentionAccessorials.getDetentionByFacility", input: FacilityInput(limit: 1)
+        ) {
+            worstFacility = wire.facilities.first
+            anySucceeded = true
+        } else {
+            worstFacility = nil
+        }
+
+        if !anySucceeded {
+            loadError = "Couldn't reach the detention service - pull to retry."
+            rows = []
+            atRiskCount = 0
+            exposureDollars = "—"
         }
     }
 
@@ -429,6 +472,20 @@ private struct DetentionRow_391: Identifiable {
     let facility: String
     let value: String
     let isOver: Bool
+}
+
+/// Mirrors one row of `detentionAccessorials.getDetentionByFacility`
+/// (detentionAccessorials.ts:409) — every field Number()-wrapped server-side.
+private struct WorstFacility_391: Decodable {
+    let rank: Int
+    let facilityName: String
+    let eventCount: Int
+    let totalCharges: Double
+    let avgWaitMinutes: Int
+    let maxWaitMinutes: Int
+    let avgCharge: Double
+    let disputeCount: Int
+    let score: Int
 }
 
 // MARK: - Previews

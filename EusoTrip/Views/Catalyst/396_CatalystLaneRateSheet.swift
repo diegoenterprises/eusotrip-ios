@@ -29,17 +29,14 @@
 //                                          → getVersionHistory                   (rateSheet.ts:1578)
 //  RBAC: isolatedApprovedProcedure — carrier-scoped. transportMode = truck · USD.
 //
-//  HONEST WIRING (iOS EusoTripAPI.RateSheetAPI — grep-verified):
-//    • getCurrentDiesel EXISTS → the DOE-diesel band hydrates live (price,
-//      1-week change, source freshness). The remaining seeds (FSC peg,
-//      hero RPM-vs-market, per-lane spreads) are overwritten on hydrate
-//      ONCE the platform-rate-intelligence client method ships — the iOS
-//      RateSheetAPI does not yet expose `getPlatformRateIntelligence` /
-//      `saveRateSheet`, so those carry a // WIRE: marker and the Code/
-//      representative seeds (house "0% mock — seeds overwritten on
-//      hydrate"). The lane RPM-vs-market board is NOT representable from
-//      getRateSheet (BBL mileage tiers), so it stays seeded until the
-//      rate-intelligence projection lands.
+//  ZERO-FALLBACK WIRING (2026-06-09 · audit M5):
+//    LIVE — getCurrentDiesel (DOE band), listMyRateSheets + getRateSheet
+//    (sheet identity + real version), getPlatformRateIntelligence (market
+//    clearing RPM from real completed loads).
+//    HONEST EM-DASH / EMPTY — blended RPM, win-cover, FSC peg, and the
+//    per-lane spread board: getRateSheet carries BBL mileage tiers, not
+//    lane RPM-vs-market pairs, so the board renders an EusoEmptyState
+//    until a per-lane rate-intelligence projection ships. No seeds remain.
 //
 //  Bottom nav (Catalyst variant): HOME · DISPATCH · [orb] · WALLET · ME
 //  (DISPATCH current — the rate sheet is reached from the Dispatch tab).
@@ -96,39 +93,25 @@ private struct LaneRate_396: Identifiable {
 private struct LaneRateSheetBody_396: View {
     @Environment(\.palette) private var palette
 
-    // ----- Diesel / FSC band (getCurrentDiesel — LIVE) -----
-    @State private var doeDiesel: String   = "$4.012"     // /gal · overwritten on hydrate
-    @State private var fscPeg: String      = "$0.42"      // /mi  · WIRE: derived peg
-    @State private var weekDelta: String   = "+$0.03"     // WK Δ · overwritten on hydrate
-    @State private var refreshedAgo: String = "6m ago"    // overwritten on hydrate
+    // ----- Diesel / FSC band (getCurrentDiesel — LIVE; em-dash until it answers) -----
+    @State private var doeDiesel: String   = "—"
+    @State private var fscPeg: String      = "—"     // no live peg source → honest em-dash
+    @State private var weekDelta: String   = "—"
+    @State private var refreshedAgo: String = "—"
     @State private var weekDeltaUp: Bool   = true
 
-    // ----- Hero (getPlatformRateIntelligence — seeded · WIRE) -----
-    @State private var blendedRPM: String  = "$2.84"
-    @State private var marketClears: String = "$2.71/mi"
-    @State private var activeLanes: Int    = 8
-    @State private var blendedSpreadPct: Double = 4.8
-    @State private var winCover: String    = "96.4%"
+    // ----- Hero (live platform-rate intelligence; em-dash where no source) -----
+    @State private var blendedRPM: String  = "—"     // carrier's own blended RPM — no live source yet
+    @State private var marketClears: String = "—"    // LIVE: rateSheet.getPlatformRateIntelligence
+    @State private var blendedSpreadPct: Double? = nil
+    @State private var winCover: String    = "—"     // no live source → honest em-dash
 
-    // ----- Lanes (getRateSheet / listMyRateSheets — seeded · WIRE) -----
-    @State private var lanes: [LaneRate_396] = LaneRateSheetBody_396.seedLanes
-    @State private var underMarketNote: String = "2 lanes under market · ~$118/load RPM gap on KC→Omaha"
-    @State private var version: String = "v4"
-
-    static let seedLanes: [LaneRate_396] = [
-        LaneRate_396(id: "rs-hou-dal", lane: "Houston → Dallas",
-                     spec: "53' Dry Van · 239 mi", equipment: .dryVan,
-                     yourRate: 2.91, marketRate: 2.74),
-        LaneRate_396(id: "rs-la-phx", lane: "LA → Phoenix",
-                     spec: "53' Reefer 38°F · 372 mi", equipment: .reefer,
-                     yourRate: 3.02, marketRate: 2.98),
-        LaneRate_396(id: "rs-kc-oma", lane: "KC → Omaha",
-                     spec: "MC-331 NH₃ · escort · 185 mi", equipment: .tanker,
-                     yourRate: 3.18, marketRate: 3.41),
-        LaneRate_396(id: "rs-pit-cle", lane: "Pittsburgh → Cleveland",
-                     spec: "48' Flatbed · steel coils · 134 mi", equipment: .flatbed,
-                     yourRate: 2.46, marketRate: 2.55),
-    ]
+    // ----- Sheet identity (LIVE: listMyRateSheets + getRateSheet) -----
+    @State private var lanes: [LaneRate_396] = []
+    @State private var underMarketNote: String = ""
+    @State private var version: String = "—"
+    @State private var sheetName: String? = nil
+    @State private var loadingSheet: Bool = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -160,14 +143,16 @@ private struct LaneRateSheetBody_396: View {
                     Image(systemName: "sparkles")
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.primary)
-                    Text("CATALYST · RATE SHEET · DOE WK21")
+                    Text("CATALYST · RATE SHEET")
                         .font(EType.micro).tracking(1.0)
                         .foregroundStyle(LinearGradient.primary)
                 }
                 Spacer(minLength: 0)
-                Text("\(version) · \(lanes.count) LANES")
+                Text("\(version) · \(sheetName?.uppercased() ?? "NO SHEET")")
                     .font(EType.mono(.micro)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
             HStack(alignment: .center, spacing: Space.s3) {
                 Image(systemName: "chevron.left")
@@ -269,12 +254,14 @@ private struct LaneRateSheetBody_396: View {
                     }
                     (Text("market clears ")
                         + Text(marketClears).fontWeight(.bold).foregroundColor(palette.textPrimary)
-                        + Text(" · \(activeLanes) active lanes"))
+                        + Text(" · \(lanes.count) lanes on sheet"))
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 10) {
-                    spreadChip_396(pct: blendedSpreadPct)
+                    if let pct = blendedSpreadPct {
+                        spreadChip_396(pct: pct)
+                    }
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("TENDER WIN-COVER").font(EType.micro).tracking(0.6)
                             .foregroundStyle(palette.textTertiary)
@@ -312,15 +299,27 @@ private struct LaneRateSheetBody_396: View {
                 Text("LANES · YOUR RATE vs MARKET").font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
-                Text("See all (\(activeLanes))").font(EType.caption)
+                Text("See all (\(lanes.count))").font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
             VStack(spacing: 0) {
-                ForEach(Array(lanes.enumerated()), id: \.element.id) { idx, lane in
-                    laneRow_396(lane)
-                    if idx < lanes.count - 1 {
-                        Rectangle().fill(palette.borderFaint).frame(height: 1)
-                            .padding(.leading, 48)
+                if lanes.isEmpty {
+                    // Honest: the per-lane RPM-vs-market projection has no
+                    // live source (getRateSheet carries BBL mileage tiers,
+                    // not lane RPM pairs) — never a seeded spread board.
+                    EusoEmptyState(
+                        systemImage: "chart.bar.xaxis",
+                        title: loadingSheet ? "Loading rate sheet…" : "No lane spread data yet",
+                        subtitle: loadingSheet ? "" : "Per-lane rate-vs-market rows aren't connected to mobile yet - sheet identity and the diesel band above are live."
+                    )
+                    .padding(.vertical, Space.s3)
+                } else {
+                    ForEach(Array(lanes.enumerated()), id: \.element.id) { idx, lane in
+                        laneRow_396(lane)
+                        if idx < lanes.count - 1 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1)
+                                .padding(.leading, 48)
+                        }
                     }
                 }
                 HStack {
@@ -476,17 +475,25 @@ private struct LaneRateSheetBody_396: View {
         }
     }
 
-    // MARK: - Network
+    // MARK: - Network (zero-fallback · audit M5)
     //
-    // getCurrentDiesel EXISTS on the iOS RateSheetAPI → hydrates the DOE
-    // diesel band live (price · 1-week change · source freshness). The
-    // hero blended-RPM-vs-market spread, the FSC peg, and the per-lane
-    // spread rows come from rateSheet.getPlatformRateIntelligence, which
-    // the iOS client does not yet expose — those keep the Code/ seeds
-    // (overwritten on hydrate once the method ships) and carry the WIRE
-    // markers below.
+    // LIVE: getCurrentDiesel (band), listMyRateSheets + getRateSheet (sheet
+    // identity + version), getPlatformRateIntelligence (market clearing RPM).
+    // Honest em-dash: blended RPM, win-cover, FSC peg and the per-lane spread
+    // board — none has a live per-lane source on mobile yet (getRateSheet
+    // carries BBL mileage tiers, not lane RPM pairs).
+
+    private struct RateIntelWire_396: Decodable {
+        let totalLoads: Int
+        let avgRatePerMile: Double
+        let lastUpdated: String?
+    }
+    private struct RateIntelInput_396: Encodable { let state: String? }
 
     private func loadAll() async {
+        loadingSheet = true
+        defer { loadingSheet = false }
+
         do {
             let diesel = try await EusoTripAPI.shared.rateSheet.getCurrentDiesel()
             self.doeDiesel = String(format: "$%.3f", diesel.price)
@@ -501,18 +508,30 @@ private struct LaneRateSheetBody_396: View {
                 self.refreshedAgo = String(r.prefix(10))
             }
         } catch {
-            // Keep the representative seed band — honest, not a crash.
+            // Band stays em-dash — honest, not a crash.
         }
 
-        // WIRE: rateSheet.getPlatformRateIntelligence (rateSheet.ts:706)
-        //   → blendedRPM · marketClears · activeLanes · blendedSpreadPct
-        //     · winCover · per-lane yourRate/marketRate spread board.
-        // WIRE: rateSheet.getRateSheet (rateSheet.ts:1425)
-        //     + rateSheet.listMyRateSheets (rateSheet.ts:1618)
-        //   → the carrier's active sheet id + version eyebrow for the lane rows.
-        // (Both kept seeded — the iOS RateSheetAPI does not yet expose the
-        //  platform-rate-intelligence projection; getRateSheet returns BBL
-        //  mileage tiers, not lane RPM-vs-market pairs.)
+        // Sheet identity + version — LIVE (already-bridged client methods).
+        if let sheets = try? await EusoTripAPI.shared.rateSheet.listMyRateSheets(),
+           let first = sheets.first {
+            sheetName = first.name ?? "Sheet \(first.id)"
+            // `try?` flattens the client's RateSheetDetail? — one bind suffices.
+            if let d = try? await EusoTripAPI.shared.rateSheet.getRateSheet(id: first.id) {
+                version = "v\(d.version)"
+            }
+        } else {
+            sheetName = nil
+            version = "—"
+        }
+
+        // Market clearing RPM — LIVE platform aggregate (real completed loads).
+        if let intel: RateIntelWire_396 = try? await EusoTripAPI.shared.query(
+            "rateSheet.getPlatformRateIntelligence", input: RateIntelInput_396(state: nil)
+        ), intel.totalLoads > 0, intel.avgRatePerMile > 0 {
+            marketClears = String(format: "$%.2f/mi", intel.avgRatePerMile)
+        } else {
+            marketClears = "—"
+        }
     }
 }
 

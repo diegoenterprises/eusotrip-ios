@@ -35,9 +35,13 @@
 //        + requireAccess DISPATCH/CATALYST resource INVOICE on writes (fscEngine.ts:71).
 //  transportMode = truck · PADD region 3 Gulf Coast · currency USD.
 //
-//  0% mock — the ladder/footer seeds mirror the SVG verbatim and are
-//  overwritten on hydrate; the live PADD-3 index lights up the hero
-//  gauge + national line the moment getCurrentDiesel resolves.
+//  ZERO-FALLBACK (2026-06-09 · audit M4): the hero hydrates from the live
+//  PADD-3 index, schedule identity/method/base-peg/surcharge-now hydrate
+//  from fscEngine.getSchedules (+ getSchedulePreview band lookup for table
+//  schedules), and everything without a live source (the per-band ladder
+//  rows of fsc_lookup_table, attached-lane count, FSC-billed rollup) is an
+//  honest em-dash / EusoEmptyState. WIRE-GAP: fscEngine exposes no read for
+//  the lookup-table rows — needed before the staircase can ever render.
 //
 //  Bottom nav (Catalyst variant): HOME · DISPATCH · [orb] · WALLET · ME (WALLET current).
 //
@@ -88,38 +92,33 @@ private struct FscBracket_395: Identifiable {
 private struct FuelSurchargeBody_395: View {
     @Environment(\.palette) private var palette
 
-    // Index gauge (hydrated from rateSheet.getCurrentDiesel over the seed)
+    // Index gauge — em-dash until rateSheet.getCurrentDiesel answers. No seeds.
     @State private var paddRegion: String   = "PADD 3 GULF COAST"
-    @State private var weekLabel: String    = "EIA WK21"
-    @State private var scheduleId: String   = "FSC-DV-23 · WK21"
-    @State private var dieselPrice: String  = "$3.75"
-    @State private var basePegLabel: String = "$1.25 base peg"
-    @State private var ceilingLabel: String = "$5.00"
-    @State private var gaugeFraction: Double = (3.75 - 1.25) / (5.00 - 1.25)   // 0.6667
-    @State private var appliedSurcharge: String = "$0.46"
-    @State private var nationalLine: String = "natl $3.89 · +$0.04 wk"
+    @State private var weekLabel: String    = "—"
+    @State private var scheduleId: String   = "—"
+    @State private var dieselPrice: String  = "—"
+    @State private var basePegLabel: String = "—"
+    @State private var ceilingLabel: String = ""
+    @State private var gaugeFraction: Double = 0
+    @State private var appliedSurcharge: String = "—"
+    @State private var surchargeUnit: String = "/mi"
+    @State private var nationalLine: String = "—"
 
-    // Step ladder — seeds mirror the SVG verbatim, overwritten by
-    // fscEngine.getSchedulePreview once that procedure ships on iOS.
-    @State private var methodLabel: String  = "CPM · 6 STEPS · WEEKLY"
-    @State private var brackets: [FscBracket_395] = [
-        FscBracket_395(id: "3.00-3.25", range: "$3.00 – 3.25", surcharge: "$0.33", barFraction: 0.125, active: false),
-        FscBracket_395(id: "3.25-3.50", range: "$3.25 – 3.50", surcharge: "$0.37", barFraction: 0.292, active: false),
-        FscBracket_395(id: "3.50-3.75", range: "$3.50 – 3.75", surcharge: "$0.42", barFraction: 0.500, active: false),
-        FscBracket_395(id: "3.75-4.00", range: "$3.75 – 4.00", surcharge: "$0.46", barFraction: 0.667, active: true),
-        FscBracket_395(id: "4.00-4.25", range: "$4.00 – 4.25", surcharge: "$0.50", barFraction: 0.833, active: false),
-        FscBracket_395(id: "4.25-4.50", range: "$4.25 – 4.50", surcharge: "$0.54", barFraction: 1.000, active: false),
-    ]
-    @State private var nextStepDiesel: String    = "$4.00"
-    @State private var nextStepSurcharge: String = "$0.50/mi"
-    @State private var nextStepDelta: String     = "+$0.04"
+    // Step ladder — LIVE fscEngine.getSchedules header; the per-band rows of
+    // fsc_lookup_table are NOT exposed by any read procedure (WIRE-GAP:
+    // fscEngine needs a getScheduleTable read), so the ladder renders an
+    // honest empty state instead of an invented staircase.
+    @State private var methodLabel: String  = "—"
+    @State private var brackets: [FscBracket_395] = []
 
-    // Footer · attached lanes
-    @State private var attachedLanes: Int  = 6
-    @State private var fscBilled: String   = "$4,210"
-    @State private var billedWindow: String = "90d"
+    // Footer · attached lanes — no live source (pricebook fscIncluded rollup
+    // unexposed) → em-dash, never invented.
+    @State private var attachedLanes: Int? = nil
+    @State private var fscBilled: String   = "—"
+    @State private var billedWindow: String = "—"
 
     @State private var refreshing: Bool = false
+    @State private var scheduleLoadNote: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -216,7 +215,7 @@ private struct FuelSurchargeBody_395: View {
                         Text(appliedSurcharge)
                             .font(.system(size: 22, weight: .bold).monospacedDigit())
                             .foregroundStyle(palette.textPrimary)
-                        Text("/mi")
+                        Text(appliedSurcharge == "—" ? "" : surchargeUnit)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(palette.textSecondary)
                     }
@@ -288,28 +287,25 @@ private struct FuelSurchargeBody_395: View {
                 .padding(.bottom, Space.s2)
                 Rectangle().fill(palette.borderFaint).frame(height: 1)
 
-                ForEach(Array(brackets.enumerated()), id: \.element.id) { idx, b in
-                    bracketRow_395(b)
-                    if idx < brackets.count - 1 && !b.active && !brackets[idx + 1].active {
-                        Rectangle().fill(palette.borderFaint.opacity(0.7))
-                            .frame(height: 1)
-                            .padding(.horizontal, Space.s4)
+                if brackets.isEmpty {
+                    // Honest: the fsc_lookup_table band rows have no read
+                    // procedure yet — never an invented staircase.
+                    EusoEmptyState(
+                        systemImage: "tablecells",
+                        title: "Bracket table not yet available",
+                        subtitle: scheduleLoadNote ?? "Your schedule's diesel-band rows aren't exposed to mobile yet."
+                    )
+                    .padding(.vertical, Space.s3)
+                } else {
+                    ForEach(Array(brackets.enumerated()), id: \.element.id) { idx, b in
+                        bracketRow_395(b)
+                        if idx < brackets.count - 1 && !b.active && !brackets[idx + 1].active {
+                            Rectangle().fill(palette.borderFaint.opacity(0.7))
+                                .frame(height: 1)
+                                .padding(.horizontal, Space.s4)
+                        }
                     }
                 }
-
-                Rectangle().fill(palette.borderFaint).frame(height: 1)
-                HStack(spacing: 0) {
-                    (Text("Next step at ")
-                        + Text(nextStepDiesel).fontWeight(.bold).foregroundColor(palette.textPrimary)
-                        + Text(" diesel → ")
-                        + Text(nextStepSurcharge).fontWeight(.bold).foregroundColor(palette.textPrimary)
-                        + Text(" (\(nextStepDelta))"))
-                        .font(.system(size: 10))
-                        .foregroundStyle(palette.textTertiary)
-                    Spacer()
-                }
-                .padding(.horizontal, Space.s4)
-                .padding(.vertical, Space.s3)
             }
             .background(palette.bgCard)
             .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
@@ -373,11 +369,13 @@ private struct FuelSurchargeBody_395: View {
 
     private var attachedFooter_395: some View {
         HStack {
-            (Text("Attached to ")
-                + Text("\(attachedLanes) active lanes").fontWeight(.bold).foregroundColor(palette.textPrimary)
-                + Text(" · ")
+            // Attached-lane count + billed rollup have no live source on any
+            // wired proc — honest em-dash, never an invented "$4,210 · 90d".
+            (Text("Attached lanes ")
+                + Text(attachedLanes.map { "\($0)" } ?? "—").fontWeight(.bold).foregroundColor(palette.textPrimary)
+                + Text(" · FSC billed ")
                 + Text(fscBilled).fontWeight(.bold).foregroundColor(palette.textPrimary)
-                + Text(" FSC billed · \(billedWindow)"))
+                + Text(" · \(billedWindow)"))
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
             Spacer()
@@ -450,27 +448,98 @@ private struct FuelSurchargeBody_395: View {
         }
     }
 
-    // MARK: - Network
+    // MARK: - Network (live: getCurrentDiesel + fscEngine.getSchedules/getSchedulePreview)
+
+    private struct FscScheduleWire_395: Decodable {
+        let id: Int
+        let scheduleName: String
+        let basePrice: String?        // DECIMAL → JSON string
+        let method: String
+        let cpmRate: String?          // DECIMAL → JSON string
+        let percentageRate: String?   // DECIMAL → JSON string
+        let paddRegion: String
+        let fuelType: String?
+        let updateFrequency: String?
+        let lastPaddPrice: String?
+        let isActive: Int?
+    }
+    private struct FscSchedulesWire_395: Decodable { let schedules: [FscScheduleWire_395] }
+    private struct SchedulesInput_395: Encodable { let isActive: Bool }
+    private struct PreviewInput_395: Encodable { let scheduleId: Int; let paddPrice: Double? }
+    private struct PreviewWire_395: Decodable {
+        let fsc: Double
+        let method: String
+        let paddPrice: Double
+        let basePrice: Double
+    }
 
     private func loadAll() async {
         refreshing = true
         defer { refreshing = false }
-        // Live PADD-3 Gulf Coast diesel index → hero gauge + national line.
-        // rateSheet.getCurrentDiesel EXISTS on iOS; the fscEngine ladder
-        // procedures do not yet, so the bracket table keeps its SVG-verbatim
-        // seeds (overwritten the moment getSchedulePreview ships).
-        guard let diesel = try? await EusoTripAPI.shared.rateSheet.getCurrentDiesel(padd: "3") else {
-            return
+
+        // 1. Live PADD-3 Gulf Coast diesel index → hero gauge + national line.
+        var livePadd: Double? = nil
+        if let diesel = try? await EusoTripAPI.shared.rateSheet.getCurrentDiesel(padd: "3") {
+            applyDiesel_395(diesel)
+            livePadd = diesel.price
         }
-        applyDiesel_395(diesel)
+
+        // 2. Live schedule header → identity + method + base peg + surcharge-now.
+        do {
+            let wire: FscSchedulesWire_395 = try await EusoTripAPI.shared.query(
+                "fscEngine.getSchedules", input: SchedulesInput_395(isActive: true))
+            guard let schedule = wire.schedules.first else {
+                scheduleId = "—"
+                methodLabel = "—"
+                appliedSurcharge = "—"
+                scheduleLoadNote = "No FSC schedule on file - create one from the web portal."
+                return
+            }
+            scheduleId = schedule.scheduleName.uppercased()
+            let freq = (schedule.updateFrequency ?? "weekly").uppercased()
+            methodLabel = "\(schedule.method.uppercased()) · \(freq)"
+            if let base = schedule.basePrice.flatMap(Double.init), base > 0 {
+                basePegLabel = String(format: "$%.2f base peg", base)
+            }
+
+            switch schedule.method {
+            case "cpm":
+                // fsc = miles × rate / 100 → per-mile surcharge = rate / 100.
+                if let rate = schedule.cpmRate.flatMap(Double.init) {
+                    appliedSurcharge = String(format: "$%.2f", rate / 100.0)
+                    surchargeUnit = "/mi"
+                }
+            case "percentage":
+                if let pct = schedule.percentageRate.flatMap(Double.init) {
+                    appliedSurcharge = String(format: "%.1f", pct)
+                    surchargeUnit = "% of linehaul"
+                }
+            case "table":
+                // Real band lookup against the live PADD price.
+                if let preview: PreviewWire_395 = try? await EusoTripAPI.shared.query(
+                    "fscEngine.getSchedulePreview",
+                    input: PreviewInput_395(scheduleId: schedule.id, paddPrice: livePadd)
+                ), preview.fsc > 0 {
+                    appliedSurcharge = String(format: "$%.2f", preview.fsc)
+                    surchargeUnit = "/mi"
+                }
+                scheduleLoadNote = "Schedule \(schedule.scheduleName) is table-based - its band rows aren't exposed to mobile yet."
+            default:
+                break
+            }
+        } catch {
+            scheduleLoadNote = "Couldn't reach the FSC engine - retry."
+        }
     }
 
     private func applyDiesel_395(_ d: RateSheetAPI.CurrentDiesel) {
         // Price → "$3.75"
         dieselPrice = formatPrice_395(d.price)
-        // Gauge fraction over the $1.25 base peg → $5.00 ceiling band.
-        let basePeg = 1.25, ceiling = 5.00
-        let frac = (d.price - basePeg) / (ceiling - basePeg)
+        // Gauge over a fixed $2.00–$6.00 display axis (axis bounds are
+        // presentation, labeled honestly — the marker is the live price).
+        let axisLow = 2.00, axisHigh = 6.00
+        ceilingLabel = formatPrice_395(axisHigh)
+        let frac = (d.price - axisLow) / (axisHigh - axisLow)
         gaugeFraction = min(1.0, max(0.0, frac))
         // PADD label (server echoes "3" / "PADD 3" / region name).
         if let p = d.padd, !p.isEmpty {

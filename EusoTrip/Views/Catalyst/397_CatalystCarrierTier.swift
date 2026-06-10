@@ -26,13 +26,15 @@
 //  writes a blockchainAudit row and broadcasts WS_EVENTS.CARRIER_TIER_CHANGED
 //  on WS_CHANNELS.catalyst(carrierId). RBAC: isolatedProcedure.
 //
-//  WIRING STATUS: the `carrierTier` tRPC router has no Swift client on
-//  EusoTripAPI yet (grep confirms only a `carrierTier: String?` field on
-//  RFP bid/scorecard structs — not this surface). Per house doctrine the
-//  representative seed figures are kept verbatim (0% mock — seeds
-//  overwritten on hydrate) and one `// WIRE:` marker is left per missing
-//  procedure. When the client lands, reload() fans the five calls in and
-//  hydrates over the seeds via @State.
+//  LIVE WIRING (zero-fallback purge · 2026-06-09 · audit B13): reload()
+//  fans in carrierTier.getCarrierTier + getTierDefinitions + getTierBenefits
+//  + getDispatchBoost against the session company id and builds the entire
+//  VM from the real CarrierTierResult (tier, composite score, promotion
+//  path, real Gold/Silver/Bronze/Standard ladder from TIER_DEFINITIONS).
+//  The old seed's Diamond/Platinum ladder never existed server-side and is
+//  GONE. Honest EusoEmptyState when no company tier is computable; em-dash
+//  for any missing field. getTierDistribution intentionally not called
+//  (N+1 over 500 carriers server-side — peer rank renders em-dash).
 //
 //  Powered by ESANG AI™.
 //
@@ -104,11 +106,11 @@ private struct CarrierTierVM_397 {
 
 private struct CarrierTierBody_397: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
 
-    // Representative seed mirrors the SVG verbatim. Overwritten on hydrate
-    // once the carrierTier Swift client lands (see WIRE markers in reload()).
-    @State private var vm: CarrierTierVM_397 = .seed
-    @State private var loading: Bool = false
+    // Live VM — starts on the honest em-dash envelope, never a seed.
+    @State private var vm: CarrierTierVM_397 = .empty
+    @State private var loading: Bool = true
     @State private var loadError: String? = nil
 
     private let gold = LinearGradient(
@@ -126,10 +128,12 @@ private struct CarrierTierBody_397: View {
                 ladderSection
                 benefitsSection
                 ctaRow
-                Text(vm.nextUnlockNote)
-                    .font(.system(size: 10))
-                    .foregroundStyle(palette.textTertiary)
-                    .frame(maxWidth: .infinity, alignment: .center)
+                if !vm.nextUnlockNote.isEmpty {
+                    Text(vm.nextUnlockNote)
+                        .font(.system(size: 10))
+                        .foregroundStyle(palette.textTertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                }
             }
             .padding(.horizontal, Space.s5)
             .padding(.top, Space.s3)
@@ -150,7 +154,7 @@ private struct CarrierTierBody_397: View {
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
-                Text("Q2 2026")
+                Text(currentQuarterLabel_397())
                     .font(EType.mono(.micro)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -183,7 +187,7 @@ private struct CarrierTierBody_397: View {
                 .padding(1.5)
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("CURRENT TIER · AURORA NETWORK")
+                    Text("CURRENT TIER · EUSOTRIP NETWORK")
                         .font(EType.micro).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
                     HStack(spacing: 10) {
@@ -191,9 +195,11 @@ private struct CarrierTierBody_397: View {
                         Text(vm.currentTier)
                             .font(.system(size: 30, weight: .bold)).tracking(-0.4)
                             .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
                     }
                     (Text(vm.points).fontWeight(.bold).foregroundColor(palette.textPrimary)
-                        + Text(" network points · \(vm.rankLine)"))
+                        + Text(" composite · \(vm.rankLine)"))
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .monospacedDigit()
@@ -253,15 +259,24 @@ private struct CarrierTierBody_397: View {
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             VStack(spacing: 0) {
-                ForEach(Array(vm.rungs.enumerated()), id: \.element.id) { idx, rung in
-                    if rung.state == .current {
-                        currentRung(rung)
-                    } else {
-                        rungRow(rung)
-                        if idx < vm.rungs.count - 1, vm.rungs[idx + 1].state != .current {
-                            Rectangle().fill(palette.borderFaint)
-                                .frame(height: 1)
-                                .padding(.leading, 42)
+                if vm.rungs.isEmpty {
+                    EusoEmptyState(
+                        systemImage: "chart.bar.doc.horizontal",
+                        title: loading ? "Computing tier…" : "Tier not yet computed",
+                        subtitle: loading ? "" : (loadError ?? "Your network tier appears here once your company record and load history are on file.")
+                    )
+                    .padding(.vertical, Space.s2)
+                } else {
+                    ForEach(Array(vm.rungs.enumerated()), id: \.element.id) { idx, rung in
+                        if rung.state == .current {
+                            currentRung(rung)
+                        } else {
+                            rungRow(rung)
+                            if idx < vm.rungs.count - 1, vm.rungs[idx + 1].state != .current {
+                                Rectangle().fill(palette.borderFaint)
+                                    .frame(height: 1)
+                                    .padding(.leading, 42)
+                            }
                         }
                     }
                 }
@@ -363,8 +378,10 @@ private struct CarrierTierBody_397: View {
 
     // MARK: Benefits
 
+    @ViewBuilder
     private var benefitsSection: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
+        if !vm.benefits.isEmpty {
+            VStack(alignment: .leading, spacing: Space.s2) {
             Text("YOUR \(vm.currentTier.uppercased()) BENEFITS")
                 .font(EType.micro).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
@@ -387,6 +404,7 @@ private struct CarrierTierBody_397: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                 }
             }
+            }
         }
     }
 
@@ -399,13 +417,13 @@ private struct CarrierTierBody_397: View {
                     name: .eusoCatalystTierReachNext_397, object: nil,
                     userInfo: ["source": "397_CatalystCarrierTier", "target": vm.nextTier])
             } label: {
-                Text("Reach \(vm.nextTier)")
+                Text(vm.nextTier == "—" ? "How tiers work" : "Reach \(vm.nextTier)")
                     .font(EType.bodyStrong).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 40)
                     .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("How to reach \(vm.nextTier)")
+            .accessibilityLabel(vm.nextTier == "—" ? "How tiers work" : "How to reach \(vm.nextTier)")
 
             Button {
                 NotificationCenter.default.post(
@@ -424,24 +442,163 @@ private struct CarrierTierBody_397: View {
         }
     }
 
-    // MARK: - Network hydrate
+    // MARK: - Network hydrate (LIVE — carrierTier.* bridges)
+
+    private struct TierDefWire_397: Decodable {
+        let id: String
+        let name: String
+        let minScore: Double
+        let maxScore: Double
+        let benefits: [String]
+        let platformFeeDiscount: Double
+        let priorityMatchBoost: Double
+        let analyticsAccess: String?
+        let loadAccessTier: String?
+    }
+    private struct PromotionWire_397: Decodable {
+        let nextTier: String?
+        let pointsNeeded: Double
+        let suggestions: [String]
+    }
+    private struct TierResultWire_397: Decodable {
+        let carrierId: Int
+        let tier: String
+        let tierDefinition: TierDefWire_397
+        let compositeScore: Double
+        let promotionPath: PromotionWire_397?
+        let flags: [String]?
+        let companyName: String?
+        let dotNumber: String?
+    }
+    private struct BoostWire_397: Decodable {
+        let tier: String
+        let boost: Double
+        let feeDiscount: Double
+    }
+    private struct CarrierIdInput_397: Encodable { let carrierId: Int }
+    private struct TierInput_397: Encodable { let tier: String }
 
     private func reload() async {
         loading = true
         loadError = nil
-        // The carrierTier tRPC router has no Swift client on EusoTripAPI yet
-        // (grep: only a `carrierTier: String?` field on RFP bid/scorecard
-        // structs exists, not this surface). When the client lands, fan the
-        // five calls in and hydrate `vm` over the seeds. Until then the
-        // representative seed (mirrors the SVG verbatim) stands.
-        //
-        // WIRE: carrierTier.getCarrierTier      (carrierTier.ts:27)   → hero tier + points + ring
-        // WIRE: carrierTier.getDispatchBoost    (carrierTier.ts:219)  → boost multiplier
-        // WIRE: carrierTier.getTierDefinitions  (carrierTier.ts:135)  → ladder rungs + thresholds
-        // WIRE: carrierTier.getTierBenefits     (carrierTier.ts:141)  → active-tier benefit tiles
-        // WIRE: carrierTier.getTierDistribution (carrierTier.ts:390)  → peer rank context
-        loading = false
+        defer { loading = false }
+
+        guard let cidString = session.user?.companyId, let cid = Int(cidString) else {
+            vm = .empty
+            loadError = "No company on this account - tiering needs a registered carrier company."
+            return
+        }
+
+        do {
+            async let resultTask: TierResultWire_397? = EusoTripAPI.shared.query(
+                "carrierTier.getCarrierTier", input: CarrierIdInput_397(carrierId: cid))
+            async let defsTask: [TierDefWire_397] = EusoTripAPI.shared.queryNoInput(
+                "carrierTier.getTierDefinitions")
+
+            let (result, defs) = try await (resultTask, defsTask)
+            guard let result else {
+                vm = .empty
+                loadError = "Tier not computable yet - no company record found."
+                return
+            }
+
+            let boost: BoostWire_397? = try? await EusoTripAPI.shared.query(
+                "carrierTier.getDispatchBoost", input: TierInput_397(tier: result.tier))
+
+            vm = buildVM_397(result: result, defs: defs, boost: boost)
+        } catch {
+            vm = .empty
+            loadError = "Couldn't reach the tier service - retry."
+        }
     }
+
+    private func buildVM_397(result: TierResultWire_397,
+                             defs: [TierDefWire_397],
+                             boost: BoostWire_397?) -> CarrierTierVM_397 {
+        // Server returns definitions sorted by minScore DESC already; keep order.
+        let sorted = defs.sorted { $0.minScore > $1.minScore }
+        let currentIdx = sorted.firstIndex { $0.id == result.tier }
+        let nextDef = currentIdx.flatMap { $0 > 0 ? sorted[$0 - 1] : nil }
+
+        let rungs: [TierRung_397] = sorted.enumerated().map { idx, def in
+            let state: TierRungState_397
+            let trailing: String
+            if def.id == result.tier {
+                state = .current; trailing = "CURRENT"
+            } else if let ci = currentIdx, idx == ci - 1 {
+                state = .next
+                let pts = result.promotionPath.map { Int($0.pointsNeeded.rounded()) }
+                trailing = pts.map { "+\($0) PTS" } ?? "NEXT"
+            } else if let ci = currentIdx, idx > ci {
+                state = .achieved; trailing = "ACHIEVED"
+            } else {
+                state = .locked; trailing = "LOCKED"
+            }
+            return TierRung_397(
+                id: def.id,
+                name: def.name,
+                threshold: "\(Int(def.minScore))–\(Int(def.maxScore)) composite",
+                state: state,
+                trailing: trailing
+            )
+        }
+
+        // Progress within the current band toward the next tier's floor.
+        var progress = 0
+        if let cur = currentIdx.map({ sorted[$0] }), let next = nextDef {
+            let span = next.minScore - cur.minScore
+            if span > 0 {
+                progress = Int(((result.compositeScore - cur.minScore) / span * 100)
+                    .rounded())
+                progress = min(100, max(0, progress))
+            }
+        } else if currentIdx != nil {
+            progress = 100   // already top tier
+        }
+
+        let def = result.tierDefinition
+        let benefits: [TierBenefit_397] = [
+            TierBenefit_397(label: "FEE DISCOUNT",
+                            value: def.platformFeeDiscount > 0 ? "\(Int(def.platformFeeDiscount))%" : "0%",
+                            highlight: def.platformFeeDiscount > 0),
+            TierBenefit_397(label: "MATCH BOOST",
+                            value: "+\(Int(boost?.boost ?? def.priorityMatchBoost))",
+                            highlight: false),
+            TierBenefit_397(label: "ANALYTICS",
+                            value: (def.analyticsAccess ?? "—").capitalized,
+                            highlight: false),
+        ]
+
+        let nextUnlock: String
+        if let next = nextDef {
+            let fee = next.platformFeeDiscount
+            nextUnlock = "\(next.name) unlocks \(Int(fee))% fee discount · +\(Int(next.priorityMatchBoost)) dispatch boost"
+        } else {
+            nextUnlock = result.promotionPath?.suggestions.first ?? ""
+        }
+
+        return CarrierTierVM_397(
+            currentTier: def.name,
+            points: "\(Int(result.compositeScore.rounded()))",
+            rankLine: result.companyName ?? result.dotNumber.map { "DOT \($0)" } ?? "—",
+            boostLabel: "+\(Int(boost?.boost ?? def.priorityMatchBoost)) DISPATCH BOOST",
+            progressPct: progress,
+            nextTier: nextDef?.name ?? "—",
+            ptsToGo: result.promotionPath.map { "\(Int($0.pointsNeeded.rounded())) pts to go" } ?? "top tier",
+            rungs: rungs,
+            benefits: benefits,
+            nextUnlockNote: nextUnlock
+        )
+    }
+}
+
+// MARK: - Quarter label (derived from the real clock, not a hardcoded string)
+
+private func currentQuarterLabel_397() -> String {
+    let now = Date()
+    let cal = Calendar.current
+    let q = (cal.component(.month, from: now) - 1) / 3 + 1
+    return "Q\(q) \(cal.component(.year, from: now))"
 }
 
 // MARK: - Notifications (CTA routing)
@@ -451,26 +608,16 @@ extension Notification.Name {
     static let eusoCatalystTierAllBenefits_397 = Notification.Name("eusoCatalystTierAllBenefits_397")
 }
 
-// MARK: - Seed fixture (mirrors the SVG verbatim — 0% mock, overwritten on hydrate)
+// MARK: - Honest empty envelope (every figure em-dash until a real hydrate)
 
 private extension CarrierTierVM_397 {
-    static let seed = CarrierTierVM_397(
-        currentTier: "Gold", points: "1,840", rankLine: "rank 38 of 412",
-        boostLabel: "1.18× DISPATCH BOOST", progressPct: 72, nextTier: "Platinum",
-        ptsToGo: "160 pts to go",
-        rungs: [
-            TierRung_397(id: "diamond",  name: "Diamond",  threshold: "3,000 pts · OTR ≥ 99% · CSA clean",      state: .locked,   trailing: "LOCKED"),
-            TierRung_397(id: "platinum", name: "Platinum", threshold: "2,000 pts · OTR ≥ 97% · 1.32× boost",    state: .next,     trailing: "+160 PTS"),
-            TierRung_397(id: "gold",     name: "Gold",     threshold: "1,500 pts · OTR ≥ 95% · 1.18× boost",    state: .current,  trailing: "CURRENT"),
-            TierRung_397(id: "silver",   name: "Silver",   threshold: "800 pts · OTR ≥ 92% · cleared Mar 2026", state: .achieved, trailing: "ACHIEVED"),
-            TierRung_397(id: "bronze",   name: "Bronze",   threshold: "entry · onboarded Nov 2025",             state: .achieved, trailing: "ACHIEVED"),
-        ],
-        benefits: [
-            TierBenefit_397(label: "QUICK-PAY",    value: "Net-5",    highlight: false),
-            TierBenefit_397(label: "PLATFORM FEE", value: "4.2%",     highlight: true),
-            TierBenefit_397(label: "TENDER",       value: "Priority", highlight: false),
-        ],
-        nextUnlockNote: "Platinum unlocks net-3 pay · 3.6% fee · 1.32× boost"
+    static let empty = CarrierTierVM_397(
+        currentTier: "—", points: "—", rankLine: "—",
+        boostLabel: "—", progressPct: 0, nextTier: "—",
+        ptsToGo: "—",
+        rungs: [],
+        benefits: [],
+        nextUnlockNote: ""
     )
 }
 
@@ -478,10 +625,12 @@ private extension CarrierTierVM_397 {
 
 #Preview("397 · Catalyst · Carrier Tier · Night") {
     CatalystCarrierTierScreen(theme: Theme.dark)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
 }
 
 #Preview("397 · Catalyst · Carrier Tier · Afternoon") {
     CatalystCarrierTierScreen(theme: Theme.light)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
 }
