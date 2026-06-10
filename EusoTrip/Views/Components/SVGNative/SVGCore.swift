@@ -50,12 +50,18 @@ enum SVGNum {
     }
 
     /// Parse a list of numbers separated by commas and/or whitespace.
+    /// Unit-suffixed tokens ("-52deg", "4px") parse via the head-scan — they
+    /// used to be silently DROPPED, which collapsed every unit-bearing CSS
+    /// keyframe transform (rotate(-52deg), translateX(4px)) to zero: the
+    /// frozen loading-arm/keyframed-x bucket of the animation census.
     static func list(_ s: String) -> [CGFloat] {
         var out: [CGFloat] = []
         var cur = ""
         func flush() {
             let t = cur.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !t.isEmpty, let v = Double(t) { out.append(CGFloat(v)) }
+            if t.isEmpty { cur = ""; return }
+            if let v = Double(t) { out.append(CGFloat(v)) }
+            else if let v = SVGNum.parse(Substring(t)) { out.append(v) }
             cur = ""
         }
         var prevWasDigit = false

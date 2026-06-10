@@ -1,52 +1,64 @@
 //
 //  SVGAnimation.swift
-//  EusoTrip — Native SVG renderer · time → animated transform/opacity.
+//  EusoTrip — Native SVG renderer · time → animated state.
 //
 //  Evaluates CSS @keyframes (driven by the `animation:` shorthand) and SMIL
-//  (<animate>/<animateTransform>) at a wall-clock time, producing the extra
-//  transform + opacity multiplier + visibility to apply to an element. Animated
-//  rotate/scale are taken about the element's transform-origin (default = bbox
-//  center) so wheels, gauges, and pulses spin/scale about the right point.
+//  (<animate>/<animateTransform>/<set>) at a wall-clock time, producing the
+//  extra transform + opacity multiplier + animated geometry/paint overrides
+//  to apply to an element. Animated rotate/scale are taken about the element's
+//  transform-origin (default = bbox center; transform-box: view-box honored)
+//  so wheels, gauges, booms, and pulses move about the right point.
+//
+//  Wave E (2026-06-10):
+//    • beyond transform+opacity — SMIL r/cy/cx/x/y/width/height/
+//      stroke-dashoffset and keyframed x/y/r/cx/cy/width/height/
+//      stroke-dashoffset/fill now interpolate (the tanker fill-flow,
+//      exhaust puffs, hose flow visuals).
+//    • the hot path consumes BAKED data only (specs, compiled keyframes,
+//      compiled SMIL) — no per-frame string splitting/parsing/formatting.
 //
 
 import Foundation
+import SwiftUI
 import CoreGraphics
 
 struct AnimatedState {
     var extraTransform: CGAffineTransform = .identity
     var opacityMultiplier: CGFloat = 1
     var hidden: Bool = false
-}
+    // Animated geometry overrides (absolute values, SVG user units).
+    var x: CGFloat? = nil
+    var y: CGFloat? = nil
+    var cx: CGFloat? = nil
+    var cy: CGFloat? = nil
+    var r: CGFloat? = nil
+    var width: CGFloat? = nil
+    var height: CGFloat? = nil
+    // Animated paint overrides.
+    var dashoffset: CGFloat? = nil
+    var fillOverride: SVGRGBA? = nil
 
-/// A single transform operation kept un-collapsed so it can be interpolated
-/// (rotate(0)→rotate(360) interpolates the angle, not the matrix).
-private struct TOp {
-    var name: String
-    var args: [CGFloat]
+    var hasGeometryOverride: Bool {
+        x != nil || y != nil || cx != nil || cy != nil || r != nil || width != nil || height != nil
+    }
 }
 
 enum SVGAnimation {
 
-    // MARK: CSS @keyframes
+    // MARK: CSS @keyframes (compiled)
 
-    static func cssState(decls: [String: String],
+    /// Evaluate the element's baked animation specs into `state`.
+    static func cssState(specs: [SVGAnimationSpec],
                          keyframes: [String: SVGKeyframes],
                          time: Double,
-                         origin: CGPoint) -> AnimatedState {
-        guard let anim = decls["animation"], anim.lowercased() != "none" else { return AnimatedState() }
-        var state = AnimatedState()
-        for spec in splitAnimations(anim).compactMap({ SVGAnimationSpec.parse($0) }) {
-            guard let kf = keyframes[spec.name], !kf.frames.isEmpty else { continue }
+                         origin: CGPoint,
+                         cssVars: [String: String],
+                         into state: inout AnimatedState) {
+        for spec in specs {
+            guard let kf = keyframes[spec.name], !kf.compiled.isEmpty else { continue }
             let e = progress(spec: spec, time: time)
-            let frame = interpolateFrame(kf, at: e)
-            if let t = frame.transform {
-                state.extraTransform = state.extraTransform.concatenating(matrix(from: t, origin: origin))
-            }
-            if let o = frame.opacity {
-                state.opacityMultiplier *= o
-            }
+            applyCompiled(kf.compiled, at: e, origin: origin, cssVars: cssVars, into: &state)
         }
-        return state
     }
 
     /// Eased progress 0…1 for the current iteration, honoring delay /
@@ -82,211 +94,285 @@ enum SVGAnimation {
         }
     }
 
-    private struct FrameValue { var transform: String?; var opacity: CGFloat? }
+    private static func applyCompiled(_ frames: [SVGCompiledFrame], at e: CGFloat,
+                                      origin: CGPoint, cssVars: [String: String],
+                                      into state: inout AnimatedState) {
+        guard let first = frames.first, let last = frames.last else { return }
 
-    private static func interpolateFrame(_ kf: SVGKeyframes, at e: CGFloat) -> FrameValue {
-        let frames = kf.frames
-        guard let first = frames.first else { return FrameValue(transform: nil, opacity: nil) }
-        if e <= first.pct { return FrameValue(transform: first.decls["transform"], opacity: SVGNum.parse(first.decls["opacity"])) }
-        guard let last = frames.last else { return FrameValue() }
-        if e >= last.pct { return FrameValue(transform: last.decls["transform"], opacity: SVGNum.parse(last.decls["opacity"])) }
-
-        var lo = frames[0], hi = frames[0]
-        for f in frames {
-            if f.pct <= e { lo = f }
-            if f.pct >= e { hi = f; break }
+        let lo: SVGCompiledFrame
+        let hi: SVGCompiledFrame
+        var t: CGFloat = 0
+        if e <= first.pct {
+            lo = first; hi = first
+        } else if e >= last.pct {
+            lo = last; hi = last
+        } else {
+            var loF = first, hiF = first
+            for f in frames {
+                if f.pct <= e { loF = f }
+                if f.pct >= e { hiF = f; break }
+            }
+            lo = loF; hi = hiF
+            let span = hi.pct - lo.pct
+            t = span > 0 ? (e - lo.pct) / span : 0
         }
-        let span = hi.pct - lo.pct
-        let t = span > 0 ? (e - lo.pct) / span : 0
 
+        // transform
+        if let m = lerpedTransform(lo, hi, t, origin: origin, cssVars: cssVars) {
+            state.extraTransform = state.extraTransform.concatenating(m)
+        }
         // opacity
-        var opacity: CGFloat? = nil
-        if let o0 = SVGNum.parse(lo.decls["opacity"]), let o1 = SVGNum.parse(hi.decls["opacity"]) {
-            opacity = o0 + (o1 - o0) * t
-        } else {
-            opacity = SVGNum.parse(lo.decls["opacity"]) ?? SVGNum.parse(hi.decls["opacity"])
+        if let o0 = lo.opacity, let o1 = hi.opacity {
+            state.opacityMultiplier *= (o0 + (o1 - o0) * t)
+        } else if let o = lo.opacity ?? hi.opacity {
+            state.opacityMultiplier *= o
         }
-
-        // transform: interpolate matching op lists
-        var transformStr: String? = nil
-        if let s0 = lo.decls["transform"], let s1 = hi.decls["transform"] {
-            transformStr = interpolateTransformStrings(s0, s1, t)
-        } else {
-            transformStr = lo.decls["transform"] ?? hi.decls["transform"]
+        // numeric geometry/paint channels
+        if let v = lerpOpt(lo.x, hi.x, t) { state.x = v }
+        if let v = lerpOpt(lo.y, hi.y, t) { state.y = v }
+        if let v = lerpOpt(lo.r, hi.r, t) { state.r = v }
+        if let v = lerpOpt(lo.cx, hi.cx, t) { state.cx = v }
+        if let v = lerpOpt(lo.cy, hi.cy, t) { state.cy = v }
+        if let v = lerpOpt(lo.width, hi.width, t) { state.width = v }
+        if let v = lerpOpt(lo.height, hi.height, t) { state.height = v }
+        if let v = lerpOpt(lo.dashoffset, hi.dashoffset, t) { state.dashoffset = v }
+        // fill (color lerp)
+        if let f0 = lo.fill, let f1 = hi.fill {
+            state.fillOverride = f0.lerp(to: f1, t)
+        } else if let f = lo.fill ?? hi.fill {
+            state.fillOverride = f
         }
-        return FrameValue(transform: transformStr, opacity: opacity)
     }
 
-    // MARK: SMIL
+    private static func lerpOpt(_ a: CGFloat?, _ b: CGFloat?, _ t: CGFloat) -> CGFloat? {
+        if let a = a, let b = b { return a + (b - a) * t }
+        return a ?? b
+    }
 
-    static func smilState(element: SVGElement, time: Double, origin: CGPoint) -> AnimatedState {
-        var state = AnimatedState()
-        for child in element.children {
-            switch child.tag {
-            case "animateTransform":
-                applyAnimateTransform(child, time: time, origin: origin, into: &state)
-            case "animate":
-                applyAnimate(child, time: time, into: &state)
-            case "set":
-                applySet(child, time: time, into: &state)
-            default: break
+    /// Interpolated transform matrix between two compiled frames. Pre-parsed
+    /// ops are the fast path; var()-bearing transforms resolve+parse per frame.
+    private static func lerpedTransform(_ lo: SVGCompiledFrame, _ hi: SVGCompiledFrame,
+                                        _ t: CGFloat, origin: CGPoint,
+                                        cssVars: [String: String]) -> CGAffineTransform? {
+        let loOps = resolvedOps(lo, cssVars)
+        let hiOps = resolvedOps(hi, cssVars)
+        switch (loOps, hiOps) {
+        case (nil, nil):
+            return nil
+        case (let a?, nil):
+            return matrix(ops: a, origin: origin)
+        case (nil, let b?):
+            return matrix(ops: b, origin: origin)
+        case (let a?, let b?):
+            guard a.count == b.count, zip(a, b).allSatisfy({ $0.name == $1.name }) else {
+                // op shapes differ — snap to the nearer frame (legacy behavior)
+                return matrix(ops: t < 0.5 ? a : b, origin: origin)
+            }
+            var m = CGAffineTransform.identity
+            for (oa, ob) in zip(a, b) {
+                let n = max(oa.args.count, ob.args.count)
+                let a0 = lerpArg(oa.args, ob.args, 0, t)
+                let a1 = lerpArg(oa.args, ob.args, 1, t)
+                let a2 = lerpArg(oa.args, ob.args, 2, t)
+                m = m.concatenating(opMatrix(oa.name, a0, a1, a2, argCount: n, origin: origin))
+            }
+            return m
+        }
+    }
+
+    private static func resolvedOps(_ f: SVGCompiledFrame, _ cssVars: [String: String]) -> [SVGTransformOp]? {
+        if let ops = f.ops { return ops }
+        if let raw = f.transformRaw {
+            let resolved = SVGRenderer.resolveVars(raw, cssVars) ?? raw
+            return parseOps(resolved)
+        }
+        return nil
+    }
+
+    private static func lerpArg(_ a: [CGFloat], _ b: [CGFloat], _ k: Int, _ t: CGFloat) -> CGFloat {
+        let va = k < a.count ? a[k] : 0
+        let vb = k < b.count ? b[k] : 0
+        return va + (vb - va) * t
+    }
+
+    // MARK: SMIL (compiled)
+
+    static func smilState(element: SVGElement, time: Double, origin: CGPoint,
+                          into state: inout AnimatedState) {
+        for child in element.bakedSMILChildren {
+            guard let c = child.bakedSMIL else { continue }
+            switch c.kind {
+            case .animateTransform:
+                applyAnimateTransform(c, time: time, origin: origin, into: &state)
+            case .animate:
+                applyAnimate(c, time: time, into: &state)
+            case .set:
+                applySet(c, time: time, into: &state)
             }
         }
-        return state
     }
 
-    private static func smilProgress(_ el: SVGElement, time: Double) -> (p: CGFloat, active: Bool) {
-        let dur = parseClock(el.attrs["dur"]) ?? 0
-        let begin = parseClock(el.attrs["begin"]) ?? 0
-        let repeats = (el.attrs["repeatCount"]?.lowercased() == "indefinite")
-        guard dur > 0 else { return (1, true) }
-        let elapsed = time - begin
+    private static func smilProgress(_ c: SVGSMILCompiled, time: Double) -> (p: CGFloat, active: Bool) {
+        guard c.dur > 0 else { return (1, true) }
+        let elapsed = time - c.begin
         if elapsed < 0 { return (0, false) }
-        let cycles = elapsed / dur
-        if !repeats && cycles >= 1 {
-            let freeze = (el.attrs["fill"] ?? "remove") == "freeze"
-            return (freeze ? 1 : 0, freeze)
+        let cycles = elapsed / c.dur
+        if !c.repeats && cycles >= 1 {
+            return (c.freeze ? 1 : 0, c.freeze)
         }
         return (CGFloat(cycles - floor(cycles)), true)
     }
 
-    private static func applyAnimateTransform(_ el: SVGElement, time: Double, origin: CGPoint, into state: inout AnimatedState) {
-        let (p, active) = smilProgress(el, time: time)
+    private static func applyAnimateTransform(_ c: SVGSMILCompiled, time: Double, origin: CGPoint,
+                                              into state: inout AnimatedState) {
+        let (p, active) = smilProgress(c, time: time)
         guard active else { return }
-        let type = (el.attrs["type"] ?? "translate").lowercased()
-        let values = sampleValues(el, p: p)   // the interpolated numeric args
-        guard !values.isEmpty else { return }
+        let v = sample(c, p: p)
+        guard v.count > 0 else { return }
         let t: CGAffineTransform
-        switch type {
+        switch c.transformType {
         case "rotate":
-            let angle = (values.first ?? 0) * .pi / 180
-            let cx = values.count >= 3 ? values[1] : origin.x
-            let cy = values.count >= 3 ? values[2] : origin.y
+            let angle = v.a * .pi / 180
+            let cx = v.count >= 3 ? v.b : origin.x
+            let cy = v.count >= 3 ? v.c : origin.y
             t = CGAffineTransform(translationX: cx, y: cy).rotated(by: angle).translatedBy(x: -cx, y: -cy)
         case "scale":
-            let sx = values.first ?? 1
-            let sy = values.count > 1 ? values[1] : sx
+            let sx = v.a
+            let sy = v.count > 1 ? v.b : sx
             t = CGAffineTransform(translationX: origin.x, y: origin.y)
                 .scaledBy(x: sx, y: sy)
                 .translatedBy(x: -origin.x, y: -origin.y)
         default: // translate
-            t = CGAffineTransform(translationX: values.first ?? 0, y: values.count > 1 ? values[1] : 0)
+            t = CGAffineTransform(translationX: v.a, y: v.count > 1 ? v.b : 0)
         }
         state.extraTransform = state.extraTransform.concatenating(t)
     }
 
-    private static func applyAnimate(_ el: SVGElement, time: Double, into state: inout AnimatedState) {
-        let (p, active) = smilProgress(el, time: time)
+    private static func applyAnimate(_ c: SVGSMILCompiled, time: Double, into state: inout AnimatedState) {
+        let (p, active) = smilProgress(c, time: time)
         guard active else { return }
-        let attr = (el.attrs["attributeName"] ?? "").lowercased()
-        let vals = sampleValues(el, p: p)
-        guard let v = vals.first else { return }
-        if attr == "opacity" || attr == "fill-opacity" {
-            state.opacityMultiplier *= v
+        let v = sample(c, p: p)
+        guard v.count > 0 else { return }
+        assign(c.attributeName, v.a, into: &state)
+    }
+
+    private static func applySet(_ c: SVGSMILCompiled, time: Double, into state: inout AnimatedState) {
+        guard time >= c.begin else { return }
+        guard let to = c.frames.last, to.count > 0 else { return }
+        assign(c.attributeName, to.a, into: &state)
+    }
+
+    /// Route an animated attribute value into the state (the Wave E
+    /// geometry/paint extension beyond opacity).
+    private static func assign(_ attr: String, _ v: CGFloat, into state: inout AnimatedState) {
+        switch attr {
+        case "opacity", "fill-opacity": state.opacityMultiplier *= v
+        case "r": state.r = v
+        case "cy": state.cy = v
+        case "cx": state.cx = v
+        case "x": state.x = v
+        case "y": state.y = v
+        case "width": state.width = v
+        case "height": state.height = v
+        case "stroke-dashoffset": state.dashoffset = v
+        default: break
         }
     }
 
-    private static func applySet(_ el: SVGElement, time: Double, into state: inout AnimatedState) {
-        let begin = parseClock(el.attrs["begin"]) ?? 0
-        guard time >= begin else { return }
-        if (el.attrs["attributeName"]?.lowercased() == "opacity"), let v = SVGNum.parse(el.attrs["to"]) {
-            state.opacityMultiplier *= v
-        }
-    }
-
-    /// Sample SMIL `values;...` (with optional keyTimes) or from/to at progress p.
-    private static func sampleValues(_ el: SVGElement, p: CGFloat) -> [CGFloat] {
-        if let valuesStr = el.attrs["values"] {
-            let frames = valuesStr.split(separator: ";").map { SVGNum.list(String($0)) }
-            guard frames.count >= 2 else { return frames.first ?? [] }
-            let keyTimes = el.attrs["keyTimes"].map { SVGNum.list($0) }
-            // locate segment
-            var i0 = 0, i1 = 1, segT = p
-            if let kt = keyTimes, kt.count == frames.count {
-                for k in 0..<(kt.count - 1) where p >= kt[k] && p <= kt[k + 1] {
-                    i0 = k; i1 = k + 1
-                    let span = kt[k + 1] - kt[k]
-                    segT = span > 0 ? (p - kt[k]) / span : 0
-                    break
-                }
-            } else {
-                let scaled = p * CGFloat(frames.count - 1)
-                i0 = min(frames.count - 1, Int(floor(scaled)))
-                i1 = min(frames.count - 1, i0 + 1)
-                segT = scaled - floor(scaled)
+    /// Sample compiled SMIL frames (with optional keyTimes) at progress p.
+    private static func sample(_ c: SVGSMILCompiled, p: CGFloat) -> SVGSMILVec {
+        let frames = c.frames
+        guard frames.count >= 2 else { return frames.first ?? SVGSMILVec() }
+        var i0 = 0, i1 = 1, segT = p
+        if let kt = c.keyTimes, kt.count == frames.count {
+            for k in 0..<(kt.count - 1) where p >= kt[k] && p <= kt[k + 1] {
+                i0 = k; i1 = k + 1
+                let span = kt[k + 1] - kt[k]
+                segT = span > 0 ? (p - kt[k]) / span : 0
+                break
             }
-            return lerpLists(frames[i0], frames[i1], segT)
+        } else {
+            let scaled = p * CGFloat(frames.count - 1)
+            i0 = min(frames.count - 1, Int(floor(scaled)))
+            i1 = min(frames.count - 1, i0 + 1)
+            segT = scaled - floor(scaled)
         }
-        if let from = el.attrs["from"], let to = el.attrs["to"] {
-            return lerpLists(SVGNum.list(from), SVGNum.list(to), p)
-        }
-        if let to = el.attrs["to"] { return SVGNum.list(to) }
-        return []
+        return SVGSMILVec.lerp(frames[i0], frames[i1], segT)
     }
 
-    // MARK: Transform string interpolation
+    // MARK: Transform op parsing + matrices (shared with the baker)
 
-    private static func interpolateTransformStrings(_ a: String, _ b: String, _ t: CGFloat) -> String {
-        let opsA = parseOps(a), opsB = parseOps(b)
-        guard opsA.count == opsB.count else { return t < 0.5 ? a : b }
-        var pieces: [String] = []
-        for (oa, ob) in zip(opsA, opsB) where oa.name == ob.name {
-            let n = max(oa.args.count, ob.args.count)
-            var args: [CGFloat] = []
-            for k in 0..<n {
-                let va = k < oa.args.count ? oa.args[k] : 0
-                let vb = k < ob.args.count ? ob.args[k] : 0
-                args.append(va + (vb - va) * t)
-            }
-            pieces.append("\(oa.name)(\(args.map { String(format: "%.4f", $0) }.joined(separator: " ")))")
-        }
-        return pieces.joined(separator: " ")
-    }
-
-    private static func parseOps(_ s: String) -> [TOp] {
-        var ops: [TOp] = []
+    static func parseOps(_ s: String) -> [SVGTransformOp] {
+        var ops: [SVGTransformOp] = []
         var idx = s.startIndex
         while idx < s.endIndex {
             guard let open = s[idx...].firstIndex(of: "(") else { break }
             let name = s[idx..<open].trimmingCharacters(in: CharacterSet(charactersIn: " ,\n\t")).lowercased()
             guard let close = s[open...].firstIndex(of: ")") else { break }
             var args = SVGNum.list(String(s[s.index(after: open)..<close]))
-            // normalize deg suffixes already stripped by SVGNum.list
             if name == "rotate" && args.isEmpty { args = [0] }
-            ops.append(TOp(name: name, args: args))
+            ops.append(SVGTransformOp(name: name, args: args))
             idx = s.index(after: close)
         }
         return ops
     }
 
-    /// Build a matrix from a transform string, taking rotate/scale about `origin`.
-    private static func matrix(from s: String, origin: CGPoint) -> CGAffineTransform {
+    /// Build a matrix from parsed ops, taking rotate/scale about `origin`.
+    static func matrix(ops: [SVGTransformOp], origin: CGPoint) -> CGAffineTransform {
         var m = CGAffineTransform.identity
-        for op in parseOps(s) {
-            switch op.name {
-            case "translate":
-                m = m.concatenating(CGAffineTransform(translationX: op.args.first ?? 0, y: op.args.count > 1 ? op.args[1] : 0))
-            case "translatex": m = m.concatenating(CGAffineTransform(translationX: op.args.first ?? 0, y: 0))
-            case "translatey": m = m.concatenating(CGAffineTransform(translationX: 0, y: op.args.first ?? 0))
-            case "rotate":
-                let rad = (op.args.first ?? 0) * .pi / 180
-                let cx = op.args.count >= 3 ? op.args[1] : origin.x
-                let cy = op.args.count >= 3 ? op.args[2] : origin.y
-                m = m.concatenating(CGAffineTransform(translationX: cx, y: cy).rotated(by: rad).translatedBy(x: -cx, y: -cy))
-            case "scale":
-                let sx = op.args.first ?? 1
-                let sy = op.args.count > 1 ? op.args[1] : sx
-                m = m.concatenating(CGAffineTransform(translationX: origin.x, y: origin.y).scaledBy(x: sx, y: sy).translatedBy(x: -origin.x, y: -origin.y))
-            default: break
-            }
+        for op in ops {
+            let n = op.args.count
+            let a0 = n > 0 ? op.args[0] : .nan
+            let a1 = n > 1 ? op.args[1] : .nan
+            let a2 = n > 2 ? op.args[2] : .nan
+            m = m.concatenating(opMatrix(op.name, a0, a1, a2, argCount: n, origin: origin))
         }
         return m
     }
 
-    // MARK: helpers
+    /// Build a matrix from a CSS transform string, taking rotate/scale about
+    /// `origin` (used for var()-bearing transforms resolved per frame).
+    static func matrix(from s: String, origin: CGPoint) -> CGAffineTransform {
+        matrix(ops: parseOps(s), origin: origin)
+    }
 
-    private static func splitAnimations(_ s: String) -> [String] {
-        // split on commas that are NOT inside parentheses (cubic-bezier(...))
+    private static func opMatrix(_ name: String, _ a0: CGFloat, _ a1: CGFloat, _ a2: CGFloat,
+                                 argCount: Int, origin: CGPoint) -> CGAffineTransform {
+        func v(_ x: CGFloat, _ fallback: CGFloat) -> CGFloat { x.isNaN ? fallback : x }
+        switch name {
+        case "translate":
+            return CGAffineTransform(translationX: v(a0, 0), y: argCount > 1 ? v(a1, 0) : 0)
+        case "translatex": return CGAffineTransform(translationX: v(a0, 0), y: 0)
+        case "translatey": return CGAffineTransform(translationX: 0, y: v(a0, 0))
+        case "rotate":
+            let rad = v(a0, 0) * .pi / 180
+            let cx = argCount >= 3 ? v(a1, origin.x) : origin.x
+            let cy = argCount >= 3 ? v(a2, origin.y) : origin.y
+            return CGAffineTransform(translationX: cx, y: cy).rotated(by: rad).translatedBy(x: -cx, y: -cy)
+        case "scale":
+            let sx = v(a0, 1)
+            let sy = argCount > 1 ? v(a1, sx) : sx
+            return CGAffineTransform(translationX: origin.x, y: origin.y)
+                .scaledBy(x: sx, y: sy)
+                .translatedBy(x: -origin.x, y: -origin.y)
+        case "scalex":
+            return CGAffineTransform(translationX: origin.x, y: origin.y)
+                .scaledBy(x: v(a0, 1), y: 1)
+                .translatedBy(x: -origin.x, y: -origin.y)
+        case "scaley":
+            return CGAffineTransform(translationX: origin.x, y: origin.y)
+                .scaledBy(x: 1, y: v(a0, 1))
+                .translatedBy(x: -origin.x, y: -origin.y)
+        default:
+            return .identity
+        }
+    }
+
+    // MARK: Bake-time helpers (string parsing — never on the render path)
+
+    /// Split a CSS `animation:` shorthand on commas that are NOT inside
+    /// parentheses (cubic-bezier(...)).
+    static func splitAnimations(_ s: String) -> [String] {
         var out: [String] = []
         var depth = 0, cur = ""
         for c in s {
@@ -299,17 +385,8 @@ enum SVGAnimation {
         return out
     }
 
-    private static func lerpLists(_ a: [CGFloat], _ b: [CGFloat], _ t: CGFloat) -> [CGFloat] {
-        let n = max(a.count, b.count)
-        return (0..<n).map { k in
-            let va = k < a.count ? a[k] : 0
-            let vb = k < b.count ? b[k] : 0
-            return va + (vb - va) * t
-        }
-    }
-
-    /// Parse a SMIL clock value ("2s", "500ms", "2", "00:02").
-    private static func parseClock(_ raw: String?) -> Double? {
+    /// Parse a SMIL clock value ("2s", "500ms", "2", "00:02", "-0.9s").
+    static func parseClock(_ raw: String?) -> Double? {
         guard let s = raw?.trimmingCharacters(in: .whitespaces).lowercased(), !s.isEmpty else { return nil }
         if s.hasSuffix("ms") { return Double(s.dropLast(2)).map { $0 / 1000 } }
         if s.hasSuffix("s") { return Double(s.dropLast()) }
