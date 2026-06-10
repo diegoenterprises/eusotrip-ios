@@ -251,6 +251,12 @@ struct MeHOSLogs: View {
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 }
+                // The legally relevant citation, e.g. "49 CFR 395.3(a)(3)(ii)".
+                if let cfr = v.cfr, !cfr.isEmpty {
+                    Text(cfr)
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                }
             }
             Spacer(minLength: Space.s2)
             if let sev = v.severity {

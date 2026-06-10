@@ -2090,25 +2090,69 @@ struct HOSAPI {
     }
 
     /// `hosRouter.getDailyLog` — segments + totals for a single calendar
-    /// day. `date` is YYYY-MM-DD in the driver's carrier timezone;
-    /// omitting it asks the server for "today".
+    /// day. `date` is YYYY-MM-DD and is REQUIRED by the server's Zod
+    /// schema (`hos.ts:138` — no default): the old client sent nil,
+    /// the synthesized encoder dropped the key, and every call died as
+    /// a BAD_REQUEST swallowed by `try?` (audit B1). Passing nil here
+    /// now resolves to today's local calendar date client-side.
     func getDailyLog(date: String? = nil, driverId: String? = nil) async throws -> HOSDailyLog {
         struct Input: Encodable {
-            let date: String?
+            let date: String
             let driverId: String?
         }
-        return try await api.query("hos.getDailyLog", input: Input(date: date, driverId: driverId))
+        let resolved = date ?? HOSAPI.dayString(Date())
+        return try await api.query("hos.getDailyLog", input: Input(date: resolved, driverId: driverId))
     }
 
-    /// `hosRouter.getLogHistory` — array of daily logs for the last
-    /// `days` calendar days (defaults to the §395.8(k) 8-day cycle).
-    /// Returns newest-first to match the ELD screen's list rendering.
+    /// `hosRouter.getLogHistory` — last `days` calendar days (defaults to
+    /// the §395.8(k) 8-day cycle), newest-first.
+    ///
+    /// The server response is shape-forked (`hos.ts:194-202`):
+    ///   • ELD-connected companies: a FLAT segment array
+    ///     (`[{id, status, startTime, endTime, duration, …}]`)
+    ///   • engine fallback: `[{date, entries}]` day rows, or `[]`
+    /// Neither matched the old strict `[HOSDailyLog]` decode, so any
+    /// driver WITH logs rendered identically to one without (audit B3).
+    /// Decode is now a tolerant union: day rows pass through, flat
+    /// segments are folded into per-day rollups derived from the real
+    /// segment durations.
     func getLogHistory(days: Int = 8, driverId: String? = nil) async throws -> [HOSDailyLog] {
         struct Input: Encodable {
             let days: Int
             let driverId: String?
         }
-        return try await api.query("hos.getLogHistory", input: Input(days: days, driverId: driverId))
+        let rows: [HOSLogHistoryRow] = try await api.query(
+            "hos.getLogHistory",
+            input: Input(days: days, driverId: driverId)
+        )
+        var dayRows: [HOSDailyLog] = []
+        var flatSegments: [HOSLogEntry] = []
+        for row in rows {
+            switch row {
+            case .day(let d):    dayRows.append(d)
+            case .entry(let e):  flatSegments.append(e)
+            case .undecodable:   continue
+            }
+        }
+        if !flatSegments.isEmpty {
+            let grouped = Dictionary(grouping: flatSegments) { String($0.startAt.prefix(10)) }
+            for (day, segments) in grouped where !day.isEmpty {
+                guard !dayRows.contains(where: { $0.date == day }) else { continue }
+                let sums = HOSDailyLog.summedMinutes(segments)
+                dayRows.append(HOSDailyLog(
+                    date: day,
+                    entries: segments.sorted { $0.startAt < $1.startAt },
+                    drivingMinutes: sums.driving,
+                    onDutyMinutes: sums.onDutyNotDriving,
+                    milesDriven: nil,
+                    certified: false,
+                    certifiedAt: nil,
+                    signature: nil,
+                    violations: []
+                ))
+            }
+        }
+        return dayRows.sorted { $0.date > $1.date }
     }
 
     /// `hosRouter.certifyLog` — §395.8(g) driver certification.
@@ -2122,21 +2166,73 @@ struct HOSAPI {
         return try await api.mutation("hos.certifyLog", input: Input(date: date, signature: signature))
     }
 
-    /// `hosRouter.addRemark` — attach an annotation (§395.8(j)) to the
-    /// driver's current segment, or an explicit entry if `entryId` given.
-    func addRemark(text: String, entryId: String? = nil) async throws -> AddRemarkResult {
+    /// `hosRouter.addRemark` — attach an annotation (§395.8(j)).
+    ///
+    /// Server schema (`hos.ts:218`) requires `{date, time, remark}` —
+    /// ALL three. The old client sent `{text, entryId}`, so every call
+    /// was a Zod BAD_REQUEST and the remark composer was 100%
+    /// inoperable (audit B5). `date`/`time` default to "now" in the
+    /// device's local calendar; `entryId` stays on the signature for
+    /// call-site stability but is not on the server schema yet — it
+    /// will flow through if/when the backend accepts per-entry remarks.
+    func addRemark(
+        text: String,
+        entryId: String? = nil,
+        date: String? = nil,
+        time: String? = nil
+    ) async throws -> AddRemarkResult {
         struct Input: Encodable {
-            let text: String
-            let entryId: String?
+            let date: String
+            let time: String
+            let remark: String
         }
-        return try await api.mutation("hos.addRemark", input: Input(text: text, entryId: entryId))
+        _ = entryId
+        let now = Date()
+        let input = Input(
+            date: date ?? HOSAPI.dayString(now),
+            time: time ?? HOSAPI.timeString(now),
+            remark: text
+        )
+        return try await api.mutation("hos.addRemark", input: input)
     }
 
     /// `hosRouter.getViolations` — unresolved violations the driver
     /// should be shown on the 019 screen. Empty array when clean.
+    /// ELD-connected companies get `eld.ELDViolation` rows
+    /// (`description`/`occurredAt`), everyone else gets
+    /// `hosEngine.HOSViolation` rows (`description`/`detectedAt`/`cfr`)
+    /// — HOSViolation's tolerant decoder reads both dialects.
     func getViolations() async throws -> [HOSViolation] {
         try await api.queryNoInput("hos.getViolations")
     }
+
+    // MARK: - Local clock → wire strings
+
+    /// YYYY-MM-DD in the device's local calendar (POSIX digits).
+    static func dayString(_ date: Date) -> String {
+        hosDayFormatter.string(from: date)
+    }
+
+    /// HH:mm in the device's local calendar (POSIX digits).
+    static func timeString(_ date: Date) -> String {
+        hosTimeFormatter.string(from: date)
+    }
+
+    private static let hosDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static let hosTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
 }
 
 // MARK: - authRouter

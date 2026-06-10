@@ -1742,7 +1742,11 @@ struct UnifiedViolation: Identifiable, Equatable {
         case .compliance(let v):
             if !v.location.isEmpty { return "\(v.location) · \(v.regulation)" }
             return v.regulation
-        case .hos:
+        case .hos(let v, _):
+            // hosEngine sends the exact citation (e.g. "49 CFR 395.3(a)(3)")
+            // on every violation — show it instead of the generic chapter
+            // reference whenever present.
+            if let cfr = v.cfr, !cfr.isEmpty { return cfr }
             return "49 CFR §395"
         }
     }
@@ -1759,9 +1763,11 @@ struct UnifiedViolation: Identifiable, Equatable {
         switch kind {
         case .compliance(let v): return v.severity.lowercased()
         case .hos(let v, _):
+            // Server enum is "warning" | "violation" (hosEngine.ts:68-74)
+            // — a confirmed violation buckets as major, a warning as minor.
             let s = (v.severity ?? "").lowercased()
             if s == "critical" || s == "high" { return "critical" }
-            if s == "moderate" || s == "major" { return "major" }
+            if s == "moderate" || s == "major" || s == "violation" { return "major" }
             return "minor"
         }
     }
