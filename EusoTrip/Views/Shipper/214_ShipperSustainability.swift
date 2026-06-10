@@ -3,13 +3,14 @@
 //  EusoTrip 2027 UI — Shipper · Sustainability (parity-reconciled 2026-04-29)
 //
 //  PARITY AUDIT 2026-04-29 — reconciled to wireframe canon at
-//  /02 Shipper/Code/214_ShipperSustainability.swift. Persona: Diego
-//  Usoro / Eusorone Technologies (companyId 1) per §11. The
-//  PER-SHIPMENT CALCULATOR card anchors §11.2 flagship row 1
-//  (LD-260427-A38FB12C7E · Houston→Dallas · MC-306 · UN1203 ·
-//  50,000 lb · 239 mi) when no live shipment is selected — input
-//  fields default to that anchor and `co2Calculator.calculateTruckShipment`
-//  drives the result.
+//  /02 Shipper/Code/214_ShipperSustainability.swift.
+//  ZERO-FALLBACK 2026-06-09 (audit M12): the PER-SHIPMENT CALCULATOR
+//  anchors to the shipper's most recent LIVE load
+//  (`shippers.getActiveLoads` → `getRecentLoads` fallback) — the old
+//  hardcoded MATRIX-50 row-1 lane/spec and the 450 kg lane benchmark
+//  are gone. `co2Calculator.calculateTruckShipment` drives the result
+//  only once real distance + weight exist; VS LANE AVG em-dashes until
+//  the per-lane rolling-average proc ships (EUSO-2115 WIRE-GAP).
 //
 //  Layout (top → bottom):
 //    1. TopBar             ✦ SHIPPER · SUSTAINABILITY / "YTD · {N} t SAVED" (Brand.success)
@@ -47,8 +48,8 @@
 //  Doctrine refs: §2 HOME-tab nav (handled by ContentView); §3
 //  numbers-first copy ("42.6 t CO₂e", "8.4 t SAVED", "−8.4%"); §4.3
 //  single iridescent hairline; §7 breathe density; §9.1 equivalence
-//  triplet (leaf · fuel pump · car); §11 / §11.2 Diego canon +
-//  MATRIX-50 lane anchor (LD-260427-A38FB12C7E); §17.2 mode-tab
+//  triplet (leaf · fuel pump · car); §11 / §11.2 Diego canon (anchor
+//  now resolved from the live load, not a canon constant); §17.2 mode-tab
 //  pill grammar; §19.2 file-scoped LeafShape / FuelPumpGlyph /
 //  CarGlyph / ChevronShape / MiniOrb / `LinearGradient.greenBlue`;
 //  §20.4 no dead buttons (every button posts a notification or
@@ -152,24 +153,35 @@ struct ShipperSustainability: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @EnvironmentObject private var session: EusoTripSession
     @StateObject private var store = ShipperSustainabilityStore()
 
-    // §11.2 MATRIX-50 row 1 anchor — Houston → Dallas · MC-306 ·
-    // UN1203 · 50,000 lb (= 25 tons) · 239 mi · tanker.
-    @State private var distanceMiles: Double = 239
-    @State private var weightTons: Double = 25
-    @State private var equipment: Co2Equipment = .tanker
-    @State private var distanceText: String = "239"
-    @State private var weightText: String = "25"
+    /// Anchor = the shipper's most recent LIVE load
+    /// (`shippers.getActiveLoads`, falling back to `getRecentLoads`).
+    /// No fabricated MATRIX-50 lane / MC-306 / UN1203 spec — zero-
+    /// fallback (audit M12). Inputs seed from the live anchor when one
+    /// exists and stay user-mutable; with no anchor they start empty
+    /// and the calculator waits for real input.
+    private struct AnchorLoad {
+        let loadId: String
+        let lane: String
+        let specLine: String?
+        let distanceMiles: Double?
+        let weightTons: Double?
+    }
+    @State private var anchor: AnchorLoad?
+
+    @State private var distanceMiles: Double = 0
+    @State private var weightTons: Double = 0
+    @State private var equipment: Co2Equipment = .dryVan
+    @State private var distanceText: String = ""
+    @State private var weightText: String = ""
     @State private var calcMode: CalcMode = .truck
 
-    private let anchorLoadId   = "LD-260427-A38FB12C7E"
-    private let anchorLane     = "Houston TX → Dallas TX"
-    private let anchorSpecLine = "MC-306 Petroleum Tanker · UN1203 · 50,000 lb · 239 mi"
-    // Lane average benchmark for the §11.2 row 1 hazmat tanker
-    // (450 kg per shipment from the 2025 carbon ledger). Backend
-    // EUSO-2115 will replace this with a per-lane rolling average.
-    private let anchorLaneAvgKg: Double = 450
+    // Lane-average benchmark: NO live per-lane rolling average exists
+    // yet (EUSO-2115 WIRE-GAP) — the VS LANE AVG tile renders an honest
+    // em-dash until that proc ships. The previous hardcoded 450 kg
+    // hazmat-tanker benchmark is gone.
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -205,12 +217,8 @@ struct ShipperSustainability: View {
                     .padding(.bottom, Space.s8)
             }
         }
-        .task {
-            await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment)
-        }
-        .refreshable {
-            await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment)
-        }
+        .task { await bootstrap() }
+        .refreshable { await bootstrap() }
         .animation(
             reduceMotion ? .easeOut(duration: 0.15) : .easeOut(duration: 0.22),
             value: storeStateKey
@@ -224,6 +232,78 @@ struct ShipperSustainability: View {
         case .error:        return "error"
         case .loaded(let r): return "loaded-\(r.co2Kg)"
         }
+    }
+
+    // MARK: Live anchor resolution (audit M12 — no fabricated lane)
+
+    private func bootstrap() async {
+        await resolveAnchor()
+        recalcIfReady()
+    }
+
+    private func resolveAnchor() async {
+        do {
+            let active = try await EusoTripAPI.shared.shipper.getActiveLoads(limit: 1)
+            if let l = active.first {
+                applyAnchor(
+                    loadId: l.loadNumber,
+                    lane: "\(l.origin) → \(l.destination)",
+                    spec: l.cargoSummary,
+                    distance: [l.distance, l.miles].compactMap { $0 }.first(where: { $0 > 0 }),
+                    tons: Self.parseTons(fromWeightDisplay: l.weightDisplay)
+                )
+                return
+            }
+            let recent = try await EusoTripAPI.shared.shipper.getRecentLoads(limit: 1)
+            if let r = recent.first {
+                applyAnchor(
+                    loadId: r.loadNumber,
+                    lane: "\(r.origin) → \(r.destination)",
+                    spec: r.deliveredAt.isEmpty ? nil : "delivered \(r.deliveredAt)",
+                    distance: [r.distance, r.miles].compactMap { $0 }.first(where: { $0 > 0 }),
+                    tons: nil
+                )
+                return
+            }
+            anchor = nil
+        } catch {
+            anchor = nil
+        }
+    }
+
+    private func applyAnchor(loadId: String, lane: String, spec: String?, distance: Double?, tons: Double?) {
+        anchor = AnchorLoad(loadId: loadId, lane: lane, specLine: spec,
+                            distanceMiles: distance, weightTons: tons)
+        if let d = distance, d > 0 {
+            distanceMiles = d
+            distanceText = String(Int(d.rounded()))
+        }
+        if let t = tons, t > 0 {
+            weightTons = t
+            weightText = t.truncatingRemainder(dividingBy: 1) == 0
+                ? String(Int(t)) : String(format: "%.1f", t)
+        }
+    }
+
+    /// "50000 lbs" → tons. Returns nil when the display string is
+    /// absent or unparseable — never invents a weight.
+    private static func parseTons(fromWeightDisplay s: String?) -> Double? {
+        guard let s, !s.isEmpty else { return nil }
+        let parts = s.split(separator: " ")
+        guard let first = parts.first,
+              let num = Double(first.replacingOccurrences(of: ",", with: "")),
+              num > 0 else { return nil }
+        let unit = parts.count > 1 ? parts[1].lowercased() : "lbs"
+        if unit.hasPrefix("kg") { return num / 907.185 }
+        if unit.hasPrefix("ton") || unit == "t" { return num }
+        return num / 2000.0 // lbs default
+    }
+
+    /// Only fire the real GLEC calc with real inputs — a 0-distance or
+    /// 0-weight call would render a fabricated-looking 0 kg result.
+    private func recalcIfReady() {
+        guard distanceMiles > 0, weightTons > 0 else { return }
+        Task { await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment) }
     }
 
     // MARK: TopBar (gradient eyebrow + green YTD-saved counter)
@@ -426,7 +506,7 @@ struct ShipperSustainability: View {
     // MARK: Per-shipment calculator label + card
 
     private var calculatorLabel: some View {
-        Text("PER-SHIPMENT CALCULATOR · \(anchorLoadId)")
+        Text("PER-SHIPMENT CALCULATOR · \(anchor?.loadId ?? "—")")
             .font(EType.micro).tracking(1.0)
             .foregroundStyle(palette.textTertiary)
             .lineLimit(1)
@@ -439,10 +519,12 @@ struct ShipperSustainability: View {
     private var calculatorCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(anchorLane)
+                Text(anchor?.lane ?? "No recent load")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text(anchorSpecLine)
+                Text(anchor?.specLine ?? (anchor == nil
+                        ? "Enter shipment details below to run the GLEC calc"
+                        : "spec —"))
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -460,22 +542,22 @@ struct ShipperSustainability: View {
             }
             .padding(.top, Space.s3)
 
-            // Inputs (override anchor lane defaults)
+            // Inputs (seed from the live anchor; always user-mutable)
             VStack(alignment: .leading, spacing: 6) {
                 inputRow(label: "DISTANCE", suffix: "mi", text: $distanceText) {
                     if let v = Double(distanceText), v >= 0 {
                         distanceMiles = v
-                        Task { await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment) }
+                        recalcIfReady()
                     } else {
-                        distanceText = String(Int(distanceMiles))
+                        distanceText = distanceMiles > 0 ? String(Int(distanceMiles)) : ""
                     }
                 }
                 inputRow(label: "WEIGHT", suffix: "tons", text: $weightText) {
                     if let v = Double(weightText), v >= 0 {
                         weightTons = v
-                        Task { await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment) }
+                        recalcIfReady()
                     } else {
-                        weightText = String(Int(weightTons))
+                        weightText = weightTons > 0 ? String(Int(weightTons)) : ""
                     }
                 }
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -506,7 +588,11 @@ struct ShipperSustainability: View {
     @ViewBuilder
     private var resultRow: some View {
         switch store.state {
-        case .idle, .calculating:
+        case .idle:
+            Text("Enter distance and weight to run the GLEC calc.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        case .calculating:
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Crunching emissions…")
@@ -534,18 +620,17 @@ struct ShipperSustainability: View {
                         .minimumScaleFactor(0.82)
                 }
                 Spacer(minLength: 0)
-                let delta = (r.co2Kg - anchorLaneAvgKg) / anchorLaneAvgKg
-                let deltaPct = delta * 100
-                let deltaKg = Int((r.co2Kg - anchorLaneAvgKg).rounded())
-                let isBetter = delta < 0
+                // No live per-lane benchmark proc yet (EUSO-2115
+                // WIRE-GAP) — honest em-dash, never a hardcoded 450 kg
+                // hazmat-tanker yardstick.
                 VStack(alignment: .leading, spacing: 2) {
                     Text("VS LANE AVG")
                         .font(EType.micro).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
-                    Text(String(format: "%@%.1f%%", isBetter ? "−" : "+", abs(deltaPct)))
+                    Text("—")
                         .font(.system(size: 22, weight: .bold).monospacedDigit())
-                        .foregroundStyle(isBetter ? Brand.success : Brand.danger)
-                    Text("\(abs(deltaKg)) kg \(isBetter ? "better" : "above")")
+                        .foregroundStyle(palette.textTertiary)
+                    Text("benchmark pending")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -619,7 +704,7 @@ struct ShipperSustainability: View {
             #if canImport(UIKit)
             UISelectionFeedbackGenerator().selectionChanged()
             #endif
-            Task { await store.calculate(distanceMiles: distanceMiles, weightTons: weightTons, equipment: equipment) }
+            recalcIfReady()
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: eq.icon)
@@ -743,7 +828,7 @@ struct ShipperSustainability: View {
             userInfo: [
                 "source": "214_ShipperSustainability",
                 "mode": mode.rawValue,
-                "shipperCompanyId": 1
+                "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
     }
@@ -758,7 +843,7 @@ struct ShipperSustainability: View {
             object: nil,
             userInfo: [
                 "source": "214_ShipperSustainability",
-                "shipperCompanyId": 1
+                "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
         NotificationCenter.default.post(
@@ -770,7 +855,7 @@ struct ShipperSustainability: View {
     private func tapBuyOffsets() {
         var info: [String: Any] = [
             "source": "214_ShipperSustainability",
-            "shipperCompanyId": 1
+            "shipperCompanyId": session.user?.companyId ?? ""
         ]
         var co2Tonnes: Double = 0
         if case .loaded(let r) = store.state {
@@ -806,7 +891,7 @@ struct ShipperSustainability: View {
             object: nil,
             userInfo: [
                 "source": "214_ShipperSustainability",
-                "shipperCompanyId": 1
+                "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
         NotificationCenter.default.post(
@@ -961,6 +1046,7 @@ extension Notification.Name {
 
 #Preview("214 · Sustainability · Dark") {
     ShipperSustainability()
+        .environmentObject(EusoTripSession())
         .environment(\.palette, Theme.dark)
         .preferredColorScheme(.dark)
         .background(Theme.dark.bgPage)
@@ -968,6 +1054,7 @@ extension Notification.Name {
 
 #Preview("214 · Sustainability · Light") {
     ShipperSustainability()
+        .environmentObject(EusoTripSession())
         .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
         .background(Theme.light.bgPage)

@@ -13,15 +13,14 @@
 //  236 widget gallery · 237 App Intents · 238 Continuity · 239 Apple Pay
 //  Wallet · 240 CarPlay Dashboard).
 //
-//  Hero is the active CarPlay tile for §11.2 row 1
-//  (LD-260427-A38FB12C7E · Houston→Dallas · MC-306 Gasoline UN1203 ·
-//  $1,900). Six tiles in the gallery (Active Load + Hot Zones +
-//  Control Tower + Wallet Pass enabled, Catalyst Ticker + Quick Call
-//  Driver disabled). Three zone slots: Driver Cluster active wash,
-//  Dashboard Widget enabled, Passenger Map disabled per Eusorone fleet
-//  policy.
-//
-//  §11 Diego canon · §11.2/§11.4 MATRIX-50 anchors verbatim.
+//  Hero is the active CarPlay tile bound to the shipper's most recent
+//  LIVE load via `shippers.getActiveLoads(limit: 1)` (2026-06-09, audit
+//  B24) — honest empty/error card when no load is in flight. Six tiles
+//  in the gallery (Active Load + Hot Zones + Control Tower + Wallet
+//  Pass enabled, Catalyst Ticker + Quick Call Driver disabled — default
+//  config until carplay.* prefs procs ship, EUSO-2161 WIRE-GAP). Three
+//  zone slots: Driver Cluster active wash, Dashboard Widget enabled,
+//  Passenger Map disabled.
 //  Doctrine: §2 nav, §3 numbers-first, §4.3 single hairline, §7 breathe
 //  density, §13 Catalyst tier system, §17.2 width-locked status grammar,
 //  §19.2 file-scoped helpers (GradientPassHeader, GradientCapsuleCTA,
@@ -64,99 +63,149 @@ import SwiftUI
 struct ShipperCarPlayDashboard: View {
     @Environment(\.palette) var palette
     @Environment(\.openURL) private var openURL
+    @EnvironmentObject private var session: EusoTripSession
 
+    /// Live binding state — the hero tile is built from the shipper's
+    /// most recent live load (`shippers.getActiveLoads`), never from a
+    /// fixture. Honest empty/error states otherwise (zero-fallback,
+    /// audit B24). The per-tile / per-zone enable vector has no live
+    /// proc yet (carplay.* — EUSO-2161 WIRE-GAP), so the gallery shows
+    /// the default tile configuration with no invented data inside the
+    /// binding lines.
+    private enum Phase {
+        case loading
+        case empty
+        case error
+        case loaded(ActiveCarPlayTile)
+    }
+    @State private var phase: Phase = .loading
+
+    private var activeTile: ActiveCarPlayTile? {
+        if case .loaded(let t) = phase { return t }
+        return nil
+    }
+
+    // Gallery-config counter — describes the default widget vector
+    // below (6 tiles, 4 enabled), not server data.
     private let counterEyebrow = "6 TILES · 4 ENABLED"
 
-    private let activeTile = ActiveCarPlayTile(
-        id:                 "carplay_LD-260427-A38FB12C7E",
-        sceneLine:          "CARPLAY · ACTIVE LOAD",
-        title:              "Houston \u{2192} Dallas",
-        loadId:             "LD-260427-A38FB12C7E",
-        eta:                "Apr 30 · in 4h 12m",
-        equipment:          "MC-306 · UN1203 · Gas",
-        driver:             "Michael Eusorone",
-        carrier:            "Bulk Logistics MC-1485",
-        carrierTier:        "A",
-        tierCarrierLine:    "Tier A · Eusotrans LLC",
-        pairingLine:        "CarPlay paired · in 4h 12m",
-        distanceLine:       "240 mi · 4h 12m",
-        ctaLabel:           "Add to CarPlay"
-    )
+    private var widgets: [CarPlayWidget] {
+        let hasLoad = activeTile != nil
+        return [
+            CarPlayWidget(
+                id:       "tile_active_load",
+                name:     "Active Load",
+                binding:  activeTile.map { "\($0.loadId) · Driver Cluster" } ?? "No active load",
+                glyph:    .truck,
+                enabled:  hasLoad,
+                isActive: hasLoad
+            ),
+            CarPlayWidget(
+                id:       "tile_hot_zones",
+                name:     "Hot Zones",
+                binding:  "Demand heat tiles · Dashboard Widget",
+                glyph:    .flame,
+                enabled:  true,
+                isActive: false
+            ),
+            CarPlayWidget(
+                id:       "tile_control_tower",
+                name:     "Control Tower",
+                binding:  "Exceptions + in-transit summary · Dashboard Widget",
+                glyph:    .tower,
+                enabled:  true,
+                isActive: false
+            ),
+            CarPlayWidget(
+                id:       "tile_wallet_pass",
+                name:     "Wallet Pass",
+                binding:  "Add-to-Wallet quick action · Driver Cluster",
+                glyph:    .wallet,
+                enabled:  true,
+                isActive: false
+            ),
+            CarPlayWidget(
+                id:       "tile_catalyst_ticker",
+                name:     "Catalyst Ticker",
+                binding:  "Carrier grade trend · Passenger Map",
+                glyph:    .tierLetterA,
+                enabled:  false,
+                isActive: false
+            ),
+            CarPlayWidget(
+                id:       "tile_quick_call",
+                name:     "Quick Call Driver",
+                binding:  activeTile.map { "\($0.driver) · Driver Cluster" } ?? "No active load",
+                glyph:    .phone,
+                enabled:  false,
+                isActive: false
+            )
+        ]
+    }
 
-    private let widgets: [CarPlayWidget] = [
-        CarPlayWidget(
-            id:       "tile_active_load",
-            name:     "Active Load",
-            binding:  "LD-260427-A38FB12C7E · Driver Cluster",
-            glyph:    .truck,
-            enabled:  true,
-            isActive: true
-        ),
-        CarPlayWidget(
-            id:       "tile_hot_zones",
-            name:     "Hot Zones",
-            binding:  "Gulf · LA basin · Midwest · Dashboard Widget",
-            glyph:    .flame,
-            enabled:  true,
-            isActive: false
-        ),
-        CarPlayWidget(
-            id:       "tile_control_tower",
-            name:     "Control Tower",
-            binding:  "2 EXCEPTIONS · 4 IN TRANSIT · Dashboard Widget",
-            glyph:    .tower,
-            enabled:  true,
-            isActive: false
-        ),
-        CarPlayWidget(
-            id:       "tile_wallet_pass",
-            name:     "Wallet Pass",
-            binding:  "Add-to-Wallet quick action · Driver Cluster",
-            glyph:    .wallet,
-            enabled:  true,
-            isActive: false
-        ),
-        CarPlayWidget(
-            id:       "tile_catalyst_ticker",
-            name:     "Catalyst Ticker",
-            binding:  "5-carrier grade trend · Passenger Map",
-            glyph:    .tierLetterA,
-            enabled:  false,
-            isActive: false
-        ),
-        CarPlayWidget(
-            id:       "tile_quick_call",
-            name:     "Quick Call Driver",
-            binding:  "Eusotrans LLC · Driver Cluster",
-            glyph:    .phone,
-            enabled:  false,
-            isActive: false
-        )
-    ]
+    private var zones: [CarPlayZone] {
+        let hasLoad = activeTile != nil
+        return [
+            CarPlayZone(
+                id:       "zone_driver_cluster",
+                name:     "Driver Cluster",
+                binding:  hasLoad ? "2 widgets · Active Load · Wallet Pass"
+                                  : "1 widget · Wallet Pass",
+                enabled:  true,
+                isActive: hasLoad
+            ),
+            CarPlayZone(
+                id:       "zone_dashboard_widget",
+                name:     "Dashboard Widget",
+                binding:  "2 widgets · Hot Zones · Control Tower",
+                enabled:  true,
+                isActive: false
+            ),
+            CarPlayZone(
+                id:       "zone_passenger_map",
+                name:     "Passenger Map",
+                binding:  "0 widgets · disabled",
+                enabled:  false,
+                isActive: false
+            )
+        ]
+    }
 
-    private let zones: [CarPlayZone] = [
-        CarPlayZone(
-            id:       "zone_driver_cluster",
-            name:     "Driver Cluster",
-            binding:  "2 widgets · Active Load · Wallet Pass",
-            enabled:  true,
-            isActive: true
-        ),
-        CarPlayZone(
-            id:       "zone_dashboard_widget",
-            name:     "Dashboard Widget",
-            binding:  "2 widgets · Hot Zones · Control Tower",
-            enabled:  true,
-            isActive: false
-        ),
-        CarPlayZone(
-            id:       "zone_passenger_map",
-            name:     "Passenger Map",
-            binding:  "0 widgets · disabled in Eusorone fleet policy",
-            enabled:  false,
-            isActive: false
+    // MARK: - Live load → hero tile
+
+    private func load() async {
+        do {
+            let rows = try await EusoTripAPI.shared.shipper.getActiveLoads(limit: 1)
+            if let l = rows.first {
+                phase = .loaded(makeTile(from: l))
+            } else {
+                phase = .empty
+            }
+        } catch {
+            phase = .error
+        }
+    }
+
+    private func makeTile(from l: ShipperAPI.ActiveLoad) -> ActiveCarPlayTile {
+        let statusLine = l.status.replacingOccurrences(of: "_", with: " ").uppercased()
+        let miles = l.distance ?? l.miles ?? 0
+        return ActiveCarPlayTile(
+            id:                 "carplay_\(l.loadNumber)",
+            sceneLine:          "CARPLAY · ACTIVE LOAD",
+            title:              "\(l.origin) \u{2192} \(l.destination)",
+            loadId:             l.loadNumber,
+            eta:                l.eta == "TBD" ? "—" : l.eta,
+            equipment:          l.cargoSummary ?? l.cargoType ?? "—",
+            driver:             l.driver,
+            carrier:            l.catalyst,
+            // No live carrier-tier proc on this surface — honest em-dash.
+            carrierTier:        "—",
+            tierCarrierLine:    l.catalyst,
+            pairingLine:        "LIVE · \(statusLine)",
+            distanceLine:       miles > 0 ? "\(Int(miles.rounded())) mi" : "—",
+            ctaLabel:           "Add to CarPlay"
         )
-    ]
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -168,9 +217,9 @@ struct ShipperCarPlayDashboard: View {
             IridescentHairline()
                 .padding(.top, Space.s3)
 
-            sectionLabel("ACTIVE TILE · MATRIX-50 ROW 1")
+            sectionLabel("ACTIVE TILE · LIVE LOAD")
                 .padding(.top, Space.s5)
-            heroTileCard
+            heroSection
                 .padding(.horizontal, Space.s5)
                 .padding(.top, Space.s2)
 
@@ -193,6 +242,57 @@ struct ShipperCarPlayDashboard: View {
             footer
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s5)
+        }
+        .task { await load() }
+    }
+
+    /// Hero slot — live tile, or honest loading / empty / error card.
+    @ViewBuilder
+    private var heroSection: some View {
+        switch phase {
+        case .loading:
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .fill(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
+                ProgressView()
+            }
+            .frame(maxWidth: .infinity, minHeight: 200)
+        case .empty:
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .fill(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
+                EusoEmptyState(
+                    systemImage: "car.fill",
+                    title: "No active load",
+                    subtitle: "The CarPlay tile lights up when a load is in flight."
+                )
+            }
+            .frame(maxWidth: .infinity, minHeight: 200)
+        case .error:
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .fill(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                            .strokeBorder(palette.borderFaint)
+                    )
+                EusoEmptyState(
+                    systemImage: "wifi.exclamationmark",
+                    title: "Couldn't reach the loads service",
+                    subtitle: "Nothing is cached or invented here — reopen to retry."
+                )
+            }
+            .frame(maxWidth: .infinity, minHeight: 200)
+        case .loaded(let tile):
+            heroTileCard(tile)
         }
     }
 
@@ -220,7 +320,7 @@ struct ShipperCarPlayDashboard: View {
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("Dashboard widgets · Eusorone Technologies")
+            Text("Dashboard widgets · \(session.user?.name ?? "—")")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -238,9 +338,9 @@ struct ShipperCarPlayDashboard: View {
             .padding(.horizontal, Space.s5)
     }
 
-    // MARK: - HERO TILE CARD (active CarPlay tile preview)
+    // MARK: - HERO TILE CARD (active CarPlay tile preview — live load)
 
-    private var heroTileCard: some View {
+    private func heroTileCard(_ activeTile: ActiveCarPlayTile) -> some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .fill(palette.bgCard)
@@ -329,7 +429,10 @@ struct ShipperCarPlayDashboard: View {
 
                     HStack {
                         Spacer()
-                        CarPlayMapPreview(distanceLabel: activeTile.distanceLine)
+                        CarPlayMapPreview(
+                            laneLabel: activeTile.title,
+                            distanceLabel: activeTile.distanceLine
+                        )
                             .padding(.top, 12)
                             .padding(.trailing, 20)
                     }
@@ -353,11 +456,11 @@ struct ShipperCarPlayDashboard: View {
 
                     Spacer(minLength: 0)
 
-                    Button(action: tapAddToCarPlay) {
+                    Button(action: { tapAddToCarPlay(activeTile) }) {
                         GradientCapsuleCTA(label: activeTile.ctaLabel, width: 140)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Add the active load tile to CarPlay. Pins the Houston to Dallas active-load widget to the Driver Cluster zone of the head unit's Dashboard scene.")
+                    .accessibilityLabel("Add the active load tile to CarPlay. Pins the \(activeTile.title) active-load widget to the Driver Cluster zone of the head unit's Dashboard scene.")
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 14)
@@ -455,7 +558,7 @@ struct ShipperCarPlayDashboard: View {
             Text("Powered by CarPlay · MapKit · CPNowPlayingTemplate")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
-            Text("companyId 1 · Eusorone Technologies · MATRIX-50-2026-04-26")
+            Text("companyId \(session.user?.companyId ?? "—") · live load binding")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
         }
@@ -465,7 +568,7 @@ struct ShipperCarPlayDashboard: View {
 
     // MARK: - Tap handlers (§20.4 no dead buttons)
 
-    private func tapAddToCarPlay() {
+    private func tapAddToCarPlay(_ activeTile: ActiveCarPlayTile) {
         NotificationCenter.default.post(
             name: .eusoShipperCarPlayAddTile,
             object: nil,
@@ -473,9 +576,9 @@ struct ShipperCarPlayDashboard: View {
                 "source":           "240_ShipperCarPlayDashboard",
                 "tileId":           activeTile.id,
                 "loadId":           activeTile.loadId,
-                "carrierMC":        "MC-1485",
+                "carrier":          activeTile.carrier,
                 "driver":           activeTile.driver,
-                "shipperCompanyId": 1,
+                "shipperCompanyId": session.user?.companyId ?? "",
                 "zone":             "driver_cluster"
             ]
         )
@@ -494,7 +597,7 @@ struct ShipperCarPlayDashboard: View {
                 "widgetName":       widget.name,
                 "isEnabled":        widget.enabled,
                 "isActive":         widget.isActive,
-                "shipperCompanyId": 1
+                "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/carplay/widget/\(widget.id)") {
@@ -512,7 +615,7 @@ struct ShipperCarPlayDashboard: View {
                 "zoneName":         zone.name,
                 "isEnabled":        zone.enabled,
                 "isActive":         zone.isActive,
-                "shipperCompanyId": 1
+                "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/carplay/zone/\(zone.id)") {
@@ -527,7 +630,7 @@ struct ShipperCarPlayDashboard: View {
             userInfo: [
                 "source":           "240_ShipperCarPlayDashboard",
                 "targetScreen":     "211 Settings",
-                "shipperCompanyId": 1
+                "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/settings/carplay") {
@@ -659,6 +762,7 @@ private struct GradientCapsuleCTA: View {
 
 private struct CarPlayMapPreview: View {
     @Environment(\.palette) var palette
+    let laneLabel: String
     let distanceLabel: String
 
     var body: some View {
@@ -734,7 +838,7 @@ private struct CarPlayMapPreview: View {
         }
         .frame(width: 100, height: 100)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("CarPlay map preview · Houston to Dallas · \(distanceLabel)")
+        .accessibilityLabel("CarPlay map preview · \(laneLabel) · \(distanceLabel)")
     }
 }
 
@@ -1117,6 +1221,7 @@ struct ShipperCarPlayDashboardScreen: View {
 
 #Preview("Shipper CarPlay Dashboard · Dark") {
     ShipperCarPlayDashboardScreen(theme: Theme.dark)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
         .padding(24)
         .background(Theme.dark.bgPage)
@@ -1124,6 +1229,7 @@ struct ShipperCarPlayDashboardScreen: View {
 
 #Preview("Shipper CarPlay Dashboard · Light") {
     ShipperCarPlayDashboardScreen(theme: Theme.light)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
         .padding(24)
         .background(Theme.light.bgPage)

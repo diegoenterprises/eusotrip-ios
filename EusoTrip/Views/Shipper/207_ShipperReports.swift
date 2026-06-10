@@ -76,6 +76,12 @@ struct ShipperReports: View {
     @StateObject private var spendStore = ShipperSpendingAnalyticsStore()
     @StateObject private var catalystStore = ShipperCatalystPerformanceStore()
 
+    /// Live detention rollup (`detentionAccessorials.getDetentionDashboard`,
+    /// 298's pattern) — drives the "Detention & accessorial" saved-report
+    /// row. nil → honest em-dash row, never the old fabricated
+    /// "$3,820 · 4 claims" figures (audit M13).
+    @State private var detention: DetentionAPI.Dashboard?
+
     @State private var selectedPeriod: ShipperAPI.SpendingPeriod = .month
     @State private var activeMetricChips: Set<String> = ["spend"]
     @State private var activeGroupByChips: Set<String> = ["lane"]
@@ -206,7 +212,12 @@ struct ShipperReports: View {
     private func refreshAll() async {
         async let a: Void = spendStore.refresh()
         async let b: Void = catalystStore.refresh()
-        _ = await (a, b)
+        async let c: Void = refreshDetention()
+        _ = await (a, b, c)
+    }
+
+    private func refreshDetention() async {
+        detention = try? await EusoTripAPI.shared.detention.getDashboard()
     }
 
     private var liveSpend: ShipperAPI.SpendingAnalytics? {
@@ -230,9 +241,11 @@ struct ShipperReports: View {
     }
 
     private var counterEyebrow: String {
-        // Saved-report taxonomy: 4 rows, 2 of them scheduled.
+        // Saved-report taxonomy: 4 rows, 2 of them scheduled. Run count
+        // proxies off live spend loadCount until reports.list ships —
+        // em-dash when the analytics proc hasn't answered (audit M13).
         let scheduled = 2
-        let ranLifetime = (liveSpend?.loadCount ?? 12) // proxy for "runs" until reports.list ships
+        let ranLifetime = liveSpend.map { String($0.loadCount) } ?? "—"
         return "\(ranLifetime) RUN · \(scheduled) SCHEDULED"
     }
 
@@ -285,7 +298,7 @@ struct ShipperReports: View {
             quickExportTile(
                 kind: .co2Statement,
                 title: "CO₂ statement",
-                sub:   "42.6 t · GLEC v3.0",
+                sub:   "GLEC v3.0 · scope 3",
                 cta:   "Export · PDF"
             )
         }
@@ -295,14 +308,14 @@ struct ShipperReports: View {
         if let s = liveSpend, s.loadCount > 0 {
             return "\(s.loadCount) loads · \(currency(s.totalSpend)) · YTD"
         }
-        return "22 lanes · 50 loads · YTD"
+        return "loads — · spend — · YTD"
     }
 
     private var catalystPayableSub: String {
-        if case .loaded(let rows) = catalystStore.state, !rows.isEmpty {
+        if case .loaded(let rows) = catalystStore.state {
             return "\(rows.count) carriers · settlements"
         }
-        return "5 carriers · settlements"
+        return "carriers — · settlements"
     }
 
     private func quickExportTile(kind: QuickExportKind, title: String, sub: String, cta: String) -> some View {
@@ -401,19 +414,27 @@ struct ShipperReports: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    /// 4 saved reports — Q1 spend rollup pulls live values when
-    /// available; the other three are §11 canon-anchored cadences.
+    /// 4 saved reports — every figure is live-derived or an honest
+    /// em-dash (audit M13). Q1 spend ← shippers.getSpendingAnalytics;
+    /// catalyst count ← shippers.getCatalystPerformance; detention row
+    /// ← detentionAccessorials.getDetentionDashboard (298's pattern).
     private var savedReports: [(title: String, sub: String, status: ReportStatus, verb: String)] {
         let q1Sub: String
         if let s = liveSpend, s.loadCount > 0 {
-            q1Sub = "\(s.loadCount) loads · \(currency(s.totalSpend)) · last run 2d ago"
+            q1Sub = "\(s.loadCount) loads · \(currency(s.totalSpend))"
         } else {
-            q1Sub = "53 loads · $784,210 · last run 2d ago"
+            q1Sub = "loads — · spend —"
         }
-        let catalystCount: Int = {
-            if case .loaded(let rows) = catalystStore.state { return rows.count }
-            return 12
+        let catalystCount: String = {
+            if case .loaded(let rows) = catalystStore.state { return String(rows.count) }
+            return "—"
         }()
+        let detentionSub: String
+        if let d = detention {
+            detentionSub = "\(currency(d.totalCharges)) in detention · \(d.totalEvents) claims · 30d window"
+        } else {
+            detentionSub = "detention — · claims — · 30d window"
+        }
         return [
             ("Q1 spend rollup",
              q1Sub,
@@ -422,7 +443,7 @@ struct ShipperReports: View {
              "\(catalystCount) catalysts · letter grades · scheduled weekly Mon 06:00",
              .scheduled, "openSchedule"),
             ("Detention & accessorial",
-             "$3,820 in detention · 4 claims · 90d window",
+             detentionSub,
              .run, "run"),
             ("Hazmat exposure log",
              "UN1203 + UN1005 + UN1267 · scheduled monthly 1st 09:00",

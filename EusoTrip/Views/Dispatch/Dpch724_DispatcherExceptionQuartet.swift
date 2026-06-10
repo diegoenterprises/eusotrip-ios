@@ -318,7 +318,13 @@ private struct CancelLoadBody: View {
     @State private var load: ExceptionLoadCtx?
     @State private var reason: String = "Receiver facility unavailable"
     @State private var cascadeAck: Bool = false
-    @State private var policyAck: Bool = false
+    /// Real server flag — `dispatchRole.cancelLoad` records whether the
+    /// TONU (Truck Order Not Used) accessorial is waived on this cancel.
+    /// Replaces the invented "$150 cancel fee per Eusotrans §3.4" gate
+    /// (audit M11): the rate shown comes from the platform's live
+    /// accessorial catalog, or em-dash when the catalog is unreachable.
+    @State private var waiveTonus: Bool = false
+    @State private var tonuRate: Double?
     @State private var loading: Bool = true
     @State private var actionInFlight: Bool = false
     @State private var actionAck: String?
@@ -354,8 +360,14 @@ private struct CancelLoadBody: View {
             }
             .padding(.horizontal, 14).padding(.top, 8)
         }
-        .task { await loadCtx() }
-        .refreshable { await loadCtx() }
+        .task { await loadAll() }
+        .refreshable { await loadAll() }
+    }
+
+    private func loadAll() async {
+        async let a: Void = loadCtx()
+        async let b: Void = loadTonuRate()
+        _ = await (a, b)
     }
 
     private var header: some View {
@@ -443,14 +455,23 @@ private struct CancelLoadBody: View {
     }
 
     private var policySection: some View {
-        Toggle(isOn: $policyAck) {
+        Toggle(isOn: $waiveTonus) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Apply cancel-fee policy").font(EType.body.weight(.semibold))
-                Text("$150 cancel fee per Eusotrans contract §3.4").font(.caption).foregroundStyle(palette.textSecondary)
+                Text("Waive TONU charge").font(EType.body.weight(.semibold))
+                Text(tonuPolicyLine).font(.caption).foregroundStyle(palette.textSecondary)
             }
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+    }
+
+    /// Live TONU rate from `detentionAccessorials.getAccessorialCatalog`
+    /// — never an invented fee or a fabricated contract citation.
+    private var tonuPolicyLine: String {
+        if let r = tonuRate {
+            return "Truck Order Not Used · $\(Int(r.rounded())) flat · accessorial catalog"
+        }
+        return "Truck Order Not Used · rate —"
     }
 
     private var actionRow: some View {
@@ -478,7 +499,7 @@ private struct CancelLoadBody: View {
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
-            .disabled(actionInFlight || !cascadeAck || !policyAck)
+            .disabled(actionInFlight || !cascadeAck)
         }
     }
 
@@ -490,7 +511,7 @@ private struct CancelLoadBody: View {
         do {
             let resp: Out = try await EusoTripAPI.shared.mutation(
                 "dispatchRole.cancelLoad",
-                input: In(loadId: loadId, reason: reason, waiveTonus: false, cascadeAck: cascadeAck)
+                input: In(loadId: loadId, reason: reason, waiveTonus: waiveTonus, cascadeAck: cascadeAck)
             )
             if resp.success == true {
                 actionAck = "Load cancelled · reason '\(resp.reason ?? reason)' archived to audit chain."
@@ -507,6 +528,24 @@ private struct CancelLoadBody: View {
         loading = true; defer { loading = false }
         struct In: Encodable { let id: String }
         do { load = try await EusoTripAPI.shared.query("loads.getById", input: In(id: loadId)) } catch { /* */ }
+    }
+
+    /// Live TONU flat rate from the platform accessorial catalog
+    /// (`detentionAccessorials.getAccessorialCatalog`). nil → the
+    /// policy line renders an honest em-dash.
+    private func loadTonuRate() async {
+        struct In: Encodable { let category: String?; let search: String? }
+        struct Catalog: Decodable {
+            struct Item: Decodable { let code: String?; let defaultRate: Double? }
+            let items: [Item]?
+        }
+        do {
+            let cat: Catalog = try await EusoTripAPI.shared.query(
+                "detentionAccessorials.getAccessorialCatalog",
+                input: In(category: nil, search: "TONU")
+            )
+            tonuRate = cat.items?.first(where: { ($0.code ?? "").uppercased() == "TONU" })?.defaultRate
+        } catch { tonuRate = nil }
     }
 }
 
