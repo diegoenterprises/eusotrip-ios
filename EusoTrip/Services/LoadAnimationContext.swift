@@ -48,7 +48,14 @@ struct LoadAnimationContext: Hashable {
     /// `TEMPLATE_TOKEN_INDEX.md` v1.5 — defaults are baked into
     /// `<text>` content; we only override when the snapshot has a
     /// real value).
-    static func from(snapshot: ShipperAPI.LifecycleSnapshot) -> LoadAnimationContext {
+    ///
+    /// `dockNumber` is the REAL assigned dock door from
+    /// `appointments.getByLoad.dockNumber` — the same read the driver
+    /// lifecycle screens (024/037/039) hydrate. Callers that have the
+    /// appointment in hand pass it through; it wins over the facility-
+    /// name fallback so the dock chip shows the actual door.
+    static func from(snapshot: ShipperAPI.LifecycleSnapshot,
+                     dockNumber: String? = nil) -> LoadAnimationContext {
         let mode = inferModality(from: snapshot)
         let vert = inferVertical(from: snapshot)
         let reg = inferRegion(from: snapshot)
@@ -59,7 +66,7 @@ struct LoadAnimationContext: Hashable {
         b["state_label"]        = snapshot.load.status.uppercased().replacingOccurrences(of: "_", with: " ")
         b["equipment_label"]    = equipmentLabel(snapshot)
         b["equipment_subtitle"] = equipmentSubtitle(snapshot)
-        b["dock_id"]            = dockId(snapshot)
+        b["dock_id"]            = dockId(snapshot, dockNumber: dockNumber)
         b["eta_minutes"]        = etaLabel(snapshot)
         b["commodity_label"]    = commodityLabel(snapshot)
         b["weight_label"]       = weightLabel(snapshot)
@@ -150,10 +157,25 @@ struct LoadAnimationContext: Hashable {
         return cargo.isEmpty ? "GENERAL FREIGHT" : cargo
     }
 
-    /// Dock chip — pulls the pickup or delivery facility name based on
-    /// which side of the trip the load is closest to. Matches the
-    /// `data-bind="dock_id"` chip on the loading/unloading SVGs.
-    private static func dockId(_ s: ShipperAPI.LifecycleSnapshot) -> String {
+    /// Dock chip — resolution order:
+    ///   1. the REAL assigned dock door (`appointments.getByLoad
+    ///      .dockNumber`, plumbed in by the caller — 024's pattern),
+    ///   2. the pickup/delivery facility name for the side of the trip
+    ///      the load is closest to,
+    ///   3. city/state,
+    ///   4. the honest em-dash sentinel.
+    /// The "DOCK 12" Figma sample is DEAD (Wave-A1 fabrication kill,
+    /// 2026-06-10) — the em-dash deliberately OVERRIDES the SVG's baked
+    /// "DOCK 12" default text so a sample dock can never read as real.
+    private static func dockId(_ s: ShipperAPI.LifecycleSnapshot,
+                               dockNumber: String? = nil) -> String {
+        if let d = dockNumber?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !d.isEmpty {
+            let up = d.uppercased()
+            return up.contains("DOCK") || up.contains("BAY") || up.contains("DOOR")
+                ? up
+                : "DOCK \(up)"
+        }
         let status = s.load.status.lowercased()
         let useDelivery = status.contains("deliver") ||
                           status.contains("unload") ||
@@ -163,7 +185,7 @@ struct LoadAnimationContext: Hashable {
         if let c = stop?.city, let st = stop?.state, !c.isEmpty, !st.isEmpty {
             return "\(c.uppercased()), \(st.uppercased())"
         }
-        return "DOCK 12"
+        return "—"
     }
 
     /// ETA chip — formats minutes-to-arrival into the canonical

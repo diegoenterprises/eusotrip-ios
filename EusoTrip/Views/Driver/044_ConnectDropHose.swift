@@ -23,6 +23,9 @@ struct ConnectDropHose: View {
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
     @State private var isConfirming: Bool = false
+    /// True once the driver has confirmed the mate on THIS screen — the
+    /// real confirmation event that freezes the diagram seated.
+    @State private var mateConfirmed: Bool = false
 
     enum Register { case night, afternoon }
     let register: Register
@@ -32,7 +35,17 @@ struct ConnectDropHose: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    private let fallbackClock = "21:14"
+    /// Real mate state. The diagram loops the INSTRUCTIONAL mate cycle
+    /// (dashed release-arc + lever drop = the how-to read) until the
+    /// coupling is actually confirmed — either the lifecycle state says
+    /// so or the driver just confirmed it here — then freezes SEATED.
+    /// The seated pose is real state, never a decorative loop
+    /// (Wave-A1, 2026-06-10).
+    private var isMated: Bool {
+        if mateConfirmed { return true }
+        let s = (lifecycle.currentState ?? activeLoad?.status ?? "").lowercased()
+        return s.contains("mated") || s.contains("primed")
+    }
 
     /// Connecting-headline — composes "Connecting <medium> ·
     /// <cityState>" with em-dash sentinels for parts that aren't
@@ -51,15 +64,16 @@ struct ConnectDropHose: View {
         return "Connecting \(medium) · \(cityState)"
     }
 
-    /// ESD-bond continuity gate. On step 2 the bond-strap ladder rung
-    /// ("Bond ESD strap to dock grid") is already DONE and the ESD BOND
-    /// metric reads LIVE · Continuity OK — so the bonding strap + ground
-    /// clamp in the diagram light up live (gold). A dry-break poppet
-    /// must not pass product before continuity is proven, so the diagram
-    /// only paints the bond as "hot" when the bond rung has cleared.
-    /// Mirrors the static metric/ladder state until the backend exposes
-    /// a first-class `Load.esdContinuityOK` field.
-    private var esdBondLive: Bool { true }
+    /// ESD-bond continuity gate. A dry-break poppet must not pass
+    /// product before continuity is proven, so the diagram only paints
+    /// the bond "hot" (gold + glow) when a REAL continuity proof
+    /// exists. No live bond/continuity feed reaches this screen today
+    /// (the backend has not shipped `Load.esdContinuityOK` /
+    /// `tankMonitor` bay-ops sensors), so this is honestly FALSE — the
+    /// strap renders neutral, never a fabricated "LIVE · Continuity
+    /// OK" assertion (Wave-A1 fixture kill, 2026-06-10). Bind it to
+    /// the real field the moment it lands.
+    private var esdBondLive: Bool { false }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -96,7 +110,10 @@ struct ConnectDropHose: View {
                     Image(systemName: ctx.product.symbol)
                         .font(.system(size: 9, weight: .heavy))
                         .foregroundStyle(LinearGradient.diagonal)
-                    Text("STEP 2 OF 4 · \(ctx.headerKicker)")
+                    // No live step-progress source — the old "STEP 2
+                    // OF 4" count was a Figma fixture (042 ladder
+                    // pattern: never a hardcoded position claim).
+                    Text(ctx.headerKicker)
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(LinearGradient.diagonal)
                     // EUSOTRIP-MODE-BADGE-2026-05-17 — mode chip on lifecycle screen
@@ -109,14 +126,20 @@ struct ConnectDropHose: View {
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
-                Text("DRY-DISCONNECT MATE · ESD BOND LIVE")
+                // No live continuity feed → no "ESD BOND LIVE"
+                // assertion; the kicker names the procedure only.
+                Text("DRY-DISCONNECT MATE")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer(minLength: 0)
-            Text(fallbackClock)
-                .font(EType.mono(.caption)).fontWeight(.semibold)
-                .foregroundStyle(palette.textPrimary)
+            // Live device wall clock — the 042 pattern, refreshed each
+            // minute; never the seeded "21:14".
+            TimelineView(.everyMinute) { tl in
+                Text(tl.date, format: .dateTime.hour().minute())
+                    .font(EType.mono(.caption)).fontWeight(.semibold)
+                    .foregroundStyle(palette.textPrimary)
+            }
         }
         .padding(.top, 4)
     }
@@ -128,9 +151,14 @@ struct ConnectDropHose: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("LIVE")
+                // No live coupler sensor feed — the diagram below is an
+                // instructional reference until the mate is confirmed,
+                // then it freezes at the real seated state. Honest
+                // em-dash, never a red "LIVE" telemetry assertion
+                // (042 pattern; Wave-A1 fixture kill).
+                Text(isMated ? "MATED" : "—")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(Brand.danger)
+                    .foregroundStyle(isMated ? Brand.success : palette.textTertiary)
             }
             ZStack {
                 RoundedRectangle(cornerRadius: Radius.md).fill(Color.black.opacity(0.7))
@@ -140,9 +168,12 @@ struct ConnectDropHose: View {
                 // seat/lock onto the stub adapter (lever-down = seated,
                 // which is exactly when the poppet valve opens and flow
                 // can prime). ESD bond + ground clamp gate continuity
-                // before flow. Honors reduce-motion (freeze seated).
+                // before flow. Loops the instructional cycle until the
+                // REAL mate confirmation lands, then freezes seated.
+                // Honors reduce-motion (freeze seated).
                 DryBreakMateDiagram(esdBonded: esdBondLive,
-                                    isHazmat: ctx.isHazmat)
+                                    isHazmat: ctx.isHazmat,
+                                    seated: isMated)
                     .padding(.horizontal, 4)
             }
             .frame(height: 96)
@@ -181,10 +212,14 @@ struct ConnectDropHose: View {
     }
 
     private var metricRow: some View {
+        // No bay-ops sensor stack reaches this screen (no continuity,
+        // line-pressure, or leak-test feed) — em-dash readouts, never
+        // the seeded "LIVE / 0.0 / Priming" Figma trio (042 metric
+        // pattern; Wave-A1 fixture kill, 2026-06-10).
         HStack(spacing: Space.s2) {
-            metric(label: "ESD BOND",     value: "LIVE", note: "Continuity OK")
-            metric(label: "PRESS CHECK",  value: "0.0", note: "LINE EMPTY")
-            metric(label: "LEAK TEST",    value: "Priming", note: "WAITS · STEP 3")
+            metric(label: "ESD BOND",     value: "-", note: "—")
+            metric(label: "PRESS CHECK",  value: "-", note: "psig")
+            metric(label: "LEAK TEST",    value: "-", note: "—")
         }
     }
 
@@ -211,20 +246,26 @@ struct ConnectDropHose: View {
     }
 
     private var ladder: some View {
+        // The ladder rows are the canonical CONNECT procedure ORDER —
+        // operational truth, kept. Per-row completion has NO live
+        // source (no step-progress feed, no bay-ops witness checks),
+        // so every row renders neutral with an em-dash tail — never
+        // the seeded timestamped DONE / NOW / STEP-N Figma ladder (the
+        // 042 disconnect-ladder pattern; Wave-A1 fixture kill).
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("CONNECT LADDER · \(ctx.isHazmat ? "NH3 CLOSED-LOOP" : "TRAILER")")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("STEP 2 OF 4")
+                Text("—")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(palette.textSecondary)
+                    .foregroundStyle(palette.textTertiary)
             }
-            connectRow(title: ctx.isHazmat ? "Bond ESD strap to dock grid" : "Pull-test fifth wheel", state: "done", time: "21:13:38")
-            connectRow(title: ctx.isHazmat ? "Mate dry-disconnect coupler" : "Couple gladhands + lights", state: "now",  time: "NOW")
-            connectRow(title: "Pressurize-check & sniff vapor", state: "next", time: "STEP 3")
-            connectRow(title: "Open loop & prime to receiver", state: "next", time: "STEP 4")
+            connectRow(title: ctx.isHazmat ? "Bond ESD strap to dock grid" : "Pull-test fifth wheel", state: "next", time: "—")
+            connectRow(title: ctx.isHazmat ? "Mate dry-disconnect coupler" : "Couple gladhands + lights", state: "next", time: "—")
+            connectRow(title: "Pressurize-check & sniff vapor", state: "next", time: "—")
+            connectRow(title: "Open loop & prime to receiver", state: "next", time: "—")
         }
     }
 
@@ -251,29 +292,34 @@ struct ConnectDropHose: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
     }
 
+    // Honest empty state. No live supervisor-mic feed is wired to this
+    // screen (no dock-side spotter session, no transcript stream), so
+    // the invented supervisor persona, the "LIVE MIC" indicator, and
+    // the canned quote are excised (the 042/039 pattern; Wave-A1
+    // fixture kill, 2026-06-10). Card chrome is preserved; a real
+    // spotter/supervisor session backend lights this up with the actual
+    // participant + live captions.
     private var supervisorMic: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             ZStack {
-                Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-                Text("RH").font(.system(size: 11, weight: .heavy)).foregroundStyle(.white)
+                Circle().fill(palette.bgCardSoft).frame(width: 32, height: 32)
+                Image(systemName: "person.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack {
-                    Text("Reg Hammond")
+                    Text("No supervisor connected")
                         .font(EType.caption.weight(.semibold))
-                        .foregroundStyle(palette.textPrimary)
+                        .foregroundStyle(palette.textSecondary)
                     Spacer()
-                    HStack(spacing: 3) {
-                        Circle().fill(Brand.danger).frame(width: 5, height: 5)
-                        Text("LIVE MIC")
-                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(Brand.danger)
-                    }
+                    Text("—")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
                 }
-                Text("\"Ring is on three turns, give it a snug, no torquing.\"")
+                Text("Supervisor / spotter mic not connected for this connect.")
                     .font(EType.body)
-                    .foregroundStyle(palette.textPrimary)
-                    .italic()
+                    .foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -282,7 +328,7 @@ struct ConnectDropHose: View {
         .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
+                .strokeBorder(palette.borderFaint)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
@@ -330,6 +376,9 @@ struct ConnectDropHose: View {
             ?? lifecycle.availableTransitions.first {
             _ = await lifecycle.execute(t)
         }
+        // The driver's confirmation IS the mate witness event — freeze
+        // the diagram at the real seated state from here on.
+        mateConfirmed = true
         advance?()
     }
 }
@@ -360,8 +409,17 @@ struct ConnectDropHose: View {
 private struct DryBreakMateDiagram: View {
     let esdBonded: Bool
     let isHazmat: Bool
+    /// Real mate confirmation. False = the instructional mate cycle
+    /// loops (the how-to read); true = the coupling is CONFIRMED and
+    /// the diagram freezes at the seated/locked pose — real state,
+    /// not a decorative loop (Wave-A1, 2026-06-10).
+    var seated: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Freeze the whole scene at the seated pose — either the user
+    /// asked for calm motion or the mate is genuinely confirmed.
+    private var frozen: Bool { reduceMotion || seated }
 
     // Physical-hardware colors (steel, safety-orange, charcoal fitting).
     private let steelHi   = Color(hex: 0xC9CED6)
@@ -385,20 +443,32 @@ private struct DryBreakMateDiagram: View {
         // overshoot settle, the seated pulse, and the hose prime — and
         // `paused: reduceMotion` halts the clock so everything freezes in
         // the seated state for reduce-motion users.
-        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: reduceMotion)) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: frozen)) { timeline in
             let clock = timeline.date.timeIntervalSinceReferenceDate
             // seat: 0 = lever raised/open, 1 = locked down/seated.
-            let seat = reduceMotion ? 1.0 : seatProgress(clock)
+            let seat = frozen ? 1.0 : seatProgress(clock)
             Canvas(rendersAsynchronously: false) { ctx, size in
                 drawScene(ctx: &ctx, size: size, seat: seat,
-                          shimmer: reduceMotion ? 0.5 : clock)
+                          shimmer: frozen ? 0.5 : clock)
             }
                 .overlay(alignment: .topLeading) { titlePill }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(reduceMotion
-            ? "Dry-break coupler seated and locked onto the stub adapter, ESD bond live."
-            : "Dry-break coupler mating: release lever rotating down to seat and lock onto the stub adapter, ESD bond live, hose priming.")
+        .accessibilityLabel(accessibilityCopy)
+    }
+
+    /// VoiceOver copy — distinguishes the confirmed-seated real state
+    /// from the instructional mate loop. ESD bond is only described as
+    /// live when a real continuity proof painted it gold.
+    private var accessibilityCopy: String {
+        let bond = esdBonded ? "ESD bond live." : "ESD bond not yet proven."
+        if seated {
+            return "Dry-break coupler confirmed seated and locked onto the stub adapter. \(bond)"
+        }
+        if reduceMotion {
+            return "Dry-break coupler shown at the seated, locked position on the stub adapter. \(bond)"
+        }
+        return "Dry-break coupler mating guide: release lever rotating down to seat and lock onto the stub adapter. \(bond)"
     }
 
     /// Eased mate progress for the current clock. Maps one `loop` window
@@ -427,9 +497,10 @@ private struct DryBreakMateDiagram: View {
     }
 
     /// Seated-pulse intensity (0…1) — a brief glow/scale tick right after
-    /// the lever locks, decaying through the dwell.
+    /// the lever locks, decaying through the dwell. Suppressed when the
+    /// scene is frozen (reduce-motion or confirmed-seated).
     private func seatedPulse(_ clock: Double) -> Double {
-        if reduceMotion { return 0 }
+        if frozen { return 0 }
         let phase = clock.truncatingRemainder(dividingBy: loop)
         let drop = 0.7
         guard phase >= drop, phase < drop + 0.9 else { return 0 }
@@ -632,8 +703,9 @@ private struct DryBreakMateDiagram: View {
         let clampRect = CGRect(x: clamp.x - 6, y: clamp.y - 4, width: 12, height: 8)
         ctx.fill(Path(roundedRect: clampRect, cornerRadius: 2), with: .color(gold))
         ctx.stroke(Path(roundedRect: clampRect, cornerRadius: 2), with: .color(.black.opacity(0.4)), lineWidth: 1)
-        // Live-continuity glow pulse on the clamp when bonded.
-        if live && !reduceMotion {
+        // Live-continuity glow pulse on the clamp when bonded. Static
+        // glow when the scene is frozen (reduce-motion / confirmed).
+        if live && !frozen {
             let g = 0.35 + 0.35 * (sin(shimmer * 3.0) * 0.5 + 0.5)
             ctx.fill(Path(ellipseIn: CGRect(x: clamp.x - 9, y: clamp.y - 7, width: 18, height: 14)),
                      with: .radialGradient(Gradient(colors: [gold.opacity(g), .clear]),

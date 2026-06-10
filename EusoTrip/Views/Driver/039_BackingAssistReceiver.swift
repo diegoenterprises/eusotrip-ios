@@ -269,12 +269,21 @@ struct BackingAssistReceiver: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
     }
 
+    /// Brake-ring arc fraction. There is NO live proximity feed reaching
+    /// this screen (the center value is the em-dash sentinel), so the
+    /// arc renders the honest EMPTY track — never the decorative 0.55
+    /// trim the Figma frame baked around a "8 in" readout (Wave-A1
+    /// fabrication kill, 2026-06-10). When a real proximity lane lands,
+    /// bind this to inches-remaining ÷ approach envelope and the ring
+    /// lights up with the same stroke.
+    private var brakeRingFraction: CGFloat { 0 }
+
     private var brakeRing: some View {
         HStack(spacing: Space.s3) {
             ZStack {
                 Circle().stroke(palette.bgCardSoft, lineWidth: 6).frame(width: 64, height: 64)
                 Circle()
-                    .trim(from: 0, to: 0.55)
+                    .trim(from: 0, to: brakeRingFraction)
                     .stroke(LinearGradient.diagonal, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .frame(width: 64, height: 64)

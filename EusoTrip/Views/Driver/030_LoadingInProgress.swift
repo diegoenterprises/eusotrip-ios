@@ -156,6 +156,17 @@ struct LoadingInProgress: View {
         Int((targetFraction * 100).rounded())
     }
 
+    /// True when the shown fraction is the elapsed-window ESTIMATE (the
+    /// `loading` mid-fill heuristic) rather than metered volume. The
+    /// readout carries an explicit ESTIMATE chip until the tankMonitor
+    /// loaded-volume feed (T-020b) ships — an estimate must never wear
+    /// telemetry's clothes (Wave-A1, 2026-06-10).
+    private var fillIsEstimate: Bool {
+        guard gallonsTotal > 0 else { return false }
+        let state = (lifecycle.currentState ?? activeLoad?.status ?? "").lowercased()
+        return state == "loading"
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -253,6 +264,16 @@ struct LoadingInProgress: View {
                     .font(.system(size: 48, weight: .heavy, design: .rounded))
                     .foregroundStyle(palette.textPrimary)
                     .monospacedDigit()
+                // Criterion (b): the mid-fill fraction is an elapsed-
+                // window heuristic until T-020b metered volume ships —
+                // it must be LABELED an estimate, in pixels.
+                if fillIsEstimate {
+                    Text("ESTIMATE")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(Brand.warning)
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .overlay(Capsule().strokeBorder(Brand.warning.opacity(0.5), lineWidth: 1))
+                }
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(gallonsTotal > 0 ? gallonsNow.formatted() : "-")
