@@ -110,6 +110,19 @@
       .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
     }
   
+    /* ========== IDENTITY BEAT — tarp-breathe ==========
+       The rolling tarp is the conestoga's identity: the tensioned
+       canvas flexes a hair on its bow framework as the rig rolls. */
+    .tarp-breathe { transform-box: fill-box; transform-origin: bottom center;
+                    animation: tarp-breathe 2.8s ease-in-out infinite; }
+    @keyframes tarp-breathe {
+      0%, 100% { transform: scaleY(1); }
+      50%      { transform: scaleY(1.012); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .tarp-breathe { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -215,7 +228,9 @@
     </g>
     <rect x="475" y="445" width="600" height="13" rx="2" fill="#1A1F2E"/>
 
-    <!-- Curved tarp body — domed top profile -->
+    <!-- Curved tarp body — domed top profile. IDENTITY BEAT: the whole
+         tensioned tarp system breathes on its bows (.tarp-breathe). -->
+    <g class="tarp-breathe">
     <path d="M 475 395 L 475 215 Q 475 175 510 175 L 1040 175 Q 1075 175 1075 215 L 1075 395 Z"
           fill="url(#tarp)"/>
 
@@ -242,6 +257,7 @@
       <line x1="990" y1="178" x2="990" y2="395"/>
     </g>
 
+    </g><!-- /tarp-breathe -->
     <!-- Top track (the rail the tarp slides on) -->
     <rect x="500" y="172" width="550" height="6" rx="3" fill="#1A1F2E"/>
 
@@ -328,4 +344,7 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="572" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">CONESTOGA 48 FT</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan> &#183; <tspan data-bind="weight_label">&#8212;</tspan></text>
 </svg>

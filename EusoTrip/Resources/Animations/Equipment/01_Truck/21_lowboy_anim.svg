@@ -104,12 +104,31 @@
       50%      { opacity: 1; }
     }
 
+    /* ========== COUNTRY-SWITCHABLE REGULATORY LAYER ==========
+       Heavy-haul securement: US 49 CFR 393.110 tiedown count (LBS) · CA NSC Standard 10 (KG) · MX NOM-012-SCT-2 pesos y dimensiones (KG).
+       Default = US visible. The renderer shows ONE country group by
+       toggling display on .country-US / .country-MX / .country-CA. */
+    .country-US { display: inline; }
+    .country-MX, .country-CA { display: none; }
+
     @media (prefers-reduced-motion: reduce) {
       .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,
       .sheen, .wordmark, .badge-e, .headlight-glow, .airlines, .chevron,
       .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
     }
   
+    /* ========== IDENTITY BEAT — the deck-height read ==========
+       What makes a lowboy a lowboy is the WELL: a breathing dimension
+       bracket reads the low deck height against the roadway. */
+    .deck-read { animation: deck-read-breath 3.4s ease-in-out infinite; }
+    @keyframes deck-read-breath {
+      0%, 100% { opacity: 0.35; }
+      50%      { opacity: 0.9; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .deck-read { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -196,6 +215,15 @@
     <rect x="475" y="410" width="80" height="3" fill="#FFFFFF" opacity="0.4"/>
     <!-- Low main deck (lower than standard for cargo clearance) -->
     <rect x="555" y="425" width="450" height="33" rx="2" fill="url(#deckTop)"/>
+    <!-- IDENTITY BEAT — deck-height dimension bracket against the roadway -->
+    <g class="deck-read">
+      <g stroke="#5B3FBF" stroke-width="1.6" fill="none" stroke-linecap="round">
+        <line x1="700" y1="427" x2="700" y2="473"/>
+        <path d="M 696 431 L 700 427 L 704 431"/>
+        <path d="M 696 469 L 700 473 L 704 469"/>
+      </g>
+      <text x="712" y="455" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="11" fill="#5B3FBF" letter-spacing="1">24 IN DECK</text>
+    </g>
     <rect x="555" y="425" width="450" height="3" fill="#FFFFFF" opacity="0.4"/>
     <!-- Wood deck planks visible (lowboy decks are typically apitong hardwood) -->
     <g stroke="#2A2F38" stroke-width="0.8" opacity="0.55">
@@ -297,4 +325,20 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- COUNTRY-SWITCHABLE COMPLIANCE CHIP — lowboy heavy-haul tiedown standard + weight units flip by jurisdiction -->
+  <g class="country-US" transform="translate(1056 96)">
+    <rect x="0" y="0" width="96" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="48" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4" fill="#5B3FBF">LBS · 393.110</text>
+  </g>
+  <g class="country-CA" transform="translate(1056 96)">
+    <rect x="0" y="0" width="96" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="48" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4" fill="#5B3FBF">KG · NSC 10</text>
+  </g>
+  <g class="country-MX" transform="translate(1056 96)">
+    <rect x="0" y="0" width="96" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="48" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4" fill="#5B3FBF">KG · NOM-012</text>
+  </g>
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="572" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">LOWBOY RGN 48 FT</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan> &#183; <tspan data-bind="weight_label">&#8212;</tspan></text>
 </svg>

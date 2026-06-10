@@ -26,7 +26,6 @@
       0%, 100% { opacity: 0.85; transform: scale(1); }
       50%      { opacity: 1;    transform: scale(1.04); }
     }
-    .progress-fill { transition: width 0.4s ease-out; }
     .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
     @keyframes chevron-pulse {
       0%, 100% { opacity: 0.3; }
@@ -130,6 +129,13 @@
       0%, 100% { transform: rotate(-6deg); }
       50%      { transform: rotate(8deg); }
     }
+
+    /* ========== COUNTRY-SWITCHABLE REGULATORY LAYER ==========
+       TOFC flatcar spec stencil: US imperial (AAR) · CA Transport Canada metric · MX SCT metric.
+       Default = US visible. The renderer shows ONE country group by
+       toggling display on .country-US / .country-MX / .country-CA. */
+    .country-US { display: inline; }
+    .country-MX, .country-CA { display: none; }
 
     @media (prefers-reduced-motion: reduce) {
       .beacon-flash,
@@ -465,9 +471,22 @@
     <text x="170" y="484" font-family="Inter, system-ui, sans-serif"
           font-weight="800" font-size="10" letter-spacing="0.6"
           fill="#E5E2EF" data-bind="reporting_marks">EUSO 7142</text>
-    <text x="170" y="505" font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="6.5" letter-spacing="0.4"
-          fill="#9B7FD9">RAIL FLATCAR &#183; 89 FT 4 IN &#183; CAP 200000 LB</text>
+    <!-- COUNTRY-SWITCHABLE FLATCAR SPEC STENCIL — unit system flips by jurisdiction -->
+    <g class="country-US">
+      <text x="170" y="505" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.5" letter-spacing="0.4"
+            fill="#9B7FD9">RAIL FLATCAR &#183; 89 FT 4 IN &#183; CAP 200000 LB</text>
+    </g>
+    <g class="country-CA">
+      <text x="170" y="505" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.5" letter-spacing="0.4"
+            fill="#9B7FD9">RAIL FLATCAR &#183; 27.2 m &#183; CAP 90 720 kg</text>
+    </g>
+    <g class="country-MX">
+      <text x="170" y="505" font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.5" letter-spacing="0.4"
+            fill="#9B7FD9">PLATAFORMA FFCC &#183; 27.2 m &#183; CAP 90 720 kg</text>
+    </g>
 
     <!-- AAR class stencil -->
     <text x="900" y="484" font-family="Inter, system-ui, sans-serif"
@@ -1561,9 +1580,11 @@
        ============================================================ -->
   <g>
     <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.9"/>
-    <rect class="progress-fill" x="60" y="555" width="540" height="6" rx="3"
-          fill="#0AC2C2"
-          data-progress="0.5"/>
+    <g transform="translate(60 555)">
+      <rect class="progress-fill" x="0" y="0" width="1080" height="6" rx="3"
+            fill="#0AC2C2"
+            transform="scaleX(var(--load-progress, 0))"/>
+    </g>
     <text x="1140" y="548" text-anchor="end"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="10" letter-spacing="1.4"

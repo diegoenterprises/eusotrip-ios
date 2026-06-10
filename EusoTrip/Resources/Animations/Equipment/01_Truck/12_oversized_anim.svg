@@ -126,16 +126,11 @@
        US (FMCSA): yellow banner, black "OVERSIZE LOAD" (default).
        CA: provincial "D" sign — reflective white, RED "OVERSIZE LOAD".
        MX (SCT NOM-040): yellow sign, black "EXCESO DE DIMENSIONES".
-       Host renderer adds class="country-CA" or "country-MX" to the root
-       <svg>; no class = US. Red corner flags are common to all 3. */
-    .sign-US { display: inline; }
-    .sign-CA, .sign-MX { display: none; }
-    .country-CA .sign-US { display: none; }
-    .country-CA .sign-CA { display: inline; }
-    .country-CA .sign-MX { display: none; }
-    .country-MX .sign-US { display: none; }
-    .country-MX .sign-CA { display: none; }
-    .country-MX .sign-MX { display: inline; }
+       Normalized to the engine contract (07_tanker_hazmat pattern):
+       default = US visible; the renderer shows ONE country group by toggling
+       display on the .country-* groups. Red corner flags are common to all 3. */
+    .country-US { display: inline; }
+    .country-MX, .country-CA { display: none; }
   ]]></style>
 
   <!-- 12 · Oversized · Idle silhouette · EquipmentKind: oversized · TRUCK / LBS
@@ -274,20 +269,20 @@
   </g>
 
   <!-- ========== COUNTRY-SWITCHABLE OVERSIZE BANNER (under cargo) ========== -->
-  <!-- One frame, three jurisdiction variants; .sign-* CSS shows exactly one. -->
+  <!-- One frame, three jurisdiction variants; the .country-* guard shows exactly one. -->
   <g filter="url(#rigShadow)">
     <!-- US (default): yellow banner, black "OVERSIZE LOAD" -->
-    <g class="sign-US">
+    <g class="country-US">
       <rect x="600" y="430" width="360" height="22" rx="3" fill="#FFFF00" stroke="#000000" stroke-width="1.5"/>
       <text x="780" y="446" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="14" fill="#000000" letter-spacing="3">OVERSIZE LOAD</text>
     </g>
     <!-- CA: "D" sign — reflective white, RED "OVERSIZE LOAD" -->
-    <g class="sign-CA">
+    <g class="country-CA">
       <rect x="600" y="430" width="360" height="22" rx="3" fill="#FFFFFF" stroke="#C42810" stroke-width="1.8"/>
       <text x="780" y="446" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="14" fill="#C42810" letter-spacing="3">OVERSIZE LOAD</text>
     </g>
     <!-- MX: SCT NOM-040 yellow sign, black "EXCESO DE DIMENSIONES" -->
-    <g class="sign-MX">
+    <g class="country-MX">
       <rect x="600" y="430" width="360" height="22" rx="3" fill="#FFFF00" stroke="#000000" stroke-width="1.5"/>
       <text x="780" y="446" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="12" fill="#000000" letter-spacing="1.2">EXCESO DE DIMENSIONES</text>
     </g>
@@ -362,4 +357,7 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">OVERSIZED &#183; HEAVY HAUL</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan> &#183; <tspan data-bind="weight_label">&#8212;</tspan></text>
 </svg>

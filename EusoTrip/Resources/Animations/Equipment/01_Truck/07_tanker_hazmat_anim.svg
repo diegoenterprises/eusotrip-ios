@@ -141,8 +141,8 @@
        Identity is shared with the Loading/Unloading set: Class 8 CORROSIVE,
        Sulfuric Acid, UN 1830. Placard + UN panel are country-switchable
        (see .country-US / .country-MX / .country-CA groups below).
-       NOTE: tank cross-section here still reads as a pressure cylinder; a
-       future geometry pass can flatten it to the DOT-407 elliptical shell. -->
+       2026-06-10 (Wave S1): barrel reshaped to the DOT-407 low-profile
+       elliptical shell — dished heads + external stiffening rings. -->
   <defs>
         <linearGradient id="skyDark" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%"  stop-color="#0A0F1F"/>
@@ -219,35 +219,38 @@
     <circle cx="377" cy="395" r="9" fill="#FFFFFF" opacity="0.85"/><text x="377" y="399" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="9" fill="#5B3FBF">E</text>
   </g>
 
-  <!-- ========== MC-331 PRESSURE TANK (cylindrical with hemispherical ends) ========== -->
+  <!-- ========== DOT-407 CHEMICAL CARGO TANK ==========
+       Low-profile elliptical barrel, dished (not hemispherical) heads and
+       EXTERNAL circumferential stiffening rings — the visual signature that
+       separates a DOT-407 chemical trailer from an MC-331 pressure cylinder. -->
   <g filter="url(#rigShadow)">
-    <!-- Tank body — long cylinder, slightly curved top/bottom for pressure rating -->
-    <path d="M 525 235 Q 525 220 545 220 L 1015 220 Q 1075 220 1075 320 Q 1075 420 1015 420 L 545 420 Q 525 420 525 405 Z"
+    <!-- Tank barrel — low-profile elliptical shell (height < diameter read) -->
+    <path d="M 525 262 Q 525 248 551 248 L 1009 248 Q 1075 252 1075 334 Q 1075 416 1009 420 L 551 420 Q 525 420 525 406 Z"
           fill="url(#hazmatTank)"/>
-    <!-- Front hemispherical cap (rounded left end) -->
-    <path d="M 525 235 Q 480 240 480 320 Q 480 400 525 405 L 525 235 Z" fill="url(#tankCap)"/>
+    <!-- Front DISHED head (shallow — DOT-407, not a pressure hemisphere) -->
+    <path d="M 525 262 Q 494 270 494 334 Q 494 398 525 406 L 525 262 Z" fill="url(#tankCap)"/>
     <!-- Top sheen -->
-    <path d="M 525 235 Q 525 220 545 220 L 1015 220 Q 1075 220 1075 320"
+    <path d="M 525 262 Q 525 248 551 248 L 1009 248 Q 1075 252 1075 334"
           fill="url(#tankSheen)" opacity="0.6"/>
-    <!-- Reinforcing rings around the cylinder -->
-    <g stroke="#A66012" stroke-width="2" opacity="0.55">
-      <ellipse cx="600" cy="320" rx="4" ry="100"/>
-      <ellipse cx="700" cy="320" rx="4" ry="100"/>
-      <ellipse cx="800" cy="320" rx="4" ry="100"/>
-      <ellipse cx="900" cy="320" rx="4" ry="100"/>
-      <ellipse cx="1000" cy="320" rx="4" ry="100"/>
+    <!-- EXTERNAL circumferential stiffening rings — the DOT-407 signature -->
+    <g fill="#A66012" opacity="0.5">
+      <rect x="597" y="252" width="6" height="166" rx="3"/>
+      <rect x="697" y="250" width="6" height="169" rx="3"/>
+      <rect x="797" y="249" width="6" height="170" rx="3"/>
+      <rect x="897" y="250" width="6" height="169" rx="3"/>
+      <rect x="997" y="252" width="6" height="166" rx="3"/>
     </g>
     <!-- Walkway on top -->
-    <rect x="540" y="218" width="490" height="6" rx="1" fill="#3A3F4A"/>
+    <rect x="540" y="246" width="490" height="6" rx="1" fill="#3A3F4A"/>
     <!-- Pressure relief valve on top -->
     <g>
-      <rect x="780" y="200" width="10" height="20" fill="#1A1F2E"/>
-      <circle cx="785" cy="198" r="6" fill="#7A7F88"/>
-      <circle cx="785" cy="198" r="3" fill="#1A1F2E"/>
+      <rect x="780" y="228" width="10" height="20" fill="#1A1F2E"/>
+      <circle cx="785" cy="226" r="6" fill="#7A7F88"/>
+      <circle cx="785" cy="226" r="3" fill="#1A1F2E"/>
     </g>
     <!-- Manhole / dome on top -->
-    <ellipse cx="640" cy="217" rx="20" ry="5" fill="#3A3F4A"/>
-    <ellipse cx="640" cy="215" rx="16" ry="3" fill="#1A1F2E"/>
+    <ellipse cx="640" cy="245" rx="20" ry="5" fill="#3A3F4A"/>
+    <ellipse cx="640" cy="243" rx="16" ry="3" fill="#1A1F2E"/>
     <!-- Discharge piping at rear -->
     <g>
       <rect x="1075" y="370" width="22" height="10" fill="#3A3F4A"/>
@@ -257,27 +260,96 @@
 
     <!-- HAZMAT PLACARD · Class 8 CORROSIVE (white top / black bottom diamond,
          dripping-flask corrosion symbol, "8"). UN-harmonized: identical for
-         US DOT, CA TDG, MX SCT. -->
-    <g transform="translate(750 290) rotate(45)">
-      <!-- top-half white -->
-      <rect x="-32" y="-32" width="64" height="32" fill="#FFFFFF" stroke="#000000" stroke-width="3"/>
-      <!-- bottom-half black -->
-      <rect x="-32" y="0" width="64" height="32" fill="#0A0A0A" stroke="#000000" stroke-width="3"/>
-      <g transform="rotate(-45)">
-        <!-- corrosion symbol: two flasks dripping onto a surface + a hand -->
-        <g fill="#0A0A0A">
-          <path d="M -13 -12 L -13 -6 L -10 -6 L -10 -12 Z"/>
-          <path d="M 10 -12 L 10 -6 L 13 -6 L 13 -12 Z"/>
-          <path d="M -13 -6 L -8 0 M 10 -6 L 5 0" stroke="#0A0A0A" stroke-width="1.2" fill="none"/>
-          <rect x="-15" y="2" width="10" height="2"/>
-          <rect x="5" y="2" width="10" height="2"/>
-          <path d="M -2 4 L 4 4 L 4 8 L 8 8 L 8 10 L -2 10 Z"/>
+         US DOT, CA TDG, MX SCT. Hooked for the live class swap below. -->
+    <!-- ===== COMMODITY PLACARD ENGINE HOOK =====
+         The renderer remaps <use href="#commodityPlacard"> to the live
+         load's class symbol (LoadAnimationContext.placardSymbolId).
+         Default service: Class 8 (the rig's authored placard set).
+         Anchored at origin; instanced at translate(750 312).
+         Library: class8Placard (authored) + class3Placard / class5_1Placard / class6_1Placard / class9Placard. -->
+    <defs>
+      <g id="class8Placard">
+      <g transform="rotate(45)">
+        <!-- top-half white -->
+        <rect x="-32" y="-32" width="64" height="32" fill="#FFFFFF" stroke="#000000" stroke-width="3"/>
+        <!-- bottom-half black -->
+        <rect x="-32" y="0" width="64" height="32" fill="#0A0A0A" stroke="#000000" stroke-width="3"/>
+        <g transform="rotate(-45)">
+          <!-- corrosion symbol: two flasks dripping onto a surface + a hand -->
+          <g fill="#0A0A0A">
+            <path d="M -13 -12 L -13 -6 L -10 -6 L -10 -12 Z"/>
+            <path d="M 10 -12 L 10 -6 L 13 -6 L 13 -12 Z"/>
+            <path d="M -13 -6 L -8 0 M 10 -6 L 5 0" stroke="#0A0A0A" stroke-width="1.2" fill="none"/>
+            <rect x="-15" y="2" width="10" height="2"/>
+            <rect x="5" y="2" width="10" height="2"/>
+            <path d="M -2 4 L 4 4 L 4 8 L 8 8 L 8 10 L -2 10 Z"/>
+          </g>
+          <text y="26" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="18" fill="#FFFFFF">8</text>
+          <!-- US/CA carry no word on the class diamond; MX adds CORROSIVO -->
+          <text class="country-MX" y="13" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5.4" fill="#FFFFFF" letter-spacing="0.3">CORROSIVO</text>
         </g>
-        <text y="26" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="18" fill="#FFFFFF">8</text>
-        <!-- US/CA carry no word on the class diamond; MX adds CORROSIVO -->
-        <text class="country-MX" y="13" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5.4" fill="#FFFFFF" letter-spacing="0.3">CORROSIVO</text>
       </g>
-    </g>
+      </g>
+      <g id="class3Placard">
+        <g>
+          <g transform="rotate(45)">
+            <rect x="-32" y="-32" width="64" height="64" fill="#E5350D" stroke="#000000" stroke-width="3"/>
+            <rect x="-27" y="-27" width="54" height="54" fill="none" stroke="#FFFFFF" stroke-width="1.2" opacity="0.7"/>
+          </g>
+          <g transform="translate(0 -10) scale(1.3)" fill="#FFFFFF"><path d="M 0 -8 C -3 -3 -6 0 -5 4 C -7 3 -8 0 -7 -2 C -9 0 -10 5 -7 8 C -9 7 -9 4 -9 7 C -7 10 -4 11 0 11 C 4 11 7 10 9 7 C 9 4 9 7 7 8 C 10 5 9 0 7 -2 C 8 0 7 3 5 4 C 6 0 3 -3 0 -8 Z"/></g>
+          <text class="country-US" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#FFFFFF" letter-spacing="0.4">FLAMMABLE</text>
+          <text class="country-MX" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#FFFFFF" letter-spacing="0.4">INFLAMABLE</text>
+          <text y="27" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="13" fill="#FFFFFF">3</text>
+        </g>
+      </g>
+      <g id="class5_1Placard">
+        <g>
+          <g transform="rotate(45)">
+            <rect x="-32" y="-32" width="64" height="64" fill="#F7D117" stroke="#000000" stroke-width="3"/>
+          </g>
+          <circle cx="0" cy="-7" r="7" fill="none" stroke="#0A0A0A" stroke-width="2.6"/>
+          <g transform="translate(0 -21) scale(0.75)" fill="#0A0A0A"><path d="M 0 -8 C -3 -3 -6 0 -5 4 C -7 3 -8 0 -7 -2 C -9 0 -10 5 -7 8 C -9 7 -9 4 -9 7 C -7 10 -4 11 0 11 C 4 11 7 10 9 7 C 9 4 9 7 7 8 C 10 5 9 0 7 -2 C 8 0 7 3 5 4 C 6 0 3 -3 0 -8 Z"/></g>
+          <text class="country-US" y="13" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#0A0A0A" letter-spacing="0.4">OXIDIZER</text>
+          <text class="country-MX" y="13" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#0A0A0A" letter-spacing="0.4">OXIDANTE</text>
+          <text y="26" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="11" fill="#0A0A0A">5.1</text>
+        </g>
+      </g>
+      <g id="class6_1Placard">
+        <g>
+          <g transform="rotate(45)">
+            <rect x="-32" y="-32" width="64" height="64" fill="#FFFFFF" stroke="#000000" stroke-width="3"/>
+          </g>
+          <g fill="#0A0A0A">
+            <circle cx="0" cy="-16" r="6"/>
+            <rect x="-10" y="-9" width="20" height="2.6" rx="1.3" transform="rotate(20 0 -7.7)"/>
+            <rect x="-10" y="-9" width="20" height="2.6" rx="1.3" transform="rotate(-20 0 -7.7)"/>
+          </g>
+          <text class="country-US" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#0A0A0A" letter-spacing="0.4">POISON</text>
+          <text class="country-MX" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#0A0A0A" letter-spacing="0.4">T&#211;XICO</text>
+          <text y="27" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="13" fill="#0A0A0A">6</text>
+        </g>
+      </g>
+      <g id="class9Placard">
+        <g>
+          <g transform="rotate(45)">
+            <rect x="-32" y="-32" width="64" height="64" fill="#FFFFFF" stroke="#000000" stroke-width="3"/>
+          </g>
+          <g fill="#0A0A0A">
+            <rect x="-29" y="-14" width="4.5" height="14"/>
+            <rect x="-20" y="-23" width="4.5" height="23"/>
+            <rect x="-11" y="-32" width="4.5" height="32"/>
+            <rect x="-2" y="-40" width="4.5" height="40"/>
+            <rect x="7" y="-31" width="4.5" height="31"/>
+            <rect x="16" y="-22" width="4.5" height="22"/>
+            <rect x="25" y="-13" width="4.5" height="13"/>
+          </g>
+          <text y="24" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="13" fill="#0A0A0A">9</text>
+          <line x1="-7" y1="28" x2="7" y2="28" stroke="#0A0A0A" stroke-width="1.6"/>
+        </g>
+      </g>
+      <g id="commodityPlacard"><use href="#class8Placard"/></g>
+    </defs>
+    <g transform="translate(750 312)"><use href="#commodityPlacard"/></g>
 
     <!-- UN number orange panel (required in all 3 countries) -->
     <g>
@@ -371,4 +443,7 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults (the rig's painted service identity); zero fabrication. -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">DOT-407 CHEMICAL</tspan> &#183; <tspan data-bind="un_number">UN 1830</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan></text>
 </svg>

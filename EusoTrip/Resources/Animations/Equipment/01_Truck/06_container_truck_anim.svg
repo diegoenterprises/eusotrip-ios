@@ -115,6 +115,18 @@
       .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
     }
   
+    /* ========== IDENTITY BEAT — twist-lock LOCKED indicators ==========
+       The yellow chassis twist-locks (what actually holds the box to the
+       chassis) carry a slow LOCKED pulse — the COFC/chassis truth beat. */
+    .twist-indicator { animation: twist-indicator 2.4s ease-in-out infinite; }
+    @keyframes twist-indicator {
+      0%, 100% { opacity: 0.55; }
+      50%      { opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .twist-indicator { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -197,7 +209,7 @@
     <rect x="475" y="425" width="600" height="14" rx="2" fill="#3A3F4A"/>
     <rect x="475" y="439" width="600" height="13" rx="2" fill="#1A1F2E"/>
     <!-- Twist locks (the yellow corner connectors that hold container to chassis) -->
-    <g fill="#FFE680">
+    <g class="twist-indicator" fill="#FFE680">
       <rect x="478" y="418" width="10" height="8"/>
       <rect x="1062" y="418" width="10" height="8"/>
     </g>
@@ -352,4 +364,7 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">CONTAINER CHASSIS 40 FT</tspan> &#183; <tspan data-bind="container_id">&#8212;</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan></text>
 </svg>

@@ -94,12 +94,41 @@
       50%      { opacity: 1; }
     }
 
+    /* ========== COUNTRY-SWITCHABLE REGULATORY LAYER ==========
+       Boxcar capacity stencil: US AAR pounds · CA Transport Canada kg · MX SCT kg (one interchange fleet, unit flips).
+       Default = US visible. The renderer shows ONE country group by
+       toggling display on .country-US / .country-MX / .country-CA. */
+    .country-US { display: inline; }
+    .country-MX, .country-CA { display: none; }
+
     @media (prefers-reduced-motion: reduce) {
       .rail-clack, .rail-yaw, .container-settle, .spray,
       .sheen, .wordmark, .twist-lock, .reporting, .iso-code,
       .chevron, .sky-shimmer, .rail-line, .ballast, .brand-mark, .brand-word { animation: none !important; }
     }
   
+    /* ========== ACTIVATED RAIL VOCAB (Wave S1) ==========
+       Real jointed-rail read: 96px rail + 4px joint gap scrolled by the
+       shared rail-scroll keyframe — dash cycle (100) equals the keyframe
+       travel, so the joint sweep loops seamlessly under the consist. */
+    .rail-joints { stroke-dasharray: 96 4;
+                   animation: rail-scroll 1.2s linear infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .rail-joints { animation: none !important; }
+    }
+
+    /* ========== IDENTITY BEAT — sliding-door rattle ==========
+       The plug door is the boxcar's identity: it shivers a hair in its
+       track between rail joints (door mass vs car body). */
+    .door-rattle { animation: door-rattle 0.31s ease-in-out infinite; }
+    @keyframes door-rattle {
+      0%, 100% { transform: translateX(0); }
+      50%      { transform: translateX(0.6px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .door-rattle { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -153,9 +182,9 @@
   <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
 
   <rect x="40" y="510" width="1120" height="20" fill="#9B7FD9" opacity="0.18"/>
-  <g fill="#5B3FBF" opacity="0.25"><circle cx="80" cy="518" r="1.5"/><circle cx="160" cy="522" r="1.5"/><circle cx="240" cy="516" r="1.5"/><circle cx="320" cy="524" r="1.5"/><circle cx="400" cy="518" r="1.5"/><circle cx="480" cy="522" r="1.5"/><circle cx="560" cy="516" r="1.5"/><circle cx="640" cy="524" r="1.5"/><circle cx="720" cy="518" r="1.5"/><circle cx="800" cy="522" r="1.5"/><circle cx="880" cy="516" r="1.5"/><circle cx="960" cy="524" r="1.5"/><circle cx="1040" cy="518" r="1.5"/><circle cx="1120" cy="522" r="1.5"/></g>
+  <g class="ballast" fill="#5B3FBF" opacity="0.25"><circle cx="80" cy="518" r="1.5"/><circle cx="160" cy="522" r="1.5"/><circle cx="240" cy="516" r="1.5"/><circle cx="320" cy="524" r="1.5"/><circle cx="400" cy="518" r="1.5"/><circle cx="480" cy="522" r="1.5"/><circle cx="560" cy="516" r="1.5"/><circle cx="640" cy="524" r="1.5"/><circle cx="720" cy="518" r="1.5"/><circle cx="800" cy="522" r="1.5"/><circle cx="880" cy="516" r="1.5"/><circle cx="960" cy="524" r="1.5"/><circle cx="1040" cy="518" r="1.5"/><circle cx="1120" cy="522" r="1.5"/></g>
   <g><rect x="80" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="140" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="200" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="260" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="320" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="380" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="440" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="500" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="560" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="620" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="680" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="740" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="800" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="860" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="920" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="980" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="1040" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="1100" y="498" width="40" height="14" rx="1" fill="url(#tie)"/></g>
-  <rect x="40" y="492" width="1120" height="6" rx="1" fill="#7A7F88"/><rect x="40" y="492" width="1120" height="2" fill="#C0C5CD"/>
+  <line class="rail-joints" x1="40" y1="495" x2="1160" y2="495" stroke="#7A7F88" stroke-width="6" stroke-linecap="butt"/><line class="rail-joints" x1="40" y1="493" x2="1160" y2="493" stroke="#C0C5CD" stroke-width="2" stroke-linecap="butt"/>
   <ellipse cx="600" cy="488" rx="490" ry="6" fill="#1A1F2E" opacity="0.13"/>
 
   <!-- ========== BOXCAR BODY ========== -->
@@ -173,14 +202,18 @@
     <!-- Roof seam -->
     <line x1="120" y1="220" x2="1080" y2="220" stroke="#5C1F1F" stroke-width="1" opacity="0.6"/>
     <!-- ========== SLIDING DOOR (signature boxcar feature, slightly off-center) ========== -->
-    <rect x="420" y="220" width="220" height="225" rx="2" fill="#7A2E2E"/>
-    <rect x="420" y="220" width="220" height="4" fill="#FFFFFF" opacity="0.35"/>
+    <g class="door-rattle">
+      <rect x="420" y="220" width="220" height="225" rx="2" fill="#7A2E2E"/>
+      <rect x="420" y="220" width="220" height="4" fill="#FFFFFF" opacity="0.35"/>
+    </g>
     <!-- Door rails (top + bottom — the door slides on these) -->
     <rect x="380" y="216" width="300" height="6" fill="#1A1F2E"/>
     <rect x="380" y="445" width="300" height="6" fill="#1A1F2E"/>
     <!-- Door handle -->
-    <rect x="615" y="320" width="6" height="60" rx="1" fill="#1A1F2E"/>
-    <rect x="608" y="345" width="20" height="8" rx="1" fill="#3A3F4A"/>
+    <g class="door-rattle">
+      <rect x="615" y="320" width="6" height="60" rx="1" fill="#1A1F2E"/>
+      <rect x="608" y="345" width="20" height="8" rx="1" fill="#3A3F4A"/>
+    </g>
     <!-- Door panel grooves -->
     <g stroke="#5C1F1F" stroke-width="0.7" opacity="0.5">
       <line x1="450" y1="230" x2="450" y2="440"/><line x1="490" y1="230" x2="490" y2="440"/><line x1="530" y1="230" x2="530" y2="440"/>
@@ -188,10 +221,21 @@
     </g>
     <!-- Reporting marks (BNSF or similar) -->
     <text x="240" y="295" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="22" fill="#FFFFFF" opacity="0.95" letter-spacing="2">EUSO</text>
-    <text x="240" y="328" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="32" fill="#FFFFFF" opacity="0.95" letter-spacing="3">713 421</text>
+    <text class="reporting" data-bind="reporting_marks" x="240" y="328" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="32" fill="#FFFFFF" opacity="0.95" letter-spacing="3">713 421</text>
     <!-- Capacity stencil -->
-    <text x="240" y="395" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="2">LD LMT 197200</text>
-    <text x="240" y="412" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="2">LT WT 65800</text>
+    <!-- COUNTRY-SWITCHABLE CAPACITY STENCIL — same car, jurisdiction unit flips -->
+    <g class="country-US">
+      <text x="240" y="395" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="2">LD LMT 197200</text>
+      <text x="240" y="412" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="2">LT WT 65800</text>
+    </g>
+    <g class="country-CA">
+      <text x="240" y="395" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="2">LD LMT 89 450 kg</text>
+      <text x="240" y="412" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="2">LT WT 29 850 kg</text>
+    </g>
+    <g class="country-MX">
+      <text x="240" y="395" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="2">L&#205;M CARGA 89 450 kg</text>
+      <text x="240" y="412" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="2">TARA 29 850 kg</text>
+    </g>
     <!-- 50' label on right side -->
     <text x="850" y="328" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="48" fill="#FFFFFF" opacity="0.18" letter-spacing="2">50'</text>
     <!-- Roof walk grates (small detail across roof) -->
@@ -265,4 +309,7 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">BOXCAR 50 FT</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan></text>
 </svg>
