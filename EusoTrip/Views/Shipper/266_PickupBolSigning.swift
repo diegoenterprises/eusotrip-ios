@@ -84,7 +84,7 @@ private struct BolSigningBody: View {
             // surface routes through the Documents tab.
             NotificationCenter.default.post(
                 name: .eusoShipperNavSwap, object: nil,
-                userInfo: ["screenId": "300", "loadId": loadId, "doc": "bol"]
+                userInfo: ["screenId": "226", "loadId": loadId, "doc": "bol"]
             )
         } label: {
             HStack(spacing: 6) {

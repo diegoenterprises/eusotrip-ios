@@ -118,6 +118,10 @@ struct DriverTripsHistory: View {
         }
         .sheet(isPresented: $showEarningsSheet) {
             MeEarnings068(theme: palette)
+                // Sheet-hosted: null the push layer so 068's top-load
+                // rows fall back to their .medium sheet — a push would
+                // render beneath this open sheet (audit M25 triage).
+                .environment(\.rolePushDetail, nil)
                 .eusoSheetX()
         }
         .sheet(isPresented: $showWeeklyPlanSheet) {

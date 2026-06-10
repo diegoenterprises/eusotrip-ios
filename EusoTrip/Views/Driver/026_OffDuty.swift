@@ -217,6 +217,10 @@ struct OffDuty: View {
         .sheet(isPresented: $showPaySlip) {
             MeEarnings068(theme: palette)
                 .environment(\.palette, palette)
+                // Sheet-hosted: null the push layer so 068's top-load
+                // rows fall back to their .medium sheet — a push would
+                // render beneath this open sheet (audit M25 triage).
+                .environment(\.rolePushDetail, nil)
                 .environmentObject(session)
         }
         .screenTileRoot()

@@ -125,6 +125,22 @@ enum ShipperNavRoute {
         // SETTINGS cell groups. 202 (ShipperProfile) is reachable from
         // inside Me via the ACCOUNT → "Profile" cell.
         "me":          "320",
+        // 2026-06-09 alias sweep (audit Wave-11 minors): the lifecycle
+        // sextet chrome (241/242/243/248) labels its 2nd slot "Post" and
+        // the bids surfaces (390/396/400b) label theirs "Bids" — neither
+        // had a map entry, so those slots were silent dead-taps. Alias
+        // the verbatim labels onto the registered shipper boards.
+        "post":        "204",   // Shipper · Post Load
+        "bids":        "203",   // Shipper · Bids board
+        // 2026-06-09 alias sweep (audit M24 / Wave-11 minors): the
+        // shipper-pool rail/vessel ports (Rail001/002, Vesl001-004)
+        // carry the legacy SVG slot labels "Wallet" / "Track" /
+        // "Bookings" — no map entry made those slots silent dead-taps.
+        // Alias the verbatim labels onto registered shipper screens
+        // (labels are wireframe-verbatim; reconcile by purpose).
+        "wallet":      "290",      // Shipper · Wallet Home
+        "track":       "Vesl003",  // Vessel Shipper · Live Tracking
+        "bookings":    "201",      // Shipper · Loads board (vessel-mode "bookings" lexicon)
     ]
 
     /// `BottomNav` emits the orb tap as `"esang"` — surfaced via a

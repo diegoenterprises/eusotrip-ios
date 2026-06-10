@@ -46,6 +46,14 @@ struct LoadDetailSheet: View {
     /// transform the model (e.g. `AvailableLoad.from(MyLoad)`) can
     /// keep the source/destination ids in sync.
     var heroSourceId: String? = nil
+    /// True when this detail is rendered inside the shared
+    /// `RoleDetailLayer` push (push-nav mandate, 2026-06-09 / audit
+    /// M25) instead of a presented sheet. In push context the layer's
+    /// `BespokeBackBar` owns the exit, so the canonical close X is
+    /// hidden (its `dismiss()` would be a dead no-op) and the booked-
+    /// card "Done"/"Open My Loads" exit posts `.eusoRoleNavBack` to
+    /// pop the layer instead of dismissing a non-existent sheet.
+    var hostedInPush: Bool = false
 
     // MARK: - Environment
 
@@ -181,9 +189,13 @@ struct LoadDetailSheet: View {
             // Canonical close X. Replaces the bespoke inline button
             // so this sheet shares the same hit-target geometry +
             // press animation as every other sheet in the app per
-            // the 2026 UX motion doc.
-            SheetCloseButton { dismiss() }
-                .padding(Space.s4)
+            // the 2026 UX motion doc. Sheet-hosting only — in push
+            // context the BespokeBackBar owns the exit and dismiss()
+            // would be a dead no-op (audit M25).
+            if !hostedInPush {
+                SheetCloseButton { dismiss() }
+                    .padding(Space.s4)
+            }
         }
         // Uniform cafe-door entrance — loads used to snap in.
         .screenTileRoot()
@@ -1519,7 +1531,14 @@ struct LoadDetailSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             Button {
                 onBook?()
-                dismiss()
+                // Push-hosted: pop the RoleDetailLayer (dismiss() would
+                // be a no-op with no presentation). Sheet-hosted: the
+                // normal dismissal. (Audit M25.)
+                if hostedInPush {
+                    NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+                } else {
+                    dismiss()
+                }
             } label: {
                 Text(status == "auto_accepted" ? "Open My Loads" : "Done")
                     .font(EType.bodyStrong)

@@ -68,7 +68,7 @@ private struct PodSignedBody: View {
 
     private var ctaRow: some View {
         Button {
-            NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "300", "loadId": loadId])
+            NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "226", "loadId": loadId])
         } label: {
             Text("View paperwork").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                 .frame(maxWidth: .infinity).padding(.vertical, 12)

@@ -46,6 +46,15 @@ enum DispatchNavRoute {
         // (Home), which made the "Me" tab a silent dead-end that bounced
         // the dispatcher back to the screen they were already on.
         "me":    "Dpch713",
+        // 2026-06-09 alias sweep (audit M24): ~20 dispatch screens still
+        // carry the legacy SVG slot labels "Drivers" / "Loads" in their
+        // BottomNav rows. Those labels had no map entry, so the slots
+        // were silent dead-taps (the dispatcher's `guard let` returns).
+        // Alias them onto the registered boards instead of relabeling
+        // every bespoke port (the labels are wireframe-verbatim).
+        "drivers": "Dpch701",   // Dispatch · Driver Board (registered)
+        "loads":   "Dpch702",   // Dispatch · Load Assignment (registered)
+        "dispatch": "Disp401",  // Dpch710A Convoy Composer's "Dispatch" slot → canonical board
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

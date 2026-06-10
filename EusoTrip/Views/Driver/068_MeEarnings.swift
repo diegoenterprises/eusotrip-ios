@@ -63,6 +63,14 @@ struct MeEarnings068: View {
     let theme: Theme.Palette
     @Environment(\.palette) var palette
     @Environment(\.dismiss) private var dismiss
+    /// Sheet→push detail layer (push-nav mandate, 2026-06-09 / audit
+    /// M25). Top-load rows push the detail in-stack when the Driver
+    /// surface layer is mounted. IMPORTANT: hosts that present THIS
+    /// screen inside a `.sheet` (059 Trips History, 058 Weekly Plan,
+    /// 026 Off Duty) null this env (`.environment(\.rolePushDetail,
+    /// nil)`) so the row falls back to its `.medium` detent sheet —
+    /// a push would render beneath their open sheet.
+    @Environment(\.rolePushDetail) private var pushDetail
 
     @StateObject private var store = MeEarningsStore()
 
@@ -109,6 +117,10 @@ struct MeEarnings068: View {
             }
         }
         .task { await store.refresh() }
+        // FALLBACK presenter (push-nav mandate, 2026-06-09 / audit M25):
+        // fires when `\.rolePushDetail` is nil — i.e. previews, or when
+        // this screen is itself hosted inside a sheet (059/058/026 null
+        // the env). The production top-level path pushes in-stack.
         .sheet(item: $detailRow) { row in
             TopLoadDetailSheet(row: row)
                 .environment(\.palette, theme)
@@ -473,7 +485,23 @@ struct MeEarnings068: View {
             case .loaded(let rows):
                 VStack(spacing: Space.s2) {
                     ForEach(rows) { row in
-                        Button { detailRow = row } label: {
+                        Button {
+                            // Push-nav (audit M25): in-stack detail when
+                            // the layer is mounted; .medium-detent sheet
+                            // fallback otherwise (incl. sheet hosts that
+                            // null \.rolePushDetail).
+                            if let push = pushDetail {
+                                push("Load detail") {
+                                    AnyView(
+                                        TopLoadDetailSheet(row: row,
+                                                           hostedInPush: true)
+                                            .environment(\.palette, theme)
+                                    )
+                                }
+                            } else {
+                                detailRow = row
+                            }
+                        } label: {
                             TopLoadRowView(row: row)
                         }
                         .buttonStyle(.plain)
@@ -729,6 +757,12 @@ private struct TopLoadDetailSheet: View {
     @Environment(\.palette) var palette
     @Environment(\.dismiss) private var dismiss
     let row: TopLoadRow
+    /// True when this detail is rendered inside the shared
+    /// `RoleDetailLayer` push (push-nav mandate, 2026-06-09 / audit
+    /// M25) instead of a presented sheet. In push context the layer's
+    /// `BespokeBackBar` owns the exit, so the header's sheet-only
+    /// close X (whose `dismiss()` would be a dead no-op) is hidden.
+    var hostedInPush: Bool = false
 
     var body: some View {
         ZStack {
@@ -737,19 +771,23 @@ private struct TopLoadDetailSheet: View {
                 EusoHeader(title: row.loadNumber,
                            subtitle: "\(row.origin) → \(row.destination)",
                            size: .sheet) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(palette.textPrimary)
-                            .frame(width: 32, height: 32)
-                            .background(palette.bgCardSoft)
-                            .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                                    .strokeBorder(palette.borderFaint)
-                            )
+                    // Sheet-hosting only — in push context the
+                    // BespokeBackBar owns the exit (audit M25).
+                    if !hostedInPush {
+                        Button { dismiss() } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(palette.textPrimary)
+                                .frame(width: 32, height: 32)
+                                .background(palette.bgCardSoft)
+                                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                                        .strokeBorder(palette.borderFaint)
+                                )
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
                 IridescentHairline()
                 VStack(alignment: .leading, spacing: Space.s4) {

@@ -224,8 +224,11 @@ private struct DispatcherHomeBody: View {
                     Spacer(minLength: 0)
                 }
                 Button {
+                    // 2026-06-09 nav repair: "708" was the retired Dpch708
+                    // kanban's stale shorthand — never a registered id, so
+                    // the CTA was a silent no-op. Canonical board = Disp401.
                     NotificationCenter.default.post(name: .eusoDispatchNavSwap,
-                                                    object: nil, userInfo: ["screenId": "708"])
+                                                    object: nil, userInfo: ["screenId": "Disp401"])
                 } label: {
                     Text("Open the Board →")
                         .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
@@ -450,8 +453,11 @@ private struct DispatcherHomeBody: View {
     private var esangStrip: some View {
         let pick = tenders.first { $0.isPeer != true && $0.suggestedDriver != nil }
         return Button {
-            NotificationCenter.default.post(name: .eusoDispatchNavSwap,
-                                            object: nil, userInfo: ["screenId": "esang"])
+            // 2026-06-09 nav repair: posting navSwap "esang" was dead —
+            // "esang" is not a registered screen id, so RBAC bounced it.
+            // The coach opens via the dedicated orb notification that
+            // DispatchSurface already receives (RoleSurfaceRouter).
+            NotificationCenter.default.post(name: .eusoDispatcheSangTapped, object: nil)
         } label: {
             HStack(spacing: 12) {
                 ZStack {

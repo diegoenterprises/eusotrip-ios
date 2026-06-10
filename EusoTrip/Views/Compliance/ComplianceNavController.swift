@@ -40,6 +40,16 @@ enum ComplianceNavRoute {
         "drivers": "901",
         "audits":  "902",
         "me":      "903",
+        // 2026-06-09 alias sweep (audit M24 / Wave-11 minors): 1111
+        // OnboardingWizard's chrome labels its slots "Tiers" / "Docs".
+        // "docs" aliases onto the registered Expiring Docs board.
+        // "tiers" is intentionally UNMAPPED: it is only ever emitted by
+        // 1111's own current slot, and the wizard is not a registered
+        // ScreenRegistry surface (RIOS flow hosts it directly) — there
+        // is no honest registered destination to alias it to. Current-
+        // tab taps are no-ops by convention, so the slot stays inert
+        // rather than fabricating a target.
+        "docs":    "901",   // Compliance · Expiring Docs (registered)
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

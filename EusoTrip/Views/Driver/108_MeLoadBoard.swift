@@ -85,9 +85,14 @@ final class MeLoadBoardStore: ObservableObject {
 struct MeLoadBoardView: View {
     @Environment(\.palette) private var palette
     @StateObject private var store = MeLoadBoardStore()
+    /// Sheet→push detail layer (push-nav mandate, 2026-06-09 / audit
+    /// M25). Row taps push the canonical `LoadDetailSheet` in-stack via
+    /// the Driver surface's `RoleDetailLayer`; the `.sheet` below stays
+    /// as the nil-env fallback (previews / isolated hosting).
+    @Environment(\.rolePushDetail) private var pushDetail
 
-    /// Tap-on-row presents the canonical load-detail sheet IN-PLACE
-    /// inside Eusoboards. Founder bug 2026-05-07: tapping a load
+    /// Tap-on-row presents the canonical load-detail IN-PLACE inside
+    /// Eusoboards. Founder bug 2026-05-07: tapping a load
     /// previously fired `MeAction.fire("driver.load.detail")` which
     /// the global handler routed to `.wallet` (My Loads) — wrong
     /// destination. Driver Me LoadBoard IS Eusoboards (the public
@@ -114,6 +119,9 @@ struct MeLoadBoardView: View {
         .onChange(of: store.hazmatOnly) { _, _ in Task { await store.search() } }
         .onChange(of: store.sortBy) { _, _ in Task { await store.search() } }
         .refreshable { await store.search() }
+        // LEGACY FALLBACK ONLY (push-nav mandate, 2026-06-09 / audit M25):
+        // row taps push in-stack via `\.rolePushDetail`; this slide-up
+        // presenter fires only when no detail layer is mounted.
         .sheet(item: $selectedRow) { selected in
             LoadDetailSheet(load: availableLoad(from: selected.row))
                 .environment(\.palette, palette)
@@ -341,7 +349,19 @@ struct MeLoadBoardView: View {
         let perMile: Double = (l.distance > 0) ? l.rate / l.distance : 0
         let isContract = l.isLaneContract == true
         return Button {
-            selectedRow = SelectedEusoboardsRow(row: l)
+            // Push-nav (audit M25): in-stack detail when the layer is
+            // mounted; legacy sheet fallback otherwise.
+            if let push = pushDetail {
+                let load = availableLoad(from: l)
+                push("Load details") {
+                    AnyView(
+                        LoadDetailSheet(load: load, hostedInPush: true)
+                            .environment(\.palette, palette)
+                    )
+                }
+            } else {
+                selectedRow = SelectedEusoboardsRow(row: l)
+            }
         } label: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {

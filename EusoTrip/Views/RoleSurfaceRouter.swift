@@ -1114,15 +1114,13 @@ struct BrokerSurface: View {
     // tabRoots must equal the 4 BottomNav slot destinations. The Broker
     // bottom-nav (400 Home / Tenders / Carriers / Me) resolves through
     // `BrokerNavRoute.map`:
-    //   home→400 · loads→401 · carriers→402b · me→404.
-    // The previous literal {400,401,402,403} listed 402 (Tender Detail)
-    // and 403 (Tender→Carrier) — neither is a bottom-nav slot — and
-    // omitted 402b (Carriers slot) and 404 (Me slot). With 404 absent the
-    // Me tab never reset to its root. Corrected to the real slot set.
-    // NOTE (flagged, not fixed): the 2nd slot's label is "Tenders" but the
-    // route map keys it as "loads"→401; "tenders" has no map entry, so that
-    // slot is currently a no-op until the label/key are reconciled — that is
-    // a BottomNav-destination bug, out of scope here. (IA recon 2026-05-30.)
+    //   home→400 · loads/tenders→401 · carriers→402b · me→404B.
+    // All four ids below are registered broker screens and match the map
+    // verbatim — the Me hub is 404B (Commission Queue dual), NOT bare
+    // 404. The "Tenders" label gained its own map alias onto 401 in the
+    // 2026-06-09 alias sweep (it was a flagged no-op since the 2026-05-30
+    // IA recon). Keep this set in lockstep with `BrokerNavRoute.map`.
+    // (Comment re-verified against shipped code 2026-06-09.)
     private static let tabRoots: Set<String> = ["400", "401", "402b", "404B"]
 
     private var currentScreenId: String { screenStack.last ?? "400" }
@@ -1219,11 +1217,12 @@ struct EscortSurface: View {
     // tabRoots must equal the 4 BottomNav slot destinations. The Escort
     // bottom-nav (600 Home / Assignments / Corridor / Me) resolves through
     // `EscortNavRoute.map`:
-    //   home→600 · assignments→601 · corridor→602 · me→600.
-    // The previous literal listed 603 — not a bottom-nav slot and not a
-    // registered screen (verified). Me resolves to 600 (Home), already
-    // present. Corrected to the 3 distinct, real slot destinations.
-    // (IA recon 2026-05-30.)
+    //   home→600 · assignments→601 · corridor→602 · me→620.
+    // All four ids below are registered escort screens and match the map
+    // verbatim — Me resolves to the dedicated 620 Escort Me hub (it no
+    // longer collapses onto 600 Home as an older revision of this comment
+    // claimed). Keep this set in lockstep with `EscortNavRoute.map`.
+    // (Comment re-verified against shipped code 2026-06-09.)
     private static let tabRoots: Set<String> = ["600", "601", "602", "620"]
 
     private var currentScreenId: String { screenStack.last ?? "600" }
@@ -1314,11 +1313,13 @@ struct TerminalSurface: View {
     // tabRoots must equal the 4 BottomNav slot destinations. The Terminal
     // bottom-nav (700 Home / Movements / Yard / Me) resolves through
     // `TerminalNavRoute.map`:
-    //   home→700 · movements→701 · yard→702 · me→700.
-    // The previous literal listed 703 — not a bottom-nav slot and not a
-    // registered screen (verified). Me resolves to 700 (Home), already
-    // present. Corrected to the 3 distinct, real slot destinations.
-    // (IA recon 2026-05-30.)
+    //   home→700 · movements→701 · yard→702 · me→703.
+    // All four ids below are registered terminal screens and match the
+    // map verbatim — Me resolves to the dedicated 703 Terminal Me hub
+    // (it no longer collapses onto 700 Home, and 703 IS registered now,
+    // contrary to an older revision of this comment). Keep this set in
+    // lockstep with `TerminalNavRoute.map`.
+    // (Comment re-verified against shipped code 2026-06-09.)
     private static let tabRoots: Set<String> = ["700", "701", "702", "703"]
 
     private var currentScreenId: String { screenStack.last ?? "700" }
@@ -1412,11 +1413,13 @@ struct AdminSurface: View {
     // tabRoots must equal the 4 BottomNav slot destinations. The Admin
     // bottom-nav (800 Home / Tickets / Tenants / Me) resolves through
     // `AdminNavRoute.map`:
-    //   home→800 · tickets→801 · tenants→802 · me→800.
-    // The previous literal listed 803 (Tenant Detail) — a registered screen
-    // but NOT a bottom-nav slot (it's a push-detail drill from 802). Me
-    // resolves to 800 (Home), already present. Corrected to the 3 distinct
-    // slot destinations. (IA recon 2026-05-30.)
+    //   home→800 · tickets→801 · tenants→802 · me→804.
+    // All four ids below are registered admin screens and match the map
+    // verbatim — Me resolves to the dedicated 804 Admin Me hub (it no
+    // longer collapses onto 800 Home as an older revision of this comment
+    // claimed). 803 (Tenant Detail) is a push-detail drill from 802, not
+    // a slot. Keep this set in lockstep with `AdminNavRoute.map`.
+    // (Comment re-verified against shipped code 2026-06-09.)
     private static let tabRoots: Set<String> = ["800", "801", "802", "804"]
 
     private var currentScreenId: String { screenStack.last ?? "800" }
@@ -1610,11 +1613,13 @@ struct ComplianceSurface: View {
     // tabRoots must equal the 4 BottomNav slot destinations. The Compliance
     // bottom-nav (900 Home / Drivers / Audits / Me) resolves through
     // `ComplianceNavRoute.map`:
-    //   home→900 · drivers→901 · audits→902 · me→900.
-    // The previous literal listed 903 — a screen that does NOT exist in
-    // ScreenRegistry (verified) — making it a phantom tab-root. Me resolves
-    // to 900 (Home), already present. Corrected to the 3 distinct, real,
-    // registered slot destinations. (IA recon 2026-05-30.)
+    //   home→900 · drivers→901 · audits→902 · me→903.
+    // All four ids below are registered compliance screens and match the
+    // map verbatim — Me resolves to the dedicated 903 Compliance Me hub
+    // (903 IS registered now; an older revision of this comment called it
+    // a phantom and claimed Me collapsed onto 900 Home). Keep this set in
+    // lockstep with `ComplianceNavRoute.map`.
+    // (Comment re-verified against shipped code 2026-06-09.)
     private static let tabRoots: Set<String> = ["900", "901", "902", "903"]
 
     private var currentScreenId: String { screenStack.last ?? "900" }

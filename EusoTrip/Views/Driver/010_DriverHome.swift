@@ -795,6 +795,12 @@ struct DriverHome: View {
     @Environment(\.palette) var palette
     @EnvironmentObject private var profile: DriverProfileStore
     @StateObject private var vm = DriverHomeViewModel()
+    /// Sheet→push detail layer (push-nav mandate, 2026-06-09 / audit
+    /// M25). The active-load "Review load brief" CTA and the suggested-
+    /// loads carousel push the canonical `LoadDetailSheet` in-stack via
+    /// the Driver surface's `RoleDetailLayer`; the legacy `.sheet`
+    /// presenters stay as the nil-env fallback (previews).
+    @Environment(\.rolePushDetail) private var pushDetail
     @State private var showMessages: Bool = false
     /// True when the driver has tapped the active-load card's "Details"
     /// button. Presents `LoadDetailSheet` over the Home surface with the
@@ -1030,47 +1036,13 @@ struct DriverHome: View {
         // canonical LoadDetailSheet the Eusoboards surface renders so
         // drivers get the same route map, rate breakdown, and broker
         // card regardless of which surface opened it.
+        // LEGACY FALLBACK ONLY (push-nav mandate, 2026-06-09 / audit M25):
+        // the production path is `openAssignedLoadDetail()` → in-stack
+        // push via `RoleDetailLayer`. This slide-up presenter fires only
+        // when no detail layer is mounted (previews / isolated hosting).
         .sheet(isPresented: $showAssignedLoadDetail) {
-            if let load = vm.activeLoad {
-                LoadDetailSheet(
-                    load: AvailableLoad.from(
-                        load,
-                        originCity: vm.originCity,
-                        destCity: vm.destCity
-                    )
-                )
-                .environment(\.palette, palette)
+            assignedLoadDetailContent(hostedInPush: false)
                 .eusoSheetX()
-            } else {
-                // Summary-only fallback — builds a thinner AvailableLoad
-                // from the LoadSummary projection so the detail sheet
-                // still has enough to render while getById is in flight.
-                LoadDetailSheet(
-                    load: AvailableLoad(
-                        id: vm.loadIDDisplay,
-                        origin: vm.originCity,
-                        destination: vm.destCity,
-                        miles: 0,
-                        equipment: "-",
-                        rate: 0,
-                        rpm: 0,
-                        pickupWindow: vm.pickupStatusPill,
-                        broker: "Dispatch",
-                        hazmat: false,
-                        weight: "-",
-                        hotScore: 0,
-                        originLat: 39.8283, originLng: -98.5795,
-                        destLat: 39.8283, destLng: -98.5795,
-                        // Summary-only fallback — the VM doesn't surface a
-                        // mode here; default truck so mode-aware surfaces
-                        // read correctly until getById hydrates the row.
-                        transportMode: "truck",
-                        equipmentRaw: nil
-                    )
-                )
-                .environment(\.palette, palette)
-                .eusoSheetX()
-            }
         }
         // HOS port — full 019 surface with banks / 24h timeline / 3-meter
         // strip. Picks the `.afternoon` register so the live status reads
@@ -1100,6 +1072,10 @@ struct DriverHome: View {
         // direction (2026-04-21):
         //
         //   > when you press it it takes you to the load details
+        //
+        // LEGACY FALLBACK ONLY since 2026-06-09 (audit M25): carousel
+        // taps push in-stack via `\.rolePushDetail`; this presenter
+        // fires only when no detail layer is mounted.
         .sheet(item: $selectedSuggestedLoad) { load in
             LoadDetailSheet(load: load)
                 .environment(\.palette, palette)
@@ -1114,6 +1090,71 @@ struct DriverHome: View {
             DriverHomeNotificationsSheet()
                 .environment(\.palette, palette)
                 .eusoSheetX()
+        }
+    }
+
+    // MARK: Assigned-load detail (push-nav, audit M25)
+
+    /// Shared detail body for the active/assigned load. Reuses the
+    /// canonical `LoadDetailSheet` the Eusoboards surface renders so
+    /// drivers get the same route map, rate breakdown, and broker card
+    /// regardless of which surface opened it. Rendered either in-stack
+    /// (pushed via `RoleDetailLayer`) or inside the legacy fallback
+    /// sheet above. `hostedInPush` threads through to `LoadDetailSheet`
+    /// so the push-hosted variant hides its sheet-only close X and exits
+    /// via `.eusoRoleNavBack` instead of a dead `dismiss()`.
+    @ViewBuilder
+    private func assignedLoadDetailContent(hostedInPush: Bool) -> some View {
+        if let load = vm.activeLoad {
+            LoadDetailSheet(
+                load: AvailableLoad.from(
+                    load,
+                    originCity: vm.originCity,
+                    destCity: vm.destCity
+                ),
+                hostedInPush: hostedInPush
+            )
+            .environment(\.palette, palette)
+        } else {
+            // Summary-only fallback — builds a thinner AvailableLoad
+            // from the LoadSummary projection so the detail sheet
+            // still has enough to render while getById is in flight.
+            LoadDetailSheet(
+                load: AvailableLoad(
+                    id: vm.loadIDDisplay,
+                    origin: vm.originCity,
+                    destination: vm.destCity,
+                    miles: 0,
+                    equipment: "-",
+                    rate: 0,
+                    rpm: 0,
+                    pickupWindow: vm.pickupStatusPill,
+                    broker: "Dispatch",
+                    hazmat: false,
+                    weight: "-",
+                    hotScore: 0,
+                    originLat: 39.8283, originLng: -98.5795,
+                    destLat: 39.8283, destLng: -98.5795,
+                    // Summary-only fallback — the VM doesn't surface a
+                    // mode here; default truck so mode-aware surfaces
+                    // read correctly until getById hydrates the row.
+                    transportMode: "truck",
+                    equipmentRaw: nil
+                ),
+                hostedInPush: hostedInPush
+            )
+            .environment(\.palette, palette)
+        }
+    }
+
+    /// Push-nav entry point for the "Review load brief" CTA. In-stack
+    /// push when the Driver surface layer is mounted; legacy slide-up
+    /// sheet otherwise.
+    private func openAssignedLoadDetail() {
+        if let push = pushDetail {
+            push("Load brief") { AnyView(assignedLoadDetailContent(hostedInPush: true)) }
+        } else {
+            showAssignedLoadDetail = true
         }
     }
 
@@ -1394,7 +1435,20 @@ struct DriverHome: View {
                     LazyHStack(spacing: Space.s3) {
                         ForEach(suggestedLoads) { load in
                             Button {
-                                selectedSuggestedLoad = load
+                                // Push-nav (audit M25): in-stack detail
+                                // when the layer is mounted; legacy
+                                // sheet fallback otherwise.
+                                if let push = pushDetail {
+                                    push("Load details") {
+                                        AnyView(
+                                            LoadDetailSheet(load: load,
+                                                            hostedInPush: true)
+                                                .environment(\.palette, palette)
+                                        )
+                                    }
+                                } else {
+                                    selectedSuggestedLoad = load
+                                }
                             } label: {
                                 SuggestedLoadCard(load: load)
                                     .frame(width: suggestedCardWidth)
@@ -1556,7 +1610,7 @@ struct DriverHome: View {
                 HStack(spacing: Space.s2) {
                     LifecycleCTAButton(title: "Continue pre-trip")
                         .frame(maxWidth: .infinity)
-                    Button("Review load brief") { showAssignedLoadDetail = true }
+                    Button("Review load brief") { openAssignedLoadDetail() }
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                         .frame(maxWidth: .infinity, minHeight: 50)

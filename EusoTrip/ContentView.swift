@@ -708,7 +708,12 @@ enum ScreenRegistry {
         list.append(.init(id: "227", title: "Shipper · Settlement Detail", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperSettlementDetail() }) })
         list.append(.init(id: "228", title: "Shipper · BOLs",            role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperBOLs() }) })
         list.append(.init(id: "229", title: "Shipper · Allocations",     role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperAllocations() }) })
-        list.append(.init(id: "233", title: "Shipper · Market Intelligence", role: .shipper) { p in AnyView(MarketIntelligenceScreen(theme: p)) })
+        // 2026-06-09 registry dedup: Market Intelligence was registered as
+        // "233", colliding with (and shadowing) "233" Watch Complication —
+        // the /shipper/watch deep-link rendered this screen instead. The
+        // 231-240 series owns "233" (Watch); Market Intelligence re-id'd
+        // to the free slot "330". Me-hub VISIBILITY cell updated to match.
+        list.append(.init(id: "330", title: "Shipper · Market Intelligence", role: .shipper) { p in AnyView(MarketIntelligenceScreen(theme: p)) })
         list.append(.init(id: "223A", title: "Shipper · Agreement Wizard",   role: .shipper) { p in AnyView(AgreementWizardScreen(theme: p)) })
         list.append(.init(id: "230", title: "Shipper · Bid Thread",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperBidThread(loadId: 0) }) })
         // 228b / 229b / 230b — sibling files at the same slot numbers.
@@ -929,6 +934,13 @@ enum ScreenRegistry {
         list.append(.init(id: "297", title: "Shipper · Monthly Statement",       role: .shipper) { p in AnyView(MonthlyStatementScreen(theme: p)) })
         list.append(.init(id: "298", title: "Shipper · Sustainability",          role: .shipper) { p in AnyView(SustainabilityScreen(theme: p)) })
         list.append(.init(id: "299", title: "Shipper · Reports",                 role: .shipper) { p in AnyView(ReportsScreen(theme: p)) })
+        // 2026-06-09 — 300-309 documents/signing cluster EXPLICITLY RETIRED
+        // (DocumentsAll, Pdf/ImageViewer, EusoTicket BOL/RunTicket/Haul,
+        // BolCounterSign, RateConSign, PodPhotoCapture, WalletPass). Never
+        // registered, zero external references; the canonical shipper
+        // document surface is 226 ShipperDocumentCenter (the six lifecycle
+        // CTAs in 262/266/271/272/273/274 were retargeted 300 → 226).
+        // Do NOT register the orphans without a loadId/docId context plan.
         // 2026-05-30 — the-oath §46/§52 shipper ports (id-prefixed; bare 297/298 are taken above).
         list.append(.init(id: "Ship297Ins", title: "Shipper · Cargo Insurance",  role: .shipper) { p in AnyView(ShipperCargoInsurance().environment(\.palette, p)) })
         list.append(.init(id: "Ship298Det", title: "Shipper · Detention Exposure", role: .shipper) { p in AnyView(ShipperDetentionExposureScreen(theme: p)) })
@@ -1799,9 +1811,11 @@ enum ScreenRegistry {
             // 2026-06-02 — Dpch700 "Dispatch · Home" RETIRED: it was the
             // quarantined 700-series invention (no SVG provenance, Drivers/
             // Loads nav). Canonical home is now Disp400 (verbatim 400 SVG
-            // port, more wired). DispatchHomeScreen struct kept on disk but
-            // unregistered. Driver roster (Dpch701) + load queue (Dpch702)
-            // remain registered + reachable via the Dpch713 Me hub.
+            // port, more wired). 2026-06-09 — 700_DispatchHome.swift DELETED
+            // from disk + target (zero references; its stray "703" post was
+            // a Terminal id and died with it). Driver roster (Dpch701) +
+            // load queue (Dpch702) remain registered + reachable via the
+            // Dpch713 Me hub and the drivers/loads label aliases.
             .init(id: "Dpch701", title: "Dispatch · Driver Board",     role: .dispatch) { p in AnyView(DispatchDriverBoardScreen(theme: p)) },
             // §37 — Dispatcher 404 Driver Roster (HOS-urgency-sorted roster; wires dispatch.getDriverRoster).
             .init(id: "Dpch404", title: "Dispatch · Driver Roster",    role: .dispatch) { p in AnyView(DispatcherDriverRosterScreen(theme: p)) },
@@ -1813,7 +1827,9 @@ enum ScreenRegistry {
             .init(id: "Dpch707", title: "Dispatch · Daily KPI",        role: .dispatch) { p in AnyView(DispatchDailyKPIScreen(theme: p)) },
             // 2026-06-02 — Dpch708 "Dispatch · Kanban Board" RETIRED: superseded
             // by canonical Disp401 (verbatim 401 SVG port, same endpoints).
-            // DispatchKanbanBoardScreen struct kept on disk but unregistered.
+            // 2026-06-09 — 708_DispatchKanbanBoard.swift DELETED from disk +
+            // target (zero references; Disp400's "Open the Board" CTA now
+            // posts "Disp401" instead of the stale "708").
             // 2026-05-31 — Rescue land: bespoke Dispatcher greenfield home + kanban (full ports).
             .init(id: "Disp400", title: "Dispatch · Home",            role: .dispatch) { p in AnyView(DispatcherHomeScreen(theme: p)) },
             .init(id: "Disp401", title: "Dispatch · Kanban",          role: .dispatch) { p in AnyView(DispatcherKanbanScreen(theme: p)) },
@@ -2225,7 +2241,13 @@ enum ScreenRegistry {
             .init(id: "Vesl008", title: "Vessel · Intermodal Journey",    role: .vesselOperator) { p in AnyView(VesselIntermodalJourneyScreen(theme: p)) },
             .init(id: "Vesl009", title: "Vessel · Tender Workflow",        role: .vesselOperator) { p in AnyView(VesselTenderWorkflowScreen(theme: p)) },
             // Phase B wave 1 — Vessel operator NEW screens (verbatim ports of the canonical Dark-SVGs).
-            .init(id: "Vesl659", title: "Vessel Operator · Port Directory",       role: .vesselOperator) { p in AnyView(VesselPortDirectoryScreen(theme: p)) },
+            // 2026-06-09 registry dedup: Port Directory was registered as
+            // "Vesl659", colliding with (and shadowing) the Bunker FSC
+            // screen that owns that id — the 656 Me-hub "Bunker FSC" row
+            // opened the Port Directory instead. Re-id'd to the free slot
+            // "Vesl686" (wave 3 skips 686); file renamed 659→686 on disk.
+            // Do NOT merge with Vesl685 (Bunker FSC Schedule — different screen).
+            .init(id: "Vesl686", title: "Vessel Operator · Port Directory",       role: .vesselOperator) { p in AnyView(VesselPortDirectoryScreen(theme: p)) },
             .init(id: "Vesl666", title: "Vessel Operator · Container Timeline",   role: .vesselOperator) { p in AnyView(VesselContainerTimelineScreen(theme: p)) },
             .init(id: "Vesl667", title: "Vessel Operator · Chain of Custody",      role: .vesselOperator) { p in AnyView(VesselChainOfCustodyScreen(theme: p)) },
             .init(id: "Vesl668", title: "Vessel Operator · IMDG Hazmat Manifest",  role: .vesselOperator) { p in AnyView(VesselIMDGHazmatManifestScreen(theme: p)) },
@@ -2444,6 +2466,16 @@ struct ContentView: View {
     /// backgrounds to decide whether the traffic/weather overlays render.
     @AppStorage("com.eusorone.EusoTrip.map.layersVisible") private var mapLayersVisible: Bool = true
 
+    /// Driver-surface sheet→push detail layer (push-nav mandate,
+    /// 2026-06-09 / audit M25). The non-driver roles each mount their own
+    /// `RoleDetailLayer` inside `RoleSurfaceRouter`; the Driver surface is
+    /// inline here, so it owns its own pushed-detail truth. Driver screens
+    /// (010 Home, Eusoboards/Loads panes, 108 Me LoadBoard, 068 Me
+    /// Earnings) call `\.rolePushDetail` to slide the canonical
+    /// `LoadDetailSheet` in from the trailing edge instead of presenting
+    /// a slide-up modal. Back posts the shared `.eusoRoleNavBack`.
+    @State private var driverPushedDetail: RoleDetailPush? = nil
+
 #if DEBUG
     private var screens: [ProductionScreen] {
         ScreenRegistry.forRole(selectedRole)
@@ -2491,6 +2523,31 @@ struct ContentView: View {
                 let role = session.user?.roleEnum ?? .driver
                 if role == .driver {
                     driverSurface
+                        // Push-nav mandate (2026-06-09 / audit M25): the
+                        // shared sheet→push detail layer, identical to
+                        // every RoleSurfaceRouter surface. Injects
+                        // `\.rolePushDetail` for all driver screens and
+                        // renders the pushed detail above the surface
+                        // (incl. BottomNav — same as the other roles).
+                        .modifier(RoleDetailLayer(
+                            pushedDetail: $driverPushedDetail,
+                            palette: register.palette,
+                            onBack: {
+                                NotificationCenter.default.post(
+                                    name: .eusoRoleNavBack, object: nil)
+                            }
+                        ))
+                        // Detail-first back semantics: one back gesture
+                        // clears the pushed layer. Only the driver branch
+                        // is mounted when this fires (other surfaces own
+                        // their own `.eusoRoleNavBack` receivers).
+                        .onReceive(NotificationCenter.default.publisher(for: .eusoRoleNavBack)) { _ in
+                            if driverPushedDetail != nil {
+                                withAnimation(.easeInOut(duration: 0.28)) {
+                                    driverPushedDetail = nil
+                                }
+                            }
+                        }
                 } else {
                     RoleSurfaceRouter(palette: register.palette)
                         .id("role-\(role.rawValue)")

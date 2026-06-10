@@ -51,6 +51,14 @@ struct DriverTripsPane: View {
     /// behavior matches a manual nav tap.
     @Environment(\.driverNavHandler) private var driverNavHandler
 
+    /// Sheet→push detail layer (push-nav mandate, 2026-06-09 / audit
+    /// M25). When the Driver surface mounts `RoleDetailLayer` (see
+    /// `ContentView.driverSurface`), load-detail taps slide the canonical
+    /// `LoadDetailSheet` in from the trailing edge with a `BespokeBackBar`
+    /// instead of presenting a slide-up modal. Nil (e.g. previews) falls
+    /// back to the legacy `.sheet` presenters kept below.
+    @Environment(\.rolePushDetail) private var pushDetail
+
     /// Live trip state — drives the pane's top-level branch between the
     /// public Eusoboards load board (when idle) and the active-trip
     /// surface with map, nav info, and SOS (when a trip is active).
@@ -135,9 +143,9 @@ struct DriverTripsPane: View {
     }
 
     /// Computed binding that maps `selectedLoadID` ↔ the matching
-    /// `AvailableLoad`. Feeds `.sheet(item:)` so tapping a pickup pin
-    /// (or a mini-card) presents the full LoadDetailSheet — and
-    /// dismissing the sheet clears the selection.
+    /// `AvailableLoad`. Feeds the legacy `.sheet(item:)` FALLBACK below —
+    /// only reachable when `\.rolePushDetail` is nil (previews / isolated
+    /// hosting). The production path is `openLoadDetail(_:)` → push.
     private var selectedLoadBinding: Binding<AvailableLoad?> {
         Binding(
             get: {
@@ -150,6 +158,46 @@ struct DriverTripsPane: View {
         )
     }
 
+    /// Push-nav entry point for every Eusoboards load tap (map pin,
+    /// map mini-card, list card). Pushes the canonical `LoadDetailSheet`
+    /// in-stack via the shared `RoleDetailLayer`; falls back to the
+    /// legacy slide-up sheet when no layer is mounted. Book/Bid CTAs
+    /// pop the pushed layer via the shared `.eusoRoleNavBack`.
+    private func openLoadDetail(_ id: String) {
+        guard let load = board.first(where: { $0.id == id }) else { return }
+        guard let push = pushDetail else {
+            selectedLoadID = id     // legacy sheet fallback
+            return
+        }
+        push("Load details") {
+            AnyView(
+                LoadDetailSheet(
+                    load: load,
+                    onMessageBroker: {
+                        // Hook into messaging in a later wave.
+                    },
+                    hostedInPush: true
+                )
+                .environment(\.palette, palette)
+            )
+        }
+    }
+
+    /// Push-nav entry point for the "My Loads" CTA. Same fallback
+    /// contract as `openLoadDetail(_:)`.
+    private func openMyLoads() {
+        guard let push = pushDetail else {
+            showMyLoads = true      // legacy sheet fallback
+            return
+        }
+        push("My Loads") {
+            AnyView(
+                MyLoadsSheet(hostedInPush: true)
+                    .environment(\.palette, palette)
+            )
+        }
+    }
+
     var body: some View {
         Group {
             if trip.phase.isActiveTrip {
@@ -158,14 +206,18 @@ struct DriverTripsPane: View {
                 eusoboardsBody
             }
         }
+        // LEGACY FALLBACK ONLY (push-nav mandate, 2026-06-09 / audit M25):
+        // the production path is `openMyLoads()` → `RoleDetailLayer` push.
+        // This presenter is reachable only when `\.rolePushDetail` is nil
+        // (previews / isolated hosting without the Driver surface layer).
         .sheet(isPresented: $showMyLoads) {
             MyLoadsSheet()
                 .environment(\.palette, palette)
                 .eusoSheetX()
         }
-        // Pin-tap → full load-detail sheet. Mirrors the web Eusoboards
-        // click-through: route · permits · prohibited routes · cargo ·
-        // broker · rate breakdown.
+        // LEGACY FALLBACK ONLY — see `openLoadDetail(_:)`. Pin/card taps
+        // push the canonical LoadDetailSheet in-stack; this slide-up
+        // presenter fires only when no detail layer is mounted.
         .sheet(item: selectedLoadBinding) { load in
             LoadDetailSheet(
                 load: load,
@@ -734,9 +786,7 @@ struct DriverTripsPane: View {
                 addOns: [],
                 showLegend: false,
                 onSelectMarker: { id in
-                    withAnimation(.easeOut(duration: 0.18)) {
-                        selectedLoadID = id
-                    }
+                    openLoadDetail(id)
                 }
             )
             .frame(height: 340)
@@ -886,9 +936,7 @@ struct DriverTripsPane: View {
                             )
                     )
                     .onTapGesture {
-                        withAnimation(.easeOut(duration: 0.18)) {
-                            selectedLoadID = load.id
-                        }
+                        openLoadDetail(load.id)
                     }
                 }
             }
@@ -899,7 +947,7 @@ struct DriverTripsPane: View {
 
     private var myLoadsButton: some View {
         Button {
-            showMyLoads = true
+            openMyLoads()
         } label: {
             HStack(spacing: Space.s3) {
                 ZStack {
@@ -1096,7 +1144,7 @@ struct DriverTripsPane: View {
             } else {
                 ForEach(filtered) { load in
                     Button {
-                        selectedLoadID = load.id
+                        openLoadDetail(load.id)
                     } label: {
                         LoadBoardCard(load: load)
                     }
@@ -1399,6 +1447,16 @@ struct PressableCardStyle: ButtonStyle {
 struct MyLoadsSheet: View {
     @Environment(\.palette) var palette
     @Environment(\.dismiss) private var dismiss
+    /// True when this board is rendered inside the shared
+    /// `RoleDetailLayer` push (push-nav mandate, 2026-06-09 / audit M25)
+    /// instead of a slide-up sheet. The layer's `BespokeBackBar` owns
+    /// the exit affordance, so the header's own X (which calls the
+    /// sheet-only `dismiss()`) is hidden — it would be a dead button
+    /// in push context. Row taps keep presenting the canonical
+    /// `LoadDetailSheet` as a system sheet either way: the shared
+    /// detail layer is single-level by design, and a second push would
+    /// REPLACE the board instead of stacking on it.
+    var hostedInPush: Bool = false
     @State private var bucket: MyLoadBucket = .active
     /// Row the driver tapped — drives the canonical `LoadDetailSheet`
     /// so the Eusoboards "My Loads" sheet and Driver "Loads" tab share
@@ -1503,22 +1561,26 @@ struct MyLoadsSheet: View {
                     .foregroundStyle(palette.textSecondary)
             }
             Spacer()
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 32, height: 32)
-                    .background(palette.bgCardSoft)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                            .strokeBorder(palette.borderFaint)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+            // Sheet-hosting only — in push context the BespokeBackBar
+            // owns the exit and `dismiss()` would be a dead no-op.
+            if !hostedInPush {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(width: 32, height: 32)
+                        .background(palette.bgCardSoft)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                                .strokeBorder(palette.borderFaint)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close my loads")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close my loads")
         }
         .padding(.horizontal, Space.s5)
         .padding(.top, Space.s4)
@@ -1803,6 +1865,10 @@ struct DriverLoadsPane: View {
 
     @Environment(\.palette)     var palette
     @Environment(\.colorScheme) private var scheme
+    /// Sheet→push detail layer (push-nav mandate, 2026-06-09 / audit
+    /// M25). Load rows push the canonical `LoadDetailSheet` in-stack;
+    /// the legacy `.sheet` below stays as the nil-env fallback.
+    @Environment(\.rolePushDetail) private var pushDetail
 
     @State private var bucket: MyLoadBucket = .active
     @State private var meRoute: MeDetailRoute? = nil
@@ -1860,9 +1926,10 @@ struct DriverLoadsPane: View {
                 .environment(\.palette, palette)
                 .eusoSheetX()
         }
-        // Tap-a-row → canonical Load Details sheet. Mirrors the Eusoboards
-        // tap affordance so every surface that shows a load exposes the
-        // same detail view.
+        // LEGACY FALLBACK ONLY (push-nav mandate, 2026-06-09 / audit M25):
+        // row taps push the canonical LoadDetailSheet in-stack via
+        // `\.rolePushDetail`; this slide-up presenter fires only when no
+        // detail layer is mounted (previews / isolated hosting).
         .sheet(item: $selectedLoad) { load in
             LoadDetailSheet(load: AvailableLoad.from(load))
                 .environment(\.palette, palette)
@@ -1957,7 +2024,20 @@ struct DriverLoadsPane: View {
             VStack(spacing: Space.s3) {
                 ForEach(visible) { load in
                     Button {
-                        selectedLoad = load
+                        // Push-nav (audit M25): in-stack detail when the
+                        // Driver surface layer is mounted; legacy sheet
+                        // fallback otherwise (previews).
+                        if let push = pushDetail {
+                            push("Load details") {
+                                AnyView(
+                                    LoadDetailSheet(load: AvailableLoad.from(load),
+                                                    hostedInPush: true)
+                                        .environment(\.palette, palette)
+                                )
+                            }
+                        } else {
+                            selectedLoad = load
+                        }
                     } label: {
                         MyLoadCard(load: load)
                     }
