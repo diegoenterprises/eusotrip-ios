@@ -176,6 +176,7 @@ private struct VesselOperatorAccountBody: View {
                 ("Vesl772", "chart.bar.xaxis", "Demurrage analytics", "Avoidable vs baseline trend"),
                 ("Vesl735", "bell.badge", "Demurrage alerts", "Free-time cutoffs at risk"),
                 ("Vesl784", "timer", "Detention tracking", "Live detention accrual"),
+                ("Vesl731", "list.bullet.rectangle", "Accessorial charges", "Code-keyed charge ledger"),
             ])
             opsGroup("INTERMODAL", [
                 ("Vesl737", "truck.box.fill", "Drayage orders", "Dispatch the inland leg"),
@@ -201,6 +202,7 @@ private struct VesselOperatorAccountBody: View {
                 ("Vesl820", "thermometer.snowflake", "Reefer pre-cool", "FSMA pre-cool gate"),
                 ("Vesl821", "exclamationmark.triangle", "Reefer alert console", "Cold-chain deviations"),
                 ("Vesl689", "bolt.horizontal.circle", "Network disruption", "Blank sailings & reroutes"),
+                ("Vesl730", "calendar.badge.exclamationmark", "Blank sailing watch", "Cancelled sailings triage"),
             ])
             opsGroup("DISPUTE & RECOVERY", [
                 ("Vesl802", "creditcard", "Claim payments", "Reconcile claim payouts"),
@@ -235,6 +237,7 @@ private struct VesselOperatorAccountBody: View {
             opsGroup("BERTH, TERMINAL & D&D", [
                 ("Vesl664", "calendar.badge.clock", "Terminal appointment", "Schedule a terminal slot"),
                 ("Vesl698", "rectangle.portrait.and.arrow.right", "Berth window", "Assigned berth windows"),
+                ("Vesl697", "ferry.fill", "Port operations", "Live terminal ops console"),
                 ("Vesl658", "hourglass", "Demurrage & detention", "Free-time exposure summary"),
             ])
             opsGroup("CUSTOMS & COMPLIANCE", [
@@ -245,6 +248,7 @@ private struct VesselOperatorAccountBody: View {
                 ("Vesl701", "list.bullet.clipboard", "IMDG DG rules", "DG segregation rules"),
                 ("Vesl705", "bell.badge", "CBP alerts", "Customs hold notifications"),
                 ("Vesl710", "exclamationmark.triangle.fill", "Marine casualty", "Incident & casualty filing"),
+                ("Vesl738", "scalemass", "VGM declaration", "SOLAS verified gross mass"),
             ])
             opsGroup("EQUIPMENT & FLEET", [
                 ("Vesl673", "doc.text.below.ecg", "Container lease", "Box / chassis leases"),

@@ -2231,6 +2231,14 @@ enum ScreenRegistry {
             .init(id: "Vesl812", title: "Vessel · Claim Templates", role: .vesselOperator) { p in AnyView(VesselClaimTemplatesScreen(theme: p)) },
             .init(id: "Vesl670", title: "Vessel · Bunker Prices", role: .vesselOperator) { p in AnyView(VesselBunkerPricesScreen(theme: p)) },
             .init(id: "Vesl708", title: "Vessel · Shipment CO2", role: .vesselOperator) { p in AnyView(VesselShipmentCO2Screen(theme: p)) },
+            // 2026-06-10 — PR #50 salvage: the 4 port-wave-1 screens that never
+            // landed on main (661/670/735/784 + KeyboardDismissBridge were
+            // superseded by newer work). De-fabricated to the live procs
+            // before registration.
+            .init(id: "Vesl697", title: "Vessel · Port Operations", role: .vesselOperator) { p in AnyView(VesselPortOperationsScreen(theme: p)) },
+            .init(id: "Vesl730", title: "Vessel · Blank Sailing Watch", role: .vesselOperator) { p in AnyView(VesselBlankSailingWatchScreen(theme: p)) },
+            .init(id: "Vesl731", title: "Vessel · Accessorial Charges", role: .vesselOperator) { p in AnyView(VesselAccessorialChargesScreen(theme: p)) },
+            .init(id: "Vesl738", title: "Vessel · VGM Declaration", role: .vesselOperator) { p in AnyView(VesselVGMDeclarationScreen(theme: p)) },
             .init(id: "Vesl653", title: "Vessel Operator · Booking Detail",      role: .vesselOperator) { p in AnyView(VesselBookingDetailCarrierScreen(theme: p, shipmentId: 0)) },
             .init(id: "Vesl654", title: "Vessel Operator · Crew Certifications",  role: .vesselOperator) { p in AnyView(VesselCrewCertificationsScreen(theme: p)) },
             .init(id: "Vesl655", title: "Vessel Operator · Container Positions",  role: .vesselOperator) { p in AnyView(VesselContainerPositionsScreen(theme: p)) },
