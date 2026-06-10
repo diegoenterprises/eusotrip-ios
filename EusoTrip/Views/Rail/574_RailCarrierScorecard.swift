@@ -263,6 +263,34 @@ private struct RailCarrierScorecardBody: View {
         return parts.joined(separator: " · ")
     }
 
+    // MARK: Radar model (Wave A2 — real KPI spokes only)
+
+    private var radarModel: ScorecardRadarModel? {
+        guard let sc = scorecard else { return nil }
+        var axes: [ScorecardRadarAxis] = []
+        func axis(_ id: String, _ label: String, _ pct: Double?) {
+            guard let v = pct else { return }
+            axes.append(ScorecardRadarAxis(
+                id: id,
+                label: label,
+                value: max(0, min(1, v / 100)),
+                benchmark: nil,
+                valueText: pctLabel(v)
+            ))
+        }
+        axis("ontime",  "On-time",     sc.ontimePercent)
+        axis("claims",  "Claims-free", sc.claimsFreePercent)
+        axis("tender",  "Tender acpt", sc.tenderAcceptPercent)
+        axis("billing", "Bill acc",    sc.billingAccuracyPercent)
+        guard axes.count >= 3 else { return nil }
+        return ScorecardRadarModel(
+            grade: sc.compositeGrade ?? "",
+            subjectLabel: "Composite interchange · \(captionLabel)",
+            benchmarkLabel: "",
+            axes: axes
+        )
+    }
+
     // MARK: Body
 
     var body: some View {
@@ -276,6 +304,16 @@ private struct RailCarrierScorecardBody: View {
                 } else {
                     heroCard
                     kpiStrip
+                    // Wave A2 — ScorecardRadar de-orphaned onto its census
+                    // host: the four REAL KPI percentages (on-time /
+                    // claims-free / tender-accept / billing-accuracy) become
+                    // the spokes, the composite grade the medallion. Only
+                    // mounts when ≥3 axes carry live values; no benchmark
+                    // hull is drawn because no network benchmark ships on
+                    // this proc (never a fabricated peer hull).
+                    if let radar = radarModel {
+                        ScorecardRadar(model: radar, showsBenchmark: false)
+                    }
                     carrierList
                     ctaPair
                 }

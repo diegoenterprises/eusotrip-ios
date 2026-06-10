@@ -112,14 +112,10 @@
          · US  DOT/PHMSA 49 CFR 172     → CHEMTREC 1-800-424-9300
          · CA  TC TDG (SOR/2001-286)    → CANUTEC 1-888-226-8832
          · MX  SCT NOM-004-SCT/2008     → SETIQ 01-800-00-214-00 (CORROSIVO)
-       Default = US visible. The host renderer sets data-country on <svg>
-       (US|MX|CA); the attribute selectors below reveal exactly one group. */
+       Default = US visible. The renderer shows ONE country group by
+       toggling display on .country-US / .country-MX / .country-CA. */
     .country-US { display: inline; }                  /* default = US visible */
     .country-MX, .country-CA { display: none; }
-    [data-country="MX"] .country-US { display: none; }
-    [data-country="MX"] .country-MX { display: inline; }
-    [data-country="CA"] .country-US { display: none; }
-    [data-country="CA"] .country-CA { display: inline; }
 
     @media (prefers-reduced-motion: reduce) {
       .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,

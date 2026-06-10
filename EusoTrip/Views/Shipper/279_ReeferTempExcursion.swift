@@ -40,10 +40,57 @@ private struct ReeferBody: View {
         VStack(alignment: .leading, spacing: Space.s4) {
             cargoCard
             LifecycleMapCard(live: live, label: "TRUCK POSITION", icon: "thermometer.high", mode: .full)
+            // 799-class probe chart over the SAME live `reeferTemp.getReadings`
+            // rows the ledger below lists — grouped by zone, chronological.
+            // Only mounts when ≥2 samples exist in some zone (a single point
+            // is not a trace); the FSMA 40°F ceiling is a regulatory constant
+            // and no commanded-setpoint column ships on this proc, so the SET
+            // rail is honestly omitted.
+            if !chartZones.isEmpty {
+                ReeferTempLogChart(
+                    zones: chartZones,
+                    setpointF: nil,
+                    ceilingF: 40,
+                    title: "REEFER TEMP LOG · LIVE"
+                )
+            }
             tempCard
             ctaRow
         }
         .task { await loadReadings() }
+    }
+
+    /// Group the live readings by zone → chart traces. Mirrors the 652
+    /// vessel grouping; canonical front/center/rear first, then extras.
+    private var chartZones: [TempZone] {
+        guard !readings.isEmpty else { return [] }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoPlain = ISO8601DateFormatter()
+        func parse(_ s: String) -> Date? {
+            iso.date(from: s) ?? isoPlain.date(from: s)
+        }
+        var grouped: [String: [TempZone.Reading]] = [:]
+        for r in readings {
+            guard let t = parse(r.timestamp) else { continue }
+            let key = (r.zone ?? "center").lowercased()
+            grouped[key, default: []].append(.init(t: t, tempF: r.temp))
+        }
+        func zone(_ key: String, _ name: String, _ pos: TempZone.Position, _ color: Color) -> TempZone? {
+            guard let rs = grouped[key]?.sorted(by: { $0.t < $1.t }), rs.count >= 2 else { return nil }
+            return TempZone(name: name, position: pos, color: color, readings: rs)
+        }
+        var zones: [TempZone] = []
+        if let z = zone("front",  "Front",  .front,  Brand.success) { zones.append(z) }
+        if let z = zone("center", "Center", .center, Brand.blue)    { zones.append(z) }
+        if let z = zone("rear",   "Rear",   .rear,   Brand.warning) { zones.append(z) }
+        let extras = grouped.keys
+            .filter { !["front", "center", "rear"].contains($0) }
+            .sorted().prefix(3)
+        for key in extras {
+            if let z = zone(key, key.capitalized, .center, Brand.info) { zones.append(z) }
+        }
+        return zones
     }
 
     private var cargoCard: some View {

@@ -437,17 +437,17 @@
        Selection: set the unwanted groups to display:none (or toggle a `.country-XX`
        visibility rule) keyed off shipment.routeCountry; data-bind="carrier_dot"
        feeds the live number into whichever group is shown. -->
-  <g class="country-US" data-country="US">
+  <g class="country-US">
     <text x="331" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
           transform="rotate(-90 331 290)" opacity="0.85" data-bind="carrier_dot">USDOT 1234567</text>
   </g>
-  <g class="country-MX" data-country="MX" style="display:none">
+  <g class="country-MX" style="display:none">
     <text x="331" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
           transform="rotate(-90 331 290)" opacity="0.85" data-bind="carrier_sct">SCT 123-4567</text>
   </g>
-  <g class="country-CA" data-country="CA" style="display:none">
+  <g class="country-CA" style="display:none">
     <text x="331" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
           transform="rotate(-90 331 290)" opacity="0.85" data-bind="carrier_nsc">NSC 1234567</text>

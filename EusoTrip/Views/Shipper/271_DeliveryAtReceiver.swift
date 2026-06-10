@@ -42,6 +42,10 @@ private struct AtReceiverBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             arrivalCard
+            // Wave A2 strip extension — the live equipment animation rides
+            // the at-delivery stage (echo-cel 271 M04; the strip previously
+            // stopped at 270).
+            LifecycleAnimationStrip(live: live, label: loadMode.atDeliveryLabel, height: 180)
             receiverCard
             podCard
         }

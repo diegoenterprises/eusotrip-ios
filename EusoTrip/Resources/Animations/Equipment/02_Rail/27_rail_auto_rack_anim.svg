@@ -97,14 +97,10 @@
     /* ========== COUNTRY-SWITCHABLE STENCIL ==========
        Auto racks carry finished automobiles — NON-HAZMAT, so NO hazard
        placards (DOT/PHMSA · SCT/NOM · TDG) apply (n/a). Only the capacity
-       stencil UNIT differs by country of interchange. Renderer sets the
-       root <svg> data-country attr (default US). Groups: .country-US /
-       .country-CA / .country-MX. */
+       stencil UNIT differs by country of interchange. The renderer shows
+       ONE group by toggling display on .country-US / .country-CA /
+       .country-MX (default US). */
     .country-CA, .country-MX { display: none; }
-    svg[data-country="CA"] .country-US, svg[data-country="CA"] .country-MX { display: none; }
-    svg[data-country="CA"] .country-CA { display: inline; }
-    svg[data-country="MX"] .country-US, svg[data-country="MX"] .country-CA { display: none; }
-    svg[data-country="MX"] .country-MX { display: inline; }
 
     @media (prefers-reduced-motion: reduce) {
       .rail-clack, .rail-yaw, .container-settle, .spray,

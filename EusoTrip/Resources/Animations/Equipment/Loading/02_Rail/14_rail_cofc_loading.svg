@@ -168,15 +168,11 @@
 
     /* ============ COUNTRY-AWARE STENCIL UNITS (US default · MX · CA) ============
        The container's weight/volume stencil swaps units by jurisdiction.
-       Renderer picks the locale by setting data-country on the root <svg>
-       (e.g. <svg data-country="MX">). US is the default when unset. The
-       display="inline/none" attributes on each group are the no-CSS fallback. */
+       The renderer picks the locale by toggling display on the
+       .country-US / .country-MX / .country-CA groups directly (US is the
+       default). The display="inline/none" attributes carry the default. */
     .country-MX, .country-CA { display: none; }
     .country-US { display: inline; }
-    [data-country="MX"] .country-US, [data-country="MX"] .country-CA { display: none; }
-    [data-country="MX"] .country-MX { display: inline; }
-    [data-country="CA"] .country-US, [data-country="CA"] .country-MX { display: none; }
-    [data-country="CA"] .country-CA { display: inline; }
 
   ]]></style>
 
@@ -1279,12 +1275,11 @@
                US (FRA/AAR/PHMSA) ........ imperial: LB / CU FT
                MX (SCT · NOM-012-SCT-2) .. metric SI: KG / M3
                CA (Transport Canada/TDG) . metric SI: KG / M3
-             Renderer selects ONE group by toggling display: it shows
-             .country-US by default and sets the other two to display:none
-             (or sets [data-country] on the <svg> and styles
-              [data-country='MX'] .country-MX{display:inline} etc.).
+             Renderer selects ONE group by toggling display on the
+             .country-US/-MX/-CA groups: .country-US shows by default,
+             the other two carry display:none.
              Same 67.2 t MAX GROSS expressed per locale. ============ -->
-        <g class="country-US" data-country="US" display="inline">
+        <g class="country-US" display="inline">
           <text x="306" y="356" font-family="Inter, system-ui, sans-serif"
                 font-weight="700" font-size="7.4" letter-spacing="1.2" fill="#FFFFFF" opacity="0.85">USA</text>
           <text x="306" y="370" font-family="Inter, system-ui, sans-serif"
@@ -1296,7 +1291,7 @@
           <text x="306" y="400" font-family="Inter, system-ui, sans-serif"
                 font-weight="700" font-size="5.8" letter-spacing="0.6" fill="#FFFFFF" opacity="0.55">CU CAP 2,390 CU FT</text>
         </g>
-        <g class="country-MX" data-country="MX" display="none">
+        <g class="country-MX" display="none">
           <text x="306" y="356" font-family="Inter, system-ui, sans-serif"
                 font-weight="700" font-size="7.4" letter-spacing="1.2" fill="#FFFFFF" opacity="0.85">MEXICO</text>
           <text x="306" y="370" font-family="Inter, system-ui, sans-serif"
@@ -1308,7 +1303,7 @@
           <text x="306" y="400" font-family="Inter, system-ui, sans-serif"
                 font-weight="700" font-size="5.8" letter-spacing="0.6" fill="#FFFFFF" opacity="0.55">CAP 67,7 M3 &#183; NOM-012-SCT-2</text>
         </g>
-        <g class="country-CA" data-country="CA" display="none">
+        <g class="country-CA" display="none">
           <text x="306" y="356" font-family="Inter, system-ui, sans-serif"
                 font-weight="700" font-size="7.4" letter-spacing="1.2" fill="#FFFFFF" opacity="0.85">CANADA</text>
           <text x="306" y="370" font-family="Inter, system-ui, sans-serif"

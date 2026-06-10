@@ -1546,6 +1546,14 @@ struct LoadsAPI {
         // Misc
         let notes: String?
 
+        /// Per-load pallet count. DECODE SEAM (Wave A2 — 024 per-pallet
+        /// fill): the driver load envelope doesn't ship this column yet
+        /// (`LiveLoadFacets.palletCount` backend gap), so it decodes nil
+        /// today; the moment the server adds `palletCount` to the load
+        /// projection the 024 pallet map gains its real denominator with
+        /// zero further client work. Tolerant: Int or numeric string.
+        let palletCount: Int?
+
         // Resolved parties (server `resolveParty`) — nil when absent.
         // Decoded tolerantly so a party-shape drift can never kill the
         // whole envelope.
@@ -1572,6 +1580,7 @@ struct LoadsAPI {
             case transportMode, vesselClass, multiVehicleCount, permitType
             case originPort, destPort, worldscalePct, worldscaleFlat, rateUnit
             case notes
+            case palletCount
             case driver, catalyst, shipper
         }
 
@@ -1651,6 +1660,17 @@ struct LoadsAPI {
 
             // Misc
             self.notes = try c.decodeIfPresent(String.self, forKey: .notes)
+
+            // Pallet count — tolerant Int-or-string decode; nil until the
+            // server column ships (no fabricated denominator, ever).
+            if let n = try? c.decodeIfPresent(Int.self, forKey: .palletCount) {
+                self.palletCount = n
+            } else if let s = (try? c.decodeIfPresent(String.self, forKey: .palletCount)) ?? nil,
+                      let n = Int(s) {
+                self.palletCount = n
+            } else {
+                self.palletCount = nil
+            }
 
             // Resolved parties — tolerant: drift → nil, never a throw.
             self.driver   = (try? c.decodeIfPresent(LoadParty.self, forKey: .driver)) ?? nil

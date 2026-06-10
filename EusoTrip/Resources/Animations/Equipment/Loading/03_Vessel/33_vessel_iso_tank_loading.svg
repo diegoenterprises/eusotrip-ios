@@ -92,11 +92,10 @@
          country-US — 49 CFR 172.332 orange ID panel
          country-MX — SCT NOM-002/004 (UN labels adopted) + dual-designation tick
          country-CA — TDG white square-on-point ID display
-       Renderer sets ONE root class: svg.classList = 'ctx-' + shipment.regulatoryRegion.
-       Default (no ctx-* set) = US. */
-    .country-US, .country-MX, .country-CA { opacity: 0; }
-    .ctx-US .country-US, .ctx-MX .country-MX, .ctx-CA .country-CA { opacity: 1; }
-    svg:not(.ctx-US):not(.ctx-MX):not(.ctx-CA) .country-US { opacity: 1; }
+       The renderer selects ONE country group by toggling display on the
+       .country-US / .country-MX / .country-CA groups directly. Default = US. */
+    .country-MX, .country-CA { display: none; }
+    .country-US { display: inline; }
 
     @media (prefers-reduced-motion: reduce) {
       .brand-lockup,
@@ -368,7 +367,8 @@
           <text y="3" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
                 font-weight="900" font-size="10" fill="#FFFFFF" data-bind="hazmat_class">3</text>
         </g>
-        <!-- UN-ID panel — jurisdiction variant (renderer reveals one via ctx-* root class) -->
+        <!-- UN-ID panel — jurisdiction variant (renderer reveals one by toggling
+             display on the .country-US/-MX/-CA groups) -->
         <g class="country-US" transform="translate(70 282)">
           <rect x="0" y="0" width="40" height="11" fill="#F08000" stroke="#000000" stroke-width="0.6"/>
           <text x="20" y="8.6" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="7" fill="#000000" data-bind="un_number">1993</text>

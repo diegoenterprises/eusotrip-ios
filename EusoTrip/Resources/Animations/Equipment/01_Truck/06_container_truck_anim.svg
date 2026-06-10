@@ -105,15 +105,9 @@
     }
 
     /* ============ COUNTRY-SWITCHABLE DG PLACARD SELECTION ============
-       Renderer sets data-country (US|MX|CA) on the root <svg>; CSS shows the one
-       matching variant. Default markup = US visible, MX/CA display:none. Hosts
-       unable to style by attribute may toggle `display` on the groups. */
-    svg[data-country="US"] .placard-country:not(.country-US) { display: none; }
-    svg[data-country="US"] .placard-country.country-US       { display: inline; }
-    svg[data-country="MX"] .placard-country:not(.country-MX) { display: none; }
-    svg[data-country="MX"] .placard-country.country-MX       { display: inline; }
-    svg[data-country="CA"] .placard-country:not(.country-CA) { display: none; }
-    svg[data-country="CA"] .placard-country.country-CA       { display: inline; }
+       The renderer shows ONE country group by toggling display on the
+       .country-US / .country-MX / .country-CA groups (default markup =
+       US visible, MX/CA display:none). */
 
     @media (prefers-reduced-motion: reduce) {
       .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,
@@ -254,7 +248,7 @@
     <!-- ============================================================
          COUNTRY-SWITCHABLE DANGEROUS-GOODS PLACARD (idle silhouette).
          Class 3 Flammable Liquid, UN 1203 (gasoline) — sample DG load.
-         RENDERER: data-country (US|MX|CA) on the root <svg> picks one variant
+         RENDERER: toggle display on .country-US/-MX/-CA — one variant renders
          (default US). US = diamond w/ centred UN id; CA = diamond + orange UN
          panel (TDG); MX = rombo + Spanish proper shipping name (NOM-004-SCT2). -->
     <g class="dg-placard" transform="translate(510 352)">

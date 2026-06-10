@@ -18,7 +18,14 @@ struct BackingIn: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
     @Environment(\.driverNavBack) private var navBack
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var session: EusoTripSession
+
+    /// Drives the slow breath on the drawn alignment-guide target line
+    /// (the honest motion language for "this is a guide, keep your eyes
+    /// moving" — NOT a fabricated reading). Armed on appear; the
+    /// repeatForever animation carries it. Off under Reduce Motion.
+    @State private var guideBreath = false
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @StateObject private var uwb = EusoNISession()
@@ -347,19 +354,42 @@ struct BackingIn: View {
                     )
                     .frame(height: geo.size.height * 0.55)
                     .offset(y: 18)
-                // Dock outline (stylized)
+                // Dock outline (stylized) — UWB-driven convergence: while a
+                // real anchor is ranging, the outline scales with the LIVE
+                // distance (closer ⇒ larger, exactly how a dock grows in a
+                // mirror), easing every range update on the standard curve.
+                // With no sensor the outline holds its neutral size — the
+                // scale is never a fabricated approach.
                 Rectangle()
                     .stroke(Color.white.opacity(0.35), lineWidth: 1.2)
                     .frame(width: geo.size.width * 0.45, height: geo.size.height * 0.32)
+                    .scaleEffect(convergenceScale)
                     .position(x: geo.size.width / 2, y: geo.size.height * 0.50)
-                // Target line
+                    .animation(
+                        reduceMotion ? nil : .timingCurve(0.4, 0, 0.2, 1, duration: 0.5),
+                        value: convergenceScale
+                    )
+                // Target line — slow guide breath while this is a DRAWN
+                // alignment guide (no partner feed). Steady when a real
+                // camera feed is declared or under Reduce Motion.
                 Rectangle()
                     .fill(LinearGradient.diagonal)
                     .frame(width: geo.size.width * 0.45, height: 3)
                     .position(x: geo.size.width / 2, y: geo.size.height * 0.66)
+                    .opacity((guideBreath && !hasCameraFeed && !reduceMotion) ? 0.55 : 1.0)
+                    .animation(
+                        (!hasCameraFeed && !reduceMotion)
+                            ? .easeInOut(duration: 2.2).repeatForever(autoreverses: true)
+                            : .default,
+                        value: guideBreath
+                    )
             }
             .frame(height: 220)
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            .onAppear {
+                guard !reduceMotion else { return }
+                guideBreath = true
+            }
 
             // Top overlay — feed status + door.
             //
@@ -430,6 +460,16 @@ struct BackingIn: View {
         )
     }
 
+    /// UWB-driven convergence scale for the drawn dock outline. Maps the
+    /// LIVE centerline range (clamped 0…15 m) onto 1.22…0.88 — the outline
+    /// grows as the trailer closes on the dock. Exactly 1.0 (neutral) when
+    /// no sensor is ranging; never an invented approach.
+    private var convergenceScale: CGFloat {
+        guard uwbActive, !uwb.lostLineOfSight, let dist = uwb.distance else { return 1.0 }
+        let clamped = max(0.0, min(15.0, Double(dist)))
+        return CGFloat(0.88 + (1.0 - clamped / 15.0) * 0.34)
+    }
+
     // MARK: Distance tiles — live wiring
     //
     // Per-corner clearance (driver-side / blind-side inches) has NO live
@@ -474,10 +514,17 @@ struct BackingIn: View {
             Text(label)
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
+            // Live UWB range rolls digit-by-digit as real fixes land
+            // (em-dash tiles never change, so never animate).
             Text(value)
                 .font(.system(size: 22, weight: .heavy, design: .rounded))
                 .foregroundStyle(color)
                 .monospacedDigit()
+                .contentTransition(.numericText())
+                .animation(
+                    reduceMotion ? nil : .timingCurve(0.4, 0, 0.2, 1, duration: 0.3),
+                    value: value
+                )
             Text(sub)
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textSecondary)
@@ -542,12 +589,20 @@ struct BackingIn: View {
                         .position(x: geo.size.width / 2, y: 10)
                     // Alignment marker — live UWB-derived drift when a
                     // sensor is ranging, dead-center (neutral) otherwise.
+                    // Each REAL drift update glides the marker on the
+                    // standard curve instead of teleporting; snaps under
+                    // Reduce Motion. Position is never decorative — it is
+                    // the live fraction or the neutral park, nothing else.
                     Circle()
                         .fill(alignmentFraction == nil
                               ? AnyShapeStyle(palette.borderSoft)
                               : AnyShapeStyle(LinearGradient.diagonal))
                         .frame(width: 12, height: 12)
                         .position(x: geo.size.width * (alignmentFraction ?? 0.5), y: 10)
+                        .animation(
+                            reduceMotion ? nil : .timingCurve(0.4, 0, 0.2, 1, duration: 0.35),
+                            value: alignmentFraction
+                        )
                 }
             }
             .frame(height: 20)
