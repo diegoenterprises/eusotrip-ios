@@ -181,9 +181,29 @@ private struct RailETAPredictionBody: View {
             interchangeLabel: interchangeLabel,
             destinationLabel: destinationLabel,
             etaChip: etaChipText,
-            livePositionFraction: liveFraction
+            livePositionFraction: liveFraction,
+            markerKind: markerKind643
         )
         .frame(height: 146)
+    }
+
+    /// Equipment-true marker model (Wave B, 2026-06-10). 643 is the
+    /// INTERMODAL forecast surface (intermodalNumber + segments[] +
+    /// containers[] contract) — the live leg's mode picks the model:
+    /// a rail leg rides the intermodal WELL CAR (15 — the car that
+    /// actually carries the boxes, never an unconditional boxcar), a
+    /// truck/drayage leg rides the container truck (06).
+    private var markerKind643: EquipmentKind {
+        let active = segments.first(where: { seg in
+            let s = (seg.status ?? "").lowercased()
+            return s.contains("transit") || s.contains("active") || s.contains("progress")
+        })
+        let mode = (tracking?.currentMode ?? active?.mode ?? segments.first?.mode ?? "rail")
+            .lowercased()
+        if mode.contains("truck") || mode.contains("dray") {
+            return .container
+        }
+        return .railIntermodal
     }
 
     private var originLabel: String {
@@ -560,6 +580,10 @@ private struct RouteCanvas643: View {
     let destinationLabel: String
     let etaChip: String
     let livePositionFraction: Double
+    /// Equipment-true marker model (Wave B, 2026-06-10) — resolved by
+    /// the caller from the live leg's mode (well car on rail legs,
+    /// container truck on drayage legs).
+    var markerKind: EquipmentKind = .railIntermodal
 
     @Environment(\.palette) private var palette
 
@@ -630,18 +654,18 @@ private struct RouteCanvas643: View {
                 label(destinationLabel, at: CGPoint(x: p2.x, y: p2.y - sy(12)),
                       color: palette.textPrimary, bold: true)
 
-                // Live car-position marker — the canonical rail BOXCAR model
-                // from the EusoTrip Animation Design System (Resources/
-                // Animations/Equipment/02_Rail/23_rail_boxcar_anim.svg),
-                // rendered through the in-house native SVG engine and ridden
-                // along the route arc. Replaces the plain position dot (and
-                // any hand-drawn car) with the founder-approved equipment
-                // lockup so the live vehicle reads as a real rail car.
+                // Live position marker — the canonical EQUIPMENT-TRUE
+                // model from the EusoTrip Animation Design System,
+                // rendered through the in-house native SVG engine and
+                // ridden along the route arc. Wave B (2026-06-10): the
+                // kind resolves from the live leg's mode (well car on
+                // rail, container truck on drayage) — never an
+                // unconditional boxcar, never a hand-drawn car.
                 Circle().fill(Brand.blue.opacity(0.16)).frame(width: 30, height: 30)
                     .position(livePoint)   // soft ramp-fence glow under the car
                 Group {
-                    if let boxcarSVG = EquipmentAnimationCache.shared.svg(for: .railBoxcar) {
-                        NativeSVGView(svgString: boxcarSVG)
+                    if let carSVG = EquipmentAnimationCache.shared.svg(for: markerKind) {
+                        NativeSVGView(svgString: carSVG)
                             .frame(width: 58, height: 24)
                     } else {
                         // Fallback to the gradient dot if the model can't load.

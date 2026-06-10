@@ -355,18 +355,31 @@ private struct VesselLiveTrackingBody: View {
         .position(x: x, y: y)
     }
 
+    /// Equipment-true vessel model (Wave B, 2026-06-10). 003 tracks
+    /// `vessel_bookings` rows — a container-liner contract by shape
+    /// (numberOfContainers / containerCount are the row's own fields),
+    /// so the container ship is the honest floor. The service-route
+    /// string rides the shared matcher FIRST so an LNG / RoRo / tanker
+    /// service resolves its real hull instead of a hardcoded container
+    /// ship.
+    private var markerKind003: EquipmentKind {
+        EquipmentKind.resolve(
+            from: board?.booking?.serviceRoute,
+            modality: .vessel
+        )
+    }
+
     private func vesselMarker(at p: CGPoint) -> some View {
-        // Live vessel-position marker — the canonical CONTAINER VESSEL model from
-        // the EusoTrip Animation Design System (Resources/Animations/Equipment/
-        // 03_Vessel/16_vessel_container_anim.svg), rendered through the in-house
+        // Live vessel-position marker — the canonical equipment-true model from
+        // the EusoTrip Animation Design System, rendered through the in-house
         // native SVG engine and pinned at the position fraction along the
         // great-circle arc. Replaces the hand-drawn ferry-glyph orb with the
-        // founder-approved equipment lockup so the live vessel reads as a real
-        // container ship. Mirrors the 643 rail-boxcar marker pattern.
+        // founder-approved equipment lockup so the live vessel reads as the
+        // booking's real hull. Mirrors the 643 marker pattern.
         ZStack {
             // Soft magenta wake-glow under the hull (keeps the original orb's halo).
             Circle().fill(Brand.magenta.opacity(0.22)).frame(width: 40, height: 40).blur(radius: 6)
-            if let vesselSVG = EquipmentAnimationCache.shared.svg(for: .vesselContainer) {
+            if let vesselSVG = EquipmentAnimationCache.shared.svg(for: markerKind003) {
                 NativeSVGView(svgString: vesselSVG)
                     .frame(width: 64, height: 26)   // ~2.5:1 vessel model
             } else {

@@ -283,6 +283,15 @@ struct Unloading: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 palletMap
+                // Wave B (2026-06-10) — at the receiver dock the driver
+                // sees the UNLOADING procedure animation for the real
+                // rig, bound to the live status / cargo / weight.
+                // Complements the pallet map + detention clock.
+                DriverEquipmentMoment(
+                    facts: activeLoad.map(LoadAnimationContext.DriverLoadFacts.init(detail:)),
+                    state: .unloading,
+                    label: "AT RECEIVER DOCK"
+                )
                 progressCard
                 detentionCard
                 receiverRow

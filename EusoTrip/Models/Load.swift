@@ -116,6 +116,12 @@ struct Load: Codable, Identifiable, Hashable {
     let driverId: Int?
     let loadNumber: String
     let status: String
+    /// Wave-4 tanker sub-state chip (loads.tanker_sub_state, migration
+    /// 0100: FLOWING, SAMPLE_2_OF_4, DETACH_ARM_CAPPED…). `loads.getById`
+    /// returns the full row, so the column is already on the wire —
+    /// consumed by the driver equipment band's state_label (Wave B,
+    /// 2026-06-10).
+    let tankerSubState: String?
     let cargoType: String?
     let hazmatClass: String?
     let unNumber: String?
@@ -242,13 +248,15 @@ struct Load: Codable, Identifiable, Hashable {
         destPort: String?,
         worldscalePct: String?,
         worldscaleFlat: String?,
-        rateUnit: String?
+        rateUnit: String?,
+        tankerSubState: String? = nil
     ) {
         self.id = id
         self.shipperId = shipperId
         self.driverId = driverId
         self.loadNumber = loadNumber
         self.status = status
+        self.tankerSubState = tankerSubState
         self.cargoType = cargoType
         self.hazmatClass = hazmatClass
         self.unNumber = unNumber
@@ -301,7 +309,7 @@ struct Load: Codable, Identifiable, Hashable {
     // demo fixtures) and Hashable conformance are unaffected.
 
     private enum CodingKeys: String, CodingKey {
-        case id, shipperId, driverId, loadNumber, status, cargoType
+        case id, shipperId, driverId, loadNumber, status, tankerSubState, cargoType
         case hazmatClass, unNumber, weight, weightUnit
         case pickupLocation, deliveryLocation
         case pickupDate, deliveryDate
@@ -350,6 +358,7 @@ struct Load: Codable, Identifiable, Hashable {
 
         self.loadNumber = try c.decodeIfPresent(String.self, forKey: .loadNumber) ?? ""
         self.status     = try c.decodeIfPresent(String.self, forKey: .status) ?? ""
+        self.tankerSubState = try c.decodeIfPresent(String.self, forKey: .tankerSubState)
         self.cargoType  = try c.decodeIfPresent(String.self, forKey: .cargoType)
         self.hazmatClass = try c.decodeIfPresent(String.self, forKey: .hazmatClass)
         self.unNumber    = try c.decodeIfPresent(String.self, forKey: .unNumber)
@@ -416,6 +425,7 @@ struct Load: Codable, Identifiable, Hashable {
         try c.encodeIfPresent(driverId, forKey: .driverId)
         try c.encode(loadNumber, forKey: .loadNumber)
         try c.encode(status, forKey: .status)
+        try c.encodeIfPresent(tankerSubState, forKey: .tankerSubState)
         try c.encodeIfPresent(cargoType, forKey: .cargoType)
         try c.encodeIfPresent(hazmatClass, forKey: .hazmatClass)
         try c.encodeIfPresent(unNumber, forKey: .unNumber)

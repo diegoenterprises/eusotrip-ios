@@ -207,6 +207,15 @@ struct AtGateAwaitingDock: View {
                 header
                 facilityStrip
                 queueCard
+                // Wave B (2026-06-10) — staged at the gate, the driver
+                // sees the LOADING procedure animation for the real rig
+                // queued for the bay, bound to the live status / cargo.
+                // Complements the queue + credential cards.
+                DriverEquipmentMoment(
+                    facts: activeLoad.map(LoadAnimationContext.DriverLoadFacts.init(load:)),
+                    state: .loading,
+                    label: "STAGED FOR BAY"
+                )
                 metadataGrid
                 if loadIDText != "-" { gateCredentialCard }
                 esangIdleWatchCard

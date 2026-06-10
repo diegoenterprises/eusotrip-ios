@@ -172,6 +172,17 @@ struct LoadingInProgress: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 progressCard
+                // Wave B (2026-06-10) — the driver mid-fill sees the
+                // LOADING procedure animation for the real rig (08
+                // petro bottom-load for a petroleum tanker — the
+                // 2,099-line file authored for exactly this moment),
+                // bound to the live status / commodity / UN / weight.
+                // Complements the fill bar + metric tiles above.
+                DriverEquipmentMoment(
+                    facts: activeLoad.map(LoadAnimationContext.DriverLoadFacts.init(load:)),
+                    state: .loading,
+                    label: "LOADING PROCEDURE"
+                )
                 metricRow
                 safetyRow
                 spectraCard

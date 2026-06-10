@@ -73,6 +73,16 @@ struct DisconnectAndVerify: View {
                 header
                 couplerRing
                 stepCard
+                // Wave B (2026-06-10) — during disconnect/verify the
+                // driver sees the UNLOADING procedure animation for the
+                // real rig, bound live. Complements the reverse-mate
+                // coupler diagram above (the A1 quality bar) — never
+                // replaces it.
+                DriverEquipmentMoment(
+                    facts: activeLoad.map(LoadAnimationContext.DriverLoadFacts.init(load:)),
+                    state: .unloading,
+                    label: "DISCONNECT & VERIFY"
+                )
                 metricRow
                 ladderCard
                 supervisorMic

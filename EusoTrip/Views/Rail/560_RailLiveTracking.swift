@@ -43,6 +43,17 @@ private struct RailYard560: Decodable {
     let code: String?
     let city: String?
     let state: String?
+    /// Real yard anchor from the rail_yards catalog (`coordinates`
+    /// JSON {lat,lng}) — getRailShipmentDetail returns the FULL yard
+    /// row; the decode just never asked for it (Wave B, 2026-06-10).
+    /// Feeds the AEI-fix route interpolation so the arc stops parking
+    /// at a milestone bucket for a thousand miles.
+    let coordinates: Coord560?
+}
+
+private struct Coord560: Decodable {
+    let lat: Double?
+    let lng: Double?
 }
 
 private struct RailLocation560: Decodable {
@@ -198,13 +209,18 @@ private struct RailLiveTrackingBody: View {
 
     /// Real journey progress (0…1) — origin yard → destination yard.
     ///
-    /// Strongest signal is the tracking event chain: a departure scan marks the
-    /// shipment off-origin, intermediate AEI scans / interchanges advance it, and
-    /// an arrival/spotting marks it on-destination. We map the most-advanced
-    /// milestone seen to a fraction. When no events are present yet we fall back
-    /// to the shipment status. This is what the completed gradient arc and the
-    /// dashed-remaining continuation are bound to — never a hardcoded position.
+    /// Strongest signal (Wave B, 2026-06-10) is REAL geometry: when the
+    /// latest AEI fix carries coordinates AND both yards resolve real
+    /// catalog anchors, the fraction is interpolated by route distance
+    /// (origin→fix over origin→fix→destination) — the arc rides the
+    /// actual scan position instead of parking at a 0.50 milestone
+    /// bucket for a thousand miles. The event-chain milestone ladder is
+    /// the fallback when geometry is incomplete; the status ladder is
+    /// the floor when the event feed is empty. Never a hardcoded
+    /// position.
     private var journeyProgress: Double {
+        // 0) Route-distance interpolation off the latest real AEI fix.
+        if let f = interpolatedRouteFraction { return f }
         // 1) Event-chain milestone — pick the furthest-along event type seen.
         if let events = tracking?.events, !events.isEmpty {
             var best = 0.04 // booked but tracked
@@ -225,16 +241,88 @@ private struct RailLiveTrackingBody: View {
             }
             return min(max(best, 0), 1)
         }
-        // 2) Status fallback when the event feed is empty.
+        // 2) Status fallback when the event feed is empty — the full
+        //    rail consist FSM (updateRailShipmentStatus transitions),
+        //    each stage at its honest fraction.
         switch (detail?.status ?? "").lowercased() {
-        case "delivered", "completed", "arrived", "unloaded": return 1.0
+        case "delivered", "completed", "arrived", "unloaded",
+             "empty_returned", "invoiced", "settled":          return 1.0
+        case "unloading":                                      return 0.95
+        case "spotted", "at_destination":                      return 0.9
+        case "in_yard":                                        return 0.8
         case "in_transit", "in-transit", "enroute", "en_route": return 0.5
-        case "spotted", "at_destination":                     return 0.9
-        case "interchange":                                   return 0.62
-        case "departed", "released":                          return 0.14
-        case "pending", "scheduled", "booked":                return 0.04
-        default:                                              return 0.45
+        case "interchange", "at_interchange", "interchange_delay": return 0.62
+        case "departed", "released":                           return 0.14
+        case "in_consist":                                     return 0.10
+        case "pending", "scheduled", "booked", "requested",
+             "car_ordered", "car_placed", "loading", "loaded": return 0.04
+        case "on_hold", "derailment_hold", "hazmat_exception",
+             "cancelled":                                      return 0.04
+        default:
+            // Zero-fallback doctrine: an unmapped consist status must
+            // not fabricate a mid-route arc. DEBUG-loud, honest
+            // origin-side floor in release (the 003 pattern).
+            assertionFailure("RailLiveTracking.journeyProgress: unmapped consist status '\(detail?.status ?? "nil")' — add it to the ramp")
+            return 0.04
         }
+    }
+
+    /// Equipment-true marker model (Wave B, 2026-06-10) — resolves the
+    /// shipment's REAL carType via the shared matcher; boxcar only as
+    /// the honest rail floor when the row carries no car type.
+    private var markerKind560: EquipmentKind {
+        EquipmentKind.resolve(
+            from: detail?.carType,
+            hazmat: (detail?.hazmatClass?.isEmpty == false),
+            modality: .rail
+        )
+    }
+
+    /// Latest position fix with real coordinates — the live AEI fix
+    /// first, then the newest tracking event that carries a location.
+    private var latestFix560: (lat: Double, lng: Double)? {
+        if let c = tracking?.currentLocation,
+           let la = c.lat, let ln = c.lng, !(la == 0 && ln == 0) {
+            return (la, ln)
+        }
+        let dated = (tracking?.events ?? []).compactMap { e -> (String, Double, Double)? in
+            guard let l = e.location, let la = l.lat, let ln = l.lng,
+                  !(la == 0 && ln == 0) else { return nil }
+            return (e.timestamp ?? "", la, ln)
+        }
+        // ISO-8601 strings sort lexicographically — newest fix wins.
+        guard let newest = dated.max(by: { $0.0 < $1.0 }) else { return nil }
+        return (newest.1, newest.2)
+    }
+
+    /// Route-distance fraction between the REAL yard anchors. nil when
+    /// either yard lacks catalog coordinates or no fix exists — the
+    /// milestone/status ladders then take over (honest degradation).
+    private var interpolatedRouteFraction: Double? {
+        guard let o = detail?.originYard?.coordinates,
+              let d = detail?.destinationYard?.coordinates,
+              let ola = o.lat, let oln = o.lng,
+              let dla = d.lat, let dln = d.lng,
+              !(ola == 0 && oln == 0), !(dla == 0 && dln == 0),
+              let fix = latestFix560 else { return nil }
+        let toFix  = Self.haversineMi(ola, oln, fix.lat, fix.lng)
+        let toDest = Self.haversineMi(fix.lat, fix.lng, dla, dln)
+        let total = toFix + toDest
+        guard total > 0.5 else { return nil }   // co-located anchors — no geometry
+        // Clamp inside the pins so the marker never overpaints a yard
+        // node it hasn't actually reached/left.
+        return min(max(toFix / total, 0.02), 0.98)
+    }
+
+    private static func haversineMi(_ lat1: Double, _ lng1: Double,
+                                    _ lat2: Double, _ lng2: Double) -> Double {
+        let r = 3958.8
+        let dLat = (lat2 - lat1) * .pi / 180
+        let dLng = (lng2 - lng1) * .pi / 180
+        let a = sin(dLat / 2) * sin(dLat / 2)
+            + cos(lat1 * .pi / 180) * cos(lat2 * .pi / 180)
+            * sin(dLng / 2) * sin(dLng / 2)
+        return r * 2 * atan2(sqrt(a), sqrt(1 - a))
     }
 
     var body: some View {
@@ -318,7 +406,9 @@ private struct RailLiveTrackingBody: View {
                     // rather than invented pins.)
                     railLiveMap
                 } else {
-                    RouteArc560(progress: journeyProgress, palette: palette)
+                    RouteArc560(progress: journeyProgress,
+                                kind: markerKind560,
+                                palette: palette)
                 }
                 // Overlay chips + labels
                 VStack(alignment: .leading) {
@@ -555,6 +645,11 @@ private struct RouteArc560: View {
 
     /// Real origin→destination fraction (0…1) from the data model.
     let progress: Double
+    /// Equipment-true marker model (Wave B, 2026-06-10) — resolved by
+    /// the caller from the shipment's REAL carType via the shared
+    /// `EquipmentKind.resolve(from:)`; boxcar only as the honest rail
+    /// floor when the row carries no car type.
+    var kind: EquipmentKind = .railBoxcar
     let palette: Theme.Palette
 
     /// The fraction the completed arc currently animates toward; starts at 0 so
@@ -623,8 +718,8 @@ private struct RouteArc560: View {
                     .frame(width: breathing ? 26 : 20, height: breathing ? 26 : 20)
                     .position(livePoint)
                 Group {
-                    if let boxcarSVG = EquipmentAnimationCache.shared.svg(for: .railBoxcar) {
-                        NativeSVGView(svgString: boxcarSVG)
+                    if let carSVG = EquipmentAnimationCache.shared.svg(for: kind) {
+                        NativeSVGView(svgString: carSVG)
                             .frame(width: 58, height: 24)
                     } else {
                         // Fallback to the gradient dot if the model can't load.

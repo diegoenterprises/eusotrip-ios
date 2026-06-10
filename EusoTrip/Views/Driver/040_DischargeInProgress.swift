@@ -124,6 +124,15 @@ struct DischargeInProgress: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 heroCard
+                // Wave B (2026-06-10) — mid-discharge the driver sees
+                // the UNLOADING procedure animation for the real rig
+                // (hose / vapor-recovery context alongside the twin
+                // gauges), bound to the live status / commodity / UN.
+                DriverEquipmentMoment(
+                    facts: activeLoad.map(LoadAnimationContext.DriverLoadFacts.init(load:)),
+                    state: .unloading,
+                    label: "DISCHARGE SIDE"
+                )
                 flowRateRow
                 gaugePair
                 if !ctx.dischargeSafetyTiles.isEmpty {

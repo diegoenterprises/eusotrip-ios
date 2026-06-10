@@ -14151,6 +14151,13 @@ struct ShipperAPI {
             // render as head_haul (the base look) — a web lane is adding
             // the server side in parallel.
             let relationship: String?
+            /// Wave-4 tanker sub-state chip (loads.tanker_sub_state,
+            /// migration 0100: FLOWING, SAMPLE_2_OF_4, DETACH_ARM_CAPPED…).
+            /// getLifecycleSnapshot returns the FULL load row, so the
+            /// column is already on the wire — the decode just never
+            /// asked for it. Optional & forward-safe; consumed by
+            /// LoadAnimationContext.state_label (Wave B, 2026-06-10).
+            let tankerSubState: String?
         }
         struct Stop: Decodable, Hashable, Identifiable {
             let id: Int

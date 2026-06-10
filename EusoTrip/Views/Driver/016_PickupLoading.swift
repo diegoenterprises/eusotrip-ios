@@ -139,6 +139,17 @@ struct PickupLoading: View {
                 header
                 facilityStrip
                 progressCard
+                // Wave B (2026-06-10) — the driver at the rack sees the
+                // LOADING procedure animation for the real rig (the
+                // bind-rich state-variant file the census found fully
+                // orphaned), bound to this load's live status / commodity
+                // / UN / weight. Complements the ring + gauges above —
+                // never replaces them.
+                DriverEquipmentMoment(
+                    facts: activeLoad.map(LoadAnimationContext.DriverLoadFacts.init(load:)),
+                    state: .loading,
+                    label: "AT THE RACK"
+                )
                 safetyTiles
                 watchdogCard
                 baySequenceCard

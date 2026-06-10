@@ -317,8 +317,39 @@ private struct ConvoyVehicleAnimation: View {
     let vehicle: Vehicle
     @Environment(\.palette) private var palette
 
+    /// Escort pilot/chase cars have NO canonical equipment model in
+    /// the 40-model catalog — painting a dry van for a pilot car would
+    /// be a wrong-shape fabrication (canonical-models doctrine). They
+    /// render the bespoke beacon card instead.
+    private var isEscort: Bool {
+        switch vehicle.role {
+        case .escortLead, .escortChase, .escortStateTrooper: return true
+        default: return false
+        }
+    }
+
     var body: some View {
-        if let svg = EquipmentAnimationCache.shared.svg(for: equipmentKind) {
+        if isEscort {
+            VStack(spacing: 6) {
+                Image(systemName: "light.beacon.max.fill")
+                    .font(.system(size: 24, weight: .heavy))
+                    .foregroundStyle(Brand.warning)
+                Text(vehicle.equipment.label)
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                Text(vehicle.childState.replacingOccurrences(of: "_", with: " ").uppercased())
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.7)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(palette.bgCardSoft)
+        } else if let svg = EquipmentAnimationCache.shared.svg(
+            for: equipmentKind,
+            // Wave B (2026-06-10) — the convoy card renders the
+            // lifecycle STATE VARIANT for its child state, same
+            // selection contract as the shipper strip.
+            state: AnimationState(loadStatus: vehicle.childState)
+        ) {
             BindableEquipmentAnimation(
                 svgString: svg,
                 context: vehicleContext()
@@ -337,51 +368,22 @@ private struct ConvoyVehicleAnimation: View {
         }
     }
 
+    /// Wave B (2026-06-10) — rides the ONE shared resolver
+    /// (`EquipmentKind.resolve(from:)`, normalizes underscore/space
+    /// tokens) instead of a private matcher that missed the T-030 six
+    /// + auto-carrier. Modality floor stays honest per mode.
     private var equipmentKind: EquipmentKind {
-        let t = vehicle.equipment.type.lowercased()
-        // Truck
-        if t.contains("dry_van") || t.contains("dry van") { return .dryVan }
-        if t.contains("reefer") && !t.contains("rail") && !t.contains("vessel") { return .reefer }
-        if t.contains("flatbed") { return .flatbed }
-        if t.contains("step_deck") || t.contains("step deck") { return .stepDeck }
-        if t.contains("conestoga") { return .conestoga }
-        if t.contains("container") && !t.contains("ship") { return .container }
-        if t.contains("mc_331") || t.contains("hazmat_tanker") { return .tankerHazmat }
-        if t.contains("mc_306") || t.contains("dot_406") || t.contains("petro") { return .tankerPetro }
-        if t.contains("dot_407") || t.contains("liquid_tanker") { return .tankerLiquid }
-        if t.contains("mc_338") || t.contains("gas_tanker") { return .tankerGas }
-        if t.contains("power") { return .powerOnly }
-        if t.contains("oversize") || t.contains("rgn") { return .oversized }
-        if t.contains("lowboy") { return .lowboy }
-        if t.contains("hot_shot") || t.contains("hotshot") { return .hotShot }
-        // Rail
-        if t.contains("rail_tofc") || t.contains("tofc") { return .railTOFC }
-        if t.contains("rail_cofc") || t.contains("cofc") { return .railCOFC }
-        if t.contains("rail_intermodal") || t.contains("well_car") { return .railIntermodal }
-        if t.contains("dot_105") || t.contains("rail_tank_gas") { return .railTankGas }
-        if t.contains("dot_117") || t.contains("dot_111") || t.contains("rail_tank") { return .railTankLiquid }
-        if t.contains("rail_boxcar") || t.contains("boxcar") { return .railBoxcar }
-        if t.contains("rail_hopper") || t.contains("hopper") { return .railHopper }
-        if t.contains("centerbeam") { return .railCenterbeam }
-        if t.contains("gondola") { return .railGondola }
-        if t.contains("auto_rack") || t.contains("autorack") { return .railAutoRack }
-        if t.contains("rail_reefer") { return .railReeferBoxcar }
-        if t.contains("flatcar") { return .railFlatcar }
-        // Vessel
-        if t.contains("vessel_reefer") || t.contains("reefer_container") { return .vesselReeferContainer }
-        if t.contains("iso_tank") { return .vesselISOTank }
-        if t.contains("container_ship") || t.contains("vessel_container") { return .vesselContainer }
-        if t.contains("bulk_carrier") || t.contains("vessel_bulk") { return .vesselBulk }
-        if t.contains("vessel_tanker") || t.contains("vlcc") { return .vesselTanker }
-        if t.contains("ro_ro") || t.contains("roro") { return .vesselRoRo }
-        if t.contains("lng") { return .vesselLNG }
-
-        // Modality fallback
-        switch vehicle.modality {
-        case .truck:  return .dryVan
-        case .rail:   return .railBoxcar
-        case .vessel: return .vesselContainer
-        }
+        EquipmentKind.resolve(
+            from: vehicle.equipment.type,
+            hazmat: vehicle.hazmatChain?.entries.isEmpty == false,
+            modality: {
+                switch vehicle.modality {
+                case .truck:  return .truck
+                case .rail:   return .rail
+                case .vessel: return .vessel
+                }
+            }()
+        )
     }
 
     /// Build the binding dictionary from the Vehicle. Only fields we
@@ -423,34 +425,229 @@ private struct ConvoyVehicleAnimation: View {
         )
     }
 
+    /// Wave B (2026-06-10) — child-state progress now rides THE
+    /// canonical 49-status ramp (`LoadAnimationContext.percent
+    /// (forStatus:)`), so the convoy cards and the shipper strip can
+    /// never disagree on a load's lifecycle percent. The handful of
+    /// multi-vehicle-only child states (relay / AV / rail-ramp / vessel
+    /// vocabulary from the 55-state taxonomy) are mapped here BEFORE
+    /// delegating; everything else — including all 11 Wave-4 tanker
+    /// statuses — resolves centrally.
     private func progressFromChildState(_ state: String) -> Double {
-        switch state {
-        case "DRAFT", "POSTED", "BIDDING", "AWARDED", "ACCEPTED", "ASSIGNED", "CONFIRMED":
-            return 0
-        case "EN_ROUTE_PICKUP", "EN_ROUTE_DELIVERY":
-            return 15
-        case "AT_PICKUP", "PICKUP_CHECKIN":
-            return 25
-        case "LOADING":
-            return 35
-        case "LOADED", "DEPARTED_PICKUP":
-            return 50
-        case "IN_TRANSIT", "IN_TRANSIT_AUTONOMOUS", "RAIL_LINEHAUL", "VESSEL_LOADED":
+        switch state.uppercased() {
+        case "EN_ROUTE_DELIVERY", "IN_TRANSIT_AUTONOMOUS",
+             "RAIL_LINEHAUL", "VESSEL_LOADED":
             return 70
-        case "AT_DELIVERY", "DELIVERY_CHECKIN":
-            return 85
-        case "UNLOADING":
-            return 90
-        case "UNLOADED", "POD_PENDING":
+        case "AV_HUMAN_HANDOFF", "RAIL_RAMP_IN", "VESSEL_GATE_IN":
+            return 60
+        case "RAIL_RAMP_OUT", "VESSEL_DISCHARGED":
             return 95
-        case "DELIVERED", "VESSEL_DISCHARGED", "RAIL_RAMP_OUT", "COMPLETE":
-            return 100
-        default:
-            // Zero-fallback doctrine (E2E audit §4 · 2026-06-09): an
-            // unmapped child state must not fabricate a half-done bar —
-            // same ramp contract as LoadAnimationContext.progressPercent.
-            assertionFailure("ConvoyAnimationStrip.progressFromChildState: unmapped child state '\(state)' — add it to the ramp")
+        // Pre-departure compliance overlays — booked, not rolling.
+        case "EQUIPMENT_VERIFIED", "HAZMAT_CLASS_VALIDATED",
+             "BRIDGE_CLEARANCE_CHECKED":
             return 0
+        // Blocking exceptions with unknowable physical position —
+        // honest floor, never a fabricated mid-route bar.
+        case "HAZMAT_INCIDENT", "CUSTOMS_HOLD",
+             "IDENTITY_RE_VERIFICATION_REQUIRED":
+            return 0
+        default:
+            return LoadAnimationContext.percent(forStatus: state)
+        }
+    }
+}
+
+// ============================================================================
+// MARK: - Wave B · real-data Shipment composer (2026-06-10)
+// ============================================================================
+
+/// Composes a `Shipment` from the REAL rows the escort surface already
+/// hydrates: the load detail (`loads.getDetail`) + its escort
+/// assignments (`loads.getEscortAssignment`). This is what finally
+/// mounts ConvoyAnimationStrip — fully built since 2026-05-10, ZERO
+/// call sites until now (LEVEL100 census, bindings row "Convoy
+/// AnimationStrip": 15) — on the escorted-load detail per
+/// MULTI_VEHICLE_LOAD_ARCHITECTURE doctrine ("one Shipment, N typed
+/// Vehicles … one tractor + two pilot cars is ONE Shipment").
+///
+/// Every populated field is a real row value; structurally required
+/// fields with no honest source (BOL, audit anchor, customs filings)
+/// stay empty/zero — the strip renders the em-dash, never a sample.
+extension Shipment {
+
+    static func composed(
+        fromLoad detail: LoadsAPI.LoadDetail,
+        escorts: [LoadsAPI.EscortAssignment]
+    ) -> Shipment? {
+        guard !escorts.isEmpty else { return nil }
+
+        let loadRef = detail.loadNumber
+        let weight = detail.weight.flatMap(Double.init) ?? 0
+        let hazmat = (detail.hazmatClass?.isEmpty == false)
+        let modality: VehicleModality = {
+            switch (detail.transportMode ?? "truck").lowercased() {
+            case "rail":   return .rail
+            case "vessel": return .vessel
+            default:       return .truck
+            }
+        }()
+        let originPoint = GeoPoint(
+            lat: detail.pickupLocation?.lat ?? 0,
+            lng: detail.pickupLocation?.lng ?? 0,
+            label: detail.pickupLocation?.cityState
+        )
+        let destPoint = GeoPoint(
+            lat: detail.deliveryLocation?.lat ?? 0,
+            lng: detail.deliveryLocation?.lng ?? 0,
+            label: detail.deliveryLocation?.cityState
+        )
+
+        let primaryKind = EquipmentKind.resolve(
+            from: detail.equipmentType ?? detail.cargoType,
+            hazmat: hazmat,
+            modality: modality == .rail ? .rail : (modality == .vessel ? .vessel : .truck)
+        )
+
+        func leg(_ seq: Int) -> LegSpec {
+            LegSpec(
+                sequenceNumber: seq,
+                origin: originPoint,
+                destination: destPoint,
+                plannedDepartTs: nil, plannedArriveTs: nil,
+                actualDepartTs: nil, actualArriveTs: nil,
+                modeTransition: .origin,
+                predecessorVehicleId: nil, successorVehicleId: nil
+            )
+        }
+
+        // Convoy order: lead escorts ahead of the primary, chase
+        // behind — sequence numbers encode the CONVOY position (Swift
+        // sort isn't stable, so equal keys would shuffle the cards).
+        var vehicles: [Vehicle] = []
+        var seq = 1
+        for e in escorts where e.position.lowercased() != "chase" {
+            vehicles.append(escortVehicle(e, shipmentId: loadRef, role: .escortLead, seq: seq, leg: leg(seq)))
+            seq += 1
+        }
+        vehicles.append(Vehicle(
+            id: "\(loadRef)-PRIMARY",
+            shipmentId: loadRef,
+            role: .primary,
+            modality: modality,
+            equipment: EquipmentSpec(
+                type: detail.equipmentType ?? detail.cargoType ?? "",
+                label: primaryKind.shortLabel,
+                subtitle: detail.commodityName ?? detail.commodity,
+                trailerId: nil, licensePlate: nil, reportingMarks: nil,
+                containerBicCode: nil, containerIsoCode: nil,
+                vesselName: nil, imoNumber: nil, mmsi: nil
+            ),
+            driverIds: detail.driverId.map { [String($0)] } ?? [],
+            carrierId: detail.catalystId.map(String.init) ?? "",
+            leg: leg(seq),
+            cargoSplit: CargoSplit(
+                weightAllocated: weight, unitsAllocated: 0,
+                itemRangeStart: nil, itemRangeEnd: nil,
+                hazmatProportionAllocated: hazmat ? 1.0 : nil
+            ),
+            childState: detail.status.uppercased(),
+            animationManifestId: primaryKind.rawValue,
+            geofenceEvents: []
+        ))
+        seq += 1
+        for e in escorts where e.position.lowercased() == "chase" {
+            vehicles.append(escortVehicle(e, shipmentId: loadRef, role: .escortChase, seq: seq, leg: leg(seq)))
+            seq += 1
+        }
+
+        return Shipment(
+            id: loadRef,
+            parentBolNumber: "—",                 // no BOL on the detail row — honest dash
+            shipperOrgId: detail.shipperId.map(String.init) ?? "",
+            consigneeOrgId: "",
+            vertical: (detail.cargoType ?? "general").lowercased(),
+            region: "us",
+            totalWeight: weight,
+            totalValue: 0,
+            hazmatPresent: hazmat,
+            customsRequired: false,
+            parentState: parentState(fromLoadStatus: detail.status),
+            vehicles: vehicles,
+            stops: [],
+            handoffs: [],
+            syncWindows: [],
+            customsFilings: [],
+            parentRate: Money(
+                amount: Decimal(string: detail.rate ?? "0") ?? 0,
+                currency: detail.currency ?? "USD"
+            ),
+            vehicleRates: [],
+            parentInvoiceId: nil,
+            hashChainAnchor: ""
+        )
+    }
+
+    private static func escortVehicle(
+        _ e: LoadsAPI.EscortAssignment,
+        shipmentId: String,
+        role: VehicleRole,
+        seq: Int,
+        leg: LegSpec
+    ) -> Vehicle {
+        let who = [e.escortName, e.companyName]
+            .compactMap { $0?.isEmpty == false ? $0 : nil }
+            .first ?? "PILOT CAR"
+        return Vehicle(
+            id: "\(shipmentId)-ESC-\(e.id)",
+            shipmentId: shipmentId,
+            role: role,
+            modality: .truck,
+            equipment: EquipmentSpec(
+                type: "escort_vehicle",
+                label: who.uppercased(),
+                subtitle: role == .escortLead ? "LEAD PILOT CAR" : "CHASE PILOT CAR",
+                trailerId: nil, licensePlate: nil, reportingMarks: nil,
+                containerBicCode: nil, containerIsoCode: nil,
+                vesselName: nil, imoNumber: nil, mmsi: nil
+            ),
+            driverIds: [String(e.escortUserId)],
+            carrierId: e.companyDot ?? "",
+            leg: leg,
+            cargoSplit: CargoSplit(
+                weightAllocated: 0, unitsAllocated: 0,   // escorts carry no cargo
+                itemRangeStart: nil, itemRangeEnd: nil,
+                hazmatProportionAllocated: nil
+            ),
+            childState: e.status.uppercased(),
+            animationManifestId: "escort",
+            geofenceEvents: []
+        )
+    }
+
+    /// Roll a single load status up to the parent-shipment vocabulary.
+    private static func parentState(fromLoadStatus status: String) -> ParentShipmentState {
+        switch status.lowercased() {
+        case "draft":                                            return .draft
+        case "posted", "bidding", "expired", "declined", "lapsed": return .posted
+        case "awarded", "accepted", "assigned", "confirmed":     return .bookedFull
+        case "en_route_pickup", "at_pickup", "pickup_checkin",
+             "locked", "backing_in", "brakes_set", "connecting",
+             "loading_locked", "loading", "loaded",
+             "load_locked_filled":                               return .inProgress
+        case "in_transit":                                       return .inTransitFull
+        case "transit_hold", "transit_exception",
+             "loading_exception", "unloading_exception",
+             "on_hold", "temp_excursion":                        return .exceptionAny
+        case "reefer_breakdown", "contamination_reject",
+             "seal_breach", "weight_violation":                  return .exceptionBlocking
+        case "at_delivery", "delivery_checkin", "discharging",
+             "unloading", "vapor_purging", "disconnecting",
+             "detaching":                                        return .inProgress
+        case "unloaded", "released", "delivered":                return .delivered
+        case "pod_pending", "pod_rejected":                      return .podPartial
+        case "invoiced", "disputed", "paid", "complete":         return .complete
+        case "cancelled":                                        return .cancelled
+        default:                                                 return .inProgress
         }
     }
 }

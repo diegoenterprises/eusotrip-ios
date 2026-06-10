@@ -88,11 +88,15 @@ struct EusoTripApp: App {
                     })
                     .transition(.opacity)
                     .task {
-                        // Preload the 33 EusoTrip Animation Design
-                        // System SVGs while the splash is up so
-                        // wizard tile selection + scroll feel
-                        // instant the first time the user opens
-                        // Post a Load.
+                        // Preload the 40 hero SVGs of the EusoTrip
+                        // Animation Design System while the splash is
+                        // up so wizard tile selection + scroll feel
+                        // instant the first time the user opens Post
+                        // a Load. The 80 Loading/Unloading state
+                        // variants warm per ACTIVE load instead
+                        // (preloadStateVariants, called from the
+                        // lifecycle strips/bands — Wave B 2026-06-10):
+                        // the 120-file corpus is never read wholesale.
                         EquipmentAnimationCache.shared.preload()
                     }
                 }

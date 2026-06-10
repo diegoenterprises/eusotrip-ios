@@ -63,7 +63,16 @@ struct LoadAnimationContext: Hashable {
         var b: [String: String] = [:]
 
         // ─── Universal layer ──────────────────────────────────────
-        b["state_label"]        = snapshot.load.status.uppercased().replacingOccurrences(of: "_", with: " ")
+        // state_label — the live tanker sub-state chip (loads.
+        // tanker_sub_state, migration 0100: FLOWING, SAMPLE_2_OF_4,
+        // DETACH_ARM_CAPPED…) is FINER truth than the top-level
+        // status, so it wins when present (Wave B, spec gap 3).
+        if let sub = snapshot.load.tankerSubState?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !sub.isEmpty {
+            b["state_label"] = sub.uppercased().replacingOccurrences(of: "_", with: " ")
+        } else {
+            b["state_label"] = snapshot.load.status.uppercased().replacingOccurrences(of: "_", with: " ")
+        }
         b["equipment_label"]    = equipmentLabel(snapshot)
         b["equipment_subtitle"] = equipmentSubtitle(snapshot)
         b["dock_id"]            = dockId(snapshot, dockNumber: dockNumber)
@@ -73,21 +82,23 @@ struct LoadAnimationContext: Hashable {
         b["progress_pct"]       = "\(Int(progressPercent(snapshot)))"
 
         // ─── Mode-specific layer ──────────────────────────────────
-        // Rail reporting marks — `EUSO 7142` etc. The snapshot
-        // doesn't carry reporting marks today; the server-side
-        // shippers.getLifecycleSnapshot envelope omits the field. We
-        // leave the key absent rather than fabricate one — the
-        // SVG's baked default ("EUSO 7142") will show through, which
-        // is the founder-doctrine honest fallback.
-
-        // Vessel name + IMO — same story; absent until the snapshot
-        // wraps the vessel record.
-
-        // Container id + ISO code — pulled from cargoType heuristic
-        // until the snapshot carries the BIC field explicitly.
-        if mode == "vessel" || vert == "intermodal",
-           let containerId = inferContainerId(from: snapshot) {
-            b["container_id"] = containerId
+        // Wave B baked-sample kill (2026-06-10): the snapshot carries
+        // no reporting marks / vessel identity / container BIC, and
+        // "leave the key absent so the baked default shows" let the
+        // SVG's authoring samples (EUSO 7142, MV EUSORONE ATLAS,
+        // EUSO 884310) read as REAL data on live loads — exactly the
+        // fabrication class the census's criterion (b) prohibits.
+        // Until the snapshot wraps those records, the chips render the
+        // honest em-dash. A real value, when it lands, overrides.
+        if mode == "rail" {
+            b["reporting_marks"] = "—"
+        }
+        if mode == "vessel" {
+            b["vessel_name"] = "—"
+            b["imo_number"]  = "—"
+        }
+        if mode == "vessel" || vert == "intermodal" {
+            b["container_id"] = inferContainerId(from: snapshot) ?? "—"
         }
 
         // Reefer — driven by the load's hazmatClass rejection +
@@ -189,17 +200,19 @@ struct LoadAnimationContext: Hashable {
     }
 
     /// ETA chip — formats minutes-to-arrival into the canonical
-    /// "ETA NN MIN" / "ETA NN HR" string. Returns "" when the
-    /// snapshot doesn't carry an ETA — SVG baked default shows.
+    /// "ETA NN MIN" / "ETA NN HR" string. Returns the honest em-dash
+    /// when the snapshot doesn't carry a future ETA — the SVG's baked
+    /// "ETA 18 MIN" authoring sample must never read as live truth
+    /// (Wave B baked-sample kill, 2026-06-10).
     private static func etaLabel(_ s: ShipperAPI.LifecycleSnapshot) -> String {
         let etaIso = s.load.estimatedDeliveryDate ?? s.load.deliveryDate
-        guard let etaIso else { return "" }
+        guard let etaIso else { return "—" }
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let parsed = f.date(from: etaIso) ?? ISO8601DateFormatter().date(from: etaIso)
-        guard let eta = parsed else { return "" }
+        guard let eta = parsed else { return "—" }
         let mins = Int(eta.timeIntervalSinceNow / 60)
-        if mins < 0 { return "" }                  // past — leave default
+        if mins < 0 { return "—" }                 // past — honest dash
         if mins < 60 { return "ETA \(mins) MIN" }
         if mins < 60 * 24 { return "ETA \(mins / 60) HR" }
         return "ETA \(mins / (60 * 24)) D"
@@ -218,10 +231,12 @@ struct LoadAnimationContext: Hashable {
     }
 
     /// Weight label — formats the load's weight + unit into the
-    /// canonical "NN,NNN LBS" string. Falls back to an empty key when
-    /// the snapshot has no weight (lets the SVG default show).
+    /// canonical "NN,NNN LBS" string. Renders the honest em-dash when
+    /// the snapshot has no weight — the SVG's baked "45,000 LBS"
+    /// authoring sample must never read as live truth (Wave B
+    /// baked-sample kill, 2026-06-10).
     private static func weightLabel(_ s: ShipperAPI.LifecycleSnapshot) -> String {
-        guard let w = s.load.weight, w > 0 else { return "" }
+        guard let w = s.load.weight, w > 0 else { return "—" }
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
@@ -234,38 +249,108 @@ struct LoadAnimationContext: Hashable {
         }
     }
 
-    /// Progress percent — derived from the lifecycle status. Pre-
-    /// pickup states report 0; loaded → 50; in-transit → 75; delivery
-    /// states → 100. Server-side `progress.updated` events from the
-    /// LoadChannel WebSocket override this when wired (~Phase 4).
+    /// Progress percent — derived from the lifecycle status via the
+    /// canonical 49-status ramp below.
     private static func progressPercent(_ s: ShipperAPI.LifecycleSnapshot) -> Double {
-        switch s.load.status.lowercased() {
-        case "draft", "posted", "bidding", "awarded", "accepted", "assigned", "confirmed":
+        percent(forStatus: s.load.status)
+    }
+
+    /// Wave B (2026-06-10) — THE canonical lifecycle-status → percent
+    /// ramp. Covers all 49 TANKER_LOAD_STATUSES from the `loads.status`
+    /// mysqlEnum (schema.additions.wave4-1.ts — original 32 + the 11
+    /// Wave-4 tanker additions + 5 cargo-integrity exceptions + hold).
+    /// The phantom `departed_pickup` (never a real enum member) is
+    /// DEAD. Shared by the shipper strip, the driver equipment band,
+    /// and ConvoyAnimationStrip so no two surfaces can disagree on a
+    /// load's lifecycle percent.
+    ///
+    /// Exception states hold the percent of the procedure stage they
+    /// wrap (a loading exception is still AT the rack at ~35%); hold/
+    /// cancel/cargo-integrity states whose physical position is
+    /// genuinely unknown report the honest floor 0 — never an estimate
+    /// wearing telemetry's clothes.
+    static func percent(forStatus status: String) -> Double {
+        switch status.lowercased() {
+        // ── pre-tender / tender (no freight movement yet) ──
+        case "draft", "posted", "bidding", "expired",
+             "awarded", "declined", "lapsed",
+             "accepted", "assigned", "confirmed":
             return 0
+        // ── rolling to the shipper ──
         case "en_route_pickup":
             return 10
         case "at_pickup", "pickup_checkin":
             return 25
-        case "loading":
+        // ── Wave-4 pickup-side wizard (locked → loading_locked) ──
+        case "locked":
+            return 26
+        case "backing_in":
+            return 28
+        case "brakes_set":
+            return 30
+        case "connecting":
+            return 32
+        case "loading_locked":
+            return 34
+        // ── loading block ──
+        case "loading", "loading_exception":
             return 35
-        case "loaded", "departed_pickup":
+        case "loaded", "load_locked_filled":
             return 50
-        case "in_transit":
+        // ── transit block (holds keep the transit stage — the trailer
+        //    is on the road; the hold is administrative) ──
+        case "in_transit", "transit_hold", "transit_exception":
             return 70
+        // ── receiver side ──
         case "at_delivery", "delivery_checkin":
             return 85
-        case "unloading":
+        case "discharging":
+            return 88
+        case "unloading", "unloading_exception":
             return 90
-        case "unloaded", "pod_pending":
+        case "unloaded":
             return 95
-        case "delivered", "complete":
+        // ── Wave-4 detach wizard (cargo off, rig still connected) ──
+        case "vapor_purging":
+            return 96
+        case "disconnecting":
+            return 97
+        case "detaching":
+            return 98
+        case "released":
+            return 99
+        // ── paperwork / financial / terminal ──
+        case "pod_pending", "pod_rejected":
+            return 95
+        case "delivered", "invoiced", "disputed", "paid", "complete":
+            return 100
+        // ── terminal-cancel + holds with unknowable physical position:
+        //    honest floor, never a fabricated mid-route bar ──
+        case "cancelled", "on_hold":
+            return 0
+        // ── cargo-integrity exceptions can fire at ANY stage; with no
+        //    stage signal on the row the honest answer is the floor ──
+        case "temp_excursion", "reefer_breakdown", "contamination_reject",
+             "seal_breach", "weight_violation":
+            return 0
+        // ── escort-assignment statuses (loads.getEscortAssignment rows
+        //    ride the ConvoyAnimationStrip through this same ramp) ──
+        case "pending":
+            return 0
+        case "en_route":
+            return 10
+        case "on_site":
+            return 25
+        case "escorting":
+            return 70
+        case "completed":
             return 100
         default:
             // Zero-fallback doctrine (E2E audit §4 · 2026-06-09): an
             // unmapped lifecycle status must not fabricate a half-done
             // progress bar. Surface the gap loudly in DEBUG; render an
             // honest 0 in release until the status is mapped above.
-            assertionFailure("LoadAnimationContext.progressPercent: unmapped load status '\(s.load.status)' — add it to the ramp")
+            assertionFailure("LoadAnimationContext.percent(forStatus:): unmapped load status '\(status)' — add it to the ramp")
             return 0
         }
     }
@@ -328,10 +413,157 @@ struct LoadAnimationContext: Hashable {
     }
 
     /// Container BIC — only relevant for intermodal/container loads.
-    /// The snapshot doesn't carry a BIC today; we leave it nil and
-    /// let the SVG's baked default ("EUSO 884310") show through.
+    /// The snapshot doesn't carry a BIC today → nil, and the caller
+    /// overrides the chip with the honest em-dash (the baked
+    /// "EUSO 884310" sample is dead — Wave B baked-sample kill).
     private static func inferContainerId(from s: ShipperAPI.LifecycleSnapshot) -> String? {
-        // No BIC field on snapshot — return nil to keep baked default.
+        // No BIC field on snapshot — nil → "—" at the call site.
         nil
+    }
+
+    // MARK: - Wave B · driver-side builder (2026-06-10)
+
+    /// Minimal honest fact set a DRIVER lifecycle screen can assemble
+    /// from whatever load shape it hydrates (`Load` from
+    /// `loads.getById`, `LoadsAPI.LoadDetail` from `loads.getDetail`).
+    /// Every field is the real row value or nil — the builder below
+    /// renders nil as the honest em-dash, never a sample.
+    struct DriverLoadFacts {
+        var status: String
+        var tankerSubState: String?
+        var cargoType: String?
+        var hazmatClass: String?
+        var unNumber: String?
+        var commodityName: String?
+        var equipmentType: String?
+        var weightLbs: Double?
+        var transportMode: String?
+        var dockNumber: String?
+        var facilityLabel: String?
+
+        init(load: Load) {
+            status         = load.status
+            tankerSubState = load.tankerSubState
+            cargoType      = load.cargoType
+            hazmatClass    = load.hazmatClass
+            unNumber       = load.unNumber
+            commodityName  = load.commodityName
+            equipmentType  = nil   // driver Load row carries no free-text equipment column
+            weightLbs      = load.weightValue > 0 ? load.weightValue : nil
+            transportMode  = load.transportMode
+            dockNumber     = nil
+            facilityLabel  = nil
+        }
+
+        init(detail: LoadsAPI.LoadDetail) {
+            status         = detail.status
+            tankerSubState = nil   // loads.getDetail projection omits the column
+            cargoType      = detail.cargoType
+            hazmatClass    = detail.hazmatClass
+            unNumber       = detail.unNumber
+            commodityName  = detail.commodityName ?? detail.commodity
+            equipmentType  = detail.equipmentType
+            weightLbs      = detail.weight.flatMap(Double.init).flatMap { $0 > 0 ? $0 : nil }
+            transportMode  = detail.transportMode
+            dockNumber     = nil
+            facilityLabel  = nil
+        }
+    }
+
+    /// Build the binding dictionary for the DRIVER equipment band —
+    /// the same universal contract `from(snapshot:)` emits, assembled
+    /// from the driver-side load row. The driver at the rack during
+    /// 016/030 is the one user the 2,099-line petro-loading SVG was
+    /// authored for; this is the context that finally feeds it.
+    static func from(facts: DriverLoadFacts) -> LoadAnimationContext {
+        var b: [String: String] = [:]
+
+        // state_label — sub-state chip wins over the top-level status
+        // (FLOWING beats LOADING for the driver mid-procedure).
+        if let sub = facts.tankerSubState?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !sub.isEmpty {
+            b["state_label"] = sub.uppercased().replacingOccurrences(of: "_", with: " ")
+        } else {
+            b["state_label"] = facts.status.uppercased().replacingOccurrences(of: "_", with: " ")
+        }
+
+        let mode = (facts.transportMode ?? "truck").lowercased()
+        let kind = EquipmentKind.resolve(
+            from: facts.equipmentType,
+            hazmat: (facts.hazmatClass?.isEmpty == false)
+        )
+        let resolvedKind: EquipmentKind = facts.equipmentType == nil
+            ? EquipmentKind.resolve(
+                cargoType: facts.cargoType,
+                hazmat: (facts.hazmatClass?.isEmpty == false),
+                modality: mode == "rail" ? .rail : (mode == "vessel" ? .vessel : .truck))
+            : kind
+        b["equipment_label"] = resolvedKind.shortLabel
+
+        // equipment_subtitle — cargo + regulatory hint (same composition
+        // as the shipper builder).
+        let cargo = (facts.cargoType ?? "").uppercased()
+        if facts.hazmatClass?.isEmpty == false {
+            b["equipment_subtitle"] = cargo.isEmpty
+                ? "HAZMAT · CDL-X · 49 CFR 173"
+                : "\(cargo) · HAZMAT · 49 CFR 173"
+        } else {
+            b["equipment_subtitle"] = cargo.isEmpty ? "GENERAL FREIGHT" : cargo
+        }
+
+        // dock chip — real assigned door → facility label → em-dash.
+        if let d = facts.dockNumber?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !d.isEmpty {
+            let up = d.uppercased()
+            b["dock_id"] = up.contains("DOCK") || up.contains("BAY") || up.contains("DOOR")
+                ? up : "DOCK \(up)"
+        } else if let f = facts.facilityLabel, !f.isEmpty {
+            b["dock_id"] = f.uppercased()
+        } else {
+            b["dock_id"] = "—"
+        }
+
+        // No ETA source on the driver row shapes — honest dash (never
+        // the SVG's baked "ETA 18 MIN" sample).
+        b["eta_minutes"] = "—"
+
+        let commodity = (facts.commodityName ?? facts.cargoType ?? "").uppercased()
+        b["commodity_label"] = commodity.isEmpty ? "—" : commodity
+
+        if let w = facts.weightLbs {
+            let f = NumberFormatter()
+            f.numberStyle = .decimal
+            f.maximumFractionDigits = 0
+            let n = f.string(from: NSNumber(value: w)) ?? "\(Int(w))"
+            b["weight_label"] = "\(n) LBS"
+        } else {
+            b["weight_label"] = "—"
+        }
+
+        b["progress_pct"] = "\(Int(percent(forStatus: facts.status)))"
+
+        // Hazmat layer — real row values only.
+        var placardId: String? = nil
+        if let hazClass = facts.hazmatClass, !hazClass.isEmpty {
+            b["hazmat_class"] = hazClass
+            placardId = "class\(hazClass.replacingOccurrences(of: ".", with: "_"))Placard"
+            if let un = facts.unNumber, !un.isEmpty {
+                let normalized = un.uppercased().contains("UN")
+                    ? un.uppercased().replacingOccurrences(of: " ", with: "")
+                    : "UN\(un.replacingOccurrences(of: " ", with: ""))"
+                b["un_number"] = normalized.replacingOccurrences(of: "UN", with: "UN ")
+            }
+            if let c = facts.commodityName ?? facts.cargoType, !c.isEmpty {
+                b["commodity_stencil"] = c.uppercased()
+            }
+        }
+
+        return LoadAnimationContext(
+            bindings: b,
+            placardSymbolId: placardId,
+            modality: mode,
+            vertical: "",
+            region: "us"
+        )
     }
 }
