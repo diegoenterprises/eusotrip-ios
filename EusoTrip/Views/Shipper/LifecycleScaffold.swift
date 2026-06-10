@@ -564,6 +564,14 @@ struct LifecycleAnimationStrip: View {
     var label: String = "EQUIPMENT"
     var height: CGFloat = 200
 
+    /// Real assigned dock door for this load — the same
+    /// `appointments.getByLoad.dockNumber` read the driver lifecycle
+    /// screens (024/037/039) hydrate. Nil until it resolves or when no
+    /// door is assigned; the SVG dock chip then falls through to
+    /// facility / city / the honest em-dash — never the baked
+    /// "DOCK 12" Figma sample (Wave-A1 fabrication kill, 2026-06-10).
+    @State private var dockNumber: String?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -601,10 +609,19 @@ struct LifecycleAnimationStrip: View {
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .task(id: live.load.id) {
+            // Best-effort, nil-tolerant: no appointment / no door →
+            // dockNumber stays nil and the chip resolves honestly.
+            let appt = try? await EusoTripAPI.shared.appointments
+                .getByLoad(loadId: String(live.load.id))
+            let door = appt?.dockNumber?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            dockNumber = (door?.isEmpty == false) ? door : nil
+        }
     }
 
     private var animationContext: LoadAnimationContext {
-        LoadAnimationContext.from(snapshot: live)
+        LoadAnimationContext.from(snapshot: live, dockNumber: dockNumber)
     }
 
     private var stateLabel: String {

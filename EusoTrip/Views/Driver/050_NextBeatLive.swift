@@ -71,8 +71,31 @@ private struct NBLoadCtx: Decodable, Hashable {
         let dotNumber: String?
     }
 
+    /// Metered loaded gallons (`LiveLoadFacets.loadedGallons`, the viga
+    /// fill capture at the rack). The server column hasn't shipped yet —
+    /// the key is simply absent and this stays nil (honest em-dash) —
+    /// but the decode + binding are wired NOW so the gauge lights up the
+    /// moment the envelope carries it (build-what-doesn't-exist, Wave-A1).
+    /// Wrapped in the tolerant numeric so a DECIMAL-string dialect can
+    /// never blank the whole record (the decode-shape silent-fail trap).
+    let loadedGallons: NBLenientDouble?
+
     /// Weight as Double (proxy target for the fill gauge) — 0 when missing.
     var weightValue: Double { Double(weight ?? "") ?? 0 }
+}
+
+/// Tolerant numeric for not-yet-shipped columns: decodes a JSON number
+/// OR a DECIMAL string ("8500.00"), nil for anything else — one
+/// malformed field must never throw the whole `loads.getById` decode
+/// (DL133/DL126 lesson: a typeMismatch blanks the entire screen).
+struct NBLenientDouble: Decodable, Hashable {
+    let value: Double?
+    init(from decoder: Decoder) {
+        let c = try? decoder.singleValueContainer()
+        if let d = try? c?.decode(Double.self)      { value = d }
+        else if let s = try? c?.decode(String.self) { value = Double(s) }
+        else                                        { value = nil }
+    }
 }
 
 struct NextBeatLive: View {
@@ -216,6 +239,9 @@ struct NextBeatLive: View {
         }
         .task { await hydrateLiveTrip() }
         .onAppear { startFillAnimation(); now = Date() }
+        // Re-settle the gauge when the load envelope (and with it a
+        // possible metered loadedGallons row) hydrates after appear.
+        .onChange(of: loadCtx) { _, _ in startFillAnimation() }
         .screenTileRoot()
         .sheet(isPresented: $showAmenities) {
             AmenitiesNearbySheet(palette: palette)
@@ -251,15 +277,29 @@ struct NextBeatLive: View {
         .padding(.top, 4)
     }
 
+    /// Resting-ring arc = the REAL §395.3(b) cycle fraction: live
+    /// hours-remaining ÷ the 70-hr/8-day cycle the card header names,
+    /// clamped 0…1. Empty (0) until the HOS snapshot lands — never the
+    /// old decorative 0.99 trim wrapped around the live center value
+    /// (Wave-A1 fabrication kill, 2026-06-10): the arc and the number
+    /// now read off the SAME snapshot and can never disagree.
+    private var cycleRingFraction: CGFloat {
+        guard let s = hos.status else { return 0 }
+        return CGFloat(min(max(s.cycleRemaining / 70.0, 0), 1))
+    }
+
     private var restingCard: some View {
         HStack(alignment: .center, spacing: Space.s3) {
             ZStack {
                 Circle().stroke(palette.bgCardSoft, lineWidth: 6).frame(width: 84, height: 84)
                 Circle()
-                    .trim(from: 0, to: 0.99)
+                    .trim(from: 0, to: cycleRingFraction)
                     .stroke(LinearGradient.diagonal, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .frame(width: 84, height: 84)
+                    .animation(reduceMotion ? nil
+                               : .timingCurve(0.4, 0, 0.2, 1, duration: 0.6),
+                               value: cycleRingFraction)
                 VStack(spacing: -2) {
                     Text(cycleRemainingDisplay)
                         .font(.system(size: 20, weight: .heavy, design: .rounded))
@@ -312,14 +352,15 @@ struct NextBeatLive: View {
     // large progress ring whose arc + count-up percent track the same
     // bound fraction.
 
-    /// Single source of truth for the gauge. The backend has NOT shipped
-    /// a metered loaded-gallons column on the load envelope (fill net is
-    /// captured by viga AI photo at the rack, per
-    /// `LiveLoadFacets.loadedGallons`, which is a known em-dash gap), so
-    /// `loaded` has no live source and the gauge renders honest "—" for
-    /// the loaded value, percent, and ETA. The TARGET is derived from the
-    /// live load weight when present (DECIMAL string → gallons proxy);
-    /// when absent the whole readout is em-dash. Nothing here is faked.
+    /// Single source of truth for the gauge. `loaded` binds to the
+    /// envelope's metered `loadedGallons` (viga AI fill capture at the
+    /// rack, `LiveLoadFacets.loadedGallons`) — the iOS decode + binding
+    /// are wired (Wave-A1, 2026-06-10); until the server column ships
+    /// the key is absent, `loaded` is nil, and the gauge renders honest
+    /// "—" for the loaded value, percent, and ETA. The TARGET is derived
+    /// from the live load weight when present (DECIMAL string → gallons
+    /// proxy); when absent the whole readout is em-dash. Nothing here is
+    /// faked.
     private struct FillModel {
         let loaded: Double?     // gallons in the compartment now (no live source → nil)
         let target: Double?     // ticketed batch size proxy (from live weight)
@@ -342,14 +383,16 @@ struct NextBeatLive: View {
     }
 
     /// Resolve the gauge from live state. Target is derived from the
-    /// live load weight when present; loaded gallons have NO live source
-    /// on the load envelope yet (viga fill telemetry isn't surfaced), so
-    /// it stays nil and the readout renders honest em-dash. Fraction is
-    /// always COMPUTED — never a literal — and nil when not derivable.
+    /// live load weight when present. Loaded gallons decode from the
+    /// envelope's `loadedGallons` (viga fill capture) — nil until the
+    /// backend ships the column, so the readout renders honest em-dash
+    /// today and lights up automatically the moment the wire carries
+    /// it. Fraction is always COMPUTED — never a literal — and nil
+    /// when not derivable.
     private var fillModel: FillModel {
         let w = loadCtx?.weightValue ?? 0
         let target: Double? = w > 1_000 ? (w / 1_000).rounded() * 1_000 : nil
-        return FillModel(loaded: nil, target: target)
+        return FillModel(loaded: loadCtx?.loadedGallons?.value, target: target)
     }
 
     private var fillGaugeCard: some View {
@@ -368,13 +411,15 @@ struct NextBeatLive: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
+                // Status chip is REAL: live when a metered loadedGallons
+                // row resolved, honest "AWAITING FILL DATA" otherwise.
                 HStack(spacing: 4) {
-                    Circle().fill(palette.textTertiary)
+                    Circle().fill(m.fraction != nil ? Brand.success : palette.textTertiary)
                         .frame(width: 6, height: 6)
                         .opacity(flowPulseOpacity)
-                    Text("AWAITING FILL DATA")
+                    Text(m.fraction != nil ? "FILL DATA LIVE" : "AWAITING FILL DATA")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                        .foregroundStyle(palette.textTertiary)
+                        .foregroundStyle(m.fraction != nil ? Brand.success : palette.textTertiary)
                 }
             }
 

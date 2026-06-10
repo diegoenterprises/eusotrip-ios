@@ -23,13 +23,15 @@
 //    • Footer — E-Stop (red outline) + View BOL preview (gradient).
 //    • Bottom nav — preserved verbatim per doctrine.
 //
-//  Data wiring:
+//  Data wiring (Wave-A1 fabrication kill, 2026-06-10):
 //    • `TripLifecycleStore.hydrateActiveLoad()` pulls the real load
 //      for commodity / UN number / total-gallons fields.
-//    • Sensor readings (pressure psi, temp °F, ground Ω) are
-//      forwarded-from-truck telemetry in production; until that
-//      pipeline ships, the Figma reference values render so the
-//      frame paints identically in preview + cold start.
+//    • The fill TARGET derives from the real load weight (the 030
+//      pattern: weight ÷ 5.15 lb/gal). Gallons FLOWN have no live
+//      source yet (forwarded-from-truck fill telemetry) — the ring
+//      renders the honest EMPTY state with an em-dash center, never
+//      the old fixed Figma numerator. Rate / time-to-full / sensor
+//      tiles / bay-sequence stamps are em-dash until their feeds land.
 //    • View BOL preview opens the 017 BOL signing sheet.
 //    • E-Stop fires an emergency mutation — routes through
 //      `emergencyOps.triggerEStop` when wired.
@@ -65,64 +67,58 @@ struct PickupLoading: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    // MARK: - Figma-verbatim fallback (matches the 2026-04-24 frame).
-    private let fallbackClock        = "09:14 CDT"
+    // MARK: - Honest sentinels (no Figma reference values on the live path).
+    // The old "Anhydrous Ammonia" / "UN1005" commodity pair was a Figma
+    // persona — em-dash until the real load hydrates (Wave-A1 kill).
     private let fallbackBayLine      = "-"
     private let fallbackLoadID       = "-"
-    private let fallbackCommod       = "Anhydrous Ammonia"
-    private let fallbackUN           = "UN1005"
-    private let fallbackPressure     = 132
-    private let fallbackPressureLim  = 250
-    private let fallbackTempF        = -28
-    private let fallbackChillSpec    = "chill spec"
-    private let fallbackGroundOhm    = 0.8
-    private let fallbackGroundSpec   = "cap 0.8 Ω"
-    private let fallbackRateGpm      = 218
-    private let fallbackMinutesLeft  = 18
-    private let fallbackGallonsFlown = 6_510
-    private let fallbackGallonsTotal = 10_500
+    private let fallbackCommod       = "—"
+    private let fallbackUN           = "—"
 
     // MARK: - Loaded-fraction source of truth
     //
     // The progress ring, the big "% LOADED" label, and the
     // "gallons flown / total" readout MUST all read off the same two
     // numbers so they can never disagree on screen. `gallonsTotal`
-    // (the fill target) comes from the real load envelope when the
-    // backend ships it; `gallonsFlown` is the live forwarded-from-
-    // truck fill telemetry. Until either pipeline lands the Figma
-    // reference renders so the frame paints identically on cold start
-    // (matching the file-header data-wiring doctrine). The ring trim
-    // is therefore bound to `loadedFraction`, a genuine
-    // flown / target ratio — never a decorative literal.
+    // (the fill target) is REAL — derived from the load's manifested
+    // weight, the same weight ÷ 5.15 lb/gal derivation 030 uses.
+    // `gallonsFlown` is the live forwarded-from-truck fill telemetry,
+    // which has NO source yet — so it is nil and the ring renders the
+    // honest EMPTY state with an em-dash center. The old fixed Figma
+    // numerator is DEAD (Wave-A1 fabrication kill, 2026-06-10): a ring
+    // that swept to 62% on every load was telemetry-shaped fiction.
 
     /// Fill target in gallons. Derived from the real load's net
     /// weight when present (anhydrous ammonia ≈ 5.15 lb/gal at the
-    /// fill reference; liquids only), else the Figma reference total.
-    private var gallonsTotal: Int {
-        if let load = activeLoad, load.weightValue > 0, ctx.isHazmat {
-            // Net-weight → gallons for the loaded liquid. 5.15 lb/gal
-            // is the anhydrous-ammonia fill reference; clamp to a sane
-            // floor so a malformed weight can't zero the denominator.
-            let gal = Int((load.weightValue / 5.15).rounded())
-            return max(gal, 1)
-        }
-        return fallbackGallonsTotal
+    /// fill reference — the 030 pattern). Nil when the load hasn't
+    /// hydrated or carries no weight → the readout em-dashes.
+    private var gallonsTotal: Int? {
+        guard let load = activeLoad, load.weightValue > 0,
+              load.weightValue.isFinite else { return nil }
+        return max(Int((load.weightValue / 5.15).rounded()), 1)
     }
 
     /// Gallons transferred so far. Live fill telemetry is forwarded
-    /// from the truck in production; until that stream ships the
-    /// reference fill renders. Clamped to the target so the ring can
-    /// never read over 100%.
-    private var gallonsFlown: Int {
-        min(fallbackGallonsFlown, gallonsTotal)
+    /// from the truck in production; that stream has NOT shipped, so
+    /// this is nil and every consumer renders the em-dash / empty-ring
+    /// state (the 050 fill-gauge pattern). Never a baked number.
+    private var gallonsFlown: Int? { nil }
+
+    /// Flown ÷ target, clamped 0…1. Nil when either side has no live
+    /// source — the ring then renders EMPTY, never a fabricated sweep.
+    private var loadedFraction: Double? {
+        guard let flown = gallonsFlown, let total = gallonsTotal,
+              total > 0 else { return nil }
+        return min(1, Double(flown) / Double(total))
     }
 
-    private var loadedFraction: Double {
-        guard gallonsTotal > 0 else { return 0 }
-        return min(1, Double(gallonsFlown) / Double(gallonsTotal))
-    }
-    private var loadedPercent: Int {
-        Int((loadedFraction * 100).rounded())
+    private static let groupedGal: NumberFormatter = {
+        let f = NumberFormatter(); f.numberStyle = .decimal
+        f.maximumFractionDigits = 0; return f
+    }()
+    private func gal(_ v: Int?) -> String {
+        guard let v else { return "—" }
+        return Self.groupedGal.string(from: NSNumber(value: v)) ?? "\(v)"
     }
 
     private var loadIDText: String {
@@ -195,9 +191,13 @@ struct PickupLoading: View {
             Spacer(minLength: 0)
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(fallbackClock)
-                    .font(EType.mono(.caption)).fontWeight(.semibold)
-                    .foregroundStyle(palette.textPrimary)
+                // Live device wall clock, refreshed every minute — the
+                // 039/044 pattern, never the seeded "09:14 CDT".
+                TimelineView(.everyMinute) { tl in
+                    Text(tl.date, format: .dateTime.hour().minute())
+                        .font(EType.mono(.caption)).fontWeight(.semibold)
+                        .foregroundStyle(palette.textPrimary)
+                }
                 Text(loadIDText)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                     .foregroundStyle(palette.textTertiary)
@@ -226,23 +226,27 @@ struct PickupLoading: View {
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1)
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(gallonsFlown.formatted())
+                    // Gallons flown have no live source → em-dash; the
+                    // target is the REAL weight-derived total when known.
+                    Text(gal(gallonsFlown))
                         .font(.system(size: 26, weight: .heavy, design: .rounded))
                         .foregroundStyle(palette.textPrimary)
-                    Text("/ \(gallonsTotal.formatted()) gal")
+                    Text("/ \(gal(gallonsTotal)) gal")
                         .font(EType.body)
                         .foregroundStyle(palette.textSecondary)
                 }
                 HStack(spacing: 4) {
-                    Text("▲ \(fallbackRateGpm) gpm")
+                    // No live flow-rate / time-to-full feed → em-dash,
+                    // never the seeded "218 gpm" / "18 min" Figma pair.
+                    Text("— gpm")
                         .font(EType.mono(.caption)).fontWeight(.semibold)
-                        .foregroundStyle(Brand.success)
+                        .foregroundStyle(palette.textTertiary)
                     Text("·")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
-                    Text("\(fallbackMinutesLeft) min to full")
+                    Text("— min to full")
                         .font(EType.mono(.caption)).fontWeight(.semibold)
-                        .foregroundStyle(palette.textSecondary)
+                        .foregroundStyle(palette.textTertiary)
                 }
             }
             Spacer(minLength: 0)
@@ -257,13 +261,19 @@ struct PickupLoading: View {
     }
 
     private var progressRing: some View {
-        ZStack {
+        // No live fraction (gallons flown unsourced) → the arc renders
+        // EMPTY and the center reads "—" — the 050 fill-gauge pattern.
+        // When the fill-telemetry lane ships, the same trim lights up
+        // with the real flown ÷ target ratio. Never a decorative sweep.
+        let frac = loadedFraction
+        let shown = CGFloat(frac ?? 0)
+        return ZStack {
             Circle()
                 .stroke(palette.bgCardSoft, lineWidth: 10)
                 .frame(width: 108, height: 108)
             Circle()
-                // Completed arc = real flown / target fraction.
-                .trim(from: 0, to: CGFloat(loadedFraction))
+                // Completed arc = real flown / target fraction (0 = empty).
+                .trim(from: 0, to: shown)
                 .stroke(
                     LinearGradient.diagonal,
                     style: StrokeStyle(lineWidth: 10, lineCap: .round)
@@ -278,10 +288,10 @@ struct PickupLoading: View {
                     reduceMotion
                         ? nil
                         : .timingCurve(0.4, 0, 0.2, 1, duration: 0.6),
-                    value: loadedFraction
+                    value: shown
                 )
             VStack(spacing: 0) {
-                Text("\(loadedPercent)%")
+                Text(frac.map { "\(Int(($0 * 100).rounded()))%" } ?? "—")
                     .font(.system(size: 30, weight: .heavy, design: .rounded))
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
@@ -292,7 +302,10 @@ struct PickupLoading: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Load fill progress")
-        .accessibilityValue("\(loadedPercent) percent loaded · \(gallonsFlown.formatted()) of \(gallonsTotal.formatted()) gallons")
+        .accessibilityValue(
+            frac.map { "\(Int(($0 * 100).rounded())) percent loaded · \(gal(gallonsFlown)) of \(gal(gallonsTotal)) gallons" }
+                ?? "Awaiting fill telemetry · target \(gal(gallonsTotal)) gallons"
+        )
     }
 
     // MARK: Safety tiles — product-dispatched
@@ -317,12 +330,15 @@ struct PickupLoading: View {
 
     /// Derive a tile color from the label — pressure/critical
     /// tiles promote to warn/danger at threshold, OK/primary tiles
-    /// stay on brand success.
+    /// stay on brand success. An em-dash primary (no live reading)
+    /// stays NEUTRAL — a green em-dash would assert "OK" with no
+    /// sensor behind it, and the old pressure ratio computed off the
+    /// seeded 132/250 Figma pair (dead, Wave-A1 fabrication kill).
     private func tileColor(for tile: LifecycleProductContext.SafetyTile) -> Color {
-        let l = tile.label.uppercased()
-        if l.contains("PRESSURE") {
-            return pressureColor
+        guard tile.primary != LiveLoadFacets.dash else {
+            return palette.textPrimary
         }
+        let l = tile.label.uppercased()
         if l.contains("TEMP") {
             return Brand.info
         }
@@ -333,13 +349,6 @@ struct PickupLoading: View {
             return Brand.success
         }
         return palette.textPrimary
-    }
-
-    private var pressureColor: Color {
-        let ratio = Double(fallbackPressure) / Double(fallbackPressureLim)
-        if ratio < 0.8 { return Brand.success }
-        if ratio < 0.95 { return Brand.warning }
-        return Brand.danger
     }
 
     private func safetyTile(
@@ -387,7 +396,11 @@ struct PickupLoading: View {
                 Text("ESANG · WATCHDOG")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Rate steady at \(fallbackRateGpm) gpm, pressure \(fallbackPressure) psi, well under \(fallbackPressureLim). I'm listening for pressure spikes. Ground is solid at \(String(format: "%.1f", fallbackGroundOhm)) Ω.")
+                // Honest watchdog copy — never narrates readings it
+                // doesn't have. The old line recited the seeded
+                // 218 gpm / 132 psi / 0.8 Ω Figma trio as if it were
+                // streaming (dead, Wave-A1 fabrication kill).
+                Text("I'm on this fill. Rate, pressure, and grounding telemetry will narrate here the moment the bay sensor lane connects — until then I'm walking the \(commodityText == fallbackCommod ? "product" : commodityText) transfer procedure with you.")
                     .font(EType.body)
                     .foregroundStyle(palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -413,13 +426,20 @@ struct PickupLoading: View {
         enum State { case done, now, next }
     }
 
+    /// The canonical NH3 bay procedure ORDER — operational truth, kept.
+    /// Per-row completion/timestamps have NO live source (no witness-
+    /// checks / bay-ops step feed reaches this screen), so every row is
+    /// neutral with an em-dash tail — never the seeded "09:02 … DONE /
+    /// 09:10 NOW" Figma ladder (Wave-A1 fabrication kill; the 042
+    /// disconnect-ladder pattern). `.done`/`.now` rendering is retained
+    /// for the day a real step-progress source lands.
     private let bayCanonicalSteps: [SequenceStep] = [
-        .init(id: "chock",    title: "Chock + wheel lock",           timestamp: "09:02", state: .done),
-        .init(id: "ground",   title: "Grounding cable clipped",      timestamp: "09:03", state: .done),
-        .init(id: "arm",      title: "Arm connected · leak-tested",  timestamp: "09:08", state: .done),
-        .init(id: "transfer", title: "Transfer in progress",         timestamp: "09:10", state: .now),
-        .init(id: "blowdown", title: "Line blow-down · cap torque",  timestamp: nil,     state: .next),
-        .init(id: "release",  title: "Release from gantry",          timestamp: nil,     state: .next),
+        .init(id: "chock",    title: "Chock + wheel lock",           timestamp: nil, state: .next),
+        .init(id: "ground",   title: "Grounding cable clipped",      timestamp: nil, state: .next),
+        .init(id: "arm",      title: "Arm connected · leak-tested",  timestamp: nil, state: .next),
+        .init(id: "transfer", title: "Transfer in progress",         timestamp: nil, state: .next),
+        .init(id: "blowdown", title: "Line blow-down · cap torque",  timestamp: nil, state: .next),
+        .init(id: "release",  title: "Release from gantry",          timestamp: nil, state: .next),
     ]
 
     private var baySequenceCard: some View {
@@ -491,7 +511,9 @@ struct PickupLoading: View {
         switch step.state {
         case .done: return step.timestamp ?? "DONE"
         case .now:  return step.timestamp ?? "NOW"
-        case .next: return "NEXT"
+        // No per-row completion source → em-dash tail, never a
+        // hardcoded "NEXT" queue assertion (042 ladder pattern).
+        case .next: return "—"
         }
     }
 
