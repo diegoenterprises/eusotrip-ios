@@ -108,6 +108,11 @@ struct ShipperLoadDetail: View {
     /// Hydrates from appointments.getByLoad alongside the detail.
     /// Drives the "Assign dock" action-menu entry below.
     @State private var loadAppointment: AppointmentsAPI.ByLoadAppointment? = nil
+    /// Wave B (2026-06-10) — escort assignments for this load
+    /// (`loads.getEscortAssignment`). `[]` = confirmed solo OR fetch
+    /// failed → the convoy strip stays hidden (never a fabricated
+    /// pilot car).
+    @State private var escortAssignments: [LoadsAPI.EscortAssignment] = []
     @State private var showDockAssign: Bool = false
     @State private var dockNumberDraft: String = ""
     @State private var dockAssignInFlight: Bool = false
@@ -133,6 +138,18 @@ struct ShipperLoadDetail: View {
         )
     }
 
+    /// Wave B (2026-06-10) — the multi-vehicle convoy strip, mounted
+    /// ONLY when real escort rows exist for this load. Renders nothing
+    /// otherwise — no placeholder, no sample convoy.
+    @ViewBuilder
+    private var convoyStripIfEscorted: some View {
+        if let detail = detailStore.state.value ?? nil,
+           !escortAssignments.isEmpty,
+           let shipment = Shipment.composed(fromLoad: detail, escorts: escortAssignments) {
+            ConvoyAnimationStrip(shipment: shipment)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             topBar
@@ -142,6 +159,15 @@ struct ShipperLoadDetail: View {
                 VStack(alignment: .leading, spacing: Space.s4) {
                     heroMap
                     lifecycleCard
+                    // Wave B (2026-06-10) — escorted loads mount the
+                    // multi-vehicle convoy strip (one Shipment, N typed
+                    // Vehicles per MULTI_VEHICLE_LOAD_ARCHITECTURE):
+                    // lead pilot car(s), the primary rig with its
+                    // lifecycle state-variant animation, chase car(s).
+                    // Composed exclusively from the real load detail +
+                    // real loads.getEscortAssignment rows — hidden
+                    // entirely when the load has no escort wired.
+                    convoyStripIfEscorted
                     moneyCard
                     carrierCard
                     driverReadinessCard
@@ -2037,12 +2063,17 @@ struct ShipperLoadDetail: View {
         async let b: Void = bidsStore.refresh()
         async let r: LoadsAPI.DriverReadiness? = (try? await EusoTripAPI.shared.loads.getAssignedDriverReadiness(loadId: loadId))
         async let p: AppointmentsAPI.ByLoadAppointment? = (try? await EusoTripAPI.shared.appointments.getByLoad(loadId: loadId)) ?? nil
+        // Wave B — escort attachments; [] on failure keeps the convoy
+        // strip honestly hidden.
+        async let e: [LoadsAPI.EscortAssignment] = (try? await EusoTripAPI.shared.loads.getEscortAssignment(loadId: loadId)) ?? []
         _ = await (a, b)
         let readiness = await r
         let appointment = await p
+        let escorts = await e
         await MainActor.run {
             driverReadiness = readiness
             loadAppointment = appointment
+            escortAssignments = escorts
         }
     }
 

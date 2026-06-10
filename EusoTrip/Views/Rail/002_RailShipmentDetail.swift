@@ -481,12 +481,24 @@ private struct RailShipmentDetail: View {
 
     /// Live-position pin riding the route curve. W13 hygiene (E2E audit §4
     /// animations · 2026-06-10): the non-canonical `tram.fill` glyph is
-    /// replaced by the canonical rail BOXCAR model from the EusoTrip
-    /// Animation Design System (Resources/Animations/Equipment/02_Rail/
-    /// 23_rail_boxcar_anim.svg), rendered through the in-house native SVG
-    /// engine — the same founder-approved lockup 560/643 ride. The hold
-    /// state keeps the exclamation puck (a status glyph, not a vehicle).
-    /// The ambient halo breathes beneath (Reduce Motion gated).
+    /// replaced by the canonical equipment model rendered through the
+    /// in-house native SVG engine — the same founder-approved lockup
+    /// 560/643 ride. Wave B (2026-06-10): the marker is EQUIPMENT-TRUE —
+    /// the model resolves from the shipment's REAL `carType` via the
+    /// shared `EquipmentKind.resolve(from:)` matcher (a DOT-117 consist
+    /// rides a tank car, an auto-rack consist rides 27 — never an
+    /// unconditional boxcar). Boxcar remains only as the honest rail
+    /// floor when the row carries no car type. The hold state keeps the
+    /// exclamation puck (a status glyph, not a vehicle). The ambient
+    /// halo breathes beneath (Reduce Motion gated).
+    private var markerKind: EquipmentKind {
+        EquipmentKind.resolve(
+            from: detail?.carType,
+            hazmat: (detail?.hazmatClass?.isEmpty == false),
+            modality: .rail
+        )
+    }
+
     private var trainPin: some View {
         ZStack {
             Circle().fill(LinearGradient.primary.opacity(pinBreathing ? 0.32 : 0.18))
@@ -498,8 +510,8 @@ private struct RailShipmentDetail: View {
                 Image(systemName: "exclamationmark")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(Brand.hazmat)
-            } else if let boxcarSVG = EquipmentAnimationCache.shared.svg(for: .railBoxcar) {
-                NativeSVGView(svgString: boxcarSVG)
+            } else if let carSVG = EquipmentAnimationCache.shared.svg(for: markerKind) {
+                NativeSVGView(svgString: carSVG)
                     .frame(width: 58, height: 24)
             } else {
                 // Fallback ring puck if the model can't load — never a

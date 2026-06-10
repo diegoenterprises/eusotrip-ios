@@ -61,6 +61,13 @@ enum EquipmentKind: String, Hashable, CaseIterable {
     // its identity). Each maps to the canonical TrailerCode of the
     // same name from T-001's foundation.
     case livestockCattlePot, logTrailer, pneumaticTank, endDump, waterTank, curtainSide
+    // Wave B (2026-06-10) — auto-carrier finally gets its own case.
+    // The 35_auto_carrier SVG triplet has been on disk since the
+    // 2026-05-29 gap-fill, and AnimationBindingMap already binds
+    // TrailerCode.autoCarrier to it, but NO EquipmentKind case
+    // existed — a vehicles/car-hauler load could never resolve to
+    // the right model (LEVEL100 spec §3.1, model 35).
+    case autoCarrier
 
     var vertical: AnimVertical {
         switch self {
@@ -114,16 +121,20 @@ enum EquipmentKind: String, Hashable, CaseIterable {
         case .vesselLNG:             return "31_vessel_lng_anim"
         case .vesselReeferContainer: return "32_vessel_reefer_container_anim"
         case .vesselISOTank:         return "33_vessel_iso_tank_anim"
-        // T-030 hero fallbacks — closest-shape v1 SVG until the
-        // dedicated state-variant catalog ships (T-030b on the design
-        // backlog). Once the 6 dedicated hero SVGs land, swap each
-        // case to its own asset name.
-        case .livestockCattlePot:    return "01_dry_van_anim"        // fallback proxy
-        case .logTrailer:            return "03_flatbed_anim"        // fallback proxy
-        case .pneumaticTank:         return "10_tanker_gas_anim"     // fallback proxy
-        case .endDump:               return "03_flatbed_anim"        // fallback proxy
-        case .waterTank:             return "09_tanker_liquid_anim"  // fallback proxy
-        case .curtainSide:           return "01_dry_van_anim"        // fallback proxy
+        // Wave B (2026-06-10) — the six T-030 proxies are DEAD. The
+        // dedicated hero SVGs (34-40) shipped in the 2026-05-29
+        // gap-fill drop and have been on disk ever since; these cases
+        // kept pointing at closest-shape proxies, so a livestock load
+        // painted a dry van and an end-dump painted a flatbed — a
+        // wrong-equipment fabrication per the canonical-models
+        // doctrine. Each now resolves to its own model.
+        case .livestockCattlePot:    return "34_livestock_anim"
+        case .autoCarrier:           return "35_auto_carrier_anim"
+        case .pneumaticTank:         return "36_pneumatic_dry_bulk_anim"
+        case .endDump:               return "37_end_dump_anim"
+        case .waterTank:             return "38_water_tank_anim"
+        case .logTrailer:            return "39_log_trailer_anim"
+        case .curtainSide:           return "40_curtain_side_anim"
         }
     }
 
@@ -188,6 +199,7 @@ enum EquipmentKind: String, Hashable, CaseIterable {
         case .endDump:               return .truck(.endDump)
         case .waterTank:             return .truck(.waterTank)
         case .curtainSide:           return .truck(.curtainSide)
+        case .autoCarrier:           return .truck(.autoCarrier)
         }
     }
 
@@ -255,6 +267,134 @@ enum EquipmentKind: String, Hashable, CaseIterable {
         }
     }
 
+    // MARK: - Wave B · shared equipment-string resolver (2026-06-10)
+
+    /// ONE canonical equipment-string → EquipmentKind matcher for every
+    /// surface (shipper LifecycleAnimationStrip, ConvoyAnimationStrip,
+    /// rail/vessel live markers, driver equipment band). Replaces the
+    /// two divergent private matchers that each missed the T-030 six +
+    /// auto-carrier, so a livestock load painted a dry van on one
+    /// screen and matched nothing on another.
+    ///
+    /// `raw` accepts either separator convention ("step deck" /
+    /// "step_deck" / "DOT-117") — the matcher normalizes to spaces.
+    /// `hazmat` promotes an otherwise-unmatched string to the hazmat
+    /// tanker. `modality` is the honest last-resort shape per mode
+    /// (dry van / boxcar / container ship) used only when nothing in
+    /// the string matched.
+    static func resolve(
+        from raw: String?,
+        hazmat: Bool = false,
+        modality: AnimVertical = .truck
+    ) -> EquipmentKind {
+        let e = (raw ?? "")
+            .lowercased()
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+
+        if !e.isEmpty {
+            // Vessel (checked first: "container ship" must not match
+            // the container-truck token, "vessel reefer" not reefer).
+            if e.contains("vessel reefer") || e.contains("reefer container")  { return .vesselReeferContainer }
+            if e.contains("iso tank")                                          { return .vesselISOTank }
+            if e.contains("container ship") || e.contains("vessel container") { return .vesselContainer }
+            if e.contains("bulk carrier") || e.contains("vessel bulk")         { return .vesselBulk }
+            if e.contains("vessel tanker") || e.contains("vlcc")               { return .vesselTanker }
+            if e.contains("ro/ro") || e.contains("roro") || e.contains("ro ro") { return .vesselRoRo }
+            if e.contains("lng")                                               { return .vesselLNG }
+
+            // Rail
+            if e.contains("tofc")                                              { return .railTOFC }
+            if e.contains("cofc")                                              { return .railCOFC }
+            if e.contains("well car") || e.contains("rail intermodal") ||
+               e.contains("double stack") || e.contains("doublestack")         { return .railIntermodal }
+            if e.contains("dot 105") || e.contains("rail tank gas") ||
+               e.contains("tank pressure") || e.contains("pressure tank car")  { return .railTankGas }
+            if e.contains("dot 117") || e.contains("dot 111") ||
+               e.contains("rail tank") || e.contains("tank car")               { return .railTankLiquid }
+            if e.contains("boxcar") && (e.contains("reefer") || e.contains("refrigerated")) { return .railReeferBoxcar }
+            if e.contains("rail reefer")                                       { return .railReeferBoxcar }
+            if e.contains("boxcar")                                            { return .railBoxcar }
+            if e.contains("hopper") && (e.contains("rail") || e.contains("covered") || e.contains("grain") || modality == .rail) { return .railHopper }
+            if e.contains("centerbeam")                                        { return .railCenterbeam }
+            if e.contains("gondola")                                           { return .railGondola }
+            if e.contains("auto rack") || e.contains("autorack")               { return .railAutoRack }
+            if e.contains("flatcar")                                           { return .railFlatcar }
+
+            // Truck — specialized first so "livestock van" never falls
+            // into the generic van bucket.
+            if e.contains("livestock") || e.contains("cattle")                 { return .livestockCattlePot }
+            if e.contains("auto carrier") || e.contains("car hauler") ||
+               e.contains("autocarrier") || e.contains("car carrier")          { return .autoCarrier }
+            if e.contains("log trailer") || e.contains("logging") ||
+               e.contains("timber") || e == "log" || e.hasSuffix(" logs")      { return .logTrailer }
+            if e.contains("pneumatic") || e.contains("dry bulk") ||
+               e.contains("grain") && modality == .truck                       { return .pneumaticTank }
+            if e.contains("end dump") || e.contains("enddump")                 { return .endDump }
+            if e.contains("water tank") || e.contains("water truck")           { return .waterTank }
+            if e.contains("curtain") || e.contains("tautliner")                { return .curtainSide }
+            if e.contains("reefer") || e.contains("refrigerated")              { return .reefer }
+            if e.contains("step deck") || e.contains("stepdeck")               { return .stepDeck }
+            if e.contains("conestoga")                                         { return .conestoga }
+            if e.contains("lowboy") || e.contains("rgn")                       { return .lowboy }
+            if e.contains("flatbed")                                           { return .flatbed }
+            if e.contains("oversize") || e.contains("schnabel")                { return .oversized }
+            if e.contains("hot shot") || e.contains("hotshot")                 { return .hotShot }
+            if e.contains("power only") || e.contains("power") || e.contains("bobtail") { return .powerOnly }
+            if e.contains("mc 331") || e.contains("mc331") ||
+               e.contains("hazmat tanker") || e.contains("tanker hazmat")      { return .tankerHazmat }
+            if e.contains("mc 306") || e.contains("dot 406") ||
+               e.contains("petro")                                             { return .tankerPetro }
+            if e.contains("dot 407") || e.contains("food grade") ||
+               e.contains("liquid tank") || e.contains("tanker liquid")        { return .tankerLiquid }
+            if e.contains("mc 338") || e.contains("cryo") ||
+               e.contains("gas tank") || e.contains("tanker gas")              { return .tankerGas }
+            if e.contains("tanker") || e.contains("tank")                      { return hazmat ? .tankerHazmat : .tankerLiquid }
+            if e.contains("container") || e.contains("intermodal") ||
+               e.contains("chassis")                                           { return .container }
+            if e.contains("dry van") || e.contains("van")                      { return .dryVan }
+        }
+
+        // Hazmat-aware promotion before the modality floor.
+        if hazmat { return .tankerHazmat }
+        switch modality {
+        case .truck:  return .dryVan
+        case .rail:   return .railBoxcar
+        case .vessel: return .vesselContainer
+        }
+    }
+
+    /// Maps the `loads.cargoType` mysqlEnum (general / hazmat /
+    /// refrigerated / oversized / liquid / gas / chemicals / petroleum /
+    /// livestock / vehicles / timber / grain / dry_bulk / food_grade /
+    /// water / intermodal / cryogenic) onto the canonical model when the
+    /// load row carries no free-text equipment string (the driver-side
+    /// `Load` shape). Real column values only — unknown → modality floor.
+    static func resolve(
+        cargoType: String?,
+        hazmat: Bool = false,
+        modality: AnimVertical = .truck
+    ) -> EquipmentKind {
+        guard modality == .truck else {
+            return resolve(from: cargoType, hazmat: hazmat, modality: modality)
+        }
+        switch (cargoType ?? "").lowercased() {
+        case "hazmat", "chemicals":  return .tankerHazmat
+        case "petroleum":            return .tankerPetro
+        case "liquid", "food_grade": return .tankerLiquid
+        case "gas", "cryogenic":     return .tankerGas
+        case "refrigerated":         return .reefer
+        case "oversized":            return .oversized
+        case "livestock":            return .livestockCattlePot
+        case "vehicles":             return .autoCarrier
+        case "timber":               return .logTrailer
+        case "grain", "dry_bulk":    return .pneumaticTank
+        case "water":                return .waterTank
+        case "intermodal":           return .container
+        default:                     return hazmat ? .tankerHazmat : .dryVan
+        }
+    }
+
     /// Short user-facing label used by the reactive top-left equipment
     /// badge inside `EquipmentAnimation`. Replaces the SVG-baked text
     /// stripped 2026-05-17 to fix viewBox clipping.
@@ -300,6 +440,7 @@ enum EquipmentKind: String, Hashable, CaseIterable {
         case .endDump:               return "END-DUMP"
         case .waterTank:             return "WATER TANK"
         case .curtainSide:           return "CURTAIN-SIDE / TAUTLINER"
+        case .autoCarrier:           return "AUTO CARRIER"
         }
     }
 }
@@ -313,6 +454,42 @@ public enum AnimationState: String, CaseIterable, Codable, Hashable {
     case hero
     case loading
     case unloading
+
+    /// Wave B (2026-06-10) — canonical lifecycle-status → animation-state
+    /// selection. Maps every one of the 49 TANKER_LOAD_STATUSES (the
+    /// `loads.status` mysqlEnum, schema.additions.wave4-1.ts) onto the
+    /// variant whose PROCEDURE the load is physically in:
+    ///
+    ///   • loading block  (at the rack / dock, pickup side)  → .loading
+    ///   • unloading block (at the receiver, discharge side) → .unloading
+    ///   • everything else (pre-tender, transit, paperwork,
+    ///     financial, terminal, cargo-integrity exceptions)  → .hero
+    ///
+    /// Rail consist statuses (loading/loaded/unloading…) share the same
+    /// vocabulary and resolve through the same buckets. An UNKNOWN status
+    /// resolves to .hero — the transit pose is the honest neutral (the
+    /// equipment exists regardless of lifecycle), never a fabricated
+    /// dock procedure.
+    public init(loadStatus: String) {
+        switch loadStatus.lowercased() {
+        // ── pickup-side procedure (Wave-4 tanker wizard + classic) ──
+        case "at_pickup", "pickup_checkin",
+             "locked", "backing_in", "brakes_set", "connecting",
+             "loading_locked", "loading", "loading_exception",
+             "loaded", "load_locked_filled":
+            self = .loading
+        // ── receiver-side procedure (discharge + detach wizard) ──
+        case "at_delivery", "delivery_checkin",
+             "discharging", "unloading", "unloading_exception",
+             "unloaded", "vapor_purging", "disconnecting",
+             "detaching", "released":
+            self = .unloading
+        // ── everything else: pre-tender / transit / paperwork /
+        //    financial / terminal / cargo-integrity exceptions ──
+        default:
+            self = .hero
+        }
+    }
 }
 
 enum CargoKind: String, Hashable {
@@ -388,6 +565,65 @@ final class EquipmentAnimationCache {
             return s
         }
         return nil
+    }
+
+    // MARK: - Wave B · state-variant entry point (2026-06-10)
+
+    /// THE cache entry point for the 80-file Loading/Unloading
+    /// state-variant catalog. `EquipmentKind.file(for:)` +
+    /// `subdirectory(for:)` had ZERO callers since T-029 — every live
+    /// surface fed the bind-less hero corpus, which silently no-op'd
+    /// the entire BindableEquipmentAnimation data pipeline (LEVEL100
+    /// census, bindings row "State-variant catalog": asset quality
+    /// ~90, runtime reach 0).
+    ///
+    /// `.hero` routes through the legacy single-state path. A missing
+    /// state-variant file falls back to the HERO of the SAME kind —
+    /// still the load's true equipment, just the transit pose (honest
+    /// degradation, never a wrong-shape proxy).
+    func svg(for kind: EquipmentKind, state: AnimationState) -> String? {
+        guard state != .hero else { return svg(for: kind) }
+        let key = "\(kind.rawValue)#\(state.rawValue)"
+        lock.lock()
+        if let s = store[key] {
+            lock.unlock()
+            return s
+        }
+        if let s = loadStateVariantFromBundle(kind, state: state) {
+            store[key] = s
+            lock.unlock()
+            return s
+        }
+        lock.unlock()
+        #if DEBUG
+        print("[EquipmentAnimationCache] missing \(state.rawValue) variant for \(kind.rawValue) — honest hero fallback")
+        #endif
+        return svg(for: kind)
+    }
+
+    /// Warm both procedure variants for the ACTIVE load's kind so the
+    /// lifecycle swap (hero → loading → unloading) crossfades without
+    /// a first-parse hitch. Called from the strips' `.task` the moment
+    /// the live load's equipment resolves — the full 120-file corpus
+    /// is never preloaded wholesale.
+    func preloadStateVariants(for kind: EquipmentKind) {
+        _ = svg(for: kind, state: .loading)
+        _ = svg(for: kind, state: .unloading)
+    }
+
+    private func loadStateVariantFromBundle(
+        _ kind: EquipmentKind, state: AnimationState
+    ) -> String? {
+        guard let file = kind.file(for: state) else { return nil }
+        // AnimationBindingMap file names carry the ".svg" extension;
+        // Bundle.main.url wants the stem + explicit extension.
+        let stem = file.hasSuffix(".svg") ? String(file.dropLast(4)) : file
+        guard let url = Bundle.main.url(
+            forResource: stem,
+            withExtension: "svg",
+            subdirectory: kind.subdirectory(for: state)
+        ) else { return nil }
+        return try? String(contentsOf: url, encoding: .utf8)
     }
 
     private func loadSVGFromBundle(_ kind: EquipmentKind) -> String? {
@@ -637,6 +873,137 @@ struct EquipmentAnimation: View {
                 .allowsHitTesting(false)
             }
         }
+    }
+}
+
+// MARK: - Wave B · Driver equipment moment band (2026-06-10)
+
+/// The driver's equipment moment — mounts the (Wave-B de-orphaned)
+/// state-variant procedure animation on the driver lifecycle screens
+/// where the procedure physically happens: the driver standing at the
+/// rack during 016/030 sees 08_tanker_petro_loading.svg with REAL
+/// bindings; 024/040/042 see the unloading/discharge variant.
+///
+/// The band COMPLEMENTS the bespoke gauges per screen (044's diagram
+/// is the quality bar) — it never replaces them. Every moving value is
+/// live-or-honestly-absent: bindings come from
+/// `LoadAnimationContext.from(facts:)` (real load row), progress from
+/// the canonical 49-status ramp, and an unhydrated load renders the
+/// honest awaiting card — never a sample rig.
+struct DriverEquipmentMoment: View {
+    @Environment(\.palette) private var palette
+
+    /// Real load facts — nil until the screen's load hydrates.
+    let facts: LoadAnimationContext.DriverLoadFacts?
+    /// The procedure this SCREEN hosts (016/030 → .loading,
+    /// 024/040/042 → .unloading). The screen itself encodes the
+    /// physical moment; status drives the progress + state chip.
+    let state: AnimationState
+    /// Bespoke per-screen header label ("AT THE RACK", "DISCHARGE
+    /// SIDE", …) per bespoke-port-fidelity.
+    var label: String = "EQUIPMENT"
+    var height: CGFloat = 168
+
+    /// Continuity clock epoch — phase carries across variant swaps.
+    @State private var epoch = Date()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: equipmentKind.iconName)
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(label)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                Text(stateChip)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.horizontal, 5).padding(.vertical, 1.5)
+                    .overlay(Capsule().strokeBorder(palette.borderFaint))
+            }
+
+            if let facts,
+               let svg = EquipmentAnimationCache.shared
+                   .svg(for: equipmentKind, state: state) {
+                BindableEquipmentAnimation(
+                    svgString: svg,
+                    context: LoadAnimationContext.from(facts: facts),
+                    clockReference: epoch
+                )
+                .frame(height: height)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+            } else {
+                // Honest awaiting state — the load row hasn't hydrated
+                // (or the catalog file is genuinely missing). Never a
+                // sample rig with fabricated chips.
+                VStack(spacing: 6) {
+                    Image(systemName: "truck.box")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                    Text(facts == nil ? "Awaiting load data" : "Equipment animation not bundled")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(palette.textSecondary)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: height)
+                .background(palette.bgCardSoft)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .task(id: facts?.status) {
+            // Warm both procedure variants for this kind the moment the
+            // load resolves so the swap crossfades without a parse hitch.
+            if facts != nil {
+                EquipmentAnimationCache.shared.preloadStateVariants(for: equipmentKind)
+            }
+        }
+    }
+
+    private var equipmentKind: EquipmentKind {
+        guard let facts else { return .dryVan }
+        let modality: AnimVertical = {
+            switch (facts.transportMode ?? "truck").lowercased() {
+            case "rail":   return .rail
+            case "vessel": return .vessel
+            default:       return .truck
+            }
+        }()
+        if let e = facts.equipmentType, !e.isEmpty {
+            return EquipmentKind.resolve(
+                from: e,
+                hazmat: (facts.hazmatClass?.isEmpty == false),
+                modality: modality
+            )
+        }
+        return EquipmentKind.resolve(
+            cargoType: facts.cargoType,
+            hazmat: (facts.hazmatClass?.isEmpty == false),
+            modality: modality
+        )
+    }
+
+    private var stateChip: String {
+        guard let facts else { return "—" }
+        if let sub = facts.tankerSubState?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !sub.isEmpty {
+            return sub.uppercased().replacingOccurrences(of: "_", with: " ")
+        }
+        let s = facts.status.trimmingCharacters(in: .whitespacesAndNewlines)
+        return s.isEmpty ? "—" : s.uppercased().replacingOccurrences(of: "_", with: " ")
     }
 }
 

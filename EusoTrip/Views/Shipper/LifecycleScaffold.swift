@@ -572,6 +572,12 @@ struct LifecycleAnimationStrip: View {
     /// "DOCK 12" Figma sample (Wave-A1 fabrication kill, 2026-06-10).
     @State private var dockNumber: String?
 
+    /// Lifecycle-continuity clock epoch (Wave B, 2026-06-10) — keyed
+    /// to the STRIP's first appearance, not the SVG string, so the
+    /// wheel/strobe phase carries across the hero → loading →
+    /// unloading variant swap instead of resetting on every crossfade.
+    @State private var stripEpoch = Date()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -589,10 +595,19 @@ struct LifecycleAnimationStrip: View {
                     .overlay(Capsule().strokeBorder(palette.borderFaint))
             }
 
-            if let svg = EquipmentAnimationCache.shared.svg(for: equipmentKind) {
+            // Wave B (2026-06-10) — the strip now renders the LIFECYCLE
+            // state variant, not the hero: at the dock the shipper sees
+            // the loading procedure file (the bind-rich catalog the
+            // census found fully orphaned), at the receiver the
+            // unloading file, in transit the hero. Selection rides the
+            // live load status through the canonical
+            // `AnimationState(loadStatus:)` map.
+            if let svg = EquipmentAnimationCache.shared
+                .svg(for: equipmentKind, state: animationState) {
                 BindableEquipmentAnimation(
                     svgString: svg,
-                    context: animationContext
+                    context: animationContext,
+                    clockReference: stripEpoch
                 )
                 .frame(height: height)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -610,6 +625,10 @@ struct LifecycleAnimationStrip: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         .task(id: live.load.id) {
+            // Warm the loading/unloading variants for the active load's
+            // kind so the lifecycle swap crossfades without a first-
+            // parse hitch (Wave B preload, spec gap 1).
+            EquipmentAnimationCache.shared.preloadStateVariants(for: equipmentKind)
             // Best-effort, nil-tolerant: no appointment / no door →
             // dockNumber stays nil and the chip resolves honestly.
             let appt = try? await EusoTripAPI.shared.appointments
@@ -620,6 +639,13 @@ struct LifecycleAnimationStrip: View {
         }
     }
 
+    /// Which procedure file renders — driven by the REAL lifecycle
+    /// status (loading block → Loading variant, unloading block →
+    /// Unloading variant, everything else → hero).
+    private var animationState: AnimationState {
+        AnimationState(loadStatus: live.load.status)
+    }
+
     private var animationContext: LoadAnimationContext {
         LoadAnimationContext.from(snapshot: live, dockNumber: dockNumber)
     }
@@ -628,54 +654,18 @@ struct LifecycleAnimationStrip: View {
         live.load.status.uppercased().replacingOccurrences(of: "_", with: " ")
     }
 
-    /// Maps the snapshot's equipmentType + cargoType to one of the 33
-    /// `EquipmentKind` cases the iOS bundle ships SVGs for. Falls back
-    /// to `dryVan` for anything not recognized — the SVG is still the
-    /// honest brand surface, just the most generic option.
+    /// Maps the snapshot's equipmentType to the canonical model via
+    /// the ONE shared resolver (`EquipmentKind.resolve(from:)`, Wave B
+    /// 2026-06-10) — the strip's private matcher missed the T-030 six
+    /// + auto-carrier, so a livestock load painted a dry van here
+    /// while ConvoyAnimationStrip matched it correctly. Hazmat-aware,
+    /// dry-van honest floor.
     private var equipmentKind: EquipmentKind {
-        let e = (live.load.equipmentType ?? "").lowercased()
-        // Truck explicit
-        if e.contains("dry van") || e.contains("van")           { return .dryVan }
-        if e.contains("reefer") || e.contains("refrigerated")   { return .reefer }
-        if e.contains("flatbed")                                 { return .flatbed }
-        if e.contains("step deck") || e.contains("stepdeck")     { return .stepDeck }
-        if e.contains("conestoga")                               { return .conestoga }
-        if e.contains("container") && !e.contains("ship")        { return .container }
-        if e.contains("tanker hazmat") || e.contains("mc-331") || e.contains("mc331") { return .tankerHazmat }
-        if e.contains("tanker petro") || e.contains("dot 406") || e.contains("mc-306") { return .tankerPetro }
-        if e.contains("tanker liquid") || e.contains("dot 407") { return .tankerLiquid }
-        if e.contains("tanker gas") || e.contains("mc-338")     { return .tankerGas }
-        if e.contains("power only") || e.contains("bobtail")    { return .powerOnly }
-        if e.contains("oversize") || e.contains("rgn") || e.contains("schnabel") { return .oversized }
-        if e.contains("lowboy")                                  { return .lowboy }
-        if e.contains("hot shot") || e.contains("hotshot")       { return .hotShot }
-
-        // Rail
-        if e.contains("rail tofc") || e.contains("tofc")         { return .railTOFC }
-        if e.contains("rail cofc") || e.contains("cofc")         { return .railCOFC }
-        if e.contains("rail intermodal") || e.contains("well car") { return .railIntermodal }
-        if e.contains("dot-105") || e.contains("rail tank gas")  { return .railTankGas }
-        if e.contains("dot-117") || e.contains("dot-111") || e.contains("rail tank") { return .railTankLiquid }
-        if e.contains("rail boxcar") || e.contains("boxcar")     { return .railBoxcar }
-        if e.contains("rail hopper") || e.contains("hopper")     { return .railHopper }
-        if e.contains("rail centerbeam") || e.contains("centerbeam") { return .railCenterbeam }
-        if e.contains("rail gondola") || e.contains("gondola")   { return .railGondola }
-        if e.contains("rail auto rack") || e.contains("autorack") { return .railAutoRack }
-        if e.contains("rail reefer") || e.contains("reefer boxcar") { return .railReeferBoxcar }
-        if e.contains("rail flatcar") || e.contains("flatcar")   { return .railFlatcar }
-
-        // Vessel
-        if e.contains("vessel reefer") || e.contains("reefer container") { return .vesselReeferContainer }
-        if e.contains("vessel iso tank") || e.contains("iso tank")        { return .vesselISOTank }
-        if e.contains("vessel container") || e.contains("container ship") { return .vesselContainer }
-        if e.contains("vessel bulk") || e.contains("bulk carrier")        { return .vesselBulk }
-        if e.contains("vessel tanker") || e.contains("vlcc")              { return .vesselTanker }
-        if e.contains("ro/ro") || e.contains("roro")                      { return .vesselRoRo }
-        if e.contains("lng")                                              { return .vesselLNG }
-
-        // Hazmat-aware fallback
-        if (live.load.hazmatClass?.isEmpty == false) { return .tankerHazmat }
-        return .dryVan
+        EquipmentKind.resolve(
+            from: live.load.equipmentType,
+            hazmat: (live.load.hazmatClass?.isEmpty == false),
+            modality: .truck
+        )
     }
 
     private var emptyAnimation: some View {

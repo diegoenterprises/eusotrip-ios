@@ -38,6 +38,11 @@ struct BindableEquipmentAnimation: View {
     /// Runtime bindings from `LoadAnimationContext.from(snapshot:)`. Empty values
     /// are skipped so the SVG's baked default text content stays visible.
     let context: LoadAnimationContext
+    /// Lifecycle-continuity clock epoch (Wave B, 2026-06-10) — pass the
+    /// HOST surface's first-appearance date so wheel/strobe phase carries
+    /// across hero ↔ loading ↔ unloading variant swaps instead of
+    /// resetting with each crossfade. nil = per-view clock (legacy).
+    var clockReference: Date? = nil
 
     var body: some View {
         NativeSVGView(
@@ -50,7 +55,8 @@ struct BindableEquipmentAnimation: View {
             // stop states via the server's country rule — selects exactly
             // ONE `.country-US/-MX/-CA` regulatory group. nil renders the
             // US default; the engine never double-renders countries.
-            country: context.svgCountry
+            country: context.svgCountry,
+            clockReference: clockReference
         )
     }
 
