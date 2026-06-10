@@ -64,7 +64,8 @@ private struct BunkerPrice: Decodable, Identifiable {
 private struct VesselBunkerFSCBody: View {
     @Environment(\.palette) private var palette
 
-    // Live VLSFO index ($/MT) — nil until loaded; falls back to the proof's $712.
+    // Live VLSFO index ($/MT) — nil until loaded. ZERO-FALLBACK: no proof-$712
+    // stand-in; when the upstream index is absent the marker/bracket render "—".
     @State private var liveIndex: Double? = nil
     @State private var changePct: Double? = nil
     @State private var loading = true
@@ -79,32 +80,37 @@ private struct VesselBunkerFSCBody: View {
     private let ladder: [BunkerFSCStep] = BunkerFSCStepLadder.proofSchedule
 
     // Base freight the surcharge is applied to (the booking's base ocean rate).
-    // Reference figure for the "applied to booking" worked example — there is no
-    // booking-rate source wired into this surface, so it is a clear constant, not
-    // fabricated persistence.
-    private let baseFreightUsd: Double = 1_850
+    // ZERO-FALLBACK: no booking-rate source is wired into this surface yet, so
+    // this stays nil and the "applied to booking" card em-dashes its dollars —
+    // a hardcoded figure must never flow into a displayed total.
+    private let baseFreightUsd: Double? = nil
 
-    // Resolved live index ($/MT) — live value when loaded, else the proof's $712.
-    private var activeIndex: Double { liveIndex ?? 712 }
-    private var markerLabel: String { "$\(Int(activeIndex.rounded()))" }
+    // Resolved live index ($/MT) — live value only, never a stand-in.
+    private var activeIndex: Double? { liveIndex }
+    private var markerLabel: String { activeIndex.map { "$\(Int($0.rounded()))" } ?? "—" }
 
     /// Active bracket the live index sits inside (mirrors the component's own
-    /// clamping: below floor → first, above ceiling → last).
+    /// clamping: below floor → first, above ceiling → last). nil until a live
+    /// index exists — no bracket is ever claimed off a fabricated index.
     private var activeStep: BunkerFSCStep? {
+        guard let idx = activeIndex else { return nil }
         let sorted = ladder.sorted { $0.indexFrom < $1.indexFrom }
         guard !sorted.isEmpty else { return nil }
         for (i, s) in sorted.enumerated() {
             let isLast = (i == sorted.count - 1)
-            if activeIndex >= s.indexFrom && (activeIndex < s.indexTo || (isLast && activeIndex <= s.indexTo)) {
+            if idx >= s.indexFrom && (idx < s.indexTo || (isLast && idx <= s.indexTo)) {
                 return s
             }
         }
-        if activeIndex < sorted.first!.indexFrom { return sorted.first }
+        if idx < sorted.first!.indexFrom { return sorted.first }
         return sorted.last
     }
 
-    private var surchargePct: Double { activeStep?.surchargePct ?? 0 }
-    private var surchargeUsd: Double { baseFreightUsd * surchargePct / 100 }
+    private var surchargePct: Double? { activeStep?.surchargePct }
+    private var surchargeUsd: Double? {
+        guard let base = baseFreightUsd, let pct = surchargePct else { return nil }
+        return base * pct / 100
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -114,11 +120,15 @@ private struct VesselBunkerFSCBody: View {
                     LifecycleCard { Text("Loading bunker index…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else {
                     if let err = loadError {
-                        // Soft, non-blocking — the reference ladder + proof index
-                        // still render so the surface is never stranded.
                         LifecycleCard(accentDanger: true) {
-                            Text("Live VLSFO index unavailable. Showing reference index. \(err)")
+                            Text("Live VLSFO index unavailable. \(err)")
                                 .font(EType.caption).foregroundStyle(Brand.warning)
+                        }
+                    } else if liveIndex == nil {
+                        // Upstream returned nothing — honest seam, no proof index.
+                        LifecycleCard {
+                            Text("Live VLSFO index unavailable — the upstream bunker feed returned no \(hubName) quote. Bracket marker hidden until a real index lands.")
+                                .font(EType.caption).foregroundStyle(palette.textSecondary)
                         }
                     }
                     kpiStrip
@@ -155,24 +165,29 @@ private struct VesselBunkerFSCBody: View {
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s2) {
-            MetricTile(label: "VLSFO INDEX", value: "$\(Int(activeIndex.rounded()))", gradientNumeral: true)
-            MetricTile(label: "FSC BRACKET", value: pctString(surchargePct), accent: Brand.info)
+            MetricTile(label: "VLSFO INDEX", value: activeIndex.map { "$\(Int($0.rounded()))" } ?? "—", gradientNumeral: true)
+            MetricTile(label: "FSC BRACKET", value: surchargePct.map { pctString($0) } ?? "—", accent: Brand.info)
             MetricTile(
                 label: "24H",
-                value: changePct == nil ? "-" : String(format: "%+.1f%%", changePct!),
+                value: changePct == nil ? "—" : String(format: "%+.1f%%", changePct!),
                 accent: (changePct ?? 0) >= 0 ? Brand.warning : Brand.success
             )
         }
     }
 
+    @ViewBuilder
     private var ladderCard: some View {
-        // The hosted bespoke component. Live index drives the active bracket +
+        // The hosted bespoke component. The LIVE index drives the active bracket +
         // the "$<amount>" pill marker; the reference ladder supplies the steps.
-        BunkerFSCStepLadder(
-            steps: ladder,
-            activeIndex: activeIndex,
-            markerLabel: markerLabel
-        )
+        // ZERO-FALLBACK: without a live index the ladder is not rendered with a
+        // fabricated marker — the honest seam card above explains the absence.
+        if let idx = activeIndex {
+            BunkerFSCStepLadder(
+                steps: ladder,
+                activeIndex: idx,
+                markerLabel: markerLabel
+            )
+        }
     }
 
     private var appliedCard: some View {
@@ -180,22 +195,34 @@ private struct VesselBunkerFSCBody: View {
             Text("APPLIED TO BOOKING").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard(accentGradient: true) {
                 VStack(alignment: .leading, spacing: 10) {
-                    appliedRow(label: "Base ocean freight", value: "$\(Int(baseFreightUsd))")
+                    appliedRow(label: "Base ocean freight", value: baseFreightUsd.map { "$\(Int($0))" } ?? "—")
                     appliedRow(label: "Active bracket", value: bracketRangeLabel)
-                    appliedRow(label: "Bunker surcharge", value: pctString(surchargePct))
+                    appliedRow(label: "Bunker surcharge", value: surchargePct.map { pctString($0) } ?? "—")
                     Divider().overlay(palette.borderSoft)
                     HStack(alignment: .firstTextBaseline) {
                         Text("Surcharge applied").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                         Spacer()
-                        Text("+$\(Int(surchargeUsd.rounded()))")
+                        Text(surchargeUsd.map { "+$\(Int($0.rounded()))" } ?? "—")
                             .font(.system(size: 18, weight: .heavy)).monospacedDigit()
                             .foregroundStyle(LinearGradient.diagonal)
                     }
-                    Text("$\(Int(baseFreightUsd)) base × \(pctString(surchargePct)) = +$\(Int(surchargeUsd.rounded())) · all-in $\(Int((baseFreightUsd + surchargeUsd).rounded()))")
+                    // ZERO-FALLBACK: dollar math renders only when a real booking
+                    // rate exists — the % bracket alone is what we can honestly show.
+                    Text(appliedMathLine)
                         .font(.system(size: 11)).monospaced().foregroundStyle(palette.textTertiary)
                 }
             }
         }
+    }
+
+    private var appliedMathLine: String {
+        if let base = baseFreightUsd, let pct = surchargePct, let usd = surchargeUsd {
+            return "$\(Int(base)) base × \(pctString(pct)) = +$\(Int(usd.rounded())) · all-in $\(Int((base + usd).rounded()))"
+        }
+        if let pct = surchargePct {
+            return "\(pctString(pct)) applies to the booking's ocean rate at invoicing — no booking rate wired to this surface"
+        }
+        return "bracket resolves once a live VLSFO index lands"
     }
 
     private func appliedRow(label: String, value: String) -> some View {
@@ -207,7 +234,7 @@ private struct VesselBunkerFSCBody: View {
     }
 
     private var bracketRangeLabel: String {
-        guard let s = activeStep else { return "-" }
+        guard let s = activeStep else { return "—" }
         return "\(Int(s.indexFrom))–\(Int(s.indexTo)) $/MT"
     }
 
@@ -231,8 +258,10 @@ private struct VesselBunkerFSCBody: View {
                 liveIndex = vlsfo.price
                 changePct = vlsfo.changePercent24h
             } else {
-                // Upstream returned nothing — keep the proof fallback, no error noise.
+                // Upstream returned nothing — honest absence (em-dash KPIs +
+                // explanatory seam card), never a stand-in index.
                 liveIndex = nil
+                changePct = nil
             }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

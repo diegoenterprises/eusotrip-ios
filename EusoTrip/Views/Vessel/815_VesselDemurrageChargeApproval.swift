@@ -25,12 +25,10 @@
 //    row Dispute -> demurrageCharges.disputeCharge (EXISTS demurrageCharges.ts).
 //    batch -> demurrageCharges.batchApprove (EXISTS demurrageCharges.ts); then invoiceDetentionCharge
 //      posts the batch to settlement.
-//    Honest empty/error states — if generateCharges returns nothing the seeded bespoke queue stands as
-//    the visual composition; live charges replace it. The write verbs are honestly flagged STUB rather
-//    than faked complete (no charge.status write / blockchainAuditTrail / WS broadcast persisted yet).
-//
-//  0 stubs in the UI · 0 mock data · 0 placeholders — values render from real state; the write verbs
-//  are honestly flagged STUB rather than faked complete.
+//    ZERO-FALLBACK: state is em-dash/zero/empty-initialized and UNCONDITIONALLY overwritten from the
+//    live generateCharges response — an empty queue renders the honest empty state, never a seeded
+//    composition. The write verbs are honestly flagged STUB rather than faked complete (no
+//    charge.status write / blockchainAuditTrail / WS broadcast persisted yet).
 //
 
 import SwiftUI
@@ -46,6 +44,7 @@ private struct PendingCharge815: Identifiable {
     let title: String
     let sub: String
     let amount: String
+    let amountValue: Double    // real finalCharge — totals are summed from this, never re-parsed strings
     let aged: String
     var selected: Bool
 }
@@ -73,19 +72,25 @@ private struct VesselDemurrageChargeApprovalBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
 
-    @State private var pending  = "$8,920"
-    @State private var readyN   = 9
-    @State private var totalN   = 12
+    // ZERO-FALLBACK: em-dash/zero/empty init — every figure is unconditionally
+    // overwritten from the live generateCharges response; an empty queue renders
+    // the honest empty state, never the seeded MSCU/TCLU/CMAU composition.
+    @State private var pending  = "—"
+    @State private var readyN   = 0
+    @State private var totalN   = 0
+    @State private var terminalChip: String? = nil   // real terminalName when the queue carries one
 
-    @State private var charges: [PendingCharge815] = [
-        .init(kind: .demurrage, title: "Demurrage · USOAK", sub: "MSCU 7741203 · 3d over · MSC", amount: "$4,280", aged: "5d aged", selected: true),
-        .init(kind: .detention, title: "Detention · USLGB", sub: "TCLU 5031187 · 2d held · ZIM", amount: "$1,500", aged: "3d aged", selected: true),
-        .init(kind: .chassis,   title: "Chassis split · USHOU", sub: "CMAU 2209143 · 8d · CMA-CGM", amount: "$460", aged: "1d aged", selected: false)
-    ]
+    @State private var charges: [PendingCharge815] = []
 
     private var selectedCount: Int { charges.filter { $0.selected }.count }
     private var selectedTotal: Int {
-        charges.filter { $0.selected }.reduce(0) { $0 + (Int($1.amount.dropFirst().replacingOccurrences(of: ",", with: "")) ?? 0) }
+        Int(charges.filter { $0.selected }.reduce(0.0) { $0 + $1.amountValue }.rounded())
+    }
+    /// Live-derived ESang nudge (smallest pending charge) — nil hides the row.
+    private var esangNudge: (title: String, subtitle: String)? {
+        guard let smallest = charges.min(by: { $0.amountValue < $1.amountValue }), charges.count > 1 else { return nil }
+        return (title: "ESang: the \(smallest.amount) \(smallest.title.lowercased()) is the smallest in the batch",
+                subtitle: "\(smallest.sub) · review before approving")
     }
 
     var body: some View {
@@ -98,6 +103,10 @@ private struct VesselDemurrageChargeApprovalBody: View {
                     LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                } else if charges.isEmpty {
+                    EusoEmptyState(systemImage: "checkmark.circle",
+                                   title: "No charges pending approval",
+                                   subtitle: "Stopped financial timers with billable minutes generate the approval queue — nothing is waiting on you.")
                 } else {
                     exposureHero
                     HStack {
@@ -111,8 +120,9 @@ private struct VesselDemurrageChargeApprovalBody: View {
                         CTAButton(title: "Approve selected · $\(selectedTotal)", action: { Task { await batchApprove() } }, leadingIcon: "checkmark.circle")
                         SecondaryButton815(title: "Hold") { Task { await load() } }
                     }
-                    ESangRow815(title: "ESang: the $460 chassis split looks disputable",
-                                subtitle: "UIIA pool error on CMAU 2209143 · review before approving")
+                    if let nudge = esangNudge {
+                        ESangRow815(title: nudge.title, subtitle: nudge.subtitle)
+                    }
                 }
                 Color.clear.frame(height: 96)
             }
@@ -128,7 +138,7 @@ private struct VesselDemurrageChargeApprovalBody: View {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · CHARGE APPROVAL").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
-                Text("QUEUE · USOAK").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
+                Text(terminalChip.map { "QUEUE · \($0)" } ?? "QUEUE").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("Approve charges").font(.system(size: 28, weight: .bold)).foregroundStyle(palette.textPrimary)
@@ -214,30 +224,54 @@ private struct VesselDemurrageChargeApprovalBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            struct Charge: Decodable { let chargeType: String?; let terminalName: String?; let loadReference: String?; let finalCharge: Double?; let status: String? }
+            struct Charge: Decodable {
+                let chargeType: String?; let terminalName: String?; let loadReference: String?
+                let finalCharge: Double?; let status: String?; let generatedAt: String?
+            }
             struct Resp: Decodable { let charges: [Charge]? }
             let r: Resp = try await EusoTripAPI.shared.query("demurrageCharges.generateCharges", input: EmptyInput())
-            if let cs = r.charges, !cs.isEmpty {
-                totalN = cs.count
-                readyN = cs.filter { ($0.status ?? "") != "disputed" }.count
-                let total = cs.reduce(0.0) { $0 + ($1.finalCharge ?? 0) }
-                pending = "$\(Int(total))"
-                charges = cs.prefix(3).map { c in
-                    let kind: ChargeKind815 = (c.chargeType ?? "").uppercased().contains("DETENTION") ? .detention
-                        : ((c.chargeType ?? "").lowercased().contains("chassis") ? .chassis : .demurrage)
-                    return PendingCharge815(
-                        kind: kind,
-                        title: "\(c.chargeType?.capitalized ?? "Charge") · \(c.terminalName ?? "-")",
-                        sub: c.loadReference ?? "-",
-                        amount: "$\(Int(c.finalCharge ?? 0))",
-                        aged: "-",
-                        selected: kind != .chassis)
-                }
+
+            // UNCONDITIONAL overwrite — an empty response empties the queue and
+            // the honest empty state renders; nothing seeded survives a load.
+            let cs = r.charges ?? []
+            totalN = cs.count
+            readyN = cs.filter { ($0.status ?? "") != "disputed" }.count
+            let total = cs.reduce(0.0) { $0 + ($1.finalCharge ?? 0) }
+            pending = "$\(Int(total))"
+            terminalChip = cs.compactMap { $0.terminalName }.first(where: { !$0.isEmpty })
+            charges = cs.map { c in
+                let kind: ChargeKind815 = (c.chargeType ?? "").uppercased().contains("DETENTION") ? .detention
+                    : ((c.chargeType ?? "").lowercased().contains("chassis") ? .chassis : .demurrage)
+                let title: String = {
+                    let type = c.chargeType?.capitalized ?? "Charge"
+                    if let t = c.terminalName, !t.isEmpty { return "\(type) · \(t)" }
+                    return type
+                }()
+                return PendingCharge815(
+                    kind: kind,
+                    title: title,
+                    sub: c.loadReference ?? "—",
+                    amount: "$\(Int(c.finalCharge ?? 0))",
+                    amountValue: c.finalCharge ?? 0,
+                    aged: agedLabel(c.generatedAt),
+                    selected: (c.status ?? "pending") == "pending")
             }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+
+    /// "Nd aged" from the REAL generatedAt timestamp — em-dash when absent.
+    private func agedLabel(_ iso: String?) -> String {
+        guard let iso, !iso.isEmpty else { return "—" }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        guard let d = fractional.date(from: iso) ?? plain.date(from: iso) else { return "—" }
+        let days = max(0, Calendar.current.dateComponents([.day], from: d, to: Date()).day ?? 0)
+        return "\(days)d aged"
     }
 
     private func approve(_ idx: Int) async { /* demurrageCharges.approveCharge (EXISTS) — STUB persistence, surfaced to the-oath. */ await load() }

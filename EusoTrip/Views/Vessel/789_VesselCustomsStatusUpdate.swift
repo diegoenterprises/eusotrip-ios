@@ -14,24 +14,29 @@
 //  removed (Shell provides them); the bespoke body is kept verbatim.
 //
 //  Data / wiring (endpoints MCP-confirmed on disk this fire — frontend/server/routers/vesselShipments.ts):
-//    READ (live):  vesselShipments.getCBPEntryStatus EXISTS :1641 — vesselProcedure QUERY
+//    READ (live):  vesselShipments.getCustomsEntries EXISTS :2062 — vesselProcedure QUERY (no input)
+//        -> raw customs_declarations rows desc by id (entryNumber, status enum draft|filed|
+//        under_review|cleared|held|rejected, declarationType, dutyAmount/declaredValue as
+//        DECIMAL-strings, filedDate/clearedDate). The screen anchors on the MOST RECENT real
+//        declaration — no fabricated ENT number/duty/dates; honest empty state when none exist.
+//    READ (overlay): vesselShipments.getCBPEntryStatus EXISTS :1768 — vesselProcedure QUERY
 //        { entryNumber:string } -> EntryStatus? { entryNumber, status, holds[], releaseDate,
 //        liquidationDate, dutyOwed, lastUpdated } (DescartesABIService.getEntryStatus :269; returns
-//        null when ABI credentials are unconfigured — the honest "no live status" state renders).
-//    ENGINE (write): vesselShipments.updateCustomsStatus EXISTS :693 — vesselProcedure MUTATION
+//        null when ABI credentials are unconfigured — the declaration row remains the floor).
+//    ENGINE (write): vesselShipments.updateCustomsStatus EXISTS :697 — vesselProcedure MUTATION
 //        { id:number, newStatus:enum(draft|filed|under_review|cleared|held|rejected), holdReasons?:[]}
 //        -> { success, newStatus }; sets filedDate on filed, clearedDate on cleared, persists
-//        holdReasons on held, inserts blockchainAuditTrail. Drives BOTH CTAs — but this screen reads
-//        the entry by entryNumber (string) while the mutation keys on the customsDeclarations row id
-//        (number), which this read does not surface; the two write verbs are therefore honestly
-//        flagged STUB · named-gap (no declaration id to mutate from this surface) and re-run load()
-//        rather than firing a half-wired mutation.
+//        holdReasons on held, inserts blockchainAuditTrail. Drives BOTH CTAs — getCustomsEntries now
+//        surfaces the customsDeclarations row id, so the former named-gap stub is CLOSED: Advance
+//        and Flag-hold fire the real mutation keyed on that id (the held reason-capture composer is
+//        the remaining named follow-up; holdReasons is optional server-side).
 //
-//  0 mock data on load · honest empty/error/null states — values render from real state; the design-
-//  time seeds are overwritten by the query on .task (and cleared on a null/empty ABI status).
-//  StatusPill is the shared app pill (param is `kind:`, not the canonical `tone:`); RimCard789 /
-//  secondaryButton789 are file-scoped bespoke helpers (the canonical port's RimCard/SecondaryButton
-//  are not shared app symbols) built from sibling 757's gradient-rim grammar to preserve the look.
+//  ZERO-FALLBACK: nil-initialized — no design-time seeds. Every cell renders from the live
+//  declaration row (or the ABI overlay) or em-dashes; the status pill reads the REAL status field,
+//  never a hardcoded "UNDER REVIEW". StatusPill is the shared app pill (param is `kind:`, not the
+//  canonical `tone:`); RimCard789 / secondaryButton789 are file-scoped bespoke helpers (the
+//  canonical port's RimCard/SecondaryButton are not shared app symbols) built from sibling 757's
+//  gradient-rim grammar to preserve the look.
 //
 
 import SwiftUI
@@ -69,19 +74,20 @@ private struct VesselCustomsStatusUpdateBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
 
-    @State private var entryId = "ENT-260524-04417"
-    @State private var subline = "01 · Consumption · duty $4,210 · stage 3 of 4"
-    @State private var currentTitle = "Under review"
-    @State private var duty = "$4,210"
-    @State private var heroSub = "CBP document review · exam pending · filed 05-20"
-    @State private var stageIndex = 2   // 0..3 -> draft, filed, under_review, cleared
+    // ZERO-FALLBACK: nil/empty init — every cell renders live or em-dash.
+    @State private var entryId: String? = nil            // real entryNumber (or "Entry #<id>")
+    @State private var declarationId: Int? = nil         // customs_declarations row id (mutation key)
+    @State private var subline: String? = nil
+    @State private var currentTitle: String? = nil
+    @State private var duty: String? = nil
+    @State private var heroSub: String? = nil
+    @State private var stageIndex: Int? = nil            // 0..3 -> draft, filed, under_review, cleared
+    @State private var status: String? = nil             // the REAL status enum value — drives the pill
+    @State private var noEntry = false
 
-    @State private var steps: [CustomsStep789] = [
-        CustomsStep789(title: "Draft", sub: "created 05-19 · operator drafted entry", state: .done, pill: "DONE"),
-        CustomsStep789(title: "Filed", sub: "filedDate 05-20 · ABI / ACE accepted", state: .done, pill: "DONE"),
-        CustomsStep789(title: "Under review", sub: "CBP document review · exam pending", state: .current, pill: "CURRENT"),
-        CustomsStep789(title: "Cleared", sub: "sets clearedDate · CBP release", state: .next, pill: "NEXT")
-    ]
+    @State private var steps: [CustomsStep789] = []
+    @State private var actionError: String? = nil
+    @State private var acting = false
 
     /// Theme.Palette exposes no `isDark` member (the canonical port assumed one); we derive it
     /// file-locally the same way EusoCardModifier does — by comparing the page token.
@@ -91,22 +97,29 @@ private struct VesselCustomsStatusUpdateBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s3) {
                 header
-                Text(entryId).font(.system(size: 28, weight: .bold, design: .monospaced)).tracking(-0.4).foregroundStyle(palette.textPrimary)
-                Text(subline).font(.system(size: 12)).foregroundStyle(palette.textSecondary)
+                Text(entryId ?? "—").font(.system(size: 28, weight: .bold, design: .monospaced)).tracking(-0.4).foregroundStyle(palette.textPrimary)
+                Text(subline ?? "—").font(.system(size: 12)).foregroundStyle(palette.textSecondary)
                 IridescentHairline()
 
                 if loading {
                     LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                } else if noEntry {
+                    EusoEmptyState(systemImage: "doc.badge.clock",
+                                   title: "No customs entries on file",
+                                   subtitle: "The declaration status ladder appears here once an entry is drafted for a booking.")
                 } else {
                     statusHero
                     Text("STATUS PROGRESSION · updateCustomsStatus enum")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     stepperCard
                     terminalAltsCard
+                    if let ae = actionError {
+                        Text(ae).font(EType.caption).foregroundStyle(Brand.danger)
+                    }
                     HStack(spacing: 8) {
-                        CTAButton(title: "Advance → cleared", action: { Task { await advance() } }, trailingIcon: "checkmark.seal")
+                        CTAButton(title: acting ? "Updating…" : "Advance → cleared", action: { Task { await advance() } }, trailingIcon: "checkmark.seal")
                         secondaryButton789(title: "Flag hold") { Task { await flagHold() } }
                     }
                 }
@@ -138,27 +151,43 @@ private struct VesselCustomsStatusUpdateBody: View {
                 HStack {
                     Text("CURRENT STATUS · CBP DECLARATION").font(.system(size: 9, weight: .heavy)).tracking(0.9).foregroundStyle(palette.textTertiary)
                     Spacer()
-                    StatusPill(text: "UNDER REVIEW", kind: .warning)
+                    // The pill reads the REAL status field — never a hardcoded stage.
+                    StatusPill(text: statusPillText, kind: statusPillKind)
                 }
                 HStack(alignment: .firstTextBaseline) {
-                    Text(currentTitle).font(.system(size: 26, weight: .heavy)).tracking(-0.3).foregroundStyle(palette.textPrimary)
+                    Text(currentTitle ?? "—").font(.system(size: 26, weight: .heavy)).tracking(-0.3).foregroundStyle(palette.textPrimary)
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(duty).font(.system(size: 18, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textPrimary)
+                        Text(duty ?? "—").font(.system(size: 18, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textPrimary)
                         Text("duty owed").font(.system(size: 10)).foregroundStyle(palette.textSecondary)
                     }
                 }
                 HStack(spacing: 6) {
                     ForEach(0..<4, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(i < stageIndex ? AnyShapeStyle(LinearGradient.primary)
-                                  : i == stageIndex ? AnyShapeStyle(Brand.warning)
+                            .fill(i < (stageIndex ?? -1) ? AnyShapeStyle(LinearGradient.primary)
+                                  : i == (stageIndex ?? -1) ? AnyShapeStyle(Brand.warning)
                                   : AnyShapeStyle(palette.borderFaint))
                             .frame(height: 8)
                     }
                 }
-                Text(heroSub).font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                Text(heroSub ?? "—").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
+        }
+    }
+
+    private var statusPillText: String {
+        guard let s = status, !s.isEmpty else { return "—" }
+        return s.replacingOccurrences(of: "_", with: " ").uppercased()
+    }
+
+    private var statusPillKind: StatusPill.Kind {
+        switch (status ?? "").lowercased() {
+        case "cleared":             return .success
+        case "held", "rejected":    return .danger
+        case "under_review":        return .warning
+        case "filed":               return .info
+        default:                    return .neutral
         }
     }
 
@@ -251,17 +280,76 @@ private struct VesselCustomsStatusUpdateBody: View {
     }
 
     // MARK: Data
+
+    /// Raw customs_declarations row (vesselShipments.getCustomsEntries). Drizzle
+    /// DECIMALs arrive as JSON strings and timestamps as ISO strings — every
+    /// field decodes tolerantly so one odd cell never kills the ladder.
+    private struct EntryRow789: Decodable {
+        let id: Int?
+        let entryNumber: String?
+        let declarationType: String?
+        let status: String?
+        let dutyAmount: Double?
+        let declaredValue: Double?
+        let filedDate: String?
+        let clearedDate: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, entryNumber, declarationType, status, dutyAmount, declaredValue, filedDate, clearedDate
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id              = try? c.decode(Int.self,    forKey: .id)
+            entryNumber     = try? c.decode(String.self, forKey: .entryNumber)
+            declarationType = try? c.decode(String.self, forKey: .declarationType)
+            status          = try? c.decode(String.self, forKey: .status)
+            dutyAmount      = Self.flex(c, .dutyAmount)
+            declaredValue   = Self.flex(c, .declaredValue)
+            filedDate       = try? c.decode(String.self, forKey: .filedDate)
+            clearedDate     = try? c.decode(String.self, forKey: .clearedDate)
+        }
+
+        private static func flex(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Double? {
+            if let d = try? c.decode(Double.self, forKey: key) { return d }
+            if let s = try? c.decode(String.self, forKey: key) { return Double(s) }
+            return nil
+        }
+    }
+
     /// getCBPEntryStatus may return null (ABI unconfigured) — decode optionally; all fields optional.
     private struct EntryStatus789: Decodable { let status: String?; let dutyOwed: Double?; let lastUpdated: String? }
+    private struct EmptyIn789: Encodable {}
 
     private func load() async {
         loading = true; loadError = nil
         do {
-            struct In789: Encodable { let entryNumber: String }
-            let st: EntryStatus789? = try await EusoTripAPI.shared.query("vesselShipments.getCBPEntryStatus", input: In789(entryNumber: entryId))
-            if let st {
-                apply(status: st.status)
-                if let d = st.dutyOwed { duty = "$" + String(format: "%.0f", d) }
+            // 1) Anchor on the MOST RECENT real declaration row (desc by id).
+            let rows: [EntryRow789] = try await EusoTripAPI.shared.query(
+                "vesselShipments.getCustomsEntries", input: EmptyIn789())
+            guard let e = rows.first else {
+                noEntry = true
+                entryId = nil; declarationId = nil; subline = nil; currentTitle = nil
+                duty = nil; heroSub = nil; stageIndex = nil; status = nil; steps = []
+                loading = false
+                return
+            }
+            noEntry = false
+            declarationId = e.id
+            entryId = e.entryNumber.flatMap { $0.isEmpty ? nil : $0 } ?? e.id.map { "Entry #\($0)" }
+            duty = e.dutyAmount.map { "$" + String(format: "%.0f", $0) }
+            apply(status: e.status, entry: e)
+
+            // 2) ABI overlay — live CBP status when the gateway is configured;
+            //    the declaration row remains the honest floor when it is not.
+            if let num = e.entryNumber, !num.isEmpty {
+                struct In789: Encodable { let entryNumber: String }
+                let st: EntryStatus789? = try? await EusoTripAPI.shared.query(
+                    "vesselShipments.getCBPEntryStatus", input: In789(entryNumber: num))
+                if let st {
+                    if let s = st.status, !s.isEmpty { apply(status: s, entry: e) }
+                    if let d = st.dutyOwed { duty = "$" + String(format: "%.0f", d) }
+                }
             }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -269,26 +357,59 @@ private struct VesselCustomsStatusUpdateBody: View {
         loading = false
     }
 
-    private func apply(status: String?) {
+    private func apply(status raw: String?, entry e: EntryRow789) {
         let order = ["draft", "filed", "under_review", "cleared"]
-        guard let s = status?.lowercased(), let i = order.firstIndex(of: s) else { return }
+        let s = (raw ?? "").lowercased()
+        status = s.isEmpty ? nil : s
+        // held/rejected are terminal alternatives off the post-filing rail.
+        let i = order.firstIndex(of: s) ?? ((s == "held" || s == "rejected") ? 2 : nil) ?? 0
         stageIndex = i
-        currentTitle = s.replacingOccurrences(of: "_", with: " ").capitalized
+        currentTitle = s.isEmpty ? nil : s.replacingOccurrences(of: "_", with: " ").capitalized
+
+        let day10: (String?) -> String? = { iso in iso.flatMap { $0.isEmpty ? nil : String($0.prefix(10)) } }
+        let filedSub = day10(e.filedDate).map { "filedDate \($0) · ABI / ACE" } ?? "sets filedDate · ABI / ACE"
+        let clearedSub = day10(e.clearedDate).map { "clearedDate \($0) · CBP release" } ?? "sets clearedDate · CBP release"
+        let subs = ["operator drafted entry", filedSub, "CBP document review", clearedSub]
+
         steps = order.enumerated().map { idx, key in
             let state: StepState789 = idx < i ? .done : (idx == i ? .current : .next)
             let pill = state == .done ? "DONE" : (state == .current ? "CURRENT" : "NEXT")
             return CustomsStep789(title: key.replacingOccurrences(of: "_", with: " ").capitalized,
-                                  sub: steps[safe789: idx]?.sub ?? "", state: state, pill: pill)
+                                  sub: subs[safe789: idx] ?? "", state: state, pill: pill)
+        }
+
+        let typeLabel = e.declarationType.flatMap { $0.isEmpty ? nil : $0.capitalized } ?? "—"
+        let stageLabel = (s == "held" || s == "rejected") ? s : "stage \(i + 1) of 4"
+        subline = "\(typeLabel) · duty \(duty ?? "—") · \(stageLabel)"
+        if let f = day10(e.filedDate) {
+            heroSub = day10(e.clearedDate).map { "filed \(f) · cleared \($0)" } ?? "filed \(f)"
+        } else {
+            heroSub = "not yet filed"
         }
     }
 
-    /// updateCustomsStatus{ id, newStatus:"cleared" } -> clearedDate + audit — STUB · named-gap:
-    /// the mutation keys on the customsDeclarations row id, which this entryNumber read does not
-    /// surface, so we re-run load() rather than fire a half-wired mutation.
-    private func advance() async { await load() }
-    /// updateCustomsStatus{ id, newStatus:"held", holdReasons[] } via reason-capture sheet — STUB ·
-    /// named-gap (same missing declaration id). Re-runs load().
-    private func flagHold() async { await load() }
+    /// updateCustomsStatus{ id, newStatus:"cleared" } — REAL mutation (vesselShipments.ts:697,
+    /// sets clearedDate + blockchainAuditTrail). The declaration id is now surfaced by
+    /// getCustomsEntries, so the former named-gap stub is closed.
+    private func advance() async { await setStatus("cleared") }
+    /// updateCustomsStatus{ id, newStatus:"held" } — REAL mutation; the reason-capture
+    /// composer remains the named follow-up (holdReasons optional server-side).
+    private func flagHold() async { await setStatus("held") }
+
+    private func setStatus(_ newStatus: String) async {
+        guard let id = declarationId else { return }
+        acting = true; actionError = nil
+        struct In: Encodable { let id: Int; let newStatus: String }
+        struct Out: Decodable { let success: Bool?; let newStatus: String? }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "vesselShipments.updateCustomsStatus", input: In(id: id, newStatus: newStatus))
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        acting = false
+    }
 }
 
 private extension Array {

@@ -18,8 +18,8 @@
 //        recoveredDate,type}],total,summary:{totalIdentified,totalRecovered,pendingRecovery,recoveryRate,
 //        avgRecoveryDays}}). Funnel stages are derived from the status buckets; recoveryRate =
 //        totalRecovered/totalIdentified. NOTE recoveries[] currently returns empty (web stub, confirmed
-//        on disk line 960-981) — the bespoke seeds below are overwritten by the live query on .task /
-//        .refreshable only when the server returns non-empty data, so we never fabricate over real zeros.
+//        on disk) — ZERO-FALLBACK: state is em-dash/empty-initialized and UNCONDITIONALLY overwritten
+//        by the live response (a real $0 renders $0; empty cases render the honest empty state).
 //    "File recovery dispute" -> freightClaims.fileClaim (EXISTS freightClaims.ts:332 · inserts claim row +
 //        blockchainAuditTrail entry, broadcasts WS_CHANNELS.claims / WS_EVENTS.claimFiled). Today this
 //        screen only re-pulls the tracker after filing (the file-dispute composer lives on the claim flow);
@@ -81,25 +81,19 @@ private struct VesselOverchargeRecoveryBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
 
-    @State private var hero    = "$31,600"
-    @State private var subline = "recovered of $42,800 identified · 74% rate · avg 22d to recover"
-    @State private var ratePct = "74% recovered"
-    @State private var pending     = "$11,200"
-    @State private var avgDays     = "22d"
-    @State private var writtenOff  = "$640"
+    // ZERO-FALLBACK: em-dash/empty init — every figure is unconditionally
+    // overwritten from the live response (a real $0 renders as $0, never a seed).
+    @State private var hero    = "—"
+    @State private var subline = "—"
+    @State private var ratePct = "—"
+    @State private var pending     = "—"
+    @State private var avgDays     = "—"
+    @State private var writtenOff  = "—"
 
-    @State private var stages: [FunnelStage804] = [
-        .init(label: "IDENTIFIED", frac: 1.00,  color: Brand.blue,    detail: "9 · $42,800"),
-        .init(label: "DISPUTED",   frac: 0.453, color: Brand.warning, detail: "5 · $19,400"),
-        .init(label: "IN REVIEW",  frac: 0.201, color: Brand.info,    detail: "2 · $8,600"),
-        .init(label: "RECOVERED",  frac: 0.738, color: Brand.success, detail: "6 · $31,600")
-    ]
-
-    @State private var cases: [RecoveryCase804] = [
-        .init(carrierCode: "MSC",  title: "MSC · accessorial",  sub: "INV-MSC-88241 · recovered 6d ago",  tone: .success, chip: Brand.success, pill: "RECOVERED", value: "$3,200", ofOver: "of $3,200 over", muted: false),
-        .init(carrierCode: "MAEU", title: "Maersk · duplicate", sub: "INV-MAEU-71530 · disputed 18d ago", tone: .warning, chip: Brand.warning, pill: "DISPUTED",  value: "$0",     ofOver: "of $2,400 over", muted: false),
-        .init(carrierCode: "OOLU", title: "OOCL · rate error",  sub: "INV-OOLU-50912 · in review 4d ago", tone: .info,    chip: Brand.blue,    pill: "REVIEW",    value: "$0",     ofOver: "of $1,850 over", muted: false)
-    ]
+    @State private var stages: [FunnelStage804] = []
+    @State private var cases: [RecoveryCase804] = []
+    /// Live-derived ESang advisory (best open case) — nil hides the row.
+    @State private var esangBestCase: (title: String, subtitle: String)? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -123,8 +117,11 @@ private struct VesselOverchargeRecoveryBody: View {
                         CTAButton(title: "File recovery dispute", action: { Task { await fileDispute() } }, trailingIcon: "doc.text")
                         secondaryButton804(title: "Export") { Task { await load() } }
                     }
-                    ESangRow804(title: "ESang: the Maersk duplicate is your best open case",
-                                subtitle: "file the dispute now · 81% of duplicates recover in 18d")
+                    // ESang advisory derives from the LIVE best open case only —
+                    // no fabricated "Maersk duplicate" line when none exists.
+                    if let best = esangBestCase {
+                        ESangRow804(title: best.title, subtitle: best.subtitle)
+                    }
                 }
                 Color.clear.frame(height: 96)
             }
@@ -190,7 +187,20 @@ private struct VesselOverchargeRecoveryBody: View {
         }.frame(maxWidth: .infinity, alignment: align == .trailing ? .trailing : .leading)
     }
 
+    @ViewBuilder
     private var caseLedger: some View {
+        if cases.isEmpty {
+            // Honest empty — the server returns zero recovery cases today
+            // (getOverchargeRecovery web stub); no invented MSC/Maersk/OOCL rows.
+            EusoEmptyState(systemImage: "tray",
+                           title: "No recovery cases",
+                           subtitle: "Overcharge cases appear here as the freight-audit engine flags invoices for recovery.")
+        } else {
+            caseLedgerRows
+        }
+    }
+
+    private var caseLedgerRows: some View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(cases.enumerated()), id: \.element.id) { idx, c in
@@ -247,46 +257,57 @@ private struct VesselOverchargeRecoveryBody: View {
             let r: Out = try await EusoTripAPI.shared.query("freightClaims.getOverchargeRecovery", input: OverchargeInput804(limit: 20, offset: 0))
             let s = r.summary
             let identified = s.totalIdentified ?? 0, recovered = s.totalRecovered ?? 0
-            if recovered > 0 { hero = usd804(recovered) }
+
+            // UNCONDITIONAL overwrite — a real $0 renders as $0, never a seed.
+            hero = usd804(recovered)
             let rate = identified > 0 ? Int(round(recovered / identified * 100)) : 0
             ratePct = "\(rate)% recovered"
             pending = usd804(s.pendingRecovery ?? 0)
             avgDays = "\(Int(round(s.avgRecoveryDays ?? 0)))d"
             subline = "recovered of \(usd804(identified)) identified · \(rate)% rate · avg \(avgDays) to recover"
 
-            if !r.recoveries.isEmpty {
-                let bucket: (String) -> (Double, Int) = { st in
-                    let g = r.recoveries.filter { ($0.status ?? "") == st }
-                    return (g.reduce(0) { $0 + ($1.overchargeAmount ?? 0) }, g.count)
-                }
-                let idAmt = identified, idN = r.recoveries.count
-                let (dAmt, dN) = bucket("disputed")
-                let reviewG = r.recoveries.filter { ($0.status ?? "") == "identified" }
-                let iAmt = reviewG.reduce(0) { $0 + ($1.overchargeAmount ?? 0) }, iN = reviewG.count
-                let (rAmt, rN) = bucket("recovered")
-                let base = max(idAmt, 1)
-                stages = [
-                    FunnelStage804(label: "IDENTIFIED", frac: 1.0,                 color: Brand.blue,    detail: "\(idN) · \(usd804(idAmt))"),
-                    FunnelStage804(label: "DISPUTED",   frac: min(1, dAmt / base), color: Brand.warning, detail: "\(dN) · \(usd804(dAmt))"),
-                    FunnelStage804(label: "IN REVIEW",  frac: min(1, iAmt / base), color: Brand.info,    detail: "\(iN) · \(usd804(iAmt))"),
-                    FunnelStage804(label: "RECOVERED",  frac: min(1, rAmt / base), color: Brand.success, detail: "\(rN) · \(usd804(rAmt))")
-                ]
-                writtenOff = usd804(bucket("written_off").0)
+            let bucket: (String) -> (Double, Int) = { st in
+                let g = r.recoveries.filter { ($0.status ?? "") == st }
+                return (g.reduce(0) { $0 + ($1.overchargeAmount ?? 0) }, g.count)
+            }
+            let idAmt = identified, idN = r.recoveries.count
+            let (dAmt, dN) = bucket("disputed")
+            let reviewG = r.recoveries.filter { ($0.status ?? "") == "identified" }
+            let iAmt = reviewG.reduce(0) { $0 + ($1.overchargeAmount ?? 0) }, iN = reviewG.count
+            let (rAmt, rN) = bucket("recovered")
+            let base = max(idAmt, 1)
+            stages = [
+                FunnelStage804(label: "IDENTIFIED", frac: idAmt > 0 ? 1.0 : 0,    color: Brand.blue,    detail: "\(idN) · \(usd804(idAmt))"),
+                FunnelStage804(label: "DISPUTED",   frac: min(1, dAmt / base), color: Brand.warning, detail: "\(dN) · \(usd804(dAmt))"),
+                FunnelStage804(label: "IN REVIEW",  frac: min(1, iAmt / base), color: Brand.info,    detail: "\(iN) · \(usd804(iAmt))"),
+                FunnelStage804(label: "RECOVERED",  frac: min(1, rAmt / base), color: Brand.success, detail: "\(rN) · \(usd804(rAmt))")
+            ]
+            writtenOff = usd804(bucket("written_off").0)
 
-                cases = r.recoveries.prefix(3).map { rec in
-                    let st = rec.status ?? "identified"
-                    let tone: StatusPill.Kind = st == "recovered" ? .success : (st == "disputed" ? .warning : (st == "written_off" ? .neutral : .info))
-                    let chip: Color = st == "recovered" ? Brand.success : (st == "disputed" ? Brand.warning : (st == "written_off" ? Brand.neutral : Brand.blue))
-                    let code = (rec.carrier ?? "-").uppercased().prefix(4)
-                    return RecoveryCase804(
-                        carrierCode: String(code),
-                        title: "\(rec.carrier ?? "-") · \(rec.type ?? "review")",
-                        sub: "\(rec.invoiceNumber ?? "-") · \(st)",
-                        tone: tone, chip: chip, pill: st.uppercased(),
-                        value: usd804(rec.recoveredAmount ?? 0),
-                        ofOver: "of \(usd804(rec.overchargeAmount ?? 0)) over",
-                        muted: st == "written_off")
-                }
+            cases = r.recoveries.prefix(3).map { rec in
+                let st = rec.status ?? "identified"
+                let tone: StatusPill.Kind = st == "recovered" ? .success : (st == "disputed" ? .warning : (st == "written_off" ? .neutral : .info))
+                let chip: Color = st == "recovered" ? Brand.success : (st == "disputed" ? Brand.warning : (st == "written_off" ? Brand.neutral : Brand.blue))
+                let code = (rec.carrier ?? "-").uppercased().prefix(4)
+                return RecoveryCase804(
+                    carrierCode: String(code),
+                    title: "\(rec.carrier ?? "-") · \(rec.type ?? "review")",
+                    sub: "\(rec.invoiceNumber ?? "-") · \(st)",
+                    tone: tone, chip: chip, pill: st.uppercased(),
+                    value: usd804(rec.recoveredAmount ?? 0),
+                    ofOver: "of \(usd804(rec.overchargeAmount ?? 0)) over",
+                    muted: st == "written_off")
+            }
+
+            // ESang advisory from the LIVE best open case (largest open overcharge).
+            let open = r.recoveries.filter { ["identified", "disputed"].contains($0.status ?? "") }
+            if let best = open.max(by: { ($0.overchargeAmount ?? 0) < ($1.overchargeAmount ?? 0) }) {
+                esangBestCase = (
+                    title: "ESang: \(best.carrier ?? "—") · \(best.type ?? "overcharge") is your best open case",
+                    subtitle: "\(best.invoiceNumber ?? "—") · \(usd804(best.overchargeAmount ?? 0)) over · file the dispute"
+                )
+            } else {
+                esangBestCase = nil
             }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

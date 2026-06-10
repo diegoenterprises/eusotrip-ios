@@ -101,6 +101,9 @@ private struct MarineCasualty710: Decodable {
     let reportable: Bool?
     let filingStage: String?
     let dueInDays: Int?
+    /// REAL server field (incidents.getById → createdAt ISO) — the only honest
+    /// anchor for the 46 CFR 4.05-10 five-day CG-2692 due countdown.
+    let reportedAt: String?
 }
 
 private struct USCGCheck710: Decodable, Identifiable {
@@ -188,7 +191,7 @@ private struct VesselMarineCasualtyBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
-                Text(casualty?.incidentNumber ?? "INC-260522-04")
+                Text(casualty?.incidentNumber ?? "—")
                     .font(EType.mono(.micro))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -209,8 +212,7 @@ private struct VesselMarineCasualtyBody: View {
 
     private func heroCard(_ c: MarineCasualty710) -> some View {
         let isReportable = c.reportable ?? (((c.severity ?? "").lowercased() == "critical") || ((c.severity ?? "").lowercased() == "major"))
-        let casualtyClass = c.casualtyClass ?? (c.type ?? "allision")
-        let dueDays = c.dueInDays
+        let casualtyClass = c.casualtyClass ?? c.type   // nil → em-dash pill, never "allision"
         return ActiveCard {
             HStack(alignment: .top, spacing: Space.s4) {
                 VStack(alignment: .leading, spacing: Space.s3) {
@@ -220,7 +222,7 @@ private struct VesselMarineCasualtyBody: View {
                             .foregroundStyle(isReportable ? Brand.danger : palette.textTertiary)
                             .padding(.horizontal, 14).padding(.vertical, 5)
                             .background(Capsule().fill((isReportable ? Brand.danger : palette.textTertiary).opacity(0.20)))
-                        Text(casualtyClass.lowercased())
+                        Text(casualtyClass?.lowercased() ?? "—")
                             .font(.system(size: 11, weight: .bold)).tracking(0.4)
                             .foregroundStyle(palette.textSecondary)
                             .padding(.horizontal, 14).padding(.vertical, 5)
@@ -236,29 +238,58 @@ private struct VesselMarineCasualtyBody: View {
                     }
                 }
                 Spacer(minLength: 0)
-                dueRing(dueDays)
+                // ZERO-FALLBACK: the 2692 countdown renders ONLY off a real
+                // server timestamp (dueInDays or reportedAt) and only while the
+                // filing is still outstanding — never a fabricated "5d".
+                if let dd = dueDays(c), currentStage(c) != .filed, currentStage(c) != .closed {
+                    dueRing(dd)
+                }
             }
         }
     }
 
+    /// "<Class> · <real location>" — the class from the live row, the location
+    /// only when the server actually has one. No invented "berth B7", and a real
+    /// non-berth address is never overwritten.
     private func heroTitle(_ c: MarineCasualty710) -> String {
-        let cls = (c.casualtyClass ?? c.type ?? "Allision").capitalized
-        if let loc = c.location?.address, !loc.isEmpty,
-           loc.lowercased().contains("berth") {
+        let cls = (c.casualtyClass ?? c.type).map { $0.capitalized } ?? "—"
+        if let loc = c.location?.address, !loc.isEmpty {
             return "\(cls) · \(loc)"
         }
-        return "\(cls) · berth B7"
+        return cls
     }
 
+    /// "<city> · <date> · <time> LT" — each component live or em-dash; the
+    /// address already lives in the title, so no component is invented here.
     private func heroSubtitle(_ c: MarineCasualty710) -> String {
-        let port = c.location?.address.flatMap { $0.isEmpty ? nil : $0 } ?? "Long Beach USLGB"
-        let day = c.date.flatMap { $0.isEmpty ? nil : $0 } ?? "May 22"
-        let t = c.time.flatMap { $0.isEmpty ? nil : $0 } ?? "14:06"
+        let port = c.location?.city.flatMap { $0.isEmpty ? nil : $0 }
+            ?? c.location?.state.flatMap { $0.isEmpty ? nil : $0 } ?? "—"
+        let day = c.date.flatMap { $0.isEmpty ? nil : $0 } ?? "—"
+        let t = c.time.flatMap { $0.isEmpty ? nil : $0 } ?? "—"
         return "\(port) · \(day) · \(t) LT"
     }
 
-    private func dueRing(_ dueDays: Int?) -> some View {
-        let txt = dueDays.map { "\($0)d" } ?? "5d"
+    /// CG-2692 days remaining — 46 CFR 4.05-10 gives 5 days from the report.
+    /// Computed ONLY from server truth: explicit dueInDays when typed, else the
+    /// real reportedAt (createdAt) timestamp. nil = no honest countdown exists.
+    private func dueDays(_ c: MarineCasualty710) -> Int? {
+        if let d = c.dueInDays { return d }
+        guard let ts = c.reportedAt, let reported = Self.parseISO710(ts) else { return nil }
+        let elapsed = Calendar.current.dateComponents([.day], from: reported, to: Date()).day ?? 0
+        return max(0, 5 - elapsed)
+    }
+
+    private static func parseISO710(_ s: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = fractional.date(from: s) { return d }
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return plain.date(from: s)
+    }
+
+    private func dueRing(_ dueDays: Int) -> some View {
+        let txt = "\(dueDays)d"
         return ZStack {
             Circle().fill(Brand.danger.opacity(0.10)).frame(width: 60, height: 60)
             Circle().strokeBorder(style: StrokeStyle(lineWidth: 2, dash: [4, 3]))

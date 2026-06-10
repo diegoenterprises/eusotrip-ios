@@ -11,25 +11,34 @@
 //  COMPLIANCE slot inked (a CO2/GHG statement is a compliance surface).
 //
 //  Data / wiring (endpoints confirmed via EUSOTRIP_PLATFORM MCP this fire):
+//    vesselShipments.getVesselShipments (EXISTS vesselShipments.ts:222 · vesselProcedure ·
+//      {limit,offset} -> {shipments:[raw vessel_shipments rows],total}) — anchors the statement to
+//      the operator's MOST RECENT real booking (id + bookingNumber + numberOfContainers). Honest
+//      empty state when the operator has no bookings.
 //    co2Calculator.calculateVesselShipment (EXISTS frontend/server/routers/co2Calculator.ts:66 ·
 //      vesselProcedure · input {shipmentId?,fuelConsumedTonnes?,fuelType?,distanceNm?,teuCount?} ·
-//      returns {co2Tonnes,co2PerTeu,ciiAttained,ciiRating A|B|C|D|E,fuelConsumedTonnes,…}). The
-//      booking's voyage distance + TEU + VLSFO fuel feed the IMO CII branch; the attained rating
-//      drives the needle band. fuelType is lowercase per VESSEL_FUEL_CO2 keys ("vlsfo").
+//      returns {co2Tonnes,co2PerTeu,ciiAttained,ciiRating A|B|C|D|E,distanceNm,teuCount,fuelType,
+//      fuelConsumedTonnes}). ZERO-FALLBACK: the REAL shipmentId is threaded — no hardcoded
+//      5,720 nm / 2 TEU / "vlsfo" inputs; when the proc returns zero tonnes (no voyage distance on
+//      record) the screen says so honestly instead of rendering fabricated math.
 //    "Export GHG statement" -> reports.exportCO2Statement (EXISTS reports.ts:509 · protectedProcedure ·
 //      no input · returns {filename,mime:"text/csv",body} GLEC v3.0 per-load CO2e ledger). Real
 //      export verb fired for the GHG statement download.
 //
+//    Per-leg ledger + EU-ETS surrender band: NO server source exists today (no leg telemetry, no
+//    EUA ledger) — the per-leg section renders an honest empty state and the ETS band is NOT
+//    rendered (a fabricated regulatory obligation is worse than an absent one). Surfaced as the
+//    named backend seam (vessel leg telemetry + EU-ETS ledger procs).
+//
 //    ESang advisory: esangCoach.forScreen exists (esangCoach.ts:264) but its SCREEN_ENUM is
 //    driver-centric (home/trips/earnings/…/active-trip) — there is NO vessel.co2 value, so a call
 //    with a vessel screen key would fail Zod validation. The advisory is therefore an honest,
-//    in-screen directional recommendation (NOT a fabricated server line, NOT a 400-ing call); the
-//    named gap (a vessel-mode coach screen key) is the surfaced backend seam.
+//    DIRECTIONAL recommendation carrying no invented quantities; the named gap (a vessel-mode
+//    coach screen key) is the surfaced backend seam.
 //
-//  0 mock data on load · honest empty/error states — the hero/legs/CII render from live state when
-//  calculateVesselShipment returns; the seed figures live ONLY in #Preview-adjacent @State so the
-//  first frame is never blank. CIIGauge708 is a file-scoped bespoke dial (the canonical port's
-//  CIIGauge is not a shared app symbol), built to mirror the SVG arc bands.
+//  0 mock data on load · honest empty/error states — the hero/CII render from live state only;
+//  nil-initialized, em-dash absence. CIIGauge708 is a file-scoped bespoke dial (the canonical
+//  port's CIIGauge is not a shared app symbol), built to mirror the SVG arc bands.
 //
 
 import SwiftUI
@@ -61,19 +70,17 @@ private struct VesselShipmentCO2Body: View {
     @State private var loading = true
     @State private var loadError: String? = nil
 
-    private let bookingId = "VES-260523-9F2C41A0E7"
-    @State private var totalTonnes = 2.31
-    @State private var ciiRating = "C"           // band label; index drives the needle
-    @State private var ciiBand = 2               // 0=A … 4=E
-    @State private var legs: [EmissionLeg708] = [
-        .init(title: "Ocean main leg",      sub: "Shanghai → Long Beach · VLSFO", glyph: "ferry.fill",   tonnes: 2.10, share: 0.909),
-        .init(title: "Destination drayage", sub: "Long Beach → DC · diesel",       glyph: "truck.box",    tonnes: 0.18, share: 0.078),
-        .init(title: "Origin gate move",    sub: "CY → berth · yard tractor",      glyph: "shippingbox",  tonnes: 0.03, share: 0.013),
-    ]
-    @State private var euaDue = 142
-    @State private var etsCost = "€11,360"
-    @State private var surrenderedPct = 0.71
-    @State private var esang = "Switch to bio-bunker on EU legs"
+    // ZERO-FALLBACK: nil-initialized — every figure renders live-or-em-dash.
+    @State private var bookingId: String? = nil      // real bookingNumber from the anchored shipment
+    @State private var hasShipment = false           // operator has at least one real booking
+    @State private var totalTonnes: Double? = nil
+    @State private var ciiRating: String? = nil      // band label; index drives the needle
+    @State private var ciiBand = 2                   // 0=A … 4=E (only read when ciiRating != nil)
+    @State private var ciiAttained: Double? = nil    // g CO2 / (t-capacity·nm), server-computed
+    @State private var distanceNm: Double? = nil     // echoed by the proc (0 = not on record)
+    @State private var teuCount: Int? = nil
+    @State private var fuelType: String? = nil
+    @State private var legs: [EmissionLeg708] = []   // no leg-telemetry source exists — honest empty
     @State private var exporting = false
 
     var body: some View {
@@ -85,12 +92,15 @@ private struct VesselShipmentCO2Body: View {
                     LifecycleCard { Text("Computing GLEC emissions…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                } else if !hasShipment {
+                    EusoEmptyState(systemImage: "leaf",
+                                   title: "No booking to report on",
+                                   subtitle: "The CO2 / GHG statement anchors to your most recent vessel booking — it appears once a booking exists.")
                 } else {
                     heroCard
                     Text("EMISSIONS BY LEG · WELL-TO-WAKE")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     legsCard
-                    etsBand
                     esangRow
                     HStack(spacing: 12) {
                         CTAButton(title: "Export GHG statement",
@@ -124,7 +134,10 @@ private struct VesselShipmentCO2Body: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Emissions statement").font(.system(size: 28, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Spacer()
-                StatusPill(text: "CII · \(ciiRating)", kind: .warning)
+                // Pill renders only off a server-attained rating — never a seed.
+                if let r = ciiRating {
+                    StatusPill(text: "CII · \(r)", kind: .warning)
+                }
             }
         }
     }
@@ -135,19 +148,54 @@ private struct VesselShipmentCO2Body: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("CO2e · THIS BOOKING").font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text(String(format: "%.2f", totalTonnes)).font(.system(size: 40, weight: .bold)).foregroundStyle(LinearGradient.diagonal).monospacedDigit()
+                        Text(totalTonnes.map { String(format: "%.2f", $0) } ?? "—")
+                            .font(.system(size: 40, weight: .bold)).foregroundStyle(LinearGradient.diagonal).monospacedDigit()
                         Text("t").font(.system(size: 18, weight: .bold)).foregroundStyle(palette.textTertiary)
                     }
-                    Text("\(bookingId) · FEU · 5,720 nm").font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textTertiary)
-                    Text("0.40 kg/t-nm · +14% vs A-rating").font(.system(size: 11, weight: .bold)).foregroundStyle(Brand.warning)
+                    Text(heroBookingLine).font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textTertiary)
+                    if totalTonnes == nil {
+                        // Honest: shipmentId was threaded but the booking has no
+                        // voyage distance on record — no math can be claimed.
+                        Text("voyage distance not on record — emissions pending")
+                            .font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textTertiary)
+                    } else if let cii = ciiAttained, cii > 0 {
+                        Text(String(format: "CII attained %.2f g/t-nm", cii))
+                            .font(.system(size: 11, weight: .bold)).foregroundStyle(Brand.warning)
+                    }
                 }
                 Spacer()
-                CIIGauge708(band: ciiBand, label: ciiRating).frame(width: 92, height: 84)
+                if let r = ciiRating {
+                    CIIGauge708(band: ciiBand, label: r).frame(width: 92, height: 84)
+                }
             }
         }
     }
 
+    /// "<bookingNumber> · <N> TEU · <D> nm" — every component live or em-dash.
+    private var heroBookingLine: String {
+        let booking = bookingId ?? "—"
+        let teu = teuCount.map { "\($0) TEU" } ?? "— TEU"
+        let dist: String = {
+            guard let d = distanceNm, d > 0 else { return "— nm" }
+            return "\(Int(d.rounded()).formatted(.number.grouping(.automatic))) nm"
+        }()
+        return "\(booking) · \(teu) · \(dist)"
+    }
+
+    @ViewBuilder
     private var legsCard: some View {
+        if legs.isEmpty {
+            // NAMED GAP: no vessel leg-telemetry source exists server-side —
+            // honest empty state, never a canned Shanghai→Long Beach ledger.
+            EusoEmptyState(systemImage: "point.topleft.down.curvedto.point.bottomright.up",
+                           title: "No per-leg breakdown on record",
+                           subtitle: "Well-to-wake legs appear here once voyage leg telemetry lands for this booking.")
+        } else {
+            legsLedger
+        }
+    }
+
+    private var legsLedger: some View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(legs.enumerated()), id: \.element.id) { idx, leg in
@@ -173,28 +221,9 @@ private struct VesselShipmentCO2Body: View {
         }
     }
 
-    private var etsBand: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("EU ETS SURRENDER · 2026 · 100% PHASE-IN").font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
-                Spacer()
-            }
-            HStack {
-                Text("\(euaDue) EUA due · \(etsCost)").font(.system(size: 15, weight: .bold)).foregroundStyle(palette.textPrimary).monospacedDigit()
-                Spacer()
-                Text("\(Int(surrenderedPct * 100))% surrendered").font(.system(size: 11, weight: .bold)).foregroundStyle(Brand.success)
-            }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(palette.textPrimary.opacity(0.06)).frame(height: 8)
-                    Capsule().fill(LinearGradient(colors: [Brand.success, Brand.info], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: geo.size.width * surrenderedPct, height: 8)
-                }
-            }.frame(height: 8)
-        }
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCard).overlay(RoundedRectangle(cornerRadius: 16).stroke(palette.borderFaint, lineWidth: 1)))
-    }
+    // EU-ETS surrender band REMOVED (zero-fallback): no EUA ledger proc exists,
+    // and a fabricated regulatory obligation (142 EUA · €11,360 · 71%) is worse
+    // than an absent one. The band returns when a real EU-ETS ledger source lands.
 
     private var esangRow: some View {
         HStack(spacing: 12) {
@@ -203,8 +232,10 @@ private struct VesselShipmentCO2Body: View {
                 Circle().fill(RadialGradient(colors: [.white.opacity(0.75), .clear], center: .topLeading, startRadius: 0, endRadius: 14)).frame(width: 20, height: 20)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(esang).font(.system(size: 12.5, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text("ESang · cuts 18% CO2e · €2,040 less ETS this qtr").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                // Directional advisory only — no invented savings figures; the
+                // quantified version lands with voyage fuel + EU-ETS ledger data.
+                Text("Switch to bio-bunker on EU legs").font(.system(size: 12.5, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text("ESang · directional — savings quantify once voyage fuel data lands").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
             Spacer()
             Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(palette.textTertiary)
@@ -214,18 +245,71 @@ private struct VesselShipmentCO2Body: View {
     }
 
     // MARK: - Data
+
+    /// Raw vessel_shipments row (tolerant subset) — anchors the statement to a REAL booking.
+    private struct ShipmentRow708: Decodable {
+        let id: Int?
+        let bookingNumber: String?
+        let numberOfContainers: Int?
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id                 = try? c.decode(Int.self,    forKey: .id)
+            bookingNumber      = try? c.decode(String.self, forKey: .bookingNumber)
+            numberOfContainers = try? c.decode(Int.self,    forKey: .numberOfContainers)
+        }
+        enum CodingKeys: String, CodingKey { case id, bookingNumber, numberOfContainers }
+    }
+
     private func load() async {
         loading = true; loadError = nil
-        struct In: Encodable { let distanceNm: Double; let teuCount: Int; let fuelType: String }
-        struct Out: Decodable { let co2Tonnes: Double?; let co2PerTeu: Double?; let ciiAttained: Double?; let ciiRating: String? }
+        struct ListIn: Encodable { let limit: Int; let offset: Int }
+        struct ListOut: Decodable { let shipments: [ShipmentRow708]? }
+        struct CalcIn: Encodable { let shipmentId: Int; let teuCount: Int? }
+        struct CalcOut: Decodable {
+            let co2Tonnes: Double?; let co2PerTeu: Double?; let ciiAttained: Double?; let ciiRating: String?
+            let distanceNm: Double?; let teuCount: Int?; let fuelType: String?; let fuelConsumedTonnes: Double?
+        }
         do {
-            let o: Out = try await EusoTripAPI.shared.query("co2Calculator.calculateVesselShipment",
-                    input: In(distanceNm: 5720, teuCount: 2, fuelType: "vlsfo"))
-            if let t = o.co2Tonnes { totalTonnes = t }
-            if let r = o.ciiRating, !r.isEmpty {
-                ciiRating = r
-                ciiBand = ["A", "B", "C", "D", "E"].firstIndex(of: r) ?? 2
+            // 1) Anchor on the operator's most recent REAL booking — never a hardcoded voyage.
+            let list: ListOut = try await EusoTripAPI.shared.query("vesselShipments.getVesselShipments",
+                                                                   input: ListIn(limit: 1, offset: 0))
+            guard let s = list.shipments?.first, let sid = s.id else {
+                hasShipment = false
+                bookingId = nil; totalTonnes = nil; ciiRating = nil; ciiAttained = nil
+                distanceNm = nil; teuCount = nil; fuelType = nil; legs = []
+                loading = false
+                return
             }
+            hasShipment = true
+            bookingId = s.bookingNumber
+
+            // 2) Real shipmentId threaded into the GLEC/CII proc; TEU passed only
+            //    when the booking actually records a container count.
+            let o: CalcOut = try await EusoTripAPI.shared.query("co2Calculator.calculateVesselShipment",
+                    input: CalcIn(shipmentId: sid, teuCount: s.numberOfContainers))
+
+            // Unconditional overwrite — live or honest absence, never a seed.
+            distanceNm = o.distanceNm
+            teuCount   = o.teuCount ?? s.numberOfContainers
+            fuelType   = o.fuelType
+            if let t = o.co2Tonnes, t > 0 {
+                totalTonnes = t
+                ciiAttained = o.ciiAttained
+                if let r = o.ciiRating, !r.isEmpty {
+                    ciiRating = r
+                    ciiBand = ["A", "B", "C", "D", "E"].firstIndex(of: r) ?? 2
+                } else {
+                    ciiRating = nil
+                }
+            } else {
+                // Server computed zero — the booking has no voyage distance on
+                // record. Rendering 0.00 t / rating "A" would be a fabricated
+                // attainment, so we em-dash and say why.
+                totalTonnes = nil
+                ciiRating = nil
+                ciiAttained = nil
+            }
+            legs = []   // no leg-telemetry source — honest empty state renders
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
