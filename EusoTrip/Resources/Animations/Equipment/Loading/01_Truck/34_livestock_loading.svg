@@ -354,17 +354,17 @@
          MX → SENASICA transporte de ganado (NOM-051-ZOO)
          CA → CFIA humane transport + NFACC code (bedding / fitness-to-travel)
        data-bind feeds the live permit/certificate number. -->
-  <g class="country-US" data-country="US">
+  <g class="country-US">
     <text x="371" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
           transform="rotate(-90 371 290)" opacity="0.85" data-bind="welfare_auth">USDA APHIS · 28-HR LAW</text>
   </g>
-  <g class="country-MX" data-country="MX" style="display:none">
+  <g class="country-MX" style="display:none">
     <text x="371" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
           transform="rotate(-90 371 290)" opacity="0.85" data-bind="welfare_auth">SENASICA · NOM-051-ZOO</text>
   </g>
-  <g class="country-CA" data-country="CA" style="display:none">
+  <g class="country-CA" style="display:none">
     <text x="371" y="290" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="900" font-size="3.6" fill="#1A1F2E" letter-spacing="0.3"
           transform="rotate(-90 371 290)" opacity="0.85" data-bind="welfare_auth">CFIA · NFACC TRANSPORT</text>

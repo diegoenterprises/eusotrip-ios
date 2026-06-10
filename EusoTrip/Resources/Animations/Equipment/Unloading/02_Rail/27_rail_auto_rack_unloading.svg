@@ -130,13 +130,9 @@
          US (FRA 49 CFR 224 / AAR)  — NET TONS, lbs LT WT
          CA (Transport Canada TC)   — metric tonnes, kg
          MX (SCT / ferrocarril)     — toneladas, kg
-       Renderer selects ONE via the root <svg> data-country attribute
-       (default US). Groups: .country-US / .country-CA / .country-MX. */
+       The renderer selects ONE by toggling display on the .country-US /
+       .country-CA / .country-MX groups directly (default US). */
     .country-CA, .country-MX { display: none; }
-    svg[data-country="CA"] .country-US, svg[data-country="CA"] .country-MX { display: none; }
-    svg[data-country="CA"] .country-CA { display: inline; }
-    svg[data-country="MX"] .country-US, svg[data-country="MX"] .country-CA { display: none; }
-    svg[data-country="MX"] .country-MX { display: inline; }
 
     @media (prefers-reduced-motion: reduce) {
       .brand-lockup, .brand-mark, .brand-word,

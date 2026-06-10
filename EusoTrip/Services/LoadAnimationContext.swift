@@ -40,6 +40,19 @@ struct LoadAnimationContext: Hashable {
     let vertical: String   // dry_van | reefer | tanker_hazmat | …
     let region: String     // us | mx | ca
 
+    /// Engine-facing country toggle for the `.country-US/-MX/-CA` regulatory
+    /// groups (Wave C plumbing). Maps the derived region onto the Wave E
+    /// `NativeSVGView(country:)` API. An unknown region maps to nil — the
+    /// engine renders the US default, never a guessed placard set.
+    var svgCountry: SVGCountry? {
+        switch region {
+        case "us": return .us
+        case "mx": return .mx
+        case "ca": return .ca
+        default:   return nil
+        }
+    }
+
     // MARK: - Build from a LifecycleSnapshot
 
     /// Builds the binding dictionary from the live snapshot. Empty
@@ -198,17 +211,30 @@ struct LoadAnimationContext: Hashable {
     /// Weight label — formats the load's weight + unit into the
     /// canonical "NN,NNN LBS" string. Falls back to an empty key when
     /// the snapshot has no weight (lets the SVG default show).
+    ///
+    /// Unit localization (Wave C, level-100 criterion c): the platform
+    /// stores truck/rail weight in pounds; MX (NOM-012-SCT) and CA
+    /// (provincial weights & dimensions regs) loads read in kilograms,
+    /// so the label converts for region mx/ca. Vessel DWT is already
+    /// metric tonnes — never converted.
     private static func weightLabel(_ s: ShipperAPI.LifecycleSnapshot) -> String {
         guard let w = s.load.weight, w > 0 else { return "" }
         let f = NumberFormatter()
         f.numberStyle = .decimal
         f.maximumFractionDigits = 0
-        let n = f.string(from: NSNumber(value: w)) ?? "\(Int(w))"
         // Mode-aware units
-        switch inferModality(from: s) {
-        case "vessel": return "DWT \(n)"
-        case "rail":   return "\(n) LBS"
-        default:       return "\(n) LBS"
+        if inferModality(from: s) == "vessel" {
+            let n = f.string(from: NSNumber(value: w)) ?? "\(Int(w))"
+            return "DWT \(n)"
+        }
+        switch inferRegion(from: s) {
+        case "mx", "ca":
+            let kg = w * 0.45359237
+            let n = f.string(from: NSNumber(value: kg.rounded())) ?? "\(Int(kg))"
+            return "\(n) KG"
+        default:
+            let n = f.string(from: NSNumber(value: w)) ?? "\(Int(w))"
+            return "\(n) LBS"
         }
     }
 
@@ -291,18 +317,87 @@ struct LoadAnimationContext: Hashable {
         return "dry_van"
     }
 
-    /// Region — defaults to `us` until cross-border state is wired.
-    /// The server-side `BORDER_CROSSING_USMCA` state and customs
-    /// router will populate this in Phase 6+.
+    /// Region — the jurisdiction whose regulatory truth governs the
+    /// rendered placards/credentials/units (Wave C).
+    ///
+    /// CURRENT-LEG RULE: a cross-border load renders the country of the
+    /// leg it is on NOW — origin-side statuses (anything up to and
+    /// including departure from the pickup) take the PICKUP stop's
+    /// country; post-departure statuses (in transit → delivered) take
+    /// the DELIVERY stop's country. Domestic loads resolve identically
+    /// from either side. Statuses the ramp doesn't recognize stay on
+    /// the origin leg — the load hasn't provably departed, so the
+    /// pixels never switch placard regimes on a guess.
+    ///
+    /// Country derives from the stop's state/province abbreviation via
+    /// `countryCode(forState:)` — the server's `detectLoadCountry`
+    /// tables (routers/loads.ts:106, the rule that mints
+    /// `loads.originCountry`/`destCountry`) minus the ambiguous-code
+    /// collisions (see countryCode's DELIBERATE DIVERGENCE note). The
+    /// lifecycle snapshot envelope carries `Stop.state`, not the minted
+    /// country columns, so deriving from the same input is the honest
+    /// equivalent. Unknown/absent state → "us" — the engine's
+    /// US-default, never a guessed placard set.
     private static func inferRegion(from s: ShipperAPI.LifecycleSnapshot) -> String {
-        // Heuristic: if either pickup or delivery state matches
-        // 2-letter MX or CA codes, route accordingly.
-        let mxStates: Set<String> = ["AGS","BC","BCS","CAM","CHH","CHP","COA","COL","CMX","DUR","GRO","GTO","HID","JAL","MEX","MIC","MOR","NAY","NLE","OAX","PUE","QRO","ROO","SIN","SLP","SON","TAB","TAM","TLA","VER","YUC","ZAC"]
+        let status = s.load.status.lowercased()
+        let departedOrigin: Bool
+        switch status {
+        case "in_transit", "departed_pickup",
+             "at_delivery", "delivery_checkin",
+             "unloading", "unloaded", "pod_pending",
+             "delivered", "complete":
+            departedOrigin = true
+        default:
+            departedOrigin = false
+        }
+        let legStop = departedOrigin
+            ? (s.delivery ?? s.pickup)
+            : (s.pickup ?? s.delivery)
+        return countryCode(forState: legStop?.state)
+    }
+
+    /// State/province abbreviation → country code, derived from the
+    /// server's `detectLoadCountry` tables (routers/loads.ts:106 — the
+    /// rule that mints `loads.originCountry`/`destCountry`), plus the
+    /// 3-letter MX forms (CHH, AGS, …) free-form stop entry produces.
+    ///
+    /// DELIBERATE DIVERGENCE (honest floor): the server's 2-letter MX
+    /// table contains codes that are ALSO real US states (CO=Colorado,
+    /// MI=Michigan, MO=Missouri) or CA provinces (BC, NL). Resolving
+    /// those to MX would paint SCT placards on a Michigan rig — wrong
+    /// regulatory truth, the exact failure class Wave C kills. An
+    /// ambiguous code therefore never flips the pixels away from its
+    /// far-more-likely US/CA reading; only unambiguous codes resolve MX.
+    static func countryCode(forState state: String?) -> String {
+        guard let raw = state?.uppercased().trimmingCharacters(in: .whitespaces),
+              !raw.isEmpty else { return "us" }
+        let mxStates: Set<String> = [
+            // Server detectLoadCountry 2-letter set (routers/loads.ts:109)
+            // minus the ambiguous US/CA collisions {CO, MI, MO, BC, NL}.
+            "AG","BS","CM","CS","CH","CL","DG","GT","GR","HG","JA",
+            "MX","NA","OA","PU","QT","QR","SL","SI","SO","TB",
+            "TM","TL","VE","YU","ZA","DF",
+            // 3-letter forms free-form stop entry produces
+            "AGS","BCS","CAM","CHH","CHP","COA","COL","CMX","DUR","GRO","GTO",
+            "HID","JAL","MEX","MIC","MOR","NAY","NLE","OAX","PUE","QRO","ROO",
+            "SIN","SLP","SON","TAB","TAM","TLA","VER","YUC","ZAC"
+        ]
         let caProvs: Set<String> = ["AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT"]
-        let states = [s.pickup?.state, s.delivery?.state].compactMap { $0?.uppercased() }
-        if states.contains(where: { mxStates.contains($0) }) { return "mx" }
-        if states.contains(where: { caProvs.contains($0) }) { return "ca" }
+        if mxStates.contains(raw) { return "mx" }
+        if caProvs.contains(raw) { return "ca" }
         return "us"
+    }
+
+    /// Engine-facing country for an arbitrary state/province code —
+    /// used by surfaces that have a state but no LifecycleSnapshot
+    /// (e.g. the post-load wizard's equipment preview, where the
+    /// current leg is by definition the origin).
+    static func svgCountry(forState state: String?) -> SVGCountry? {
+        switch countryCode(forState: state) {
+        case "mx": return .mx
+        case "ca": return .ca
+        default:   return .us
+        }
     }
 
     /// Container BIC — only relevant for intermodal/container loads.

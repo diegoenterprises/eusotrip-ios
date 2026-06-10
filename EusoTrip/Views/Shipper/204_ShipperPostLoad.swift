@@ -3233,7 +3233,18 @@ struct ShipperPostLoad: View {
             flatbedTarps: flatbedTarps,
             flatbedChains: flatbedChains,
             flatbedEdgeProtectors: flatbedEdgeProtectors,
-            oversizePermits: oversizePermits
+            oversizePermits: oversizePermits,
+            // COUNTRY DIMENSION (Wave C): a load being posted is by
+            // definition on its origin leg, so the preview renders the
+            // ORIGIN state's regulatory group (DOT vs SCT vs TDG placards,
+            // credentials, units) — resolved via the same state→country
+            // rule the server uses to mint loads.originCountry. An
+            // un-geocoded / unknown origin renders the US default.
+            country: LoadAnimationContext.svgCountry(
+                forState: (originStateCode?.isEmpty == false)
+                    ? originStateCode
+                    : Self.stateFromLane(origin)
+            )
         )
         .frame(height: 180)
     }

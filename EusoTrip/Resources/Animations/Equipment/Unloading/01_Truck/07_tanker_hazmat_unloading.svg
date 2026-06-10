@@ -170,13 +170,10 @@
          · US  DOT/PHMSA 49 CFR 172   → CHEMTREC 1-800-424-9300
          · CA  TC TDG (SOR/2001-286)  → CANUTEC 1-888-226-8832
          · MX  SCT NOM-004-SCT/2008   → SETIQ 01-800-00-214-00 (CORROSIVO)
-       Default = US. Host renderer sets data-country="US|MX|CA" on <svg>. */
+       Default = US. The renderer shows ONE country group by toggling
+       display on .country-US / .country-MX / .country-CA. */
     .country-US { display: inline; }
     .country-MX, .country-CA { display: none; }
-    [data-country="MX"] .country-US { display: none; }
-    [data-country="MX"] .country-MX { display: inline; }
-    [data-country="CA"] .country-US { display: none; }
-    [data-country="CA"] .country-CA { display: inline; }
 
     @media (prefers-reduced-motion: reduce) {
       .brand-lockup, .brand-mark, .brand-word,
@@ -830,12 +827,26 @@
           letter-spacing="1.4">316 STAINLESS · INSULATED</text>
   </g>
 
-  <!-- Capacity stencil -->
+  <!-- Capacity stencil — country-switchable units (6,500 gal ≈ 24,600 L) -->
   <g>
-    <text x="280" y="406"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="900" font-size="14" fill="#1A1F2E" opacity="0.78"
-          letter-spacing="1.6">6,500 GAL</text>
+    <g class="country-US">
+      <text x="280" y="406"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="14" fill="#1A1F2E" opacity="0.78"
+            letter-spacing="1.6">6,500 GAL</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="280" y="406"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="14" fill="#1A1F2E" opacity="0.78"
+            letter-spacing="1.6">24,600 L</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="280" y="406"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="14" fill="#1A1F2E" opacity="0.78"
+            letter-spacing="1.6">24,600 L</text>
+    </g>
     <text x="280" y="420"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="7" fill="#3A3F4A" opacity="0.65"
@@ -1902,13 +1913,25 @@
           font-weight="800" font-size="14" letter-spacing="1.8" fill="#FFFFFF">TRUCK</text>
   </g>
 
-  <!-- LBS unit badge (below TRUCK) -->
+  <!-- Weight unit badge (below TRUCK) — LBS for US, KG for MX/CA -->
   <g>
     <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
           fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
-    <text x="1102" y="112" text-anchor="middle"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+    <g class="country-US">
+      <text x="1102" y="112" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">LBS</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="1102" y="112" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="1102" y="112" text-anchor="middle"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="800" font-size="10" letter-spacing="2" fill="#5B3FBF">KG</text>
+    </g>
   </g>
 
   <!-- UNLOADING pill (amber) -->

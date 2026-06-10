@@ -1909,7 +1909,7 @@
        ============================================================ -->
   <g class="country-units">
     <!-- US (default visible): pounds -->
-    <g class="country-US" data-country="US">
+    <g class="country-US">
       <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
             fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
       <text x="1102" y="112" text-anchor="middle"
@@ -1921,7 +1921,7 @@
             fill="#7A5AB8" opacity="0.85">WLL 22,500 LB</text>
     </g>
     <!-- CA: kilograms (NSC Std 10 — WLL marked) -->
-    <g class="country-CA" data-country="CA" style="display:none;">
+    <g class="country-CA" style="display:none;">
       <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
             fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
       <text x="1102" y="112" text-anchor="middle"
@@ -1933,7 +1933,7 @@
             fill="#7A5AB8" opacity="0.85">WLL 10 200 KG</text>
     </g>
     <!-- MX: kilograms (NOM-SCT2 — harmonized NA standard) -->
-    <g class="country-MX" data-country="MX" style="display:none;">
+    <g class="country-MX" style="display:none;">
       <rect x="1072" y="98" width="60" height="20" rx="10" ry="10"
             fill="#FAFBFD" stroke="#9B7FD9" stroke-width="1" stroke-opacity="0.55"/>
       <text x="1102" y="112" text-anchor="middle"
