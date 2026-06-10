@@ -636,6 +636,14 @@ final class EusoTripAPI: ObservableObject {
     /// 94th firing (brick port 102 Me · Contacts).
     lazy var contacts: ContactsAPI = ContactsAPI(api: self)
 
+    /// `trackingRouter.getGeofences` — company-scoped geofence rows
+    /// (real center + radius METERS) + the facility-coordinate fence
+    /// resolver behind the §3c geofence-ring map layers (013/018/035
+    /// receiver rings, 020 dynamic-geofence pill, 602 pilot-ground).
+    /// MCP-verified at `frontend/server/routers/tracking.ts:428`.
+    /// Added 2026-06-10 (map-layer adoption).
+    lazy var trackingGeofences: TrackingGeofencesAPI = TrackingGeofencesAPI(api: self)
+
     /// `agreementsRouter` — party-to-party agreements with
     /// Gradient-Ink e-signature. Driver sees all agreements
     /// where they're party A or B (lease-on, owner-op,
@@ -12511,6 +12519,119 @@ struct FreightClaimsAPI {
                 damageExtent: damageExtent
             )
         )
+    }
+}
+
+// MARK: - trackingRouter geofences (map-layer fence grammar · 2026-06-10)
+//
+// Mirrors `frontend/server/routers/tracking.ts` → `getGeofences`
+// (company-scoped, isActive-filtered `geofences` rows: `{ id, name,
+// type, center{lat,lng}, radius, polygon, alertOnEntry, alertOnExit,
+// active, createdAt }`; `radius` is METERS — `createGeofence` writes
+// the same meters figure into both `radius` and `radiusMeters`).
+//
+// Consumer: the §3c geofence-ring adoption on the driver nav cluster
+// (013/018/035), the 020 dynamic-geofence pill, and the 602 escort
+// corridor. The resolver matches a REAL server fence row to a real
+// facility coordinate — a ring only ever draws from a row that
+// exists, with the row's own center + radius. No row ⇒ no ring
+// (honest absence), never a fabricated radius.
+
+struct TrackingGeofencesAPI {
+    unowned let api: EusoTripAPI
+
+    /// `{lat,lng}` center as the proc projects it. Optional fields so a
+    /// missing/odd column never silently kills the whole array decode
+    /// (the decode-shape trap).
+    struct GeofenceCenter: Decodable, Hashable {
+        let lat: Double?
+        let lng: Double?
+    }
+
+    /// One `tracking.getGeofences` row, decode-shape tolerant.
+    struct GeofenceRow: Decodable, Hashable {
+        let id: String?
+        let name: String?
+        /// The proc maps the SHAPE column here ("circle" | "polygon").
+        let type: String?
+        let center: GeofenceCenter?
+        /// Meters (see header note). nil/0 rows are unusable for rings.
+        let radius: Double?
+        let active: Bool?
+    }
+
+    /// A server fence row resolved against a facility coordinate —
+    /// the ONLY payload the §3c ring layers accept: the row's own
+    /// real center + real radius in meters.
+    struct ResolvedFence: Hashable {
+        let center: HereLatLng
+        let radiusMeters: Double
+        let name: String?
+    }
+
+    /// Raw `tracking.getGeofences` read (no input → company-scoped rows).
+    func list() async throws -> [GeofenceRow] {
+        try await api.queryNoInput("tracking.getGeofences")
+    }
+
+    /// Resolves the server fence row covering ONE facility coordinate.
+    /// Network/decoding failures fold to nil — the caller paints no ring.
+    func fence(near lat: Double, _ lng: Double) async -> ResolvedFence? {
+        await fences(near: [(lat, lng)]).first
+    }
+
+    /// Resolves server fence rows for a batch of facility coordinates in
+    /// ONE `tracking.getGeofences` read. For each target the nearest
+    /// active circle row whose center sits within max(its own radius,
+    /// 1 500 m) of the target wins — i.e. the fence genuinely covers (or
+    /// immediately rings) that facility. Results are deduped. Any
+    /// failure → empty array (honest absence; no ring is drawn).
+    func fences(near points: [(lat: Double, lng: Double)]) async -> [ResolvedFence] {
+        guard !points.isEmpty else { return [] }
+        guard let rows = try? await list(), !rows.isEmpty else { return [] }
+
+        // Usable rows: a real (non-null-island) center + a positive
+        // radius + not explicitly inactive. Polygon rows carry no
+        // radius and are skipped (the ring grammar is circular).
+        let usable: [(center: HereLatLng, radius: Double, name: String?)] = rows.compactMap { row in
+            guard row.active != false,
+                  let c = row.center,
+                  let cLat = c.lat, let cLng = c.lng,
+                  cLat.isFinite, cLng.isFinite,
+                  !(cLat == 0 && cLng == 0),
+                  let r = row.radius, r.isFinite, r > 0
+            else { return nil }
+            return (HereLatLng(cLat, cLng), r, row.name)
+        }
+        guard !usable.isEmpty else { return [] }
+
+        var out: [ResolvedFence] = []
+        for p in points {
+            guard p.lat.isFinite, p.lng.isFinite, !(p.lat == 0 && p.lng == 0) else { continue }
+            var best: (fence: ResolvedFence, meters: Double)? = nil
+            for f in usable {
+                let d = Self.haversineMeters(p.lat, p.lng, f.center.lat, f.center.lng)
+                guard d <= Swift.max(f.radius, 1_500) else { continue }
+                if best == nil || d < best!.meters {
+                    best = (ResolvedFence(center: f.center, radiusMeters: f.radius, name: f.name), d)
+                }
+            }
+            if let hit = best?.fence, !out.contains(hit) {
+                out.append(hit)
+            }
+        }
+        return out
+    }
+
+    /// Great-circle distance in meters (mean Earth radius).
+    static func haversineMeters(_ lat1: Double, _ lng1: Double, _ lat2: Double, _ lng2: Double) -> Double {
+        let r = 6_371_000.0
+        let dLat = (lat2 - lat1) * .pi / 180
+        let dLng = (lng2 - lng1) * .pi / 180
+        let a = sin(dLat / 2) * sin(dLat / 2)
+            + cos(lat1 * .pi / 180) * cos(lat2 * .pi / 180)
+            * sin(dLng / 2) * sin(dLng / 2)
+        return r * 2 * atan2(sqrt(a), sqrt(1 - a))
     }
 }
 

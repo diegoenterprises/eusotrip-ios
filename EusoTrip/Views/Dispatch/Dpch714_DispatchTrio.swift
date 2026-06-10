@@ -21,10 +21,20 @@
 //  registration for the trio — keeps the eusotrip-killers screen-
 //  porting sweep tight.
 //
+//  Map-layer adoption (2026-06-10): the Fleet Map adopts the §2
+//  traffic-flow ribbon grammar (536 wireframe: jam `#FFA726` w6 ·
+//  severe `#F44336` w6) fed by REAL HERE Real-Time Traffic v7 flow
+//  links around the fleet's live anchor — jamFactor ≥8 ⇒ severe,
+//  ≥4 ⇒ jam (HERE's documented 0–10 scale: 4-7 slow, 7-9 queued,
+//  9-10 stopped), with the speed/freeFlow ratio fallback (≤0.25 ⇒
+//  severe, ≤0.5 ⇒ jam) when jamFactor is absent. No flow data / no
+//  real fleet fix ⇒ NO ribbons (honest empty).
+//
 //  Powered by ESANG AI™.
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: ─────────────────────────────────────────────────────────
 // MARK: Dispatch Command Center (714)
@@ -262,6 +272,13 @@ private struct FleetMapBody: View {
     @State private var stats: FleetStatsRow?
     @State private var loading: Bool = true
 
+    /// §2 congestion ribbons over the fleet's corridor — REAL HERE
+    /// Real-Time Traffic v7 flow links fetched around the first live
+    /// fleet fix. Empty when HERE returns nothing, when no severity
+    /// threshold trips, or when no fleet vehicle has a real fix yet
+    /// (honest empty — the layer is simply absent).
+    @State private var trafficSegments: [HereTrafficSegment] = []
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -323,10 +340,15 @@ private struct FleetMapBody: View {
                     .font(.system(size: 8, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1).minimumScaleFactor(0.6)
+                // §2 traffic ribbons ride UNDER the pucks — only when real
+                // HERE flow links tripped a jam/severe threshold.
+                let trafficLayers: [HereMapLayer] = trafficSegments.isEmpty
+                    ? []
+                    : [.trafficFlow(trafficSegments)]
                 HereLiveMapView(
                     center: mapCenter,
                     zoom: 4,
-                    baseLayers: [.markers(truckMarkers)],
+                    baseLayers: trafficLayers + [.markers(truckMarkers)],
                     addOns: .shipperTracking
                 )
                 .frame(height: 240)
@@ -433,6 +455,9 @@ private struct FleetMapBody: View {
         async let s: Void = loadStats()
         _ = await (p, s)
         loading = false
+        // Traffic depends on the fleet anchor, so it runs AFTER the
+        // positions land (and silently no-ops without a real fix).
+        await loadTraffic()
     }
 
     private func loadPositions() async {
@@ -445,6 +470,67 @@ private struct FleetMapBody: View {
     }
     private func loadStats() async {
         do { stats = try await EusoTripAPI.shared.queryNoInput("dispatchRole.getFleetStats") } catch { /* */ }
+    }
+
+    // MARK: §2 traffic-flow ribbons (REAL HERE Real-Time Traffic v7)
+
+    /// Fetches HERE flow links around the first REAL fleet fix and maps
+    /// them onto the canon `.trafficFlow` layer. Every ribbon is a real
+    /// HERE shape-link polyline whose live flow tripped a jam/severe
+    /// threshold; anything below the jam floor is NOT painted (free
+    /// flow is the basemap, not a ribbon). Any failure ⇒ empty array.
+    private func loadTraffic() async {
+        // Honest gate: no real fleet fix → no traffic query → no ribbons.
+        guard let anchor = truckMarkers.first?.at else {
+            trafficSegments = []
+            return
+        }
+        do {
+            let flows = try await HereTrafficClient.shared.flow(
+                near: CLLocationCoordinate2D(latitude: anchor.lat, longitude: anchor.lng),
+                radiusMeters: 30_000
+            )
+            var segs: [HereTrafficSegment] = []
+            outer: for result in flows {
+                guard let severity = Self.severity(for: result.currentFlow) else { continue }
+                for link in result.location?.shape?.links ?? [] {
+                    let pts = (link.points ?? []).filter {
+                        $0.lat.isFinite && $0.lng.isFinite && !($0.lat == 0 && $0.lng == 0)
+                    }
+                    guard pts.count >= 2 else { continue }
+                    segs.append(HereTrafficSegment(
+                        polyline: pts.map { HereLatLng($0.lat, $0.lng) },
+                        severity: severity
+                    ))
+                    // Perf cap — the canvas culls, but there's no need to
+                    // ship hundreds of ribbons for a zoom-4 board.
+                    if segs.count >= 60 { break outer }
+                }
+            }
+            trafficSegments = segs
+        } catch {
+            trafficSegments = []   // honest empty — never a fabricated ribbon
+        }
+    }
+
+    /// HERE jamFactor scales 0 (free) → 10 (closed); per HERE's docs
+    /// 4-7 is slow, 7-9 queued, 9-10 stopped. Canon mapping: ≥8 ⇒
+    /// severe (`#F44336`), ≥4 ⇒ jam (`#FFA726`), else no ribbon. When
+    /// jamFactor is absent, the speed/freeFlow ratio stands in:
+    /// ≤0.25 ⇒ severe, ≤0.5 ⇒ jam.
+    private static func severity(for flow: HereTrafficFlow?) -> HereTrafficSegment.Severity? {
+        guard let f = flow else { return nil }
+        if let jf = f.jamFactor, jf.isFinite {
+            if jf >= 8 { return .severe }
+            if jf >= 4 { return .jam }
+            return nil
+        }
+        if let s = f.speed, let ff = f.freeFlow, s.isFinite, ff.isFinite, ff > 0 {
+            let ratio = s / ff
+            if ratio <= 0.25 { return .severe }
+            if ratio <= 0.5 { return .jam }
+        }
+        return nil
     }
 }
 

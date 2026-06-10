@@ -56,6 +56,13 @@ struct ActiveEnrouteLoaded: View {
     /// base line (never a fabricated path). Mirrors 013 / 035.
     @State private var routePolyline: [HereLatLng] = []
 
+    /// §3c receiver fence on the loaded-approach corridor (map-layer
+    /// adoption 2026-06-10). Resolved from a REAL `tracking.getGeofences`
+    /// row matched against the load's delivery coordinate — the ring is
+    /// the row's own center + radius (meters). nil ⇒ no ring is painted
+    /// (honest absence; the radius is never invented). Mirrors 013.
+    @State private var receiverFence: TrackingGeofencesAPI.ResolvedFence?
+
     enum Register { case night, afternoon }
     let register: Register
 
@@ -335,8 +342,28 @@ struct ActiveEnrouteLoaded: View {
         if !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) {
             activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
         }
-        if let load = activeLoad { await refreshRoutePolyline(for: load) }
+        if let load = activeLoad {
+            await refreshRoutePolyline(for: load)
+            await resolveReceiverFence(for: load)
+        }
         _ = await hosBoot
+    }
+
+    /// Looks up the company's REAL geofence row covering the delivery
+    /// coordinate (`tracking.getGeofences` → nearest active circle row
+    /// whose center sits within max(its radius, 1.5 km) of the
+    /// receiver). The §3c receiver ring renders only when such a row
+    /// exists — its own center + radius — otherwise the map stays
+    /// ring-free. No invented coordinates, no invented radius.
+    @MainActor
+    private func resolveReceiverFence(for load: Load) async {
+        guard let delivery = load.deliveryLocation,
+              !(delivery.lat == 0 && delivery.lng == 0) else {
+            receiverFence = nil
+            return
+        }
+        receiverFence = await EusoTripAPI.shared.trackingGeofences
+            .fence(near: delivery.lat, delivery.lng)
     }
 
     /// Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
@@ -461,6 +488,15 @@ struct ActiveEnrouteLoaded: View {
             let line: [HereLatLng] = routePolyline.count >= 2
                 ? routePolyline
                 : [HereLatLng(pickup.lat, pickup.lng), HereLatLng(delivery.lat, delivery.lng)]
+            // §3c receiver fence at the corridor terminus — ONLY when a
+            // real `tracking.getGeofences` row covers the receiver
+            // (resolveReceiverFence). Absent row ⇒ absent layer.
+            let fenceLayers: [HereMapLayer] = receiverFence.map {
+                [.geofenceRing(center: $0.center,
+                               radiusMeters: $0.radiusMeters,
+                               kind: .receiver,
+                               breachAt: nil)]
+            } ?? []
             HereLiveMapView(
                 center: .init(pickup.lat, pickup.lng),
                 zoom: 7,
@@ -472,7 +508,7 @@ struct ActiveEnrouteLoaded: View {
                         .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: originName),
                         .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: destFlagText)
                     ])
-                ],
+                ] + fenceLayers,
                 addOns: .driverEnRoute
             )
         } else {

@@ -68,6 +68,18 @@ struct EscortCorridorMap: View {
 
     @StateObject private var corridor = EscortCorridorStore()
 
+    /// §3c pilot-ground fences on the corridor endpoints (map-layer
+    /// adoption 2026-06-10). The spec is explicit that ESCORT has NO
+    /// map wireframes of its own — this surface reuses the standard
+    /// board register (HereLiveMapView `.auto`) + the §3c pilot-ground
+    /// ring grammar, nothing invented. Each ring is a REAL
+    /// `tracking.getGeofences` row (its own center + radius in meters)
+    /// matched against the corridor's real originPin/destPin. The
+    /// server's `geofences` chips on this envelope are UNLOCATED
+    /// regulatory flags (no coords, no radius), so they stay chips;
+    /// only located company fence rows draw rings. No row ⇒ no ring.
+    @State private var groundFences: [TrackingGeofencesAPI.ResolvedFence] = []
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -336,18 +348,53 @@ struct EscortCorridorMap: View {
     }
 
     /// Base layers for the corridor map: routed polyline + endpoint pins +
-    /// live vehicle pucks. Only emits layers that carry ≥1 real point.
+    /// live vehicle pucks + §3c pilot-ground rings (real fence rows only).
+    /// Only emits layers that carry ≥1 real point.
     private func corridorBaseLayers(_ v: EscortAPI.EscortCorridor) -> [HereMapLayer] {
         var out: [HereMapLayer] = []
         let poly = polylinePoints(v)
         if poly.count >= 2 {
             out.append(.route(polyline: poly, colorHex: "#1473FF"))
         }
+        // Pilot-ground fence grammar — one ring per REAL company fence
+        // row matched to a corridor endpoint (resolveGroundFences). The
+        // ring draws the row's own center + radius; absent rows ⇒ no
+        // rings, the layer simply isn't emitted.
+        for fence in groundFences {
+            out.append(.geofenceRing(
+                center: fence.center,
+                radiusMeters: fence.radiusMeters,
+                kind: .pilotGround,
+                breachAt: nil
+            ))
+        }
         let pins = endpointMarkers(v) + liveMarkers(v)
         if !pins.isEmpty {
             out.append(.markers(pins))
         }
         return out
+    }
+
+    /// Resolves the company's REAL geofence rows covering the corridor's
+    /// origin/destination pins in one `tracking.getGeofences` read
+    /// (nearest active circle row whose center sits within max(its own
+    /// radius, 1.5 km) of the endpoint). Failure / no rows / no real
+    /// endpoint coords ⇒ empty (honest absence — no ring is painted).
+    private func resolveGroundFences() async {
+        guard case .loaded(let envelope) = corridor.state,
+              let v = envelope,
+              let geo = v.corridor else {
+            groundFences = []
+            return
+        }
+        var targets: [(lat: Double, lng: Double)] = []
+        if let o = geo.originPin, validFix(o.lat, o.lng) { targets.append((o.lat, o.lng)) }
+        if let d = geo.destPin, validFix(d.lat, d.lng) { targets.append((d.lat, d.lng)) }
+        guard !targets.isEmpty else {
+            groundFences = []
+            return
+        }
+        groundFences = await EusoTripAPI.shared.trackingGeofences.fences(near: targets)
     }
 
     /// Camera center: prefer the bounds midpoint, else the first live fix,
@@ -845,6 +892,9 @@ struct EscortCorridorMap: View {
     private func refreshAll() async {
         corridor.assignmentId = assignmentId
         await corridor.refresh()
+        // Pilot-ground fences hang off the corridor's real endpoint
+        // coords, so they resolve AFTER the envelope lands.
+        await resolveGroundFences()
     }
 }
 
