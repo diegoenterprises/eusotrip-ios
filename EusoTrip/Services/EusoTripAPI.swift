@@ -11549,9 +11549,12 @@ struct LoadBiddingAPI {
         )
     }
 
-    /// `loadBidding.getMyBids` — bids the caller has placed.
-    /// Used by the iOS My Bids surface and the post-Book ack to
-    /// confirm the bid landed in the chain.
+    /// One row of `loadBidding.getMyBids` — a raw drizzle `load_bids`
+    /// row (server does a bare `db.select().from(loadBids)` at
+    /// `loadBidding.ts:106`). DECIMAL `bidAmount` arrives as a String;
+    /// timestamps as ISO strings. Tolerant: every column that can be
+    /// NULL on the row decodes optional. Extra server columns
+    /// (bidderUserId, currency, parentBidId, …) are ignored.
     struct MyBid: Decodable, Equatable, Identifiable {
         let id: Int
         let loadId: Int
@@ -11559,38 +11562,36 @@ struct LoadBiddingAPI {
         let rateType: String?
         let bidRound: Int?
         let status: String
+        let equipmentType: String?
+        let isAutoAccepted: Bool?
+        let expiresAt: String?
         let createdAt: String?
         let respondedAt: String?
     }
 
-    func getMyBids(limit: Int = 50) async throws -> [MyBid] {
-        struct Input: Encodable { let limit: Int }
-        return try await api.query(
-            "loadBidding.getMyBids",
-            input: Input(limit: limit)
-        )
-    }
-
-    /// MyBids envelope returned by the server when filtering — the
-    /// raw projection wraps the rows in `{ bids, total }`. The
-    /// flat-array variant above remains for legacy call sites that
-    /// expect the un-enveloped shape.
+    /// `{ bids, total }` — the ONLY shape the server ever emits for
+    /// getMyBids (`loadBidding.ts:96/99/114/115`): enveloped on
+    /// success, on no-db, on no-user, and on error. There is no
+    /// bare-array path.
     struct MyBidsEnvelope: Decodable {
         let bids: [MyBid]
         let total: Int
     }
 
-    /// Filter my bids by status. Used by the driver counter-receive
-    /// inbox (Phase 4 of the 8000-scenario parity audit) — pulls
-    /// status='countered' rows so the driver sees every active
-    /// counter-from-shipper awaiting their action.
+    /// `loadBidding.getMyBids` — bids the caller has placed,
+    /// optionally filtered by status server-side (`pending` /
+    /// `accepted` / `rejected` / `countered` / `withdrawn` /
+    /// `expired` / `auto_accepted`). A nil status is omitted from
+    /// the encoded input so the zod `.optional()` gate passes.
+    /// Consumers: Driver 107 My Bids, Catalyst 309 Bids Outbound,
+    /// and the driver counter-receive inbox (status: "countered").
     func getMyBids(
-        status: String,
+        status: String? = nil,
         limit: Int = 50,
         offset: Int = 0
     ) async throws -> MyBidsEnvelope {
         struct Input: Encodable {
-            let status: String
+            let status: String?
             let limit: Int
             let offset: Int
         }
