@@ -62,6 +62,52 @@ struct LoadSummary: Codable, Identifiable, Hashable {
     let worldscalePct: String?
 }
 
+// MARK: - LoadSummary tolerant decode (2026-06-09 · audit M2)
+//
+// `loads.search` now emits the five multi-modal fields and Number()-wraps
+// `worldscalePct` (DECIMAL) per the decode-shape doctrine, while legacy
+// deploys still ship DECIMALs as Strings ("102.50"). This custom
+// `init(from:)` lives in an EXTENSION so the synthesized memberwise init
+// (used by the demo fixture below) survives. `worldscalePct` decodes
+// tolerantly — String | Number → String?, absent/null → nil — so a wire
+// number can never kill the whole search-row decode.
+extension LoadSummary {
+    private enum WireKeys: String, CodingKey {
+        case id, loadNumber, status, cargoType, origin, destination
+        case rate, pickupDate, createdAt
+        case transportMode, multiVehicleCount, permitType, rateUnit, worldscalePct
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: WireKeys.self)
+        let worldscale: String? = {
+            if let s = try? c.decodeIfPresent(String.self, forKey: .worldscalePct) { return s }
+            if let d = try? c.decodeIfPresent(Double.self, forKey: .worldscalePct) {
+                // Whole numbers without trailing ".0" — mirrors
+                // Load.flexStringIfPresent's canonical form.
+                return d == d.rounded() ? String(Int(d)) : String(d)
+            }
+            return nil   // absent / explicit null / unexpected shape
+        }()
+        self.init(
+            id: try c.decode(String.self, forKey: .id),
+            loadNumber: try c.decode(String.self, forKey: .loadNumber),
+            status: try c.decode(String.self, forKey: .status),
+            cargoType: try c.decodeIfPresent(String.self, forKey: .cargoType),
+            origin: try c.decode(String.self, forKey: .origin),
+            destination: try c.decode(String.self, forKey: .destination),
+            rate: try c.decode(Double.self, forKey: .rate),
+            pickupDate: try c.decode(String.self, forKey: .pickupDate),
+            createdAt: try c.decode(String.self, forKey: .createdAt),
+            transportMode: try c.decodeIfPresent(String.self, forKey: .transportMode),
+            multiVehicleCount: (try? c.decodeIfPresent(Int.self, forKey: .multiVehicleCount)) ?? nil,
+            permitType: try c.decodeIfPresent(String.self, forKey: .permitType),
+            rateUnit: try c.decodeIfPresent(String.self, forKey: .rateUnit),
+            worldscalePct: worldscale
+        )
+    }
+}
+
 // MARK: - Load  (full record — from get_load_details / loads.getById)
 
 struct Load: Codable, Identifiable, Hashable {
