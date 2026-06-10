@@ -563,7 +563,15 @@ private struct VesselLiveTrackingBody: View {
         case "in_transit", "transshipment":                             return 0.55
         case "arrived", "customs_hold", "customs_cleared":              return 0.92
         case "discharged", "gate_out", "delivered":                     return 0.98
-        default:                                                        return 0.5
+        default:
+            // Zero-fallback doctrine (E2E audit §4 · 2026-06-09): an
+            // unmapped booking status must not fabricate a mid-ocean
+            // marker. Surface the gap loudly in DEBUG; render the honest
+            // origin-side floor (0.04 — the pre-departure fraction) in
+            // release until the status is mapped above. Same ramp
+            // contract as LoadAnimationContext.progressPercent.
+            assertionFailure("VesselLiveTracking.progressFraction: unmapped booking status '\(board?.booking?.status ?? "nil")' — add it to the ramp")
+            return 0.04
         }
     }
 
