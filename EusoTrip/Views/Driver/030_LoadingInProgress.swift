@@ -35,6 +35,13 @@ struct LoadingInProgress: View {
     /// reads `targetFraction` directly and never touches this.
     @State private var fillProgress: Double = 0
 
+    /// The real instant loading began — the `loading` lifecycle
+    /// transition `createdAt` (else `loading_locked` / the `at_pickup`
+    /// arrival), parsed from the server audit trail. Drives the
+    /// "STARTED" stamp on the progress card. Nil until a real
+    /// transition row resolves → em-dash, never a static sentinel.
+    @State private var loadingStartedAt: Date?
+
     enum Register { case night, afternoon }
     let register: Register
     init(register: Register = .afternoon) { self.register = register }
@@ -58,7 +65,6 @@ struct LoadingInProgress: View {
     // TankMonitorAPI on the iOS side. Until the live snapshot
     // hydrates, the screen renders the layout with em-dashes — no
     // fabricated flow rate, pressure, or sample value.
-    private let fallbackClock   = "-"
     private let fallbackLoadID  = "-"
     private let fallbackBay     = "AWAITING BAY ASSIGNMENT"
     private let fallbackSubtitle = "Telemetry will appear when sensors connect"
@@ -69,10 +75,11 @@ struct LoadingInProgress: View {
     private let fallbackVapor   = "-"
     private let fallbackStatic  = "-"
     private let fallbackTankT   = "-"
-    private let fallbackSample  = "-"
-    private let fallbackSampleSub = "target -"
+    // `fallbackSample` / `fallbackSampleSub` removed 2026-06-07 — the
+    // Spectra-Match reading + "target -" framing they backed are no
+    // longer rendered (no live purity feed; see spectraCard). Only the
+    // sample-index sentinel remains.
     private let fallbackSampleIx  = "-"
-    private let fallbackStarted   = "-"
     private let fallbackEtaClock  = "-"
 
     // MARK: - Real fill telemetry (wired from the live Load model).
@@ -228,9 +235,13 @@ struct LoadingInProgress: View {
                     .lineLimit(2)
             }
             Spacer(minLength: 0)
-            Text(fallbackClock)
-                .font(EType.mono(.caption)).fontWeight(.semibold)
-                .foregroundStyle(palette.textPrimary)
+            // Live device wall clock — same TimelineView pattern as the
+            // 024 sibling. Re-renders every minute; never a static "-".
+            TimelineView(.everyMinute) { tl in
+                Text(Self.clockHHmm.string(from: tl.date))
+                    .font(EType.mono(.caption)).fontWeight(.semibold)
+                    .foregroundStyle(palette.textPrimary)
+            }
         }
         .padding(.top, 4)
     }
@@ -268,7 +279,11 @@ struct LoadingInProgress: View {
             }
             .frame(height: 6)
             HStack {
-                Text("STARTED \(fallbackStarted)")
+                // Real loading-start instant from the lifecycle audit
+                // trail (transition INTO `loading`, else `loading_locked`
+                // / `at_pickup` arrival) — em-dash until it resolves,
+                // never a static sentinel.
+                Text("STARTED \(startedLabel)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -405,7 +420,19 @@ struct LoadingInProgress: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .overlay(Capsule().stroke(Brand.success.opacity(0.5), lineWidth: 1))
                 }
-                Text("Last reading \(fallbackSample)% NH3 · \(fallbackSampleSub)")
+                // De-fabrication (2026-06-07): the prior "% NH3 · target -"
+                // suffix hardcoded anhydrous-ammonia onto EVERY load (a
+                // hazmat-default that mislabels a non-hazmat fill) and
+                // framed a fake "target" reading. There is no live
+                // Spectra-Match purity feed (backend gap — no sample value
+                // on the wire), so we drop the fabricated reading entirely
+                // and honestly state the commodity actually on the load. The
+                // commodity resolves through `LifecycleProductContext`
+                // facets — the real `commodityName` when present, an honest
+                // em-dash when the load hasn't hydrated or carries no
+                // commodity. No reading is asserted until the sensor lane
+                // ships.
+                Text("Awaiting sample · \(ctx.facets.commodityName)")
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -500,11 +527,52 @@ struct LoadingInProgress: View {
             return
         }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // "STARTED" anchor — the REAL loading-start lifecycle transition
+        // timestamp (mirrors 024's resolveUnloadStarted pattern).
+        resolveLoadingStarted(from: lifecycle.history)
         // `targetFraction` is now real; sweep the bar up to it. The
         // onChange above also fires, but calling here guarantees the
         // first paint animates even if the value was already non-zero.
         settleFill(to: targetFraction)
     }
+
+    /// "STARTED HH:MM" value — the real `loading` (else lock/arrival)
+    /// lifecycle-transition local time, em-dash until it resolves.
+    private var startedLabel: String {
+        guard let d = loadingStartedAt else { return "—" }
+        return Self.clockHHmm.string(from: d)
+    }
+
+    /// Find the real instant loading began from the lifecycle audit
+    /// trail and set `loadingStartedAt`. Prefers the transition INTO
+    /// `loading`; falls back to `loading_locked` (pre-fill lock), then
+    /// `at_pickup` (arrival at the shipper). Parses the ISO-8601
+    /// `createdAt` server stamp; leaves the anchor nil → "STARTED —"
+    /// when no row exists.
+    private func resolveLoadingStarted(from history: [LoadLifecycleAPI.StateTransition]) {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoPlain = ISO8601DateFormatter()
+        func parse(_ s: String?) -> Date? {
+            guard let s = s, !s.isEmpty else { return nil }
+            return iso.date(from: s) ?? isoPlain.date(from: s)
+        }
+        let started = history.first(where: { ($0.toState ?? "").lowercased() == "loading" })
+            ?? history.first(where: { ($0.toState ?? "").lowercased() == "loading_locked" })
+            ?? history.first(where: { ($0.toState ?? "").lowercased() == "at_pickup" })
+        if let stamp = parse(started?.createdAt) {
+            loadingStartedAt = stamp
+        }
+    }
+
+    /// Shared "HH:mm" local clock formatter for the header wall clock +
+    /// STARTED stamp (mirrors the 024 sibling).
+    private static let clockHHmm: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
 
     /// Drive `fillProgress` to a real fraction. Reduce-motion snaps
     /// instantly (no sweep); otherwise it eases on the decelerate
@@ -617,8 +685,16 @@ fileprivate enum LoadingMetricsViewBuilder {
         case .dryVan, .curtainSide, .hazmatBox, .conestoga,
              .intermodalChassis:
             return LoadingMetricPair(
+                // De-fabrication (2026-06-07): "of 44,000 max" was a seeded
+                // payload literal — a dry van's max cargo weight varies by
+                // tractor/trailer tare, it is NOT a fixed regulatory
+                // constant (unlike the flatbed "13'6" legal max" / "49 CFR
+                // 393" / livestock "49 USC 80502" rows kept verbatim). No
+                // live max-payload feed exists, so the sub honestly em-dashes.
+                // Neutral tint on the sentinel — a green "success" wash
+                // on "of - max" implied a passing check that never ran.
                 left:  .init(label: "CARGO WEIGHT", primary: "-", unit: "lb",
-                             sub: "of 44,000 max", subColor: Brand.success),
+                             sub: "of - max", subColor: Brand.neutral),
                 right: .init(label: "LOAD FILL",   primary: "-", unit: "%",
                              sub: "pallets staged", subColor: Brand.warning)
             )

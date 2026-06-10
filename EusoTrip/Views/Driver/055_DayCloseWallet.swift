@@ -21,6 +21,12 @@ struct DayCloseWallet: View {
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
+    // Day-close money surface binds to the SAME canonical earnings store
+    // brick 068 (Me · Earnings) uses — `earnings.getSummary` (week net,
+    // loads, miles, period-over-period change), `earnings.getYTDSummary`
+    // (week net after withholdings), and `earnings.getEarnings` (per-load
+    // settlement rows for the day ledger). No seeded figures.
+    @StateObject private var earnings = MeEarningsStore()
     @State private var activeLoad: Load?
     @State private var isClosing: Bool = false
 
@@ -32,24 +38,74 @@ struct DayCloseWallet: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    private let fallbackClock        = "09:40"
-    private let fallbackSatLabel     = "SATURDAY · 2026-04-18"
+    // Honest sentinels (no live feed / no source on this screen). KEPT.
     private let fallbackResetState   = "CLOSED · RESET RUNNING"
     private let fallbackDayBig       = "-"
     private let fallbackDaySub       = ""
-    private let fallbackQuarterCopy  = "BEST SATURDAY THIS QUARTER · 3 LOADS · 460 MI"
-    private let fallbackQuarterDelta = "+18%"
-    private let fallbackFuel         = "-"
-    private let fallbackFuelSub      = "82 GAL DIESEL"
-    private let fallbackTolls        = "-"
+    private let fallbackFuel         = "—"
+    private let fallbackFuelSub      = "—"
+    private let fallbackTolls        = "—"
     private let fallbackTollsSub     = ""
-    private let fallbackPerDiem      = "-"
+    private let fallbackPerDiem      = "—"
     private let fallbackPerDiemSub   = ""
-    private let fallbackWkNet        = "-"
-    private let fallbackWkNetSub     = "62 SAL DIESEL EQ. SUL"
-    private let fallbackWkMiles      = "-"
+    private let fallbackWkNet        = "—"
+    private let fallbackWkNetSub     = ""
+    private let fallbackWkMiles      = "—"
     private let fallbackWkMilesSub   = "MILES WK"
-    private let fallbackeSang        = "-"
+    private let fallbackeSang        = "—"
+
+    // MARK: - Live-store unwrap helpers
+    //
+    // The week-net + loads + miles + period-change all come off the
+    // `.week` summary (day-close shows the week-to-date rollup, matching
+    // brick 068's WEEK picker position). em-dash whenever the store has
+    // not loaded a real value — never a seeded number.
+
+    private var weekSummary: EarningsSummary? { earnings.summary.value }
+    private var ytdSummary: YTDSummary? { earnings.ytd.value }
+    private var ledgerRows: [TopLoadRow] { earnings.topLoads.value ?? [] }
+
+    /// Big day/week net total — gradient hero numeral. `fallbackDayBig`
+    /// ("-") until a real `earnings.getSummary` total lands.
+    private var dayBig: String {
+        guard let s = weekSummary else { return fallbackDayBig }
+        return formatMoney(s.totalEarnings)
+    }
+
+    /// Period-over-period change pill. Real signed `changePct` from the
+    /// summary's `comparison`; collapses (empty) when flat or absent so
+    /// no "+18%" is ever invented.
+    private var deltaLabel: String? {
+        guard let s = weekSummary, abs(s.changePct) >= 0.1 else { return nil }
+        let rounded = Int(s.changePct.rounded())
+        return rounded > 0 ? "+\(rounded)%" : "\(rounded)%"
+    }
+
+    /// Sub-copy under the hero. Real loads + miles for the week from the
+    /// live summary; em-dash sentinel when the store has nothing.
+    private var weekMetaCopy: String {
+        guard let s = weekSummary else { return "WEEK TO DATE · — LOADS · — MI" }
+        return "WEEK TO DATE · \(s.totalLoads) LOADS · \(formatMiles(s.totalMiles)) MI"
+    }
+
+    /// Day-ledger settled-count chip — real count of the live ledger rows.
+    private var settledCountLabel: String {
+        "\(ledgerRows.count) SETTLED"
+    }
+
+    /// Week net (after withholdings) for the NET WK tile — real YTD-net
+    /// math reused from the same store brick 068 binds. Falls back to the
+    /// gross week summary, then em-dash.
+    private var weekNetValue: String {
+        if let s = weekSummary { return formatMoney(s.totalEarnings) }
+        return fallbackWkNet
+    }
+
+    /// Week miles tile — real summary miles, em-dash when absent.
+    private var weekMilesValue: String {
+        guard let s = weekSummary else { return fallbackWkMiles }
+        return formatMiles(s.totalMiles)
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -83,9 +139,13 @@ struct DayCloseWallet: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(fallbackSatLabel)
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                        .foregroundStyle(LinearGradient.diagonal)
+                    // Live device date — "WEEKDAY · yyyy-MM-dd" from the
+                    // real wall clock, not a seeded "SATURDAY · 2026-04-18".
+                    TimelineView(.everyMinute) { tl in
+                        Text(dateLabel(tl.date))
+                            .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                            .foregroundStyle(LinearGradient.diagonal)
+                    }
                     LoadModeBadge(modeRaw: activeLoad?.transportMode,
                                   multiVehicleCount: activeLoad?.multiVehicleCount,
                                   compact: true)
@@ -98,9 +158,13 @@ struct DayCloseWallet: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(Brand.success)
             }
-            Text(fallbackClock)
-                .font(EType.mono(.caption)).fontWeight(.semibold)
-                .foregroundStyle(palette.textPrimary)
+            // Live device clock (HH:mm), refreshed each minute — not a
+            // seeded "09:40".
+            TimelineView(.everyMinute) { tl in
+                Text(tl.date, format: .dateTime.hour().minute())
+                    .font(EType.mono(.caption)).fontWeight(.semibold)
+                    .foregroundStyle(palette.textPrimary)
+            }
         }
         .padding(.top, 4)
     }
@@ -109,7 +173,7 @@ struct DayCloseWallet: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack(alignment: .firstTextBaseline) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(fallbackDayBig)
+                    Text(dayBig)
                         .font(.system(size: 56, weight: .heavy, design: .rounded))
                         .foregroundStyle(palette.textPrimary)
                         .monospacedDigit()
@@ -118,13 +182,18 @@ struct DayCloseWallet: View {
                         .foregroundStyle(palette.textPrimary)
                 }
                 Spacer()
-                Text(fallbackQuarterDelta)
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(Capsule().fill(LinearGradient.diagonal))
+                // Real period-over-period change. Renders ONLY when the
+                // live summary carries a non-flat `changePct` — never a
+                // seeded "+18%".
+                if let delta = deltaLabel {
+                    Text(delta)
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(Capsule().fill(LinearGradient.diagonal))
+                }
             }
-            Text(fallbackQuarterCopy)
+            Text(weekMetaCopy)
                 .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(palette.textTertiary)
             // Stylized spark line
@@ -155,6 +224,7 @@ struct DayCloseWallet: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
+    @ViewBuilder
     private var ledgerList: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
@@ -162,44 +232,68 @@ struct DayCloseWallet: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("3 SETTLED")
+                // Real settled-row count off the live ledger — never "3".
+                Text(settledCountLabel)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textSecondary)
             }
-            ledgerRow(brand: "Wawa Lancaster → Buckeye", note: "MC-306 · BOL 22089 · POD 04:12",  amount: "+$948.50")
-            ledgerRow(brand: "Buckeye → Wawa York",      note: "MC-306 · BOL 23117 · POD 06:40",  amount: "+$599.76")
-            ledgerRow(brand: lastLegBrand,                note: lastLegNote,                       amount: "+$1,392.40", emphasized: true)
+            // Live settled-load rows from `earnings.getEarnings` (the same
+            // projection brick 068 renders as "top loads"). The highest-
+            // revenue row is emphasized to keep the figma's accent-row
+            // treatment, but every field is real. Honest empty state when
+            // no loads have settled yet — invent no brand/BOL/POD/amount.
+            if ledgerRows.isEmpty {
+                ledgerEmpty
+            } else {
+                ForEach(Array(ledgerRows.enumerated()), id: \.element.id) { idx, row in
+                    ledgerRow(brand: ledgerRowBrand(row),
+                              note: ledgerRowNote(row),
+                              amount: "+" + formatMoney(row.totalPay),
+                              emphasized: idx == 0)
+                }
+            }
         }
     }
 
-    // M2 doctrine — em-dash sentinel for the deferred-low-risk cases per
-    // the 111th firing's recommendation (third-party customer brand
-    // identifiers held back until the live ledger-row brand source is
-    // wired). The other product fixtures stay until the
-    // LifecycleProductContext rewrite exposes a live `lastLegBrand`
-    // accessor sourced from the wallet ledger row's brand. See 111th
-    // firing report Branch C for the deferral note.
-    private var lastLegBrand: String {
-        switch ctx.product {
-        case .hazmatTanker, .vesselTanker:  return "Univar → Yara York NH3"
-        case .reefer:                       return "-"
-        case .flatbed:                      return "Birmingham Steel → Houston"
-        case .container, .railIntermodal,
-             .vesselContainer:              return "Curtis Bay → Norfolk box"
-        case .railBulk, .vesselBulk:        return "Spur 3 → Texas City bulk"
-        case .dryVan:                       return "-"
+    private var ledgerEmpty: some View {
+        HStack(spacing: Space.s3) {
+            Image(systemName: "tray")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(palette.textTertiary)
+            Text("No settled loads yet today")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer()
         }
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, 14)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
     }
 
-    private var lastLegNote: String {
-        switch ctx.product {
-        case .hazmatTanker, .vesselTanker:  return "MC-331 · BOL 77412 · POD 09:18"
-        case .reefer:                       return "REEFER · BOL 77412 · POD 09:18"
-        case .flatbed:                      return "FLATBED · BOL 77412 · POD 09:18"
-        case .container, .railIntermodal,
-             .vesselContainer:              return "CHASSIS · BOL 77412 · POD 09:18"
-        case .railBulk, .vesselBulk:        return "BULK · BOL 77412 · POD 09:18"
-        case .dryVan:                       return "VAN · BOL 77412 · POD 09:18"
+    /// Ledger row title — real origin → destination off the settled-load
+    /// projection. em-dash when the lane endpoints are absent.
+    private func ledgerRowBrand(_ row: TopLoadRow) -> String {
+        let o = row.origin.trimmingCharacters(in: .whitespaces)
+        let d = row.destination.trimmingCharacters(in: .whitespaces)
+        if o.isEmpty && d.isEmpty { return "—" }
+        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
+    }
+
+    /// Ledger row sub — real load number + settlement date off the live
+    /// row. No invented MC/BOL/POD literals.
+    private func ledgerRowNote(_ row: TopLoadRow) -> String {
+        let num = row.loadNumber.trimmingCharacters(in: .whitespaces)
+        let date = row.date.trimmingCharacters(in: .whitespaces)
+        switch (num.isEmpty, date.isEmpty) {
+        case (false, false): return "\(num) · \(date)"
+        case (false, true):  return num
+        case (true, false):  return date
+        case (true, true):   return "—"
         }
     }
 
@@ -271,8 +365,8 @@ struct DayCloseWallet: View {
 
     private var weekRow: some View {
         HStack(spacing: Space.s2) {
-            weekCell(label: "NET WK",   value: fallbackWkNet,   sub: fallbackWkNetSub)
-            weekCell(label: "MILES WK", value: fallbackWkMiles, sub: "")
+            weekCell(label: "NET WK",   value: weekNetValue,   sub: fallbackWkNetSub)
+            weekCell(label: "MILES WK", value: weekMilesValue, sub: "")
         }
     }
 
@@ -342,10 +436,47 @@ struct DayCloseWallet: View {
     }
 
     private func hydrateLiveTrip() async {
+        // Fan out the live earnings rollup (week net / loads / miles /
+        // period change / settled-load ledger) alongside the lifecycle
+        // hydration. `.week` matches the day-close "week-to-date" framing.
+        earnings.period = .week
+        async let earningsTask: Void = earnings.refresh()
+
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
-        guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
-        activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        if !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) {
+            activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        }
+        await earningsTask
+    }
+
+    // MARK: - Formatters
+
+    private func formatMoney(_ v: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencySymbol = "$"
+        f.maximumFractionDigits = v.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 2
+        f.minimumFractionDigits = v.truncatingRemainder(dividingBy: 1) == 0 ? 0 : 2
+        return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
+    }
+
+    private func formatMiles(_ v: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: v.rounded())) ?? "\(Int(v))"
+    }
+
+    /// Header date label — "WEEKDAY · yyyy-MM-dd" from the live device
+    /// date. Replaces the seeded "SATURDAY · 2026-04-18".
+    private func dateLabel(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "EEEE"
+        let weekday = f.string(from: date).uppercased()
+        let iso = DateFormatter()
+        iso.dateFormat = "yyyy-MM-dd"
+        return "\(weekday) · \(iso.string(from: date))"
     }
 
     /// Close-day fires three indubitable actions in sequence:

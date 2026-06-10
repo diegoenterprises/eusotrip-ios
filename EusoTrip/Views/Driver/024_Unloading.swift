@@ -40,11 +40,20 @@ struct Unloading: View {
     /// reference clock so the layout still holds.
     @State private var arrivalAnchor: Date?
 
-    /// Live unloaded count, resolved from the load's lifecycle progress
-    /// once hydrated. Nil = no live count yet → render the Figma
-    /// `fallbackOff` reference. Driven through `unloadedNow` /
-    /// `unloadProgress` so the grid + rail bind to ONE real fraction.
-    @State private var liveUnloaded: Int?
+    /// The real instant the unload began — the `unloading` lifecycle
+    /// transition `createdAt` (else the `at_delivery` arrival), parsed
+    /// from the server audit trail. Drives the "STARTED" stamp on the
+    /// progress card. Nil until a real transition row resolves → "-".
+    @State private var unloadStartedAt: Date?
+
+    /// Whether the load has reached a terminal unload state (every unit
+    /// is provably off). The load envelope ships NO granular unloaded-unit
+    /// / total-unit column (`LiveLoadFacets.palletCount` is a backend gap),
+    /// so the only count we can assert is the binary "all off" at a
+    /// terminal state. Drives the grid/rail to a full fill at completion
+    /// while the numeric "N of N" header still em-dashes (no real
+    /// denominator to print). Never produces a seeded partial number.
+    @State private var unloadComplete: Bool = false
 
     /// Drives the autoreversing opacity breath on the PAID chip while
     /// detention is accruing. Toggled true on appear; the repeatForever
@@ -88,16 +97,31 @@ struct Unloading: View {
     // MARK: - Figma fallback
     //
     // 2026-06-06 de-fabrication: door "12" / detention "2:47" / the
-    // "door 12" receiver-sub leak excised. Door now reads from the live
+    // "door 12" receiver-sub leak excised. Door reads from the live
     // appointment (`appointments.getByLoad.dockNumber`), detention from
     // the live calc proc, receiver from `activeLoad.deliveryLocation`.
-    // Sentinels below are honest em-dashes, not invented figures.
-    private let fallbackOff       = 4
-    private let fallbackTotal     = 26
+    //
+    // 2026-06-07 de-fabrication (this pass): the seeded unload metrics
+    // were Figma literals leaking onto the live path —
+    //   • off "4" / total "26"        → no granular unloaded-unit / total
+    //                                    column on the load envelope
+    //                                    (LiveLoadFacets.palletCount is a
+    //                                    backend gap). The numeric "N of N"
+    //                                    header + hero now em-dash; the
+    //                                    grid/rail sit empty until a real
+    //                                    terminal-state completion fills
+    //                                    them (binary, provable).
+    //   • started "00:32"             → now the real `unloading` (else
+    //                                    `at_delivery`) lifecycle-transition
+    //                                    `createdAt`, formatted local; "-"
+    //                                    when no transition row exists.
+    //   • eta "3:15"                  → no remaining-time projection feeds
+    //                                    a dock unload (no live rate); "-".
+    //   • rate "2"                    → no per-unit unload-rate telemetry
+    //                                    reaches this screen; "-".
+    // None of these emit a fabricated figure now. The trailer sentinel
+    // stays the honest em-dash it already was.
     private let fallbackTrailer   = "-"
-    private let fallbackStarted   = "00:32"
-    private let fallbackEtaRemain = "3:15"
-    private let fallbackRate      = "2"
 
     // MARK: - Honest live displays
 
@@ -170,31 +194,57 @@ struct Unloading: View {
 
     // MARK: - Real-logic bindings
     //
-    // Every meaningful animation on this screen reads from ONE of the
-    // two derived values below — never a decorative literal. The grid
-    // fill, the progress rail, and the hero counter all bind to
-    // `unloadedNow` / `unloadProgress`; the detention ticker binds to
-    // the real `arrivalAnchor` elapsed clock.
+    // The grid fill + progress rail bind to ONE derived fraction
+    // (`unloadProgress`); the numeric "N of N" header/hero bind to the
+    // count getters below. None falls back to a seeded literal — the
+    // load envelope ships no granular unloaded-unit / total column, so
+    // the count axis is honest em-dash until a real terminal completion
+    // (binary "all off") lands.
 
-    /// Total unload units (pallets / gallons / moves / tons). Falls
-    /// back to the Figma reference total until a live count column
-    /// lands on the load envelope.
-    private var unloadTotal: Int { fallbackTotal }
+    /// Live count of units off the trailer when a real source exists,
+    /// else nil. There is no granular partial-count column on the wire
+    /// (`LiveLoadFacets.palletCount` backend gap) and no live feed ever
+    /// assigns one, so this is permanently nil today — the header/hero
+    /// em-dash and the `.contentTransition(.numericText)` modifiers sit
+    /// dormant until a real count column lands server-side. Never a
+    /// seeded "4".
+    private var unloadedNow: Int? { nil }
 
-    /// Live count of units off the trailer. Prefers the hydrated
-    /// `liveUnloaded` from the lifecycle progress; falls back to the
-    /// Figma reference until a live column ships. Clamped to the total.
-    private var unloadedNow: Int {
-        min(liveUnloaded ?? fallbackOff, unloadTotal)
+    /// Numeric "off" label for the header / hero — the live count, else
+    /// the honest em-dash sentinel. No seeded number.
+    private var unloadedNowLabel: String {
+        unloadedNow.map(String.init) ?? "—"
     }
 
-    /// THE real unload fraction (0…1). Bound directly to the progress
-    /// rail width and to the grid fill threshold so both reflect the
-    /// same live `unloaded / total` — never a hardcoded percentage.
+    /// Numeric "of N" total label — no live total-unit column on the
+    /// load envelope (backend gap), so always the honest em-dash.
+    private var unloadTotalLabel: String { "—" }
+
+    /// THE real unload fraction (0…1) the grid + rail bind to. Empty
+    /// (0) until a terminal completion is proven, then full (1). No
+    /// fabricated partial percentage — the wire ships no partial count.
     private var unloadProgress: Double {
-        guard unloadTotal > 0 else { return 0 }
-        return Double(unloadedNow) / Double(unloadTotal)
+        unloadComplete ? 1 : 0
     }
+
+    /// "STARTED HH:MM" value — the real `unloading` (else arrival)
+    /// lifecycle-transition local time, em-dash until it resolves.
+    private var startedLabel: String {
+        guard let d = unloadStartedAt else { return "—" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f.string(from: d)
+    }
+
+    /// "Est. … remaining" value — no remaining-time projection feeds a
+    /// dock unload (no live unload-rate telemetry on the wire), so this
+    /// is the honest em-dash sentinel rather than a seeded "3:15".
+    private var etaRemainingLabel: String { "—" }
+
+    /// "RATE …" value — no per-unit unload-rate telemetry reaches this
+    /// screen, so the honest em-dash rather than a seeded "2".
+    private var unloadRateValueLabel: String { "—" }
 
     // MARK: Detention accrual
 
@@ -279,12 +329,12 @@ struct Unloading: View {
                                   multiVehicleCount: activeLoad?.multiVehicleCount,
                                   compact: true)
                 }
-                Text("Door \(doorDisplay) · \(unloadedNow) of \(unloadTotal) \(ctx.unloadUnitLabel) off")
+                Text("Door \(doorDisplay) · \(unloadedNowLabel) of \(unloadTotalLabel) \(ctx.unloadUnitLabel) off")
                     .font(.system(size: 20, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
-                    .contentTransition(.numericText(value: Double(unloadedNow)))
+                    .contentTransition(.numericText(value: Double(unloadedNow ?? 0)))
                 Text(fallbackTrailer)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
@@ -310,9 +360,15 @@ struct Unloading: View {
     private var palletMap: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("PALLET MAP · REFRESHED 03:19")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
+                // Refresh stamp = the live device clock (the map mirrors
+                // the on-screen state, which refreshes with the view),
+                // not a seeded "03:19". TimelineView re-renders it every
+                // minute so it always reads "now".
+                TimelineView(.everyMinute) { tl in
+                    Text("PALLET MAP · REFRESHED \(Self.clockHHmm.string(from: tl.date))")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                }
                 Spacer()
                 HStack(spacing: 4) {
                     Circle().fill(palette.textSecondary.opacity(0.5)).frame(width: 6, height: 6)
@@ -344,16 +400,17 @@ struct Unloading: View {
                     let cellW = (geo.size.width - CGFloat(cols - 1) * 3) / CGFloat(cols)
                     let cellH: CGFloat = 18
                     VStack(spacing: 3) {
-                        ForEach(0..<rows, id: \.self) { r in
+                        ForEach(0..<rows, id: \.self) { _ in
                             HStack(spacing: 3) {
-                                ForEach(0..<cols, id: \.self) { c in
-                                    let idx = r * cols + c
-                                    // Bound to the REAL unloaded count
-                                    // (`unloadedNow`). Each cell flips
-                                    // gradient-filled the instant the
-                                    // live count crosses its index — no
-                                    // decorative threshold.
-                                    let isOff = idx < unloadedNow
+                                ForEach(0..<cols, id: \.self) { _ in
+                                    // Bound to the REAL unload fraction.
+                                    // No granular partial count exists on
+                                    // the wire, so every cell sits empty
+                                    // until a terminal completion is
+                                    // proven (`unloadProgress` == 1), then
+                                    // all flip filled — never a seeded
+                                    // partial grid.
+                                    let isOff = unloadProgress >= 1
                                     RoundedRectangle(cornerRadius: 2)
                                         .fill(isOff
                                               ? AnyShapeStyle(LinearGradient.diagonal)
@@ -370,17 +427,17 @@ struct Unloading: View {
                             }
                         }
                     }
-                    // Spring-settle fill crossfade when a unit flips from
-                    // on-trailer to unloaded — each newly-crossed cell
-                    // eases from the soft slot to the gradient fill,
-                    // reading as a satisfying "thunk" as the live count
-                    // advances. Bound to the REAL `unloadedNow`; snaps to
-                    // the final grid under reduce-motion.
+                    // Spring-settle fill crossfade when the unload flips
+                    // to complete — the whole grid eases from the soft
+                    // slots to the gradient fill, reading as a satisfying
+                    // "thunk" at completion. Bound to the REAL
+                    // `unloadProgress`; snaps to the final grid under
+                    // reduce-motion.
                     .animation(
                         reduceMotion
                             ? nil
                             : .spring(response: 0.34, dampingFraction: 0.72),
-                        value: unloadedNow
+                        value: unloadProgress
                     )
                 }
                 .frame(height: 44)
@@ -410,16 +467,16 @@ struct Unloading: View {
     private var progressCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(unloadedNow)")
+                Text(unloadedNowLabel)
                     .font(.system(size: 40, weight: .heavy, design: .rounded))
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
-                    .contentTransition(.numericText(value: Double(unloadedNow)))
-                Text("/ \(unloadTotal) \(ctx.unloadUnitLabel)")
+                    .contentTransition(.numericText(value: Double(unloadedNow ?? 0)))
+                Text("/ \(unloadTotalLabel) \(ctx.unloadUnitLabel)")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: 0)
-                Text("Est. \(fallbackEtaRemain) remaining")
+                Text("Est. \(etaRemainingLabel) remaining")
                     .font(EType.mono(.micro)).tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -449,14 +506,19 @@ struct Unloading: View {
             .frame(height: 5)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Unload progress")
-            .accessibilityValue("\(Int((unloadProgress * 100).rounded())) percent, \(unloadedNow) of \(unloadTotal) \(ctx.unloadUnitLabel)")
+            .accessibilityValue("\(Int((unloadProgress * 100).rounded())) percent, \(unloadedNowLabel) of \(unloadTotalLabel) \(ctx.unloadUnitLabel)")
 
             HStack {
-                Text("STARTED \(fallbackStarted)")
+                Text("STARTED \(startedLabel)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("RATE \(fallbackRate) \(ctx.unloadRateLabel)")
+                // No live unload-rate telemetry → the value em-dashes and
+                // the unit suffix is dropped (no "— PALLETS/HR" sentinel
+                // mash-up); the rate unit reappears with a real number.
+                Text(unloadRateValueLabel == "—"
+                     ? "RATE —"
+                     : "RATE \(unloadRateValueLabel) \(ctx.unloadRateLabel)")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -587,12 +649,26 @@ struct Unloading: View {
 
     // MARK: Advisory
 
+    /// De-templated advisory. The seeded "two-person crew at 4/hr" and
+    /// "$75" figures were Figma fixtures — there is no live lumper-crew /
+    /// crew-rate feed and no per-load detention threshold on the wire, so
+    /// neither number is invented. The detention guidance keys off the
+    /// REAL live calc: it cites the actual $/hr tier rate when the calc
+    /// has returned one, otherwise stays a generic prompt with no figure.
+    private var advisoryText: String {
+        let base = "Wake the house crew if it stalls; no lumper overnight."
+        if let rate = detentionCalc?.tierBreakdown.first?.rate, rate > 0 {
+            return "\(base) Detention is now billing at \(currency(rate))/hr past free time — ping dispatch from the Chat button and they'll rebill the shipper."
+        }
+        return "\(base) If detention starts billing, ping dispatch from the Chat button and they'll rebill the shipper."
+    }
+
     private var advisoryCard: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             Image(systemName: "sparkles")
                 .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(Brand.success)
-            Text("Wake the house crew if it stalls. No lumper overnight. They run a two-person crew at 4 \(ctx.unloadUnitLabel)/hr. If detention passes $75, ping dispatch from the Chat button and they'll rebill the shipper.")
+            Text(advisoryText)
                 .font(EType.body)
                 .foregroundStyle(palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -686,25 +762,40 @@ struct Unloading: View {
                 )
         }
 
-        // Live unloaded count — derived honestly from lifecycle state.
-        // The load envelope doesn't yet ship a granular unloaded-unit
-        // column (LiveLoadFacets.palletCount is a backend gap), so we
-        // only assert a count we can prove: once the load reaches a
-        // terminal unload state, every unit is off. Mid-unload we leave
-        // it nil and render the Figma reference rather than fabricate a
-        // partial number.
+        // Unload-started stamp — the REAL `unloading` (else arrival)
+        // lifecycle transition `createdAt`. Drives the "STARTED HH:MM"
+        // value; nil → em-dash. No seeded "00:32".
+        resolveUnloadStarted(from: lifecycle.history)
+
+        // Completion — derived honestly from lifecycle state. The load
+        // envelope doesn't ship a granular unloaded-unit / total column
+        // (LiveLoadFacets.palletCount is a backend gap), so we assert no
+        // partial count and no numeric total. The only thing we can
+        // prove is the binary "all off" once the load reaches a terminal
+        // unload state — that flips the grid/rail to a full fill. The
+        // numeric "N of N" header still em-dashes (no real denominator).
+        // Mid-unload everything stays empty rather than fabricating a
+        // partial number or a seeded "4 of 26".
+        // Canonical set per TANKER_LOAD_STATUSES (schema.additions.
+        // wave4-1.ts) — `unloaded` is the state that proves completion;
+        // the Wave-4 disconnect block + POD/terminal states all occur
+        // strictly after it. The previous set carried pod_signed /
+        // completed / closed, none of which exist in the state machine
+        // (the terminal state is `complete`), so completion never lit.
         let terminalUnloaded: Set<String> = [
-            "delivered", "pod_pending", "pod_signed", "completed", "closed",
+            "unloaded", "vapor_purging", "disconnecting", "detaching",
+            "released", "pod_pending", "pod_rejected", "delivered",
+            "invoiced", "paid", "complete",
         ]
         let state = (lifecycle.currentState ?? activeLoad?.status ?? "").lowercased()
         if terminalUnloaded.contains(state) {
-            // Animate the count roll + grid spring + rail ease together
-            // on the real data update. Snap under reduce-motion.
+            // Spring the grid + ease the rail to full on the real data
+            // update. Snap under reduce-motion.
             if reduceMotion {
-                liveUnloaded = unloadTotal
+                unloadComplete = true
             } else {
                 withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.4)) {
-                    liveUnloaded = unloadTotal
+                    unloadComplete = true
                 }
             }
         }
@@ -746,6 +837,35 @@ struct Unloading: View {
             arrivalAnchor = stamp
         }
     }
+
+    /// Find the real instant the unload began from the lifecycle audit
+    /// trail and set `unloadStartedAt`. Prefers the transition INTO
+    /// `unloading` (offload began); falls back to `at_delivery` (arrival
+    /// at the receiver). Parses the ISO-8601 `createdAt` server stamp;
+    /// leaves the anchor nil → "STARTED —" when no row exists.
+    private func resolveUnloadStarted(from history: [LoadLifecycleAPI.StateTransition]) {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoPlain = ISO8601DateFormatter()
+        func parse(_ s: String?) -> Date? {
+            guard let s = s, !s.isEmpty else { return nil }
+            return iso.date(from: s) ?? isoPlain.date(from: s)
+        }
+        let started = history.first(where: { ($0.toState ?? "").lowercased() == "unloading" })
+            ?? history.first(where: { ($0.toState ?? "").lowercased() == "at_delivery" })
+        if let stamp = parse(started?.createdAt) {
+            unloadStartedAt = stamp
+        }
+    }
+
+    /// Shared "HH:MM" local clock formatter for the pallet-map refresh
+    /// stamp (and any other live wall clock on this screen).
+    private static let clockHHmm: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
 }
 
 struct UnloadingScreen: View {

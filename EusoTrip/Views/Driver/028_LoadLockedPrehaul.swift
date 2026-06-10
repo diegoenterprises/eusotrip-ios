@@ -28,6 +28,15 @@ struct LoadLockedPrehaul: View {
     @State private var isRolling: Bool = false
     @State private var reminderToast: String? = nil
 
+    /// The most-recent appointment row for this load — the same
+    /// `appointments.getByLoad` read the sibling lifecycle screens
+    /// (020/037/024) hydrate. Carries the committed pickup window
+    /// (`scheduledAt`) that drives the manifest roll clock. Nil until
+    /// the appointment hydrates (or when the load has no appointment) →
+    /// the roll clock falls through to the load's `pickupDate`, then an
+    /// honest em-dash.
+    @State private var appointment: AppointmentsAPI.ByLoadAppointment?
+
     enum Register { case night, afternoon }
     let register: Register
     init(register: Register = .afternoon) { self.register = register }
@@ -36,17 +45,76 @@ struct LoadLockedPrehaul: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    // MARK: - Production-clean placeholders.
-    // Updated 2026-04-24 (eusotrip-killers ledger-hygiene pass).
-    // Live values: `loads.getById` for origin/dest/manifest and
-    // `loadLifecycle.getRollClock` for the appointment timer.
-    private let fallbackClock       = "-"
-    private let fallbackLoadID      = "-"
-    private let fallbackOrigin      = "-"
-    private let fallbackDestination = "-"
-    private let fallbackManifest    = "-"
-    private let fallbackRollClock   = "-"
-    private let fallbackApptSub     = "-"
+    // MARK: - Honest sentinels + live displays.
+    //
+    // De-fabrication (2026-06-07): the manifest origin/dest/commodity
+    // line + the appointment roll clock were rendered from static "-"
+    // placeholders. They now resolve from the live `activeLoad`
+    // (`loads.getById` pickup/delivery + commodity facets) + the live
+    // `appointments.getByLoad` row (`scheduledAt`), mirroring the
+    // proven sibling 020/037/024 pattern. The header "now" clock reads
+    // off the live device clock (`TimelineView(.everyMinute)`), not a
+    // frozen literal. Every field without a live source degrades to an
+    // honest em-dash "-": no active load, no appointment, no pickup
+    // date all read "-" rather than a seeded number.
+    private let dash = "-"
+
+    /// Used as the header load-id when no live load has hydrated.
+    private let fallbackLoadID  = "-"
+    /// Honest em-dash appointment subtitle — no committed appointment-
+    /// window-detail column is on the wire for this screen.
+    private let fallbackApptSub = "-"
+
+    /// Origin (pickup) city/state from the live load, else em-dash.
+    private var originDisplay: String {
+        let cs = activeLoad?.pickupLocation?.cityState ?? ""
+        return cs.isEmpty ? dash : cs
+    }
+
+    /// Destination (delivery) city/state from the live load, else em-dash.
+    private var destinationDisplay: String {
+        let cs = activeLoad?.deliveryLocation?.cityState ?? ""
+        return cs.isEmpty ? dash : cs
+    }
+
+    /// Manifest subtitle — the live commodity (+ UN number when the
+    /// load actually carries a hazmat class) from the load facets. Em-
+    /// dash when neither commodity nor UN is on the load. Never a
+    /// fabricated "UN1005 · NH3 · tanker" hazmat-default.
+    private var manifestDisplay: String {
+        let f = ctx.facets
+        // commodityWithUN already joins commodity + UN and collapses to
+        // em-dash only when both are empty; the UN segment is dropped
+        // for non-hazmat loads because `unNumber` is em-dash there.
+        return f.commodityWithUN
+    }
+
+    /// Roll clock — local "HH:mm" of the committed pickup appointment
+    /// (`appointments.getByLoad.scheduledAt`), falling through to the
+    /// load's `pickupDate`, else an honest em-dash. No seeded countdown.
+    private var rollClockDisplay: String {
+        if let t = Self.formatClock(appointment?.scheduledAt) { return t }
+        if let t = Self.formatClock(activeLoad?.pickupDate) { return t }
+        return dash
+    }
+
+    /// Lenient ISO-8601 parse (with and without fractional seconds).
+    private static func parseISO(_ s: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s)
+    }
+
+    /// "08:30" local wall clock; nil when the ISO is missing/unparseable.
+    private static func formatClock(_ iso: String?) -> String? {
+        guard let iso = iso, !iso.isEmpty, let date = parseISO(iso) else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
+    }
 
     private var checklist: [PrehaulCheck] {
         switch ctx.product {
@@ -236,7 +304,6 @@ struct LoadLockedPrehaul: View {
         }
         .task {
             await hydrateLiveTrip()
-            seedDefaults()
         }
         .overlay(alignment: .bottom) {
             if let msg = reminderToast {
@@ -296,12 +363,25 @@ struct LoadLockedPrehaul: View {
                     .lineLimit(2)
             }
             Spacer(minLength: 0)
-            Text(fallbackClock)
-                .font(EType.mono(.caption)).fontWeight(.semibold)
-                .foregroundStyle(palette.textPrimary)
+            // Live device "now" clock — advances every minute off the
+            // real `Date`, never a frozen Figma literal.
+            TimelineView(.everyMinute) { timeline in
+                Text(Self.headerClockFormatter.string(from: timeline.date))
+                    .font(EType.mono(.caption)).fontWeight(.semibold)
+                    .foregroundStyle(palette.textPrimary)
+                    .monospacedDigit()
+            }
         }
         .padding(.top, 4)
     }
+
+    /// "08:30" local wall-clock formatter for the live header clock.
+    private static let headerClockFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
 
     private var prehaulHeading: String {
         switch ctx.product {
@@ -328,16 +408,16 @@ struct LoadLockedPrehaul: View {
             }
             .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(fallbackOrigin) → \(fallbackDestination)")
+                Text("\(originDisplay) → \(destinationDisplay)")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text(fallbackManifest)
+                Text(manifestDisplay)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
             }
             Spacer()
-            Text(fallbackRollClock)
+            Text(rollClockDisplay)
                 .font(.system(size: 18, weight: .heavy, design: .rounded))
                 .foregroundStyle(LinearGradient.diagonal)
                 .monospacedDigit()
@@ -409,13 +489,13 @@ struct LoadLockedPrehaul: View {
         .frame(width: 24, height: 24)
     }
 
-    private func seedDefaults() {
-        guard completed.isEmpty else { return }
-        let list = checklist
-        if list.count >= 5 {
-            completed = Set(list.prefix(5).map { $0.id })
-        }
-    }
+    // De-fabrication (2026-06-07): the prior `seedDefaults()` helper
+    // auto-marked the first five checklist rows DONE on appear,
+    // fabricating green checks + a "5 of N done" / "N-5 LEFT" /
+    // "N-5 open" count that no driver had actually cleared. It is
+    // removed: rows start unchecked, and the existing tap toggle in
+    // `checklistRows` is the only completion path. `openCount` and the
+    // "X open" / "X LEFT" counters now reflect the real tapped set.
 
     // MARK: Footer CTAs
 
@@ -435,12 +515,22 @@ struct LoadLockedPrehaul: View {
             }
 
             CTAButton(
-                title: "Roll to Curtis Bay",
+                title: rollCtaTitle,
                 action: { Task { await rollToPickup() } },
                 subtitle: "\(openCount) LEFT",
                 isLoading: isRolling || openCount > 0
             )
         }
+    }
+
+    /// Roll CTA title — this leg rolls toward the pickup, so it names
+    /// the live pickup city ("Roll to Shreveport") from the load. The
+    /// prior "Roll to Curtis Bay" was a Figma destination fixture.
+    /// Degrades to the neutral, non-fabricated "Roll to pickup" when no
+    /// pickup city is on the load.
+    private var rollCtaTitle: String {
+        let cs = activeLoad?.pickupLocation?.city ?? ""
+        return cs.isEmpty ? "Roll to pickup" : "Roll to \(cs)"
     }
 
     // MARK: - Hydration + actions
@@ -450,6 +540,12 @@ struct LoadLockedPrehaul: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // Committed pickup appointment (scheduledAt → roll clock) — the
+        // same `appointments.getByLoad` read the sibling lifecycle
+        // screens (020/037/024) hydrate. nil-tolerant: no row → the roll
+        // clock falls through to the load's `pickupDate`, then "-".
+        appointment = try? await EusoTripAPI.shared.appointments
+            .getByLoad(loadId: lifecycle.loadId)
     }
 
     private func rollToPickup() async {

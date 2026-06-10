@@ -12,28 +12,48 @@
 //  appt drift.
 //
 //  Composition (top to bottom):
-//    • Header — back chevron + "At the gate" + right-column clock +
-//      "Bay 03 · gate 2".
-//    • Facility line — "KOCH FERTILIZER · BELLE PLAINE · GUARD
-//      CHECK-IN COMPLETE".
-//    • Queue position card — big gradient "N" + "of M trucks
-//      waiting" + "Est. wait Xh XXm · advancing avg every N min" +
-//      dot row showing each truck in the queue.
-//    • 2×2 metadata grid — LOAD ID / DWELL POLICY / GATE GUARD /
-//      APPT DRIFT.
+//    • Header — back chevron + "At the gate" + right-column live
+//      device clock + mode-correct "Bay 03 · gate 2".
+//    • Facility line — live facility/city + "GUARD CHECK-IN COMPLETE".
+//    • Queue position card — gradient-bordered hero. No live queue
+//      source yet (`loadLifecycle.queuePosition`), so it reads an
+//      honest "AWAITING DISPATCH" empty-state until that endpoint
+//      ships; the rank / total / wait / advance-cadence figures
+//      return then.
+//    • 2×2 metadata grid — LOAD ID (live commodity) / DWELL POLICY
+//      (em-dash, no per-load terms) / GATE GUARD (em-dash) / APPT
+//      DRIFT (live scheduled-vs-now from the appointment).
 //    • ESANG · IDLE-WATCH card.
 //    • Footer CTAs — "Log dwell" outline + "Mark ready" gradient.
 //    • Bottom nav — preserved verbatim per doctrine.
 //
 //  Data wiring:
 //    • `TripLifecycleStore.hydrateActiveLoad()` → `loads.getById`
-//      for the real load id + pickup location + hazmat class.
-//    • Queue position is a server-pushed field; until
-//      `loadLifecycle.queuePosition(loadId:)` ships we read from the
-//      Figma reference (Position 2 of 4) so the frame paints
-//      identically in preview + cold start.
-//    • "Mark ready" fires the forward transition from the lifecycle
-//      store — same selection rule as 014.
+//      for the real load id + pickup location + commodity facets.
+//    • Header clock is the live device clock (TimelineView every
+//      minute).
+//    • APPT DRIFT computes scheduled-vs-now from the real
+//      `appointments.getByLoad.scheduledAt` row (the same read the
+//      sibling lifecycle screens 014/020/037 hydrate); em-dash when
+//      no appointment is on file.
+//    • LOAD ID secondary commodity reads the live
+//      `ctx.facets.commodityWithUN` (composed commodityName · UN);
+//      em-dash when the load carries neither — no hazmat default.
+//    • ESANG idle-watch dwell-snapshot timestamp is the real
+//      appointment scheduled ISO when present; the sentence omits the
+//      "armed at" clause entirely when no timestamp is known.
+//
+//  De-fabrication (2026-06-07): the seeded header clock "08:32 CDT",
+//  the queue hero (2 / of 4 / 14m est / 7-min cadence), the DWELL
+//  POLICY "2h free" / "Detention after 2h" copy, the APPT DRIFT
+//  "-6 min" / "vs. scheduled 09:00 CDT" literals, the ESANG "armed at
+//  08:18 CDT" stamp, and the "UN1005 · NH3 · tanker" hazmat-default
+//  commodity were all Figma fixtures that leaked onto the live path.
+//  Queue position has no live source (`loadLifecycle.queuePosition`
+//  is not yet on the wire), so the hero now reads an honest
+//  "AWAITING DISPATCH" empty-state instead of a fabricated rank. The
+//  four honest "-" sentinels (facility / load id / guard / badge)
+//  are preserved.
 //
 //  Powered by ESANG AI™.
 //
@@ -48,6 +68,12 @@ struct AtGateAwaitingDock: View {
 
     @StateObject private var lifecycle = TripLifecycleStore()
     @State private var activeLoad: Load?
+    /// The most-recent appointment row for this load — source for the
+    /// APPT DRIFT (scheduled-vs-now) compute and the ESANG dwell-snapshot
+    /// timestamp. The same `appointments.getByLoad` read the sibling
+    /// lifecycle screens (014/020/037) hydrate. Nil-tolerant: no row →
+    /// drift + armed-at fall through to em-dash / an omitted clause.
+    @State private var appointment: AppointmentsAPI.ByLoadAppointment?
     @State private var isMarkingReady: Bool = false
     @State private var isLoggingDwell: Bool = false
     @State private var dwellToast: String? = nil
@@ -64,28 +90,19 @@ struct AtGateAwaitingDock: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    // MARK: - Figma-verbatim fallback (used only while the backend
-    // hasn't hydrated a real load — matches the 2026-04-24 frame).
+    // MARK: - Honest sentinels
+    //
+    // The four facts that have no live source on this screen render an
+    // honest em-dash "-" until their column lands on the wire: the
+    // facility brand (no structured facility field on pickupLocation),
+    // the load id (until hydration), and the gate-guard identity +
+    // badge (no guard column exists). These are sentinels, NOT seeded
+    // literals.
+    private let dash = "-"
     private let fallbackFacility = "-"
     private let fallbackLoadID   = "-"
-    private let fallbackCommod   = "UN1005 · NH3 · tanker"
     private let fallbackGuard    = "-"
     private let fallbackBadge    = "-"
-    private let fallbackApptDrift = "-6 min"
-    private let fallbackApptSched = "vs. scheduled 09:00 CDT"
-    private let fallbackBayGate   = "Bay 03 · gate 2"
-    private let fallbackClock     = "08:32 CDT"
-    private let fallbackDwellFree = "2h free"
-    private let fallbackDwellPen  = "Detention after 2h"
-    private let fallbackArmedAt   = "08:18 CDT"
-
-    // Queue state — bound to live server pushes once the
-    // `loadLifecycle.queuePosition` endpoint ships. Figma reference
-    // anchors preview + cold start.
-    private let queuePosition   = 2
-    private let queueTotal      = 4
-    private let estWaitMinutes  = 14
-    private let avgMovementMin  = 7
 
     // MARK: - Derived UI strings
 
@@ -104,10 +121,82 @@ struct AtGateAwaitingDock: View {
         return fallbackLoadID
     }
 
+    /// Live commodity line — the composed "<commodity> · <UN>" from the
+    /// load's real facets, em-dash when the load carries neither. Drops
+    /// the prior "UN1005 · NH3 · tanker" hazmat default that mislabeled
+    /// non-hazmat loads.
     private var commodityText: String {
-        let un = activeLoad?.unNumber ?? "UN1005"
-        let commod = activeLoad?.commodityName ?? "NH3 · tanker"
-        return "\(un) · \(commod)"
+        ctx.facets.commodityWithUN
+    }
+
+    // MARK: - Header clock (live device clock)
+
+    /// "HH:mm zzz" wall clock formatter for the header. Fed the live
+    /// device `Date` via the header's TimelineView(.everyMinute) — no
+    /// seeded "08:32 CDT".
+    private func headerClock(_ now: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm zzz"
+        return f.string(from: now)
+    }
+
+    // MARK: - APPT DRIFT (scheduled-vs-now from the live appointment)
+
+    /// Lenient ISO-8601 parse (with and without fractional seconds).
+    private static func parseISO(_ s: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: s) { return d }
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: s)
+    }
+
+    /// Signed minute drift of NOW vs the appointment's committed
+    /// `scheduledAt` (negative = ahead of schedule, positive = past the
+    /// window). Em-dash when no appointment is on file. Computed against
+    /// the live device clock so it advances minute-over-minute with the
+    /// header's TimelineView.
+    private func apptDriftText(_ now: Date) -> String {
+        guard let iso = appointment?.scheduledAt,
+              let sched = Self.parseISO(iso) else { return dash }
+        let mins = Int((now.timeIntervalSince(sched) / 60).rounded())
+        if mins == 0 { return "on time" }
+        return mins > 0 ? "+\(mins) min" : "\(mins) min"
+    }
+
+    /// "vs. scheduled HH:mm zzz" sub-line from the real appointment
+    /// `scheduledAt`. Em-dash when no appointment is on file — never the
+    /// seeded "vs. scheduled 09:00 CDT".
+    private var apptSchedText: String {
+        guard let iso = appointment?.scheduledAt,
+              let sched = Self.parseISO(iso) else { return dash }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm zzz"
+        return "vs. scheduled \(f.string(from: sched))"
+    }
+
+    /// On-time/behind tint for the APPT DRIFT primary value — warning
+    /// once we're past the committed window, neutral otherwise. nil (→
+    /// default text color) when there's no appointment to judge against.
+    private func apptDriftColor(_ now: Date) -> Color? {
+        guard let iso = appointment?.scheduledAt,
+              let sched = Self.parseISO(iso) else { return nil }
+        return now.timeIntervalSince(sched) > 0 ? Brand.warning : nil
+    }
+
+    /// ESANG idle-watch dwell-armed clause. When the appointment carries
+    /// a real `scheduledAt`, the dwell timer is armed against that
+    /// committed window and we surface the local time; otherwise the
+    /// clause is omitted entirely rather than inventing an "08:18 CDT".
+    private var dwellArmedClause: String {
+        guard let iso = appointment?.scheduledAt,
+              let sched = Self.parseISO(iso) else { return "" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm zzz"
+        return " Dwell timer armed at \(f.string(from: sched))."
     }
 
     // MARK: - Body
@@ -189,9 +278,13 @@ struct AtGateAwaitingDock: View {
             Spacer(minLength: 0)
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text(fallbackClock)
-                    .font(EType.mono(.caption)).fontWeight(.semibold)
-                    .foregroundStyle(palette.textPrimary)
+                // Live device clock — ticks every minute, no seeded
+                // "08:32 CDT".
+                TimelineView(.everyMinute) { timeline in
+                    Text(headerClock(timeline.date))
+                        .font(EType.mono(.caption)).fontWeight(.semibold)
+                        .foregroundStyle(palette.textPrimary)
+                }
                 // Swap the static "Bay 03 · gate 2" for a
                 // vertical-correct noun pair via the shared
                 // context (bay for truck, spur for rail,
@@ -216,6 +309,15 @@ struct AtGateAwaitingDock: View {
     // MARK: Queue position hero card
 
     private var queueCard: some View {
+        // No live queue source — `loadLifecycle.queuePosition(loadId:)`
+        // is not yet on the wire. Rather than paint a fabricated rank /
+        // total / wait estimate / advance cadence, the hero reads an
+        // honest "AWAITING DISPATCH" empty-state. The card chrome
+        // (gradient-bordered hero) is preserved verbatim; only the
+        // fabricated figures are gone. The big-number rank, the
+        // "of N trucks waiting", the "Est. wait …" line, and the dot
+        // row all bind to that missing endpoint, so they return when it
+        // ships.
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
                 Text("QUEUE POSITION")
@@ -225,33 +327,25 @@ struct AtGateAwaitingDock: View {
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("\(queuePosition)")
+                Text(dash)
                     .font(.system(size: 86, weight: .heavy, design: .rounded))
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("of \(queueTotal) trucks")
+                    Text("AWAITING DISPATCH")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Text("waiting")
+                    Text("queue position pending")
                         .font(EType.body)
                         .foregroundStyle(palette.textSecondary)
                 }
             }
 
-            // Wait line
             HStack(spacing: 6) {
-                Text("Est. wait \(formattedWait) · advancing avg every \(avgMovementMin) min")
+                Text("Queue position appears when the yard releases the call-forward.")
                     .font(EType.mono(.micro)).tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
-                Spacer(minLength: 0)
-            }
-
-            // Dot row
-            HStack(spacing: 8) {
-                ForEach(1...queueTotal, id: \.self) { idx in
-                    queueDot(idx)
-                }
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
         }
@@ -264,41 +358,36 @@ struct AtGateAwaitingDock: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private func queueDot(_ idx: Int) -> some View {
-        let isCurrent = idx == queuePosition
-        let isPassed  = idx < queuePosition
-        return Group {
-            if isCurrent {
-                Circle().fill(LinearGradient.diagonal)
-                    .frame(width: 14, height: 14)
-                    .overlay(Circle().strokeBorder(palette.bgPage, lineWidth: 2))
-            } else if isPassed {
-                Circle().fill(palette.textTertiary.opacity(0.5))
-                    .frame(width: 8, height: 8)
-            } else {
-                Circle().strokeBorder(palette.borderSoft, lineWidth: 1)
-                    .frame(width: 8, height: 8)
-            }
-        }
-    }
-
-    private var formattedWait: String {
-        let h = estWaitMinutes / 60
-        let m = estWaitMinutes % 60
-        return "\(h)h \(String(format: "%02d", m))m"
-    }
-
     // MARK: 2×2 metadata grid
 
     private var metadataGrid: some View {
-        VStack(spacing: Space.s2) {
-            HStack(spacing: Space.s2) {
-                metaCard(label: "LOAD ID", primary: loadIDText, secondary: commodityText)
-                metaCard(label: "DWELL POLICY", primary: fallbackDwellFree, secondary: fallbackDwellPen)
-            }
-            HStack(spacing: Space.s2) {
-                metaCard(label: "GATE GUARD", primary: fallbackGuard, secondary: fallbackBadge)
-                metaCard(label: "APPT DRIFT", primary: fallbackApptDrift, secondary: fallbackApptSched, primaryColor: Brand.warning)
+        // APPT DRIFT ticks against the live device clock so the
+        // scheduled-vs-now delta advances minute-over-minute, matching
+        // the header clock cadence.
+        TimelineView(.everyMinute) { timeline in
+            let now = timeline.date
+            VStack(spacing: Space.s2) {
+                HStack(spacing: Space.s2) {
+                    metaCard(label: "LOAD ID", primary: loadIDText, secondary: commodityText)
+                    // DWELL POLICY — no per-load detention-terms column
+                    // feeds this screen, so the generic "2h free" /
+                    // "Detention after 2h" copy is dropped for an honest
+                    // em-dash rather than asserting a free window we
+                    // can't read off this load.
+                    metaCard(label: "DWELL POLICY", primary: dash, secondary: dash)
+                }
+                HStack(spacing: Space.s2) {
+                    metaCard(label: "GATE GUARD", primary: fallbackGuard, secondary: fallbackBadge)
+                    // APPT DRIFT — computed from the real appointment
+                    // scheduledAt vs the live clock; em-dash when no
+                    // appointment is on file.
+                    metaCard(
+                        label: "APPT DRIFT",
+                        primary: apptDriftText(now),
+                        secondary: apptSchedText,
+                        primaryColor: apptDriftColor(now)
+                    )
+                }
             }
         }
     }
@@ -381,7 +470,7 @@ struct AtGateAwaitingDock: View {
                 Text("ESANG · IDLE-WATCH")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.9)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Engine off, parking brake set. I'll listen for your call-forward and wake you if the queue moves. Dwell timer armed at \(fallbackArmedAt).")
+                Text("Engine off, parking brake set. I'll listen for your call-forward and wake you if the queue moves.\(dwellArmedClause)")
                     .font(EType.body)
                     .foregroundStyle(palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -439,6 +528,13 @@ struct AtGateAwaitingDock: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // Appointment row (scheduledAt → APPT DRIFT compute + ESANG
+        // dwell-snapshot timestamp) — the same `appointments.getByLoad`
+        // read the sibling lifecycle screens (014/020/037) hydrate.
+        // nil-tolerant: no row → APPT DRIFT + armed-at fall through to
+        // em-dash / an omitted clause.
+        appointment = try? await EusoTripAPI.shared.appointments
+            .getByLoad(loadId: lifecycle.loadId)
         // Phase 10 closure: round-trip the appointment status so
         // the shipper / dispatcher web surfaces see the driver
         // checked-in at the gate the moment 015 appears. Best-
