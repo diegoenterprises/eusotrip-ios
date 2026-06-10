@@ -23,8 +23,9 @@
 //        re-runs load() honestly rather than faking a file write (surfaced to the-oath).
 //    RBAC: protectedProcedure.
 //
-//  0 mock data on load · honest empty/error states — values render from real state; design-time seeds
-//  live only in @State and are overwritten by the query on .task. RimCard811 / secondaryButton811 /
+//  ZERO-FALLBACK: state is em-dash/empty/nil-initialized and UNCONDITIONALLY overwritten by the
+//  query — no design-time seeds; trend/SLA (no server source) stay hidden; empty peer/peril data
+//  renders honest empty states. RimCard811 / secondaryButton811 /
 //  PeerBar811 / FlowLegend811 are file-scoped bespoke helpers (the canonical port's
 //  RimCard / SecondaryButton are not shared app symbols), built from the registered siblings' grammar to
 //  preserve the exact wireframe look.
@@ -63,25 +64,19 @@ private struct VesselClaimsAnalyticsBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
 
-    @State private var subline = "18 claims · disputed $214.6k · recovered $116.4k"
-    @State private var recoveryRate = "54%"
-    @State private var recoverySub = "$116.4k recovered of $214.6k disputed"
-    @State private var trend = "+8 pts vs Q1"
-    @State private var cycleLine = "12d avg cycle"
-    @State private var slaLine = "87% SLA hit"
-    @State private var esangLine = "34 pts below best peer · $86k exposure · live tick"
+    // ZERO-FALLBACK: em-dash/empty/nil init — values render live or honestly
+    // absent. trend/slaLine have NO server source today (getClaimsAnalytics
+    // carries no trend or SLA field) so they stay nil and their views hide.
+    @State private var subline = "—"
+    @State private var recoveryRate = "—"
+    @State private var recoverySub: String? = nil
+    @State private var trend: String? = nil
+    @State private var cycleLine: String? = nil
+    @State private var slaLine: String? = nil
+    @State private var esangLine: String? = nil
 
-    @State private var peers: [PeerRow811] = [
-        PeerRow811(carrier: "Maersk · best peer",   sub: "7 claims · cycle 9d · paid 6 / disp 1",  pct: 72, value: "$56.2k", tone: .best),
-        PeerRow811(carrier: "ONE · peer median",    sub: "5 claims · cycle 12d · paid 3 / disp 2", pct: 54, value: "$72.4k", tone: .median),
-        PeerRow811(carrier: "CMA-CGM · worst peer", sub: "6 claims · cycle 21d · 1 in mediation",  pct: 38, value: "$86.0k", tone: .worst)
-    ]
-    @State private var perils: [PerilSeg811] = [
-        PerilSeg811(label: "cargo $124.2k", value: 124.2, color: Brand.danger),
-        PerilSeg811(label: "reefer $58.6k", value: 58.6,  color: Brand.info),
-        PerilSeg811(label: "short $21.4k",  value: 21.4,  color: Brand.warning),
-        PerilSeg811(label: "delay $10.4k",  value: 10.4,  color: Brand.neutral)
-    ]
+    @State private var peers: [PeerRow811] = []
+    @State private var perils: [PerilSeg811] = []
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -139,63 +134,87 @@ private struct VesselClaimsAnalyticsBody: View {
                     Text("RECOVERY RATE · 2026 YTD · OCEAN BOOK").font(.system(size: 9, weight: .heavy)).tracking(0.9).foregroundStyle(palette.textTertiary)
                     Text(recoveryRate).font(.system(size: 44, weight: .bold)).tracking(-1)
                         .foregroundStyle(palette.textPrimary).monospacedDigit()
-                    Text(recoverySub).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(palette.textSecondary)
+                    Text(recoverySub ?? "—").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(palette.textSecondary)
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 6) {
-                    StatusPill(text: trend, kind: .success)
-                    Text(cycleLine).font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary).monospacedDigit()
-                    Text(slaLine).font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary).monospacedDigit()
-                }
-            }
-        }
-    }
-
-    private var peerCard: some View {
-        VStack(spacing: 18) {
-            ForEach(peers) { p in PeerBar811(row: p) }
-        }
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 18).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(palette.borderFaint))
-    }
-
-    private var perilCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            GeometryReader { geo in
-                let total = max(0.0001, perils.reduce(0) { $0 + $1.value })
-                HStack(spacing: 2) {
-                    ForEach(perils) { seg in
-                        RoundedRectangle(cornerRadius: 3).fill(seg.color)
-                            .frame(width: max(4, geo.size.width * CGFloat(seg.value / total)))
+                    // Trend/SLA render ONLY when the server supplies them — no source today.
+                    if let t = trend { StatusPill(text: t, kind: .success) }
+                    Text(cycleLine ?? "—").font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary).monospacedDigit()
+                    if let s = slaLine {
+                        Text(s).font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary).monospacedDigit()
                     }
                 }
-            }.frame(height: 14)
-            FlowLegend811(perils: perils)
+            }
         }
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 18).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(palette.borderFaint))
     }
 
-    private var esangCard: some View {
-        HStack(spacing: 12) {
-            Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("\(worstPeerName) \(worstPeerPct)% is the Q3 renegotiation lever").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text("ESang · \(esangLine)").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+    @ViewBuilder
+    private var peerCard: some View {
+        if peers.isEmpty {
+            // Honest empty — getClaimsAnalytics.topCarriers returns [] today;
+            // no invented Maersk/ONE/CMA-CGM ladder.
+            EusoEmptyState(systemImage: "chart.bar",
+                           title: "No peer recovery data yet",
+                           subtitle: "Per-carrier recovery bars appear once carrier-attributed claims land in the analytics.")
+        } else {
+            VStack(spacing: 18) {
+                ForEach(peers) { p in PeerBar811(row: p) }
             }
-            Spacer(minLength: 0)
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 18).fill(palette.bgCard))
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(palette.borderFaint))
         }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCard))
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.borderFaint))
+    }
+
+    @ViewBuilder
+    private var perilCard: some View {
+        if perils.isEmpty {
+            EusoEmptyState(systemImage: "chart.pie",
+                           title: "No peril breakdown yet",
+                           subtitle: "The by-peril split appears once claims are on the book for this period.")
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                GeometryReader { geo in
+                    let total = max(0.0001, perils.reduce(0) { $0 + $1.value })
+                    HStack(spacing: 2) {
+                        ForEach(perils) { seg in
+                            RoundedRectangle(cornerRadius: 3).fill(seg.color)
+                                .frame(width: max(4, geo.size.width * CGFloat(seg.value / total)))
+                        }
+                    }
+                }.frame(height: 14)
+                FlowLegend811(perils: perils)
+            }
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 18).fill(palette.bgCard))
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(palette.borderFaint))
+        }
+    }
+
+    @ViewBuilder
+    private var esangCard: some View {
+        // Renders only off live peer data — never a fabricated lever/exposure line.
+        if !peers.isEmpty, let line = esangLine {
+            HStack(spacing: 12) {
+                Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(worstPeerName) \(worstPeerPct)% is the Q3 renegotiation lever").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
+                    Text("ESang · \(line)").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCard))
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(palette.borderFaint))
+        }
     }
 
     // MARK: Derived
     private var perilTotalLabel: String {
+        guard !perils.isEmpty else { return "—" }
         let total = perils.reduce(0) { $0 + $1.value }
-        return total >= 1000 ? "$\(String(format: "%.1f", total/1000))K" : "$\(String(format: "%.1f", total))K"
+        return money(total)
     }
     private var worstPeerName: String { peers.first(where: { $0.tone == .worst })?.carrier.components(separatedBy: " ·").first ?? "-" }
     private var worstPeerPct: Int { peers.first(where: { $0.tone == .worst })?.pct ?? 0 }
@@ -225,10 +244,23 @@ private struct VesselClaimsAnalyticsBody: View {
             let a: Analytics811 = try await EusoTripAPI.shared.query("freightClaims.getClaimsAnalytics",
                                                                      input: AnalyticsInput811(period: "year"))
             // recoveryRate is a FRACTION (0.72) — render as a percentage.
-            if let r = a.recoveryRate { recoveryRate = "\(Int((r * 100).rounded()))%" }
-            if let f = a.frequency { subline = "\(f) claims · ocean book · 2026 YTD" }
-            if let d = a.avgResolutionDays { cycleLine = "\(Int(d.rounded()))d avg cycle" }
+            recoveryRate = a.recoveryRate.map { "\(Int(($0 * 100).rounded()))%" } ?? "—"
+            cycleLine = a.avgResolutionDays.map { "\(Int($0.rounded()))d avg cycle" }
 
+            // Claimed dollars = live byType sum; recovered = rate × claimed (both
+            // server fields). No invented $116.4k/$214.6k pair.
+            let claimed = (a.byType ?? []).reduce(0.0) { $0 + ($1.value ?? 0) }
+            subline = "\(a.frequency ?? 0) claims · claimed \(money(claimed)) · 2026 YTD"
+            if claimed > 0, let r = a.recoveryRate {
+                recoverySub = "\(money(claimed * r)) recovered of \(money(claimed)) claimed"
+            } else {
+                recoverySub = nil
+            }
+            // trend / slaLine: NO server source on getClaimsAnalytics — stay nil (hidden).
+            trend = nil
+            slaLine = nil
+
+            // UNCONDITIONAL overwrite — empty stays empty (honest states render).
             if let tc = a.topCarriers, !tc.isEmpty {
                 peers = tc.prefix(3).enumerated().map { idx, c in
                     let tone: PeerTone811 = idx == 0 ? .best : (idx == tc.count - 1 ? .worst : .median)
@@ -237,12 +269,20 @@ private struct VesselClaimsAnalyticsBody: View {
                                       pct: Int((c.recoveryPct ?? 0).rounded()),
                                       value: money(c.resolvedValue), tone: tone)
                 }
+                let best = peers.map(\.pct).max() ?? 0
+                let worst = peers.first(where: { $0.tone == .worst })
+                esangLine = worst.map { "\(max(0, best - $0.pct)) pts below best peer · \($0.value) exposure" }
+            } else {
+                peers = []
+                esangLine = nil
             }
             if let bt = a.byType, !bt.isEmpty {
                 let colors: [Color] = [Brand.danger, Brand.info, Brand.warning, Brand.neutral]
                 perils = bt.prefix(4).enumerated().map { idx, t in
                     PerilSeg811(label: "\(t.type ?? "-") " + money(t.value), value: t.value ?? 0, color: colors[idx % colors.count])
                 }
+            } else {
+                perils = []
             }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
