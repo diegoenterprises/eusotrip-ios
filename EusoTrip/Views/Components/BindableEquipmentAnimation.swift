@@ -19,6 +19,9 @@
 //                     <use> to the 49 CFR 172.101 class symbol (class3Placard…).
 //    3. progress     → cssVars["--load-progress"] resolves the SVG's
 //                     var(--load-progress) in its baked transform/width rule.
+//    4. country      → NativeSVGView(country:) — the load's current-leg
+//                     region toggles exactly ONE .country-US/-MX/-CA
+//                     regulatory group (placards, credentials, units).
 //
 //  No stubs, no fabricated values — every output character came from the live
 //  LifecycleSnapshot or the SVG's baked default.
@@ -41,7 +44,13 @@ struct BindableEquipmentAnimation: View {
             svgString: svgString,
             bindings: liveBindings,
             placardId: context.placardSymbolId,
-            cssVars: ["--load-progress": String(format: "%.4f", progressFraction)]
+            cssVars: ["--load-progress": String(format: "%.4f", progressFraction)],
+            // COUNTRY DIMENSION (Wave C): the load's current-leg region —
+            // derived in LoadAnimationContext from the real pickup/delivery
+            // stop states via the server's country rule — selects exactly
+            // ONE `.country-US/-MX/-CA` regulatory group. nil renders the
+            // US default; the engine never double-renders countries.
+            country: context.svgCountry
         )
     }
 

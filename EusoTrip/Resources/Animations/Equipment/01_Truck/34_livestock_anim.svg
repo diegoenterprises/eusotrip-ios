@@ -509,17 +509,17 @@
            data-bind feeds the live permit/certificate number. -->
       <g transform="translate(990 196)">
         <rect x="0" y="0" width="62" height="22" rx="4" fill="#0AC2C2" opacity="0.92"/>
-        <g class="country-US" data-country="US">
+        <g class="country-US">
           <text x="31" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
                 font-weight="800" font-size="8" fill="#FFFFFF" letter-spacing="0.6"
                 data-bind="welfare_auth">USDA APHIS</text>
         </g>
-        <g class="country-MX" data-country="MX" style="display:none">
+        <g class="country-MX" style="display:none">
           <text x="31" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
                 font-weight="800" font-size="7" fill="#FFFFFF" letter-spacing="0.4"
                 data-bind="welfare_auth">SENASICA</text>
         </g>
-        <g class="country-CA" data-country="CA" style="display:none">
+        <g class="country-CA" style="display:none">
           <text x="31" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
                 font-weight="800" font-size="8" fill="#FFFFFF" letter-spacing="0.6"
                 data-bind="welfare_auth">CFIA</text>

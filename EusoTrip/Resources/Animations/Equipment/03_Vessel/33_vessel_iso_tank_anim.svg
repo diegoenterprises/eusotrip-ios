@@ -140,14 +140,10 @@
          · country-CA — Transport Canada TDG placard (wordless graphic, bilingual rule)
        Maritime legs follow the IMDG Code; the diamond graphic is harmonised across
        all three, so the country layer carries the ID-panel / wording variant.
-       Renderer selects ONE: set the root <svg> to class "ctx-US" | "ctx-MX" | "ctx-CA"
-       (e.g. svg.classList = 'ctx-' + shipment.regulatoryRegion). Default = US. */
-    .country-US, .country-MX, .country-CA { opacity: 0; }
-    .ctx-US .country-US,
-    .ctx-MX .country-MX,
-    .ctx-CA .country-CA { opacity: 1; }
-    /* Fallback when no ctx-* class is set on the root: show US. */
-    svg:not(.ctx-US):not(.ctx-MX):not(.ctx-CA) .country-US { opacity: 1; }
+       The renderer selects ONE country group by toggling display on the
+       .country-US / .country-MX / .country-CA groups directly. Default = US. */
+    .country-MX, .country-CA { display: none; }
+    .country-US { display: inline; }
 
     @media (prefers-reduced-motion: reduce) {
       .hull-pitch, .hull-roll, .stack-settle, .antenna-arc,

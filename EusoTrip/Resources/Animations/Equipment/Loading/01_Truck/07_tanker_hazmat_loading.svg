@@ -155,13 +155,10 @@
          · US  DOT/PHMSA 49 CFR 172   → CHEMTREC 1-800-424-9300
          · CA  TC TDG (SOR/2001-286)  → CANUTEC 1-888-226-8832
          · MX  SCT NOM-004-SCT/2008   → SETIQ 01-800-00-214-00 (CORROSIVO)
-       Default = US. Host renderer sets data-country="US|MX|CA" on <svg>. */
+       Default = US. The renderer shows ONE country group by toggling
+       display on .country-US / .country-MX / .country-CA. */
     .country-US { display: inline; }
     .country-MX, .country-CA { display: none; }
-    [data-country="MX"] .country-US { display: none; }
-    [data-country="MX"] .country-MX { display: inline; }
-    [data-country="CA"] .country-US { display: none; }
-    [data-country="CA"] .country-CA { display: inline; }
 
     @media (prefers-reduced-motion: reduce) {
       .arm-articulate, .arm-elbow,
@@ -611,19 +608,49 @@
           font-weight="900" font-size="20" fill="#43E26A" letter-spacing="1.4">
       <tspan class="meter-digits">4 2 0 6</tspan>
     </text>
-    <text x="498" y="234"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="6" fill="#43E26A" letter-spacing="0.6">GAL · NET</text>
+    <g class="country-US">
+      <text x="498" y="234"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#43E26A" letter-spacing="0.6">GAL · NET</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="498" y="234"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#43E26A" letter-spacing="0.6">L · NETO</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="498" y="234"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#43E26A" letter-spacing="0.6">L · NET</text>
+    </g>
     <!-- Preset bar (visual progress within meter) -->
     <rect x="494" y="246" width="78" height="6" fill="#1A1F2E"/>
     <rect class="meter-bar" x="494" y="246" width="78" height="6" fill="#43E26A"/>
     <!-- Status row -->
-    <text x="498" y="266"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="6.2" fill="#FFFFFF" letter-spacing="0.6">PRESET 8500 GAL</text>
-    <text x="498" y="278"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="6.2" fill="#43E26A" letter-spacing="0.6">FLOW · 350 GPM</text>
+    <g class="country-US">
+      <text x="498" y="266"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.2" fill="#FFFFFF" letter-spacing="0.6">PRESET 8500 GAL</text>
+      <text x="498" y="278"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.2" fill="#43E26A" letter-spacing="0.6">FLOW · 350 GPM</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="498" y="266"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.2" fill="#FFFFFF" letter-spacing="0.6">PRESET 32,200 L</text>
+      <text x="498" y="278"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.2" fill="#43E26A" letter-spacing="0.6">FLUJO · 1,325 L/MIN</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="498" y="266"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.2" fill="#FFFFFF" letter-spacing="0.6">PRESET 32,200 L</text>
+      <text x="498" y="278"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.2" fill="#43E26A" letter-spacing="0.6">FLOW · 1,325 L/MIN</text>
+    </g>
     <text x="498" y="290"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="6.2" fill="#FFD23A" letter-spacing="0.6">SULFURIC ACID</text>
@@ -977,12 +1004,26 @@
           letter-spacing="1.4">316 STAINLESS · INSULATED</text>
   </g>
 
-  <!-- Capacity stencil -->
+  <!-- Capacity stencil — country-switchable units (6,500 gal ≈ 24,600 L) -->
   <g>
-    <text x="280" y="406"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="900" font-size="14" fill="#1A1F2E" opacity="0.78"
-          letter-spacing="1.6">6,500 GAL</text>
+    <g class="country-US">
+      <text x="280" y="406"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="14" fill="#1A1F2E" opacity="0.78"
+            letter-spacing="1.6">6,500 GAL</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="280" y="406"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="14" fill="#1A1F2E" opacity="0.78"
+            letter-spacing="1.6">24,600 L</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="280" y="406"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="900" font-size="14" fill="#1A1F2E" opacity="0.78"
+            letter-spacing="1.6">24,600 L</text>
+    </g>
     <text x="280" y="420"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="7" fill="#3A3F4A" opacity="0.65"

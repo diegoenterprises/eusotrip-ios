@@ -189,17 +189,11 @@
        Division 2.1 (flammable gas / UN1075) is UN-model-harmonised, so
        the red diamond + flame + UN number are identical for US (49 CFR),
        Canada (TDG) and Mexico (NOM-004-SCT). Only the worded text and
-       the side stencil units differ. The host renderer sets
-       data-country="US" | "MX" | "CA" on the root <svg>; default is US.
-       Selectors below show exactly one localisation group. */
+       the side stencil units differ. The renderer shows ONE country
+       group by toggling display on .country-US / .country-MX /
+       .country-CA; default is US. */
     .country-MX, .country-CA { display: none; }
     .country-US { display: inline; }
-    svg[data-country="MX"] .country-US,
-    svg[data-country="MX"] .country-CA { display: none; }
-    svg[data-country="MX"] .country-MX { display: inline; }
-    svg[data-country="CA"] .country-US,
-    svg[data-country="CA"] .country-MX { display: none; }
-    svg[data-country="CA"] .country-CA { display: inline; }
 
     @media (prefers-reduced-motion: reduce) {
       .arm-articulate, .arm-elbow,
@@ -392,8 +386,8 @@
            regimes (US 49 CFR · CA TDG · MX NOM-004-SCT), so the RED
            diamond + white flame + UN1075 are identical everywhere;
            only the WORD TEXT differs by jurisdiction. The renderer
-           sets data-country="US|MX|CA" on the root <svg> (default US)
-           and the CSS below shows exactly one group. -->
+           shows exactly one group by toggling display on the
+           .country-US/-MX/-CA groups (default US). -->
       <g class="country-US">
         <text y="-4" text-anchor="middle"
               font-family="Inter, system-ui, sans-serif"
@@ -492,9 +486,21 @@
       <text x="112" y="33" text-anchor="middle"
             font-family="Inter, system-ui, sans-serif"
             font-weight="900" font-size="9" fill="#FFFFFF" letter-spacing="1.4">LPG</text>
-      <text x="112" y="48" text-anchor="middle"
-            font-family="Inter, system-ui, sans-serif"
-            font-weight="700" font-size="6" fill="#3A3F4A" opacity="0.75">B-201 · 90,000 GAL WC</text>
+      <g class="country-US">
+        <text x="112" y="48" text-anchor="middle"
+              font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="6" fill="#3A3F4A" opacity="0.75">B-201 · 90,000 GAL WC</text>
+      </g>
+      <g class="country-MX" style="display:none">
+        <text x="112" y="48" text-anchor="middle"
+              font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="6" fill="#3A3F4A" opacity="0.75">B-201 · 340,000 L WC</text>
+      </g>
+      <g class="country-CA" style="display:none">
+        <text x="112" y="48" text-anchor="middle"
+              font-family="Inter, system-ui, sans-serif"
+              font-weight="700" font-size="6" fill="#3A3F4A" opacity="0.75">B-201 · 340,000 L WC</text>
+      </g>
       <!-- Class 2.1 placard miniature on tank end -->
       <g transform="translate(192 32) rotate(45) scale(0.18)">
         <rect x="-26" y="-26" width="52" height="52" fill="#D62F1A"/>
@@ -510,9 +516,21 @@
       <rect x="26" y="2" width="108" height="2" fill="#FFFFFF" opacity="0.65"/>
       <ellipse cx="26" cy="23" rx="14" ry="23" fill="url(#hemisphericalCap)"/>
       <ellipse cx="134" cy="23" rx="14" ry="23" fill="url(#hemisphericalCap)"/>
-      <text x="80" y="29" text-anchor="middle"
-            font-family="Inter, system-ui, sans-serif"
-            font-weight="800" font-size="6" fill="#3A3F4A" opacity="0.62">B-202 · LPG · 60,000 GAL WC</text>
+      <g class="country-US">
+        <text x="80" y="29" text-anchor="middle"
+              font-family="Inter, system-ui, sans-serif"
+              font-weight="800" font-size="6" fill="#3A3F4A" opacity="0.62">B-202 · LPG · 60,000 GAL WC</text>
+      </g>
+      <g class="country-MX" style="display:none">
+        <text x="80" y="29" text-anchor="middle"
+              font-family="Inter, system-ui, sans-serif"
+              font-weight="800" font-size="6" fill="#3A3F4A" opacity="0.62">B-202 · LPG · 227,000 L WC</text>
+      </g>
+      <g class="country-CA" style="display:none">
+        <text x="80" y="29" text-anchor="middle"
+              font-family="Inter, system-ui, sans-serif"
+              font-weight="800" font-size="6" fill="#3A3F4A" opacity="0.62">B-202 · LPG · 227,000 L WC</text>
+      </g>
     </g>
     <!-- Bullet C (very far right, partially behind rack) -->
     <g transform="translate(1024 312)">
@@ -782,19 +800,49 @@
     <text x="568" y="222" text-anchor="end"
           font-family="Courier New, ui-monospace, monospace"
           font-weight="900" font-size="20" fill="#43E26A" letter-spacing="1.4">32500</text>
-    <text x="498" y="234"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="6" fill="#43E26A" letter-spacing="0.6">LBS NET</text>
+    <g class="country-US">
+      <text x="498" y="234"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#43E26A" letter-spacing="0.6">LBS NET</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="498" y="234"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#43E26A" letter-spacing="0.6">KG NETO</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="498" y="234"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6" fill="#43E26A" letter-spacing="0.6">KG NET</text>
+    </g>
     <!-- Preset bar (visual progress within meter) -->
     <rect x="494" y="246" width="78" height="6" fill="#1A1F2E"/>
     <rect class="meter-bar" x="494" y="246" width="78" height="6" fill="#43E26A"/>
     <!-- Status row -->
-    <text x="498" y="266"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="6.2" fill="#FFFFFF" letter-spacing="0.6">PRESET 65,000 LBS</text>
-    <text x="498" y="278"
-          font-family="Inter, system-ui, sans-serif"
-          font-weight="700" font-size="6.2" fill="#43E26A" letter-spacing="0.6">FLOW · 240 GPM</text>
+    <g class="country-US">
+      <text x="498" y="266"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.2" fill="#FFFFFF" letter-spacing="0.6">PRESET 65,000 LBS</text>
+      <text x="498" y="278"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.2" fill="#43E26A" letter-spacing="0.6">FLOW · 240 GPM</text>
+    </g>
+    <g class="country-MX" style="display:none">
+      <text x="498" y="266"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.2" fill="#FFFFFF" letter-spacing="0.6">PRESET 29,500 KG</text>
+      <text x="498" y="278"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.2" fill="#43E26A" letter-spacing="0.6">FLUJO · 910 L/MIN</text>
+    </g>
+    <g class="country-CA" style="display:none">
+      <text x="498" y="266"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.2" fill="#FFFFFF" letter-spacing="0.6">PRESET 29,500 KG</text>
+      <text x="498" y="278"
+            font-family="Inter, system-ui, sans-serif"
+            font-weight="700" font-size="6.2" fill="#43E26A" letter-spacing="0.6">FLOW · 910 L/MIN</text>
+    </g>
     <text x="498" y="290"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="6.2" fill="#FFD23A" letter-spacing="0.6">PROPANE · UN1075</text>

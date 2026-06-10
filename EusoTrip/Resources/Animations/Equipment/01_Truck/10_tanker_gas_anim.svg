@@ -114,17 +114,11 @@
        Division 2.1 (flammable gas / UN1075) is UN-model-harmonised, so
        the red diamond + flame + UN number are identical for US (49 CFR),
        Canada (TDG) and Mexico (NOM-004-SCT). Only the worded text and
-       the side stencil units differ. The host renderer sets
-       data-country="US" | "MX" | "CA" on the root <svg>; default is US.
-       Selectors below show exactly one localisation group. */
+       the side stencil units differ. The renderer shows ONE country
+       group by toggling display on .country-US / .country-MX /
+       .country-CA; default is US. */
     .country-MX, .country-CA { display: none; }
     .country-US { display: inline; }
-    svg[data-country="MX"] .country-US,
-    svg[data-country="MX"] .country-CA { display: none; }
-    svg[data-country="MX"] .country-MX { display: inline; }
-    svg[data-country="CA"] .country-US,
-    svg[data-country="CA"] .country-MX { display: none; }
-    svg[data-country="CA"] .country-CA { display: inline; }
   
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
@@ -143,7 +137,8 @@
        MC 331 / TC 331 single-shell pressure vessel, WHITE-painted with
        hemispherical heads. Division 2.1 FLAMMABLE GAS · UN1075 · 250 psig
        MAWP. Placards UN-model-harmonised across US (49 CFR) / CA (TDG) /
-       MX (NOM-004-SCT); country-switchable wording via data-country. -->
+       MX (NOM-004-SCT); country-switchable wording via the
+       .country-US/-MX/-CA display toggle. -->
   <defs>
         <linearGradient id="skyDark" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%"  stop-color="#0A0F1F"/>
