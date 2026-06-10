@@ -127,12 +127,37 @@
       50%      { opacity: 1; }
     }
 
+    /* ========== COUNTRY-SWITCHABLE REGULATORY LAYER ==========
+       US FMVSS 108 / DOT-C2 conspicuity + LBS · CA CMVSS 108 + KG · MX NOM-068-SCT-2 inspección + KG.
+       Default = US visible. The renderer shows ONE country group by
+       toggling display on .country-US / .country-MX / .country-CA. */
+    .country-US { display: inline; }
+    .country-MX, .country-CA { display: none; }
+
     @media (prefers-reduced-motion: reduce) {
       .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,
       .sheen, .wordmark, .badge-e, .headlight-glow, .airlines, .chevron,
       .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
     }
   
+    /* ========== IDENTITY BEAT — swing-door hardware glint + box flex ==========
+       The 53-ft box rides its own suspension beat (counter-phase to the
+       chassis bob) and the rear swing-door lock rods catch the light. */
+    .door-rod-glint { animation: door-rod-glint 4.6s ease-in-out infinite; }
+    @keyframes door-rod-glint {
+      0%, 100% { opacity: 0; }
+      10%      { opacity: 0.55; }
+      22%      { opacity: 0; }
+    }
+    .box-flex { animation: box-flex 0.5s ease-in-out infinite -0.25s; }
+    @keyframes box-flex {
+      0%, 100% { transform: translateY(0); }
+      50%      { transform: translateY(-0.7px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .door-rod-glint, .box-flex { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -316,7 +341,7 @@
     <g filter="url(#rigShadow)">
       <rect x="475" y="170" width="600" height="290" rx="10" fill="url(#trailerBody)"
             stroke="#C8CDD8" stroke-width="1"/>
-      <rect x="475" y="170" width="600" height="6" rx="3" fill="#FFFFFF" opacity="0.55"/>
+      <rect class="box-flex" x="475" y="170" width="600" height="6" rx="3" fill="#FFFFFF" opacity="0.55"/>
 
       <g clip-path="inset(170px 125px 140px 475px)">
         <rect class="sheen" x="475" y="172" width="220" height="286" rx="9"
@@ -341,6 +366,8 @@
       <rect x="1063" y="290" width="6" height="14" rx="1" fill="#3A3F4A"/>
       <rect x="1063" y="360" width="6" height="14" rx="1" fill="#3A3F4A"/>
       <circle cx="1066" cy="328" r="4" fill="#1A1F2E"/>
+      <!-- IDENTITY BEAT — glint sweeping the swing-door lock rods -->
+      <rect class="door-rod-glint" x="1062" y="218" width="8" height="158" rx="4" fill="#FFFFFF" opacity="0"/>
   <g>
         <rect x="478" y="438" width="20" height="6" fill="#E5350D"/>
         <rect x="498" y="438" width="20" height="6" fill="#FFFFFF"/>
@@ -415,4 +442,20 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- COUNTRY-SWITCHABLE COMPLIANCE CHIP — 53-ft dry van: conspicuity-tape standard + weight units flip by jurisdiction -->
+  <g class="country-US" transform="translate(1056 96)">
+    <rect x="0" y="0" width="96" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="48" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4" fill="#5B3FBF">LBS · DOT-C2</text>
+  </g>
+  <g class="country-CA" transform="translate(1056 96)">
+    <rect x="0" y="0" width="96" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="48" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4" fill="#5B3FBF">KG · CMVSS 108</text>
+  </g>
+  <g class="country-MX" transform="translate(1056 96)">
+    <rect x="0" y="0" width="96" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="48" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4" fill="#5B3FBF">KG · NOM-068</text>
+  </g>
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">DRY VAN 53 FT</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan> &#183; <tspan data-bind="weight_label">&#8212;</tspan></text>
 </svg>

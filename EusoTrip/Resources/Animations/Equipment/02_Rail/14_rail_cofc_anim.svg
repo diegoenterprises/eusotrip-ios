@@ -122,12 +122,29 @@
       50%      { opacity: 1; }
     }
 
+    /* ========== COUNTRY-SWITCHABLE REGULATORY LAYER ==========
+       AAR interchange fleet (US/MX/CA) shares one car — the load-limit stencil UNIT flips by jurisdiction (AAR · Transport Canada · SCT).
+       Default = US visible. The renderer shows ONE country group by
+       toggling display on .country-US / .country-MX / .country-CA. */
+    .country-US { display: inline; }
+    .country-MX, .country-CA { display: none; }
+
     @media (prefers-reduced-motion: reduce) {
       .rail-clack, .rail-yaw, .container-settle, .spray,
       .sheen, .wordmark, .twist-lock, .reporting, .iso-code,
       .chevron, .sky-shimmer, .rail-line, .ballast, .brand-mark, .brand-word { animation: none !important; }
     }
   
+    /* ========== ACTIVATED RAIL VOCAB (Wave S1) ==========
+       Real jointed-rail read: 96px rail + 4px joint gap scrolled by the
+       shared rail-scroll keyframe — dash cycle (100) equals the keyframe
+       travel, so the joint sweep loops seamlessly under the consist. */
+    .rail-joints { stroke-dasharray: 96 4;
+                   animation: rail-scroll 1.2s linear infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .rail-joints { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -238,9 +255,9 @@
   </g>
 
   <!-- RAILS -->
-  <line class="rail-line" x1="40" y1="495" x2="1160" y2="495"
+  <line class="rail-joints" x1="40" y1="495" x2="1160" y2="495"
         stroke="#7A7F88" stroke-width="6" stroke-linecap="butt"/>
-  <line class="rail-line" x1="40" y1="493" x2="1160" y2="493"
+  <line class="rail-joints" x1="40" y1="493" x2="1160" y2="493"
         stroke="#C0C5CD" stroke-width="2" stroke-linecap="butt"/>
 
   <!-- DROP SHADOW (stays put) -->
@@ -263,8 +280,20 @@
         <rect x="120" y="430" width="960" height="3" rx="1" fill="#FFFFFF" opacity="0.35"/>
         <rect x="120" y="445" width="960" height="6" fill="#5A606D" opacity="0.55"/>
 
-        <text class="reporting" x="160" y="461" font-family="Inter, system-ui, sans-serif"
+        <text class="reporting" data-bind="reporting_marks" x="160" y="461" font-family="Inter, system-ui, sans-serif"
               font-weight="800" font-size="11" fill="#9B7FD9">EUSO 7142</text>
+        <!-- COUNTRY-SWITCHABLE CAPY STENCIL — COFC flatcar; unit label flips by jurisdiction -->
+        <g class="country-stencil">
+          <g class="country-US">
+            <text x="1040" y="461" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="11" fill="#9B7FD9" opacity="0.85">CAPY 70 TON</text>
+          </g>
+          <g class="country-CA">
+            <text x="1040" y="461" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="11" fill="#9B7FD9" opacity="0.85">CAPY 63 t</text>
+          </g>
+          <g class="country-MX">
+            <text x="1040" y="461" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="11" fill="#9B7FD9" opacity="0.85">CAP 63 t</text>
+          </g>
+        </g>
 
         <g fill="#0F1118">
           <rect x="200" y="460" width="6" height="6"/><rect x="280" y="460" width="6" height="6"/>
@@ -374,4 +403,7 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">COFC FLATCAR</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan></text>
 </svg>

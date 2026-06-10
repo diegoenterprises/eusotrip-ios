@@ -99,6 +99,13 @@
                   animation: wheel-spin 1.4s linear infinite; }
     @keyframes wheel-spin { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
 
+    /* ========== COUNTRY-SWITCHABLE REGULATORY LAYER ==========
+       Covered-hopper capacity stencil: US AAR cubic feet · CA/MX cubic metres (one interchange fleet, unit flips).
+       Default = US visible. The renderer shows ONE country group by
+       toggling display on .country-US / .country-MX / .country-CA. */
+    .country-US { display: inline; }
+    .country-MX, .country-CA { display: none; }
+
     @media (prefers-reduced-motion: reduce) {
       .rail-clack, .rail-yaw, .container-settle, .spray,
       .sheen, .wordmark, .twist-lock, .reporting, .iso-code,
@@ -106,6 +113,29 @@
       .wheel-spin { animation: none !important; }
     }
   
+    /* ========== ACTIVATED RAIL VOCAB (Wave S1) ==========
+       Real jointed-rail read: 96px rail + 4px joint gap scrolled by the
+       shared rail-scroll keyframe — dash cycle (100) equals the keyframe
+       travel, so the joint sweep loops seamlessly under the consist. */
+    .rail-joints { stroke-dasharray: 96 4;
+                   animation: rail-scroll 1.2s linear infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .rail-joints { animation: none !important; }
+    }
+
+    /* ========== IDENTITY BEAT — hatch-cover glints ==========
+       Four roof hatches catch the light in sequence; outlet gates stay
+       LOCKED in transit (hatches/gates never move on a rolling car). */
+    .hatch-glint { animation: hatch-glint 6s ease-in-out infinite; }
+    @keyframes hatch-glint {
+      0%, 100% { opacity: 0; }
+      8%       { opacity: 0.5; }
+      16%      { opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .hatch-glint { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -157,9 +187,9 @@
   <rect class="sky-bg" width="1200" height="600" fill="url(#sky)"/>
   <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
   <rect x="40" y="510" width="1120" height="20" fill="#9B7FD9" opacity="0.18"/>
-  <g fill="#5B3FBF" opacity="0.25"><circle cx="80" cy="518" r="1.5"/><circle cx="160" cy="522" r="1.5"/><circle cx="240" cy="516" r="1.5"/><circle cx="320" cy="524" r="1.5"/><circle cx="400" cy="518" r="1.5"/><circle cx="480" cy="522" r="1.5"/><circle cx="560" cy="516" r="1.5"/><circle cx="640" cy="524" r="1.5"/><circle cx="720" cy="518" r="1.5"/><circle cx="800" cy="522" r="1.5"/><circle cx="880" cy="516" r="1.5"/><circle cx="960" cy="524" r="1.5"/><circle cx="1040" cy="518" r="1.5"/><circle cx="1120" cy="522" r="1.5"/></g>
+  <g class="ballast" fill="#5B3FBF" opacity="0.25"><circle cx="80" cy="518" r="1.5"/><circle cx="160" cy="522" r="1.5"/><circle cx="240" cy="516" r="1.5"/><circle cx="320" cy="524" r="1.5"/><circle cx="400" cy="518" r="1.5"/><circle cx="480" cy="522" r="1.5"/><circle cx="560" cy="516" r="1.5"/><circle cx="640" cy="524" r="1.5"/><circle cx="720" cy="518" r="1.5"/><circle cx="800" cy="522" r="1.5"/><circle cx="880" cy="516" r="1.5"/><circle cx="960" cy="524" r="1.5"/><circle cx="1040" cy="518" r="1.5"/><circle cx="1120" cy="522" r="1.5"/></g>
   <g><rect x="80" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="140" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="200" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="260" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="320" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="380" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="440" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="500" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="560" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="620" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="680" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="740" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="800" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="860" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="920" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="980" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="1040" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="1100" y="498" width="40" height="14" rx="1" fill="url(#tie)"/></g>
-  <rect x="40" y="492" width="1120" height="6" rx="1" fill="#7A7F88"/><rect x="40" y="492" width="1120" height="2" fill="#C0C5CD"/>
+  <line class="rail-joints" x1="40" y1="495" x2="1160" y2="495" stroke="#7A7F88" stroke-width="6" stroke-linecap="butt"/><line class="rail-joints" x1="40" y1="493" x2="1160" y2="493" stroke="#C0C5CD" stroke-width="2" stroke-linecap="butt"/>
   <ellipse cx="600" cy="488" rx="490" ry="6" fill="#1A1F2E" opacity="0.13"/>
 
   <!-- ========== HOPPER BODY (covered hopper — top closed, V-bottom for gravity discharge) ========== -->
@@ -183,6 +213,13 @@
       <ellipse cx="730" cy="214" rx="34" ry="3.5" fill="#3DA86F"/>
       <ellipse cx="960" cy="218" rx="40" ry="6" fill="#1F5C3C"/>
       <ellipse cx="960" cy="214" rx="34" ry="3.5" fill="#3DA86F"/>
+    </g>
+    <!-- IDENTITY BEAT — sequential hatch glints -->
+    <g fill="#FFFFFF">
+      <ellipse class="hatch-glint" cx="270" cy="214" rx="34" ry="3.5" opacity="0"/>
+      <ellipse class="hatch-glint" cx="500" cy="214" rx="34" ry="3.5" opacity="0" style="animation-delay:-1.5s"/>
+      <ellipse class="hatch-glint" cx="730" cy="214" rx="34" ry="3.5" opacity="0" style="animation-delay:-3s"/>
+      <ellipse class="hatch-glint" cx="960" cy="214" rx="34" ry="3.5" opacity="0" style="animation-delay:-4.5s"/>
     </g>
 
     <!-- Vertical body ribs (the structural ribs along the side of a hopper) -->
@@ -214,11 +251,20 @@
 
     <!-- Reporting marks -->
     <text x="240" y="320" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="22" fill="#FFFFFF" opacity="0.95" letter-spacing="2">EUSO</text>
-    <text x="240" y="355" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="32" fill="#FFFFFF" opacity="0.95" letter-spacing="3">441 803</text>
+    <text class="reporting" data-bind="reporting_marks" x="240" y="355" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="32" fill="#FFFFFF" opacity="0.95" letter-spacing="3">441 803</text>
     <!-- Cargo classification stencil -->
     <text x="600" y="320" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="36" fill="#FFFFFF" opacity="0.18" letter-spacing="3">GRAIN</text>
     <!-- Capacity stencil -->
-    <text x="800" y="375" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="2">CAPY 4750 CU FT</text>
+    <!-- COUNTRY-SWITCHABLE CAPACITY STENCIL — same car, jurisdiction unit flips -->
+    <g class="country-US">
+      <text x="800" y="375" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="2">CAPY 4750 CU FT</text>
+    </g>
+    <g class="country-CA">
+      <text x="800" y="375" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="2">CAPY 134.5 m&#179;</text>
+    </g>
+    <g class="country-MX">
+      <text x="800" y="375" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="11" fill="#FFFFFF" opacity="0.7" letter-spacing="2">CAP 134.5 m&#179;</text>
+    </g>
   </g>
 
   <!-- Couplers + bogies -->
@@ -273,4 +319,7 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">COVERED HOPPER</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan></text>
 </svg>

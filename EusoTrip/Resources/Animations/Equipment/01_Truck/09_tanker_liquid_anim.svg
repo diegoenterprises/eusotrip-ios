@@ -267,56 +267,95 @@
       </g>
     </defs>
 
-    <!-- ===== US (default visible) ===== -->
-    <g class="country-US">
-      <g transform="translate(620 320) rotate(45)">
-        <rect x="-25" y="-25" width="50" height="50" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
-        <!-- bottom half black (correct Class 8 layout: white over black) -->
-        <rect x="-25" y="0" width="50" height="25" fill="#000000"/>
-        <g transform="rotate(-45)">
-          <!-- corrosive pictogram in the white upper field -->
-          <g transform="translate(0 -9) scale(0.7)"><use href="#class8Symbol"/></g>
-          <text y="15" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="6.5" fill="#FFFFFF" letter-spacing="0.5">CORROSIVE</text>
-          <text y="22" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="11" fill="#FFFFFF">8</text>
+    <!-- ===== COMMODITY PLACARD ENGINE HOOK =====
+         The renderer remaps <use href="#commodityPlacard"> to the live
+         load's class symbol (LoadAnimationContext.placardSymbolId).
+         Default service: Class 8 (UN 1789, the rig's authored set with
+         full US/MX/CA variants). Library: class8Placard (authored) +
+         class3Placard / class6_1Placard. -->
+    <defs>
+      <g id="class8Placard">
+      <!-- ===== US (default visible) ===== -->
+      <g class="country-US">
+        <g transform="translate(620 320) rotate(45)">
+          <rect x="-25" y="-25" width="50" height="50" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
+          <!-- bottom half black (correct Class 8 layout: white over black) -->
+          <rect x="-25" y="0" width="50" height="25" fill="#000000"/>
+          <g transform="rotate(-45)">
+            <!-- corrosive pictogram in the white upper field -->
+            <g transform="translate(0 -9) scale(0.7)"><use href="#class8Symbol"/></g>
+            <text y="15" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="6.5" fill="#FFFFFF" letter-spacing="0.5">CORROSIVE</text>
+            <text y="22" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="11" fill="#FFFFFF">8</text>
+          </g>
+        </g>
+        <!-- UN1789 orange ID-number panel (US 49 CFR 172.332) -->
+        <g>
+          <rect x="900" y="320" width="80" height="22" rx="2" fill="#F08200" stroke="#000000" stroke-width="1.5"/>
+          <text x="940" y="335" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" fill="#000000" letter-spacing="1">1789</text>
         </g>
       </g>
-      <!-- UN1789 orange ID-number panel (US 49 CFR 172.332) -->
-      <g>
-        <rect x="900" y="320" width="80" height="22" rx="2" fill="#F08200" stroke="#000000" stroke-width="1.5"/>
-        <text x="940" y="335" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" fill="#000000" letter-spacing="1">1789</text>
-      </g>
-    </g>
-
-    <!-- ===== MX (SCT / NOM-004-SCT) — hidden by default ===== -->
-    <g class="country-MX" style="display:none">
-      <g transform="translate(620 320) rotate(45)">
-        <rect x="-25" y="-25" width="50" height="50" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
-        <rect x="-25" y="0" width="50" height="25" fill="#000000"/>
-        <g transform="rotate(-45)">
-          <g transform="translate(0 -9) scale(0.7)"><use href="#class8Symbol"/></g>
-          <text y="15" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="6.5" fill="#FFFFFF" letter-spacing="0.3">CORROSIVO</text>
-          <text y="22" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="11" fill="#FFFFFF">8</text>
+  
+      <!-- ===== MX (SCT / NOM-004-SCT) — hidden by default ===== -->
+      <g class="country-MX" style="display:none">
+        <g transform="translate(620 320) rotate(45)">
+          <rect x="-25" y="-25" width="50" height="50" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
+          <rect x="-25" y="0" width="50" height="25" fill="#000000"/>
+          <g transform="rotate(-45)">
+            <g transform="translate(0 -9) scale(0.7)"><use href="#class8Symbol"/></g>
+            <text y="15" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="6.5" fill="#FFFFFF" letter-spacing="0.3">CORROSIVO</text>
+            <text y="22" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="11" fill="#FFFFFF">8</text>
+          </g>
+        </g>
+        <g>
+          <rect x="900" y="320" width="80" height="22" rx="2" fill="#F08200" stroke="#000000" stroke-width="1.5"/>
+          <text x="940" y="335" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="12" fill="#000000" letter-spacing="0.6">ONU 1789</text>
         </g>
       </g>
-      <g>
-        <rect x="900" y="320" width="80" height="22" rx="2" fill="#F08200" stroke="#000000" stroke-width="1.5"/>
-        <text x="940" y="335" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="12" fill="#000000" letter-spacing="0.6">ONU 1789</text>
-      </g>
-    </g>
-
-    <!-- ===== CA (TDG) — hidden by default ===== -->
-    <g class="country-CA" style="display:none">
-      <g transform="translate(620 320) rotate(45)">
-        <rect x="-25" y="-25" width="50" height="50" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
-        <rect x="-25" y="0" width="50" height="25" fill="#000000"/>
-        <g transform="rotate(-45)">
-          <!-- TDG: corrosive symbol + UN number on the placard; class word not required -->
-          <g transform="translate(0 -9) scale(0.7)"><use href="#class8Symbol"/></g>
-          <text y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF" letter-spacing="0.5">1789</text>
-          <text y="23" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="8" fill="#FFFFFF">8</text>
+  
+      <!-- ===== CA (TDG) — hidden by default ===== -->
+      <g class="country-CA" style="display:none">
+        <g transform="translate(620 320) rotate(45)">
+          <rect x="-25" y="-25" width="50" height="50" fill="#FFFFFF" stroke="#000000" stroke-width="2"/>
+          <rect x="-25" y="0" width="50" height="25" fill="#000000"/>
+          <g transform="rotate(-45)">
+            <!-- TDG: corrosive symbol + UN number on the placard; class word not required -->
+            <g transform="translate(0 -9) scale(0.7)"><use href="#class8Symbol"/></g>
+            <text y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF" letter-spacing="0.5">1789</text>
+            <text y="23" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="8" fill="#FFFFFF">8</text>
+          </g>
         </g>
       </g>
-    </g>
+      </g>
+      <g id="class3Placard">
+        <g transform="translate(620 320) scale(0.78)">
+          <g transform="rotate(45)">
+            <rect x="-32" y="-32" width="64" height="64" fill="#E5350D" stroke="#000000" stroke-width="3"/>
+            <rect x="-27" y="-27" width="54" height="54" fill="none" stroke="#FFFFFF" stroke-width="1.2" opacity="0.7"/>
+          </g>
+          <g transform="translate(0 -10) scale(1.3)" fill="#FFFFFF"><path d="M 0 -8 C -3 -3 -6 0 -5 4 C -7 3 -8 0 -7 -2 C -9 0 -10 5 -7 8 C -9 7 -9 4 -9 7 C -7 10 -4 11 0 11 C 4 11 7 10 9 7 C 9 4 9 7 7 8 C 10 5 9 0 7 -2 C 8 0 7 3 5 4 C 6 0 3 -3 0 -8 Z"/></g>
+          <text class="country-US" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#FFFFFF" letter-spacing="0.4">FLAMMABLE</text>
+          <text class="country-MX" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#FFFFFF" letter-spacing="0.4">INFLAMABLE</text>
+          <text y="27" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="13" fill="#FFFFFF">3</text>
+        </g>
+      </g>
+      <g id="class6_1Placard">
+        <g transform="translate(620 320) scale(0.78)">
+          <g transform="rotate(45)">
+            <rect x="-32" y="-32" width="64" height="64" fill="#FFFFFF" stroke="#000000" stroke-width="3"/>
+          </g>
+          <g fill="#0A0A0A">
+            <circle cx="0" cy="-16" r="6"/>
+            <rect x="-10" y="-9" width="20" height="2.6" rx="1.3" transform="rotate(20 0 -7.7)"/>
+            <rect x="-10" y="-9" width="20" height="2.6" rx="1.3" transform="rotate(-20 0 -7.7)"/>
+          </g>
+          <text class="country-US" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#0A0A0A" letter-spacing="0.4">POISON</text>
+          <text class="country-MX" y="14" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="6" fill="#0A0A0A" letter-spacing="0.4">T&#211;XICO</text>
+          <text y="27" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="13" fill="#0A0A0A">6</text>
+        </g>
+      </g>
+      <g id="commodityPlacard"><use href="#class8Placard"/></g>
+    </defs>
+    <use href="#commodityPlacard"/>
     <!-- "STAINLESS" stamp (subtle, on side) -->
     <text x="800" y="395" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" fill="#5B3FBF" opacity="0.7" letter-spacing="3">316L STAINLESS · MC-307</text>
   </g>

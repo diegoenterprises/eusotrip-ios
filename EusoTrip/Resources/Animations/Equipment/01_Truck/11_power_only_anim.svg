@@ -111,6 +111,25 @@
       .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
     }
   
+    /* ========== IDENTITY BEAT — coupling-ready fifth wheel ==========
+       Bobtail truth: no trailer, so the story is the EXPOSED fifth
+       wheel — a sheen rides the greased plate and the kingpin throat
+       pulses 'ready to couple'. */
+    .fifthwheel-sheen { animation: fifthwheel-sheen 4.2s ease-in-out infinite; }
+    @keyframes fifthwheel-sheen {
+      0%, 100% { opacity: 0; }
+      14%      { opacity: 0.5; }
+      28%      { opacity: 0; }
+    }
+    .kingpin-ready { animation: kingpin-ready 2.4s ease-in-out infinite; }
+    @keyframes kingpin-ready {
+      0%, 100% { opacity: 0.35; }
+      50%      { opacity: 0.95; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .fifthwheel-sheen, .kingpin-ready { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -194,7 +213,9 @@
     <ellipse cx="430" cy="445" rx="42" ry="8" fill="#3A3F4A"/>
     <ellipse cx="430" cy="442" rx="36" ry="5" fill="#5A606D"/>
     <!-- King pin slot (V shape opening) -->
-    <path d="M 410 440 L 430 445 L 450 440" stroke="#1A1F2E" stroke-width="2" fill="none"/>
+    <path class="kingpin-ready" d="M 410 440 L 430 445 L 450 440" stroke="#1A1F2E" stroke-width="2" fill="none"/>
+    <!-- IDENTITY BEAT — sheen riding the greased coupling plate -->
+    <ellipse class="fifthwheel-sheen" cx="430" cy="441" rx="30" ry="3.5" fill="#FFFFFF" opacity="0"/>
     <!-- Fifth wheel mounting brackets -->
     <rect x="395" y="448" width="8" height="14" rx="1" fill="#1A1F2E"/>
     <rect x="457" y="448" width="8" height="14" rx="1" fill="#1A1F2E"/>
@@ -275,4 +296,7 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">POWER ONLY &#183; TRACTOR</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan> &#183; <tspan data-bind="weight_label">&#8212;</tspan></text>
 </svg>

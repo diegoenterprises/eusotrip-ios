@@ -110,6 +110,19 @@
       .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
     }
   
+    /* ========== IDENTITY BEAT — gooseneck coupler on the bed ball ==========
+       The hot-shot signature: the trailer couples to a ball INSIDE the
+       pickup bed. A soft ring pulses on the coupler seat. */
+    .hitch-pulse { transform-box: fill-box; transform-origin: center;
+                   animation: hitch-pulse 2.6s ease-in-out infinite; }
+    @keyframes hitch-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.2; }
+      50%      { transform: scale(1.25); opacity: 0.65; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .hitch-pulse { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -241,6 +254,8 @@
     <!-- Gooseneck hitch ball (centered in bed) -->
     <circle cx="465" cy="395" r="6" fill="#1A1F2E"/>
     <circle cx="465" cy="392" r="3" fill="#5A606D"/>
+    <!-- IDENTITY BEAT — coupler-seat pulse on the gooseneck ball -->
+    <circle class="hitch-pulse" cx="465" cy="393" r="10" fill="none" stroke="#5B3FBF" stroke-width="2" opacity="0.2"/>
     <!-- Pickup brand badge on cab door -->
     <circle cx="308" cy="425" r="7" fill="#FFFFFF" opacity="0.85"/>
     <text x="308" y="429" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="8" fill="#5B3FBF">E</text>
@@ -380,4 +395,7 @@
   </g>
 
   <!-- EUSOTRIP-FIX-2026-05-17 · pixel/motion/country polish 2026-05-29 -->
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">HOT SHOT 40 FT</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan> &#183; <tspan data-bind="weight_label">&#8212;</tspan></text>
 </svg>

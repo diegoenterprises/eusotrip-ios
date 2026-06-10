@@ -108,6 +108,28 @@
       .chevron, .sky-shimmer, .rail-line, .ballast, .brand-mark, .brand-word { animation: none !important; }
     }
   
+    /* ========== ACTIVATED RAIL VOCAB (Wave S1) ==========
+       Real jointed-rail read: 96px rail + 4px joint gap scrolled by the
+       shared rail-scroll keyframe — dash cycle (100) equals the keyframe
+       travel, so the joint sweep loops seamlessly under the consist. */
+    .rail-joints { stroke-dasharray: 96 4;
+                   animation: rail-scroll 1.2s linear infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .rail-joints { animation: none !important; }
+    }
+
+    /* ========== IDENTITY BEAT — perforation shimmer ==========
+       The punched side screens (the modern auto-rack signature) breathe
+       as light plays through the perforation field. */
+    .perf-shimmer { animation: perf-shimmer 4.2s ease-in-out infinite; }
+    @keyframes perf-shimmer {
+      0%, 100% { opacity: 0.45; }
+      50%      { opacity: 0.72; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .perf-shimmer { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -158,9 +180,9 @@
   <rect class="sky-bg" width="1200" height="600" fill="url(#sky)"/>
   <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
   <rect x="40" y="510" width="1120" height="20" fill="#9B7FD9" opacity="0.18"/>
-  <g fill="#5B3FBF" opacity="0.25"><circle cx="80" cy="518" r="1.5"/><circle cx="160" cy="522" r="1.5"/><circle cx="240" cy="516" r="1.5"/><circle cx="320" cy="524" r="1.5"/><circle cx="400" cy="518" r="1.5"/><circle cx="480" cy="522" r="1.5"/><circle cx="560" cy="516" r="1.5"/><circle cx="640" cy="524" r="1.5"/><circle cx="720" cy="518" r="1.5"/><circle cx="800" cy="522" r="1.5"/><circle cx="880" cy="516" r="1.5"/><circle cx="960" cy="524" r="1.5"/><circle cx="1040" cy="518" r="1.5"/><circle cx="1120" cy="522" r="1.5"/></g>
+  <g class="ballast" fill="#5B3FBF" opacity="0.25"><circle cx="80" cy="518" r="1.5"/><circle cx="160" cy="522" r="1.5"/><circle cx="240" cy="516" r="1.5"/><circle cx="320" cy="524" r="1.5"/><circle cx="400" cy="518" r="1.5"/><circle cx="480" cy="522" r="1.5"/><circle cx="560" cy="516" r="1.5"/><circle cx="640" cy="524" r="1.5"/><circle cx="720" cy="518" r="1.5"/><circle cx="800" cy="522" r="1.5"/><circle cx="880" cy="516" r="1.5"/><circle cx="960" cy="524" r="1.5"/><circle cx="1040" cy="518" r="1.5"/><circle cx="1120" cy="522" r="1.5"/></g>
   <g><rect x="80" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="140" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="200" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="260" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="320" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="380" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="440" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="500" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="560" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="620" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="680" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="740" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="800" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="860" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="920" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="980" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="1040" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="1100" y="498" width="40" height="14" rx="1" fill="url(#tie)"/></g>
-  <rect x="40" y="492" width="1120" height="6" rx="1" fill="#7A7F88"/><rect x="40" y="492" width="1120" height="2" fill="#C0C5CD"/>
+  <line class="rail-joints" x1="40" y1="495" x2="1160" y2="495" stroke="#7A7F88" stroke-width="6" stroke-linecap="butt"/><line class="rail-joints" x1="40" y1="493" x2="1160" y2="493" stroke="#C0C5CD" stroke-width="2" stroke-linecap="butt"/>
   <ellipse cx="600" cy="488" rx="490" ry="6" fill="#1A1F2E" opacity="0.13"/>
 
   <!-- ========== AUTO RACK BODY (tri-level enclosed car — tall, perforated) ========== -->
@@ -175,7 +197,7 @@
 
     <!-- ========== PERFORATED SIDE PANELS (signature of modern auto rack — slotted/punched panels) ========== -->
     <!-- Top deck perforations -->
-    <g fill="#1F1240" opacity="0.6">
+    <g class="perf-shimmer" fill="#1F1240" opacity="0.6">
       <!-- Row 1 (between top edge and 1st divider) — diagonal slot pattern -->
       <rect x="180" y="180" width="14" height="6" rx="1"/><rect x="220" y="180" width="14" height="6" rx="1"/><rect x="260" y="180" width="14" height="6" rx="1"/>
       <rect x="300" y="180" width="14" height="6" rx="1"/><rect x="340" y="180" width="14" height="6" rx="1"/><rect x="380" y="180" width="14" height="6" rx="1"/>
@@ -228,7 +250,7 @@
     <line x1="1056" y1="170" x2="1056" y2="455" stroke="#FFFFFF" stroke-width="0.5" opacity="0.4"/>
 
     <!-- Reporting marks + country-switchable capacity stencil (default US) -->
-    <text x="180" y="158" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="14" fill="#5B3FBF" opacity="0.85" letter-spacing="2">EUSO ARC 7777 · TRI-LEVEL</text>
+    <text class="reporting" data-bind="reporting_marks" x="180" y="158" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="14" fill="#5B3FBF" opacity="0.85" letter-spacing="2">EUSO ARC 7777 · TRI-LEVEL</text>
     <text class="country-US" x="640" y="158" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="9" fill="#5B3FBF" opacity="0.7" letter-spacing="1.4">CAPY 70 TON · 89' AAR PLATE F</text>
     <text class="country-CA" x="640" y="158" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="9" fill="#5B3FBF" opacity="0.7" letter-spacing="1.4">CAP 63,5 t · 27,1 m · GABARIT AAR F</text>
     <text class="country-MX" x="640" y="158" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="9" fill="#5B3FBF" opacity="0.7" letter-spacing="1.4">CAP 63,5 t · 27,1 m · GALIBO AAR F</text>
@@ -292,4 +314,7 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">AUTO RACK TRI-LEVEL</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan></text>
 </svg>

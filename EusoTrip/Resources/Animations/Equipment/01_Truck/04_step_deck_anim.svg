@@ -104,12 +104,31 @@
       50%      { opacity: 1; }
     }
 
+    /* ========== COUNTRY-SWITCHABLE REGULATORY LAYER ==========
+       Cargo securement: US 49 CFR 393.102 tiedown WLL (LBS) · CA NSC Standard 10 (KG) · MX NOM-012-SCT-2 (KG).
+       Default = US visible. The renderer shows ONE country group by
+       toggling display on .country-US / .country-MX / .country-CA. */
+    .country-US { display: inline; }
+    .country-MX, .country-CA { display: none; }
+
     @media (prefers-reduced-motion: reduce) {
       .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,
       .sheen, .wordmark, .badge-e, .headlight-glow, .airlines, .chevron,
       .sky-shimmer, .ground-line, .brand-mark, .brand-word { animation: none !important; }
     }
   
+    /* ========== IDENTITY BEAT — the step-deck DROP read ==========
+       A breathing dimension bracket at the riser makes the two-level
+       deck (the model's identity) legible at a glance. */
+    .drop-read { animation: drop-read-breath 3.4s ease-in-out infinite; }
+    @keyframes drop-read-breath {
+      0%, 100% { opacity: 0.35; }
+      50%      { opacity: 0.9; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .drop-read { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -210,6 +229,15 @@
     <!-- Bottom chassis I-beams -->
     <rect x="475" y="445" width="180" height="13" rx="2" fill="#1A1F2E"/>
     <rect x="685" y="458" width="390" height="9" rx="2" fill="#1A1F2E"/>
+    <!-- IDENTITY BEAT — drop-height dimension bracket at the riser -->
+    <g class="drop-read">
+      <g stroke="#5B3FBF" stroke-width="1.6" fill="none" stroke-linecap="round">
+        <line x1="670" y1="397" x2="670" y2="423"/>
+        <path d="M 666 401 L 670 397 L 674 401"/>
+        <path d="M 666 419 L 670 423 L 674 419"/>
+      </g>
+      <text x="700" y="414" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="11" fill="#5B3FBF" letter-spacing="1">22 IN DROP</text>
+    </g>
     <!-- Tie-down rings -->
     <g fill="#FFE680" opacity="0.85">
       <circle cx="525" cy="402" r="3"/><circle cx="585" cy="402" r="3"/><circle cx="625" cy="402" r="3"/>
@@ -284,4 +312,20 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- COUNTRY-SWITCHABLE COMPLIANCE CHIP — step-deck tiedown WLL standard + weight units flip by jurisdiction -->
+  <g class="country-US" transform="translate(1056 96)">
+    <rect x="0" y="0" width="96" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="48" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4" fill="#5B3FBF">LBS · 393.102</text>
+  </g>
+  <g class="country-CA" transform="translate(1056 96)">
+    <rect x="0" y="0" width="96" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="48" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4" fill="#5B3FBF">KG · NSC 10</text>
+  </g>
+  <g class="country-MX" transform="translate(1056 96)">
+    <rect x="0" y="0" width="96" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="48" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4" fill="#5B3FBF">KG · NOM-012</text>
+  </g>
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="572" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">STEP DECK 48 FT</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan> &#183; <tspan data-bind="weight_label">&#8212;</tspan></text>
 </svg>

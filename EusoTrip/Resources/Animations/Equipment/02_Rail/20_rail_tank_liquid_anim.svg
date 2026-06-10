@@ -100,6 +100,16 @@
       .chevron, .sky-shimmer, .rail-line, .ballast, .brand-mark, .brand-word { animation: none !important; }
     }
   
+    /* ========== ACTIVATED RAIL VOCAB (Wave S1) ==========
+       Real jointed-rail read: 96px rail + 4px joint gap scrolled by the
+       shared rail-scroll keyframe — dash cycle (100) equals the keyframe
+       travel, so the joint sweep loops seamlessly under the consist. */
+    .rail-joints { stroke-dasharray: 96 4;
+                   animation: rail-scroll 1.2s linear infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .rail-joints { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -162,7 +172,7 @@
 
   <!-- ROADBED + TIES + RAILS -->
   <rect x="40" y="510" width="1120" height="20" fill="#9B7FD9" opacity="0.18"/>
-  <g fill="#5B3FBF" opacity="0.25">
+  <g class="ballast" fill="#5B3FBF" opacity="0.25">
     <circle cx="80" cy="518" r="1.5"/><circle cx="160" cy="522" r="1.5"/><circle cx="240" cy="516" r="1.5"/><circle cx="320" cy="524" r="1.5"/>
     <circle cx="400" cy="518" r="1.5"/><circle cx="480" cy="522" r="1.5"/><circle cx="560" cy="516" r="1.5"/><circle cx="640" cy="524" r="1.5"/>
     <circle cx="720" cy="518" r="1.5"/><circle cx="800" cy="522" r="1.5"/><circle cx="880" cy="516" r="1.5"/><circle cx="960" cy="524" r="1.5"/>
@@ -179,8 +189,8 @@
     <rect x="920" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="980" y="498" width="40" height="14" rx="1" fill="url(#tie)"/>
     <rect x="1040" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="1100" y="498" width="40" height="14" rx="1" fill="url(#tie)"/>
   </g>
-  <rect x="40" y="492" width="1120" height="6" rx="1" fill="#7A7F88"/>
-  <rect x="40" y="492" width="1120" height="2" fill="#C0C5CD"/>
+  <line class="rail-joints" x1="40" y1="495" x2="1160" y2="495" stroke="#7A7F88" stroke-width="6" stroke-linecap="butt"/>
+  <line class="rail-joints" x1="40" y1="493" x2="1160" y2="493" stroke="#C0C5CD" stroke-width="2" stroke-linecap="butt"/>
   <ellipse cx="600" cy="488" rx="490" ry="6" fill="#1A1F2E" opacity="0.13"/>
 
   <!-- ========== TANK BARREL — long stainless cylinder ========== -->
@@ -219,6 +229,8 @@
       <circle cx="600" cy="242" r="5" fill="#7A7F88"/>
     </g>
 
+    <!-- Reporting marks stencil (left tank end, AAR/UMLER interchange) -->
+    <text class="reporting" data-bind="reporting_marks" x="195" y="312" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="11" fill="#FFFFFF" opacity="0.8" letter-spacing="1">EUSO 31120</text>
     <!-- Catwalk along the top of barrel -->
     <rect x="190" y="277" width="382" height="5" fill="#3A3F4A"/>
     <rect x="628" y="277" width="382" height="5" fill="#3A3F4A"/>
@@ -395,4 +407,7 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">DOT-111 TANK CAR</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan></text>
 </svg>

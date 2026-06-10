@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 200 1200 340" preserveAspectRatio="xMidYMid meet">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 50 1200 480" preserveAspectRatio="xMidYMid meet">
   <style><![CDATA[
     /* ========== RAIL JOINT CLACK-CLACK ==========
        Real bogie over a 39' rail joint: a sharp steel-on-steel jolt
@@ -43,6 +43,84 @@
       .rail-clack, .rail-yaw, .spray { animation: none !important; }
     }
   
+    /* ========== ACTIVATED RAIL VOCAB (Wave S1) ==========
+       Real jointed-rail read: 96px rail + 4px joint gap scrolled by the
+       shared rail-scroll keyframe — dash cycle (100) equals the keyframe
+       travel, so the joint sweep loops seamlessly under the consist. */
+    .rail-joints { stroke-dasharray: 96 4;
+                   animation: rail-scroll 1.2s linear infinite; }
+    @media (prefers-reduced-motion: reduce) {
+      .rail-joints { animation: none !important; }
+    }
+
+    /* ========== SHARED RAIL VOCABULARY (family standard, Wave S1) ========== */
+    .sheen { animation: sheen-sweep 5s ease-in-out infinite; transform-box: fill-box; }
+    @keyframes sheen-sweep {
+      0%   { transform: translateX(-220px); opacity: 0; }
+      30%  { opacity: 0.5; }
+      70%  { opacity: 0.5; }
+      100% { transform: translateX(220px); opacity: 0; }
+    }
+    .wordmark { animation: wordmark-breath 6s ease-in-out infinite; }
+    @keyframes wordmark-breath {
+      0%, 100% { opacity: 0.14; }
+      50%      { opacity: 0.24; }
+    }
+    .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
+    @keyframes chevron-pulse {
+      0%, 100% { opacity: 0.3; }
+      50%      { opacity: 0.65; }
+    }
+    .sky-shimmer { animation: sky-drift 14s linear infinite; transform-box: fill-box; }
+    @keyframes sky-drift {
+      from { transform: translateX(-40px); opacity: 0.12; }
+      50%  { opacity: 0.22; }
+      to   { transform: translateX(40px); opacity: 0.12; }
+    }
+    .rail-line { stroke-dasharray: 40 0;
+                  animation: rail-scroll 1.2s linear infinite; }
+    @keyframes rail-scroll {
+      from { stroke-dashoffset: 0; }
+      to   { stroke-dashoffset: -100; }
+    }
+    .ballast { animation: ballast-drift 3s ease-in-out infinite; transform-box: fill-box; }
+    @keyframes ballast-drift {
+      0%, 100% { transform: translateX(0); opacity: 0.25; }
+      50%      { transform: translateX(-8px); opacity: 0.32; }
+    }
+    .reporting { animation: reporting-fade 7s ease-in-out infinite; }
+    @keyframes reporting-fade {
+      0%, 100% { opacity: 0.85; }
+      50%      { opacity: 0.6; }
+    }
+    /* ========== BRAND LOCKUP ========== */
+    .brand-mark {
+      transform-box: fill-box; transform-origin: center;
+      animation: brand-pulse 3.6s ease-in-out infinite;
+    }
+    @keyframes brand-pulse {
+      0%, 100% { transform: scale(1);    opacity: 0.92; }
+      50%      { transform: scale(1.05); opacity: 1; }
+    }
+    .brand-word { animation: brand-word-breath 6s ease-in-out infinite; }
+    @keyframes brand-word-breath {
+      0%, 100% { opacity: 0.78; }
+      50%      { opacity: 1; }
+    }
+    /* ========== IDENTITY BEAT — empty-deck sheen ==========
+       Light sweeps the bare apitong plank deck — the EMPTY 89-ft deck IS
+       the flatcar's identity read. */
+    .deck-sheen { animation: deck-sheen 5.5s ease-in-out infinite; }
+    @keyframes deck-sheen {
+      0%       { transform: translateX(0); opacity: 0; }
+      30%      { opacity: 0.3; }
+      60%, 100%{ transform: translateX(640px); opacity: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .sheen, .wordmark, .chevron, .sky-shimmer, .rail-line, .ballast,
+      .reporting, .brand-mark, .brand-word, .deck-sheen { animation: none !important; }
+    }
+
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
     @media (prefers-color-scheme: dark) {
       .sky-bg          { fill: url(#skyDark) !important; }
@@ -57,7 +135,10 @@
   ]]></style>
 
   <!-- 29 · Rail · Flat Car · Standalone idle silhouette · RAIL / LBS
-       Empty general-purpose rail flatcar (no container, no trailer). -->
+       Empty general-purpose rail flatcar (no container, no trailer).
+       Wave S1 2026-06-10: reframed to the family viewBox + full shared
+       rail vocabulary (scrolling joints, ballast drift, reporting fade,
+       brand keyframes) + deck-sheen identity beat + live bind hooks. -->
   <defs>
         <linearGradient id="skyDark" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0%"  stop-color="#0A0F1F"/>
@@ -93,9 +174,9 @@
   <rect class="sky-bg" width="1200" height="600" fill="url(#sky)"/>
   <rect x="0" y="380" width="1200" height="70" fill="#FFFFFF" opacity="0.18"/>
   <rect x="40" y="510" width="1120" height="20" fill="#9B7FD9" opacity="0.18"/>
-  <g fill="#5B3FBF" opacity="0.25"><circle cx="80" cy="518" r="1.5"/><circle cx="160" cy="522" r="1.5"/><circle cx="240" cy="516" r="1.5"/><circle cx="320" cy="524" r="1.5"/><circle cx="400" cy="518" r="1.5"/><circle cx="480" cy="522" r="1.5"/><circle cx="560" cy="516" r="1.5"/><circle cx="640" cy="524" r="1.5"/><circle cx="720" cy="518" r="1.5"/><circle cx="800" cy="522" r="1.5"/><circle cx="880" cy="516" r="1.5"/><circle cx="960" cy="524" r="1.5"/><circle cx="1040" cy="518" r="1.5"/><circle cx="1120" cy="522" r="1.5"/></g>
+  <g class="ballast" fill="#5B3FBF" opacity="0.25"><circle cx="80" cy="518" r="1.5"/><circle cx="160" cy="522" r="1.5"/><circle cx="240" cy="516" r="1.5"/><circle cx="320" cy="524" r="1.5"/><circle cx="400" cy="518" r="1.5"/><circle cx="480" cy="522" r="1.5"/><circle cx="560" cy="516" r="1.5"/><circle cx="640" cy="524" r="1.5"/><circle cx="720" cy="518" r="1.5"/><circle cx="800" cy="522" r="1.5"/><circle cx="880" cy="516" r="1.5"/><circle cx="960" cy="524" r="1.5"/><circle cx="1040" cy="518" r="1.5"/><circle cx="1120" cy="522" r="1.5"/></g>
   <g><rect x="80" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="140" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="200" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="260" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="320" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="380" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="440" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="500" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="560" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="620" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="680" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="740" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="800" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="860" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="920" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="980" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="1040" y="498" width="40" height="14" rx="1" fill="url(#tie)"/><rect x="1100" y="498" width="40" height="14" rx="1" fill="url(#tie)"/></g>
-  <rect x="40" y="492" width="1120" height="6" rx="1" fill="#7A7F88"/><rect x="40" y="492" width="1120" height="2" fill="#C0C5CD"/>
+  <line class="rail-joints" x1="40" y1="495" x2="1160" y2="495" stroke="#7A7F88" stroke-width="6" stroke-linecap="butt"/><line class="rail-joints" x1="40" y1="493" x2="1160" y2="493" stroke="#C0C5CD" stroke-width="2" stroke-linecap="butt"/>
   <ellipse cx="600" cy="488" rx="490" ry="6" fill="#1A1F2E" opacity="0.13"/>
 
   <!-- ========== EMPTY FLATCAR DECK ========== -->
@@ -103,6 +184,8 @@
     <!-- Deck -->
     <rect x="120" y="425" width="960" height="44" rx="3" fill="url(#flatcarTop)"/>
     <rect x="120" y="425" width="960" height="3" rx="1" fill="#FFFFFF" opacity="0.4"/>
+    <!-- IDENTITY BEAT — sheen sweeping the empty plank deck -->
+    <rect class="deck-sheen" x="130" y="426" width="180" height="10" rx="3" fill="#FFFFFF" opacity="0"/>
     <!-- Wood deck planks (typical flatcar surface) -->
     <g stroke="#0F1118" stroke-width="0.8" opacity="0.55">
       <line x1="120" y1="438" x2="1080" y2="438"/>
@@ -131,7 +214,7 @@
     </g>
     <!-- Reporting marks (railcar initials + number are owner-assigned,
          identical across borders under the AAR/UMLER interchange scheme). -->
-    <text x="200" y="442" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="11" fill="#9B7FD9" opacity="0.85">EUSO 4429 · 89' FLATCAR</text>
+    <text class="reporting" data-bind="reporting_marks" x="200" y="442" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="11" fill="#9B7FD9" opacity="0.85">EUSO 4429 · 89' FLATCAR</text>
     <!-- ===== COUNTRY-SWITCHABLE CAPACITY STENCIL =====
          Flatcars carry no hazmat placard when hauling machinery/outsize,
          but the load-limit stencil unit differs by jurisdiction. The app
@@ -215,4 +298,7 @@
   
   
   <!-- EUSOTRIP-FIX-2026-05-17 -->
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">FLATCAR 89 FT</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan></text>
 </svg>

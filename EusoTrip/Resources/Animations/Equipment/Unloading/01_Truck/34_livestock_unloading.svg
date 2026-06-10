@@ -43,7 +43,6 @@
       0%, 100% { opacity: 0.85; transform: scale(1); }
       50%      { opacity: 1;    transform: scale(1.04); }
     }
-    .progress-fill { transition: width 0.4s ease-out; }
     .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
     @keyframes chevron-pulse {
       0%, 100% { opacity: 0.3; }
@@ -112,6 +111,46 @@
       0%   { transform: translate(0,0) scale(0.4); opacity: 0; }
       25%  { opacity: 0.45; }
       100% { transform: translate(12px,-20px) scale(1.2); opacity: 0; }
+    }
+
+    /* ========== VENTILATION TRUTH (Wave S1) ==========
+       Cross-ventilation through the punched panels is the welfare-critical
+       read on a cattle pot: air wisps drift out of the vent bands and the
+       punched skin shimmers. */
+    .vent-wisp { animation: vent-wisp 3.2s ease-out infinite; }
+    .vent-wisp.v2 { animation-delay: -1.1s; }
+    .vent-wisp.v3 { animation-delay: -2.2s; }
+    @keyframes vent-wisp {
+      0%   { transform: translateX(0); opacity: 0; }
+      18%  { opacity: 0.4; }
+      100% { transform: translateX(-34px); opacity: 0; }
+    }
+    .vent-shimmer { animation: vent-shimmer 4.6s ease-in-out infinite; }
+    @keyframes vent-shimmer {
+      0%, 100% { opacity: 0.55; }
+      50%      { opacity: 0.8; }
+    }
+    /* ========== ALLEY GATE (self-closing, swings with the walk cycle) ========== */
+    .alley-gate { transform-box: fill-box; transform-origin: left center;
+                  animation: alley-gate 6.4s ease-in-out infinite; }
+    @keyframes alley-gate {
+      0%, 28%, 72%, 100% { transform: rotate(0deg); }
+      42%, 58%           { transform: rotate(-38deg); }
+    }
+    /* ========== WELFARE INSPECTION BEAT ========== */
+    .inspect-arm { transform-box: fill-box; transform-origin: top center;
+                   animation: inspect-arm 2.8s ease-in-out infinite; }
+    @keyframes inspect-arm {
+      0%, 100% { transform: rotate(0deg); }
+      50%      { transform: rotate(-14deg); }
+    }
+    .inspect-chip { animation: inspect-chip 3.4s ease-in-out infinite; }
+    @keyframes inspect-chip {
+      0%, 100% { opacity: 0.55; }
+      50%      { opacity: 0.95; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .vent-wisp, .vent-shimmer, .alley-gate, .inspect-arm, .inspect-chip { animation: none !important; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -260,7 +299,7 @@
   <g filter="url(#rigShadow)">
     <path d="M 96 392 L 96 430 Q 96 442 108 442 L 300 442 Q 312 442 312 430 L 312 392 Z"
           fill="url(#aluBelly)" stroke="#8A92A0" stroke-width="1"/>
-    <rect x="108" y="398" width="192" height="34" fill="url(#punchVent)" opacity="0.9"/>
+    <rect class="vent-shimmer" x="108" y="398" width="192" height="34" fill="url(#punchVent)" opacity="0.9"/>
 
     <rect x="74" y="200" width="290" height="192" rx="8" fill="url(#aluBody)"
           stroke="#9098A8" stroke-width="1"/>
@@ -270,8 +309,14 @@
     <rect x="74" y="290" width="290" height="8" fill="#B6BDCB" opacity="0.8"/>
 
     <rect x="80" y="212" width="280" height="166" fill="url(#trailerInterior)" opacity="0.92"/>
-    <rect x="80" y="216" width="160" height="68" fill="url(#punchVent)" opacity="0.55"/>
-    <rect x="80" y="302" width="160" height="72" fill="url(#punchVent)" opacity="0.55"/>
+    <rect class="vent-shimmer" x="80" y="216" width="160" height="68" fill="url(#punchVent)" opacity="0.55"/>
+    <rect class="vent-shimmer" x="80" y="302" width="160" height="72" fill="url(#punchVent)" opacity="0.55"/>
+    <!-- VENTILATION TRUTH — cross-flow wisps out of the punched panels -->
+    <g stroke="#BFD3E6" stroke-width="2" stroke-linecap="round" fill="none">
+      <path class="vent-wisp"    d="M 78 240 q -10 -3 -20 -2"/>
+      <path class="vent-wisp v2" d="M 78 330 q -10 -3 -20 -2"/>
+      <path class="vent-wisp v3" d="M 104 414 q -10 -3 -20 -2"/>
+    </g>
 
     <rect x="84" y="372" width="272" height="6" fill="#C8B06A" opacity="0.55"/>
     <rect x="84" y="284" width="272" height="5" fill="#C8B06A" opacity="0.45"/>
@@ -538,9 +583,11 @@
   <!-- Progress bar (head-count remaining unloaded) -->
   <g>
     <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.6"/>
-    <rect class="progress-fill" x="60" y="555" width="691" height="6" rx="3"
-          fill="#0AC2C2"
-          style="--load-progress: 0.65;"/>
+    <g transform="translate(60 555)">
+      <rect class="progress-fill" x="0" y="0" width="1080" height="6" rx="3"
+            fill="#0AC2C2"
+            transform="scaleX(var(--load-progress, 0))"/>
+    </g>
     <text x="1140" y="548" text-anchor="end"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="10" letter-spacing="1.4"
@@ -552,4 +599,40 @@
   </g>
 
   <rect class="card-border" x="20" y="20" width="1160" height="560" rx="22" fill="none" stroke="url(#brandIridescent)" stroke-width="2.5" pointer-events="none"/>
+  <!-- ============================================================
+       SELF-CLOSING ALLEY GATE at the chute mouth — swings open as each
+       animal passes (synced to the 6.4s walk cycle), latches behind it.
+       ============================================================ -->
+  <g transform="translate(608 414)">
+    <rect x="-3" y="-2" width="6" height="42" rx="2" fill="#8A92A0"/>
+    <g class="alley-gate">
+      <rect x="3" y="2" width="30" height="3.5" rx="1.5" fill="#A6AEBC"/>
+      <rect x="3" y="13" width="30" height="3.5" rx="1.5" fill="#A6AEBC"/>
+      <rect x="3" y="24" width="30" height="3.5" rx="1.5" fill="#A6AEBC"/>
+      <rect x="31" y="2" width="3" height="25.5" rx="1.5" fill="#8A92A0"/>
+    </g>
+  </g>
+  <!-- ============================================================
+       WELFARE INSPECTION BEAT — density/ventilation check at the chute
+       (the 28-hr-law / NOM-051-ZOO / NFACC procedure beat; the placard
+       binds carry the jurisdiction authority above).
+       ============================================================ -->
+  <g transform="translate(806 438)">
+    <rect x="-4" y="14" width="4" height="22" rx="1.5" fill="#2A3045"/>
+    <rect x="2" y="14" width="4" height="22" rx="1.5" fill="#2A3045"/>
+    <rect x="-7" y="-10" width="16" height="26" rx="5" fill="#F2A33C"/>
+    <rect x="-7" y="-10" width="16" height="5" rx="2.5" fill="#FFD200" opacity="0.8"/>
+    <circle cx="1" cy="-17" r="6.5" fill="#E8B98E"/>
+    <path d="M -6 -19 a 7 7 0 0 1 14 0 Z" fill="#FFD200"/>
+    <g class="inspect-arm">
+      <rect x="7" y="-8" width="4" height="16" rx="2" fill="#F2A33C"/>
+      <rect x="9" y="6" width="12" height="9" rx="1.5" fill="#FFFFFF" stroke="#3A3F4A" stroke-width="1"/>
+      <line x1="11" y1="9" x2="18" y2="9" stroke="#9098A8" stroke-width="1"/>
+      <line x1="11" y1="12" x2="18" y2="12" stroke="#9098A8" stroke-width="1"/>
+    </g>
+  </g>
+  <g class="inspect-chip">
+    <rect x="772" y="396" width="96" height="18" rx="9" fill="#FFFFFF" stroke="#0AC2C2" stroke-width="1.4"/>
+    <text x="820" y="408" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="8.5" letter-spacing="1" fill="#0AC2C2">REST &#183; WATER</text>
+  </g>
 </svg>

@@ -126,6 +126,13 @@
       50%      { opacity: 1; }
     }
 
+    /* ========== COUNTRY-SWITCHABLE REGULATORY LAYER ==========
+       Log securement: US 49 CFR 393.116 (LBS) · CA NSC Standard 10 Part 3 (KG) · MX NOM-012-SCT-2 (KG).
+       Default = US visible. The renderer shows ONE country group by
+       toggling display on .country-US / .country-MX / .country-CA. */
+    .country-US { display: inline; }
+    .country-MX, .country-CA { display: none; }
+
     @media (prefers-reduced-motion: reduce) {
       .chassis-bob, .cab-sway, .mudflap, .streak, .bow-air, .tire-dust,
       .log-settle, .strap-flex,
@@ -441,4 +448,20 @@
   </g>
 
   <!-- EUSOTRIP-FIX-2026-05-29 -->
+  <!-- COUNTRY-SWITCHABLE COMPLIANCE CHIP — log-bunk securement standard + weight units flip by jurisdiction -->
+  <g class="country-US" transform="translate(1056 96)">
+    <rect x="0" y="0" width="96" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="48" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4" fill="#5B3FBF">LBS · 393.116</text>
+  </g>
+  <g class="country-CA" transform="translate(1056 96)">
+    <rect x="0" y="0" width="96" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="48" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4" fill="#5B3FBF">KG · NSC 10</text>
+  </g>
+  <g class="country-MX" transform="translate(1056 96)">
+    <rect x="0" y="0" width="96" height="24" rx="12" fill="#FFFFFF" stroke="url(#brandIridescent)" stroke-width="1.6" stroke-opacity="0.7"/>
+    <text x="48" y="16" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="10" letter-spacing="1.4" fill="#5B3FBF">KG · NOM-012</text>
+  </g>
+  <!-- LIVE TELEMETRY CAPTION — data-bind hooks: live values replace authored
+       defaults; missing keys keep the honest em-dash (zero fabrication). -->
+  <text x="1140" y="516" text-anchor="end" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="10" letter-spacing="1.4" fill="#5B3FBF" opacity="0.85"><tspan data-bind="equipment_label">LOG TRAILER &#183; 3 BUNK</tspan> &#183; <tspan data-bind="state_label">IN TRANSIT</tspan> &#183; <tspan data-bind="eta_minutes">ETA &#8212;</tspan> &#183; <tspan data-bind="weight_label">&#8212;</tspan></text>
 </svg>
