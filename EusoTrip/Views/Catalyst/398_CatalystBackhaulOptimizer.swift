@@ -23,13 +23,15 @@
 //       WS_EVENTS.LOAD_TENDERED on WS_CHANNELS.catalyst(carrierId))
 //  RBAC: isolatedProcedure carrier-scope (capacityPlanning.ts:10).
 //
-//  HYDRATION HONESTY: the iOS EusoTripAPI does NOT yet expose a
-//  `capacityPlanning` service (no getBackhaulOptimizer / getPowerOnlyMatching),
-//  and loadBidding has no createQuote. Per house doctrine the representative
-//  seed figures below mirror the SVG verbatim and are tagged "0% mock —
-//  seeds overwritten on hydrate"; each missing procedure carries a // WIRE:
-//  marker so the live envelope can replace the seed the moment the client
-//  method lands. NO EusoTripAPI method is called that does not exist.
+//  LIVE WIRING (zero-fallback purge · 2026-06-09 · audit B13): reload()
+//  calls the REAL `capacityPlanning.getBackhaulOptimizer` (thin in-file
+//  decode mirroring the server projection exactly: opportunities[] of
+//  deliveryLoad/backhaulLoad/fromState/toState/estimatedSavings +
+//  emptyMileReduction + potentialSavings). The server matches at STATE
+//  level and carries no equipment/RPM/deadhead-mile fields — the board
+//  therefore renders state-lane matches with estimated savings, a neutral
+//  equipment glyph, and an honest EusoEmptyState when no match exists.
+//  The old city-pair/net-RPM seed board was fabricated and is GONE.
 //
 //  MAP-COORD INVESTIGATION (2026-06-05): the backhaul/deadhead lanes are
 //  CITY-NAME-ONLY — no endpoint lat/lng is reachable for a HereLiveMapView
@@ -89,63 +91,58 @@ private func catalystNavTrailing_398() -> [NavSlot] {
      NavSlot(label: "Me",     systemImage: "person",     isCurrent: false)]
 }
 
-// MARK: - View model (mirrors the Code/ fixture verbatim)
+// MARK: - View model (built from the LIVE getBackhaulOptimizer envelope only)
 
-private enum BackhaulEquipment_398 { case dryVan, reefer, flatbed }
+private enum BackhaulEquipment_398 { case dryVan, reefer, flatbed, unknown }
 
 private struct BackhaulMatch_398: Identifiable {
     let id: String
-    let lane: String          // "Dallas TX → Kansas City MO"
-    let spec: String          // "53' Dry Van · 38k lb · pickup 18:00"
+    let lane: String          // "TX → MO" (server matches at state level)
+    let spec: String          // "return for LD-… · candidate LD-…"
     let equipment: BackhaulEquipment_398
-    let netRPM: String        // "$3.05"
-    let matchScore: Int       // 94
-    // featured-card extras (best match only)
-    let deadheadMi: Int?      // 38
-    let gross: String?        // "gross $2,640"
-    let tail: String?         // "2.1h home · Eusorone shipper"
+    let savings: String       // "$1,228" — server estimatedSavings
+    let backhaulLoadNumber: String
 }
 
 private struct BackhaulVM_398 {
-    let emptyAt: String           // "EMPTY AT DALLAS TX · 16:30 CDT"
-    let deadheadLabel: String     // "Deadhead home to Belle Plaine"
-    let deadheadValue: String     // "612 mi · $0"
-    let loadedLabel: String       // "Best backhaul · 38 mi reposition"
-    let loadedValue: String       // "574 loaded mi"
-    let payoff: String            // "+$2,640"
-    let withinRadius: String      // "14 within 75 mi"
+    let emptyAt: String
+    let deadheadLabel: String
+    let deadheadValue: String
+    let loadedLabel: String
+    let loadedValue: String
+    let payoff: String
+    let withinRadius: String
     let matches: [BackhaulMatch_398]
     let footerLead: String
-    let footerSub: String         // contains the +$0.34/mi clear
-    let searchNote: String        // "Search radius 75 mi · home by Fri · HOS 8:30 drive left"
+    let footerSub: String
+    let searchNote: String
+
+    /// Honest empty envelope — every figure em-dash until a real hydrate.
+    static let empty = BackhaulVM_398(
+        emptyAt: "BACKHAUL SCAN · STATE-LEVEL MATCHES",
+        deadheadLabel: "Empty miles avoidable", deadheadValue: "—",
+        loadedLabel: "Matched return candidates", loadedValue: "—",
+        payoff: "—", withinRadius: "—",
+        matches: [],
+        footerLead: "Matches pair your recent deliveries with posted loads picking up in the same state",
+        footerSub: "",
+        searchNote: ""
+    )
 }
 
-// Representative seed (0% mock — overwritten on hydrate). Mirrors the
-// 398 Dark SVG content verbatim.
-private let seedBackhaul_398 = BackhaulVM_398(
-    emptyAt: "EMPTY AT DALLAS TX · 16:30 CDT",
-    deadheadLabel: "Deadhead home to Belle Plaine", deadheadValue: "612 mi · $0",
-    loadedLabel: "Best backhaul · 38 mi reposition", loadedValue: "574 loaded mi",
-    payoff: "+$2,640", withinRadius: "14 within 75 mi",
-    matches: [
-        BackhaulMatch_398(id: "ld-dal-kc", lane: "Dallas TX → Kansas City MO",
-                          spec: "53' Dry Van · 38k lb · pickup 18:00", equipment: .dryVan,
-                          netRPM: "$3.05", matchScore: 94, deadheadMi: 38, gross: "gross $2,640",
-                          tail: "2.1h home · Eusorone shipper"),
-        BackhaulMatch_398(id: "ld-ftw-oma", lane: "Fort Worth TX → Omaha NE",
-                          spec: "Reefer 34°F · DH 41 mi · pickup 20:30", equipment: .reefer,
-                          netRPM: "$2.88", matchScore: 89, deadheadMi: nil, gross: nil, tail: nil),
-        BackhaulMatch_398(id: "ld-dal-tul", lane: "Dallas TX → Tulsa OK",
-                          spec: "Flatbed · DH 12 mi · short reposition lane", equipment: .flatbed,
-                          netRPM: "$2.71", matchScore: 82, deadheadMi: nil, gross: nil, tail: nil),
-        BackhaulMatch_398(id: "ld-dal-ict", lane: "Dallas TX → Wichita KS",
-                          spec: "Dry Van · DH 9 mi · partial load", equipment: .dryVan,
-                          netRPM: "$2.44", matchScore: 76, deadheadMi: nil, gross: nil, tail: nil),
-    ],
-    footerLead: "ESang ranks net RPM after deadhead, HOS fit & home-time",
-    footerSub: "Top return clears $0.34/mi over deadhead-home break-even",
-    searchNote: "Search radius 75 mi · home by Fri · HOS 8:30 drive left"
-)
+/// Mirrors `capacityPlanning.getBackhaulOptimizer` (capacityPlanning.ts:690).
+private struct BackhaulWire_398: Decodable {
+    struct Opportunity: Decodable {
+        let deliveryLoad: String
+        let backhaulLoad: String
+        let fromState: String
+        let toState: String
+        let estimatedSavings: Double
+    }
+    let opportunities: [Opportunity]
+    let emptyMileReduction: Double
+    let potentialSavings: Double
+}
 
 // MARK: - Notifications (carry the tap intent into the host action layer)
 
@@ -160,7 +157,9 @@ extension Notification.Name {
 private struct BackhaulBody_398: View {
     @Environment(\.palette) private var palette
 
-    @State private var vm: BackhaulVM_398 = seedBackhaul_398
+    @State private var vm: BackhaulVM_398 = .empty
+    @State private var loading: Bool = true
+    @State private var loadError: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -168,13 +167,20 @@ private struct BackhaulBody_398: View {
             iridescentHairline
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Space.s4) {
+                    if let err = loadError {
+                        LifecycleCard(accentDanger: true) {
+                            Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                        }
+                    }
                     heroCard
                     matchesSection
                     ctaRow
-                    Text(vm.searchNote)
-                        .font(.system(size: 10))
-                        .foregroundStyle(palette.textTertiary)
-                        .frame(maxWidth: .infinity, alignment: .center)
+                    if !vm.searchNote.isEmpty {
+                        Text(vm.searchNote)
+                            .font(.system(size: 10))
+                            .foregroundStyle(palette.textTertiary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                    }
                     Color.clear.frame(height: 96)
                 }
                 .padding(.horizontal, Space.s5)
@@ -203,7 +209,7 @@ private struct BackhaulBody_398: View {
                         .foregroundStyle(LinearGradient.primary)
                 }
                 Spacer(minLength: 0)
-                Text("EMPTY IN 2h")
+                Text(loading ? "SCANNING…" : "LIVE SCAN")
                     .font(EType.micro)
                     .tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
@@ -249,16 +255,16 @@ private struct BackhaulBody_398: View {
                     .foregroundStyle(palette.textTertiary)
                 compareRow(
                     label: vm.deadheadLabel, value: vm.deadheadValue,
-                    barFrac: 1.0, barColor: Brand.danger.opacity(0.6),
+                    barFrac: vm.matches.isEmpty ? 0 : 1.0, barColor: Brand.danger.opacity(0.6),
                     track: Brand.danger.opacity(0.18), valueColor: Brand.danger
                 )
                 compareRow(
                     label: vm.loadedLabel, value: vm.loadedValue,
-                    barFrac: 0.93, barColor: nil,
+                    barFrac: vm.matches.isEmpty ? 0 : 0.93, barColor: nil,
                     track: Brand.success.opacity(0.18), valueColor: Brand.success
                 )
                 HStack {
-                    Text("Turns the empty run into")
+                    Text("Estimated savings if matched")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                     Spacer(minLength: 0)
@@ -318,11 +324,20 @@ private struct BackhaulBody_398: View {
                     .foregroundStyle(palette.textSecondary)
             }
             VStack(spacing: 0) {
-                if let best = vm.matches.first { featuredMatch(best) }
-                ForEach(Array(vm.matches.dropFirst().enumerated()), id: \.element.id) { idx, m in
-                    compactMatch(m)
-                    if idx < vm.matches.count - 2 {
-                        Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 48)
+                if vm.matches.isEmpty {
+                    EusoEmptyState(
+                        systemImage: "arrow.triangle.2.circlepath",
+                        title: loading ? "Scanning for return loads…" : "No backhaul matches right now",
+                        subtitle: loading ? "" : "Posted loads picking up where your fleet is delivering appear here ranked by estimated savings."
+                    )
+                    .padding(.vertical, Space.s3)
+                } else {
+                    if let best = vm.matches.first { featuredMatch(best) }
+                    ForEach(Array(vm.matches.dropFirst().enumerated()), id: \.element.id) { idx, m in
+                        compactMatch(m)
+                        if idx < vm.matches.count - 2 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 48)
+                        }
                     }
                 }
                 Rectangle().fill(palette.borderFaint).frame(height: 1)
@@ -330,9 +345,11 @@ private struct BackhaulBody_398: View {
                     Text(vm.footerLead)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(palette.textPrimary)
-                    Text(vm.footerSub)
-                        .font(.system(size: 10))
-                        .foregroundStyle(palette.textTertiary)
+                    if !vm.footerSub.isEmpty {
+                        Text(vm.footerSub)
+                            .font(.system(size: 10))
+                            .foregroundStyle(palette.textTertiary)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Space.s4)
@@ -361,30 +378,31 @@ private struct BackhaulBody_398: View {
                         Text(m.spec)
                             .font(EType.mono(.caption))
                             .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
                     Spacer(minLength: 0)
                     VStack(alignment: .trailing, spacing: 1) {
-                        Text(m.netRPM)
+                        Text(m.savings)
                             .font(.system(size: 20, weight: .bold).monospacedDigit())
                             .foregroundStyle(LinearGradient.diagonal)
-                        Text("net /mi · after DH")
+                        Text("est savings")
                             .font(.system(size: 10))
                             .foregroundStyle(palette.textSecondary)
                     }
                 }
                 HStack(spacing: 6) {
-                    metricChip("DH \(m.deadheadMi ?? 0) mi", tint: Brand.success.opacity(0.12), label: Brand.success)
-                    metricChip(m.gross ?? "", tint: palette.bgCardSoft, label: palette.textPrimary)
-                    metricChip("\(m.matchScore) MATCH", tint: nil, label: .white)
+                    metricChip("STATE MATCH", tint: Brand.success.opacity(0.12), label: Brand.success)
+                    metricChip(m.backhaulLoadNumber, tint: palette.bgCardSoft, label: palette.textPrimary)
                 }
                 HStack {
                     Button {
-                        // WIRE: loadBidding.createQuote (loadBidding.ts) — on win
-                        // writes the loads row + blockchainAudit, broadcasts
-                        // WS_EVENTS.LOAD_TENDERED on WS_CHANNELS.catalyst(carrierId).
+                        // Hands the REAL candidate load number to the host
+                        // action layer (loadBidding.createQuote not yet bridged).
                         NotificationCenter.default.post(
                             name: .eusoCatalystBackhaulTender_398, object: nil,
-                            userInfo: ["source": "398_CatalystBackhaulOptimizer", "loadId": m.id]
+                            userInfo: ["source": "398_CatalystBackhaulOptimizer",
+                                       "loadNumber": m.backhaulLoadNumber]
                         )
                     } label: {
                         Text("TENDER NOW →")
@@ -395,18 +413,13 @@ private struct BackhaulBody_398: View {
                     }
                     .buttonStyle(.plain)
                     Spacer(minLength: 0)
-                    if let tail = m.tail {
-                        Text(tail)
-                            .font(.system(size: 10))
-                            .foregroundStyle(palette.textSecondary)
-                    }
                 }
             }
             .padding(Space.s3)
         }
         .padding(Space.s2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Best return, \(m.lane), net \(m.netRPM) per mile after deadhead, match \(m.matchScore)")
+        .accessibilityLabel("Best return, \(m.lane), estimated savings \(m.savings)")
     }
 
     private func metricChip(_ text: String, tint: Color?, label: Color) -> some View {
@@ -432,10 +445,10 @@ private struct BackhaulBody_398: View {
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 3) {
-                Text(m.netRPM)
+                Text(m.savings)
                     .font(EType.bodyStrong).monospacedDigit()
                     .foregroundStyle(palette.textPrimary)
-                Text("\(m.matchScore) match")
+                Text("est savings")
                     .font(EType.caption).monospacedDigit()
                     .foregroundStyle(palette.textTertiary)
             }
@@ -461,6 +474,7 @@ private struct BackhaulBody_398: View {
         case .dryVan:  return "box.truck"
         case .reefer:  return "thermometer.snowflake"
         case .flatbed: return "rectangle.compress.vertical"
+        case .unknown: return "arrow.triangle.2.circlepath"   // equipment not in the live envelope — neutral glyph, never invented
         }
     }
 
@@ -469,6 +483,7 @@ private struct BackhaulBody_398: View {
         case .dryVan:  return Brand.rail            // SVG #607D8B slate
         case .reefer:  return Brand.info            // SVG #2196F3
         case .flatbed: return palette.textPrimary
+        case .unknown: return Brand.blue
         }
     }
 
@@ -511,27 +526,60 @@ private struct BackhaulBody_398: View {
         }
     }
 
-    // MARK: - Network
+    // MARK: - Network (LIVE — capacityPlanning.getBackhaulOptimizer)
 
     private func loadAll() async {
         await reload()
     }
 
+    private struct EmptyInput_398: Encodable {}
+
     private func reload() async {
-        // Hydration target — replace the seed once the iOS client exposes
-        // the carrier-scope capacity-planning surface:
-        //
-        //   WIRE: capacityPlanning.getBackhaulOptimizer  (capacityPlanning.ts:690) — ranked matches
-        //   WIRE: capacityPlanning.getPowerOnlyMatching  (capacityPlanning.ts:755) — power-only / drop-trailer
-        //   WIRE: loadBoard.search                       (loadBoard.ts)            — candidate loads near dropoff
-        //   WIRE: routeOptimization.*                    (routeOptimization.ts)    — deadhead mileage
-        //
-        // No matching EusoTripAPI.shared service exists yet (verified: there
-        // is no `capacityPlanning` client and loadBidding has no createQuote),
-        // so the SVG-verbatim seed stands. When the envelope lands:
-        //   self.vm = BackhaulVM_398(emptyAt: env.emptyAt, ...,
-        //                            matches: env.matches.map { ... })
-        vm = seedBackhaul_398
+        loading = true
+        loadError = nil
+        defer { loading = false }
+
+        do {
+            let wire: BackhaulWire_398 = try await EusoTripAPI.shared.query(
+                "capacityPlanning.getBackhaulOptimizer", input: EmptyInput_398())
+
+            let matches: [BackhaulMatch_398] = wire.opportunities.enumerated().map { idx, o in
+                BackhaulMatch_398(
+                    id: "\(o.deliveryLoad)-\(o.backhaulLoad)-\(idx)",
+                    lane: "\(o.fromState) → \(o.toState)",
+                    spec: "return for \(o.deliveryLoad) · candidate \(o.backhaulLoad)",
+                    equipment: .unknown,
+                    savings: money_398(o.estimatedSavings),
+                    backhaulLoadNumber: o.backhaulLoad
+                )
+            }
+
+            vm = BackhaulVM_398(
+                emptyAt: "BACKHAUL SCAN · STATE-LEVEL MATCHES",
+                deadheadLabel: "Empty miles avoidable",
+                deadheadValue: wire.emptyMileReduction > 0
+                    ? "\(Int(wire.emptyMileReduction)) mi est" : "—",
+                loadedLabel: "Matched return candidates",
+                loadedValue: matches.isEmpty ? "—" : "\(matches.count)",
+                payoff: wire.potentialSavings > 0 ? "+\(money_398(wire.potentialSavings))" : "—",
+                withinRadius: matches.isEmpty ? "—" : "\(matches.count) state match\(matches.count == 1 ? "" : "es")",
+                matches: matches,
+                footerLead: "Matches pair your recent deliveries with posted loads picking up in the same state",
+                footerSub: matches.isEmpty ? "" : "Savings estimated at $1.80 per avoided empty mile",
+                searchNote: matches.isEmpty ? "" : "State-level matching · 14-day delivery window · live load board"
+            )
+        } catch {
+            vm = .empty
+            loadError = "Couldn't reach the backhaul optimizer - retry."
+        }
+    }
+
+    private func money_398(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
     }
 }
 

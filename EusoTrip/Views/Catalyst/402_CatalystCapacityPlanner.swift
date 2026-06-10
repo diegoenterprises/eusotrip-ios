@@ -14,17 +14,15 @@
 //  Web peer: /catalyst/dispatch/capacity. transportMode=truck; country=US.
 //  Persona: Eusotrans LLC · Michael Eusorone owner-op · 6 trucks.
 //
-//  tRPC wiring manifest (line-confirmed on the wireframe spec this fire) — NONE of
-//  these procedures are surfaced on the iOS EusoTripAPI client yet, so the
-//  representative seed figures from the Code/ spec are kept (house 0%-mock: seeds
-//  are overwritten the moment the procedure lands and loadAll() hydrates). One
-//  WIRE breadcrumb per missing call is left in loadAll_402() below.
-//    • utilization hero + grid → capacityPlanning.getCapacityDashboard      (capacityPlanning.ts:65)
-//    • open-window list         → capacityPlanning.getFleetRightSizing       (capacityPlanning.ts:477)
-//                                 + carrierCapacity.getCapacityCalendar       (carrierCapacity.ts:22)
-//    • driver-day feasibility   → capacityPlanning.getDriverScheduleOptimizer (capacityPlanning.ts:415)
-//    • "Post open trucks" CTA   → catalystProcedure write on truckPosting/loadBoard (_core/trpc.ts:150)
-//    • "Auto-match" CTA         → matcher against open demand (loadBoard / laneAgent)
+//  LIVE WIRING (zero-fallback purge · 2026-06-09 · audit B13):
+//    • utilization hero + stacked bar → capacityPlanning.getCapacityDashboard (capacityPlanning.ts:65)
+//    • 7-day grid + open windows      → carrierCapacity.getCapacityCalendar   (carrierCapacity.ts:22)
+//      (real per-day availableTrucks; grid cells fill proportionally, count
+//       labels show the true available/fleet numbers)
+//  Both decoded in-file against the exact server projections. Anything with
+//  no live source (open miles) renders an honest em-dash; honest
+//  EusoEmptyState when no calendar/fleet exists. The seeded 6-truck week
+//  and invented best-match RPM rows are GONE.
 //
 //  Bottom nav (Catalyst variant): HOME · DISPATCH · [orb] · WALLET · ME (DISPATCH current).
 //
@@ -106,9 +104,11 @@ private struct CapacityVM_402 {
 
 private struct CapacityBody_402: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
 
-    @State private var vm: CapacityVM_402 = .seed
-    @State private var loading: Bool = false
+    @State private var vm: CapacityVM_402 = .empty
+    @State private var loading: Bool = true
+    @State private var loadError: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -154,7 +154,7 @@ private struct CapacityBody_402: View {
                     Text("Capacity")
                         .font(EType.display)
                         .foregroundStyle(palette.textPrimary)
-                    Text("Eusotrans LLC · 6 trucks · committed vs open")
+                    Text("\(vm.unitCount) · committed vs open")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -244,33 +244,45 @@ private struct CapacityBody_402: View {
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
-            HStack(spacing: 0) {
-                ForEach(vm.days) { day in
-                    VStack(spacing: 4) {
-                        Text(day.dow)
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(palette.textSecondary)
-                        Text(day.date)
-                            .font(.system(size: 8))
-                            .foregroundStyle(palette.textTertiary)
-                        VStack(spacing: 4) {
-                            ForEach(Array(day.cells.enumerated()), id: \.offset) { _, cell in
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(cellStyle(cell))
-                                    .frame(height: 12)
-                            }
-                        }
-                        .padding(.top, 2)
-                        Text(day.countLabel)
-                            .font(.system(size: 9, weight: .bold))
-                            .monospacedDigit()
-                            .foregroundStyle(day.countHot ? Brand.blue : palette.textPrimary)
-                    }
+            Group {
+                if vm.days.isEmpty {
+                    EusoEmptyState(
+                        systemImage: "calendar",
+                        title: loading ? "Loading availability…" : "No capacity calendar yet",
+                        subtitle: loading ? "" : (loadError ?? "Your fleet's 7-day availability grid appears here once vehicles and loads are on file.")
+                    )
+                    .padding(.vertical, Space.s3)
                     .frame(maxWidth: .infinity)
+                } else {
+                    HStack(spacing: 0) {
+                        ForEach(vm.days) { day in
+                            VStack(spacing: 4) {
+                                Text(day.dow)
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(palette.textSecondary)
+                                Text(day.date)
+                                    .font(.system(size: 8))
+                                    .foregroundStyle(palette.textTertiary)
+                                VStack(spacing: 4) {
+                                    ForEach(Array(day.cells.enumerated()), id: \.offset) { _, cell in
+                                        RoundedRectangle(cornerRadius: 3)
+                                            .fill(cellStyle(cell))
+                                            .frame(height: 12)
+                                    }
+                                }
+                                .padding(.top, 2)
+                                Text(day.countLabel)
+                                    .font(.system(size: 9, weight: .bold))
+                                    .monospacedDigit()
+                                    .foregroundStyle(day.countHot ? Brand.blue : palette.textPrimary)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .padding(.horizontal, Space.s3)
+                    .padding(.vertical, Space.s3)
                 }
             }
-            .padding(.horizontal, Space.s3)
-            .padding(.vertical, Space.s3)
             .background(palette.bgCard)
             .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
@@ -299,12 +311,21 @@ private struct CapacityBody_402: View {
                     .foregroundStyle(palette.textSecondary)
             }
             VStack(spacing: 0) {
-                ForEach(Array(vm.openWindows.enumerated()), id: \.element.id) { idx, w in
-                    openRow(w)
-                    if idx < vm.openWindows.count - 1 {
-                        Rectangle().fill(palette.borderFaint)
-                            .frame(height: 1)
-                            .padding(.leading, 52)
+                if vm.openWindows.isEmpty {
+                    EusoEmptyState(
+                        systemImage: "truck.box",
+                        title: loading ? "Loading open windows…" : "No open windows this week",
+                        subtitle: loading ? "" : "Days with unsold truck capacity appear here so they can be posted or auto-matched."
+                    )
+                    .padding(.vertical, Space.s3)
+                } else {
+                    ForEach(Array(vm.openWindows.enumerated()), id: \.element.id) { idx, w in
+                        openRow(w)
+                        if idx < vm.openWindows.count - 1 {
+                            Rectangle().fill(palette.borderFaint)
+                                .frame(height: 1)
+                                .padding(.leading, 52)
+                        }
                     }
                 }
             }
@@ -417,18 +438,127 @@ private struct CapacityBody_402: View {
         }
     }
 
-    // MARK: - Network
+    // MARK: - Network (LIVE — getCapacityDashboard + getCapacityCalendar)
+
+    private struct CapacityDashWire_402: Decodable {
+        let totalTrucks: Int
+        let availableTrucks: Int
+        let inUseTrucks: Int
+        let maintenanceTrucks: Int
+        let totalDrivers: Int
+        let activeLoads: Int
+        let pendingLoads: Int
+        let utilizationPct: Int
+        let demandTrend: String
+        let capacityStatus: String
+    }
+    private struct CalendarSlotWire_402: Decodable {
+        let date: String
+        let dayOfWeek: String
+        let availableTrucks: Int
+        let status: String
+    }
+    private struct CalendarWeekWire_402: Decodable {
+        let weekStart: String
+        let weekEnd: String
+        let totalAvailableTruckDays: Int
+        let slots: [CalendarSlotWire_402]
+    }
+    private struct CalendarWire_402: Decodable {
+        let carrierId: Int
+        let companyName: String?
+        let fleetSize: Int
+        let weeks: [CalendarWeekWire_402]
+    }
+    private struct CalendarInput_402: Encodable { let carrierId: Int; let weeks: Int }
+    private struct EmptyInput_402: Encodable {}
 
     private func loadAll_402() async {
         loading = true
-        loading = false
-        // No capacity-planning procedure is surfaced on the iOS EusoTripAPI
-        // client yet — the seed figures from the Code/ spec stand in until
-        // each call lands, at which point this hydrate overwrites vm.
-        // WIRE: capacityPlanning.getCapacityDashboard (capacityPlanning.ts:65)
-        // WIRE: capacityPlanning.getFleetRightSizing (capacityPlanning.ts:477)
-        // WIRE: carrierCapacity.getCapacityCalendar (carrierCapacity.ts:22)
-        // WIRE: capacityPlanning.getDriverScheduleOptimizer (capacityPlanning.ts:415)
+        loadError = nil
+        defer { loading = false }
+
+        do {
+            let dash: CapacityDashWire_402 = try await EusoTripAPI.shared.query(
+                "capacityPlanning.getCapacityDashboard", input: EmptyInput_402())
+
+            var calendar: CalendarWire_402? = nil
+            if let cidString = session.user?.companyId, let cid = Int(cidString) {
+                calendar = try? await EusoTripAPI.shared.query(
+                    "carrierCapacity.getCapacityCalendar",
+                    input: CalendarInput_402(carrierId: cid, weeks: 1))
+            }
+
+            vm = buildVM_402(dash: dash, calendar: calendar)
+        } catch {
+            vm = .empty
+            loadError = "Couldn't reach the capacity service - retry."
+        }
+    }
+
+    private func buildVM_402(dash: CapacityDashWire_402, calendar: CalendarWire_402?) -> CapacityVM_402 {
+        let total = max(0, dash.totalTrucks)
+        let frac: (Int) -> Double = { total > 0 ? Double($0) / Double(total) : 0 }
+
+        // 7-day grid from the REAL capacity calendar (proportional cell fill).
+        var days: [CapacityDay_402] = []
+        var openWindows: [OpenWindow_402] = []
+        let week = calendar?.weeks.first
+        if let week, let fleet = calendar?.fleetSize, fleet > 0 {
+            let displayCells = min(fleet, 6)
+            for slot in week.slots.prefix(7) {
+                let available = max(0, min(fleet, slot.availableTrucks))
+                let committed = fleet - available
+                let committedCells = Int((Double(committed) / Double(fleet) * Double(displayCells)).rounded())
+                var cells: [CapacityCell_402] = []
+                for i in 0..<displayCells {
+                    cells.append(i < committedCells ? .committed : .open)
+                }
+                let dayNum = String(slot.date.suffix(2))
+                days.append(CapacityDay_402(
+                    id: slot.date,
+                    dow: String(slot.dayOfWeek.prefix(3)),
+                    date: dayNum,
+                    cells: cells,
+                    countLabel: "\(available)/\(fleet)",
+                    countHot: available > 0 && slot.status != "unavailable"
+                ))
+                if available > 0 && slot.status != "unavailable" {
+                    openWindows.append(OpenWindow_402(
+                        id: slot.date,
+                        unit: dayNum,
+                        title: "\(slot.dayOfWeek) \(String(slot.date.prefix(10)))",
+                        window: "\(available) truck\(available == 1 ? "" : "s") open · \(slot.status)",
+                        match: "post to the load board to fill"
+                    ))
+                }
+            }
+        }
+        let openTruckDays = week?.totalAvailableTruckDays
+
+        let softest = days.max { a, b in
+            (Int(a.countLabel.split(separator: "/").first ?? "0") ?? 0)
+                < (Int(b.countLabel.split(separator: "/").first ?? "0") ?? 0)
+        }
+
+        return CapacityVM_402(
+            utilization: "\(dash.utilizationPct)%",
+            openSlots: openTruckDays.map { "\($0) truck-days" } ?? "—",
+            openMiles: "—",   // no open-mile rollup on any wired proc
+            committedFrac: frac(dash.inUseTrucks),
+            openFrac: frac(dash.availableTrucks),
+            maintFrac: frac(dash.maintenanceTrucks),
+            barCaption: total > 0
+                ? "\(dash.inUseTrucks) in use · \(dash.availableTrucks) available · \(dash.maintenanceTrucks) maintenance · of \(total) trucks"
+                : "No vehicles on file",
+            unitCount: total > 0 ? "\(total) unit\(total == 1 ? "" : "s")" : "— units",
+            openWindowHeader: openWindows.isEmpty ? "—" : "\(openWindows.count) of 7 days",
+            days: days,
+            openWindows: Array(openWindows.prefix(3)),
+            insightTitle: softest.map { "Most open capacity: \($0.dow) · \($0.countLabel)" }
+                ?? "Capacity \(dash.capacityStatus) · demand \(dash.demandTrend)",
+            insightSub: "\(dash.activeLoads) active load\(dash.activeLoads == 1 ? "" : "s") · \(dash.pendingLoads) pending on the board"
+        )
     }
 }
 
@@ -440,45 +570,19 @@ private extension Notification.Name {
     static let eusoCatalystCapacityInsight_402   = Notification.Name("eusoCatalystCapacityInsight_402")
 }
 
-// MARK: - Seed fixture (mirrors the SVG verbatim)
-
-private func dayCells_402(_ committed: Int, maint: Bool = false) -> [CapacityCell_402] {
-    var cells = [CapacityCell_402]()
-    let total = 6
-    for i in 0..<total {
-        if i < committed { cells.append(.committed) }
-        else if maint && i == total - 1 { cells.append(.maintenance) }
-        else { cells.append(.open) }
-    }
-    return cells
-}
+// MARK: - Honest empty envelope (em-dash until a real hydrate)
 
 private extension CapacityVM_402 {
-    static let seed = CapacityVM_402(
-        utilization: "78%", openSlots: "5 truck-days", openMiles: "2,140 mi",
-        committedFrac: 33.0 / 42, openFrac: 5.0 / 42, maintFrac: 1.0 / 42,
-        barCaption: "33 committed · 5 open · 1 in maintenance · of 42 truck-days",
-        unitCount: "6 units",
-        openWindowHeader: "2 of 5",
-        days: [
-            CapacityDay_402(id: "Mon 27", dow: "Mon", date: "27", cells: dayCells_402(5), countLabel: "5/6", countHot: false),
-            CapacityDay_402(id: "Tue 28", dow: "Tue", date: "28", cells: dayCells_402(6), countLabel: "6/6", countHot: false),
-            CapacityDay_402(id: "Wed 29", dow: "Wed", date: "29", cells: dayCells_402(5, maint: true), countLabel: "5/6", countHot: false),
-            CapacityDay_402(id: "Thu 30", dow: "Thu", date: "30", cells: dayCells_402(4), countLabel: "4/6", countHot: true),
-            CapacityDay_402(id: "Fri 31", dow: "Fri", date: "31", cells: dayCells_402(3), countLabel: "3/6", countHot: true),
-            CapacityDay_402(id: "Sat 01", dow: "Sat", date: "01", cells: dayCells_402(2), countLabel: "2/6", countHot: false),
-            CapacityDay_402(id: "Sun 02", dow: "Sun", date: "02", cells: dayCells_402(0), countLabel: "0/6", countHot: false),
-        ],
-        openWindows: [
-            OpenWindow_402(id: "261", unit: "261", title: "Unit 261 · Dallas TX",
-                           window: "open Thu–Fri · dry van · 1,040 open mi",
-                           match: "best match: DFW → Memphis $2.18/mi"),
-            OpenWindow_402(id: "318", unit: "318", title: "Unit 318 · Chicago IL",
-                           window: "open Fri–Sat · flatbed · 1,100 open mi",
-                           match: "best match: CHI → Columbus $2.41/mi"),
-        ],
-        insightTitle: "ESang: Fri–Sat is your soft spot · 5 open days",
-        insightSub: "Posting both units now clears $4.6k of idle capacity"
+    static let empty = CapacityVM_402(
+        utilization: "—", openSlots: "—", openMiles: "—",
+        committedFrac: 0, openFrac: 0, maintFrac: 0,
+        barCaption: "—",
+        unitCount: "— units",
+        openWindowHeader: "—",
+        days: [],
+        openWindows: [],
+        insightTitle: "No capacity insight yet",
+        insightSub: "Live fleet and load data populate this board."
     )
 }
 
@@ -486,10 +590,12 @@ private extension CapacityVM_402 {
 
 #Preview("402 · Catalyst · Capacity · Night") {
     CatalystCapacityPlannerScreen(theme: Theme.dark)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
 }
 
 #Preview("402 · Catalyst · Capacity · Afternoon") {
     CatalystCapacityPlannerScreen(theme: Theme.light)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
 }

@@ -18,17 +18,14 @@
 //  nav: { BottomNav(...) }. Catalyst variant — HOME · DISPATCH(current) ·
 //  [orb] · WALLET · ME.
 //
-//  tRPC wiring manifest (line-confirmed on disk; NONE present in EusoTripAPI yet
-//  — house 0%-mock seeds from the Code/ spec are retained verbatim and overwrite
-//  on hydrate when the client methods land):
-//    • fleet index + at-risk count → driverWellness.getWellnessDashboard      (driverWellness.ts:185)
-//    • per-driver score + band     → driverWellness.getFatigueRiskAssessment  (driverWellness.ts:317)
-//    • flagged-driver row          → driverWellness.getFatigueAlerts          (driverWellness.ts:451)
-//    • retention context           → driverWellness.getRetentionScore         (driverWellness.ts:681)
-//    • "Schedule rest" CTA         → catalystProcedure write on hos plan       (_core/trpc.ts:150)
-//    • "Wellness log" CTA          → driverWellness.getWellnessHistory         (driverWellness.ts:610)
-//  transportMode=truck; country=US (FMCSA ELD fatigue ruleset; CA ELD / NOM-087
-//  per domicile). Persona: Eusotrans LLC · Michael Eusorone owner-op lead 142.
+//  LIVE WIRING (zero-fallback purge · 2026-06-09 · audit B13):
+//    • fleet index / at-risk / KPIs → driverWellness.getWellnessDashboard (driverWellness.ts:185)
+//    • crew risk board + insight    → driverWellness.getFatigueAlerts     (driverWellness.ts:451)
+//  Both decoded in-file against the exact server projections. The crew rows
+//  ARE the live fatigue alerts (riskScore/riskLevel/reason) — the old seeded
+//  Salazar/Brandt/Okafor roster never existed and is GONE. Fields without a
+//  live source (on-duty-now) render an honest em-dash; honest EusoEmptyState
+//  when no driver is flagged. transportMode=truck; FMCSA fatigue ruleset.
 //
 
 import SwiftUI
@@ -39,7 +36,7 @@ private struct CrewMember_401: Identifiable {
     enum Risk { case fit, watch, rest }
     let id: String              // unit
     let initials: String        // "RS"
-    let nameUnit: String        // "R. Salazar · Unit 261"
+    let nameUnit: String        // live driver name · driver id
     let context: String         // mono on-duty/sleep/HOS line
     let score: Int              // 54
     let risk: Risk
@@ -48,18 +45,58 @@ private struct CrewMember_401: Identifiable {
 }
 
 private struct CrewWellnessVM_401 {
-    let fleetIndex: String          // "82"
-    let atRisk: String              // "1 driver"
-    let onDuty: String              // "4 of 6"
-    let bandMarkerFrac: Double      // 0.82 (position along red→green band)
+    let headerSub: String           // live driver count line
+    let fleetIndex: String          // live fleetAverageScore
+    let atRisk: String              // live driversAtRisk
+    let onDuty: String              // honest em-dash (no on-duty-now source)
+    let bandMarkerFrac: Double      // fleetAverageScore / 100
     let bandCaption: String
-    let avgSleep: String            // "7.1h"
-    let avgSleepDelta: String       // "+0.4h vs wk"
-    let hosMargin: String           // "3.2h"
-    let checkIns: String            // "6/6"
+    let safetyAvg: String           // live averageHosCompliance (safety-score avg)
+    let safetyDelta: String         // live monthOverMonthChange
+    let restQuality: String         // live averageRestQuality
+    let checkIns: String            // live recentCheckIns + checkInRate
     let crew: [CrewMember_401]
     let insightTitle: String
     let insightSub: String
+
+    /// Honest empty envelope — em-dash until a real hydrate lands.
+    static let empty = CrewWellnessVM_401(
+        headerSub: "— drivers · 7-day window",
+        fleetIndex: "—", atRisk: "—", onDuty: "—",
+        bandMarkerFrac: 0,
+        bandCaption: "—",
+        safetyAvg: "—", safetyDelta: "", restQuality: "—", checkIns: "—",
+        crew: [],
+        insightTitle: "No fatigue insight yet",
+        insightSub: "Live duty data populates this board."
+    )
+}
+
+// MARK: - Wire shapes (mirror driverWellness.ts projections exactly)
+
+private struct WellnessDashboardWire_401: Decodable {
+    let fleetAverageScore: Double
+    let totalDrivers: Int
+    let driversAtRisk: Double          // SUM(CASE…) Number()-wrapped server-side
+    let averageHosCompliance: Double
+    let averageRestQuality: Double
+    let averageDrivingPatterns: Double
+    let monthOverMonthChange: Double
+    let recentCheckIns: Int
+    let checkInRate: Double
+}
+
+private struct FatigueAlertsWire_401: Decodable {
+    struct Alert: Decodable {
+        let id: String
+        let driverId: String
+        let driverName: String
+        let riskScore: Double
+        let riskLevel: String          // "critical" | "elevated" | "moderate"
+        let reason: String
+    }
+    let alerts: [Alert]
+    let total: Int
 }
 
 // MARK: - Catalyst BottomNav (HOME · DISPATCH · [orb] · WALLET · ME)
@@ -101,10 +138,11 @@ struct CatalystCrewWellnessScreen: View {
 private struct CrewWellnessBody_401: View {
     @Environment(\.palette) private var palette
 
-    // House 0%-mock seed — mirrors the SVG content verbatim, overwritten on
-    // hydrate once the driverWellness.* client methods land in EusoTripAPI.
-    @State private var vm: CrewWellnessVM_401 = .seed
+    // Live VM — honest em-dash envelope until the real procs answer.
+    @State private var vm: CrewWellnessVM_401 = .empty
     @State private var scheduling: Bool = false
+    @State private var loading: Bool = true
+    @State private var loadError: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -147,7 +185,7 @@ private struct CrewWellnessBody_401: View {
                     .accessibilityLabel("Back to Dispatch")
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Crew Wellness").font(EType.display).foregroundStyle(palette.textPrimary)
-                    Text("Eusotrans LLC · 6 drivers · 7-day window")
+                    Text(vm.headerSub)
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
                 Spacer()
@@ -210,12 +248,12 @@ private struct CrewWellnessBody_401: View {
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s3) {
-            kpiTile("AVG SLEEP", vm.avgSleep, sub: vm.avgSleepDelta,
-                    valueStyle: AnyShapeStyle(palette.textPrimary), subColor: Brand.success)
-            kpiTile("HOS MARGIN", vm.hosMargin, sub: "avg drive left",
+            kpiTile("SAFETY AVG", vm.safetyAvg, sub: vm.safetyDelta.isEmpty ? "30-day basis" : vm.safetyDelta,
+                    valueStyle: AnyShapeStyle(palette.textPrimary), subColor: palette.textSecondary)
+            kpiTile("REST QUALITY", vm.restQuality, sub: "incident-derived",
                     valueStyle: AnyShapeStyle(LinearGradient.diagonal), subColor: palette.textSecondary)
-            kpiTile("CHECK-INS", vm.checkIns, sub: "all logged today",
-                    valueStyle: AnyShapeStyle(palette.textPrimary), subColor: Brand.success)
+            kpiTile("CHECK-INS", vm.checkIns, sub: "last 7 days",
+                    valueStyle: AnyShapeStyle(palette.textPrimary), subColor: palette.textSecondary)
         }
     }
 
@@ -239,13 +277,22 @@ private struct CrewWellnessBody_401: View {
             HStack {
                 Text("CREW · FATIGUE RISK").font(EType.micro).tracking(1.0).foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("ranked by score").font(EType.caption).foregroundStyle(palette.textSecondary)
+                Text("ranked by risk").font(EType.caption).foregroundStyle(palette.textSecondary)
             }
             VStack(spacing: 0) {
-                ForEach(Array(vm.crew.enumerated()), id: \.element.id) { idx, m in
-                    crewRow(m)
-                    if idx < vm.crew.count - 1 {
-                        Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 52)
+                if vm.crew.isEmpty {
+                    EusoEmptyState(
+                        systemImage: "person.2.badge.gearshape",
+                        title: loading ? "Scanning active duty…" : "No fatigue flags right now",
+                        subtitle: loading ? "" : (loadError ?? "Drivers on active loads with notable fatigue risk appear here.")
+                    )
+                    .padding(.vertical, Space.s3)
+                } else {
+                    ForEach(Array(vm.crew.enumerated()), id: \.element.id) { idx, m in
+                        crewRow(m)
+                        if idx < vm.crew.count - 1 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 52)
+                        }
                     }
                 }
             }
@@ -353,17 +400,76 @@ private struct CrewWellnessBody_401: View {
         }
     }
 
-    // MARK: Network
-    //
-    // No driverWellness.* client method exists in EusoTripAPI yet, so the
-    // Code/-spec representative seed (CrewWellnessVM_401.seed) stands as the
-    // 0%-mock board and is overwritten verbatim the moment hydrate lands.
+    // MARK: Network (LIVE — driverWellness.getWellnessDashboard + getFatigueAlerts)
+
+    private struct AlertsInput_401: Encodable { let severity: String; let limit: Int }
+
     private func loadAll() async {
-        // WIRE: driverWellness.getWellnessDashboard     (driverWellness.ts:185)
-        // WIRE: driverWellness.getFatigueRiskAssessment (driverWellness.ts:317)
-        // WIRE: driverWellness.getFatigueAlerts         (driverWellness.ts:451)
-        // WIRE: driverWellness.getRetentionScore        (driverWellness.ts:681)
-        vm = .seed
+        loading = true
+        loadError = nil
+        defer { loading = false }
+
+        async let dashTask: WellnessDashboardWire_401 =
+            EusoTripAPI.shared.queryNoInput("driverWellness.getWellnessDashboard")
+        async let alertsTask: FatigueAlertsWire_401 =
+            EusoTripAPI.shared.query("driverWellness.getFatigueAlerts",
+                                     input: AlertsInput_401(severity: "all", limit: 10))
+
+        do {
+            let (dash, alertsWire) = try await (dashTask, alertsTask)
+
+            let crew: [CrewMember_401] = alertsWire.alerts.map { a in
+                let risk: CrewMember_401.Risk
+                let label: String
+                switch a.riskLevel {
+                case "critical": risk = .rest;  label = "REST"
+                case "elevated": risk = .watch; label = "WATCH"
+                default:         risk = .fit;   label = "MONITOR"
+                }
+                return CrewMember_401(
+                    id: a.id,
+                    initials: initials_401(a.driverName),
+                    nameUnit: "\(a.driverName) · \(a.driverId)",
+                    context: a.reason,
+                    score: Int(a.riskScore.rounded()),
+                    risk: risk,
+                    riskLabel: label,
+                    isOwnerOp: false
+                )
+            }
+
+            let atRiskCount = Int(dash.driversAtRisk.rounded())
+            let topAlert = alertsWire.alerts.first
+            vm = CrewWellnessVM_401(
+                headerSub: "\(dash.totalDrivers) driver\(dash.totalDrivers == 1 ? "" : "s") · 7-day window",
+                fleetIndex: "\(Int(dash.fleetAverageScore.rounded()))",
+                atRisk: "\(atRiskCount) driver\(atRiskCount == 1 ? "" : "s")",
+                onDuty: "—",   // no on-duty-now rollup on any wired proc
+                bandMarkerFrac: min(1.0, max(0.0, dash.fleetAverageScore / 100.0)),
+                bandCaption: atRiskCount == 0
+                    ? "No drivers below the safety floor this period"
+                    : "\(atRiskCount) driver\(atRiskCount == 1 ? "" : "s") below the safety floor",
+                safetyAvg: "\(Int(dash.averageHosCompliance.rounded()))",
+                safetyDelta: dash.monthOverMonthChange == 0 ? "" :
+                    String(format: "%+.1f vs prior 30d", dash.monthOverMonthChange),
+                restQuality: "\(Int(dash.averageRestQuality.rounded()))",
+                checkIns: "\(dash.recentCheckIns)",
+                crew: crew,
+                insightTitle: topAlert.map { "\($0.driverName) · risk \(Int($0.riskScore.rounded()))" }
+                    ?? "No fatigue flags",
+                insightSub: topAlert?.reason ?? "All active drivers below the alert threshold."
+            )
+        } catch {
+            vm = .empty
+            loadError = "Couldn't reach the wellness service - retry."
+        }
+    }
+
+    private func initials_401(_ name: String) -> String {
+        let parts = name.split(separator: " ")
+        let first = parts.first?.first.map(String.init) ?? "?"
+        let last = parts.count > 1 ? parts.last?.first.map(String.init) ?? "" : ""
+        return (first + last).uppercased()
     }
 }
 
@@ -373,33 +479,6 @@ extension Notification.Name {
     static let eusoCatalystWellnessScheduleRest_401 = Notification.Name("eusoCatalystWellnessScheduleRest_401")
     static let eusoCatalystWellnessLog_401          = Notification.Name("eusoCatalystWellnessLog_401")
     static let eusoCatalystWellnessInsight_401      = Notification.Name("eusoCatalystWellnessInsight_401")
-}
-
-// MARK: - Seed (mirrors the SVG content verbatim)
-
-private extension CrewWellnessVM_401 {
-    static let seed = CrewWellnessVM_401(
-        fleetIndex: "82", atRisk: "1 driver", onDuty: "4 of 6",
-        bandMarkerFrac: 0.82,
-        bandCaption: "Fleet sits in the FMCSA fatigue-safe band · 1 unit flagged",
-        avgSleep: "7.1h", avgSleepDelta: "+0.4h vs wk", hosMargin: "3.2h", checkIns: "6/6",
-        crew: [
-            CrewMember_401(id: "261", initials: "RS", nameUnit: "R. Salazar · Unit 261",
-                           context: "9h45 on duty · sleep 5.2h · 0h30 drive left",
-                           score: 54, risk: .rest, riskLabel: "REST", isOwnerOp: false),
-            CrewMember_401(id: "318", initials: "LB", nameUnit: "L. Brandt · Unit 318",
-                           context: "7h10 on duty · sleep 6.4h · 2h10 drive left",
-                           score: 66, risk: .watch, riskLabel: "WATCH", isOwnerOp: false),
-            CrewMember_401(id: "207", initials: "DO", nameUnit: "D. Okafor · Unit 207",
-                           context: "5h20 on duty · sleep 7.6h · 5h40 drive left",
-                           score: 79, risk: .fit, riskLabel: "FIT", isOwnerOp: false),
-            CrewMember_401(id: "142", initials: "ME", nameUnit: "Michael Eusorone · Unit 142",
-                           context: "4h05 on duty · sleep 7.9h · owner-op lead",
-                           score: 88, risk: .fit, riskLabel: "FIT", isOwnerOp: true),
-        ],
-        insightTitle: "ESang: Salazar at 54 · 0h30 drive left",
-        insightSub: "Schedule a 34-hr reset before the next dispatch"
-    )
 }
 
 // MARK: - Previews

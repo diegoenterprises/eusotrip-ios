@@ -25,11 +25,13 @@
 //    • "Buy offsets" CTA      → sustainability.buyOffsets (sustainability.ts:193)
 //    • "Export report" CTA    → sustainability.exportCarbonReport (sustainability.ts:277)
 //
-//  The `sustainability` tRPC surface is not yet mirrored in the Swift client
-//  (EusoTripAPI exposes only `co2Calculator.*` via the `co2` accessor), so
-//  this surface carries the representative seed figures from the Code/ spec
-//  (house 0%-mock convention: seeds are overwritten the moment a real
-//  hydrate lands) and leaves one WIRE marker per missing procedure below.
+//  LIVE WIRING (zero-fallback purge · 2026-06-09 · audit B13): loadAll()
+//  hydrates from the REAL sustainability.getFleetCarbon (totalTonnes /
+//  loadCount / savedTonnes / netZeroProgressPct, all computed from actual
+//  load rows) and prices the offset CTA with a REAL getOffsetQuote. Fields
+//  the live rollup does not carry (g/ton-mi intensity, SmartWay delta,
+//  fleet MPG, per-lane intensities) render an honest em-dash / empty state
+//  — the old "284 t / −12% / $3,120" seed is GONE.
 //  Powered by ESANG AI™.
 //
 
@@ -83,7 +85,7 @@ private struct FleetCarbonVM_403 {
     let co2eYTD: String         // "284 t"
     let intensityInline: String // "78 g/ton-mi"
     let vsSmartWay: String      // "−12%"
-    let offsetToNetZero: String // "$3,120"
+    let offsetToNetZero: String // live offset quote total, or em-dash
     let benchmarkFrac: Double   // SmartWay benchmark marker position on the hero band
     let fleetFrac: Double       // fleet intensity fill on the hero band
     let bandCaption: String
@@ -98,40 +100,20 @@ private struct FleetCarbonVM_403 {
     let insightTitle: String
     let insightSub: String
 
-    /// Code/ spec representative seed — mirrors the 403 SVG content verbatim.
-    /// Overwritten on the first successful hydrate (house 0%-mock convention).
-    static let seed = FleetCarbonVM_403(
-        co2eYTD: "284 t", intensityInline: "78 g/ton-mi",
-        vsSmartWay: "−12%", offsetToNetZero: "$3,120",
-        benchmarkFrac: 0.80, fleetFrac: 0.70,
-        bandCaption: "Below the SmartWay 89 g benchmark (dashed) · verified Q1",
-        intensity: "78g", intensityYoY: "−6% YoY", fleetMPG: "7.4", mpgDelta: "+0.3 vs 25",
-        offsetCost: "$11/t",
-        lanes: [
-            LaneEmission_403(id: "i10", lane: "I-10 · Houston → Dallas",     intensity: 72, flag: .good),
-            LaneEmission_403(id: "i35", lane: "I-35 · DFW → Kansas City",    intensity: 81, flag: .neutral),
-            LaneEmission_403(id: "i80", lane: "I-80 · Ohio → PA · reefer",   intensity: 88, flag: .hot),
-            LaneEmission_403(id: "i94", lane: "I-94 · Chicago → Detroit",    intensity: 76, flag: .neutral),
-            LaneEmission_403(id: "i70", lane: "I-70 · St. Louis → Columbus", intensity: 70, flag: .good),
-        ],
-        laneAvg: 78, laneMax: 100,
-        insightTitle: "ESang: I-80 reefer runs 13% hot",
-        insightSub: "Cycle-sentry mode cuts ~9 t/yr · holds your −12% edge"
-    )
-
     /// Honest empty envelope — every figure paints an em-dash until a real
-    /// `sustainability.getFleetCarbon` hydrate lands.
+    /// `sustainability.getFleetCarbon` hydrate lands. (The old SVG seed with
+    /// "284 t / −12% / $3,120" was fabricated and is GONE — audit B13.)
     static let empty = FleetCarbonVM_403(
-        co2eYTD: "-", intensityInline: "-",
-        vsSmartWay: "-", offsetToNetZero: "-",
+        co2eYTD: "—", intensityInline: "—",
+        vsSmartWay: "—", offsetToNetZero: "—",
         benchmarkFrac: 0.0, fleetFrac: 0.0,
-        bandCaption: "-",
-        intensity: "-", intensityYoY: "-", fleetMPG: "-", mpgDelta: "-",
-        offsetCost: "-",
+        bandCaption: "—",
+        intensity: "—", intensityYoY: "—", fleetMPG: "—", mpgDelta: "—",
+        offsetCost: "—",
         lanes: [],
         laneAvg: 0, laneMax: 100,
-        insightTitle: "-",
-        insightSub: "-"
+        insightTitle: "No emissions insight yet",
+        insightSub: "Live load data populates this surface."
     )
 }
 
@@ -140,11 +122,11 @@ private struct FleetCarbonVM_403 {
 private struct FleetCarbonBody_403: View {
     @Environment(\.palette) private var palette
 
-    // House 0%-mock: start on the Code/ representative seed; loadAll()
-    // overwrites it the moment the sustainability surface is mirrored.
-    @State private var vm: FleetCarbonVM_403 = .seed
-    @State private var loading: Bool = false
+    // Live VM — honest em-dash envelope until sustainability.getFleetCarbon answers.
+    @State private var vm: FleetCarbonVM_403 = .empty
+    @State private var loading: Bool = true
     @State private var loadError: String? = nil
+    @State private var offsetQuoteTotal: Double? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -198,7 +180,7 @@ private struct FleetCarbonBody_403: View {
                     Text("Fleet Carbon")
                         .font(EType.display)
                         .foregroundStyle(palette.textPrimary)
-                    Text("Eusotrans LLC · 6 trucks · YTD 2026")
+                    Text("EPA SmartWay factors · YTD \(Calendar.current.component(.year, from: Date()))")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -222,7 +204,7 @@ private struct FleetCarbonBody_403: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("FLEET CO₂e · YTD 2026")
+                        Text("FLEET CO₂e · YTD \(Calendar.current.component(.year, from: Date()))")
                             .font(EType.micro).tracking(1.0)
                             .foregroundStyle(palette.textTertiary)
                         HStack(alignment: .firstTextBaseline, spacing: 14) {
@@ -328,16 +310,17 @@ private struct FleetCarbonBody_403: View {
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("vs \(vm.laneAvg) avg")
+                Text(vm.lanes.isEmpty ? "—" : "vs \(vm.laneAvg) avg")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
             VStack(spacing: Space.s4) {
                 if vm.lanes.isEmpty {
-                    Text("-")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textTertiary)
-                        .frame(maxWidth: .infinity, minHeight: 40)
+                    EusoEmptyState(
+                        systemImage: "leaf",
+                        title: loading ? "Loading emissions…" : "Per-lane intensity not yet available",
+                        subtitle: loading ? "" : "Lane-level CO₂e intensity isn't exposed by the live emissions rollup yet."
+                    )
                 } else {
                     ForEach(vm.lanes) { lane in
                         laneRow(lane)
@@ -433,20 +416,21 @@ private struct FleetCarbonBody_403: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             Button {
-                // WIRE: sustainability.buyOffsets (sustainability.ts:193) — payment
-                // write gated catalystProcedure (_core/trpc.ts:150); records the
-                // retirement certificate, inserts a blockchainAudit row and
-                // broadcasts a wallet update. Not yet mirrored in EusoTripAPI.
+                // Hands the REAL live quote to the host action layer
+                // (sustainability.buyOffsets not yet bridged for the write).
+                guard let total = offsetQuoteTotal else { return }
                 NotificationCenter.default.post(name: .eusoCatalystCarbonBuyOffsets_403, object: nil,
-                    userInfo: ["source": "403_CatalystFleetCarbon", "amount": vm.offsetToNetZero])
+                    userInfo: ["source": "403_CatalystFleetCarbon", "amount": total])
             } label: {
-                Text("Buy offsets · \(vm.offsetToNetZero)")
+                Text(offsetQuoteTotal != nil ? "Buy offsets · \(vm.offsetToNetZero)" : "Buy offsets")
                     .font(EType.bodyStrong)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
+            .disabled(offsetQuoteTotal == nil)
+            .opacity(offsetQuoteTotal == nil ? 0.5 : 1.0)
             Button {
                 // WIRE: sustainability.exportCarbonReport (sustainability.ts:277) —
                 // shipper-facing CDP/SmartWay packet. Not yet mirrored in EusoTripAPI.
@@ -488,26 +472,85 @@ private struct FleetCarbonBody_403: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md))
     }
 
-    // MARK: - Network
+    // MARK: - Network (LIVE — sustainability.getFleetCarbon + getOffsetQuote)
+
+    private struct FleetCarbonWire_403: Decodable {
+        let totalKg: Double
+        let totalTonnes: Double
+        let loadCount: Int
+        let netZeroProgressPct: Double
+        let savedTonnes: Double
+        let ytdYear: Int
+    }
+    private struct OffsetQuoteWire_403: Decodable {
+        let tonnesCO2e: Double
+        let usdPerTonne: Double
+        let subtotal: Double
+        let platformFee: Double
+        let total: Double
+        let provider: String?
+    }
+    private struct OffsetQuoteInput_403: Encodable { let tonnesCO2e: Double }
 
     private func loadAll() async {
         loading = true
         loadError = nil
-        loading = false
+        defer { loading = false }
 
-        // WIRE: sustainability.getFleetCarbon (sustainability.ts:89) — hero CO₂e,
-        //       fleet intensity, SmartWay delta, offset-to-net-zero, MPG, per-lane
-        //       intensities. Not yet mirrored in the Swift client.
-        // WIRE: sustainability.getOffsetQuote (sustainability.ts:165) — offset cost.
-        // WIRE: sustainability.getRecommendations (sustainability.ts:220) — ESang tip.
-        //
-        // The only carbon procedure mirrored in EusoTripAPI today is
-        // `co2Calculator.calculateTruckShipment` (per-shipment, not the fleet
-        // aggregate this surface renders). Until the `sustainability` router is
-        // mirrored, the Code/ representative seed stands per house 0%-mock.
-        //
-        // No real aggregate call exists yet, so leave the seed in place and
-        // surface no false error.
+        do {
+            let carbon: FleetCarbonWire_403 =
+                try await EusoTripAPI.shared.queryNoInput("sustainability.getFleetCarbon")
+
+            var quote: OffsetQuoteWire_403? = nil
+            if carbon.totalTonnes > 0 {
+                quote = try? await EusoTripAPI.shared.query(
+                    "sustainability.getOffsetQuote",
+                    input: OffsetQuoteInput_403(tonnesCO2e: carbon.totalTonnes))
+            }
+            offsetQuoteTotal = quote?.total
+
+            let progress = min(1.0, max(0.0, carbon.netZeroProgressPct / 100.0))
+            vm = FleetCarbonVM_403(
+                co2eYTD: carbon.totalTonnes > 0
+                    ? String(format: "%.1f t", carbon.totalTonnes)
+                    : (carbon.loadCount > 0 ? "0 t" : "—"),
+                intensityInline: carbon.loadCount > 0
+                    ? "\(carbon.loadCount) load\(carbon.loadCount == 1 ? "" : "s") YTD" : "—",
+                vsSmartWay: "—",   // no SmartWay benchmark on the live rollup
+                offsetToNetZero: quote.map { money_403($0.total) } ?? "—",
+                benchmarkFrac: 0,
+                fleetFrac: progress,
+                bandCaption: carbon.loadCount > 0
+                    ? String(format: "%.1f t saved vs dry-van baseline · net-zero progress %d%%",
+                             carbon.savedTonnes, Int(carbon.netZeroProgressPct.rounded()))
+                    : "No load emissions recorded yet this year",
+                intensity: "—",        // g/ton-mi intensity not on the live rollup
+                intensityYoY: "—",
+                fleetMPG: "—",         // no MPG rollup on any wired proc
+                mpgDelta: "—",
+                offsetCost: quote.map { String(format: "$%.0f/t", $0.usdPerTonne) } ?? "—",
+                lanes: [],             // per-lane intensity not on the live rollup
+                laneAvg: 0, laneMax: 100,
+                insightTitle: carbon.savedTonnes > 0
+                    ? String(format: "%.1f t CO₂e saved vs dry-van baseline", carbon.savedTonnes)
+                    : "No emissions insight yet",
+                insightSub: carbon.loadCount > 0
+                    ? "Computed from \(carbon.loadCount) real load\(carbon.loadCount == 1 ? "" : "s") · EPA SmartWay factors"
+                    : "Live load data populates this surface."
+            )
+        } catch {
+            vm = .empty
+            offsetQuoteTotal = nil
+            loadError = "Couldn't reach the sustainability service - retry."
+        }
+    }
+
+    private func money_403(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
     }
 }
 

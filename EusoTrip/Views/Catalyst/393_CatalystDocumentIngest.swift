@@ -24,14 +24,13 @@
 //      strip.
 //    • aiDocProcessor.enhanceBolPhoto (aiDocProcessor.ts:80) — POD/BOL row.
 //
-//  iOS CLIENT REALITY (grep EusoTripAPI.swift · 2026-05-29): the
-//  `aiDocProcessor.*` namespace is NOT bound on the mobile client. The
-//  nearest verified surface is `documentManagement.getDocuments`
-//  (EusoTripAPI.swift:7172) — a live doc list we hydrate the hero
-//  auto-classified counters + queue confidence from. The three
-//  aiDocProcessor procedures above are left as honest // WIRE: markers; the
-//  Code/ representative seed figures stay until those clients ship (0% mock
-//  — seeds overwritten on hydrate where a real call exists).
+//  LIVE WIRING (zero-fallback purge · 2026-06-09 · audit M6): the queue
+//  rows AND the hero counters both hydrate from the real
+//  `documentManagement.getDocuments` (EusoTripAPI.swift:7830) with do/catch
+//  + a surfaced loadError and honest empty states. NO seed rows remain.
+//  Per-row OCR confidence has no live source on mobile (aiDocProcessor.*
+//  unbound) — the right column shows the document's REAL status instead,
+//  and the classify CTA is honestly disabled until that namespace binds.
 //
 //  Powered by ESANG AI™.
 //
@@ -72,19 +71,19 @@ private struct DocumentIngestBody_393: View {
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var scheme
 
-    // Code/ representative seed figures — overwritten on hydrate where a
-    // real call exists (the hero counters come from getDocuments; the
-    // per-row confidence stays seeded until aiDocProcessor binds).
-    @State private var rows: [IngestRow_393] = IngestRow_393.seed
-    @State private var autoPct: Int = 94
-    @State private var totalDocs: Int = 12
-    @State private var autoExtracted: Int = 11
-    @State private var needsReview: Int = 1
+    // Live state — empty/zero until documentManagement.getDocuments answers.
+    // No seed rows, no seeded hero figures (zero-fallback purge · audit M6).
+    @State private var rows: [IngestRow_393] = []
+    @State private var autoPct: Int = 0
+    @State private var totalDocs: Int = 0
+    @State private var autoExtracted: Int = 0
+    @State private var needsReview: Int = 0
     @State private var failed: Int = 0
-    @State private var syncedAgo: String = "synced 4m ago"
+    @State private var syncedAgo: String = "—"
 
-    @State private var loading: Bool = false
-    @State private var classifying: Bool = false
+    @State private var loading: Bool = true
+    @State private var loadError: String? = nil
+    @State private var hydrated: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
@@ -93,20 +92,35 @@ private struct DocumentIngestBody_393: View {
             IridescentHairline()
                 .padding(.horizontal, -20)
 
+            if let err = loadError {
+                LifecycleCard(accentDanger: true) {
+                    HStack {
+                        Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                        Spacer(minLength: 0)
+                        Button { Task { await loadAll() } } label: {
+                            Text("Retry").font(.system(size: 11, weight: .heavy)).foregroundStyle(Brand.danger)
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }
+
             heroCard_393
 
-            sectionEyebrow_393("INGEST QUEUE · classifyDocument · enhanceBolPhoto")
+            sectionEyebrow_393("INGEST QUEUE · LIVE DOCUMENTS")
             queueCard_393
 
             sourceStrip_393
 
+            // Honestly disabled — aiDocProcessor.classifyDocument is not
+            // bridged on the mobile client; no fake in-flight spinner.
             CTAButton(
-                title: classifying ? "Classifying…" : "Classify new upload",
-                action: { classifyNewUpload() },
+                title: "Classify new upload",
+                action: {},
                 trailingIcon: "wand.and.stars",
-                subtitle: "classifyDocument · {fileId,loadId?}",
-                isLoading: classifying
+                subtitle: "Not yet available on mobile"
             )
+            .disabled(true)
+            .opacity(0.5)
 
             provenanceFootnote_393
 
@@ -147,7 +161,7 @@ private struct DocumentIngestBody_393: View {
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("classifyDocument · Aurora Freight Lines · USDOT 3 482 119")
+            Text("AI document intake · live queue")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(palette.textSecondary)
         }
@@ -163,23 +177,26 @@ private struct DocumentIngestBody_393: View {
                     .tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
-                Text("live")
+                // "live" badge is earned: only after a real hydrate succeeds.
+                Text(hydrated ? "live" : (loading ? "loading" : "offline"))
                     .font(.system(size: 10, weight: .heavy))
-                    .foregroundStyle(Brand.success)
+                    .foregroundStyle(hydrated ? Brand.success : palette.textTertiary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Capsule().fill(Brand.success.opacity(0.14)))
+                    .background(Capsule().fill(hydrated ? Brand.success.opacity(0.14) : palette.bgCardSoft))
             }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text("\(autoPct)%")
+                Text(hydrated && totalDocs > 0 ? "\(autoPct)%" : "—")
                     .font(.system(size: 30, weight: .heavy))
                     .monospacedDigit()
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("of \(totalDocs) docs")
+                Text(hydrated ? "of \(totalDocs) docs" : "of — docs")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textSecondary)
             }
-            Text("\(autoExtracted) auto-extracted · \(needsReview) needs review · \(failed) failed")
+            Text(hydrated
+                 ? "\(autoExtracted) auto-extracted · \(needsReview) needs review · \(failed) failed"
+                 : "—")
                 .font(.system(size: 10.5))
                 .foregroundStyle(palette.textSecondary)
             Text(syncedAgo)
@@ -207,35 +224,51 @@ private struct DocumentIngestBody_393: View {
 
     private var queueCard_393: some View {
         VStack(spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.element.id) { idx, d in
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(d.type)
-                        .font(.system(size: 12, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(palette.textPrimary)
-                        .frame(width: 78, alignment: .leading)
-                    Text(d.detail)
-                        .font(.system(size: 11))
+            if loading && rows.isEmpty {
+                Text("Loading documents…")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 14)
+            } else if rows.isEmpty {
+                EusoEmptyState(
+                    systemImage: "doc.viewfinder",
+                    title: "No documents in the queue",
+                    subtitle: "Uploaded BOLs, rate cons, PODs and receipts appear here with their intake status."
+                )
+            } else {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { idx, d in
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(d.type)
+                            .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(palette.textPrimary)
+                            .frame(width: 78, alignment: .leading)
+                        Text(d.detail)
+                            .font(.system(size: 11))
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                        Spacer(minLength: 0)
+                        Text(d.confidence)
+                            .font(.system(size: 10.5, weight: .bold))
+                            .monospacedDigit()
+                            .foregroundStyle(d.ok ? Brand.success : Brand.warning)
+                    }
+                    .padding(.vertical, 9)
+                    if idx != rows.count - 1 {
+                        Rectangle()
+                            .fill(palette.borderFaint)
+                            .frame(height: 1)
+                    }
+                }
+                HStack {
+                    Text("Live document records · per-row OCR confidence not yet connected")
+                        .font(.system(size: 10))
                         .foregroundStyle(palette.textSecondary)
                     Spacer(minLength: 0)
-                    Text(d.confidence)
-                        .font(.system(size: 10.5, weight: .bold))
-                        .monospacedDigit()
-                        .foregroundStyle(d.ok ? Brand.success : Brand.warning)
                 }
-                .padding(.vertical, 9)
-                if idx != rows.count - 1 {
-                    Rectangle()
-                        .fill(palette.borderFaint)
-                        .frame(height: 1)
-                }
+                .padding(.top, 6)
             }
-            HStack {
-                Text("classifier maps fields to load · BOL/RATECON/POD auto-attached")
-                    .font(.system(size: 10))
-                    .foregroundStyle(palette.textSecondary)
-                Spacer(minLength: 0)
-            }
-            .padding(.top, 6)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -251,14 +284,14 @@ private struct DocumentIngestBody_393: View {
 
     private var sourceStrip_393: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("SOURCE · bulkExtractLoads")
+            Text("SOURCES")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
-            Text("driver Michael Eusorone · ME captures via camera at dock")
+            Text("Driver camera captures at the dock + portal uploads feed this queue")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
-            Text("shipper-of-record Eusorone Technologies · DU")
+            Text("Bulk extraction (bulkExtractLoads) isn't connected on mobile yet")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
         }
@@ -275,7 +308,7 @@ private struct DocumentIngestBody_393: View {
     // MARK: Provenance footnote
 
     private var provenanceFootnote_393: some View {
-        Text("classifyDocument · {fileId,loadId?}")
+        Text("documentManagement.getDocuments · live")
             .font(.system(size: 10, design: .monospaced))
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -290,70 +323,57 @@ private struct DocumentIngestBody_393: View {
             .foregroundStyle(palette.textTertiary)
     }
 
-    // MARK: Actions
-
-    private func classifyNewUpload() {
-        // WIRE: aiDocProcessor.classifyDocument (aiDocProcessor.ts:15) —
-        // {fileId,loadId?} mutation kicks server-side OCR on the freshly
-        // captured upload. The mobile client only binds
-        // documentManagement.classifyDocument(documentId:) today, which
-        // needs an existing document id rather than a raw camera capture,
-        // so the carrier "classify new upload" gesture awaits the
-        // aiDocProcessor binding. Reflect the in-flight state honestly.
-        guard !classifying else { return }
-        classifying = true
-        Task {
-            // No representative documentId in this surface yet — flip the
-            // flag back so the CTA never wedges. Replace with the real
-            // aiDocProcessor.classifyDocument call once bound.
-            try? await Task.sleep(nanoseconds: 600_000_000)
-            await MainActor.run { classifying = false }
-        }
-    }
-
-    // MARK: Network
+    // MARK: Network — live documentManagement.getDocuments, surfaced errors
 
     private func loadAll() async {
         loading = true
+        loadError = nil
         defer { loading = false }
 
-        // Live: documentManagement.getDocuments (EusoTripAPI.swift:7172)
-        // — verified bound on the mobile client. Hydrate the hero
-        // auto-classified counters from the real doc list. A "classified"
-        // doc is one whose status is past intake (not "pending"/"uploaded").
-        let resp = try? await EusoTripAPI.shared.documentManagement.getDocuments(page: 1, pageSize: 50)
-        guard let resp else { return }
+        do {
+            let resp = try await EusoTripAPI.shared.documentManagement.getDocuments(page: 1, pageSize: 50)
+            let docs = resp.documents
+            let total = resp.total > 0 ? resp.total : docs.count
 
-        let docs = resp.documents
-        let total = resp.total > 0 ? resp.total : docs.count
-        guard total > 0 else { return }
+            let pendingStates: Set<String> = ["pending", "uploaded", "processing", "review"]
+            let needs = docs.filter { pendingStates.contains($0.status.lowercased()) }.count
+            let fail = docs.filter { ["rejected", "failed"].contains($0.status.lowercased()) }.count
+            let extracted = max(0, total - needs - fail)
+            let pct = total > 0 ? Int((Double(extracted) / Double(total) * 100.0).rounded()) : 0
 
-        let pendingStates: Set<String> = ["pending", "uploaded", "processing", "review"]
-        let needs = docs.filter { pendingStates.contains($0.status.lowercased()) && $0.status.lowercased() != "rejected" }.count
-        let fail = docs.filter { $0.status.lowercased() == "rejected" || $0.status.lowercased() == "failed" }.count
-        let extracted = max(0, total - needs - fail)
-        let pct = Int((Double(extracted) / Double(total) * 100.0).rounded())
-
-        await MainActor.run {
+            self.rows = docs.prefix(8).map { mapRow_393($0) }
             self.totalDocs = total
             self.autoExtracted = extracted
             self.needsReview = needs
             self.failed = fail
             self.autoPct = pct
             self.syncedAgo = "synced just now"
+            self.hydrated = true
+        } catch {
+            self.rows = []
+            self.hydrated = false
+            self.syncedAgo = "—"
+            self.loadError = "Couldn't reach the document service - retry."
         }
+    }
 
-        // WIRE: aiDocProcessor.bulkExtractLoads (aiDocProcessor.ts:45) —
-        //       per-row extraction confidence for the ingest queue.
-        // WIRE: aiDocProcessor.enhanceBolPhoto (aiDocProcessor.ts:80) —
-        //       deskew + OCR confidence for the POD/BOL row.
-        // Neither is bound on the mobile client (grep · 2026-05-29). The
-        // Code/ representative confidence figures remain seeded until those
-        // procedures ship to the iOS EusoTripAPI surface.
+    /// Map one live `documentManagement.getDocuments` record to a queue row.
+    /// Right column is the document's real status — per-row OCR confidence
+    /// has no live source on mobile, so it is never invented.
+    private func mapRow_393(_ d: DocumentManagementAPI.Document) -> IngestRow_393 {
+        let status = d.status.lowercased()
+        let ok = !["pending", "uploaded", "processing", "review", "rejected", "failed"].contains(status)
+        let typeTag = String(d.type.replacingOccurrences(of: "_", with: " ").uppercased().prefix(9))
+        return IngestRow_393(
+            type: typeTag.isEmpty ? "DOC" : typeTag,
+            detail: d.name,
+            confidence: status.isEmpty ? "—" : status,
+            ok: ok
+        )
     }
 }
 
-// MARK: - Ingest queue row model
+// MARK: - Ingest queue row model (built from live records only)
 
 private struct IngestRow_393: Identifiable, Equatable {
     let id = UUID()
@@ -361,16 +381,6 @@ private struct IngestRow_393: Identifiable, Equatable {
     let detail: String
     let confidence: String
     let ok: Bool
-
-    // Code/ representative seed — verbatim from
-    // 03 Catalyst/Code/393_CatalystDocumentIngest.swift.
-    static let seed: [IngestRow_393] = [
-        IngestRow_393(type: "BOL",     detail: "LD-260427-7C3A09F18B · matched to load",     confidence: "0.98",   ok: true),
-        IngestRow_393(type: "RATECON", detail: "rate confirmation · bulkExtractLoads",        confidence: "0.95",   ok: true),
-        IngestRow_393(type: "POD",     detail: "signed delivery · enhanceBolPhoto · deskewed", confidence: "0.97",   ok: true),
-        IngestRow_393(type: "LUMPER",  detail: "lumper receipt · low confidence",             confidence: "review", ok: false),
-        IngestRow_393(type: "SCALE",   detail: "weight ticket · extracted",                   confidence: "0.91",   ok: true)
-    ]
 }
 
 // MARK: - Previews

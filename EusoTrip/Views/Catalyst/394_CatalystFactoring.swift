@@ -15,20 +15,16 @@
 //  doc/$ chip but omit lifecycle dots (Foundation Contract §5). The screen
 //  exists to collapse a 30-day cash-flow gap to ~2 minutes.
 //
-//  Shipper-of-record on each invoice = Diego Usoro / Eusorone Technologies (§11).
-//
-//  Wiring manifest (tRPC procedures, line-confirmed on disk this fire). None
-//  of these are surfaced as iOS EusoTripAPI.shared.factoring clients yet —
-//  the wired client exposes only getOffer(loadId:) / accept(loadId:offerId:).
-//  We therefore keep the canonical representative seeds (house "0% mock —
-//  seeds overwritten on hydrate") and leave one WIRE marker per missing call:
-//    • hero available + reserve   → factoring.getOverview        (factoring.ts:392)
-//                                   + factoring.getReserveBalance (factoring.ts:590)
-//    • fee / rate band            → factoring.getRates           (factoring.ts:1000)
-//                                   + factoring.getFeeSchedule    (factoring.ts:686)
-//    • eligible-invoice rows      → factoring.getInvoices        (factoring.ts:424)
-//                                   + factoring.getInvoiceStatus  (factoring.ts:497)
-//    • "Advance now" CTA          → factoring.instantPay         (factoring.ts:878)
+//  LIVE WIRING (zero-fallback purge · 2026-06-09 · audit B13):
+//    • hero available + reserve + advance rate → factoring.getOverview (factoring.ts:392)
+//    • fee / rate band                         → factoring.getRates    (factoring.ts:1004)
+//    • eligible-invoice rows                   → factoring.getInvoices (factoring.ts:428)
+//    • last advance strip                      → getOverview.recentActivity
+//  All decoded against the exact server projections (Number()-wrapped on the
+//  server, plain Doubles on the wire). NO seed fixture remains: every figure
+//  is live or an honest em-dash / EusoEmptyState. The "Advance now" CTA stays
+//  a NotificationCenter intent (factoring.instantPay not yet bridged) and is
+//  disabled until real selected invoices exist.
 //
 //  Bottom nav (Catalyst variant): HOME · DISPATCH · [orb] · WALLET · ME.
 //
@@ -55,62 +51,83 @@ private func catalystNavTrailing_394() -> [NavSlot] {
      NavSlot(label: "Me",     systemImage: "person.crop.circle", isCurrent: false)]
 }
 
-// MARK: - Seed model (canonical fixture — overwritten on hydrate)
+// MARK: - Display row (built from live factoring.getInvoices rows only)
 
 private struct FactorInvoice_394: Identifiable {
     enum Verify { case verified, pending }
     let id: String
-    let shipper: String
-    let idLane: String
-    let statusLine: String
+    let shipper: String        // invoice number (title line)
+    let idLane: String         // load ref + submitted date
+    let statusLine: String     // raw server status, honest
     let verify: Verify
     let face: String
-    let advance: String?   // nil when holding
-    let selected: Bool
+    let advance: String?       // nil when holding
+    let advanceAmount: Double  // numeric, for the selected-total sum
 }
 
-private struct FactoringVM_394 {
-    let available: String
-    let eligibleCount: Int
-    let advanceRatePct: Int
-    let factorFee: String
-    let reserveHeld: String
-    let term: String
-    let invoices: [FactorInvoice_394]
-    let selectedCount: Int
-    let selectedTotal: String
-    let lastAdvanceTitle: String
-    let lastAdvanceSub: String
+// MARK: - Wire shapes (mirror server/routers/factoring.ts projections exactly)
+
+private struct FactoringOverviewWire_394: Decodable {
+    struct Account: Decodable {
+        let status: String
+        let creditLimit: Double
+        let availableCredit: Double
+        let usedCredit: Double
+        let reserveBalance: Double
+        let factoringRate: Double
+        let advanceRate: Double
+    }
+    struct Period: Decodable {
+        let invoicesSubmitted: Int
+        let totalFactored: Double
+        let feesCharged: Double
+        let pendingPayments: Int
+    }
+    struct Activity: Decodable {
+        let id: String
+        let invoiceNumber: String?
+        let status: String?
+        let amount: Double
+        let date: String
+    }
+    let account: Account
+    let currentPeriod: Period
+    let recentActivity: [Activity]
 }
 
-private let seedFactoring_394 = FactoringVM_394(
-    available: "$11,420", eligibleCount: 4, advanceRatePct: 96,
-    factorFee: "1.8%", reserveHeld: "$476", term: "Recourse · net-30",
-    invoices: [
-        FactorInvoice_394(id: "LD-260427-A38FB12C7E", shipper: "Diego Usoro · Eusorone",
-                          idLane: "LD-260427-A38FB12C7E · Houston → Dallas",
-                          statusLine: "POD signed · verified 14 min ago", verify: .verified,
-                          face: "$1,900", advance: "adv $1,824", selected: true),
-        FactorInvoice_394(id: "LD-260427-B41782FF02", shipper: "Diego Usoro · Eusorone",
-                          idLane: "LD-260427-B41782FF02 · KC → Omaha",
-                          statusLine: "POD signed · escort verified · no detention", verify: .verified,
-                          face: "$3,200", advance: "adv $3,072", selected: true),
-        FactorInvoice_394(id: "LD-260427-DA1592B7CC", shipper: "Diego Usoro · Eusorone",
-                          idLane: "LD-260427-DA1592B7CC · Pittsburgh → Cleveland",
-                          statusLine: "POD uploaded · auto-verify in progress", verify: .pending,
-                          face: "$2,200", advance: nil, selected: false),
-    ],
-    selectedCount: 2, selectedTotal: "$4,896",
-    lastAdvanceTitle: "Last advance · $2,112 funded",
-    lastAdvanceSub: "LD-260427-7C3A09F18B · reserve $88 pending · 2 days ago"
-)
+private struct FactoringInvoiceWire_394: Decodable {
+    let id: String
+    let invoiceNumber: String?
+    let loadId: Int?
+    let invoiceAmount: Double
+    let advanceAmount: Double
+    let factoringFee: Double
+    let status: String?
+    let submittedAt: String?
+    let fundedAt: String?
+    let collectedAt: String?
+}
+
+private struct FactoringRatesWire_394: Decodable {
+    let standard: Double
+    let quickPay: Double
+    let sameDay: Double
+    let currentRate: Double
+    let advanceRate: Double
+}
 
 // MARK: - Body
 
 private struct FactoringBody_394: View {
     @Environment(\.palette) private var palette
 
-    @State private var vm: FactoringVM_394 = seedFactoring_394
+    // Live state — nil/empty until the real procs answer. No seeds.
+    @State private var overview: FactoringOverviewWire_394? = nil
+    @State private var rates: FactoringRatesWire_394? = nil
+    @State private var invoices: [FactorInvoice_394] = []
+    @State private var selectedIds: Set<String> = []
+    @State private var loading: Bool = true
+    @State private var loadError: String? = nil
     @State private var funding: Bool = false
 
     var body: some View {
@@ -119,6 +136,11 @@ private struct FactoringBody_394: View {
             IridescentHairline()
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Space.s4) {
+                    if let err = loadError {
+                        LifecycleCard(accentDanger: true) {
+                            Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                        }
+                    }
                     heroCard_394
                     feeBand_394
                     invoicesSection_394
@@ -133,7 +155,31 @@ private struct FactoringBody_394: View {
             }
         }
         .task { await loadAll() }
+        .refreshable { await loadAll() }
     }
+
+    // MARK: Derived (live-only)
+
+    private var availableDisplay: String {
+        guard let a = overview?.account else { return "—" }
+        return money_394(a.availableCredit)
+    }
+    private var eligibleCount: Int { invoices.count }
+    private var advanceRatePct: Int {
+        guard let r = overview?.account.advanceRate ?? rates?.advanceRate else { return 0 }
+        return Int((r * 100).rounded())
+    }
+    private var factorFeeDisplay: String {
+        guard let r = overview?.account.factoringRate ?? rates?.currentRate else { return "—" }
+        return String(format: "%.1f%%", r * 100)
+    }
+    private var reserveHeldDisplay: String {
+        guard let a = overview?.account else { return "—" }
+        return money_394(a.reserveBalance)
+    }
+    private var selectedRows: [FactorInvoice_394] { invoices.filter { selectedIds.contains($0.id) } }
+    private var selectedTotal: Double { selectedRows.reduce(0) { $0 + $1.advanceAmount } }
+    private var selectedTotalDisplay: String { selectedRows.isEmpty ? "—" : money_394(selectedTotal) }
 
     // MARK: TopBar (inline — eyebrow / back / title / carrier)
 
@@ -175,12 +221,12 @@ private struct FactoringBody_394: View {
                     Text("AVAILABLE TO ADVANCE · TODAY")
                         .font(EType.micro).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
-                    Text(vm.available)
+                    Text(availableDisplay)
                         .font(.system(size: 38, weight: .bold).monospacedDigit())
                         .foregroundStyle(LinearGradient.diagonal)
                     (Text("across ")
-                        + Text("\(vm.eligibleCount)").fontWeight(.bold).foregroundColor(palette.textPrimary)
-                        + Text(" POD-cleared invoices · funds in ~2 min"))
+                        + Text("\(eligibleCount)").fontWeight(.bold).foregroundColor(palette.textPrimary)
+                        + Text(" factored invoices on file"))
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
                 Spacer()
@@ -194,11 +240,11 @@ private struct FactoringBody_394: View {
     private var advanceGauge_394: some View {
         ZStack {
             Circle().stroke(palette.textTertiary.opacity(0.20), lineWidth: 7)
-            Circle().trim(from: 0, to: CGFloat(vm.advanceRatePct) / 100)
+            Circle().trim(from: 0, to: CGFloat(advanceRatePct) / 100)
                 .stroke(LinearGradient.primary, style: StrokeStyle(lineWidth: 7, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 0) {
-                Text("\(vm.advanceRatePct)%")
+                Text(advanceRatePct > 0 ? "\(advanceRatePct)%" : "—")
                     .font(.system(size: 18, weight: .bold).monospacedDigit())
                     .foregroundStyle(palette.textPrimary)
                 Text("ADV RATE")
@@ -207,18 +253,20 @@ private struct FactoringBody_394: View {
             }
         }
         .frame(width: 68, height: 68)
-        .accessibilityLabel("Advance rate \(vm.advanceRatePct) percent")
+        .accessibilityLabel("Advance rate \(advanceRatePct) percent")
     }
 
     // MARK: Fee / reserve band
 
     private var feeBand_394: some View {
         HStack(spacing: 0) {
-            bandStat_394("FACTOR FEE", vm.factorFee)
+            bandStat_394("FACTOR FEE", factorFeeDisplay)
             bandDivider_394
-            bandStat_394("RESERVE HELD", vm.reserveHeld)
+            bandStat_394("RESERVE HELD", reserveHeldDisplay)
             bandDivider_394
-            bandStat_394("TERM", vm.term)
+            // No term/recourse field exists on factoring.getOverview/getRates —
+            // honest em-dash, never an invented "Recourse · net-30".
+            bandStat_394("TERM", "—")
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Space.s3)
@@ -245,31 +293,54 @@ private struct FactoringBody_394: View {
     private var invoicesSection_394: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("ELIGIBLE INVOICES · POD CLEARED")
+                Text("FACTORED INVOICES · LIVE")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Button { } label: {
-                    Text("Select all").font(.system(size: 11, weight: .heavy)).foregroundStyle(LinearGradient.primary)
-                }.buttonStyle(.plain)
+                if !invoices.isEmpty {
+                    Button {
+                        if selectedIds.count == invoices.count {
+                            selectedIds.removeAll()
+                        } else {
+                            selectedIds = Set(invoices.map(\.id))
+                        }
+                    } label: {
+                        Text(selectedIds.count == invoices.count ? "Clear all" : "Select all")
+                            .font(.system(size: 11, weight: .heavy)).foregroundStyle(LinearGradient.primary)
+                    }.buttonStyle(.plain)
+                }
             }
             VStack(spacing: 0) {
-                ForEach(Array(vm.invoices.enumerated()), id: \.element.id) { idx, inv in
-                    invoiceRow_394(inv)
-                    if idx < vm.invoices.count - 1 {
-                        Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 52)
+                if loading && invoices.isEmpty {
+                    Text("Loading invoices…")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, Space.s5)
+                } else if invoices.isEmpty {
+                    EusoEmptyState(
+                        systemImage: "doc.text",
+                        title: "No factored invoices yet",
+                        subtitle: "Invoices you submit for factoring appear here with their advance state."
+                    )
+                    .padding(.vertical, Space.s3)
+                } else {
+                    ForEach(Array(invoices.enumerated()), id: \.element.id) { idx, inv in
+                        invoiceRow_394(inv)
+                        if idx < invoices.count - 1 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 52)
+                        }
                     }
+                    Rectangle().fill(palette.borderFaint).frame(height: 1)
+                    HStack {
+                        Text("\(selectedIds.count) selected · advance total")
+                            .font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
+                        Spacer()
+                        Text(selectedTotalDisplay)
+                            .font(.system(size: 15, weight: .bold).monospacedDigit())
+                            .foregroundStyle(LinearGradient.diagonal)
+                    }
+                    .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
                 }
-                Rectangle().fill(palette.borderFaint).frame(height: 1)
-                HStack {
-                    Text("\(vm.selectedCount) selected · advance total")
-                        .font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
-                    Spacer()
-                    Text(vm.selectedTotal)
-                        .font(.system(size: 15, weight: .bold).monospacedDigit())
-                        .foregroundStyle(LinearGradient.diagonal)
-                }
-                .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
             }
             .background(palette.bgCard)
             .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
@@ -279,36 +350,42 @@ private struct FactoringBody_394: View {
 
     private func invoiceRow_394(_ inv: FactorInvoice_394) -> some View {
         let verified = inv.verify == .verified
-        return HStack(alignment: .top, spacing: Space.s3) {
-            // doc/$ chip — gradient when verified, amber clock when pending
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.sm)
-                    .fill((verified ? Brand.blue : Brand.warning).opacity(0.14))
-                Image(systemName: verified ? "doc.text" : "clock")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(verified ? AnyShapeStyle(LinearGradient.primary)
-                                              : AnyShapeStyle(Brand.warning))
-            }
-            .frame(width: 40, height: 40)
+        let isSelected = selectedIds.contains(inv.id)
+        return Button {
+            if isSelected { selectedIds.remove(inv.id) } else { selectedIds.insert(inv.id) }
+        } label: {
+            HStack(alignment: .top, spacing: Space.s3) {
+                // doc/$ chip — gradient when verified, amber clock when pending
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.sm)
+                        .fill((verified ? Brand.blue : Brand.warning).opacity(0.14))
+                    Image(systemName: verified ? "doc.text" : "clock")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(verified ? AnyShapeStyle(LinearGradient.primary)
+                                                  : AnyShapeStyle(Brand.warning))
+                }
+                .frame(width: 40, height: 40)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(inv.shipper).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Text(inv.idLane).font(EType.mono(.caption)).foregroundStyle(palette.textSecondary)
-                    .lineLimit(1).minimumScaleFactor(0.85)
-                Text(inv.statusLine).font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(verified ? Brand.success : Brand.warning)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(inv.shipper).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Text(inv.idLane).font(EType.mono(.caption)).foregroundStyle(palette.textSecondary)
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                    Text(inv.statusLine).font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(verified ? Brand.success : Brand.warning)
+                }
+                Spacer(minLength: Space.s2)
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(inv.face).font(EType.bodyStrong).monospacedDigit().foregroundStyle(palette.textPrimary)
+                    Text(inv.advance ?? "holding").font(EType.caption).monospacedDigit()
+                        .foregroundStyle(inv.advance != nil ? palette.textSecondary : palette.textTertiary)
+                    selectMark_394(isSelected)
+                }
             }
-            Spacer(minLength: Space.s2)
-            VStack(alignment: .trailing, spacing: 3) {
-                Text(inv.face).font(EType.bodyStrong).monospacedDigit().foregroundStyle(palette.textPrimary)
-                Text(inv.advance ?? "holding").font(EType.caption).monospacedDigit()
-                    .foregroundStyle(inv.advance != nil ? palette.textSecondary : palette.textTertiary)
-                selectMark_394(inv.selected)
-            }
+            .padding(Space.s4)
         }
-        .padding(Space.s4)
+        .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(inv.shipper), \(inv.face), \(inv.selected ? "selected" : "not selected")")
+        .accessibilityLabel("\(inv.shipper), \(inv.face), \(isSelected ? "selected" : "not selected")")
     }
 
     private func selectMark_394(_ on: Bool) -> some View {
@@ -329,17 +406,19 @@ private struct FactoringBody_394: View {
 
     private var fundCTA_394: some View {
         CTAButton(
-            title: "Advance \(vm.selectedTotal) now",
+            title: selectedRows.isEmpty ? "Select invoices to advance" : "Advance \(selectedTotalDisplay) now",
             action: { fundSelected() },
             leadingIcon: "arrow.right",
             isLoading: funding
         )
-        .accessibilityLabel("Advance \(vm.selectedTotal) now")
+        .disabled(selectedRows.isEmpty)
+        .opacity(selectedRows.isEmpty ? 0.5 : 1.0)
+        .accessibilityLabel(selectedRows.isEmpty ? "Select invoices to advance" : "Advance \(selectedTotalDisplay) now")
     }
 
     private var assuranceText_394: some View {
         HStack(alignment: .top) {
-            Text("Funds land in your EusoQuickPay wallet in ~2 min · 4% reserve released automatically when Eusorone pays on net-30.")
+            Text("Advances settle to your EusoQuickPay wallet · reserve releases when the shipper pays the invoice.")
                 .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Space.s2)
@@ -350,57 +429,112 @@ private struct FactoringBody_394: View {
         }
     }
 
+    @ViewBuilder
     private var lastAdvanceStrip_394: some View {
-        Button { } label: {
-            HStack(spacing: Space.s3) {
-                ZStack {
-                    Circle().fill(Brand.success.opacity(0.18))
-                    Image(systemName: "checkmark").font(.system(size: 10, weight: .heavy)).foregroundStyle(Brand.success)
+        // Live: most recent funded row from getOverview.recentActivity.
+        // Hidden entirely when there is no real advance history.
+        if let last = overview?.recentActivity.first(where: { ($0.status ?? "").lowercased() == "funded" || ($0.status ?? "").lowercased() == "collected" }) {
+            Button { } label: {
+                HStack(spacing: Space.s3) {
+                    ZStack {
+                        Circle().fill(Brand.success.opacity(0.18))
+                        Image(systemName: "checkmark").font(.system(size: 10, weight: .heavy)).foregroundStyle(Brand.success)
+                    }
+                    .frame(width: 16, height: 16)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Last advance · \(money_394(last.amount))")
+                            .font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
+                        Text("\(last.invoiceNumber ?? "—") · \((last.status ?? "—").uppercased()) · \(shortDate_394(last.date))")
+                            .font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
+                            .lineLimit(1).minimumScaleFactor(0.85)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
                 }
-                .frame(width: 16, height: 16)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(vm.lastAdvanceTitle).font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
-                    Text(vm.lastAdvanceSub).font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
-                        .lineLimit(1).minimumScaleFactor(0.85)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(palette.textSecondary)
+                .padding(Space.s3)
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
             }
-            .padding(Space.s3)
-            .background(palette.bgCard)
-            .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            .buttonStyle(.plain)
+            .accessibilityLabel("Last advance \(money_394(last.amount)). View advance history.")
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(vm.lastAdvanceTitle). View advance history.")
     }
 
     // MARK: Actions
 
     private func fundSelected() {
-        // WIRE: factoring.instantPay (factoring.ts:878) — writes a paymentLedger
-        // row + blockchainAudit row, broadcasts WS_EVENTS.FACTORING_ADVANCE_FUNDED
-        // on WS_CHANNELS.catalyst(carrierId). The wired iOS client surfaces only
-        // factoring.getOffer / factoring.accept, so the advance stays a no-op
-        // until instantPay is exposed on EusoTripAPI.shared.factoring.
+        // factoring.instantPay (factoring.ts:882) is not yet bridged to the iOS
+        // client — the CTA hands the REAL selected ids + total to the host
+        // action layer and is disabled when nothing real is selected.
+        guard !selectedRows.isEmpty else { return }
         NotificationCenter.default.post(
             name: .eusoCatalystFactoringFund_394, object: nil,
-            userInfo: ["source": "394_CatalystFactoring", "amount": vm.selectedTotal]
+            userInfo: [
+                "source": "394_CatalystFactoring",
+                "amount": selectedTotal,
+                "invoiceIds": selectedRows.map(\.id),
+            ]
         )
     }
 
-    // MARK: Network — seeds overwritten on hydrate
+    // MARK: Network — live procs only (factoring.getOverview/getInvoices/getRates)
+
+    private struct InvoicesInput_394: Encodable { let limit: Int; let offset: Int }
 
     private func loadAll() async {
-        // WIRE: factoring.getOverview (factoring.ts:392) + factoring.getReserveBalance (factoring.ts:590) — hero available + reserve
-        // WIRE: factoring.getRates (factoring.ts:1000) + factoring.getFeeSchedule (factoring.ts:686) — fee / rate band
-        // WIRE: factoring.getInvoices (factoring.ts:424) + factoring.getInvoiceStatus (factoring.ts:497) — eligible-invoice rows
-        // EusoTripAPI.shared.factoring exposes only getOffer(loadId:) / accept(loadId:offerId:)
-        // (verified in Services/EusoTripAPI.swift:5548–5591). Until the carrier-scope
-        // factoring.* procedures above are surfaced as iOS clients, the canonical
-        // seeds (0% mock — overwritten on hydrate) stand as the representative figures.
-        vm = seedFactoring_394
+        loading = true
+        loadError = nil
+        defer { loading = false }
+
+        async let overviewTask: FactoringOverviewWire_394 =
+            EusoTripAPI.shared.queryNoInput("factoring.getOverview")
+        async let ratesTask: FactoringRatesWire_394 =
+            EusoTripAPI.shared.queryNoInput("factoring.getRates")
+        async let invoicesTask: [FactoringInvoiceWire_394] =
+            EusoTripAPI.shared.query("factoring.getInvoices", input: InvoicesInput_394(limit: 20, offset: 0))
+
+        do {
+            let (ov, rt, rows) = try await (overviewTask, ratesTask, invoicesTask)
+            overview = ov
+            rates = rt
+            invoices = rows.map { mapInvoice_394($0) }
+            selectedIds.formIntersection(Set(invoices.map(\.id)))
+        } catch {
+            loadError = "Couldn't reach the factoring service - pull to retry."
+        }
+    }
+
+    private func mapInvoice_394(_ w: FactoringInvoiceWire_394) -> FactorInvoice_394 {
+        let status = (w.status ?? "").lowercased()
+        let verified = ["approved", "funded", "collected"].contains(status)
+        let loadRef = w.loadId.map { "LOAD #\($0)" } ?? "—"
+        let submitted = w.submittedAt.map { shortDate_394($0) } ?? "—"
+        return FactorInvoice_394(
+            id: w.id,
+            shipper: w.invoiceNumber ?? "Invoice \(w.id)",
+            idLane: "\(loadRef) · submitted \(submitted)",
+            statusLine: status.isEmpty ? "—" : status.replacingOccurrences(of: "_", with: " "),
+            verify: verified ? .verified : .pending,
+            face: money_394(w.invoiceAmount),
+            advance: w.advanceAmount > 0 ? "adv \(money_394(w.advanceAmount))" : nil,
+            advanceAmount: w.advanceAmount
+        )
+    }
+
+    // MARK: Formatting
+
+    private func money_394(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
+    }
+
+    private func shortDate_394(_ iso: String) -> String {
+        iso.count >= 10 ? String(iso.prefix(10)) : (iso.isEmpty ? "—" : iso)
     }
 }
 

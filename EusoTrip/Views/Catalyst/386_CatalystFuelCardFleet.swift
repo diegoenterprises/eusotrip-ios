@@ -8,23 +8,18 @@
 //  factor cells (active cards / gallons MTD / avg discount), and the
 //  Lock card + Statement action pair.
 //
-//  Wiring manifest (Code/ "Wiring manifest" → real iOS client):
-//    • MTD spend / gallons / discount   ← fuelManagement.getFuelDashboard
-//       (EusoTripAPI.fuelMgmt.getDashboard) → totalSpend / totalGallons /
-//       avgPricePerGallon / transactionCount for the MTD hero + factor cells.
-//    • card roster + summary            ← fuelManagement.getFuelCardManagement
-//       (EusoTripAPI.fuelMgmt.getFuelCards) → company-scoped fuel cards +
-//       summary {total / active / suspended / totalSpent / monthlyLimit}.
-//       Each FuelCard carries cardNumber (masked), cardType, status,
-//       driverName, limits, spend, fuelOnly, lastUsed.
-//    • recent transactions ledger       ← // WIRE: fuelManagement
-//       .getFuelTransactionsMobile(limit:) — no client method yet; the
-//       Code/ seed rows render until the feed is exposed.
-//
-//  0% mock doctrine: the figures below are the Code/ file's representative
-//  seeds — the screen renders bespoke immediately, and live records
-//  (getFuelDashboard + getFuelCardManagement) overwrite them on hydrate.
-//  Carrier Eusotrans LLC · USDOT 3 194 882 · owner-op Michael Eusorone (ME).
+//  LIVE WIRING (zero-fallback purge · 2026-06-09 · audit B14):
+//    • MTD spend / gallons      ← fuelManagement.getFuelDashboard
+//       (EusoTripAPI.fuelMgmt.getDashboard) — em-dash when nil/zero.
+//    • card roster + summary    ← fuelManagement.getFuelCardManagement
+//       (EusoTripAPI.fuelMgmt.getFuelCards) — honest EusoEmptyState when none.
+//    • recent transactions      ← fleet.getFuelTransactionsMobile
+//       (EusoTripAPI.fleet.getFuelTransactions) — honest empty state when
+//       the ledger has no rows. (Server proc exists at fleet.ts:1482;
+//       it currently projects an empty items[] until the fuelTransactions
+//       table read lands — the screen renders that emptiness honestly.)
+//    • avg discount             — NO live source on any wired proc → em-dash.
+//  NO seed roster/ledger/figures remain anywhere in this file.
 //
 //  BottomNav frozen (CatalystTab): HOME · DISPATCH · [ESang] · FLEET · ME.
 //
@@ -68,29 +63,13 @@ private func catalystNavTrailing_386() -> [NavSlot] {
 private struct FuelCardFleetContent_386: View {
     @Environment(\.palette) private var palette
 
-    // ── Live model (overwrites the Code/ seeds on hydrate) ──
+    // ── Live model (nil/empty until the real procs answer — no seeds) ──
     @State private var cards: [FuelManagementAPI.FuelCard] = []
     @State private var summary: FuelManagementAPI.FuelCardSummary? = nil
     @State private var dashboard: FuelManagementAPI.Dashboard? = nil
-
-    // ── Code/ seed roster (rendered until live cards arrive) ──
-    private struct SeedCard_386: Identifiable {
-        let id = UUID(); let masked: String; let detail: String; let status: String
-    }
-    private let seedCards: [SeedCard_386] = [
-        .init(masked: "•••• 4821 · TRK-01", detail: "Michael Eusorone · diesel",  status: "ACTIVE"),
-        .init(masked: "•••• 7730 · RFR-01", detail: "reefer fuel · auto-lock OTR", status: "ACTIVE"),
-        .init(masked: "•••• 1095 · SHOP",   detail: "parts + DEF · in-network",    status: "LOCKED"),
-    ]
-
-    // ── Code/ seed recent-transactions ledger (no client feed yet) ──
-    private struct SeedTxn_386: Identifiable {
-        let id = UUID(); let place: String; let gallons: String; let amount: String
-    }
-    private let seedTxns: [SeedTxn_386] = [
-        .init(place: "Loves #214 Amarillo",  gallons: "118.4 gal", amount: "$402.16"),
-        .init(place: "Pilot #109 Tucumcari", gallons: "96.2 gal",  amount: "$331.80"),
-    ]
+    @State private var txns: [FleetAPI.FuelTxn] = []
+    @State private var loading: Bool = true
+    @State private var syncedLabel: String = "—"
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -116,18 +95,16 @@ private struct FuelCardFleetContent_386: View {
         }
     }
 
-    // MARK: - Derived data (seed figures from the Code/ spec; live overwrites)
+    // MARK: - Derived data (live-only — zero on no data, never a seed)
 
     private var activeCount: Int {
         if let s = summary { return s.active }
-        if !cards.isEmpty { return cards.filter { ($0.status ?? "").lowercased() == "active" }.count }
-        return 2   // Code/ seed: 2 of 3 active
+        return cards.filter { ($0.status ?? "").lowercased() == "active" }.count
     }
 
     private var totalCount: Int {
         if let s = summary { return s.total }
-        if !cards.isEmpty { return cards.count }
-        return 3   // Code/ seed: 3-card fleet program
+        return cards.count
     }
 
     private var lockedCount: Int { max(0, totalCount - activeCount) }
@@ -135,10 +112,10 @@ private struct FuelCardFleetContent_386: View {
     private var mtdSpend: Double? { dashboard?.totalSpend ?? summary?.totalSpent }
     private var mtdGallons: Double? { dashboard?.totalGallons }
 
-    /// Spend-vs-monthly-limit fraction for the hero progress bar. Falls
-    /// back to the Code/ seed fraction (0.62) until the live limit lands.
+    /// Spend-vs-monthly-limit fraction for the hero progress bar.
+    /// Zero (empty bar) until a real spend + limit pair exists.
     private var spendFraction: Double {
-        guard let spend = mtdSpend, let limit = summary?.monthlyLimit, limit > 0 else { return 0.62 }
+        guard let spend = mtdSpend, let limit = summary?.monthlyLimit, limit > 0 else { return 0 }
         return min(1.0, max(0.0, spend / limit))
     }
 
@@ -177,11 +154,11 @@ private struct FuelCardFleetContent_386: View {
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                Text("EUSOTRANS LLC · USDOT 3 194 882")
+                Text("FLEET PROGRAM")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
-                Text("synced 2h ago")
+                Text(syncedLabel)
                     .font(.system(size: 11, design: .monospaced))
                     .tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
@@ -255,7 +232,7 @@ private struct FuelCardFleetContent_386: View {
                 .foregroundStyle(palette.textPrimary)
                 .padding(.top, 14)
 
-            Text("Discounts post nightly · OTR auto-lock on reefer card")
+            Text("Live from fuel dashboard + card management")
                 .font(.system(size: 9, design: .monospaced))
                 .tracking(0.3)
                 .foregroundStyle(palette.textTertiary)
@@ -271,25 +248,26 @@ private struct FuelCardFleetContent_386: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    /// MTD fleet spend — Code/ seed "$6,420" until the live dashboard lands.
+    /// MTD fleet spend — honest em-dash on nil/zero (the dashboard's
+    /// no-db fallback returns literal zeros, so a zero is not provably real).
     private var heroSpend: String {
-        guard let v = mtdSpend, v > 0 else { return "$6,420" }
+        guard let v = mtdSpend, v > 0 else { return "—" }
         return currencyString(v)
     }
 
-    /// Code/ seed "212 gal" until the live gallons rollup lands.
+    /// Honest em-dash until a real gallons rollup arrives.
     private var gallonsLabel: String {
-        guard let g = mtdGallons, g > 0 else { return "212 gal" }
+        guard let g = mtdGallons, g > 0 else { return "— gal" }
         return "\(Int(g.rounded())) gal"
     }
 
-    /// Avg negotiated discount — Code/ seed "$0.34/gal". No discount field
-    /// on the dashboard envelope, so the seed holds until a discount-bearing
-    /// rollup is wired (see fleet.getFuelStats in the manifest).
-    private var discountPerGal: String { "$0.34/gal" }
+    /// Avg negotiated discount — NO discount field exists on any wired
+    /// envelope (getFuelDashboard/getFuelCards/getFuelTransactionsMobile).
+    /// Honest em-dash, never an invented "$0.34/gal".
+    private var discountPerGal: String { "—" }
 
     private var activeSummaryLine: String {
-        "\(activeCount) cards active · \(lockedCount) locked to in-network only"
+        totalCount == 0 ? "No cards on file" : "\(activeCount) cards active · \(lockedCount) locked"
     }
 
     // MARK: - Card roster card (FUEL CARDS · FLEET)
@@ -310,17 +288,12 @@ private struct FuelCardFleetContent_386: View {
             .padding(.bottom, 14)
 
             if cards.isEmpty {
-                // Code/ seed roster — renders bespoke immediately, replaced
-                // by the live `getFuelCardManagement` cards on hydrate.
-                ForEach(Array(seedCards.enumerated()), id: \.element.id) { idx, seed in
-                    seedCardRow(seed)
-                    if idx < seedCards.count - 1 {
-                        Rectangle()
-                            .fill(Color.white.opacity(0.07))
-                            .frame(height: 1)
-                            .padding(.vertical, 12)
-                    }
-                }
+                // Honest empty state — no roster fabrication.
+                EusoEmptyState(
+                    systemImage: "creditcard",
+                    title: loading ? "Loading fuel cards…" : "No fuel cards on file",
+                    subtitle: loading ? "" : "Cards issued to this fleet appear here with their status and limits."
+                )
             } else {
                 ForEach(Array(cards.enumerated()), id: \.element.id) { idx, card in
                     cardRow(card)
@@ -415,62 +388,40 @@ private struct FuelCardFleetContent_386: View {
         }
     }
 
-    private func seedCardRow(_ seed: SeedCard_386) -> some View {
-        let active = seed.status.uppercased() == "ACTIVE"
-        let pillFg: Color = active ? Brand.success : palette.textSecondary
-        let pillBg: Color = active ? Color(hex: 0x0B3D2E) : palette.bgCardSoft
-        return HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(seed.masked)
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                Text(seed.detail)
-                    .font(.system(size: 10, design: .monospaced))
-                    .tracking(0.3)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            Text(seed.status.uppercased())
-                .font(.system(size: 9, weight: .heavy))
-                .tracking(0.4)
-                .foregroundStyle(pillFg)
-                .frame(width: 82, height: 20)
-                .background(Capsule().fill(pillBg))
-        }
-        .opacity(active ? 1.0 : 0.92)
-    }
+    // MARK: - Recent transactions ledger (LIVE — fleet.getFuelTransactionsMobile)
 
-    // MARK: - Recent transactions ledger
-
+    @ViewBuilder
     private var recentTransactions: some View {
-        // Code/ seed ledger — the fuelManagement router exposes dashboard
-        // aggregates + card management but NO per-transaction feed yet, so
-        // these representative rows render until the feed is wired.
-        //
-        // WIRE: fuelManagement.getFuelTransactionsMobile(limit:) — per-card
-        //       transaction ledger (station / gallons / amount / ts).
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(seedTxns) { txn in
-                HStack(spacing: 8) {
-                    Text(txn.place)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
-                    Spacer(minLength: 0)
-                    Text(txn.gallons)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .tracking(0.2)
-                        .foregroundStyle(palette.textSecondary)
-                    Text(txn.amount)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .tracking(0.2)
-                        .foregroundStyle(palette.textPrimary)
-                        .frame(width: 64, alignment: .trailing)
+        if txns.isEmpty {
+            Text(loading ? "Loading transactions…" : "No fuel transactions on file yet.")
+                .font(.system(size: 10, design: .monospaced))
+                .tracking(0.3)
+                .foregroundStyle(palette.textTertiary)
+                .padding(.vertical, 2)
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(txns) { txn in
+                    HStack(spacing: 8) {
+                        Text("\(txn.stationName) · \(txn.city) \(txn.state)")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                        Spacer(minLength: 0)
+                        Text(String(format: "%.1f gal", txn.gallons))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .tracking(0.2)
+                            .foregroundStyle(palette.textSecondary)
+                        Text(String(format: "$%.2f", txn.total))
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .tracking(0.2)
+                            .foregroundStyle(palette.textPrimary)
+                            .frame(width: 64, alignment: .trailing)
+                    }
                 }
             }
+            .padding(.vertical, 2)
         }
-        .padding(.vertical, 2)
     }
 
     // MARK: - Factor cells (ACTIVE CARDS / GALLONS MTD / AVG DISCOUNT)
@@ -490,12 +441,12 @@ private struct FuelCardFleetContent_386: View {
     }
 
     private var gallonsValue: String {
-        guard let g = mtdGallons, g > 0 else { return "212" }   // Code/ seed
+        guard let g = mtdGallons, g > 0 else { return "—" }
         return "\(Int(g.rounded()))"
     }
 
-    // Code/ seed "$0.34" — no discount field on the dashboard envelope yet.
-    private var discountValue: String { "$0.34" }
+    // No discount field on any wired envelope — honest em-dash.
+    private var discountValue: String { "—" }
 
     private func factorCell(eyebrow: String, value: String, sub: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -566,8 +517,7 @@ private struct FuelCardFleetContent_386: View {
 
     private var footnotes: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Fuel program · per-card limits + in-network rules + nightly discount post")
-            Text("Carrier: Eusotrans LLC · USDOT 3 194 882 · WEX-network fleet cards")
+            Text("Fuel program · per-card limits + in-network rules")
             Text("MTD spend nets pump price minus negotiated per-gallon discount")
         }
         .font(.system(size: 9, design: .monospaced))
@@ -586,23 +536,33 @@ private struct FuelCardFleetContent_386: View {
         return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
     }
 
-    // MARK: - Network (live overwrites the Code/ seeds)
+    // MARK: - Network (live procs only — cards, dashboard, transaction ledger)
 
     private func reload() async {
+        loading = true
+        defer { loading = false }
+
         async let cardsTask: FuelManagementAPI.FuelCardsResponse? = {
             try? await EusoTripAPI.shared.fuelMgmt.getFuelCards(status: "all")
         }()
         async let dashTask: FuelManagementAPI.Dashboard? = {
             try? await EusoTripAPI.shared.fuelMgmt.getDashboard(period: "month")
         }()
+        async let txnsTask: FleetAPI.FuelTxnsResponse? = {
+            try? await EusoTripAPI.shared.fleet.getFuelTransactions(limit: 10)
+        }()
 
-        let (cardsResp, dash) = await (cardsTask, dashTask)
+        let (cardsResp, dash, txnsResp) = await (cardsTask, dashTask, txnsTask)
 
         if let cardsResp {
             self.cards = cardsResp.cards
             self.summary = cardsResp.summary
         }
         if let dash { self.dashboard = dash }
+        if let txnsResp { self.txns = txnsResp.items }
+        if cardsResp != nil || dash != nil || txnsResp != nil {
+            self.syncedLabel = "synced just now"
+        }
     }
 }
 

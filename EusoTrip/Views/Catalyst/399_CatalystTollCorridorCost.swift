@@ -18,12 +18,13 @@
 //  ported into the iOS house Shell + BottomNav chrome.
 //
 //  Web peer: /catalyst/wallet/toll-spend.
-//  Wiring manifest (line-confirmed on disk — the tolls router has NO Swift
-//  client surface yet, so the hero/split/corridor seeds below are the Code/
-//  representative figures that mirror the SVG verbatim and get overwritten on
-//  hydrate once the tolls client lands; one WIRE marker per missing call):
-//    • hero spend + split + corridor rows → tolls.getRecentRoutes (tolls.ts:15)
-//    • per-route toll basis               → tolls.calculate        (tolls.ts:52)
+//  LIVE WIRING (zero-fallback purge · 2026-06-09 · audit B13):
+//    • route ledger → tolls.getRecentRoutes (tolls.ts:15) — REAL completed
+//      routes, decoded in-file against the exact server projection.
+//    • hero spend / split / per-mile / transponders / IFTA basis — SERVER
+//      WIRE-GAP: no toll-spend ledger proc exists (tolls.calculate is a
+//      zero-stub awaiting an external toll API). All dollar figures render
+//      honest em-dash; the old $4,182 MTD seed board is GONE.
 //    • "Reconcile to loads" CTA           → catalystProcedure write (_core/trpc.ts:150)
 //      (posts the toll accessorial line on each load settlement via the
 //       accessorial router, inserts a blockchainAudit row, broadcasts the
@@ -73,69 +74,70 @@ private func catalystNavTrailing_399() -> [NavSlot] {
      NavSlot(label: "Me",     systemImage: "person.fill", isCurrent: false)]
 }
 
-// MARK: - View model (seeded with the Code/ representative figures · SVG-verbatim)
+// MARK: - View model (built from the LIVE tolls.getRecentRoutes envelope only)
 
 private struct TollCorridor_399: Identifiable {
-    enum Verdict { case reimbursable, absorbed }
-    let id: String              // agency tag id
-    let name: String            // "I-80 Ohio Turnpike"
-    let tagLine: String         // "E-ZPass OH-44192 · 38 events · cl-5"
-    let amount: String          // "$1,486"
+    enum Verdict { case reimbursable, absorbed, unknown }
+    let id: String              // load id
+    let name: String            // "Houston, TX → Dallas, TX" (real route)
+    let tagLine: String         // completion date line
+    let amount: String          // "—" until a per-route toll ledger exists
     let verdict: Verdict
-    let verdictLabel: String    // "100% REIMB" / "ABSORBED"
-    let tint: Color             // chip + glyph tint
+    let verdictLabel: String
+    let tint: Color
 }
 
 private struct TollSpendVM_399 {
-    let spendMTD: String            // "$4,182"
-    let monthLabel: String          // "MTD MAY"
-    let reimbursable: String        // "$3,140"
-    let absorbed: String            // "$1,042"
-    let reimbursableFrac: Double    // 0.75
-    let splitCaption: String        // "75% auto-billed to shipper-of-record · settled on payout"
-    let perLoadedMile: String       // "$0.31"
-    let perMileDelta: String        // "−4% vs Apr"
-    let transponders: String        // "3"
-    let iftaBasis: String           // "$2.1k"
+    let spendMTD: String
+    let monthLabel: String
+    let reimbursable: String
+    let absorbed: String
+    let reimbursableFrac: Double
+    let splitCaption: String
+    let perLoadedMile: String
+    let perMileDelta: String
+    let transponders: String
+    let iftaBasis: String
     let corridors: [TollCorridor_399]
-    let corridorCount: String       // "4 of 18"
-    let insightTitle: String        // "ESang: the NJ $842 leg ran empty"
-    let insightSub: String          // "Loaded routing via US-1 saves ~$58/trip"
+    let corridorCount: String
+    let insightTitle: String
+    let insightSub: String
+
+    /// Honest empty envelope — em-dash everywhere until real data exists.
+    /// WIRE-GAP: no toll-spend ledger procedure exists server-side
+    /// (tolls.calculate is a stub awaiting an external toll API), so the
+    /// dollar figures can NEVER light up from this build — they stay
+    /// em-dash by design instead of inventing "$4,182".
+    static let empty = TollSpendVM_399(
+        spendMTD: "—", monthLabel: "MTD",
+        reimbursable: "—", absorbed: "—", reimbursableFrac: 0,
+        splitCaption: "Toll reimbursement split appears once toll events are connected.",
+        perLoadedMile: "—", perMileDelta: "",
+        transponders: "—", iftaBasis: "—",
+        corridors: [],
+        corridorCount: "—",
+        insightTitle: "No toll insight yet",
+        insightSub: "Connect toll events to see leakage analysis."
+    )
 }
 
-private let seedTollSpend_399 = TollSpendVM_399(
-    spendMTD: "$4,182", monthLabel: "MTD MAY",
-    reimbursable: "$3,140", absorbed: "$1,042", reimbursableFrac: 0.75,
-    splitCaption: "75% auto-billed to shipper-of-record · settled on payout",
-    perLoadedMile: "$0.31", perMileDelta: "−4% vs Apr",
-    transponders: "3", iftaBasis: "$2.1k",
-    corridors: [
-        TollCorridor_399(id: "OH-44192", name: "I-80 Ohio Turnpike",
-                         tagLine: "E-ZPass OH-44192 · 38 events · cl-5",
-                         amount: "$1,486", verdict: .reimbursable, verdictLabel: "100% REIMB", tint: Brand.blue),
-        TollCorridor_399(id: "PA-77310", name: "I-76 PA Turnpike",
-                         tagLine: "E-ZPass PA-77310 · 29 events · cl-5",
-                         amount: "$1,204", verdict: .reimbursable, verdictLabel: "100% REIMB", tint: Brand.blue),
-        TollCorridor_399(id: "NJ-55028", name: "NJ Turnpike",
-                         tagLine: "E-ZPass NJ-55028 · 21 events · deadhead",
-                         amount: "$842", verdict: .absorbed, verdictLabel: "ABSORBED", tint: Brand.warning),
-        TollCorridor_399(id: "NY-90114", name: "GW Bridge · Port Authority",
-                         tagLine: "E-ZPass NY-90114 · 6 crossings · 5-axle",
-                         amount: "$650", verdict: .reimbursable, verdictLabel: "100% REIMB", tint: Brand.escort),
-    ],
-    corridorCount: "4 of 18",
-    insightTitle: "ESang: the NJ $842 leg ran empty",
-    insightSub: "Loaded routing via US-1 saves ~$58/trip"
-)
+/// Mirrors one row of `tolls.getRecentRoutes` (tolls.ts:15) — bare array.
+private struct RecentRouteWire_399: Decodable {
+    let id: Int
+    let origin: String
+    let destination: String
+    let completedAt: String?
+}
 
 // MARK: - Body
 
 private struct TollCorridorBody_399: View {
     @Environment(\.palette) private var palette
 
-    // House 0%-mock: seeds mirror the SVG verbatim and are overwritten on
-    // hydrate once the tolls client surface lands (see WIRE markers in loadAll).
-    @State private var vm: TollSpendVM_399 = seedTollSpend_399
+    // Live state — honest empty envelope until tolls.getRecentRoutes answers.
+    @State private var vm: TollSpendVM_399 = .empty
+    @State private var loading: Bool = true
+    @State private var loadError: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -165,7 +167,7 @@ private struct TollCorridorBody_399: View {
                 Text("✦ CATALYST · TOLLS").font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
-                Text("BESTPASS · 3 TAGS").font(EType.micro).tracking(1.0)
+                Text(loading ? "LOADING…" : "RECENT ROUTES").font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: Space.s3) {
@@ -174,7 +176,9 @@ private struct TollCorridorBody_399: View {
                     .accessibilityLabel("Back to Wallet")
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Toll Spend").font(EType.display).foregroundStyle(palette.textPrimary)
-                    Text("Eusotrans LLC · 142 toll events MTD · auto-reconciled")
+                    Text(vm.corridors.isEmpty
+                         ? "Toll events not yet connected"
+                         : "\(vm.corridors.count) recent route\(vm.corridors.count == 1 ? "" : "s") · toll basis pending")
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
                 Spacer()
@@ -236,11 +240,11 @@ private struct TollCorridorBody_399: View {
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s3) {
-            kpiTile("$ / LOADED MI", vm.perLoadedMile, sub: vm.perMileDelta,
-                    valueStyle: AnyShapeStyle(LinearGradient.diagonal), subColor: Brand.success)
-            kpiTile("TRANSPONDERS", vm.transponders, sub: "all active",
+            kpiTile("$ / LOADED MI", vm.perLoadedMile, sub: vm.perMileDelta.isEmpty ? "not connected" : vm.perMileDelta,
+                    valueStyle: AnyShapeStyle(LinearGradient.diagonal), subColor: palette.textSecondary)
+            kpiTile("TRANSPONDERS", vm.transponders, sub: "not connected",
                     valueStyle: AnyShapeStyle(palette.textPrimary), subColor: palette.textSecondary)
-            kpiTile("IFTA Q2 BASIS", vm.iftaBasis, sub: "loaded-mi credited",
+            kpiTile("IFTA BASIS", vm.iftaBasis, sub: "not connected",
                     valueStyle: AnyShapeStyle(palette.textPrimary), subColor: palette.textSecondary)
         }
     }
@@ -264,15 +268,24 @@ private struct TollCorridorBody_399: View {
     private var corridorSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("TOLL CORRIDORS · MTD").font(EType.micro).tracking(1.0).foregroundStyle(palette.textTertiary)
+                Text("RECENT ROUTES · TOLL BASIS").font(EType.micro).tracking(1.0).foregroundStyle(palette.textTertiary)
                 Spacer()
                 Text(vm.corridorCount).font(EType.caption).foregroundStyle(palette.textSecondary)
             }
             VStack(spacing: 0) {
-                ForEach(Array(vm.corridors.enumerated()), id: \.element.id) { idx, c in
-                    corridorRow(c)
-                    if idx < vm.corridors.count - 1 {
-                        Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 52)
+                if vm.corridors.isEmpty {
+                    EusoEmptyState(
+                        systemImage: "road.lanes",
+                        title: loading ? "Loading recent routes…" : "No completed routes yet",
+                        subtitle: loading ? "" : (loadError ?? "Completed loads appear here with their toll basis once toll events are connected.")
+                    )
+                    .padding(.vertical, Space.s3)
+                } else {
+                    ForEach(Array(vm.corridors.enumerated()), id: \.element.id) { idx, c in
+                        corridorRow(c)
+                        if idx < vm.corridors.count - 1 {
+                            Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 52)
+                        }
                     }
                 }
             }
@@ -282,15 +295,24 @@ private struct TollCorridorBody_399: View {
         }
     }
 
+    private func verdictColor_399(_ v: TollCorridor_399.Verdict) -> Color {
+        switch v {
+        case .reimbursable: return Brand.success
+        case .absorbed:     return Brand.warning
+        case .unknown:      return palette.textTertiary
+        }
+    }
+
     private func corridorRow(_ c: TollCorridor_399) -> some View {
         HStack(alignment: .center, spacing: Space.s3) {
             ZStack {
                 RoundedRectangle(cornerRadius: 9).fill(c.tint.opacity(0.14))
-                Image(systemName: c.verdict == .reimbursable ? "road.lanes" : "exclamationmark.triangle")
+                Image(systemName: c.verdict == .absorbed ? "exclamationmark.triangle" : "road.lanes")
                     .font(.system(size: 15, weight: .semibold)).foregroundStyle(c.tint)
             }.frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 3) {
                 Text(c.name).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
                 Text(c.tagLine).font(EType.mono(.caption)).foregroundStyle(palette.textSecondary)
                     .lineLimit(1).minimumScaleFactor(0.85)
             }
@@ -298,7 +320,7 @@ private struct TollCorridorBody_399: View {
             VStack(alignment: .trailing, spacing: 3) {
                 Text(c.amount).font(EType.bodyStrong).monospacedDigit().foregroundStyle(palette.textPrimary)
                 Text(c.verdictLabel).font(.system(size: 10, weight: .bold)).tracking(0.6)
-                    .foregroundStyle(c.verdict == .reimbursable ? Brand.success : Brand.warning)
+                    .foregroundStyle(verdictColor_399(c.verdict))
             }
         }
         .padding(Space.s3)
@@ -362,15 +384,51 @@ private struct TollCorridorBody_399: View {
         }
     }
 
-    // MARK: Network
+    // MARK: Network (LIVE — tolls.getRecentRoutes; spend ledger is a server WIRE-GAP)
+
+    private struct RecentRoutesInput_399: Encodable { let limit: Int }
 
     private func loadAll() async {
-        // WIRE: tolls.getRecentRoutes (tolls.ts:15) — hero spend + reimbursable/
-        // absorbed split + corridor rows. No Swift client surface on EusoTripAPI
-        // yet, so the SVG-verbatim seeds above stand in (house 0%-mock); this
-        // overwrites `vm` once `EusoTripAPI.shared.tolls.getRecentRoutes()` lands.
-        // WIRE: tolls.calculate (tolls.ts:52) — per-route toll basis enrichment
-        // for each corridor row.
+        loading = true
+        loadError = nil
+        defer { loading = false }
+
+        do {
+            let routes: [RecentRouteWire_399] = try await EusoTripAPI.shared.query(
+                "tolls.getRecentRoutes", input: RecentRoutesInput_399(limit: 8))
+
+            let corridors: [TollCorridor_399] = routes.map { r in
+                TollCorridor_399(
+                    id: "route-\(r.id)",
+                    name: "\(r.origin) → \(r.destination)",
+                    tagLine: r.completedAt.map { "completed \(String($0.prefix(10))) · toll basis not yet connected" }
+                        ?? "completed — · toll basis not yet connected",
+                    amount: "—",
+                    verdict: .unknown,
+                    verdictLabel: "—",
+                    tint: Brand.blue
+                )
+            }
+
+            // Dollar figures stay em-dash: NO toll-spend ledger proc exists
+            // (tolls.calculate is a zero-stub). Routes are the only live data.
+            vm = TollSpendVM_399(
+                spendMTD: "—", monthLabel: "MTD",
+                reimbursable: "—", absorbed: "—", reimbursableFrac: 0,
+                splitCaption: "Toll reimbursement split appears once toll events are connected.",
+                perLoadedMile: "—", perMileDelta: "",
+                transponders: "—", iftaBasis: "—",
+                corridors: corridors,
+                corridorCount: corridors.isEmpty ? "—" : "\(corridors.count) recent",
+                insightTitle: corridors.isEmpty ? "No toll insight yet" : "Toll events not yet connected",
+                insightSub: corridors.isEmpty
+                    ? "Connect toll events to see leakage analysis."
+                    : "These completed routes await per-route toll reconciliation."
+            )
+        } catch {
+            vm = .empty
+            loadError = "Couldn't reach the tolls service - retry."
+        }
     }
 }
 

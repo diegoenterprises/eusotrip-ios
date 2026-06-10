@@ -14,25 +14,19 @@
 //  router. Carrier vantage (own cover, verify per load) is distinct from the
 //  shipper per-load buy. Docked under FLEET.
 //
-//  PERSONA: CATALYST — Aurora Freight Lines · USDOT 3 482 119 · MC-942 008.
-//  COI holder / shipper-of-record DU pin: Eusorone Technologies.
-//
-//  WIRING (web peer · server/routers/insurance.ts · grep 2026-05-24):
-//    There is NO `insurance` service namespace on the iOS EusoTripAPI (verified
-//    by grep of Services/EusoTripAPI.swift — no getCoverage / verifyCarrierCoverage
-//    / checkLoadCompliance / getCommodityInsuranceRequirements / getCertificates /
-//    generateCOI / getPerLoadQuote / purchasePerLoad). Per house doctrine the
-//    representative Code/ seed figures stand ("0% mock — seeds overwritten on
-//    hydrate") and one // WIRE: marker is left per missing call.
-//
-//      // WIRE: insurance.getCoverage                     (insurance.ts:664)  hero + detail
-//      // WIRE: insurance.verifyCarrierCoverage           (insurance.ts:747)  meets-load line
-//      // WIRE: insurance.checkLoadCompliance             (insurance.ts:1340) per-load strip
-//      // WIRE: insurance.getCommodityInsuranceRequirements (insurance.ts:1763) per-load strip
-//      // WIRE: insurance.getCertificates                 (insurance.ts:442)  COI tie
-//      // WIRE: insurance.generateCOI                     (insurance.ts:1559) mutation · CTA
-//      // WIRE: insurance.getPerLoadQuote                 (insurance.ts:887)  above-limit
-//      // WIRE: insurance.purchasePerLoad                 (insurance.ts:930)
+//  LIVE WIRING (zero-fallback purge · 2026-06-09 · audit B16):
+//    • hero cargo limit + coverage rows ← insurance.getPolicies (insurance.ts:93)
+//      — raw insurancePolicies rows (policyType / perOccurrenceLimit /
+//        providerName / expirationDate / status), same bridge shape 308 ships.
+//    • COI tie                          ← insurance.getCertificates (insurance.ts:451)
+//      — raw certificatesOfInsurance rows (holderName / expirationDate / status).
+//    • per-load compliance strip        — needs a load context this screen
+//      doesn't carry (insurance.checkLoadCompliance takes a loadId) → honest
+//      "not yet connected" copy, never an invented "met" verdict.
+//    • generateCOI CTA                  — insurance.requestCertificate not yet
+//      bridged → CTA disabled with honest subtitle (no dead-tap fabrication).
+//  NO invented $250k/$1M/MCS-90/expiry figures remain: live policy rows or
+//  honest "No policy on file" + em-dash.
 //
 //  Powered by ESANG AI™.
 //
@@ -71,15 +65,38 @@ private func catalystNavTrailing_392() -> [NavSlot] {
 private struct CargoInsuranceBody_392: View {
     @Environment(\.palette) private var palette
 
-    // Representative coverage-detail rows (getCoverage return shape).
-    // Seeds — overwritten on hydrate once insurance.getCoverage is wired.
-    private let coverageRows_392: [CoverageRow_392] = [
-        CoverageRow_392(label: "Cargo limit",        value: "$250,000"),
-        CoverageRow_392(label: "Auto liability",     value: "$1,000,000"),
-        CoverageRow_392(label: "Reefer breakdown",   value: "included"),
-        CoverageRow_392(label: "MCS-90 endorsement", value: "on file"),
-        CoverageRow_392(label: "Expires",            value: "2026-11-30"),
-    ]
+    // Live state — empty until insurance.getPolicies / getCertificates answer.
+    @State private var policies: [InsurancePolicy_392] = []
+    @State private var certificates: [Certificate_392] = []
+    @State private var loading: Bool = true
+    @State private var loadError: String? = nil
+
+    // MARK: Live derivations
+
+    private var activePolicies: [InsurancePolicy_392] {
+        policies.filter { ($0.status ?? "").lowercased() == "active" }
+    }
+    private var cargoPolicy: InsurancePolicy_392? {
+        activePolicies.first { ($0.policyType ?? "").lowercased().contains("cargo") }
+            ?? policies.first { ($0.policyType ?? "").lowercased().contains("cargo") }
+    }
+    private var heroLimitDisplay: String {
+        guard let raw = cargoPolicy?.perOccurrenceLimit, let v = Double(raw), v > 0 else { return "—" }
+        return money_392(v)
+    }
+    private var hasActivePolicy: Bool { !activePolicies.isEmpty }
+
+    private var coverageRows_392: [CoverageRow_392] {
+        // One row per live policy — type · limit · expiry. No invented rows.
+        policies.map { p in
+            let limit = p.perOccurrenceLimit.flatMap(Double.init).map { money_392($0) } ?? "—"
+            let expiry = p.expirationDate.map { shortDate_392($0) } ?? "—"
+            return CoverageRow_392(
+                label: (p.policyType ?? "Policy").replacingOccurrences(of: "_", with: " ").capitalized,
+                value: "\(limit) · exp \(expiry)"
+            )
+        }
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -90,7 +107,7 @@ private struct CargoInsuranceBody_392: View {
                     .padding(.horizontal, -20)
 
                 heroCard
-                provenanceLine("COVERAGE · getCoverage · verifyCarrierCoverage")
+                provenanceLine("COVERAGE · LIVE POLICIES")
                 coverageDetailCard
                 perLoadStrip
                 coiTieStrip
@@ -132,31 +149,35 @@ private struct CargoInsuranceBody_392: View {
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("getCoverage · fleet · Aurora Freight Lines · USDOT 3 482 119 · MC-942 008")
+            Text("fleet coverage · \(policies.count) polic\(policies.count == 1 ? "y" : "ies") on file")
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundStyle(palette.textSecondary)
         }
     }
 
-    // MARK: - Hero (cargo limit · active policy)
+    // MARK: - Hero (cargo limit · live policy state)
 
     private var heroCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("CARGO LIMIT · ACTIVE POLICY")
+                Text("CARGO LIMIT · POLICY")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
-                Text("in force")
+                // Badge is earned, never asserted: green "in force" only when a
+                // live active policy exists; honest neutral otherwise.
+                Text(hasActivePolicy ? "in force" : (loading ? "loading" : "no policy"))
                     .font(.system(size: 10, weight: .heavy))
-                    .foregroundStyle(Brand.success)
+                    .foregroundStyle(hasActivePolicy ? Brand.success : palette.textTertiary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
-                    .background(Capsule().fill(Brand.success.opacity(0.14)))
+                    .background(Capsule().fill(hasActivePolicy
+                        ? Brand.success.opacity(0.14)
+                        : palette.bgCardSoft))
             }
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text("$250,000")
+                Text(heroLimitDisplay)
                     .font(.system(size: 30, weight: .heavy))
                     .monospacedDigit()
                     .foregroundStyle(LinearGradient.diagonal)
@@ -164,7 +185,7 @@ private struct CargoInsuranceBody_392: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textSecondary)
             }
-            Text("auto liability $1M · MCS-90 on file · deductible $1,000")
+            Text(heroSubline)
                 .font(.system(size: 10.5))
                 .foregroundStyle(palette.textSecondary)
         }
@@ -184,30 +205,37 @@ private struct CargoInsuranceBody_392: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
-    // MARK: - Coverage detail (getCoverage · verifyCarrierCoverage)
+    // MARK: - Coverage detail (live insurance.getPolicies rows)
 
     private var coverageDetailCard: some View {
         VStack(spacing: 0) {
-            ForEach(coverageRows_392) { row in
-                HStack {
-                    Text(row.label)
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(palette.textPrimary)
-                    Spacer(minLength: 0)
-                    Text(row.value)
-                        .font(.system(size: 11, weight: .bold))
-                        .monospacedDigit()
-                        .foregroundStyle(palette.textPrimary)
-                }
-                .padding(.vertical, 7)
-            }
-            HStack {
-                Text("verifyCarrierCoverage · meets Eusorone Technologies load requirements")
-                    .font(.system(size: 10))
+            if loading && policies.isEmpty {
+                Text("Loading policies…")
+                    .font(.system(size: 11))
                     .foregroundStyle(palette.textSecondary)
-                Spacer(minLength: 0)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 10)
+            } else if policies.isEmpty {
+                EusoEmptyState(
+                    systemImage: "shield.lefthalf.filled",
+                    title: "No policy on file",
+                    subtitle: loadError ?? "Insurance policies registered to your company appear here with limits and expiry."
+                )
+            } else {
+                ForEach(coverageRows_392) { row in
+                    HStack {
+                        Text(row.label)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                        Spacer(minLength: 0)
+                        Text(row.value)
+                            .font(.system(size: 11, weight: .bold))
+                            .monospacedDigit()
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                    .padding(.vertical, 7)
+                }
             }
-            .padding(.top, 2)
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -219,16 +247,18 @@ private struct CargoInsuranceBody_392: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    // MARK: - Per-load strip (checkLoadCompliance · getCommodityInsuranceRequirements)
+    // MARK: - Per-load strip (honest: needs a load context this screen lacks)
 
     private var perLoadStrip: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("PER-LOAD · checkLoadCompliance · getCommodityInsuranceRequirements")
+            Text("PER-LOAD COMPLIANCE")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
-            perLoadLine("reefer berries load needs $100K cargo · met")
-            perLoadLine("NH\u{2083} UN1005 hazmat load needs MCS-90 + $5M · met")
+            Text("Per-load coverage checks aren't connected to this view yet — open a load to verify its insurance requirements.")
+                .font(.system(size: 11))
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -240,30 +270,26 @@ private struct CargoInsuranceBody_392: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private func perLoadLine(_ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Image(systemName: "checkmark.seal.fill")
-                .font(.system(size: 10, weight: .heavy))
-                .foregroundStyle(Brand.success)
-            Text(text)
-                .font(.system(size: 11))
-                .foregroundStyle(palette.textSecondary)
-        }
-    }
-
-    // MARK: - COI tie (getCertificates · getPerLoadQuote)
+    // MARK: - COI tie (live insurance.getCertificates rows)
 
     private var coiTieStrip: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("2 active COIs on file · 1 expiring in 22d · getCertificates")
+        let active = certificates.filter { ($0.status ?? "").lowercased() == "active" }
+        let expiringSoon = active.filter { expiresWithin_392($0.expirationDate, days: 30) }
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(certificates.isEmpty
+                 ? "No COIs on file"
+                 : "\(active.count) active COI\(active.count == 1 ? "" : "s") on file\(expiringSoon.isEmpty ? "" : " · \(expiringSoon.count) expiring in 30d")")
                 .font(.system(size: 11.5, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
-            Text("COI holder Eusorone Technologies · DU · per-load on demand")
-                .font(.system(size: 10.5))
-                .foregroundStyle(palette.textSecondary)
-            Text("getPerLoadQuote available for above-limit high-value loads")
-                .font(.system(size: 10.5))
-                .foregroundStyle(palette.textSecondary)
+            if let holder = active.first?.holderName ?? certificates.first?.holderName {
+                Text("Latest holder \(holder)")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(palette.textSecondary)
+            } else {
+                Text(loading ? "Loading certificates…" : "Certificates issued for your company appear here.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(palette.textSecondary)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -275,22 +301,24 @@ private struct CargoInsuranceBody_392: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    // MARK: - CTA (generateCOI)
+    // MARK: - CTA (honestly disabled — requestCertificate not yet bridged)
 
     private var generateCTA: some View {
-        // WIRE: insurance.generateCOI (insurance.ts:1559) — mutation · {loadId,holder,limits}
         CTAButton(
             title: "Generate certificate (COI)",
             action: {},
             leadingIcon: "doc.badge.plus"
         )
+        .disabled(true)
+        .opacity(0.5)
     }
 
     private var ctaSchemaFootnote: some View {
-        Text("generateCOI · {loadId,holder,limits}")
+        Text("COI generation isn't connected on mobile yet — request certificates from the web portal.")
             .font(.system(size: 10, design: .monospaced))
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .center)
+            .multilineTextAlignment(.center)
     }
 
     // MARK: - Provenance eyebrow
@@ -302,20 +330,68 @@ private struct CargoInsuranceBody_392: View {
             .foregroundStyle(palette.textTertiary)
     }
 
-    // MARK: - Network
-    //
-    // No `insurance` namespace exists on EusoTripAPI yet (verified by grep of
-    // Services/EusoTripAPI.swift). When the insurance router is bridged, the
-    // // WIRE: calls above hydrate the seeds via @State here. Until then the
-    // representative Code/ figures stand — honest house pattern.
+    // MARK: - Hero subline (live-derived, never invented)
+
+    private var heroSubline: String {
+        guard !policies.isEmpty else {
+            return loading ? "Checking coverage…" : "No coverage data — policies registered to your company appear here."
+        }
+        let auto = activePolicies.first { ($0.policyType ?? "").lowercased().contains("auto") || ($0.policyType ?? "").lowercased().contains("liability") }
+        let autoPart = auto?.perOccurrenceLimit.flatMap(Double.init).map { "auto liability \(money_392($0))" } ?? "auto liability —"
+        let expiry = cargoPolicy?.expirationDate.map { "cargo exp \(shortDate_392($0))" } ?? "cargo exp —"
+        return "\(autoPart) · \(expiry)"
+    }
+
+    // MARK: - Network (live bridge — same decode shape 308 ships against)
+
     private func loadAll() async {
-        // WIRE: insurance.getCoverage                       (insurance.ts:664)
-        // WIRE: insurance.verifyCarrierCoverage             (insurance.ts:747)
-        // WIRE: insurance.checkLoadCompliance               (insurance.ts:1340)
-        // WIRE: insurance.getCommodityInsuranceRequirements (insurance.ts:1763)
-        // WIRE: insurance.getCertificates                   (insurance.ts:442)
-        // WIRE: insurance.getPerLoadQuote                   (insurance.ts:887)
-        // WIRE: insurance.purchasePerLoad                   (insurance.ts:930)
+        loading = true
+        loadError = nil
+        defer { loading = false }
+
+        struct LimitInput: Encodable { let limit: Int }
+
+        async let policiesTask: [InsurancePolicy_392] =
+            EusoTripAPI.shared.query("insurance.getPolicies", input: LimitInput(limit: 20))
+        async let certsTask: [Certificate_392] =
+            EusoTripAPI.shared.query("insurance.getCertificates", input: LimitInput(limit: 20))
+
+        do {
+            let (p, c) = try await (policiesTask, certsTask)
+            policies = p
+            certificates = c
+        } catch {
+            policies = []
+            certificates = []
+            loadError = "Couldn't reach the insurance service - pull to retry."
+        }
+    }
+
+    // MARK: - Formatting
+
+    private func money_392(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
+    }
+
+    private func shortDate_392(_ iso: String) -> String {
+        iso.count >= 10 ? String(iso.prefix(10)) : (iso.isEmpty ? "—" : iso)
+    }
+
+    private func expiresWithin_392(_ iso: String?, days: Int) -> Bool {
+        guard let iso, !iso.isEmpty else { return false }
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let d = f.date(from: iso) ?? {
+            let g = ISO8601DateFormatter()
+            g.formatOptions = [.withInternetDateTime]
+            return g.date(from: iso)
+        }()
+        guard let date = d else { return false }
+        return date.timeIntervalSinceNow < Double(days) * 86400 && date.timeIntervalSinceNow > 0
     }
 }
 
@@ -325,6 +401,64 @@ private struct CoverageRow_392: Identifiable {
     let id = UUID()
     let label: String
     let value: String
+}
+
+/// Raw `insurancePolicies` row off `insurance.getPolicies` (insurance.ts:93) —
+/// DECIMAL columns arrive as JSON strings, dates as ISO strings. Identical
+/// bridge contract to 308 Authority + Insurance.
+private struct InsurancePolicy_392: Decodable, Identifiable {
+    let id: Int
+    let policyType: String?
+    let policyNumber: String?
+    let providerName: String?
+    let perOccurrenceLimit: String?
+    let aggregateLimit: String?
+    let effectiveDate: String?
+    let expirationDate: String?
+    let status: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, policyType, policyNumber, providerName, perOccurrenceLimit,
+             aggregateLimit, effectiveDate, expirationDate, status
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id                 = try c.decode(Int.self, forKey: .id)
+        policyType         = try c.decodeIfPresent(String.self, forKey: .policyType)
+        policyNumber       = try c.decodeIfPresent(String.self, forKey: .policyNumber)
+        providerName       = try c.decodeIfPresent(String.self, forKey: .providerName)
+        perOccurrenceLimit = try c.decodeIfPresent(String.self, forKey: .perOccurrenceLimit)
+        aggregateLimit     = try c.decodeIfPresent(String.self, forKey: .aggregateLimit)
+        effectiveDate      = try c.decodeIfPresent(String.self, forKey: .effectiveDate)
+        expirationDate     = try c.decodeIfPresent(String.self, forKey: .expirationDate)
+        status             = try c.decodeIfPresent(String.self, forKey: .status)
+    }
+}
+
+/// Raw `certificatesOfInsurance` row off `insurance.getCertificates`
+/// (insurance.ts:451) — only the fields this surface renders.
+private struct Certificate_392: Decodable, Identifiable {
+    let id: Int
+    let certificateNumber: String?
+    let holderName: String?
+    let issuedDate: String?
+    let expirationDate: String?
+    let status: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, certificateNumber, holderName, issuedDate, expirationDate, status
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id                = try c.decode(Int.self, forKey: .id)
+        certificateNumber = try c.decodeIfPresent(String.self, forKey: .certificateNumber)
+        holderName        = try c.decodeIfPresent(String.self, forKey: .holderName)
+        issuedDate        = try c.decodeIfPresent(String.self, forKey: .issuedDate)
+        expirationDate    = try c.decodeIfPresent(String.self, forKey: .expirationDate)
+        status            = try c.decodeIfPresent(String.self, forKey: .status)
+    }
 }
 
 // MARK: - Previews
