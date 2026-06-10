@@ -9,6 +9,25 @@
 //  CTAs. Universal across products — only the kicker label
 //  swaps via `ctx.headerKicker`.
 //
+//  De-fabrication (2026-06-07): four Figma literals leaked onto the
+//  live path and are now honest —
+//    • header clock "22:04" — was a frozen string; now the live device
+//      clock, ticked by `TimelineView(.everyMinute)` (the "now"-clock
+//      doctrine, same as the sibling lifecycle headers);
+//    • clear-card dock note "Clear of dock · 0.3 mi past gate" — there
+//      is no "0.3 mi past gate" odometer/geofence telemetry on the
+//      wire, so it renders the honest em-dash "-";
+//    • clear-card route label "On PA-295 southbound · gate arm closed
+//      behind · custody receipt sealed" — no live route-narration /
+//      gate-event source feeds this screen, so it falls to the live
+//      delivery city/state heading from the load, else em-dash "-";
+//    • home-yard note "HOS window has 2h 48m left, covers the run
+//      clean…" — now the live drive-remaining from `HOSLiveStore`
+//      (`status.drivingRemainingDisplay`), else em-dash "-".
+//  The home-yard name / miles / ETA / route-preview chart already had
+//  honest empty fallbacks ("-") — there is no home-yard coordinate on
+//  the wire to HERE-route a return leg, so those stay honest.
+//
 //  Powered by ESANG AI™.
 //
 
@@ -27,6 +46,10 @@ struct DepartingReceiver: View {
     /// of silently popping back to the prior screen.
     @StateObject private var hos = HOSLiveStore()
     @State private var activeLoad: Load?
+    /// The most-recent appointment row for this load — supplies the
+    /// receiver dock door (the leg we just cleared), same
+    /// `appointments.getByLoad` read the sibling 020/024/037 screens use.
+    @State private var appointment: AppointmentsAPI.ByLoadAppointment?
     @State private var isStartingReturn: Bool = false
     @State private var isGoingOffDuty: Bool = false
 
@@ -38,16 +61,62 @@ struct DepartingReceiver: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    private let fallbackClock      = "22:04"
+    private let dash               = "-"
     private let fallbackFacility   = "-"
-    private let fallbackDockNote   = "Clear of dock · 0.3 mi past gate"
-    private let fallbackRouteLabel = "On PA-295 southbound · gate arm closed behind · custody receipt sealed"
     private let fallbackElapsed    = "-"
     private let fallbackBolHash    = "-"
     private let fallbackHomeYard   = "-"
     private let fallbackHomeMiles  = "-"
     private let fallbackHomeEta    = ""
-    private let fallbackHomeNote   = "HOS window has 2h 48m left, covers the run clean. No fuel stop needed. 10-hr reset starts on arrival."
+
+    // MARK: - Live derived strings (device clock · load city · HOS → "-")
+
+    /// Clear-card dock note — there is no "0.3 mi past gate"
+    /// odometer/geofence telemetry on the wire, so the honest em-dash
+    /// stands in for the seeded "Clear of dock · 0.3 mi past gate".
+    private var dockNoteText: String { dash }
+
+    /// Clear-card route label — no live route-narration / gate-event
+    /// source feeds this screen, so we fall through to the live delivery
+    /// city/state heading from the load (the leg we just cleared), else
+    /// the honest em-dash. Never the seeded "On PA-295 southbound · …".
+    private var routeLabelText: String {
+        if let cs = activeLoad?.deliveryLocation?.cityState, !cs.isEmpty {
+            return "Cleared · \(cs)"
+        }
+        return dash
+    }
+
+    /// Home-yard note — the live drive-remaining HOS window from the
+    /// `HOSLiveStore` dashboard snapshot, else the honest em-dash.
+    /// Never the seeded "HOS window has 2h 48m left …".
+    private var homeNoteText: String {
+        guard let d = hos.status?.drivingRemainingDisplay, !d.isEmpty else { return dash }
+        return "HOS drive window: \(d) remaining."
+    }
+
+    /// Receiver-side dock door from the live appointment row — the dock
+    /// we just cleared — else the honest em-dash. Replaces the seeded
+    /// "DOCK 3" literal. Mirrors 037's `bayText` / 024's `dockDoor`.
+    private var dockLabel: String {
+        guard let d = appointment?.dockNumber?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !d.isEmpty
+        else { return dash }
+        return "DOCK \(d)"
+    }
+
+    /// Map-card header: "<FACILITY> · <DOCK>" with both sides honest.
+    private var yardCardHeader: String {
+        "\(fallbackFacility.uppercased()) · \(dockLabel)"
+    }
+
+    /// 24-hour wall-clock formatter for the live header "now" clock.
+    private static let clockFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -106,9 +175,13 @@ struct DepartingReceiver: View {
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(fallbackClock)
-                    .font(EType.mono(.caption)).fontWeight(.semibold)
-                    .foregroundStyle(palette.textPrimary)
+                // Live "now" device clock, ticked every minute — replaces
+                // the frozen Figma "22:04" literal.
+                TimelineView(.everyMinute) { ctx in
+                    Text(Self.clockFormatter.string(from: ctx.date))
+                        .font(EType.mono(.caption)).fontWeight(.semibold)
+                        .foregroundStyle(palette.textPrimary)
+                }
                 Text("TRIP DONE")
                     .font(.system(size: 8, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(Brand.success)
@@ -123,10 +196,10 @@ struct DepartingReceiver: View {
                 .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(Brand.success)
             VStack(alignment: .leading, spacing: 2) {
-                Text(fallbackDockNote)
+                Text(dockNoteText)
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text(fallbackRouteLabel)
+                Text(routeLabelText)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
@@ -151,7 +224,7 @@ struct DepartingReceiver: View {
     private var yardCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("\(fallbackFacility.uppercased()) · DOCK 3")
+                Text(yardCardHeader)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -196,7 +269,10 @@ struct DepartingReceiver: View {
         HStack(spacing: Space.s2) {
             fact(label: "AT RECEIVER", value: fallbackElapsed,    sub: "ELAPSED")
             fact(label: "BOL HASH",     value: fallbackBolHash,    sub: "SEALED")
-            fact(label: "SEAL",         value: "Sealed",            sub: "ESANG · ES-83-A")
+            // SEAL value + serial have no live source on this screen —
+            // the "ES-83-A" serial was a Figma fixture. Honest em-dash
+            // until a real custody-seal column lands.
+            fact(label: "SEAL",         value: dash,               sub: "ESANG")
         }
     }
 
@@ -241,7 +317,7 @@ struct DepartingReceiver: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                     .foregroundStyle(Brand.success)
             }
-            Text(fallbackHomeNote)
+            Text(homeNoteText)
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -322,10 +398,18 @@ struct DepartingReceiver: View {
     }
 
     private func hydrateLiveTrip() async {
+        // Live HOS snapshot for the home-yard drive-window note. Cheap +
+        // idempotent — mirrors HOSClockService's poll, no double-fetch.
+        await hos.bootstrap()
         await lifecycle.hydrateActiveLoad()
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // Appointment row (dockNumber → map-card dock label) — the same
+        // `appointments.getByLoad` read the sibling lifecycle screens
+        // hydrate. nil-tolerant: no row → dock label falls through to "-".
+        appointment = try? await EusoTripAPI.shared.appointments
+            .getByLoad(loadId: lifecycle.loadId)
     }
 
     private func startReturn() async {

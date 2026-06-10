@@ -9,6 +9,29 @@
 //  left/right clearance tiles + supervisor live-mic card + Hold /
 //  Set parking brake CTAs.
 //
+//  De-fabrication (2026-06-07): every Figma literal that leaked onto
+//  the live path was excised, mirroring the proven sibling 037
+//  Approaching-Receiver + 024 Unloading de-fabrications:
+//    • header clock "21:18" → the live device wall clock, refreshed
+//      every minute via TimelineView(.everyMinute);
+//    • "Dock 3" (header title + ASSIGNED badge) → the real assigned
+//      dock door from `appointments.getByLoad.dockNumber`, the same
+//      read 024's detention lane + 037 hydrate; em-dash "-" when no
+//      appointment / no door is assigned (no fabricated bay);
+//    • header sub "SPOTTER ACTIVE · SCRUBBED GREEN" → honest em-dash
+//      "-" (no live spotter/scrub-state feed);
+//    • ins-to-pad "8" / brake-at "4" / approach-rate "0.4" / left
+//      "22" / right "9" → em-dash "-" (no live proximity / clearance
+//      sensor feed reaches this screen; these were Figma readouts);
+//    • supervisor "Reg Hammond · night supervisor" + the canned
+//      transcript "Two more inches…" → an honest EMPTY STATE that
+//      keeps the card chrome but reads "No spotter connected" with no
+//      invented person or transcript and no live-mic indicator.
+//  No telemetry/proximity source feeds the cone field, the mirror
+//  pair, the brake ring, or the clearance tiles, so they render the
+//  em-dash sentinel until a real sensor lane lands. Layout, chrome,
+//  and nav are preserved verbatim.
+//
 //  Powered by ESANG AI™.
 //
 
@@ -24,6 +47,13 @@ struct BackingAssistReceiver: View {
     @State private var activeLoad: Load?
     @State private var isSetting: Bool = false
 
+    /// The most-recent appointment row for this load (assigned dock
+    /// door + receiving window) — the same `appointments.getByLoad`
+    /// read the sibling lifecycle screens (024/037) hydrate. Nil until
+    /// it resolves (or when no door is assigned) → the dock slots fall
+    /// through to the em-dash sentinel, never a fabricated "Dock 3".
+    @State private var appointment: AppointmentsAPI.ByLoadAppointment?
+
     enum Register { case night, afternoon }
     let register: Register
     init(register: Register = .night) { self.register = register }
@@ -32,24 +62,45 @@ struct BackingAssistReceiver: View {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
 
-    // MARK: - Figma fallback
-    private let fallbackClock    = "21:18"
-    private let fallbackDock     = "Dock 3"
-    private let fallbackHeaderSub = "SPOTTER ACTIVE · SCRUBBED GREEN"
-    private let fallbackInsToPad = "8"
-    private let fallbackBrakeAt  = "4"
-    private let fallbackApproachRate = "0.4"
-    private let fallbackLeft     = "22"
-    private let fallbackRight    = "9"
-    private let fallbackSupervisor = "Reg Hammond · night supervisor"
-    private let fallbackSupervisorLine = "Two more inches, hold your wheel, scrubber post on the right at ten-thirty."
+    /// The canonical honest sentinel. No live source → "-" (parity with
+    /// 018/024/037/038/051/055). NOT a seeded literal.
+    private let dash = "-"
 
-    private var dockLabel: String {
-        switch ctx.vertical {
-        case .truck:  return fallbackDock
-        case .rail:   return "Spur 3"
-        case .vessel: return "Berth 3"
+    /// Live wall-clock formatter for the header "now" clock. Device
+    /// local time, "HH:mm". Re-evaluated every minute by the header's
+    /// TimelineView(.everyMinute), so it is a real clock, not "21:18".
+    private func clockText(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
+        return f.string(from: date)
+    }
+
+    /// Bare assigned dock-door label from the live appointment, else "-".
+    /// No mode-faked "Spur 3" / "Berth 3" fabrication — when the wire
+    /// carries no assigned door the screen reads the honest sentinel.
+    private var dockDoor: String {
+        guard let d = appointment?.dockNumber?
+            .trimmingCharacters(in: .whitespacesAndNewlines), !d.isEmpty else {
+            return dash
         }
+        return d
+    }
+
+    /// Mode-aware prefix for the assigned berthing point ("Dock" /
+    /// "Spur" / "Berth") — terminology only, never an invented number.
+    private var dockKindLabel: String {
+        switch ctx.vertical {
+        case .truck:  return "Dock"
+        case .rail:   return "Spur"
+        case .vessel: return "Berth"
+        }
+    }
+
+    /// "Dock 3" composed from the mode prefix + the LIVE door; collapses
+    /// to the bare prefix (no trailing em-dash) when no door is assigned.
+    private var dockLabel: String {
+        dockDoor == dash ? dockKindLabel : "\(dockKindLabel) \(dockDoor)"
     }
 
     private var headerTitle: String {
@@ -115,19 +166,32 @@ struct BackingAssistReceiver: View {
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
-                Text(fallbackHeaderSub)
+                // No live spotter / scrub-state feed reaches this screen —
+                // the "SPOTTER ACTIVE · SCRUBBED GREEN" string was a Figma
+                // fixture. Render the honest em-dash sentinel.
+                Text(dash)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                Text(fallbackClock)
-                    .font(EType.mono(.caption)).fontWeight(.semibold)
-                    .foregroundStyle(palette.textPrimary)
-                Text("\(dockLabel.uppercased()) ASSIGNED")
+                // Live device wall clock, refreshed every minute — never
+                // the seeded "21:18".
+                TimelineView(.everyMinute) { ctxClock in
+                    Text(clockText(ctxClock.date))
+                        .font(EType.mono(.caption)).fontWeight(.semibold)
+                        .foregroundStyle(palette.textPrimary)
+                }
+                // ASSIGNED badge shows the real assigned door when the
+                // appointment carries one; collapses to a neutral
+                // "DOCK ASSIGNMENT PENDING" when no door is assigned,
+                // never a fabricated "DOCK 3 ASSIGNED".
+                Text(dockDoor == dash
+                     ? "\(dockKindLabel.uppercased()) ASSIGNMENT PENDING"
+                     : "\(dockLabel.uppercased()) ASSIGNED")
                     .font(.system(size: 8, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(Brand.success)
+                    .foregroundStyle(dockDoor == dash ? palette.textTertiary : Brand.success)
             }
         }
         .padding(.top, 4)
@@ -165,7 +229,8 @@ struct BackingAssistReceiver: View {
                             .foregroundStyle(.white.opacity(0.9))
                     }
                     Spacer()
-                    Text("\(fallbackInsToPad) in")
+                    // No live proximity sensor feed → em-dash, not "8 in".
+                    Text("\(dash) in")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                         .foregroundStyle(.white.opacity(0.8))
                 }
@@ -174,8 +239,9 @@ struct BackingAssistReceiver: View {
             }
 
             HStack(spacing: Space.s2) {
-                mirrorBox(label: "LEFT MIRROR", value: fallbackLeft, color: Brand.success)
-                mirrorBox(label: "RIGHT MIRROR", value: fallbackRight, color: Brand.warning)
+                // No live mirror-clearance sensor feed → em-dash readouts.
+                mirrorBox(label: "LEFT MIRROR", value: dash, color: palette.textTertiary)
+                mirrorBox(label: "RIGHT MIRROR", value: dash, color: palette.textTertiary)
             }
         }
     }
@@ -213,7 +279,8 @@ struct BackingAssistReceiver: View {
                     .rotationEffect(.degrees(-90))
                     .frame(width: 64, height: 64)
                 VStack(spacing: -2) {
-                    Text(fallbackInsToPad)
+                    // No live proximity sensor feed → em-dash, not "8".
+                    Text(dash)
                         .font(.system(size: 22, weight: .heavy, design: .rounded))
                         .foregroundStyle(LinearGradient.diagonal)
                         .monospacedDigit()
@@ -223,16 +290,21 @@ struct BackingAssistReceiver: View {
                 }
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text("Set parking brake at \(fallbackBrakeAt) in")
+                // Brake-at distance is a live sensor threshold — em-dash
+                // until a real proximity feed lands, never "4 in".
+                Text("Set parking brake at \(dash) in")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text("\(fallbackApproachRate) ft/s APPROACH · \(approachCaption)")
+                // Approach rate has no live feed → em-dash; the product-
+                // aware caption is honest static guidance, kept.
+                Text("\(dash) ft/s APPROACH · \(approachCaption)")
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(fallbackApproachRate) ft/s")
+                // No live approach-rate sensor feed → em-dash, not "0.4 ft/s".
+                Text("\(dash) ft/s")
                     .font(EType.caption.weight(.semibold))
                     .foregroundStyle(palette.textPrimary)
                 Text("APPROACH")
@@ -264,9 +336,11 @@ struct BackingAssistReceiver: View {
     }
 
     private var clearancePair: some View {
+        // No live left/right clearance sensor feed → em-dash readouts,
+        // never the seeded "22"/"9". Neutral color until a real feed lands.
         HStack(spacing: Space.s2) {
-            clearanceCell(label: "LEFT CLEARANCE", value: fallbackLeft, color: Brand.success)
-            clearanceCell(label: "RIGHT CLEARANCE", value: fallbackRight, color: Brand.warning)
+            clearanceCell(label: "LEFT CLEARANCE", value: dash, color: palette.textTertiary)
+            clearanceCell(label: "RIGHT CLEARANCE", value: dash, color: palette.textTertiary)
         }
     }
 
@@ -296,38 +370,30 @@ struct BackingAssistReceiver: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
+    // Honest EMPTY STATE. No live spotter-mic lane feeds this screen,
+    // so the fabricated supervisor "Reg Hammond · night supervisor",
+    // the canned transcript "Two more inches…", the "LIVE MIC"
+    // indicator, and the stylized waveform (which implied an active
+    // feed) are all excised. The card chrome — gradient border, avatar
+    // slot, container — is preserved verbatim; the avatar shows a
+    // neutral person glyph (no invented "RH" initials) and the copy
+    // reads "No spotter connected" with no person and no transcript.
     private var supervisorCard: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             ZStack {
-                Circle().fill(LinearGradient.diagonal).frame(width: 36, height: 36)
-                Text("RH").font(.system(size: 11, weight: .heavy)).foregroundStyle(.white)
+                Circle().fill(palette.bgCardSoft).frame(width: 36, height: 36)
+                Image(systemName: "person.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
             }
             VStack(alignment: .leading, spacing: 3) {
-                HStack {
-                    Text(fallbackSupervisor)
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(palette.textPrimary)
-                    Spacer()
-                    HStack(spacing: 4) {
-                        Circle().fill(Brand.danger).frame(width: 5, height: 5)
-                        Text("LIVE MIC")
-                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                            .foregroundStyle(Brand.danger)
-                    }
-                }
-                Text("\"\(fallbackSupervisorLine)\"")
-                    .font(EType.body)
+                Text("No spotter connected")
+                    .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                    .italic()
+                Text("A spotter's live mic will appear here when one connects.")
+                    .font(EType.mono(.micro)).tracking(0.3)
+                    .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                // Stylized audio waveform
-                HStack(spacing: 2) {
-                    ForEach(0..<24, id: \.self) { i in
-                        Capsule()
-                            .fill(LinearGradient.diagonal.opacity(0.85))
-                            .frame(width: 2, height: [4,8,12,16,18,14,10,6,12,18,14,8,4,10,16,18,12,8,4,6,10,14,16,10][i])
-                    }
-                }
             }
             Spacer(minLength: 0)
         }
@@ -368,6 +434,12 @@ struct BackingAssistReceiver: View {
         await lifecycle.refresh()
         guard !lifecycle.loadId.isEmpty, let n = Int(lifecycle.loadId) else { return }
         activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
+        // Assigned dock door (header title + ASSIGNED badge) — the same
+        // `appointments.getByLoad` read 024's detention lane + 037 use.
+        // nil-tolerant: no row / no door → the dock slots fall through
+        // to the em-dash sentinel rather than a fabricated "Dock 3".
+        appointment = try? await EusoTripAPI.shared.appointments
+            .getByLoad(loadId: lifecycle.loadId)
     }
 
     private func setBrake() async {
