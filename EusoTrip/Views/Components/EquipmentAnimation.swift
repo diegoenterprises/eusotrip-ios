@@ -191,12 +191,41 @@ enum EquipmentKind: String, Hashable, CaseIterable {
         }
     }
 
+    /// Dedicated state-variant file stems for the six EquipmentKinds whose
+    /// canonical bridge resolves to a closest-shape PROXY (no TrailerCode /
+    /// RailCarKind case of their own exists), which was orphaning the 12
+    /// dedicated T-028 loading/unloading SVGs that DO ship in the bundle
+    /// (E2E audit §4 animations · 2026-06-09). Resolved here ahead of the
+    /// bridge so each kind animates as itself, not its proxy:
+    ///   08 petro · 11 power-only · 12 oversized · 14 COFC ·
+    ///   15 intermodal · 22 hot-shot  (× loading + unloading = 12 files).
+    private var dedicatedStateVariantStem: String? {
+        switch self {
+        case .tankerPetro:    return "08_tanker_petro"
+        case .powerOnly:      return "11_power_only"
+        case .oversized:      return "12_oversized"
+        case .railCOFC:       return "14_rail_cofc"
+        case .railIntermodal: return "15_rail_intermodal"
+        case .hotShot:        return "22_hot_shot"
+        default:              return nil
+        }
+    }
+
     /// Resolve the SVG filename for a given state via the canonical
     /// AnimationBindingMap. Replaces the legacy single-state
     /// `svgFilename` lookup. Returns nil when no binding exists OR the
     /// canonical bridge fails — callers should fall back to
     /// `svgFilename` (hero) for legacy back-compat.
     func file(for state: AnimationState) -> String? {
+        // Dedicated state-variant override — un-orphans the 12 SVGs the
+        // canonical proxies were shadowing (audit §4 · 2026-06-09).
+        if let stem = dedicatedStateVariantStem {
+            switch state {
+            case .loading:    return "\(stem)_loading.svg"
+            case .unloading:  return "\(stem)_unloading.svg"
+            case .hero:       return "\(svgFilename).svg"
+            }
+        }
         guard let canonical = canonical,
               let pair = AnimationBindingMap.files(for: canonical) else {
             return nil

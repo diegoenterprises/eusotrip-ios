@@ -239,7 +239,12 @@ struct LoadAnimationContext: Hashable {
         case "delivered", "complete":
             return 100
         default:
-            return 50
+            // Zero-fallback doctrine (E2E audit §4 · 2026-06-09): an
+            // unmapped lifecycle status must not fabricate a half-done
+            // progress bar. Surface the gap loudly in DEBUG; render an
+            // honest 0 in release until the status is mapped above.
+            assertionFailure("LoadAnimationContext.progressPercent: unmapped load status '\(s.load.status)' — add it to the ramp")
+            return 0
         }
     }
 

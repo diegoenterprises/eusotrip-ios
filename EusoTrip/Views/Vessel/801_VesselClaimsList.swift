@@ -81,41 +81,36 @@ private struct VesselClaimsListBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
 
-    @State private var subline = "Eusorone Technologies · marine cargo claims · 2026-Q2"
-    @State private var totalCaption = "35 TOTAL · 8 OPEN"
+    // W13 hygiene (E2E audit §4 / §5 exemplar note · 2026-06-10): the
+    // design-time seeds (6 fabricated MSC/Maersk/CMA-CGM/OOCL/Hapag/ZIM
+    // claim rows, the "35 TOTAL · 8 OPEN" caption, the counted chips,
+    // and the "Eusorone Technologies · 2026-Q2" subline) are deleted —
+    // the loading/error/empty gating was already correct, so the row
+    // seed was dead code, and the caption/chip counts were the only
+    // seeded figures that could paint before the live query settled.
+    // Captions render em-dash and the chips carry uncounted filter
+    // labels until freightClaims.getClaims answers.
+    @State private var totalCaption = "- TOTAL · - OPEN"
 
     @State private var chips: [ClaimChip801] = [
-        .init(label: "All · 35", active: true),
-        .init(label: "Open · 8", active: false),
-        .init(label: "Pending · 3", active: false),
-        .init(label: "Denied · 2", active: false),
-        .init(label: "Paid · 22", active: false)
+        .init(label: "All", active: true),
+        .init(label: "Open", active: false),
+        .init(label: "Pending", active: false),
+        .init(label: "Denied", active: false),
+        .init(label: "Paid", active: false)
     ]
 
-    @State private var rows: [ClaimRow801] = [
-        .init(symbol: "drop.fill", tint: Brand.danger, title: "MSC · CNSHA → USLGB",
-              sub: "CLM-2026-0188 · MSCU 7741203", dots: .init(done: 4, current: 3, exception: -1),
-              pill: "OPEN · 62d", pillColor: Brand.danger, amount: "$24,800", recovery: "in docs"),
-        .init(symbol: "shippingbox.fill", tint: Brand.warning, title: "Maersk · NLRTM → USHOU",
-              sub: "CLM-2026-0184 · MRKU 4192860", dots: .init(done: 5, current: 4, exception: -1),
-              pill: "PENDING · 41d", pillColor: Brand.warning, amount: "$18,600", recovery: "offer due"),
-        .init(symbol: "thermometer.snowflake", tint: Brand.blue, title: "CMA CGM · FRLEH → USNYC",
-              sub: "CLM-2026-0182 · CMAU 6620115", dots: .init(done: 3, current: 2, exception: -1),
-              pill: "OPEN · 38d", pillColor: Brand.danger, amount: "$16,200", recovery: "survey set"),
-        .init(symbol: "clock.badge.checkmark", tint: Brand.success, title: "OOCL · CNNGB → USLAX",
-              sub: "CLM-2026-0179 · OOLU 8830471", dots: .init(done: 7, current: -1, exception: -1),
-              pill: "RESOLVED", pillColor: Brand.success, amount: "$12,400", recovery: "settled 6d"),
-        .init(symbol: "checkmark.seal.fill", tint: Brand.success, title: "Hapag-Lloyd · DEHAM → USSAV",
-              sub: "CLM-2026-0175 · HLXU 5530028", dots: .init(done: 7, current: -1, exception: -1),
-              pill: "PAID · ACH", pillColor: Brand.success, amount: "$8,900", recovery: "remitted 12d"),
-        .init(symbol: "triangle", tint: Brand.neutral, title: "ZIM · KRPUS → USOAK",
-              sub: "CLM-2026-0171 · ZIMU 2204117", dots: .init(done: 5, current: -1, exception: 5),
-              pill: "DENIED · appeal", pillColor: Brand.neutral, amount: "$9,200", recovery: "re-file 9d")
-        // NOTE: the DENIED seed uses Brand.neutral (the §5 palette-doctrine inactive color, palette-
-        // agnostic) — @Environment(\.palette) is NOT available inside a @State default initializer,
-        // so the canonical port's `palette.textTertiary` seed could not compile here. The live query's
-        // denied branch keeps `palette.textTertiary` (valid in instance-method scope).
-    ]
+    @State private var rows: [ClaimRow801] = []
+
+    /// Honest subline — fixed surface descriptor + the real current quarter
+    /// (derived from the device clock, not a baked "2026-Q2" fixture).
+    private var subline: String {
+        let now = Date()
+        let cal = Calendar(identifier: .gregorian)
+        let year = cal.component(.year, from: now)
+        let quarter = (cal.component(.month, from: now) - 1) / 3 + 1
+        return "Marine cargo claims · \(year)-Q\(quarter)"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -226,6 +221,15 @@ private struct VesselClaimsListBody: View {
         do {
             let r: ClaimsResp801 = try await EusoTripAPI.shared.query("freightClaims.getClaims", input: ClaimsInput801(limit: 20, offset: 0))
             totalCaption = "\(r.total) TOTAL · \(r.claims.filter { ($0.status ?? "") == "investigating" }.count) OPEN"
+            // Real total onto the All chip; per-status counts stay uncounted
+            // (the page caps at 20 rows — a page-derived count would lie).
+            chips = [
+                ClaimChip801(label: "All · \(r.total)", active: true),
+                ClaimChip801(label: "Open", active: false),
+                ClaimChip801(label: "Pending", active: false),
+                ClaimChip801(label: "Denied", active: false),
+                ClaimChip801(label: "Paid", active: false)
+            ]
             if !r.claims.isEmpty {
                 rows = r.claims.prefix(6).map { c -> ClaimRow801 in
                     let status = (c.status ?? "reported").lowercased()

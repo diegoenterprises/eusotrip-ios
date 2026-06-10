@@ -23,7 +23,10 @@ private struct ExceptionRoutingBody: View {
         switch exceptionType.lowercased() {
         case "detention":
             return [
-                ("dollarsign.circle", "File detention claim", "$75/hr × hours captured by ELD", "386", "detention"),
+                // W13 hygiene (E2E audit §4 · 2026-06-10): the "$75/hr"
+                // figure was a fabricated rate — the real detention rate
+                // comes from the load's accessorial contract at claim time.
+                ("dollarsign.circle", "File detention claim", "Contract rate × hours captured by ELD", "386", "detention"),
                 ("phone.fill", "Escalate to dispatch", "Page Eusorone ops dispatcher", "318", nil),
                 ("text.bubble", "Message driver", "Direct chat thread", "311", nil),
             ]

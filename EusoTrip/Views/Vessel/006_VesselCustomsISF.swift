@@ -357,9 +357,16 @@ private struct VesselCustomsISFBody006: View {
                 let field = r.field ?? "ISF element"
                 let isCarrier = carrierFields.contains(field)
                 if isCarrier { carrierCount += 1 } else { importerCount += 1 }
+                // W13 hygiene (E2E audit §4 · 2026-06-10): timing/penalty
+                // are server-sourced only — the fabricated "24hrs before
+                // loading" / "$5,000 per violation" defaults are gone;
+                // missing pieces render em-dash (zero-fallback doctrine).
+                let subParts = [r.timing?.lowercased(), r.penalty]
+                    .compactMap { $0 }
+                    .filter { !$0.isEmpty }
                 rows.append(ISFElementRow006(
                     title: field,
-                    sub: (r.timing ?? "24hrs before loading").lowercased() + " · " + (r.penalty ?? "$5,000 per violation"),
+                    sub: subParts.isEmpty ? "-" : subParts.joined(separator: " · "),
                     state: .open,
                     chipText: "OPEN",
                     glyph: glyphFor(field),

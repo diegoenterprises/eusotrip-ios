@@ -94,16 +94,13 @@ struct MeHotZones: View {
 
     // MARK: Heat map
 
-    /// Full-bleed heatmap deep-dive — same `HotZonesHeatmapWebView`
-    /// powering the Driver Home widget, sized for the standalone
-    /// screen's vertical budget so the gradient density actually
-    /// reads from across the cab.
-    ///
-    /// When `HereMapsConfig.jsApiKey` is unprovisioned (the JS SDK
-    /// requires its own scoped key separate from the REST OAuth
-    /// pair), defer to `HotZonesHeatMapView` which renders a
-    /// brand-gradient fallback in place of the broken WebView so
-    /// the cockpit doesn't paint a "key not configured" rectangle.
+    /// Full-bleed demand-map deep-dive — the same `HotZonesHeatMapView`
+    /// (OMV vector `HereLiveMapView` with one tappable pin per live zone)
+    /// powering the Driver Home widget, sized for the standalone screen's
+    /// vertical budget. (W13 hygiene 2026-06-10: stale doc rewritten — the
+    /// `HotZonesHeatmapWebView` HERE-JS engine it used to cite is deleted;
+    /// the gradient card only renders as the honest zero-zones empty
+    /// state, not as a key-missing fallback.)
     private var heatMap: some View {
         ZStack(alignment: .topLeading) {
             HotZonesHeatMapView(zones: store.zones)

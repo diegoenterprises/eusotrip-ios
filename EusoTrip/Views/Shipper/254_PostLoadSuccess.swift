@@ -15,7 +15,13 @@ struct PostLoadSuccessScreen: View {
 
 private struct SuccessBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject var draft: PostLoadDraft
+
+    // W13 hygiene (E2E audit §4 animations · 2026-06-10): the success hero
+    // was fully static. The checkmark pops in on a spring and the copy
+    // fades up beneath it; Reduce Motion renders the settled frame.
+    @State private var heroSettled = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
@@ -26,6 +32,15 @@ private struct SuccessBody: View {
         }
         .padding(.horizontal, 14)
         .padding(.top, 56)
+        .onAppear {
+            if reduceMotion {
+                heroSettled = true
+            } else {
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.62)) {
+                    heroSettled = true
+                }
+            }
+        }
     }
 
     private var successHero: some View {
@@ -33,12 +48,18 @@ private struct SuccessBody: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 64, weight: .heavy))
                 .foregroundStyle(.white)
+                .scaleEffect(heroSettled ? 1.0 : 0.4)
+                .opacity(heroSettled ? 1.0 : 0.0)
             Text("Posted").font(.system(size: 28, weight: .heavy)).foregroundStyle(.white)
+                .opacity(heroSettled ? 1.0 : 0.0)
+                .offset(y: heroSettled ? 0 : 8)
             Text(draft.postedLoadNumber ?? "-")
                 .font(.system(size: 13, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(.white.opacity(0.9))
                 .padding(.horizontal, 12).padding(.vertical, 4)
                 .background(.white.opacity(0.18)).clipShape(Capsule())
+                .opacity(heroSettled ? 1.0 : 0.0)
+                .offset(y: heroSettled ? 0 : 8)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 36)

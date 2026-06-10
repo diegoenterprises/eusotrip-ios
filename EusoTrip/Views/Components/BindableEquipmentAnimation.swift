@@ -53,8 +53,17 @@ struct BindableEquipmentAnimation: View {
 
     /// Decimal 0…1 used to drive the `--load-progress` CSS var (the SVG progress
     /// bar uses `scaleX(var(--load-progress))` or equivalent in its stylesheet).
+    ///
+    /// Zero-fallback doctrine (E2E audit §4 · 2026-06-09): a missing or
+    /// unparsable `progress_pct` binding renders 0 — never a fabricated
+    /// half-full bar. Both context builders (`LoadAnimationContext.from`
+    /// and `ConvoyAnimationStrip`) always emit the key, so a miss here is
+    /// a contract break — surfaced loudly in DEBUG, honest 0 in release.
     private var progressFraction: Double {
-        let raw = Double(context.bindings["progress_pct"] ?? "50") ?? 50
+        guard let raw = context.bindings["progress_pct"].flatMap(Double.init) else {
+            assertionFailure("BindableEquipmentAnimation: progress_pct binding missing/unparsable — rendering 0")
+            return 0
+        }
         return max(0, min(1, raw / 100.0))
     }
 }
