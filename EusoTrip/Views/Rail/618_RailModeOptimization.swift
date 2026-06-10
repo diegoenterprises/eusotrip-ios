@@ -13,6 +13,9 @@
 //
 //  Web parity: app/(rail)/optimize/mode/page.tsx
 //  tRPC:
+//    • shipment resolution      ← intermodal.getIntermodalShipments
+//                                (newest real shipment when none is injected
+//                                — zero-fallback: no invented lane/id)
 //    • per-mode all-in costs   ← intermodal.getIntermodalCostBreakdown
 //                                (server/routers/intermodal.ts:295)
 //    • rail-vs-truck compare    ← routeOptimization.getRouteComparison
@@ -20,9 +23,10 @@
 //    • lane context             ← intermodal.getIntermodalDashboard
 //                                (server/routers/intermodal.ts:341)
 //    • 'Apply mode' → STUB · named-gap: intermodal.applyModeChoice does NOT
-//      exist. See PORT-GAP below.
-//  RBAC: protectedProcedure. transportMode=rail; single-country US
-//  (Long Beach → Dallas, 1,452 mi). Persona: Rail Engineer Owen Trask.
+//      exist. See WIRE-GAP below.
+//  ZERO-FALLBACK (2026-06-09): every economic figure renders live or as an
+//  em-dash; savings/rationale claims are suppressed when either side of the
+//  comparison is missing. RBAC: protectedProcedure. transportMode=rail.
 //
 //  NAV (REAL): HOME · SHIPMENTS(current) · [orb] · COMPLIANCE · ME
 //
@@ -32,13 +36,14 @@ import SwiftUI
 struct RailModeOptimizationScreen: View {
     let theme: Theme.Palette
     /// Intermodal shipment this mode-optimization verdict is scoped to.
-    /// Defaults to the canonical lane record stamped on the wireframe
-    /// (RAIL-260528-D331CA02) so the screen renders standalone; the host
-    /// surface injects the live shipment id when pushing from a shipment row.
+    /// 0 = unresolved: the body resolves the user's NEWEST real intermodal
+    /// shipment via intermodal.getIntermodalShipments, so the verdict is
+    /// never rendered against an invented lane. The host surface injects the
+    /// live shipment id + labels when pushing from a shipment row.
     var intermodalShipmentId: Int = 0
-    var shipmentRef: String = "RAIL-260528-D331C"
-    var originLabel: String = "Long Beach"
-    var destinationLabel: String = "Dallas"
+    var shipmentRef: String = ""
+    var originLabel: String = ""
+    var destinationLabel: String = ""
 
     var body: some View {
         Shell(theme: theme) {
@@ -112,6 +117,21 @@ private struct IntermodalDashboard: Decodable {
     let totalRevenue: Double?
 }
 
+/// intermodal.getIntermodalShipments — raw shipment rows; used to resolve the
+/// newest REAL shipment when the navigator injects no id.
+private struct IntermodalShipmentRow618: Decodable {
+    struct Loc: Decodable { let description: String? }
+    let id: Int
+    let intermodalNumber: String?
+    let originLocation: Loc?
+    let destinationLocation: Loc?
+    let status: String?
+}
+private struct IntermodalShipmentsPage618: Decodable {
+    let shipments: [IntermodalShipmentRow618]?
+    let total: Int?
+}
+
 // MARK: - Body
 
 private struct RailModeOptimizationBody: View {
@@ -127,6 +147,16 @@ private struct RailModeOptimizationBody: View {
     @State private var dashboard: IntermodalDashboard? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+    /// True when no real intermodal shipment exists to scope the verdict to —
+    /// renders an honest empty state instead of fabricated lane economics.
+    @State private var noShipment = false
+
+    // Resolved live shipment identity (from navigation or the newest-shipment
+    // lookup). Em-dash when unresolved — never an invented lane.
+    @State private var resolvedShipmentId: Int = 0
+    @State private var resolvedRef: String = ""
+    @State private var resolvedOrigin: String = ""
+    @State private var resolvedDestination: String = ""
 
     @State private var applying = false
     @State private var applyError: String? = nil
@@ -158,11 +188,16 @@ private struct RailModeOptimizationBody: View {
         return truck - rail
     }
 
-    /// Lane mileage label from the compare endpoint's fastest route, falling
-    /// back to the wireframe lane (1,452 mi) when the compare hasn't loaded.
+    /// Lane mileage from the compare endpoint's routes — nil (em-dash) when
+    /// the compare hasn't answered. No wireframe fallback mileage.
     private var laneMiles: Int? {
         compare?.routes?.compactMap { $0.miles }.min()
     }
+
+    /// Display identity — live or em-dash.
+    private var refLabel: String { resolvedRef.isEmpty ? "—" : resolvedRef }
+    private var originDisplay: String { resolvedOrigin.isEmpty ? "—" : resolvedOrigin }
+    private var destinationDisplay: String { resolvedDestination.isEmpty ? "—" : resolvedDestination }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -190,7 +225,7 @@ private struct RailModeOptimizationBody: View {
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()
-            Text(shipmentRef)
+            Text(refLabel)
                 .font(EType.mono(.micro)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
         }
@@ -212,7 +247,7 @@ private struct RailModeOptimizationBody: View {
                     .rotationEffect(.degrees(90))
             }
             .padding(.top, Space.s4)
-            Text("\(originLabel) → \(destinationLabel) · \(laneMilesLabel)")
+            Text("\(originDisplay) → \(destinationDisplay) · \(laneMilesLabel)")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.leading, 30)
@@ -223,7 +258,7 @@ private struct RailModeOptimizationBody: View {
         if let m = laneMiles {
             return "\(m.formatted(.number.grouping(.automatic))) mi"
         }
-        return "1,452 mi"
+        return "— mi"
     }
 
     // MARK: - Content (loading / error / loaded)
@@ -254,6 +289,12 @@ private struct RailModeOptimizationBody: View {
                     Text(err).font(EType.caption).foregroundStyle(Brand.danger)
                 }
             }
+        } else if noShipment {
+            // Honest empty: no real intermodal shipment exists to optimize.
+            EusoEmptyState(systemImage: "arrow.triangle.swap",
+                           title: "No shipment to optimize",
+                           subtitle: "Book an intermodal shipment to compare rail, truck, and transload economics.")
+                .padding(.top, Space.s6)
         } else {
             VStack(alignment: .leading, spacing: Space.s5) {
                 savingsHero
@@ -292,14 +333,14 @@ private struct RailModeOptimizationBody: View {
                         .foregroundStyle(Brand.success)
                         .monospacedDigit()
                         .lineLimit(1).minimumScaleFactor(0.6)
-                    Text("Intermodal vs OTR truck · same SLA")
+                    Text("Intermodal vs OTR truck · all-in")
                         .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
                 }
                 Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: 8) {
-                    heroStat(value: moneyLabel(intermodalAllIn) ?? "$1,940", caption: "intermodal")
-                    heroStat(value: moneyLabel(truckAllIn) ?? "$3,340", caption: "truck")
-                    heroStat(value: transitLabel(truckTransitDays) ?? "4.2d", caption: "transit")
+                    heroStat(value: moneyLabel(intermodalAllIn) ?? "—", caption: "intermodal")
+                    heroStat(value: moneyLabel(truckAllIn) ?? "—", caption: "truck")
+                    heroStat(value: transitLabel(truckTransitDays) ?? "—", caption: "transit")
                 }
             }
             .padding(Space.s4)
@@ -322,7 +363,9 @@ private struct RailModeOptimizationBody: View {
     }
 
     private var savingsLabel: String {
-        guard let s = savings, s > 0 else { return "−$1.4K" }
+        // Em-dash until BOTH sides of the comparison are live — a savings
+        // claim with a missing side is a fabrication.
+        guard let s = savings, s > 0 else { return "—" }
         if s >= 1_000 {
             return String(format: "−$%.1fK", s / 1_000)
         }
@@ -350,7 +393,7 @@ private struct RailModeOptimizationBody: View {
 
             kpiTile(label: "TRUCK", value: truckPerMileLabel)
             kpiTile(label: "CO₂e", value: co2Label)
-            kpiTile(label: "TRANSIT", value: transitLabel(truckTransitDays) ?? "4.2d")
+            kpiTile(label: "TRANSIT", value: transitLabel(truckTransitDays) ?? "—")
         }
     }
 
@@ -372,31 +415,24 @@ private struct RailModeOptimizationBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    /// Rail $/mi — intermodal all-in over the lane mileage.
+    /// Rail $/mi — intermodal all-in over the lane mileage. Em-dash otherwise.
     private var railPerMileLabel: String {
         if let rail = intermodalAllIn, let m = laneMiles, m > 0 {
             return String(format: "$%.2f", rail / Double(m))
         }
-        return "$1.34"
+        return "—"
     }
-    /// Truck $/mi — cheapest truck all-in over the lane mileage.
+    /// Truck $/mi — cheapest truck all-in over the lane mileage. Em-dash otherwise.
     private var truckPerMileLabel: String {
         if let truck = truckAllIn, let m = laneMiles, m > 0 {
             return String(format: "$%.2f", truck / Double(m))
         }
-        return "$2.30"
+        return "—"
     }
-    /// CO₂e delta — rail vs truck, expressed as the percentage reduction.
-    /// Derived from the $/mi differential as a real-data proxy (no fabricated
-    /// emissions table on the iOS surface); shows the wireframe figure when
-    /// the cost inputs aren't loaded.
-    private var co2Label: String {
-        if let rail = intermodalAllIn, let truck = truckAllIn, truck > 0 {
-            let reduction = max(0.0, (truck - rail) / truck)
-            return String(format: "−%.0f%%", reduction * 100)
-        }
-        return "−62%"
-    }
+    /// CO₂e delta — WIRE-GAP: no emissions endpoint is wired to this surface,
+    /// and a cost differential is NOT an emissions figure. Em-dash until a
+    /// real CO₂e read (co2.calculate-class proc) lands here.
+    private var co2Label: String { "—" }
 
     // MARK: - Mode options (itemized comparison)
 
@@ -414,38 +450,42 @@ private struct RailModeOptimizationBody: View {
             Rectangle().fill(palette.borderFaint).frame(height: 1)
 
             VStack(spacing: 0) {
+                // Verdict pills only render when the underlying comparison is
+                // live — a "BEST $" badge over an em-dash is a fabrication.
                 modeRow(
                     icon: "tram.fill",
                     accent: Brand.success,
-                    title: "Intermodal rail (BNSF)",
-                    sub: "rail line-haul + dray · \(transitLabel(truckTransitDays) ?? "4.2d")",
-                    pillText: "BEST $",
+                    title: "Intermodal rail",
+                    sub: "rail line-haul + dray · \(transitLabel(truckTransitDays) ?? "—")",
+                    pillText: (savings.map { $0 > 0 } ?? false) ? "BEST $" : nil,
                     pillColor: Brand.success,
-                    cost: moneyLabel(intermodalAllIn) ?? "$1,940",
-                    costNote: "best",
+                    cost: moneyLabel(intermodalAllIn) ?? "—",
+                    costNote: intermodalAllIn != nil ? "all-in" : "—",
                     costNoteColor: palette.textTertiary
                 )
                 Divider().overlay(palette.borderFaint).padding(.horizontal, Space.s3)
                 modeRow(
                     icon: "truck.box.fill",
                     accent: Brand.warning,
-                    title: "OTR truck (team)",
-                    sub: "2 drivers · \(truckFastestLabel) fastest",
-                    pillText: "FASTEST",
+                    title: "OTR truck",
+                    sub: "door-to-door · \(truckFastestLabel) fastest",
+                    pillText: truckTransitDays != nil ? "FASTEST" : nil,
                     pillColor: Brand.info,
-                    cost: moneyLabel(truckAllIn) ?? "$3,340",
+                    cost: moneyLabel(truckAllIn) ?? "—",
                     costNote: truckDeltaLabel,
                     costNoteColor: palette.textTertiary
                 )
                 Divider().overlay(palette.borderFaint).padding(.horizontal, Space.s3)
+                // WIRE-GAP: no transload-scenario costing endpoint exists on
+                // this surface — every cell is an em-dash until one lands.
                 modeRow(
                     icon: "arrow.left.arrow.right",
                     accent: Brand.rail,
                     title: "Transload + rail",
-                    sub: "cross-dock IL · \(transloadTransitLabel)",
-                    pillText: "LOW $",
+                    sub: "cross-dock scenario · \(transloadTransitLabel)",
+                    pillText: nil,
                     pillColor: Brand.rail,
-                    cost: moneyLabel(transloadAllIn) ?? "$1,820",
+                    cost: moneyLabel(transloadAllIn) ?? "—",
                     costNote: transloadDeltaLabel,
                     costNoteColor: palette.textTertiary
                 )
@@ -461,7 +501,7 @@ private struct RailModeOptimizationBody: View {
                          accent: Color,
                          title: String,
                          sub: String,
-                         pillText: String,
+                         pillText: String?,
                          pillColor: Color,
                          cost: String,
                          costNote: String,
@@ -486,11 +526,13 @@ private struct RailModeOptimizationBody: View {
             }
             Spacer(minLength: 4)
             VStack(alignment: .trailing, spacing: 4) {
-                Text(pillText)
-                    .font(.system(size: 10.5, weight: .bold)).tracking(0.4)
-                    .foregroundStyle(pillColor)
-                    .padding(.horizontal, 10).padding(.vertical, 3)
-                    .background(Capsule().fill(pillColor.opacity(0.20)))
+                if let pillText {
+                    Text(pillText)
+                        .font(.system(size: 10.5, weight: .bold)).tracking(0.4)
+                        .foregroundStyle(pillColor)
+                        .padding(.horizontal, 10).padding(.vertical, 3)
+                        .background(Capsule().fill(pillColor.opacity(0.20)))
+                }
                 Text(cost)
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary).monospacedDigit()
@@ -512,7 +554,7 @@ private struct RailModeOptimizationBody: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
-                Text("Apply locks BNSF line-haul + dray both ends")
+                Text("Apply commits the selected routing to this shipment")
                     .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 4)
@@ -528,13 +570,15 @@ private struct RailModeOptimizationBody: View {
     }
 
     private var rationaleHeadline: String {
+        // A savings claim renders ONLY when both sides of the comparison are
+        // live — otherwise the rationale states honestly what's missing.
         if let s = savings, s > 0 {
             let saved = s >= 1_000
                 ? String(format: "$%.0f", (s / 100).rounded() * 100)
                 : String(format: "$%.0f", s)
             return "Intermodal clears the SLA with \(saved) saved"
         }
-        return "Intermodal clears the SLA with $1,400 saved"
+        return "Mode economics pending — live costs incomplete"
     }
 
     // MARK: - CTA pair (Apply mode · Re-run)
@@ -566,32 +610,32 @@ private struct RailModeOptimizationBody: View {
 
     // MARK: - Derived labels for transload + truck deltas
 
-    /// Transload + rail all-in. The cost breakdown endpoint returns a single
-    /// shipment's all-in; a distinct transload routing is a separate planning
-    /// scenario with no dedicated read on the iOS surface, so we present the
-    /// wireframe lane figure until a transload-scenario endpoint lands.
+    /// Transload + rail all-in. WIRE-GAP: a distinct transload routing is a
+    /// separate planning scenario with NO dedicated read on this surface —
+    /// every transload cell is an em-dash until that endpoint lands.
     private var transloadAllIn: Double? { nil }
-    private var transloadTransitLabel: String { "4.6d" }
+    private var transloadTransitLabel: String { "—" }
     private var transloadDeltaLabel: String {
-        guard let rail = intermodalAllIn, let load = transloadAllIn, rail > 0 else { return "−6%" }
+        guard let rail = intermodalAllIn, let load = transloadAllIn, rail > 0 else { return "—" }
         let pct = (load - rail) / rail * 100
         return String(format: "%@%.0f%%", pct >= 0 ? "+" : "−", abs(pct))
     }
 
     private var truckFastestLabel: String {
         guard let routes = compare?.routes,
-              let minHours = routes.compactMap({ $0.hours }).min() else { return "2.1d" }
+              let minHours = routes.compactMap({ $0.hours }).min() else { return "—" }
         return String(format: "%.1fd", minHours / 24.0)
     }
     private var truckDeltaLabel: String {
-        guard let rail = intermodalAllIn, let truck = truckAllIn, rail > 0 else { return "+72%" }
+        guard let rail = intermodalAllIn, let truck = truckAllIn, rail > 0 else { return "—" }
         let pct = (truck - rail) / rail * 100
         return String(format: "%@%.0f%%", pct >= 0 ? "+" : "−", abs(pct))
     }
 
     private var laneCode: String {
-        let o = String(originLabel.prefix(2)).uppercased()
-        let d = String(destinationLabel.prefix(3)).uppercased()
+        guard !resolvedOrigin.isEmpty, !resolvedDestination.isEmpty else { return "—" }
+        let o = String(resolvedOrigin.prefix(2)).uppercased()
+        let d = String(resolvedDestination.prefix(3)).uppercased()
         return "\(o)→\(d)"
     }
 
@@ -609,8 +653,9 @@ private struct RailModeOptimizationBody: View {
     // MARK: - Load (rename: reload, not load — avoids name collision)
 
     private func reload() async {
-        loading = true; loadError = nil
+        loading = true; loadError = nil; noShipment = false
         struct CostIn: Encodable { let intermodalShipmentId: Int }
+        struct ListIn: Encodable { let limit: Int; let offset: Int }
         struct CompareIn: Encodable {
             let origin: String
             let destination: String
@@ -619,26 +664,59 @@ private struct RailModeOptimizationBody: View {
             let isHazmat: Bool
         }
         do {
+            // 1. Resolve a REAL shipment. Navigation injection wins; otherwise
+            //    the newest intermodal shipment (createdAt desc) scopes the
+            //    verdict. No invented lane, ever.
+            resolvedShipmentId = intermodalShipmentId
+            resolvedRef = shipmentRef
+            resolvedOrigin = originLabel
+            resolvedDestination = destinationLabel
+            if resolvedShipmentId <= 0 {
+                let page: IntermodalShipmentsPage618 = try await EusoTripAPI.shared.query(
+                    "intermodal.getIntermodalShipments", input: ListIn(limit: 1, offset: 0))
+                guard let newest = page.shipments?.first else {
+                    noShipment = true
+                    loading = false
+                    return
+                }
+                resolvedShipmentId = newest.id
+                resolvedRef = newest.intermodalNumber ?? ""
+                resolvedOrigin = newest.originLocation?.description ?? ""
+                resolvedDestination = newest.destinationLocation?.description ?? ""
+            }
+
+            // 2. Live economics for the resolved shipment. The truck compare
+            //    needs a real lane — it is only fired when both endpoints are
+            //    known (no fabricated geocode inputs).
             async let bd: ModeCostBreakdown? = EusoTripAPI.shared.query(
                 "intermodal.getIntermodalCostBreakdown",
-                input: CostIn(intermodalShipmentId: intermodalShipmentId))
-            async let cmp: RouteComparison = EusoTripAPI.shared.query(
-                "routeOptimization.getRouteComparison",
-                input: CompareIn(origin: originLabel,
-                                 destination: destinationLabel,
-                                 vehicleType: "5_axle",
-                                 grossWeightLbs: 80_000,
-                                 isHazmat: false))
+                input: CostIn(intermodalShipmentId: resolvedShipmentId))
             async let dash: IntermodalDashboard = EusoTripAPI.shared.queryNoInput(
                 "intermodal.getIntermodalDashboard")
-            let (breakdownResult, compareResult, dashResult) = try await (bd, cmp, dash)
-            self.breakdown = breakdownResult
-            self.compare = compareResult
-            self.dashboard = dashResult
-            // The compare endpoint returns a geocode error in-band rather than
-            // throwing — surface it so the user isn't staring at stale numbers.
-            if let e = compareResult.error, !e.isEmpty {
-                self.loadError = e
+
+            if !resolvedOrigin.isEmpty && !resolvedDestination.isEmpty {
+                async let cmp: RouteComparison = EusoTripAPI.shared.query(
+                    "routeOptimization.getRouteComparison",
+                    input: CompareIn(origin: resolvedOrigin,
+                                     destination: resolvedDestination,
+                                     vehicleType: "5_axle",
+                                     grossWeightLbs: 80_000,
+                                     isHazmat: false))
+                let (breakdownResult, compareResult, dashResult) = try await (bd, cmp, dash)
+                self.breakdown = breakdownResult
+                self.compare = compareResult
+                self.dashboard = dashResult
+                // The compare endpoint returns a geocode error in-band rather
+                // than throwing — surface it so the user isn't staring at
+                // stale numbers.
+                if let e = compareResult.error, !e.isEmpty {
+                    self.loadError = e
+                }
+            } else {
+                let (breakdownResult, dashResult) = try await (bd, dash)
+                self.breakdown = breakdownResult
+                self.compare = nil
+                self.dashboard = dashResult
             }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -648,7 +726,7 @@ private struct RailModeOptimizationBody: View {
 
     // MARK: - Apply mode
 
-    // PORT-GAP: intermodal.applyModeChoice — the dedicated mutation that
+    // WIRE-GAP: intermodal.applyModeChoice — the dedicated mutation that
     // commits the chosen routing (insert blockchainAuditTrail row + WS
     // broadcast) does NOT exist. Wireframe <desc> proposes
     //   intermodal.applyModeChoice({intermodalShipmentId, chosenMode, quotedCost})
@@ -658,7 +736,7 @@ private struct RailModeOptimizationBody: View {
     // until it lands the mutation throws and we surface the real error (no
     // fabricated success).
     private func applyMode() async {
-        guard !applying, !applied else { return }
+        guard !applying, !applied, resolvedShipmentId > 0 else { return }
         applying = true; applyError = nil
         struct ApplyIn: Encodable {
             let intermodalShipmentId: Int
@@ -669,7 +747,7 @@ private struct RailModeOptimizationBody: View {
         do {
             let _: ApplyOut = try await EusoTripAPI.shared.mutation(
                 "intermodal.applyModeChoice",
-                input: ApplyIn(intermodalShipmentId: intermodalShipmentId,
+                input: ApplyIn(intermodalShipmentId: resolvedShipmentId,
                                chosenMode: "intermodal",
                                quotedCost: intermodalAllIn ?? 0))
             applied = true
