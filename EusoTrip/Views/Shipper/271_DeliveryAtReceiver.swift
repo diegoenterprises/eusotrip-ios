@@ -73,7 +73,7 @@ private struct AtReceiverBody: View {
                 .font(EType.body).foregroundStyle(palette.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
             Button {
-                NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "300", "loadId": loadId, "doc": "pod"])
+                NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "226", "loadId": loadId, "doc": "pod"])
             } label: {
                 Text("Open \(TransportLexicon.short(.proofOfDelivery, mode: loadMode, equipmentRaw: live.load.equipmentType)) viewer")
                     .font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)

@@ -174,7 +174,7 @@ enum MeHubCatalog {
             MeCell(icon: "rectangle.3.group",    label: "Control Tower",       action: .screen("212")),
             MeCell(icon: "location.viewfinder",  label: "Live tracking",       action: .screen("222")),
             MeCell(icon: "flame",                label: "Hot zones",           action: .screen("225")),
-            MeCell(icon: "chart.line.uptrend.xyaxis", label: "Market intelligence", action: .screen("233")),
+            MeCell(icon: "chart.line.uptrend.xyaxis", label: "Market intelligence", action: .screen("330")),
             MeCell(icon: "ferry",                label: "Port intelligence",   action: .screen("425")),
             MeCell(icon: "binoculars",           label: "Competitive intel",   action: .screen("429")),
             MeCell(icon: "magnifyingglass",      label: "Search everything",   action: .screen("392")),

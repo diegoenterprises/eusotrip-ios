@@ -488,10 +488,16 @@ private struct DispatcherAIDispatchAssistBody: View {
     }
 
     private func review() {
-        // Route to the dispatch board (401) to review the held-for-manual set.
+        // Route to the dispatch board to review the held-for-manual set.
+        // 2026-06-09 nav repair: "401" is a BROKER registry id — the
+        // dispatch RBAC guard bounced it to Home. Canonical dispatch
+        // board = "Disp401". The former "filter": "needs_review" key was
+        // dropped: no receiver reads "filter" and the kanban has no
+        // needs_review lens (it filters by cargo class only) — carrying
+        // a dead key would fabricate an affordance that doesn't exist.
         NotificationCenter.default.post(
             name: .eusoDispatchNavSwap, object: nil,
-            userInfo: ["screenId": "401", "filter": "needs_review"]
+            userInfo: ["screenId": "Disp401"]
         )
     }
 }

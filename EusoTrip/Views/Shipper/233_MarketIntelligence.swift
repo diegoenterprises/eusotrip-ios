@@ -2,6 +2,12 @@
 //  233_MarketIntelligence.swift
 //  EusoTrip — Shipper · Market Intelligence (Operations).
 //
+//  Registry id: "330" (2026-06-09 dedup — formerly mis-registered as
+//  "233", which the 231-240 system-integration series owns for the
+//  Watch Complication; the duplicate id shadowed the Watch screen).
+//  The disk number stays 233 per the iOS-numbering-vs-SVG-catalog
+//  doctrine (reconcile by purpose, never renumber working files).
+//
 //  Founder mandate 2026-05-05: web platform's Market Intelligence
 //  has commodity prices (WTI / Brent / Gold etc) — iOS Operations
 //  was rendering blank because the original implementation only

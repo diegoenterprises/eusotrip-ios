@@ -480,13 +480,11 @@
 		D2DISPV0000000000001 /* DisputeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DISPV0000000000002 /* DisputeViews.swift */; };
 		D2DLDOC0000000000001 /* DriverLoadDocUploadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DLDOC0000000000002 /* DriverLoadDocUploadView.swift */; };
 		D2DLPOD0000000000001 /* DeliveryPODCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DLPOD0000000000002 /* DeliveryPODCaptureView.swift */; };
-		D2DSP0800000000000ABDS /* 708_DispatchKanbanBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP0800000000000ACDS /* 708_DispatchKanbanBoard.swift */; };
 		D2DSP0900000000000ABDS /* 709_DispatchBulkUploadKanban.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP0900000000000ACDS /* 709_DispatchBulkUploadKanban.swift */; };
 		D2DSP1000000000000ABDS /* 710_DispatchRunTicketCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1000000000000ACDS /* 710_DispatchRunTicketCapture.swift */; };
 		D2DSP1100000000000ABDS /* 711_DispatchPriceBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1100000000000ACDS /* 711_DispatchPriceBook.swift */; };
 		D2DSP1200000000000ABDS /* 712_DispatchReportsHub.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */; };
 		D2DSP1300000000000ABDS /* Dpch713_DispatchMe.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSP1300000000000ACDS /* Dpch713_DispatchMe.swift */; };
-		D2DSPDSP0000000000000ABDS /* 700_DispatchHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSPDSP0000000000000ACDS /* 700_DispatchHome.swift */; };
 		D2DSPDSP0100000000000ABDS /* 701_DispatchDriverBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSPDSP0100000000000ACDS /* 701_DispatchDriverBoard.swift */; };
 		D2DSPDSP0200000000000ABDS /* 702_DispatchLoadAssignment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSPDSP0200000000000ACDS /* 702_DispatchLoadAssignment.swift */; };
 		D2DSPDSP0300000000000ABDS /* 703_DispatchExceptionTriage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2DSPDSP0300000000000ACDS /* 703_DispatchExceptionTriage.swift */; };
@@ -778,7 +776,7 @@
 		FFG070000000000000000000 /* 630_RailCrossDockOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFH070000000000000000000 /* 630_RailCrossDockOperations.swift */; };
 		FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */; };
 		VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = VOTMFREF1 /* VesselOceanTrackMap.swift */; };
-		FEB000000000000000000000 /* 659_VesselPortDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA000000000000000000000 /* 659_VesselPortDirectory.swift */; };
+		FEB000000000000000000000 /* 686_VesselPortDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA000000000000000000000 /* 686_VesselPortDirectory.swift */; };
 		FEB010000000000000000000 /* 666_VesselContainerTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA010000000000000000000 /* 666_VesselContainerTimeline.swift */; };
 		FEB020000000000000000000 /* 667_VesselChainOfCustody.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA020000000000000000000 /* 667_VesselChainOfCustody.swift */; };
 		FEB030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift */; };
@@ -1454,13 +1452,11 @@
 		D2DISPV0000000000002 /* DisputeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DisputeViews.swift; path = EusoTrip/Views/Components/DisputeViews.swift; sourceTree = SOURCE_ROOT; };
 		D2DLDOC0000000000002 /* DriverLoadDocUploadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverLoadDocUploadView.swift; path = EusoTrip/Views/Driver/DriverLoadDocUploadView.swift; sourceTree = SOURCE_ROOT; };
 		D2DLPOD0000000000002 /* DeliveryPODCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeliveryPODCaptureView.swift; path = EusoTrip/Views/Driver/DeliveryPODCaptureView.swift; sourceTree = SOURCE_ROOT; };
-		D2DSP0800000000000ACDS /* 708_DispatchKanbanBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 708_DispatchKanbanBoard.swift; path = EusoTrip/Views/Dispatch/708_DispatchKanbanBoard.swift; sourceTree = SOURCE_ROOT; };
 		D2DSP0900000000000ACDS /* 709_DispatchBulkUploadKanban.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 709_DispatchBulkUploadKanban.swift; path = EusoTrip/Views/Dispatch/709_DispatchBulkUploadKanban.swift; sourceTree = SOURCE_ROOT; };
 		D2DSP1000000000000ACDS /* 710_DispatchRunTicketCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 710_DispatchRunTicketCapture.swift; path = EusoTrip/Views/Dispatch/710_DispatchRunTicketCapture.swift; sourceTree = SOURCE_ROOT; };
 		D2DSP1100000000000ACDS /* 711_DispatchPriceBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 711_DispatchPriceBook.swift; path = EusoTrip/Views/Dispatch/711_DispatchPriceBook.swift; sourceTree = SOURCE_ROOT; };
 		D2DSP1200000000000ACDS /* 712_DispatchReportsHub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 712_DispatchReportsHub.swift; path = EusoTrip/Views/Dispatch/712_DispatchReportsHub.swift; sourceTree = SOURCE_ROOT; };
 		D2DSP1300000000000ACDS /* Dpch713_DispatchMe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Dpch713_DispatchMe.swift; path = EusoTrip/Views/Dispatch/Dpch713_DispatchMe.swift; sourceTree = SOURCE_ROOT; };
-		D2DSPDSP0000000000000ACDS /* 700_DispatchHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 700_DispatchHome.swift; path = EusoTrip/Views/Dispatch/700_DispatchHome.swift; sourceTree = SOURCE_ROOT; };
 		D2DSPDSP0100000000000ACDS /* 701_DispatchDriverBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 701_DispatchDriverBoard.swift; path = EusoTrip/Views/Dispatch/701_DispatchDriverBoard.swift; sourceTree = SOURCE_ROOT; };
 		D2DSPDSP0200000000000ACDS /* 702_DispatchLoadAssignment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 702_DispatchLoadAssignment.swift; path = EusoTrip/Views/Dispatch/702_DispatchLoadAssignment.swift; sourceTree = SOURCE_ROOT; };
 		D2DSPDSP0300000000000ACDS /* 703_DispatchExceptionTriage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 703_DispatchExceptionTriage.swift; path = EusoTrip/Views/Dispatch/703_DispatchExceptionTriage.swift; sourceTree = SOURCE_ROOT; };
@@ -1793,7 +1789,7 @@
 		FFH070000000000000000000 /* 630_RailCrossDockOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 630_RailCrossDockOperations.swift; sourceTree = "<group>"; };
 		FD97CECA2FC1D5120016DF5F /* 650_VesselOperatorHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 650_VesselOperatorHome.swift; sourceTree = "<group>"; };
 		VOTMFREF1 /* VesselOceanTrackMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VesselOceanTrackMap.swift; path = EusoTrip/Views/Vessel/VesselOceanTrackMap.swift; sourceTree = SOURCE_ROOT; };
-		FEA000000000000000000000 /* 659_VesselPortDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 659_VesselPortDirectory.swift; sourceTree = "<group>"; };
+		FEA000000000000000000000 /* 686_VesselPortDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 686_VesselPortDirectory.swift; sourceTree = "<group>"; };
 		FEA010000000000000000000 /* 666_VesselContainerTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 666_VesselContainerTimeline.swift; sourceTree = "<group>"; };
 		FEA020000000000000000000 /* 667_VesselChainOfCustody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 667_VesselChainOfCustody.swift; sourceTree = "<group>"; };
 		FEA030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 668_VesselIMDGHazmatManifest.swift; sourceTree = "<group>"; };
@@ -2416,7 +2412,6 @@
 				ACSC20260521000002 /* AppointmentSchedulerSheet.swift */,
 				DPTR20260521000002 /* Dpch714_DispatchTrio.swift */,
 				LBTR20260521000002 /* 340_LoadBoardTrio.swift */,
-				D2DSPDSP0000000000000ACDS /* 700_DispatchHome.swift */,
 				D2DSPNAV0000000000000ACDS /* DispatchNavController.swift */,
 				D2DSPDSP0100000000000ACDS /* 701_DispatchDriverBoard.swift */,
 				D2DSPDSP0200000000000ACDS /* 702_DispatchLoadAssignment.swift */,
@@ -2425,7 +2420,6 @@
 				D2DSPDSP0500000000000ACDS /* 705_DispatchRouteOptimization.swift */,
 				D2DSPDSP0600000000000ACDS /* 706_DispatchDriverChat.swift */,
 				D2DSPDSP0700000000000ACDS /* 707_DispatchDailyKPI.swift */,
-				D2DSP0800000000000ACDS /* 708_DispatchKanbanBoard.swift */,
 				D2DSP0900000000000ACDS /* 709_DispatchBulkUploadKanban.swift */,
 				D2DSP1000000000000ACDS /* 710_DispatchRunTicketCapture.swift */,
 				FA1F202605200003000100F9 /* 710A_DispatchConvoyComposer.swift */,
@@ -3118,7 +3112,7 @@
 				FE5C0E120000000000000000 /* 002_VesselBookingDetail.swift */,
 				FE5C0E130000000000000000 /* 003_VesselLiveTracking.swift */,
 				VOTMFREF1 /* VesselOceanTrackMap.swift */,
-				FEA000000000000000000000 /* 659_VesselPortDirectory.swift */,
+				FEA000000000000000000000 /* 686_VesselPortDirectory.swift */,
 				FEA010000000000000000000 /* 666_VesselContainerTimeline.swift */,
 				FEA020000000000000000000 /* 667_VesselChainOfCustody.swift */,
 				FEA030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift */,
@@ -3690,7 +3684,7 @@
 				FLCD2026051800000011A1 /* FMCSALookupCard.swift in Sources */,
 				FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */,
 				VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */,
-				FEB000000000000000000000 /* 659_VesselPortDirectory.swift in Sources */,
+				FEB000000000000000000000 /* 686_VesselPortDirectory.swift in Sources */,
 				FEB010000000000000000000 /* 666_VesselContainerTimeline.swift in Sources */,
 				FEB020000000000000000000 /* 667_VesselChainOfCustody.swift in Sources */,
 				FEB030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift in Sources */,
@@ -4094,7 +4088,6 @@
 				ACSC20260521000001 /* AppointmentSchedulerSheet.swift in Sources */,
 				DPTR20260521000001 /* Dpch714_DispatchTrio.swift in Sources */,
 				LBTR20260521000001 /* 340_LoadBoardTrio.swift in Sources */,
-				D2DSPDSP0000000000000ABDS /* 700_DispatchHome.swift in Sources */,
 				D2DSPNAV0000000000000ABDS /* DispatchNavController.swift in Sources */,
 				D2DSPDSP0100000000000ABDS /* 701_DispatchDriverBoard.swift in Sources */,
 				D2DSPDSP0200000000000ABDS /* 702_DispatchLoadAssignment.swift in Sources */,
@@ -4103,7 +4096,6 @@
 				D2DSPDSP0500000000000ABDS /* 705_DispatchRouteOptimization.swift in Sources */,
 				D2DSPDSP0600000000000ABDS /* 706_DispatchDriverChat.swift in Sources */,
 				D2DSPDSP0700000000000ABDS /* 707_DispatchDailyKPI.swift in Sources */,
-				D2DSP0800000000000ABDS /* 708_DispatchKanbanBoard.swift in Sources */,
 				D2DSP0900000000000ABDS /* 709_DispatchBulkUploadKanban.swift in Sources */,
 				D2DSP1000000000000ABDS /* 710_DispatchRunTicketCapture.swift in Sources */,
 				BFAD202605200003000100B9 /* 710A_DispatchConvoyComposer.swift in Sources */,

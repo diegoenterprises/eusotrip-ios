@@ -47,7 +47,7 @@ private struct AccessorialsBody: View {
             // Web peer is /detention-accessorials. iOS deep-link via
             // the Documents tab on web bridge until 274's full builder
             // ships in a future round.
-            NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "300", "loadId": loadId, "doc": "accessorials"])
+            NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "226", "loadId": loadId, "doc": "accessorials"])
         } label: {
             Text("Open accessorial builder").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                 .frame(maxWidth: .infinity).padding(.vertical, 12)

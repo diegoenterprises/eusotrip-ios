@@ -1,6 +1,11 @@
 //
-//  659_VesselPortDirectory.swift
+//  686_VesselPortDirectory.swift
 //  EusoTrip — Vessel Operator · Port Directory (542-port database).
+//
+//  Registry id: "Vesl686" (2026-06-09 dedup — formerly mis-registered
+//  as "Vesl659", which the Bunker FSC screen owns; the duplicate id
+//  shadowed Bunker FSC from the 656 Me-hub row). Disk file renamed
+//  659→686 to match. Wireframe provenance below is unchanged.
 //
 //  Verbatim port of wireframe 659 (06 Vessel · Dark). Carrier directory
 //  of ports keyed to the `ports` table (name, unlocode, city/state,

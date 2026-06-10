@@ -1197,10 +1197,13 @@ extension Notification.Name {
     /// Role-agnostic "pop one entry off the current surface's nav stack."
     /// Every non-Driver/non-Shipper role surface (Catalyst/Carrier, Broker,
     /// Escort, Terminal, Admin, Dispatch, Compliance) listens to this and
-    /// pops its own stack. Driver is tab-based (no stack) and Shipper has
-    /// `eusoShipperNavBack` already; both intentionally ignore this so
-    /// they don't pop when an unrelated leaf screen fires it. Founder
-    /// mandate 2026-05-05 — every screen needs a back button.
+    /// pops its own stack. Shipper has `eusoShipperNavBack` already and
+    /// intentionally ignores this so it doesn't pop when an unrelated
+    /// leaf screen fires it. Driver is tab-based (no stack) but — since
+    /// the 2026-06-09 push-nav repair (audit M25) — mounts the shared
+    /// `RoleDetailLayer` and listens for THIS name to clear its pushed
+    /// load-detail layer only (it never pops tabs). Founder mandate
+    /// 2026-05-05 — every screen needs a back button.
     static let eusoRoleNavBack = Notification.Name("eusoRoleNavBack")
 }
 

@@ -75,7 +75,7 @@ private struct BolFinalBody: View {
     private var ctaRow: some View {
         HStack(spacing: 10) {
             Button {
-                NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "300", "loadId": loadId, "doc": "bol"])
+                NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "226", "loadId": loadId, "doc": "bol"])
             } label: {
                 Text("Open \(TransportLexicon.short(.billOfLading, mode: loadMode, equipmentRaw: live.load.equipmentType))").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)

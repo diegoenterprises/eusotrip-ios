@@ -76,6 +76,20 @@ enum CarrierNavRoute {
         "catalyst":        "500",
         "catalyst home":   "500",
         "match detail":    "502",
+        // 2026-06-09 alias sweep (audit M24): ~140 catalyst/carrier
+        // screens carry legacy SVG slot labels with no map entry, which
+        // made those BottomNav slots silent dead-taps (the dispatcher's
+        // `guard let` returns). Alias the verbatim labels onto registered
+        // screens in the carrier+catalyst pool (CarrierSurface looks up
+        // .carrier first, then .catalyst — ids below resolve as noted):
+        "dispatch": "303",      // Carrier · Dispatch Board (57 catalyst files)
+        "wallet":   "312",      // Carrier · Earnings home (44 files)
+        "fleet":    "320",      // Carrier · Vehicles List (20 files)
+        "my loads": "301",      // Carrier · Loads board (12 files)
+        "bids":     "308",      // Carrier · My Bids (16 carrier files)
+        "network":  "304",      // Carrier · Drivers (person.2 hub; 500-trio)
+        "match":    "501",      // Catalyst · Matches (SpectraMatch board)
+        "find":     "341",      // Catalyst · Find Loads (341's own slot)
     ]
 
     /// `BottomNav` emits the orb tap as `"esang"`.

@@ -48,6 +48,13 @@ enum BrokerNavRoute {
         "loads":    "401",
         "carriers": "402b",
         "me":       "404B",
+        // 2026-06-09 alias sweep (audit M23): the 2nd broker slot is
+        // LABELED "Tenders" on all 3 broker chrome screens but the map
+        // only keyed "loads" — the slot was a silent no-op since the
+        // 2026-05-30 IA recon flagged it. Both labels resolve to the
+        // canonical Tenders board 401 (a BrokerSurface tabRoot, so the
+        // tap performs a proper tab reset).
+        "tenders":  "401",
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

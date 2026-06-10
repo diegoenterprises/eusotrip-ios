@@ -33,14 +33,20 @@ extension Notification.Name {
 /// SLA feed — the closest surface to a ticket queue today; an
 /// EusoTicket-branded admin work-ticket board can land later under
 /// 804+ and this map will pick it up). `Tenants` resolves to 802
-/// Tenants list. `Me` routes to 800 home until the admin Me brick
-/// lands.
+/// Tenants list. `Me` routes to the dedicated 804 Admin Me hub
+/// (comment re-verified against shipped code 2026-06-09; an older
+/// revision said Me collapsed onto 800 Home).
 enum AdminNavRoute {
     static let map: [String: String] = [
         "home":    "800",
         "tickets": "801",
         "tenants": "802",
         "me":      "804",
+        // 2026-06-09 alias sweep (audit M24 / Wave-11 minors): 801's
+        // own chrome labels its slot "Tower" (Control Tower) — no map
+        // entry made it a silent dead-tap. Self-alias onto the
+        // registered 801 so the tap performs a proper tab reset.
+        "tower":   "801",
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

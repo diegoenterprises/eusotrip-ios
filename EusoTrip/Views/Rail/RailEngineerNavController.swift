@@ -34,6 +34,13 @@ enum RailEngineerNavRoute {
         "shipments":  "Rail551",
         "compliance": "Rail552",
         "me":         "Rail556",
+        // 2026-06-09 alias sweep (audit M24 / Wave-11 minors): the
+        // engineer-pool port Rail005 (Waybill) carries the legacy SVG
+        // slot labels "Loads" / "Wallet" — no map entry made those
+        // slots silent dead-taps. Alias the verbatim labels onto
+        // registered engineer screens (labels are wireframe-verbatim).
+        "loads":      "Rail551",   // Rail Engineer · Shipments board
+        "wallet":     "Rail581",   // Rail Engineer · Settlement Summary
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]

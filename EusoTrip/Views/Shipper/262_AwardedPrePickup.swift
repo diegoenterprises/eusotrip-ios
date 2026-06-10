@@ -122,9 +122,12 @@ private struct AwardedBody: View {
     }
 
     private func openContract() {
+        // 2026-06-09 nav repair: was "300" (DocumentsAll) - the 300-309
+        // cluster is unregistered (retired orphans), so RBAC bounced this
+        // CTA to Home. 226 ShipperDocumentCenter is the canonical surface.
         NotificationCenter.default.post(
             name: .eusoShipperNavSwap, object: nil,
-            userInfo: ["screenId": "300", "loadId": loadId]
+            userInfo: ["screenId": "226", "loadId": loadId]
         )
     }
 

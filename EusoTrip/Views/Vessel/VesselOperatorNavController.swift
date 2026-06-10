@@ -34,6 +34,13 @@ enum VesselOperatorNavRoute {
         "shipments":  "Vesl651",
         "compliance": "Vesl652",
         "me":         "Vesl656",
+        // 2026-06-09 alias sweep (audit M24 / Wave-11 minors): the
+        // operator-pool ports Vesl008/Vesl009 carry the legacy SVG
+        // slot labels "Loads" / "Track" — no map entry made those
+        // slots silent dead-taps. Alias the verbatim labels onto
+        // registered operator screens (labels are wireframe-verbatim).
+        "loads":      "Vesl651",   // Vessel Operator · Shipments board
+        "track":      "Vesl660",   // Vessel · Live Position
     ]
 
     static let orbLabels: Set<String> = ["esang", "orb"]
