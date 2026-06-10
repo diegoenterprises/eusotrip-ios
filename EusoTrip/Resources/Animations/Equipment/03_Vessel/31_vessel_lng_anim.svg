@@ -117,6 +117,32 @@
       0%, 100% { opacity: 0.55; }
       50%      { opacity: 0.78; }
     }
+    /* ========== BOIL-OFF STORY (the LNG hero identity) ==========
+       Cargo at −162 °C continuously boils off (~0.10–0.15 %/day). A modern
+       carrier does NOT vent it: the BOG header collects vapor off the tank
+       domes and feeds it AFT to the engines as fuel (or reliquefaction).
+       Visual: faint cold wisps form at the domes, the BOG header line marches
+       aft (dashoffset crawl), and the funnel shows the burn shimmer. */
+    .bog-wisp-1 { animation: bog-wisp 4.2s ease-out infinite; }
+    .bog-wisp-2 { animation: bog-wisp 4.2s ease-out -1.4s infinite; }
+    .bog-wisp-3 { animation: bog-wisp 4.2s ease-out -2.8s infinite; }
+    @keyframes bog-wisp {
+      0%   { transform: translate(0,0) scale(0.7);    opacity: 0; }
+      30%  { opacity: 0.28; }
+      100% { transform: translate(6px,-14px) scale(1.25); opacity: 0; }
+    }
+    .bog-march { animation: bog-march 1.6s linear infinite; }
+    @keyframes bog-march {
+      0%   { stroke-dashoffset: 14; }
+      100% { stroke-dashoffset: 0; }
+    }
+    .stack-haze-1 { animation: stack-haze 3.4s ease-out infinite; }
+    .stack-haze-2 { animation: stack-haze 3.4s ease-out -1.7s infinite; }
+    @keyframes stack-haze {
+      0%   { transform: translate(0,0) scale(0.6);      opacity: 0; }
+      25%  { opacity: 0.30; }
+      100% { transform: translate(26px,-22px) scale(1.5); opacity: 0; }
+    }
     /* ========== BRAND LOCKUP ========== */
     .brand-mark {
       transform-box: fill-box; transform-origin: center;
@@ -138,7 +164,9 @@
       .wake-1, .wake-2, .wake-3, .wake-4,
       .sheen-band, .wordmark-breath, .badge-pulse, .chevron-pulse,
       .sky-drift, .bridge-window-pulse, .antenna-blink,
-      .bow-pulse, .draft-fade, .brand-mark, .brand-word { animation: none !important; }
+      .bow-pulse, .draft-fade, .brand-mark, .brand-word,
+      .bog-wisp-1, .bog-wisp-2, .bog-wisp-3, .bog-march,
+      .stack-haze-1, .stack-haze-2 { animation: none !important; }
     }
   
     /* ========== DARK-MODE OVERRIDES (2026-05-16) ========== */
@@ -216,6 +244,14 @@
     <line x1="118" y1="395" x2="125" y2="465" stroke="#0AC2C2" stroke-width="2" opacity="0.7"/>
     <g transform="translate(135 425)"><line x1="0" y1="0" x2="0" y2="14" stroke="#0AC2C2" stroke-width="1.5"/><path d="M -4 12 L 4 12 L 0 18 Z" fill="#0AC2C2" opacity="0.9"/></g>
     <circle cx="148" cy="448" r="5" fill="#0F1320" stroke="#3A4258" stroke-width="1"/>
+    <!-- Bow draft marks (metres) — the loaded waterline reads against the
+         ladder; breathes with the swell shimmer (.draft-fade). -->
+    <g class="draft-fade" font-family="Inter, system-ui, sans-serif" font-weight="700"
+       font-size="6" fill="#FFFFFF">
+      <text x="170" y="444" text-anchor="start">11M</text><line x1="162" y1="442" x2="167" y2="442" stroke="#FFFFFF" stroke-width="1"/>
+      <text x="170" y="456" text-anchor="start">10M</text><line x1="162" y1="454" x2="167" y2="454" stroke="#FFFFFF" stroke-width="1"/>
+      <text x="170" y="468" text-anchor="start">9M</text><line x1="162" y1="466" x2="167" y2="466" stroke="#FFFFFF" stroke-width="1"/>
+    </g>
   </g>
 
   <!-- Deck strip -->
@@ -313,6 +349,34 @@
     <circle cx="800" cy="265" r="2"/><circle cx="220" cy="180" r="2"/><circle cx="430" cy="170" r="2.5"/>
     <circle cx="640" cy="190" r="2"/><circle cx="780" cy="200" r="2"/>
   </g>
+
+  <!-- ========== BOIL-OFF GAS MANAGEMENT (no venting — BOG burns as fuel) ==========
+       Header pipe collects vapor off the three forward tank domes and runs AFT
+       to the engine room under the funnel; the dash march shows gas flow. -->
+  <g>
+    <!-- BOG header: dome risers + aft run to the engine intake -->
+    <g stroke="#5A8FA8" stroke-width="2" fill="none" opacity="0.8">
+      <line x1="290" y1="173" x2="290" y2="160"/>
+      <line x1="500" y1="173" x2="500" y2="160"/>
+      <line x1="710" y1="173" x2="710" y2="160"/>
+      <path d="M 290 160 L 710 160 L 905 160 L 940 200 L 952 232"/>
+    </g>
+    <path class="bog-march" d="M 290 160 L 710 160 L 905 160 L 940 200 L 952 232"
+          fill="none" stroke="#7FE6E6" stroke-width="1.4" stroke-dasharray="8 6" opacity="0.85"/>
+    <text x="816" y="154" font-family="Inter, system-ui, sans-serif" font-weight="800"
+          font-size="7" fill="#5A8FA8" letter-spacing="1">BOG &#8594; FUEL GAS</text>
+    <!-- Cold wisps forming at the tank domes -->
+    <g filter="url(#smokeBlur)">
+      <ellipse class="bog-wisp-1" cx="290" cy="168" rx="7" ry="3.5" fill="#BFEFF5"/>
+      <ellipse class="bog-wisp-2" cx="500" cy="168" rx="7" ry="3.5" fill="#BFEFF5"/>
+      <ellipse class="bog-wisp-3" cx="710" cy="168" rx="7" ry="3.5" fill="#BFEFF5"/>
+    </g>
+    <!-- Burn shimmer at the funnel (the BOG being consumed) -->
+    <g filter="url(#smokeBlur)">
+      <ellipse class="stack-haze-1" cx="966" cy="188" rx="10" ry="5" fill="#9FC4D8"/>
+      <ellipse class="stack-haze-2" cx="970" cy="186" rx="8" ry="4" fill="#9FC4D8"/>
+    </g>
+  </g>
   
   <!-- ============================================================
        COUNTRY-SWITCHABLE HAZMAT MARKING  (regulated cargo: LNG)
@@ -375,8 +439,8 @@
   <!-- ========== BOW SPRAY MIST ========== -->
   <g filter="url(#foamBlur)" opacity="0.6">
     <circle class="bow-spray" cx="115" cy="455" r="5" fill="#FFFFFF"/>
-    <circle class="bow-spray" cx="118" cy="450" r="4" fill="#FFFFFF" style="animation-delay:-0.5s"/>
-    <circle class="bow-spray" cx="112" cy="458" r="3" fill="#FFFFFF" style="animation-delay:-1s"/>
+    <circle class="bow-spray" cx="118" cy="450" r="4" fill="#FFFFFF" style="animation: bow-spray 1.6s ease-out -0.5s infinite"/>
+    <circle class="bow-spray" cx="112" cy="458" r="3" fill="#FFFFFF" style="animation: bow-spray 1.6s ease-out -1s infinite"/>
   </g>
 
   <!-- ========== EUSOTRIP BRAND LOCKUP ========== -->

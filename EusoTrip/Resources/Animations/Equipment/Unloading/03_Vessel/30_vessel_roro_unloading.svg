@@ -26,47 +26,109 @@
       0%, 100% { opacity: 0.85; transform: scale(1); }
       50%      { opacity: 1;    transform: scale(1.04); }
     }
-    .progress-fill { transition: width 0.4s ease-out; }
+    /* .progress-fill — live scaleX(var(--load-progress)) data channel (attr transform); no decorative motion. */
     .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
     @keyframes chevron-pulse {
       0%, 100% { opacity: 0.3; }
       50%      { opacity: 0.65; }
     }
     /* ============ CARGO HANDLING MOTION ============
-       RO-RO DISCHARGE: a port driver brought aboard picks a vehicle and drives
-       it OFF under its own power. It emerges from the deck-5 opening (LEFT,
-       high on the ramp), rolls DOWN the inclined stern ramp (descending = +Y,
-       ramp slope ~0.35) to the dock, then drives away RIGHT toward the
-       marshalling yard. Linear creep models the steady controlled descent;
-       the car fades in as it clears the opening and fades out leaving frame. */
-    .auto-drive { animation: auto-drive 5.4s linear infinite; opacity: 0; }
+       RO-RO DISCHARGE — the real port sequence, in the real order:
+         1. STERN-RAMP DEPLOY (one-shot, 0–4.5 s): the quarter ramp swings down
+            from the hull aperture about its hinge (540,470) and seats on the
+            dock. Nothing rolls until it lands; support pendants tension after.
+         2. LASHING RELEASE on the cargo deck: crews un-ratchet and strip the
+            web lashings BEFORE any unit moves (the release stroke runs
+            continuously while the column discharges).
+         3. Port drivers take each unit DOWN the ramp under its own power —
+            constant controlled creep, single file, 1.8 s headway, one lane —
+            then away RIGHT toward the marshalling yard.
+         4. The signalman keeps the lane clear and waves each unit out.
+       ENGINE NOTES: transform/opacity beats only; per-element delays live
+       INSIDE the animation shorthand (the engine reads only the shorthand);
+       fade classes carry NO static opacity decl — the engine multiplies
+       keyframed opacity into the static value, so a static 0 would hide the
+       element for the whole cycle (frame-0 opacity covers the pre-delay hold);
+       precise pivots use transform-box: view-box (origin = literal local px). */
+    .ramp-deploy { transform-box: view-box; transform-origin: 540px 470px;
+                   animation: ramp-deploy 4.5s cubic-bezier(0.33,0,0.2,1) 1; }
+    @keyframes ramp-deploy {
+      0%   { transform: rotate(-22deg); }   /* stowed up against the aperture */
+      82%  { transform: rotate(1.4deg); }   /* swings past level… */
+      100% { transform: rotate(0deg); }     /* …and seats on the dock */
+    }
+    .ramp-cables { animation: ramp-cables 1.2s ease-out 4.5s 1; }
+    @keyframes ramp-cables {
+      0%   { opacity: 0; }                  /* slack while the hydraulics lower */
+      100% { opacity: 1; }                  /* pendants take the static load */
+    }
+    /* Discharge column: shared path, positive shorthand delays — the first
+       unit rolls only after the ramp seats; 1.8 s headway thereafter. */
+    .auto-drive-car1 { animation: auto-drive 5.4s linear 4.8s infinite; }
+    .auto-drive-car2 { animation: auto-drive 5.4s linear 6.6s infinite; }
+    .auto-drive-car3 { animation: auto-drive 5.4s linear 8.4s infinite; }
     @keyframes auto-drive {
       0%   { transform: translate(-178px, -96px); opacity: 0; }  /* still inside the car deck */
       8%   { transform: translate(-160px, -90px); opacity: 1; }  /* clears ship opening (x=540) */
       60%  { transform: translate(100px, 0px);   opacity: 1; }  /* down the ramp to its foot (x=800) */
       82%  { transform: translate(260px, 0px);   opacity: 1; }  /* rolling out across the dock */
-      92%  { transform: translate(300px, 0px);   opacity: 0; }  /* away to the yard, off-screen right */
+      92%  { transform: translate(300px, 0px);   opacity: 0; }  /* away to the marshalling yard */
       100% { transform: translate(300px, 0px);   opacity: 0; }
+    }
+    /* Lash-release stroke: the un-ratchet swing (reverse of the loading
+       ratchet) — elbow pivot at each figure's local 0,0. */
+    .lash-release { transform-box: view-box; transform-origin: 0px 0px;
+                    animation: lash-release 1.1s ease-in-out infinite alternate; }
+    @keyframes lash-release {
+      0%   { transform: rotate(9deg); }
+      100% { transform: rotate(-22deg); }
+    }
+    /* Stripped lashing: goes slack against the deck as the release runs. */
+    .lash-slack { animation: lash-slack 2.2s ease-in-out infinite; }
+    @keyframes lash-slack {
+      0%, 45%   { opacity: 0.9; }
+      70%, 100% { opacity: 0.25; }
+    }
+    /* Signalman: continuous "come ahead, keep it moving" wave (local 10,-8). */
+    .signal-wave { transform-box: view-box; transform-origin: 10px -8px;
+                   animation: signal-wave 1.4s ease-in-out infinite alternate; }
+    @keyframes signal-wave {
+      0%   { transform: rotate(-8deg); }
+      100% { transform: rotate(14deg); }
+    }
+    .signal-wand { animation: signal-wand 1.4s ease-in-out infinite alternate; }
+    @keyframes signal-wand {
+      0%   { opacity: 0.55; }
+      100% { opacity: 1; }
     }
 
     @media (prefers-reduced-motion: reduce) {
-      .auto-drive,
+      .auto-drive-car1, .auto-drive-car2, .auto-drive-car3,
       .brand-lockup,
       .brand-mark,
       .brand-word,
       .chevron,
+      .lash-release,
+      .lash-slack,
       .load-pill,
       .progress-fill,
+      .ramp-cables,
+      .ramp-deploy,
+      .signal-wand,
+      .signal-wave,
       .sky-shimmer {
         animation: none !important;
       }
-      /* Park one vehicle, fully visible, partway down the ramp so the discharge
-         story still reads as a calm still frame instead of vanishing. */
-      .auto-drive {
+      /* Calm pose: ramp seated, pendants taut, lashings shown mid-release,
+         ONE vehicle parked fully visible partway down the ramp so the
+         discharge story still reads as a calm still frame. */
+      .ramp-cables { opacity: 1 !important; }
+      .lash-slack  { opacity: 0.6 !important; }
+      .auto-drive-car1 {
         opacity: 1 !important;
         transform: translate(-30px, -42px) !important;
       }
-      .auto-drive ~ .auto-drive { opacity: 0 !important; }
+      .auto-drive-car2, .auto-drive-car3 { opacity: 0 !important; }
     }
 
   ]]></style>
@@ -240,8 +302,10 @@
     <text x="376" y="376" text-anchor="middle" font-family="Inter, system-ui, sans-serif"
           font-weight="900" font-size="6" fill="#FFD23A" letter-spacing="0.6">STERN RAMP · DECK 5</text>
   </g>
-  <!-- Stern ramp dropped from ship deck to dock -->
+  <!-- Stern quarter ramp — deploys ONE-SHOT from the hull aperture (hinge at
+       540,470) and seats on the dock before any vehicle rolls. -->
   <g filter="url(#rigShadow)">
+   <g class="ramp-deploy">
     <polygon points="540,470 540,380 800,470 800,478" fill="#5A606D"/>
     <polygon points="540,470 540,380 800,470 800,478" fill="#FFFFFF" opacity="0.3"/>
     <g stroke="#FFD200" stroke-width="2" stroke-dasharray="14 8" opacity="0.85">
@@ -264,8 +328,13 @@
       <text class="country-MX" x="690" y="442" style="display:none">MÁX 63 t · 1 CARRIL</text>
       <text class="country-CA" x="690" y="442" style="display:none">MAX 63 t · 1 LANE</text>
     </g>
-    <line x1="540" y1="380" x2="380" y2="184" stroke="#1A1F2E" stroke-width="1.4" opacity="0.7"/>
-    <line x1="540" y1="380" x2="450" y2="184" stroke="#1A1F2E" stroke-width="1.4" opacity="0.5"/>
+   </g>
+    <!-- Support pendants — slack while the hydraulics lower the ramp, then
+         fade in as they take the static load (one-shot, after deploy). -->
+    <g class="ramp-cables">
+      <line x1="540" y1="380" x2="380" y2="184" stroke="#1A1F2E" stroke-width="1.4" opacity="0.7"/>
+      <line x1="540" y1="380" x2="450" y2="184" stroke="#1A1F2E" stroke-width="1.4" opacity="0.5"/>
+    </g>
   </g>
   <!-- Dock bollards along approach -->
   <g fill="#FFD200" stroke="#1A1F2E" stroke-width="0.6">
@@ -273,8 +342,9 @@
     <rect x="844" y="466" width="6" height="14" rx="1"/>
     <rect x="872" y="466" width="6" height="14" rx="1"/>
   </g>
-  <!-- Loadmaster figure -->
-  <g transform="translate(900 466)" filter="url(#rigShadow)">
+  <!-- SIGNALMAN (loadmaster) — hi-vis, stands CLEAR of the discharge lane in
+       the dock foreground and waves each unit out toward the yard. -->
+  <g transform="translate(880 510)" filter="url(#rigShadow)">
     <rect x="-7" y="14" width="6" height="16" fill="#1B2840"/>
     <rect x="1"  y="14" width="6" height="16" fill="#1B2840"/>
     <path d="M -10 -10 Q -10 -14 -7 -14 L 7 -14 Q 10 -14 10 -10 L 10 14 L -10 14 Z"
@@ -282,8 +352,12 @@
     <rect x="-11" y="2" width="22" height="2" fill="#FFFFFF" opacity="0.85"/>
     <circle cx="0" cy="-20" r="5" fill="#D9A878"/>
     <path d="M -6 -22 Q -6 -28 0 -28 Q 6 -28 6 -22 L 7 -19 L -7 -19 Z" fill="#F1F4F9" stroke="#1A1F2E" stroke-width="0.4"/>
-    <line x1="10" y1="-8" x2="22" y2="-22" stroke="#FF8A1F" stroke-width="4" stroke-linecap="round"/>
-    <circle cx="22" cy="-22" r="3" fill="#D9A878"/>
+    <!-- waving arm + marshalling wand (continuous "keep it moving" signal) -->
+    <g class="signal-wave">
+      <line x1="10" y1="-8" x2="22" y2="-22" stroke="#FF8A1F" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="22" cy="-22" r="3" fill="#D9A878"/>
+      <line class="signal-wand" x1="23" y1="-23" x2="31" y2="-34" stroke="#FF4D2E" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
   </g>
     <!-- Static cars on deck (always visible anchors) -->
   <g data-fix="roro-static-cars" opacity="0.95">
@@ -294,8 +368,48 @@
       <g transform="translate(440 320)"><rect x="-26" y="-12" width="52" height="20" rx="3" fill="#3DA86F"/><rect x="-18" y="-20" width="36" height="10" rx="2" fill="#7E9DDB" opacity="0.85"/><circle cx="-16" cy="10" r="5"/><circle cx="16" cy="10" r="5"/></g>
     </g>
   </g>
-  <!-- Vehicles driven OFF the ship single-file, down the stern ramp to the dock -->
-  <g class="auto-drive">
+  <!-- ON-DECK LASHING RELEASE — crews strip the web lashings BEFORE the units
+       roll: the un-ratchet stroke runs while each stripped lashing goes slack
+       (opacity falls), reading as gear coming OFF the parked column. -->
+  <g data-fix="roro-unlash-crew">
+    <!-- lashings mid-release: car sill → deck D-ring, going slack -->
+    <g class="lash-slack" stroke="#FFD200" stroke-width="1.6">
+      <line x1="200" y1="316" x2="188" y2="330"/>
+      <line x1="240" y1="316" x2="252" y2="330"/>
+      <line x1="310" y1="316" x2="298" y2="330"/>
+    </g>
+    <g fill="none" stroke="#9AA1AC" stroke-width="1">
+      <circle cx="188" cy="331" r="1.8"/>
+      <circle cx="252" cy="331" r="1.8"/>
+      <circle cx="298" cy="331" r="1.8"/>
+    </g>
+    <!-- releaser A: un-ratcheting car 2's lashing (elbow at local 0,0) -->
+    <g transform="translate(180 322)">
+      <rect x="-13" y="6" width="10" height="4" rx="1" fill="#1B2840"/>
+      <rect x="-11" y="-7" width="9" height="15" rx="2" fill="#FF8A1F" stroke="#1A1F2E" stroke-width="0.4"/>
+      <circle cx="-7" cy="-11" r="3.5" fill="#D9A878"/>
+      <path d="M -11 -12 Q -11 -16 -7 -16 Q -3 -16 -3 -12 Z" fill="#F1F4F9" stroke="#1A1F2E" stroke-width="0.3"/>
+      <g class="lash-release">
+        <line x1="0" y1="0" x2="11" y2="-5" stroke="#FF8A1F" stroke-width="3" stroke-linecap="round"/>
+        <line x1="11" y1="-5" x2="18" y2="-9" stroke="#5A606D" stroke-width="2" stroke-linecap="round"/>
+      </g>
+    </g>
+    <!-- releaser B: un-ratcheting car 3's lashing (elbow at local 0,0) -->
+    <g transform="translate(290 322)">
+      <rect x="-13" y="6" width="10" height="4" rx="1" fill="#1B2840"/>
+      <rect x="-11" y="-7" width="9" height="15" rx="2" fill="#FF8A1F" stroke="#1A1F2E" stroke-width="0.4"/>
+      <circle cx="-7" cy="-11" r="3.5" fill="#D9A878"/>
+      <path d="M -11 -12 Q -11 -16 -7 -16 Q -3 -16 -3 -12 Z" fill="#F1F4F9" stroke="#1A1F2E" stroke-width="0.3"/>
+      <g class="lash-release">
+        <line x1="0" y1="0" x2="11" y2="-5" stroke="#FF8A1F" stroke-width="3" stroke-linecap="round"/>
+        <line x1="11" y1="-5" x2="18" y2="-9" stroke="#5A606D" stroke-width="2" stroke-linecap="round"/>
+      </g>
+    </g>
+  </g>
+  <!-- Vehicles driven OFF single-file, down the ramp to the dock — first unit
+       rolls only AFTER the ramp seats (positive shorthand delays), 1.8 s
+       headway, one lane, then away right toward the marshalling yard. -->
+  <g class="auto-drive-car1">
     <g transform="translate(700 460)">
       <rect x="-50" y="-22" width="100" height="32" rx="6" fill="#1473FF"/>
       <rect x="-30" y="-32" width="60" height="14" rx="3" fill="#7E9DDB" opacity="0.85"/>
@@ -303,7 +417,7 @@
       <circle cx="30"  cy="14" r="8" fill="#1A1A1A"/>
     </g>
   </g>
-  <g class="auto-drive" style="animation-delay:-1.2s">
+  <g class="auto-drive-car2">
     <g transform="translate(700 460)">
       <rect x="-50" y="-22" width="100" height="32" rx="6" fill="#E5350D"/>
       <rect x="-30" y="-32" width="60" height="14" rx="3" fill="#7E9DDB" opacity="0.85"/>
@@ -311,13 +425,21 @@
       <circle cx="30"  cy="14" r="8" fill="#1A1A1A"/>
     </g>
   </g>
-  <g class="auto-drive" style="animation-delay:-2.4s">
+  <g class="auto-drive-car3">
     <g transform="translate(700 460)">
       <rect x="-50" y="-22" width="100" height="32" rx="6" fill="#3DA86F"/>
       <rect x="-30" y="-32" width="60" height="14" rx="3" fill="#7E9DDB" opacity="0.85"/>
       <circle cx="-30" cy="14" r="8" fill="#1A1A1A"/>
       <circle cx="30"  cy="14" r="8" fill="#1A1A1A"/>
     </g>
+  </g>
+  <!-- Marshalling-yard read at the dock exit: lane arrow + yard stencil the
+       discharged units drive toward (static — the yard holds what lands). -->
+  <g opacity="0.8">
+    <text x="1132" y="500" text-anchor="end" font-family="Inter, system-ui, sans-serif"
+          font-weight="900" font-size="8" fill="#5A606D" letter-spacing="1.2">MARSHALLING YARD</text>
+    <path d="M 1138 497 L 1152 497 M 1146 491 L 1154 497 L 1146 503" fill="none"
+          stroke="#5A606D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 
 
@@ -987,9 +1109,15 @@
 
   <g>
     <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.6"/>
-    <rect class="progress-fill" x="60" y="555" width="540" height="6" rx="3"
-          fill="#F2B27A"
-          style="--load-progress: 0.5;"/>
+    <!-- LIVE PROGRESS CHANNEL: the host feeds the load-progress CSS var (0…1,
+         BindableEquipmentAnimation cssVars) and the fill scales from its left
+         edge via scaleX(var()). The 0.5 fallback matches this document's baked
+         50% sample state; the runtime overrides it with the real lifecycle
+         percent. -->
+    <g transform="translate(60 555)">
+      <rect class="progress-fill" transform="scaleX(var(--load-progress, 0.5))"
+            x="0" y="0" width="1080" height="6" rx="3" fill="#F2B27A"/>
+    </g>
     <text x="1140" y="548" text-anchor="end"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="10" letter-spacing="1.4"

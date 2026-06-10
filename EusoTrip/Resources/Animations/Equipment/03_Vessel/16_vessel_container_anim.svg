@@ -316,8 +316,8 @@
   <!-- BOW SPRAY MIST — wisps rising up and back from bow -->
   <g filter="url(#foamBlur)" opacity="0.6">
     <circle class="bow-spray" cx="115" cy="455" r="5" fill="#FFFFFF"/>
-    <circle class="bow-spray" cx="118" cy="450" r="4" fill="#FFFFFF" style="animation-delay:-0.5s"/>
-    <circle class="bow-spray" cx="112" cy="458" r="3" fill="#FFFFFF" style="animation-delay:-1s"/>
+    <circle class="bow-spray" cx="118" cy="450" r="4" fill="#FFFFFF" style="animation: bow-spray 1.6s ease-out -0.5s infinite"/>
+    <circle class="bow-spray" cx="112" cy="458" r="3" fill="#FFFFFF" style="animation: bow-spray 1.6s ease-out -1s infinite"/>
   </g>
 
   <!-- ========== VESSEL — wraps in hull-pitch + hull-roll ========== -->
@@ -421,9 +421,9 @@
                 <text x="11" y="3.6" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="3.2" fill="#1A1F2E">33</text>
                 <text x="11" y="8.2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="3.2" fill="#1A1F2E">1203</text>
               </g>
-              <g class="country-US"><text x="0" y="26" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3.2" fill="#FFFFFF" opacity="0.85">US 49 CFR</text></g>
-              <g class="country-MX" style="display:none"><text x="0" y="26" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3.2" fill="#FFFFFF" opacity="0.85">MX NOM-003</text></g>
-              <g class="country-CA" style="display:none"><text x="0" y="26" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3.2" fill="#FFFFFF" opacity="0.85">CA TDG</text></g>
+              <g class="country-US"><text x="0" y="26" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3.2" fill="#FFFFFF" opacity="0.85">US 49 CFR &#183; DOT/PHMSA</text><text x="0" y="30.6" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3" fill="#FFD23A" opacity="0.85">CHEMTREC 1-800-424-9300</text></g>
+              <g class="country-MX" style="display:none"><text x="0" y="26" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3.2" fill="#FFFFFF" opacity="0.85">MX SCT NOM-002/003</text><text x="0" y="30.6" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3" fill="#FFD23A" opacity="0.85">SETIQ 800-002-1400</text></g>
+              <g class="country-CA" style="display:none"><text x="0" y="26" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3.2" fill="#FFFFFF" opacity="0.85">CA TDG SOR/2001-286</text><text x="0" y="30.6" font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="3" fill="#FFD23A" opacity="0.85">CANUTEC 1-888-CAN-UTEC</text></g>
             </g>
           </g>
           <!-- Bay 4 -->

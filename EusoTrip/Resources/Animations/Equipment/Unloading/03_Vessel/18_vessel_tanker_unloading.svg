@@ -26,7 +26,7 @@
       0%, 100% { opacity: 0.85; transform: scale(1); }
       50%      { opacity: 1;    transform: scale(1.04); }
     }
-    .progress-fill { transition: width 0.4s ease-out; }
+    /* .progress-fill — live scaleX(var(--load-progress)) data channel (attr transform); no decorative motion. */
     .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
     @keyframes chevron-pulse {
       0%, 100% { opacity: 0.3; }
@@ -385,15 +385,15 @@
     </g>
     <!-- Directional chevron arrows (point shore-ward, up-left) rippling along arm 2 -->
     <g fill="#FFFFFF">
-      <path class="chev-flow" style="animation-delay:0s"    d="M 567 334 L 555 340 L 559 332 L 563 338 Z"/>
-      <path class="chev-flow" style="animation-delay:-0.35s" d="M 492 290 L 480 296 L 484 288 L 488 294 Z"/>
-      <path class="chev-flow" style="animation-delay:-0.7s"  d="M 427 246 L 415 252 L 419 244 L 423 250 Z"/>
+      <path class="chev-flow" style="animation: chev-flow 1.4s ease-in-out 0s infinite"    d="M 567 334 L 555 340 L 559 332 L 563 338 Z"/>
+      <path class="chev-flow" style="animation: chev-flow 1.4s ease-in-out -0.35s infinite" d="M 492 290 L 480 296 L 484 288 L 488 294 Z"/>
+      <path class="chev-flow" style="animation: chev-flow 1.4s ease-in-out -0.7s infinite"  d="M 427 246 L 415 252 L 419 244 L 423 250 Z"/>
     </g>
     <!-- Vapour-balance chevrons (arm 4, amber) -->
     <g fill="#FFD23A">
-      <path class="chev-flow" style="animation-delay:-0.2s" d="M 617 370 L 605 376 L 609 368 L 613 374 Z"/>
-      <path class="chev-flow" style="animation-delay:-0.55s" d="M 537 326 L 525 332 L 529 324 L 533 330 Z"/>
-      <path class="chev-flow" style="animation-delay:-0.9s" d="M 457 254 L 445 260 L 449 252 L 453 258 Z"/>
+      <path class="chev-flow" style="animation: chev-flow 1.4s ease-in-out -0.2s infinite" d="M 617 370 L 605 376 L 609 368 L 613 374 Z"/>
+      <path class="chev-flow" style="animation: chev-flow 1.4s ease-in-out -0.55s infinite" d="M 537 326 L 525 332 L 529 324 L 533 330 Z"/>
+      <path class="chev-flow" style="animation: chev-flow 1.4s ease-in-out -0.9s infinite" d="M 457 254 L 445 260 L 449 252 L 453 258 Z"/>
     </g>
 
     <!-- ARM 4 — VAPOR RECOVERY arm (shortest reach, yellow safety bands) -->
@@ -1525,9 +1525,15 @@
 
   <g>
     <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.9"/>
-    <rect class="progress-fill" x="60" y="555" width="540" height="6" rx="3"
-          fill="#0AC2C2"
-          data-progress="0.5"/>
+    <!-- LIVE PROGRESS CHANNEL: the host feeds the load-progress CSS var (0…1,
+         BindableEquipmentAnimation cssVars) and the fill scales from its left
+         edge via scaleX(var()). The 0.5 fallback matches this document's baked
+         50% sample state; the runtime overrides it with the real lifecycle
+         percent. -->
+    <g transform="translate(60 555)">
+      <rect class="progress-fill" transform="scaleX(var(--load-progress, 0.5))"
+            x="0" y="0" width="1080" height="6" rx="3" fill="#0AC2C2"/>
+    </g>
     <text x="1140" y="548" text-anchor="end"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="10" letter-spacing="1.4"

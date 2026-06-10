@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" data-state="loading">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 600" width="1200" height="600" data-state="loading" data-country-exempt="true">
   <style><![CDATA[
 
     /* ============ FOUNDATION MOTION VOCAB ============ */
@@ -26,7 +26,7 @@
       0%, 100% { opacity: 0.85; transform: scale(1); }
       50%      { opacity: 1;    transform: scale(1.04); }
     }
-    .progress-fill { transition: width 0.4s ease-out; }
+    /* .progress-fill — live scaleX(var(--load-progress)) data channel (attr transform); no decorative motion. */
     .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
     @keyframes chevron-pulse {
       0%, 100% { opacity: 0.3; }
@@ -75,6 +75,27 @@
       80%, 100% { transform: scaleY(1);   opacity: 1; }
     }
 
+    /* DRAFT-SETTLE (mass conservation): the vessel eases DOWN into the water
+       as the holds fill — same 7 s cycle as .deck-stack-grow, so heap-rise and
+       draft-increase read as one physical event. The sea fill is static and
+       OUTSIDE the hull group, so the waterline correctly climbs the hull and
+       the bow draft ladder visibly submerges. */
+    .draft-settle { transform-box: fill-box; transform-origin: center bottom;
+                    animation: draft-settle 7s cubic-bezier(0.4,0,0.2,1) infinite; }
+    @keyframes draft-settle {
+      0%        { transform: translateY(-4px); }
+      88%, 100% { transform: translateY(0); }
+    }
+
+    /* Conveyor belt march along the shiploader boom — the grain RIDES a belt
+       up to the spout before gravity-feeding the hold (stroke-dashoffset
+       crawl; one dasharray period per loop for a seamless march). */
+    .belt-march { animation: belt-march 0.9s linear infinite; }
+    @keyframes belt-march {
+      0%   { stroke-dashoffset: 18; }
+      100% { stroke-dashoffset: 0; }
+    }
+
     /* Water ripple */
     .water-ripple { animation: water-ripple 4.4s ease-in-out infinite; }
     @keyframes water-ripple {
@@ -107,9 +128,11 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
+      .belt-march,
       .brand-lockup, .brand-mark, .brand-word,
       .chevron,
       .deck-stack-grow,
+      .draft-settle,
       .load-pill,
       .operator-bob,
       .progress-fill,
@@ -121,6 +144,9 @@
       .grain-fall-a, .grain-fall-b, .grain-fall-c {
         animation: none !important;
       }
+      /* Hold the vessel at a mid-load draft so the still frame reads as
+         "loading", not empty or brim-full. */
+      .draft-settle { transform: translateY(-2px); }
     }
 
   ]]></style>
@@ -291,6 +317,9 @@
     <path d="M 290 168 L 320 174 L 1080 320 L 1050 332 L 290 188 Z"
           fill="url(#craneYellow)" stroke="#C77A0A" stroke-width="0.6"/>
     <line x1="295" y1="173" x2="1078" y2="322" stroke="#FFE680" stroke-width="2" opacity="0.4"/>
+    <!-- Conveyor belt march: the running belt that feeds the discharge spout -->
+    <line class="belt-march" x1="300" y1="181" x2="1070" y2="328" stroke="#FFD23A"
+          stroke-width="1.6" stroke-dasharray="10 8" opacity="0.65"/>
     <!-- Boom truss diagonals (along the arm) -->
     <g stroke="#1A1F2E" stroke-width="0.7" opacity="0.45">
       <line x1="380" y1="180" x2="420" y2="200"/>
@@ -391,6 +420,8 @@
        maritime unit across all three countries.
        ============================================================ -->
   <g class="ship-bob" filter="url(#rigShadow)">
+   <!-- draft-settle: the vessel eases DOWN into the water as the holds fill -->
+   <g class="draft-settle">
     <!-- Hull (long horizontal shape with bow on right) -->
     <path d="M 320 440 L 1080 440 L 1130 480 L 1080 510 L 320 510 Z"
           fill="url(#shipHull)" stroke="#0A1018" stroke-width="0.8"/>
@@ -403,6 +434,14 @@
     <g transform="translate(380 478)" opacity="0.65">
       <circle r="5" fill="none" stroke="#FFFFFF" stroke-width="0.8"/>
       <line x1="-8" y1="0" x2="8" y2="0" stroke="#FFFFFF" stroke-width="0.8"/>
+    </g>
+    <!-- Bow draft ladder (metres): rides the hull, so it visibly SUBMERGES
+         against the static sea as .draft-settle takes the ship deeper -->
+    <g font-family="Inter, system-ui, sans-serif" font-weight="700" font-size="6"
+       fill="#FFFFFF" opacity="0.85">
+      <text x="1058" y="474" text-anchor="end">11M</text><line x1="1061" y1="472" x2="1066" y2="472" stroke="#FFFFFF" stroke-width="1"/>
+      <text x="1058" y="484" text-anchor="end">10M</text><line x1="1061" y1="482" x2="1066" y2="482" stroke="#FFFFFF" stroke-width="1"/>
+      <text x="1058" y="494" text-anchor="end">9M</text><line x1="1061" y1="492" x2="1066" y2="492" stroke="#FFFFFF" stroke-width="1"/>
     </g>
 
     <!-- BRIDGE TOWER / SUPERSTRUCTURE (stern, left end of hull) -->
@@ -510,6 +549,7 @@
         </g>
       </g>
     </g>
+   </g><!-- /draft-settle -->
   </g>
 
   <!-- DOCK SUPERVISOR (left side, on dock) -->
@@ -1218,9 +1258,15 @@
 
   <g>
     <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.9"/>
-    <rect class="progress-fill" x="60" y="555" width="540" height="6" rx="3"
-          fill="#0AC2C2"
-          data-progress="0.5"/>
+    <!-- LIVE PROGRESS CHANNEL: the host feeds the load-progress CSS var (0…1,
+         BindableEquipmentAnimation cssVars) and the fill scales from its left
+         edge via scaleX(var()). The 0.5 fallback matches this document's baked
+         50% sample state; the runtime overrides it with the real lifecycle
+         percent. -->
+    <g transform="translate(60 555)">
+      <rect class="progress-fill" transform="scaleX(var(--load-progress, 0.5))"
+            x="0" y="0" width="1080" height="6" rx="3" fill="#0AC2C2"/>
+    </g>
     <text x="1140" y="548" text-anchor="end"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="10" letter-spacing="1.4"
