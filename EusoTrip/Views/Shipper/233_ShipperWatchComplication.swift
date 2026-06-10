@@ -15,13 +15,13 @@
 //  then deep-links into 232 ShipperLockScreenLiveActivity (escort
 //  divergence) or 205 ShipperLoadDetail (any other tap).
 //
-//  §11.4 row 3 anchor (active complication payload):
-//    LD-260427-B41782FF02 · Eusorone Technologies (companyId 1) · Kansas
-//    City MO → Omaha NE · MC-331 anhydrous-ammonia UN1005 · Driver
-//    Michael Eusorone (Eusotrans LLC USDOT 3 194 882) · stage 5 In
-//    transit · advanced 38m ago · Carrier eSang AB grade A.
-//  §11.2 next-bid stat tile cites MATRIX-50 row 2: LA → PHX reefer
-//  $2,200 verbatim.
+//  Live binding (2026-06-09, audit B24): the complication payload is
+//  built from the shipper's most recent live load via
+//  `shippers.getActiveLoads(limit: 1)` — the same proc that drives the
+//  200 Shipper Home active-loads card. Honest empty state when no load
+//  is in flight; honest error state when the proc is unreachable. The
+//  slot-pick / opt-in counters em-dash until the watchComplications.*
+//  prefs procs ship (EUSO-2152 WIRE-GAP).
 //
 //  Doctrine: §2 nav, §3 numbers-first, §4.3 single hairline, §7 breathe
 //  density, §11 Diego canon, §11.2/§11.4 MATRIX-50 lane, §17.2 width-
@@ -65,48 +65,74 @@ struct ShipperWatchComplication: View {
     @State private var inAppLink: EusoSafariLink? = nil
     @Environment(\.palette) var palette
     @Environment(\.openURL) private var openURL
+    @EnvironmentObject private var session: EusoTripSession
 
-    // §22.2 counter eyebrow — slot count + opt-in count.
-    private let counterEyebrow = "3 SLOTS · 1 OF 7 OPT-IN"
+    /// Live binding state — the complication payload is built from the
+    /// shipper's most recent live load (`shippers.getActiveLoads`),
+    /// never from a fixture. Honest empty/error states otherwise
+    /// (zero-fallback, audit B24).
+    private enum Phase {
+        case loading
+        case empty
+        case error
+        case loaded(WatchActivity)
+    }
+    @State private var phase: Phase = .loading
 
-    // §11.4 row 3 active complication payload.
-    private let watch = WatchActivity(
-        id:               "wc_2026-04-28T13:42:00Z_LD-260427-B41782FF02",
-        loadId:           "LD-260427-B41782FF02",
-        persona:          "Eusorone Technologies",
-        lane:             "Kansas City MO → Omaha NE · MC-331 NH₃",
-        stageIndex:       4,
-        stageKicker:      "Stage 5 · In transit · advanced 38m ago",
-        relativeAgo:      "38m ago",
-        liveLabel:        "LIVE · UN1005 ESCORT · 4H 36M",
-        carrierGrade:     "A",
-        carrierGradeLine: "Carrier grade A · Tap any complication → 231 deep-link receiver",
-        cornerSlot:       CornerSlotPayload(
-                            stageTag:    "5/8",
-                            etaPrimary:  "4h",
-                            etaSub:      "36m"
-                          ),
-        circularSlot:     CircularSlotPayload(
-                            eyebrow:    "ESCORT · A",
-                            value:      "4h 36m",
-                            sub:        "STAGE 5/8"
-                          ),
-        rectangularSlot:  RectangularSlotPayload(
-                            headline:    "UN1005 · NH₃",
-                            laneSub:     "KC MO → OMA NE",
-                            etaPrimary:  "4h 36m",
-                            etaSub:      "178/198 mi",
-                            currentStageIndex: 4
-                          ),
-        nextBid:          StatLite(eyebrow: "NEXT BID",  value: "$2,200",  sub: "LA → PHX reefer", highlighted: false),
-        exception:        StatLite(eyebrow: "EXCEPTION", value: "1",        sub: "UN1005 active",   highlighted: true),
-        slots:            StatLite(eyebrow: "SLOTS",     value: "3 / 5",    sub: "on face",          highlighted: false),
-        optIn:            StatLite(eyebrow: "OPT-IN",    value: "1 / 7",    sub: "categories",       highlighted: false),
-        ctaLabel:         "Open in 231 Push Notification Landing →",
-        ctaTargetScreen:  "231 Push Notification Landing"
-    )
+    // §22.2 counter eyebrow — slot picks + per-category opt-in prefs
+    // have no live proc yet (watchComplications.* — EUSO-2152
+    // WIRE-GAP). Honest em-dash until the prefs envelope ships.
+    private let counterEyebrow = "SLOTS — · OPT-IN —"
 
     var body: some View {
+        Group {
+            switch phase {
+            case .loading:
+                VStack(spacing: 0) {
+                    topBar.padding(.top, Space.s5)
+                    titleBlock.padding(.top, Space.s3)
+                    IridescentHairline().padding(.top, Space.s3)
+                    Spacer(minLength: 0)
+                    ProgressView().controlSize(.large)
+                    Spacer(minLength: 0)
+                }
+            case .empty:
+                VStack(spacing: 0) {
+                    topBar.padding(.top, Space.s5)
+                    titleBlock.padding(.top, Space.s3)
+                    IridescentHairline().padding(.top, Space.s3)
+                    Spacer(minLength: 0)
+                    EusoEmptyState(
+                        systemImage: "applewatch",
+                        title: "No active load",
+                        subtitle: "Watch complications light up when a load is in flight."
+                    )
+                    Spacer(minLength: 0)
+                }
+            case .error:
+                VStack(spacing: 0) {
+                    topBar.padding(.top, Space.s5)
+                    titleBlock.padding(.top, Space.s3)
+                    IridescentHairline().padding(.top, Space.s3)
+                    Spacer(minLength: 0)
+                    EusoEmptyState(
+                        systemImage: "wifi.exclamationmark",
+                        title: "Couldn't reach the loads service",
+                        subtitle: "Pull back in and retry — nothing is cached or invented here."
+                    )
+                    Spacer(minLength: 0)
+                }
+            case .loaded(let watch):
+                content(watch)
+            }
+        }
+        .task { await load() }
+        .sheet(item: $inAppLink) { link in
+            EusoInAppSafari(url: link.url).ignoresSafeArea()
+        }
+    }
+
+    private func content(_ watch: WatchActivity) -> some View {
         VStack(spacing: 0) {
             topBar
                 .padding(.top, Space.s5)
@@ -118,17 +144,17 @@ struct ShipperWatchComplication: View {
 
             sectionLabel("ACTIVE LOAD · WATCH HANDOFF")
                 .padding(.top, Space.s5)
-            activeLoadCard
+            activeLoadCard(watch)
                 .padding(.horizontal, Space.s5)
                 .padding(.top, Space.s2)
 
             sectionLabel("WATCH COMPLICATION FAMILIES (CORNER · CIRCULAR · RECTANGULAR)")
                 .padding(.top, Space.s5)
-            familiesCard
+            familiesCard(watch)
                 .padding(.horizontal, Space.s5)
                 .padding(.top, Space.s2)
 
-            openCTA
+            openCTA(watch)
                 .padding(.horizontal, Space.s7)
                 .padding(.top, Space.s4)
 
@@ -140,9 +166,93 @@ struct ShipperWatchComplication: View {
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s5)
         }
-        .sheet(item: $inAppLink) { link in
-            EusoInAppSafari(url: link.url).ignoresSafeArea()
+    }
+
+    // MARK: - Live load → complication payload
+
+    private func load() async {
+        do {
+            let rows = try await EusoTripAPI.shared.shipper.getActiveLoads(limit: 1)
+            if let first = rows.first {
+                phase = .loaded(makeWatch(from: first))
+            } else {
+                phase = .empty
+            }
+        } catch {
+            phase = .error
         }
+    }
+
+    /// Canonical 8-stage mapping — same table as 200 Shipper Home's
+    /// lifecycle strip. Returns 1...8.
+    private static func lifecycleStage(for status: String) -> Int {
+        switch status.lowercased() {
+        case "posted":                          return 1
+        case "bidding":                         return 2
+        case "awarded", "assigned":             return 3
+        case "pickup", "loading":               return 4
+        case "in_transit", "in transit":        return 5
+        case "delivery", "delivering", "unloading": return 6
+        case "paperwork":                       return 7
+        case "closed", "delivered":             return 8
+        default:                                return 1
+        }
+    }
+
+    private static func stageLabel(_ stage: Int) -> String {
+        let labels = ["Posted", "Bidding", "Awarded", "Pickup",
+                      "In transit", "Delivery", "Paperwork", "Closed"]
+        return labels[max(0, min(7, stage - 1))]
+    }
+
+    private func makeWatch(from l: ShipperAPI.ActiveLoad) -> WatchActivity {
+        let stage = Self.lifecycleStage(for: l.status)
+        let stageIdx = max(0, min(7, stage - 1))
+        let stageName = Self.stageLabel(stage)
+        let lane = "\(l.origin) → \(l.destination)"
+        let laneLine = l.cargoSummary.map { "\(lane) · \($0)" } ?? lane
+        let milesStr: String = {
+            let m = l.distance ?? l.miles ?? 0
+            return m > 0 ? "\(Int(m.rounded())) mi" : "—"
+        }()
+        let statusUpper = l.status.replacingOccurrences(of: "_", with: " ").uppercased()
+
+        return WatchActivity(
+            id:               "wc_\(l.loadNumber)",
+            loadId:           l.loadNumber,
+            persona:          session.user?.name ?? "—",
+            lane:             laneLine,
+            stageIndex:       stageIdx,
+            stageKicker:      "Stage \(stage) · \(stageName)",
+            relativeAgo:      "—",
+            liveLabel:        "LIVE · \(statusUpper)",
+            // No live carrier-grade proc on this surface — honest em-dash.
+            carrierGrade:     "—",
+            carrierGradeLine: "\(l.catalyst) · \(l.driver) · tap → 231 deep-link receiver",
+            cornerSlot:       CornerSlotPayload(
+                                stageTag:    "\(stage)/8",
+                                etaPrimary:  "—",
+                                etaSub:      "ETA"
+                              ),
+            circularSlot:     CircularSlotPayload(
+                                eyebrow:    "STAGE",
+                                value:      "\(stage)/8",
+                                sub:        statusUpper
+                              ),
+            rectangularSlot:  RectangularSlotPayload(
+                                headline:    l.unNumber ?? l.commodity ?? l.loadNumber,
+                                laneSub:     lane,
+                                etaPrimary:  "—",
+                                etaSub:      milesStr,
+                                currentStageIndex: stageIdx
+                              ),
+            nextBid:          StatLite(eyebrow: "NEXT BID", value: "—",          sub: "no live source", highlighted: false),
+            exception:        StatLite(eyebrow: "STAGE",    value: "\(stage)/8", sub: stageName,        highlighted: true),
+            slots:            StatLite(eyebrow: "SLOTS",    value: "—",          sub: "prefs pending",  highlighted: false),
+            optIn:            StatLite(eyebrow: "OPT-IN",   value: "—",          sub: "prefs pending",  highlighted: false),
+            ctaLabel:         "Open in 231 Push Notification Landing →",
+            ctaTargetScreen:  "231 Push Notification Landing"
+        )
     }
 
     // MARK: - TopBar
@@ -173,7 +283,7 @@ struct ShipperWatchComplication: View {
                 .font(EType.h1)
                 .tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("Complication design-spec · Eusorone Technologies")
+            Text("Complication design-spec · \(session.user?.name ?? "—")")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -195,7 +305,7 @@ struct ShipperWatchComplication: View {
 
     // MARK: - ACTIVE LOAD · WATCH HANDOFF card
 
-    private var activeLoadCard: some View {
+    private func activeLoadCard(_ watch: WatchActivity) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 14) {
                 GradientLivePill(label: watch.liveLabel)
@@ -251,7 +361,7 @@ struct ShipperWatchComplication: View {
 
     // MARK: - WATCH COMPLICATION FAMILIES card
 
-    private var familiesCard: some View {
+    private func familiesCard(_ watch: WatchActivity) -> some View {
         VStack(alignment: .leading, spacing: 0) {
 
             // Row 1 · CORNER · 60×60
@@ -378,8 +488,8 @@ struct ShipperWatchComplication: View {
 
     // MARK: - Open in 231 CTA
 
-    private var openCTA: some View {
-        Button(action: tapOpenTarget) {
+    private func openCTA(_ watch: WatchActivity) -> some View {
+        Button(action: { tapOpenTarget(watch) }) {
             GradientCapsuleCTA(label: watch.ctaLabel)
         }
         .buttonStyle(.plain)
@@ -422,10 +532,10 @@ struct ShipperWatchComplication: View {
         .accessibilityLabel("Watch face complications. Slot picks and opt-in categories live in 211 Settings.")
     }
 
-    // MARK: - Footer (persona+batch anchor)
+    // MARK: - Footer (live session anchor — no fabricated persona stamp)
 
     private var footer: some View {
-        Text("companyId 1 · Eusorone Technologies · MATRIX-50-2026-04-26")
+        Text("companyId \(session.user?.companyId ?? "—") · live load binding")
             .font(.system(size: 10))
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -434,7 +544,7 @@ struct ShipperWatchComplication: View {
 
     // MARK: - Tap handlers (§20.4 no dead buttons)
 
-    private func tapOpenTarget() {
+    private func tapOpenTarget(_ watch: WatchActivity) {
         NotificationCenter.default.post(
             name: .eusoShipperWatchComplicationOpenTarget,
             object: nil,
@@ -445,7 +555,7 @@ struct ShipperWatchComplication: View {
                 "stageIndex": watch.stageIndex,
                 "carrierGrade": watch.carrierGrade,
                 "targetScreen": watch.ctaTargetScreen,
-                "shipperCompanyId": 1
+                "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/watch/\(watch.id)/open") {
@@ -460,7 +570,7 @@ struct ShipperWatchComplication: View {
             userInfo: [
                 "source": "233_ShipperWatchComplication",
                 "targetScreen": "211 Settings",
-                "shipperCompanyId": 1
+                "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
         if let url = URL(string: "https://app.eusotrip.com/shipper/settings/watch") {
@@ -877,6 +987,7 @@ struct ShipperWatchComplicationScreen: View {
 
 #Preview("Shipper Watch Complication · Dark") {
     ShipperWatchComplicationScreen(theme: Theme.dark)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
         .padding(24)
         .background(Theme.dark.bgPage)
@@ -884,6 +995,7 @@ struct ShipperWatchComplicationScreen: View {
 
 #Preview("Shipper Watch Complication · Light") {
     ShipperWatchComplicationScreen(theme: Theme.light)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
         .padding(24)
         .background(Theme.light.bgPage)
