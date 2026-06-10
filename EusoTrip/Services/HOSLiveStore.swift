@@ -120,7 +120,14 @@ final class HOSLiveStore: ObservableObject {
         if let day   { self.today  = day }
         self.history    = rollups
         self.violations = v
-        self.lastError  = nil
+        // Honest failure posture: only clear the error when something
+        // actually landed. The old code reset lastError to nil even when
+        // every fetch failed, masking a dead surface (audit B1).
+        if fresh != nil || day != nil {
+            self.lastError = nil
+        } else if self.today == nil {
+            self.lastError = "Couldn't reach the ELD service — pull to retry."
+        }
     }
 
     /// Log-only refresh (no dashboard poll — HOSClockService handles that).
@@ -230,10 +237,16 @@ final class HOSLiveStore: ObservableObject {
         let target = date ?? today?.date ?? Self.isoDayFormatter.string(from: Date())
         do {
             let result = try await api.hos.certifyLog(date: target, signature: signature)
-            if let log = result.log {
-                if log.date == self.today?.date { self.today = log }
-                if let idx = history.firstIndex(where: { $0.date == log.date }) {
-                    history[idx] = log
+            // The server acks `{success, date, certifiedAt}` without
+            // echoing the day (hos.ts:208-212) — stamp the local copy so
+            // the certify button reflects the acknowledged signature.
+            if result.ok {
+                let certDate = result.date ?? target
+                if let t = today, t.date == certDate {
+                    today = t.certifiedCopy(at: result.certifiedAt)
+                }
+                if let idx = history.firstIndex(where: { $0.date == certDate }) {
+                    history[idx] = history[idx].certifiedCopy(at: result.certifiedAt)
                 }
             }
             flashToast(result.message ?? "Log certified")
@@ -244,14 +257,22 @@ final class HOSLiveStore: ObservableObject {
         }
     }
 
-    /// Attach a §395.8(j) remark to the driver's current segment.
+    /// Attach a §395.8(j) remark. `at` pins the remark to a specific
+    /// segment's wall-clock (the 081 per-entry composer passes the
+    /// segment start); nil means "now" — both resolve to the
+    /// `{date, time, remark}` triple the server schema requires.
     @discardableResult
-    func addRemark(_ text: String, entryId: String? = nil) async -> Bool {
+    func addRemark(_ text: String, entryId: String? = nil, at moment: Date? = nil) async -> Bool {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return false
         }
         do {
-            let result = try await api.hos.addRemark(text: text, entryId: entryId)
+            let result = try await api.hos.addRemark(
+                text: text,
+                entryId: entryId,
+                date: moment.map(HOSAPI.dayString),
+                time: moment.map(HOSAPI.timeString)
+            )
             await refreshLogs()
             flashToast(result.message ?? "Remark added")
             return result.ok
