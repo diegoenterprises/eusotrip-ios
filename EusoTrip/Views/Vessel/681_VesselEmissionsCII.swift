@@ -144,6 +144,13 @@ private struct VesselEmissionsCIIBody: View {
                 } else if let f = fleet {
                     heroCard(f)
                     ratingBandSection(f)
+                    // Wave A2 — RadialFillGauge de-orphaned onto its census
+                    // host: the REAL attained AER on the IMO A–E dial with
+                    // the required-AER tick. Band boundaries are the SAME
+                    // deterministic ratio thresholds `computedGrade` already
+                    // applies (0.86/0.94/1.06/1.18 × required); mounts only
+                    // when both live AER figures exist.
+                    ciiGaugeSection(f)
                     voyageLedgerSection
                     ctaRow
                 } else {
@@ -582,6 +589,46 @@ private struct VesselEmissionsCIIBody: View {
         case ..<1.06:  return .c
         case ..<1.18:  return .d
         default:       return .e
+        }
+    }
+
+    // MARK: - CII dial (Wave A2 — RadialFillGauge de-orphaned)
+
+    /// The attained-AER dial. Domain spans 0.6×…1.4× the required AER so
+    /// the five IMO bands (d1–d4 multipliers, the SAME thresholds
+    /// `computedGrade` applies) all render; the required AER is the tick.
+    /// Mounts only when BOTH live AER values exist — no fabricated dial.
+    @ViewBuilder
+    private func ciiGaugeSection(_ f: FleetCarbon681) -> some View {
+        if let attained = f.attainedAER, let required = f.requiredAER, required > 0 {
+            RadialFillGauge(
+                title: "ATTAINED vs REQUIRED · CII DIAL",
+                model: RadialGaugeModel(
+                    value: attained,
+                    min: required * 0.6,
+                    max: required * 1.4,
+                    lowerIsBetter: true,
+                    bands: [
+                        RadialGaugeBand(id: "a", grade: "A", label: "Superior",
+                                        color: Color(hex: 0x00C48C), lowerBound: required * 0.6),
+                        RadialGaugeBand(id: "b", grade: "B", label: "Minor",
+                                        color: Color(hex: 0x66BB6A), lowerBound: required * 0.86),
+                        RadialGaugeBand(id: "c", grade: "C", label: "Moderate",
+                                        color: Color(hex: 0xFFB100), lowerBound: required * 0.94),
+                        RadialGaugeBand(id: "d", grade: "D", label: "Inferior",
+                                        color: Color(hex: 0xFF7043), lowerBound: required * 1.06),
+                        RadialGaugeBand(id: "e", grade: "E", label: "Critical",
+                                        color: Color(hex: 0xF44336), lowerBound: required * 1.18),
+                    ],
+                    targets: [
+                        RadialGaugeTarget(value: required,
+                                          label: "REQ \(String(format: "%.1f", required))")
+                    ],
+                    unit: "gCO₂/t·nm",
+                    caption: "ATTAINED AER · \(f.year.map(String.init) ?? "—")",
+                    decimals: 1
+                )
+            )
         }
     }
 }

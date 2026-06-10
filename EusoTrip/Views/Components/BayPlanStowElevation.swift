@@ -119,7 +119,21 @@ public struct BayPlanStowElevation: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             titleRow
-            grid
+            // ONE animation clock for the whole elevation (Wave A2 clock
+            // hygiene): the restow pulse, the bay-ordered lift sweep and the
+            // conflict-badge breathe all derive from this single 30fps
+            // TimelineView — replacing the prior per-cell TimelineViews
+            // (one per slot) + a second one inside the badge. The clock is
+            // mounted ONLY when there is something to animate (restow lifts
+            // exist) and pauses under reduce-motion; a lift-free plan renders
+            // fully static with zero running clocks.
+            if totalLifts > 0 && !reduceMotion {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { tl in
+                    grid(now: tl.date)
+                }
+            } else {
+                grid(now: nil)
+            }
             legend
         }
         .padding(Space.s4)
@@ -165,8 +179,14 @@ public struct BayPlanStowElevation: View {
 
     // MARK: Grid
 
-    private var grid: some View {
-        GeometryReader { geo in
+    private func grid(now: Date?) -> some View {
+        // Shared per-frame motion values, derived ONCE from the hoisted
+        // clock and passed down as plain values (cells are pure Canvas).
+        let pulse = now.map(pulseValue) ?? (reduceMotion ? 1.0 : 0.0)
+        let litBay = now.flatMap(sweepBayIndex)
+        let breathe = now.map(breatheScale) ?? 1.0
+
+        return GeometryReader { geo in
             let labelGutter: CGFloat = 56
             let cols = max(columns.count, 1)
             let gridWidth = max(geo.size.width - labelGutter, 1)
@@ -205,14 +225,15 @@ public struct BayPlanStowElevation: View {
                     columnView(
                         col, index: idx, cell: cell, gap: gap,
                         onDeckH: onDeckH, inHoldH: inHoldH,
-                        hatchGap: hatchGap, headerH: headerH
+                        hatchGap: hatchGap, headerH: headerH,
+                        pulse: pulse, litBay: litBay
                     )
                     .offset(x: labelGutter + CGFloat(idx) * (cell + gap))
                 }
 
                 // Conflict-bay LIFTS badge, pinned over the worst bay.
                 if let ci = conflictBayIndex {
-                    conflictBadge(columns[ci].restowCount)
+                    conflictBadge(columns[ci].restowCount, breathe: breathe)
                         .offset(
                             x: labelGutter + CGFloat(ci) * (cell + gap) + cell / 2 - 26,
                             y: -6
@@ -239,9 +260,12 @@ public struct BayPlanStowElevation: View {
     private func columnView(
         _ col: BayColumn, index: Int, cell: CGFloat, gap: CGFloat,
         onDeckH: CGFloat, inHoldH: CGFloat,
-        hatchGap: CGFloat, headerH: CGFloat
+        hatchGap: CGFloat, headerH: CGFloat,
+        pulse: Double, litBay: Int?
     ) -> some View {
         let shown = reduceMotion ? true : revealedColumns > index
+        // This bay is currently lit by the bay-ordered lift sweep.
+        let bayLit = showLiftSequence && litBay == index
         return VStack(spacing: 0) {
             // Bay number header.
             Text(String(format: "%02d", col.bayNumber))
@@ -251,13 +275,15 @@ public struct BayPlanStowElevation: View {
 
             // ON DECK band — tier 0 sits just above the hatch line, so we
             // bottom-align by padding the top.
-            stackBand(col.onDeck, cell: cell, gap: gap, bandHeight: onDeckH, anchor: .bottom)
+            stackBand(col.onDeck, cell: cell, gap: gap, bandHeight: onDeckH, anchor: .bottom,
+                      pulse: pulse, bayLit: bayLit)
 
             // Hatch line spacer.
             Color.clear.frame(width: cell, height: hatchGap)
 
             // IN HOLD band — tier 0 sits just below the hatch line, top-aligned.
-            stackBand(col.inHold, cell: cell, gap: gap, bandHeight: inHoldH, anchor: .top)
+            stackBand(col.inHold, cell: cell, gap: gap, bandHeight: inHoldH, anchor: .top,
+                      pulse: pulse, bayLit: bayLit)
         }
         .frame(width: cell)
         .opacity(shown ? 1 : 0)
@@ -268,7 +294,8 @@ public struct BayPlanStowElevation: View {
 
     private func stackBand(
         _ slots: [BayPlanSlot], cell: CGFloat, gap: CGFloat,
-        bandHeight: CGFloat, anchor: BandAnchor
+        bandHeight: CGFloat, anchor: BandAnchor,
+        pulse: Double, bayLit: Bool
     ) -> some View {
         VStack(spacing: gap) {
             if anchor == .bottom { Spacer(minLength: 0) }
@@ -276,8 +303,8 @@ public struct BayPlanStowElevation: View {
                 BayPlanSlotCell(
                     kind: slot.kind,
                     side: cell,
-                    pulsePhase: pulsePhase(for: slot),
-                    sweepActive: sweepActive(for: slot),
+                    pulse: slot.kind == .restow ? pulse : 0,
+                    sweepLit: slot.kind == .restow && bayLit && !reduceMotion,
                     palette: palette,
                     reduceMotion: reduceMotion
                 )
@@ -347,23 +374,22 @@ public struct BayPlanStowElevation: View {
 
     // MARK: Conflict badge
 
-    private func conflictBadge(_ lifts: Int) -> some View {
-        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { tl in
-            let breathe = reduceMotion ? 1.0 : breatheScale(tl.date)
-            HStack(spacing: 3) {
-                Image(systemName: "arrow.up.arrow.down")
-                    .font(.system(size: 8, weight: .heavy))
-                Text("\(lifts) LIFTS")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-            }
-            .foregroundStyle(.white)
-            .padding(.horizontal, 7).padding(.vertical, 3)
-            .background(
-                Capsule().fill(Brand.danger)
-                    .shadow(color: Brand.danger.opacity(0.6), radius: 6)
-            )
-            .scaleEffect(breathe)
+    /// Breathe scale arrives from the single hoisted clock — no second
+    /// TimelineView inside the badge anymore.
+    private func conflictBadge(_ lifts: Int, breathe: CGFloat) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "arrow.up.arrow.down")
+                .font(.system(size: 8, weight: .heavy))
+            Text("\(lifts) LIFTS")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.4)
         }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 7).padding(.vertical, 3)
+        .background(
+            Capsule().fill(Brand.danger)
+                .shadow(color: Brand.danger.opacity(0.6), radius: 6)
+        )
+        .scaleEffect(reduceMotion ? 1.0 : breathe)
         .fixedSize()
     }
 
@@ -388,17 +414,34 @@ public struct BayPlanStowElevation: View {
         }
     }
 
-    /// Gentle attention pulse for restow cells (~1.6s ease-in-out loop).
-    private func pulsePhase(for slot: BayPlanSlot) -> Double {
-        slot.kind == .restow ? 1 : 0
+    /// 0…1 heartbeat for the restow attention pulse (~1.6s loop), shared by
+    /// every restow cell from the single hoisted clock.
+    private func pulseValue(_ date: Date) -> Double {
+        (sin(date.timeIntervalSinceReferenceDate * 2 * .pi / 1.6) + 1) / 2
     }
 
-    /// Whether a slot is currently lit by the lift-sequence sweep. We use a
-    /// time-based window keyed off the slot's bay position so successive
-    /// restow bays light in order.
-    private func sweepActive(for slot: BayPlanSlot) -> Bool {
-        guard showLiftSequence, !reduceMotion, slot.kind == .restow else { return false }
-        return true
+    /// The display-order indices of bays that carry restow lifts — the real
+    /// discharge re-handle order the sweep narrates.
+    private var restowBayOrder: [Int] {
+        columns.indices.filter { columns[$0].restowCount > 0 }
+    }
+
+    /// Bay-ordered lift sweep: each restow-bearing bay lights for a 0.9s
+    /// window, in display (fore→aft) order, with a 0.6s rest between cycles —
+    /// a TIME-WINDOWED sweep over the REAL restow bays, replacing the prior
+    /// constant-true highlight. Returns the currently lit column index, or
+    /// nil during the rest beat / when no restow bays exist.
+    private func sweepBayIndex(_ date: Date) -> Int? {
+        guard showLiftSequence, !reduceMotion else { return nil }
+        let order = restowBayOrder
+        guard !order.isEmpty else { return nil }
+        let window = 0.9
+        let rest = 0.6
+        let cycle = Double(order.count) * window + rest
+        let t = date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: cycle)
+        let slot = Int(t / window)
+        guard slot < order.count else { return nil }   // rest beat
+        return order[slot]
     }
 
     private func breatheScale(_ date: Date) -> CGFloat {
@@ -425,7 +468,7 @@ public struct BayPlanStowElevation: View {
         HStack(spacing: 4) {
             BayPlanSlotCell(
                 kind: kind, side: 13,
-                pulsePhase: 0, sweepActive: false,
+                pulse: 0, sweepLit: false,
                 palette: palette, reduceMotion: true
             )
             Text(label.uppercased()).tracking(0.4)
@@ -436,34 +479,28 @@ public struct BayPlanStowElevation: View {
 
 // MARK: - Slot cell
 
-/// A single container slot, color-coded by kind. Restow cells carry the
-/// pulse + sweep state passed down from the elevation; everything else is
-/// static. Drawn with Canvas so the glyphs (◇ diamond, ↑ arrow) and the
+/// A single container slot, color-coded by kind. PURE value view: the
+/// per-frame pulse + sweep state arrive as plain values from the single
+/// elevation-level clock (Wave A2 — the prior per-cell TimelineViews are
+/// gone). Drawn with Canvas so the glyphs (◇ diamond, ↑ arrow) and the
 /// dashed empty outline render crisply at any cell size.
 private struct BayPlanSlotCell: View {
     let kind: BayPlanSlot.Kind
     let side: CGFloat
-    /// 1 when this cell should pulse (restow), else 0.
-    let pulsePhase: Double
-    /// True when the lift-sequence sweep is lighting this restow cell.
-    let sweepActive: Bool
+    /// 0…1 heartbeat for restow cells; 0 for every other kind.
+    let pulse: Double
+    /// True while the bay-ordered lift sweep is lighting this restow cell.
+    let sweepLit: Bool
     let palette: Theme.Palette
     let reduceMotion: Bool
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion || pulsePhase == 0)) { tl in
-            let pulse = (reduceMotion || pulsePhase == 0) ? 1.0 : pulseValue(tl.date)
-            Canvas { ctx, size in
-                draw(into: &ctx, size: size, pulse: pulse)
-            }
-            .frame(width: side, height: side)
-            .scaleEffect(kind == .restow && !reduceMotion ? 0.94 + 0.06 * pulse : 1)
+        let effectivePulse = reduceMotion ? 1.0 : pulse
+        Canvas { ctx, size in
+            draw(into: &ctx, size: size, pulse: effectivePulse)
         }
-    }
-
-    private func pulseValue(_ date: Date) -> Double {
-        let t = date.timeIntervalSinceReferenceDate
-        return (sin(t * 2 * .pi / 1.6) + 1) / 2   // 0…1, 1.6s ease-like loop
+        .frame(width: side, height: side)
+        .scaleEffect(kind == .restow && !reduceMotion ? 0.94 + 0.06 * effectivePulse : 1)
     }
 
     private func draw(into ctx: inout GraphicsContext, size: CGSize, pulse: Double) {
@@ -493,7 +530,7 @@ private struct BayPlanSlotCell: View {
             drawDiamond(into: &ctx, in: rect, color: Color.black.opacity(0.75))
 
         case .restow:
-            let lit = sweepActive ? pulse : 0
+            let lit = sweepLit ? pulse : 0
             ctx.fill(rr, with: .color(Brand.danger.opacity(0.78 + 0.22 * lit)))
             ctx.stroke(rr, with: .color(Brand.danger), lineWidth: 1.0 + 0.6 * lit)
             // Up-arrow ↑ glyph — must be lifted.

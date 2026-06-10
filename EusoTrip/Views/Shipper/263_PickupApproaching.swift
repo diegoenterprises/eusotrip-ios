@@ -42,6 +42,10 @@ private struct ApproachingBody: View {
         VStack(alignment: .leading, spacing: Space.s4) {
             geofenceCard
             LifecycleMapCard(live: live, label: "\(loadMode.displayName.uppercased()) → \(loadMode.pickupNoun)", mode: .truckAtPickup)
+            // Wave A2 strip extension — the same live-bound equipment
+            // animation 264/265/267/268/270 host, so the shipper sees the
+            // real rig inbound to the pickup (echo-cel 263 M04 purpose).
+            LifecycleAnimationStrip(live: live, label: "\(loadMode.displayName.uppercased()) INBOUND", height: 180)
             facilityCard
             etaStrip
             commsRow

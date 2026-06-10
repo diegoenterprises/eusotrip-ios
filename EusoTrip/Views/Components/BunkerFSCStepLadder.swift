@@ -96,18 +96,31 @@ public struct BunkerFSCStepLadder: View {
     @Environment(\.palette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// 0…stepCount progress of the left→right staircase draw. A fractional
-    /// value means a step is mid-extend.
-    @State private var drawProgress: CGFloat = 0
+    /// Wall-clock anchor of the staircase draw-in. The per-frame draw
+    /// progress derives from `now - introStart` inside the TimelineView, so
+    /// the path genuinely extends frame-by-frame (the prior `withAnimation`
+    /// on a Canvas-read @State snapped to the final value).
+    @State private var introStart: Date? = nil
+    /// Set once the staircase has fully drawn — PAUSES the TimelineView so
+    /// no per-frame clock keeps running after the intro settles (Wave A2
+    /// clock hygiene, spec :307).
+    @State private var introSettled: Bool = false
+    /// Gates the fill/highlight/marker reveal at the real moment the draw
+    /// reaches the active bracket (scheduled by `runIntro`).
+    @State private var activeStepRevealed: Bool = false
     /// 0…1 vertical sweep of the active bracket's gradient fill.
     @State private var fillSweep: CGFloat = 0
     /// Marker settle (false = lifted/transparent, true = seated).
     @State private var markerSeated: Bool = false
 
+    /// NOTE (zero-fallback): `activeIndex`/`markerLabel` carry NO defaults —
+    /// the proof "$712" stand-ins were deleted so a host can never silently
+    /// render a fabricated live index. The reference `steps` default remains
+    /// (a documented carrier-schedule placeholder, see 659's header TODO).
     public init(
         steps: [BunkerFSCStep] = BunkerFSCStepLadder.proofSchedule,
-        activeIndex: Double = 712,
-        markerLabel: String = "$712",
+        activeIndex: Double,
+        markerLabel: String,
         height: CGFloat = 240
     ) {
         // Defensive: keep brackets sorted by lower bound so the staircase is
@@ -303,10 +316,14 @@ public struct BunkerFSCStepLadder: View {
                     .clipped()
             }
 
-            // The staircase outline (draws in left→right via TimelineView).
-            TimelineView(.animation) { _ in
+            // The staircase outline — draws in left→right off the wall-clock
+            // anchor. The TimelineView PAUSES once the intro settles (and
+            // under reduce-motion), so the only per-frame clock on this card
+            // stops the moment the ladder is fully drawn.
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0,
+                                    paused: reduceMotion || introSettled)) { tl in
                 Canvas { ctx, _ in
-                    let p = staircasePath(in: plot, progress: drawProgress)
+                    let p = staircasePath(in: plot, progress: drawProgress(at: tl.date))
                     // Glow underlay.
                     ctx.stroke(
                         p,
@@ -409,22 +426,23 @@ public struct BunkerFSCStepLadder: View {
 
         if reduceMotion {
             // Static drawn ladder, fill placed, marker placed — no sweep/spring.
-            drawProgress = CGFloat(stepCount)
+            introSettled = true
+            activeStepRevealed = true
             fillSweep = 1
             markerSeated = true
             return
         }
 
-        // 1. Draw the staircase left→right, one step at a time.
-        // cubic-bezier(0.4, 0, 0.2, 1) ≈ Material standard easing.
+        // 1. Anchor the time-driven staircase draw (the TimelineView extends
+        //    the path each frame from this instant, easing on the Material
+        //    standard cubic-bezier(0.4, 0, 0.2, 1)).
         let total = perStep * Double(stepCount)
-        withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: total)) {
-            drawProgress = CGFloat(stepCount)
-        }
+        introStart = Date()
 
-        // 2. When the draw reaches the active bracket, sweep the fill up.
+        // 2. When the draw reaches the active bracket, reveal + sweep the fill.
         let activeReachedAt = perStep * Double((activeStepIndex ?? 0) + 1)
         DispatchQueue.main.asyncAfter(deadline: .now() + activeReachedAt) {
+            activeStepRevealed = true
             withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.45)) {
                 fillSweep = 1
             }
@@ -433,14 +451,51 @@ public struct BunkerFSCStepLadder: View {
                 markerSeated = true
             }
         }
+
+        // 4. CLOCK HYGIENE: once the staircase is fully drawn, pause the
+        //    TimelineView for good — no idle per-frame work after settle.
+        DispatchQueue.main.asyncAfter(deadline: .now() + total + 0.1) {
+            introSettled = true
+        }
     }
 
-    /// Whether the staircase draw has progressed past the active bracket,
-    /// gating the fill/marker/highlight reveal.
-    private var activeRevealed: Bool {
-        guard let ai = activeStepIndex else { return false }
-        return drawProgress >= CGFloat(ai) + 0.85
+    /// Per-frame staircase progress (0…stepCount), eased on the Material
+    /// standard curve across the whole draw. Clamps to full once settled so
+    /// the paused TimelineView's final frame is the complete ladder.
+    private func drawProgress(at now: Date) -> CGFloat {
+        let stepCount = CGFloat(steps.count)
+        if reduceMotion || introSettled { return stepCount }
+        guard let start = introStart else { return 0 }
+        let total = perStep * Double(steps.count)
+        guard total > 0 else { return stepCount }
+        let x = max(0, min(1, now.timeIntervalSince(start) / total))
+        return stepCount * CGFloat(Self.standardEase(x))
     }
+
+    /// cubic-bezier(0.4, 0, 0.2, 1) y-for-x via bisection — the Material
+    /// "standard" curve the rest of the design system animates on.
+    private static func standardEase(_ x: Double) -> Double {
+        guard x > 0 else { return 0 }
+        guard x < 1 else { return 1 }
+        func bezX(_ t: Double) -> Double {
+            3 * (1 - t) * (1 - t) * t * 0.4 + 3 * (1 - t) * t * t * 0.2 + t * t * t
+        }
+        func bezY(_ t: Double) -> Double {
+            3 * (1 - t) * t * t + t * t * t
+        }
+        var lo = 0.0, hi = 1.0
+        for _ in 0..<24 {
+            let mid = (lo + hi) / 2
+            if bezX(mid) < x { lo = mid } else { hi = mid }
+        }
+        return bezY((lo + hi) / 2)
+    }
+
+    /// Whether the draw has reached the active bracket, gating the
+    /// fill/marker/highlight reveal. Scheduled at the REAL reveal moment by
+    /// `runIntro` (the prior computed check read an end-value @State and
+    /// fired immediately).
+    private var activeRevealed: Bool { activeStepRevealed }
 
     /// Subtle pulse on the highlight, derived from the seated state.
     private var highlightOpacity: Double { markerSeated ? 1 : 0.5 }

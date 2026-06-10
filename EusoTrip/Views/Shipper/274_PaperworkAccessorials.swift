@@ -25,6 +25,9 @@ private struct AccessorialsBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
             summaryCard
+            // Wave A2 strip extension — accessorial close-out keeps the
+            // live equipment animation in view (echo-cel 274 M04).
+            LifecycleAnimationStrip(live: live, label: "EQUIPMENT · CLOSE-OUT", height: 160)
             ctaRow
         }
     }

@@ -107,13 +107,26 @@ public struct TempZone: Identifiable, Hashable {
 
 // MARK: - Chart
 
+/// Display unit for the chart's labels. Readings are ALWAYS supplied in °F
+/// (the telemetry wire unit); `.celsius` converts every printed label —
+/// axis ticks, rails, legend, end-dot — so vessel-operator surfaces read
+/// in °C without the caller re-baking the series.
+public enum ReeferTempDisplayUnit {
+    case fahrenheit, celsius
+}
+
 public struct ReeferTempLogChart: View {
 
     // Inputs
     private let zones: [TempZone]
-    private let setpointF: Double
+    /// Commanded setpoint, °F. Optional: when the surface has no live
+    /// setpoint source, pass nil and the SET rail is honestly omitted
+    /// (never a fabricated 34°F).
+    private let setpointF: Double?
     private let ceilingF: Double
     private let title: String
+    /// Label unit — see `ReeferTempDisplayUnit`.
+    private let unit: ReeferTempDisplayUnit
 
     /// Distance below the ceiling (°F) within which a rising rear trace is
     /// treated as "approaching" — drives the warn end-state + glow.
@@ -130,16 +143,18 @@ public struct ReeferTempLogChart: View {
 
     public init(
         zones: [TempZone],
-        setpointF: Double,
+        setpointF: Double?,
         ceilingF: Double,
         warnBandF: Double = 2.0,
-        title: String = "REEFER TEMP LOG"
+        title: String = "REEFER TEMP LOG",
+        unit: ReeferTempDisplayUnit = .fahrenheit
     ) {
         self.zones = zones
         self.setpointF = setpointF
         self.ceilingF = ceilingF
         self.warnBandF = warnBandF
         self.title = title
+        self.unit = unit
     }
 
     // MARK: derived
@@ -163,7 +178,8 @@ public struct ReeferTempLogChart: View {
     /// Y-domain. Pad a touch above the ceiling and below the coldest sample so
     /// the rails and traces never sit flush against the plot edges.
     private var yDomain: (lo: Double, hi: Double) {
-        let temps = zones.flatMap { $0.readings.map(\.tempF) } + [setpointF, ceilingF]
+        let temps = zones.flatMap { $0.readings.map(\.tempF) }
+            + [ceilingF] + (setpointF.map { [$0] } ?? [])
         let rawLo = (temps.min() ?? 30) - 2
         let rawHi = max(temps.max() ?? 42, ceilingF) + 2
         // Snap to friendly 4°F ticks (…32 / 36 / 40…) so the axis labels land.
@@ -272,8 +288,12 @@ public struct ReeferTempLogChart: View {
             // FSMA ceiling — dashed danger rail near the top, pulsing on warn.
             ceilingRail(in: size, domain: d, beat: beat)
 
-            // Setpoint — subtle solid hairline.
-            setpointRail(in: size, domain: d)
+            // Setpoint — subtle solid hairline. Only drawn when the host
+            // surface supplied a REAL commanded setpoint (honest absence
+            // otherwise — no fabricated rail).
+            if setpointF != nil {
+                setpointRail(in: size, domain: d)
+            }
 
             // Traces, draw-in left→right, staggered.
             ForEach(zones) { zone in
@@ -324,14 +344,14 @@ public struct ReeferTempLogChart: View {
 
     @ViewBuilder
     private func setpointRail(in size: CGSize, domain d: (lo: Double, hi: Double)) -> some View {
-        let y = yPos(setpointF, in: size.height, domain: d)
+        let y = yPos(setpointF ?? d.lo, in: size.height, domain: d)
         Path { p in
             p.move(to: CGPoint(x: 0, y: y))
             p.addLine(to: CGPoint(x: size.width, y: y))
         }
         .stroke(palette.textTertiary.opacity(0.55), lineWidth: 0.75)
         .overlay(alignment: .topLeading) {
-            Text("SET \(tempLabel(setpointF))")
+            Text("SET \(tempLabel(setpointF ?? d.lo))")
                 .font(EType.micro).tracking(0.4)
                 .foregroundStyle(palette.textTertiary)
                 .offset(y: max(0, y - 11))
@@ -492,12 +512,28 @@ public struct ReeferTempLogChart: View {
         return [x.lo, mid, x.hi].map(Self.hourLabel)
     }
 
+    /// °F → display-unit conversion for printed labels. Series data and
+    /// domain math stay in °F; only the labels convert.
+    private func displayValue(_ f: Double) -> Double {
+        switch unit {
+        case .fahrenheit: return f
+        case .celsius:    return (f - 32) * 5 / 9
+        }
+    }
+
+    private var unitSuffix: String {
+        switch unit {
+        case .fahrenheit: return "°F"
+        case .celsius:    return "°C"
+        }
+    }
+
     private func tempLabel(_ f: Double) -> String {
-        String(format: "%.0f°F", f.rounded())
+        String(format: "%.0f%@", displayValue(f).rounded(), unitSuffix)
     }
 
     private func preciseTempLabel(_ f: Double) -> String {
-        String(format: "%.1f°F", f)
+        String(format: "%.1f%@", displayValue(f), unitSuffix)
     }
 
     private static func hourLabel(_ date: Date) -> String {
@@ -558,7 +594,11 @@ public struct ReeferTempLogChart: View {
 
     private var accessibilitySummary: String {
         var parts: [String] = ["Reefer temperature log."]
-        parts.append("Setpoint \(tempLabel(setpointF)), FSMA ceiling \(tempLabel(ceilingF)).")
+        if let sp = setpointF {
+            parts.append("Setpoint \(tempLabel(sp)), FSMA ceiling \(tempLabel(ceilingF)).")
+        } else {
+            parts.append("FSMA ceiling \(tempLabel(ceilingF)).")
+        }
         for z in zones {
             if let v = z.lastValue {
                 parts.append("\(z.name) \(tempLabel(v)).")

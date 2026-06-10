@@ -72,6 +72,25 @@ struct HosDutyStatus: View {
     @State private var showRemark = false
     @State private var remarkDraft = ""
 
+    // MARK: Timeline motion (Wave A2 — 019 HOS motion language)
+    //
+    // The 24-hour log was real-data, zero-motion: duty flips snapped and
+    // the live edge never visibly grew. Three motion channels now ride the
+    // SAME live segments (no value is ever decorative):
+    //   • Appear reveal — `timelineReveal` 0→1 multiplies every segment's
+    //     drawn width, so the log draws itself in left-to-right on the
+    //     material standard curve at first appearance.
+    //   • Live-edge crawl + duty-flip settle — segment widths animate on
+    //     the standard curve whenever the underlying data moves (the open
+    //     segment's end advances with the 1s wall-clock tick; a duty
+    //     change births a new segment that grows from zero).
+    //   • Live-dot pulse — the iridescent marker on the open segment
+    //     breathes (~1.4s ease loop) while a segment is actually open.
+    // All three freeze under Reduce Motion: reveal pins at 1, widths
+    // snap, the dot holds steady.
+    @State private var timelineReveal: CGFloat = 0
+    @State private var liveDotPulse = false
+
     // Certification confirmation.
     @State private var certifyTarget: HOSDailyLog?
 
@@ -255,6 +274,19 @@ struct HosDutyStatus: View {
             }
         }
         .onReceive(tick) { now = $0 }
+        .onAppear {
+            // Arm the timeline appear-reveal + live-dot breath. Reduce
+            // Motion pins the reveal at 1 (static, fully drawn) and never
+            // starts the pulse.
+            if reduceMotion {
+                timelineReveal = 1
+            } else {
+                withAnimation(.timingCurve(0.4, 0, 0.2, 1, duration: 0.9).delay(0.1)) {
+                    timelineReveal = 1
+                }
+                liveDotPulse = true
+            }
+        }
         .task { await store.bootstrap() }
         .refreshable { await store.refreshAll() }
         // RealtimeService → ELD posts a duty-status change for this
@@ -556,20 +588,43 @@ struct HosDutyStatus: View {
                     let sx = (seg.start - 4.0) / 24.0
                     let ex = (seg.end - 4.0) / 24.0
                     let x = max(0, CGFloat(sx) * (w - 26)) + 26
-                    let width = max(2, CGFloat(ex - sx) * (w - 26))
+                    // REAL width × the one-shot appear reveal. The resting
+                    // value is always the live log fraction — the reveal
+                    // multiplier only shapes the entrance, never the data.
+                    let width = max(2, CGFloat(ex - sx) * (w - 26)) * timelineReveal
 
                     RoundedRectangle(cornerRadius: 3)
                         .fill(laneFill(seg.duty, isLive: isLive(seg)))
                         .frame(width: width, height: 14)
                         .offset(x: x)
+                        // Live-edge crawl + duty-flip settle: any width move
+                        // (1s open-segment growth, a fresh segment growing
+                        // from zero, the appear reveal) glides on the
+                        // material standard curve. Snaps under Reduce Motion.
+                        .animation(
+                            reduceMotion ? nil : .timingCurve(0.4, 0, 0.2, 1, duration: 0.95),
+                            value: width
+                        )
                         .overlay(alignment: .leading) {
                             if isLive(seg) {
-                                // Iridescent marker for the active segment
+                                // Iridescent marker for the active segment —
+                                // breathing while the segment is open (live).
                                 Circle()
                                     .fill(LinearGradient.diagonal)
                                     .frame(width: 8, height: 8)
                                     .overlay(Circle().strokeBorder(palette.bgPage, lineWidth: 2))
+                                    .scaleEffect((liveDotPulse && !reduceMotion) ? 1.3 : 1.0)
+                                    .animation(
+                                        reduceMotion
+                                            ? nil
+                                            : .easeInOut(duration: 1.4).repeatForever(autoreverses: true),
+                                        value: liveDotPulse
+                                    )
                                     .offset(x: x + width - 4, y: 0)
+                                    .animation(
+                                        reduceMotion ? nil : .timingCurve(0.4, 0, 0.2, 1, duration: 0.95),
+                                        value: width
+                                    )
                             }
                         }
                 }
@@ -827,7 +882,13 @@ struct HosDutyStatus: View {
 // MARK: - Segment
 
 private struct Segment: Identifiable {
-    let id = UUID()
+    /// STABLE identity — keyed off the duty lane + the segment's fixed
+    /// start hour, NOT a per-recompute UUID. The `segments` array is
+    /// derived fresh on every 1s wall-clock tick; with UUID identity every
+    /// row was a brand-new view each second, so no width animation could
+    /// ever run (the live-edge crawl and the duty-flip settle both depend
+    /// on SwiftUI seeing the SAME view's width change).
+    var id: String { "\(duty.rawValue)-\(start)" }
     let start: Double    // decimal hours 4.0 – 28.0 (mapped to 04:00 – 04:00)
     let end:   Double
     let duty:  HosDutyStatus.Duty

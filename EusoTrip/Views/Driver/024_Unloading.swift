@@ -73,6 +73,13 @@ struct Unloading: View {
     /// render em-dash sentinels rather than invented "$60/hr" / "$..." copy.
     @State private var detentionCalc: DetentionAPI.DetentionCalc?
 
+    /// The driver's assigned trailer unit, resolved from the REAL fleet
+    /// roster (`fleet.listAssets`, kind == "trailer"). Replaces the prior
+    /// permanent em-dash: when the driver's fleet carries a trailer asset
+    /// its unit number renders; with no trailer on file the honest em-dash
+    /// stays. Never a fabricated "TR-2118".
+    @State private var trailerUnit: String?
+
     enum Register { case night, afternoon }
     let register: Register
 
@@ -119,9 +126,16 @@ struct Unloading: View {
     //                                    a dock unload (no live rate); "-".
     //   • rate "2"                    → no per-unit unload-rate telemetry
     //                                    reaches this screen; "-".
-    // None of these emit a fabricated figure now. The trailer sentinel
-    // stays the honest em-dash it already was.
+    // None of these emit a fabricated figure now. The trailer line reads
+    // the REAL fleet trailer asset when one resolves, em-dash otherwise.
     private let fallbackTrailer   = "-"
+
+    /// Trailer line — the real fleet trailer's unit number, else em-dash.
+    private var trailerDisplay: String {
+        guard let unit = trailerUnit?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !unit.isEmpty else { return fallbackTrailer }
+        return unit
+    }
 
     // MARK: - Honest live displays
 
@@ -201,14 +215,22 @@ struct Unloading: View {
     // the count axis is honest em-dash until a real terminal completion
     // (binary "all off") lands.
 
+    /// Real per-load unit total — the `palletCount` column on the load
+    /// envelope (decode seam in LoadsAPI.LoadDetail; nil until the server
+    /// ships it). Drives the "of N" denominator + the pallet-map cell
+    /// count. Never a seeded "26".
+    private var totalUnits: Int? { activeLoad?.palletCount }
+
     /// Live count of units off the trailer when a real source exists,
-    /// else nil. There is no granular partial-count column on the wire
-    /// (`LiveLoadFacets.palletCount` backend gap) and no live feed ever
-    /// assigns one, so this is permanently nil today — the header/hero
-    /// em-dash and the `.contentTransition(.numericText)` modifiers sit
-    /// dormant until a real count column lands server-side. Never a
-    /// seeded "4".
-    private var unloadedNow: Int? { nil }
+    /// else nil. There is still no granular partial-count column on the
+    /// wire, so mid-unload this is nil (header/hero em-dash). The one
+    /// count we CAN prove: at a terminal unload state every unit is off,
+    /// so with a real total the count completes to it — "26 of 26" is a
+    /// provable statement, "4 of 26" without a feed is not.
+    private var unloadedNow: Int? {
+        guard unloadComplete, let total = totalUnits else { return nil }
+        return total
+    }
 
     /// Numeric "off" label for the header / hero — the live count, else
     /// the honest em-dash sentinel. No seeded number.
@@ -216,9 +238,11 @@ struct Unloading: View {
         unloadedNow.map(String.init) ?? "—"
     }
 
-    /// Numeric "of N" total label — no live total-unit column on the
-    /// load envelope (backend gap), so always the honest em-dash.
-    private var unloadTotalLabel: String { "—" }
+    /// Numeric "of N" total label — the REAL `palletCount` denominator
+    /// when the column ships; the honest em-dash otherwise.
+    private var unloadTotalLabel: String {
+        totalUnits.map(String.init) ?? "—"
+    }
 
     /// THE real unload fraction (0…1) the grid + rail bind to. Empty
     /// (0) until a terminal completion is proven, then full (1). No
@@ -335,7 +359,7 @@ struct Unloading: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                     .contentTransition(.numericText(value: Double(unloadedNow ?? 0)))
-                Text(fallbackTrailer)
+                Text(trailerDisplay)
                     .font(EType.mono(.micro)).tracking(0.3)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -378,17 +402,18 @@ struct Unloading: View {
                 }
             }
 
-            // Stylized trailer grid — 110th firing M2 retrofit:
-            // hardcoded "TR-2118" excised. Trailer id is not yet a
-            // first-class field on Load; until FleetStore.assignedTrailer
-            // wires in we render the existing `fallbackTrailer` em-dash
-            // sentinel so the layout holds without leaking a fake id.
+            // Stylized trailer grid. Trailer id reads the REAL fleet
+            // trailer asset (`fleet.listAssets`, kind == "trailer") when
+            // one resolves; em-dash otherwise — never a fake "TR-2118".
+            // Cell count binds to the REAL `palletCount` denominator when
+            // the column ships (capped at the 26-slot trailer footprint);
+            // 26 stylized slots otherwise.
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text(fallbackTrailer)
+                    Text(trailerDisplay)
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
-                        .accessibilityLabel(fallbackTrailer == "-" ? "Trailer pending" : "Trailer \(fallbackTrailer)")
+                        .accessibilityLabel(trailerDisplay == "-" ? "Trailer pending" : "Trailer \(trailerDisplay)")
                     Spacer()
                     Text("DOOR \(doorDisplay)")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.6)
@@ -399,46 +424,56 @@ struct Unloading: View {
                     let cols = 13
                     let cellW = (geo.size.width - CGFloat(cols - 1) * 3) / CGFloat(cols)
                     let cellH: CGFloat = 18
+                    // Real pallet slots when the count column ships; the
+                    // full stylized footprint otherwise. Cells past the
+                    // real count render as faint voids so a 12-pallet
+                    // load doesn't read as a 26-pallet trailer.
+                    let realSlots = totalUnits.map { max(1, min($0, rows * cols)) } ?? (rows * cols)
                     VStack(spacing: 3) {
-                        ForEach(0..<rows, id: \.self) { _ in
+                        ForEach(0..<rows, id: \.self) { row in
                             HStack(spacing: 3) {
-                                ForEach(0..<cols, id: \.self) { _ in
+                                ForEach(0..<cols, id: \.self) { col in
                                     // Bound to the REAL unload fraction.
                                     // No granular partial count exists on
                                     // the wire, so every cell sits empty
                                     // until a terminal completion is
                                     // proven (`unloadProgress` == 1), then
-                                    // all flip filled — never a seeded
-                                    // partial grid.
-                                    let isOff = unloadProgress >= 1
+                                    // the cells STAGGER-fill nose→tail
+                                    // (~25ms/cell spring) — never a seeded
+                                    // partial grid. The stagger machinery
+                                    // is the same one a real per-pallet
+                                    // count feed will drive cell-by-cell
+                                    // when `palletCount` granularity lands.
+                                    let index = row * cols + col
+                                    let isRealSlot = index < realSlots
+                                    let isOff = isRealSlot && unloadProgress >= 1
                                     RoundedRectangle(cornerRadius: 2)
                                         .fill(isOff
                                               ? AnyShapeStyle(LinearGradient.diagonal)
-                                              : AnyShapeStyle(palette.bgCardSoft))
+                                              : AnyShapeStyle(isRealSlot ? palette.bgCardSoft : Color.clear))
                                         .overlay(
                                             RoundedRectangle(cornerRadius: 2)
                                                 .stroke(
-                                                    isOff ? Color.clear : palette.borderFaint,
+                                                    isOff
+                                                        ? Color.clear
+                                                        : palette.borderFaint.opacity(isRealSlot ? 1.0 : 0.35),
                                                     lineWidth: 1
                                                 )
                                         )
                                         .frame(width: cellW, height: cellH)
+                                        // Per-cell stagger on the REAL data
+                                        // flip; snaps under reduce-motion.
+                                        .animation(
+                                            reduceMotion
+                                                ? nil
+                                                : .spring(response: 0.34, dampingFraction: 0.72)
+                                                    .delay(Double(index) * 0.025),
+                                            value: unloadProgress
+                                        )
                                 }
                             }
                         }
                     }
-                    // Spring-settle fill crossfade when the unload flips
-                    // to complete — the whole grid eases from the soft
-                    // slots to the gradient fill, reading as a satisfying
-                    // "thunk" at completion. Bound to the REAL
-                    // `unloadProgress`; snaps to the final grid under
-                    // reduce-motion.
-                    .animation(
-                        reduceMotion
-                            ? nil
-                            : .spring(response: 0.34, dampingFraction: 0.72),
-                        value: unloadProgress
-                    )
                 }
                 .frame(height: 44)
 
@@ -814,6 +849,20 @@ struct Unloading: View {
             }
             _ = try? await EusoTripAPI.shared.appointments
                 .updateStatus(id: appt.id, status: "unloading")
+        }
+
+        // Trailer id — the driver's REAL fleet trailer asset
+        // (`fleet.listAssets` is scoped to the authed user). Prefer an
+        // active trailer; fall back to any trailer on file; stay nil
+        // (em-dash) when the fleet carries none. Best-effort.
+        if let assets = try? await EusoTripAPI.shared.fleet.listAssets().items {
+            let trailers = assets.filter { $0.kind.lowercased() == "trailer" }
+            let active = trailers.first {
+                ($0.status ?? "active").lowercased() == "active"
+            }
+            if let unit = (active ?? trailers.first)?.unitNumber, !unit.isEmpty {
+                trailerUnit = unit
+            }
         }
     }
 
