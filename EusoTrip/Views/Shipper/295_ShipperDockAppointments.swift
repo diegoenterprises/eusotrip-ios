@@ -532,7 +532,10 @@ struct ShipperDockAppointments: View {
             Text("No dock appointments today")
                 .font(EType.body)
                 .foregroundStyle(palette.textSecondary)
-            Text("Houston Terminal · scheduled windows will appear here")
+            // W13 hygiene (E2E audit §4 · 2026-06-10): the empty state
+            // named "Houston Terminal" — a fabricated facility (the wire
+            // carries only facilityId, no name). Neutral copy instead.
+            Text("Scheduled dock windows will appear here")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
         }

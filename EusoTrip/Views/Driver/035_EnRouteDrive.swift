@@ -681,9 +681,12 @@ struct EnRouteDrive: View {
         }
     }
 
-    /// Decorative on-brand corridor shown only when no live load with
-    /// real coordinates is on file (previews + first-run). It carries NO
-    /// business data — a neutral backdrop, never a fabricated route.
+    /// Neutral-grid placeholder shown only when no live load with real
+    /// coordinates is on file (previews + first-run). It carries NO
+    /// business data and paints NO route — just the register backdrop,
+    /// the faint street grid, em-dash labels, and an honest "awaiting
+    /// route" seam (W13 hygiene · E2E audit §4 · 2026-06-10; the prior
+    /// decorative corridor + arrowheads read as a live route).
     private var mapPlaceholder: some View {
         ZStack {
             // Backdrop — register-specific ground color
@@ -725,11 +728,11 @@ struct EnRouteDrive: View {
                 }
             }
 
-            // Cross-street labels scattered along the vertical corridor.
+            // Cross-street labels scattered across the placeholder grid.
             // M2 cleanup (97th firing): register-keyed fixtures (e.g. "West Aire Rd"/"Old Lincoln Hwy")
             // were inherited Figma vignettes — replaced with em-dash neutrals until HERE Routing
             // turn-by-turn cross-street labels land for this screen. The four positions are
-            // preserved so the visual rhythm of the decorative corridor stays consistent.
+            // preserved so the placeholder keeps its visual rhythm.
             GeometryReader { geo in
                 crossStreetLabel(text: "-",
                                  at: .init(x: geo.size.width * 0.18, y: geo.size.height * 0.18))
@@ -741,60 +744,27 @@ struct EnRouteDrive: View {
                                  at: .init(x: geo.size.width * 0.78, y: geo.size.height * 0.64))
             }
 
-            // Route polyline — the iridescent hairline as a vertical corridor
+            // W13 hygiene (E2E audit §4 maps · 2026-06-10): the decorative
+            // fake route corridor (iridescent hairlines + direction
+            // arrowheads) is gone — a placeholder must never paint
+            // something that reads as a live route (zero-fallback
+            // doctrine, matches 018's honest-seam treatment). The neutral
+            // grid above stays; an honest "awaiting route" seam below
+            // says exactly why there is no corridor yet.
             GeometryReader { geo in
-                let w = geo.size.width
-                let h = geo.size.height
-
-                // Lower (traveled / current corridor) — solid gradient
-                Path { p in
-                    p.move(to: .init(x: w * 0.50, y: h * 0.98))
-                    p.addQuadCurve(to: .init(x: w * 0.52, y: h * 0.78),
-                                   control: .init(x: w * 0.46, y: h * 0.88))
-                    p.addQuadCurve(to: .init(x: w * 0.50, y: h * 0.60),
-                                   control: .init(x: w * 0.54, y: h * 0.70))
+                HStack(spacing: 5) {
+                    Image(systemName: "mappin.slash")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("AWAITING ROUTE")
+                        .font(EType.mono(.micro)).tracking(0.6)
                 }
-                .stroke(LinearGradient.diagonal,
-                        style: StrokeStyle(lineWidth: 9, lineCap: .round))
-
-                // Upper (remaining) — slightly thinner, same gradient
-                Path { p in
-                    p.move(to: .init(x: w * 0.50, y: h * 0.60))
-                    p.addQuadCurve(to: .init(x: w * 0.48, y: h * 0.40),
-                                   control: .init(x: w * 0.52, y: h * 0.50))
-                    p.addQuadCurve(to: .init(x: w * 0.56, y: h * 0.20),
-                                   control: .init(x: w * 0.46, y: h * 0.30))
-                    p.addQuadCurve(to: .init(x: w * 0.62, y: h * 0.05),
-                                   control: .init(x: w * 0.60, y: h * 0.12))
-                }
-                .stroke(LinearGradient.diagonal,
-                        style: StrokeStyle(lineWidth: 7, lineCap: .round))
-
-                // Inner highlight — thin white-ish line riding the gradient
-                Path { p in
-                    p.move(to: .init(x: w * 0.50, y: h * 0.98))
-                    p.addQuadCurve(to: .init(x: w * 0.52, y: h * 0.78),
-                                   control: .init(x: w * 0.46, y: h * 0.88))
-                    p.addQuadCurve(to: .init(x: w * 0.50, y: h * 0.60),
-                                   control: .init(x: w * 0.54, y: h * 0.70))
-                    p.addQuadCurve(to: .init(x: w * 0.48, y: h * 0.40),
-                                   control: .init(x: w * 0.52, y: h * 0.50))
-                    p.addQuadCurve(to: .init(x: w * 0.56, y: h * 0.20),
-                                   control: .init(x: w * 0.46, y: h * 0.30))
-                    p.addQuadCurve(to: .init(x: w * 0.62, y: h * 0.05),
-                                   control: .init(x: w * 0.60, y: h * 0.12))
-                }
-                .stroke(Color.white.opacity(register == .dark ? 0.18 : 0.35),
-                        style: StrokeStyle(lineWidth: 2, lineCap: .round))
-
-                // Direction arrowheads along the remaining path
-                ForEach(0..<3, id: \.self) { i in
-                    let frac = 0.35 - Double(i) * 0.10
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.55))
-                        .position(x: w * 0.52, y: h * CGFloat(frac))
-                }
+                .foregroundStyle(palette.textTertiary)
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .background(.ultraThinMaterial)
+                .overlay(Capsule().strokeBorder(palette.borderFaint))
+                .clipShape(Capsule())
+                .position(x: geo.size.width * 0.50, y: geo.size.height * 0.46)
+                .accessibilityLabel("Awaiting route — the live corridor appears once this load's coordinates are on file")
             }
 
             // Interstate shield waypoint pill (center of the map)

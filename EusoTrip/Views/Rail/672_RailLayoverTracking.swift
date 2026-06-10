@@ -129,7 +129,16 @@ private struct LayoverEvent672: Identifiable {
         self.status = status
         self.fault = LayoverFault672.from(reason: row.reason, status: status)
         self.reason = (row.reason?.isEmpty == false ? row.reason! : "shipper/receiver delay")
-        self.charge = Self.usd(row.totalCharge ?? Double(self.days) * (row.dailyRate ?? 350))
+        // W13 hygiene (E2E audit §4 · 2026-06-10): no fabricated $350/car-day
+        // default — the charge renders em-dash when the server sends neither
+        // a total nor a daily rate (zero-fallback doctrine).
+        if let total = row.totalCharge {
+            self.charge = Self.usd(total)
+        } else if let rate = row.dailyRate {
+            self.charge = Self.usd(Double(self.days) * rate)
+        } else {
+            self.charge = "-"
+        }
         self.mark = "Load #\(row.id)"
     }
 
@@ -155,6 +164,13 @@ private struct RailLayoverTrackingBody672: View {
     @State private var summary: LayoverSummary672? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+
+    // W13 hygiene (E2E audit §4 · 2026-06-10): the header carrier + tariff
+    // were hardcoded fixtures ("BNSF INTERMODAL · $350/car-day") rendered
+    // beside live rows. Both now bind to the live feed (first row carrying
+    // each field) and render em-dash until data lands.
+    @State private var headerCarrier: String? = nil
+    @State private var headerTariff: String? = nil
 
     // posture gradients / tints (local — mirrors the canonical port stops)
     private let heat = LinearGradient(
@@ -223,8 +239,8 @@ private struct RailLayoverTrackingBody672: View {
                 Text("Layover aging").font(.system(size: 28, weight: .bold)).kerning(-0.4).foregroundStyle(palette.textPrimary)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("BNSF INTERMODAL").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textSecondary)
-                    Text("$350 / car-day").font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textSecondary)
+                    Text(headerCarrier ?? "-").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textSecondary)
+                    Text(headerTariff ?? "-").font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textSecondary)
                 }
             }
             IridescentHairline()
@@ -401,6 +417,15 @@ private struct RailLayoverTrackingBody672: View {
                 "detentionAccessorials.getLayoverTracking", input: LayoverInput672())
             self.events = resp.layovers.map(LayoverEvent672.init(row:))
             self.summary = resp.summary
+            // Live header identity — first row carrying each field; nil
+            // keeps the em-dash (never the old BNSF/$350 fixtures).
+            self.headerCarrier = resp.layovers
+                .compactMap { $0.carrierName }
+                .first { !$0.isEmpty }?.uppercased()
+            self.headerTariff = resp.layovers
+                .compactMap { $0.dailyRate }
+                .first
+                .map { LayoverEvent672.usd($0) + " / car-day" }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

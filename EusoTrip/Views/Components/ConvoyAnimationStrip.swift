@@ -446,7 +446,11 @@ private struct ConvoyVehicleAnimation: View {
         case "DELIVERED", "VESSEL_DISCHARGED", "RAIL_RAMP_OUT", "COMPLETE":
             return 100
         default:
-            return 50
+            // Zero-fallback doctrine (E2E audit §4 · 2026-06-09): an
+            // unmapped child state must not fabricate a half-done bar —
+            // same ramp contract as LoadAnimationContext.progressPercent.
+            assertionFailure("ConvoyAnimationStrip.progressFromChildState: unmapped child state '\(state)' — add it to the ramp")
+            return 0
         }
     }
 }

@@ -1614,6 +1614,19 @@ extension BespokeMapCanvas {
     /// two-rect truck silhouette. NO green status dot anywhere. `phase`
     /// drives the canon halo pulse (222: r12→22→12 / opacity 0.9→0.3→0.9
     /// over 2.2 s; AIS surfaces keep their 2.4 s rhythm).
+    ///
+    /// DESIGN-AUTHORITY SANCTION (W13 hygiene · E2E audit §4 · 2026-06-10):
+    /// the hand-drawn vehicle Paths below (nav arrowhead, vessel top-down
+    /// hull + container slots, AIS hull chevron, cab+box truck silhouette)
+    /// are wireframe-VERBATIM puck glyphs transcribed 1:1 from the canon
+    /// SVG wireframes (035 / 660 / 003 / 222) per _MAP_DESIGN_LANGUAGE_
+    /// 2026-06-09. They are map-scale position pucks (≤ ~20 pt) drawn in a
+    /// single GraphicsContext pass — NOT equipment renders — so the
+    /// canonical-equipment-model mandate (Animation Design System via
+    /// NativeSVGView) does not apply at this dimension; full-size vehicle
+    /// markers (560/643/003 live-position cars) keep the canonical models.
+    /// Any change to these paths must re-derive from the wireframes, never
+    /// freehand.
     static func paintTruck(
         _ context: inout GraphicsContext,
         at c: CGPoint,

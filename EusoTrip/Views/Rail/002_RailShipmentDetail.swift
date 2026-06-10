@@ -184,12 +184,21 @@ struct RailShipmentDetailScreen: View {
 private struct RailShipmentDetail: View {
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let shipmentId: Int
 
     // Real loading + error state (honest wiring; no try?-collapse).
     @State private var detail: RailShipmentDetail002? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+
+    // W13 hygiene (E2E audit §4 animations · 2026-06-10): the lifecycle
+    // strip + train pin were fully static. `shownProgress` lets the pin
+    // settle along the route curve to its real fraction (560's settle
+    // pattern); `pinBreathing` drives the ambient halo + current-stage
+    // pulse. Both honor Reduce Motion.
+    @State private var shownProgress: Double = 0
+    @State private var pinBreathing = false
 
     // MARK: - Live event geometry (real coords only)
 
@@ -273,6 +282,34 @@ private struct RailShipmentDetail: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .onAppear { settlePin(); startAmbientLoops() }
+        .onChange(of: progressFraction) { _, _ in settlePin() }
+        .onChange(of: reduceMotion) { _, _ in settlePin(); startAmbientLoops() }
+    }
+
+    /// Settle the train pin to its real lifecycle fraction (spring), or
+    /// snap when Reduce Motion is on. Mirrors 560's settle().
+    private func settlePin() {
+        if reduceMotion {
+            shownProgress = progressFraction
+            return
+        }
+        withAnimation(.spring(response: 0.70, dampingFraction: 0.85)) {
+            shownProgress = progressFraction
+        }
+    }
+
+    /// Start (or stop) the continuous ambient breathing loop shared by the
+    /// train-pin halo and the current lifecycle stage node.
+    private func startAmbientLoops() {
+        guard !reduceMotion else {
+            pinBreathing = false
+            return
+        }
+        pinBreathing = false
+        withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+            pinBreathing = true
+        }
     }
 
     // MARK: - TopBar
@@ -398,7 +435,7 @@ private struct RailShipmentDetail: View {
 
                 // Live train pin positioned along the curve by lifecycle progress.
                 trainPin
-                    .position(curvePoint(at: progressFraction, w: w, h: h))
+                    .position(curvePoint(at: shownProgress, w: w, h: h))
 
                 // ETA pill (top) + status pill (bottom-left) — real/derived.
                 mapPill(etaPillText)
@@ -442,15 +479,35 @@ private struct RailShipmentDetail: View {
         return CGPoint(x: x, y: y)
     }
 
+    /// Live-position pin riding the route curve. W13 hygiene (E2E audit §4
+    /// animations · 2026-06-10): the non-canonical `tram.fill` glyph is
+    /// replaced by the canonical rail BOXCAR model from the EusoTrip
+    /// Animation Design System (Resources/Animations/Equipment/02_Rail/
+    /// 23_rail_boxcar_anim.svg), rendered through the in-house native SVG
+    /// engine — the same founder-approved lockup 560/643 ride. The hold
+    /// state keeps the exclamation puck (a status glyph, not a vehicle).
+    /// The ambient halo breathes beneath (Reduce Motion gated).
     private var trainPin: some View {
         ZStack {
-            Circle().fill(LinearGradient.primary.opacity(0.25)).frame(width: 26, height: 26)
-            Circle().fill(Color(hex: 0x1C2128))
-                .overlay(Circle().strokeBorder(LinearGradient.primary, lineWidth: 2))
-                .frame(width: 20, height: 20)
-            Image(systemName: isHold ? "exclamationmark" : "tram.fill")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(isHold ? Brand.hazmat : palette.textPrimary)
+            Circle().fill(LinearGradient.primary.opacity(pinBreathing ? 0.32 : 0.18))
+                .frame(width: pinBreathing ? 32 : 26, height: pinBreathing ? 32 : 26)
+            if isHold {
+                Circle().fill(Color(hex: 0x1C2128))
+                    .overlay(Circle().strokeBorder(LinearGradient.primary, lineWidth: 2))
+                    .frame(width: 20, height: 20)
+                Image(systemName: "exclamationmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Brand.hazmat)
+            } else if let boxcarSVG = EquipmentAnimationCache.shared.svg(for: .railBoxcar) {
+                NativeSVGView(svgString: boxcarSVG)
+                    .frame(width: 58, height: 24)
+            } else {
+                // Fallback ring puck if the model can't load — never a
+                // hand-drawn vehicle.
+                Circle().fill(Color(hex: 0x1C2128))
+                    .overlay(Circle().strokeBorder(LinearGradient.primary, lineWidth: 2))
+                    .frame(width: 20, height: 20)
+            }
         }
     }
 
@@ -578,8 +635,12 @@ private struct RailShipmentDetail: View {
     private func stageNode(idx: Int) -> some View {
         ZStack {
             if !isHold && idx == currentStageIndex {
+                // Active node breathes with the train pin (W13 hygiene —
+                // the strip was fully static); Reduce Motion freezes it.
                 Circle().strokeBorder(LinearGradient.primary, lineWidth: 2)
                     .frame(width: 22, height: 22)
+                    .scaleEffect(pinBreathing ? 1.10 : 1.0)
+                    .opacity(pinBreathing ? 0.6 : 1.0)
                 Circle().fill(LinearGradient.primary).frame(width: 16, height: 16)
                 Circle().fill(Color(hex: 0x1C2128)).frame(width: 6, height: 6)
             } else if !isHold && idx < currentStageIndex {
