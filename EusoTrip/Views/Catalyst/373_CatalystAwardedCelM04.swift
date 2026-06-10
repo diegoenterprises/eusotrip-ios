@@ -21,7 +21,11 @@
 //        Lane (pickupLocation/deliveryLocation.cityState · laneDisplay),
 //        miles (distance · distanceDisplay), equipment (equipmentType),
 //        commodity (commodityName ?? commodity ?? cargoType label),
-//        lifecycle status, pickup coords for driver-proximity haversine.
+//        lifecycle status, pickup coords for driver-proximity haversine
+//        (top-level pickupCoord/deliveryCoord, merged into
+//        pickupLocation.lat/lng by LoadDetail's decoder — audit M3),
+//        resolved parties (driver → DRIVER ASSIGN cell, shipper →
+//        initials disc + MESSAGE CTA label — 2026-06-09).
 //    • `catalysts.getAcceptedBid` ({ loadId }) → AcceptedBid_373 or null
 //        CEL's winning bid amount + the shipper's posted target `rate`;
 //        `rate - amount` = the win headroom. Spine of the screen.
@@ -299,6 +303,44 @@ private struct CatalystAwardedCelM04Body: View {
         return "CEL bid was rank —/\(total)"
     }
 
+    // MARK: Derived — assignment + shipper identity (from loads.getById
+    // resolved-party slots; 2026-06-09 — closes the last hardcoded
+    // display copy on this surface: "pending/Naomi → fleet", "ARMED",
+    // the "DU" disc and the "MESSAGE DIEGO" CTA label).
+
+    /// True only when the load row carries a real driver assignment.
+    private var driverAssigned: Bool {
+        load?.driver != nil || load?.driverId != nil
+    }
+    /// "assigned"/"pending" straight off the load row — never a claim.
+    private var driverAssignValue: String { driverAssigned ? "assigned" : "pending" }
+    /// Assigned → the REAL driver name (resolved party); unassigned →
+    /// honest live candidate count from catalysts.getMyDrivers.
+    private var driverAssignFooter: String {
+        if let n = load?.driver?.name?.trimmingCharacters(in: .whitespaces), !n.isEmpty {
+            return n
+        }
+        if driverAssigned { return "driver on file" }
+        guard !drivers.isEmpty else { return "no fleet candidates" }
+        return "\(drivers.count) candidate\(drivers.count == 1 ? "" : "s")"
+    }
+    /// "ARMED" only when the accepted bid is really accepted; "—" until.
+    private var armPickupValue: String { awardConfirmed ? "ARMED" : "—" }
+
+    /// Shipper-of-record initials from the resolved party ("—" until).
+    private var shipperInitialsDisplay: String {
+        let i = load?.shipper?.initials?.trimmingCharacters(in: .whitespaces) ?? ""
+        return i.isEmpty ? "—" : i
+    }
+    /// "MESSAGE <FIRSTNAME>" from the real shipper party, generic
+    /// "MESSAGE SHIPPER" when unresolved — never a hardcoded name.
+    private var messageShipperLabel: String {
+        let first = load?.shipper?.name?
+            .trimmingCharacters(in: .whitespaces)
+            .split(separator: " ").first.map(String.init) ?? ""
+        return first.isEmpty ? "MESSAGE SHIPPER" : "MESSAGE \(first.uppercased())"
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -451,10 +493,11 @@ private struct CatalystAwardedCelM04Body: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            // DU shipper-of-record disc (founder pin)
+            // Shipper-of-record disc — REAL initials from the resolved
+            // shipper party on loads.getById; "—" until it resolves.
             ZStack {
                 Circle().fill(LinearGradient.diagonal).frame(width: 24, height: 24)
-                Text("DU")
+                Text(shipperInitialsDisplay)
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.3)
                     .foregroundStyle(.white)
@@ -475,8 +518,8 @@ private struct CatalystAwardedCelM04Body: View {
         HStack(spacing: 8) {
             kpiCell(eyebrow: "TENDER", value: awardedAmountDisplay, footer: "CEL accepted")
             kpiCell(eyebrow: "WIN", value: winDisplay, footer: winVsTargetLine)
-            kpiCell(eyebrow: "DRIVER ASSIGN", value: "pending", footer: "Naomi → fleet")
-            kpiCell(eyebrow: "ARM PICKUP", value: "ARMED", footer: rpmDisplay)
+            kpiCell(eyebrow: "DRIVER ASSIGN", value: driverAssignValue, footer: driverAssignFooter)
+            kpiCell(eyebrow: "ARM PICKUP", value: armPickupValue, footer: rpmDisplay)
         }
     }
 
@@ -1045,7 +1088,7 @@ private struct CatalystAwardedCelM04Body: View {
                     userInfo: ["loadId": loadId]
                 )
             } label: {
-                Text("MESSAGE DIEGO")
+                Text(messageShipperLabel)
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.4)
                     .foregroundStyle(palette.textSecondary)

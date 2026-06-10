@@ -1414,11 +1414,15 @@ struct LoadsAPI {
     struct LoadCityState: Decodable, Hashable {
         let city: String?
         let state: String?
-        /// Coords land here when the server's loads.getById self-heal
-        /// flow hits a successful HERE geocode. The iOS Load Detail
-        /// map renders a real HereMapView lane when both endpoints
-        /// have non-zero lat/lng; otherwise it shows the loading
-        /// skeleton until the next read.
+        /// 2026-06-09 (audit M3) — the server narrows the
+        /// `pickupLocation`/`deliveryLocation` echoes to {city,state};
+        /// the REAL geocoded anchors ride the TOP-LEVEL
+        /// `pickupCoord`/`deliveryCoord` slots. LoadDetail's custom
+        /// `init(from:)` folds those slots in here (Load.swift
+        /// `mergeLocation` pattern), so map/proximity consumers
+        /// (373/305/502/Broker 402) gate on these as before. nil =
+        /// not geocoded yet → the screens keep their honest
+        /// "awaiting coords" state.
         let lat: Double?
         let lng: Double?
         let address: String?
@@ -1439,6 +1443,31 @@ struct LoadsAPI {
         let city: String?
         let state: String?
         let zip: String?
+    }
+
+    /// Top-level `pickupCoord`/`deliveryCoord` slot of `loads.getById` —
+    /// `{lat,lng}` or null. The server already nulls null-island
+    /// endpoints, so a non-nil pair is a real geocode. Decoded
+    /// tolerantly: any shape surprise → nil → honest no-map state,
+    /// never a fabricated point.
+    struct LoadCoord: Decodable, Hashable {
+        let lat: Double?
+        let lng: Double?
+    }
+
+    /// Resolved party object in the `driver`/`catalyst`/`shipper` slots
+    /// of `loads.getById` (server `resolveParty`) — UI binds to these
+    /// instead of hardcoding names/initials. null when the load has no
+    /// such party (e.g. unassigned driver).
+    struct LoadParty: Decodable, Hashable {
+        let id: Int?
+        let name: String?
+        let initials: String?
+        let email: String?
+        let companyId: Int?
+        let companyName: String?
+        let mcNumber: String?
+        let dotNumber: String?
     }
 
     /// Full load detail mirrored from `loads.getById` server response.
@@ -1508,6 +1537,135 @@ struct LoadsAPI {
 
         // Misc
         let notes: String?
+
+        // Resolved parties (server `resolveParty`) — nil when absent.
+        // Decoded tolerantly so a party-shape drift can never kill the
+        // whole envelope.
+        let driver: LoadParty?
+        let catalyst: LoadParty?
+        let shipper: LoadParty?
+
+        // MARK: Decode (audit M3 — top-level route-anchor merge)
+
+        // Explicit keys: providing a hand-written `init(from:)` on a
+        // Decodable-only struct disables CodingKeys synthesis, so every
+        // wire key is listed. `pickupCoord`/`deliveryCoord` have NO
+        // stored property — they fold into pickup/deliveryLocation.
+        private enum CodingKeys: String, CodingKey {
+            case id, loadNumber, status, shipperId, driverId, catalystId
+            case cargoType, hazmatClass, unNumber, weight, weightUnit
+            case commodity, commodityName, ergGuide, equipmentType, spectraMatchVerified
+            case origin, destination, pickupLocation, deliveryLocation
+            case pickupCoord, deliveryCoord
+            case distance, distanceUnit
+            case pickupDate, deliveryDate, estimatedDeliveryDate, actualDeliveryDate
+            case createdAt, updatedAt, biddingEnds
+            case rate, currency, suggestedRateMin, suggestedRateMax
+            case transportMode, vesselClass, multiVehicleCount, permitType
+            case originPort, destPort, worldscalePct, worldscaleFlat, rateUnit
+            case notes
+            case driver, catalyst, shipper
+        }
+
+        /// `loads.getById` carries the REAL geocoded anchors in the
+        /// top-level `pickupCoord`/`deliveryCoord` slots while the
+        /// `pickupLocation`/`deliveryLocation` echoes are narrowed to
+        /// {city,state}. The synthesized decode left
+        /// `LoadCityState.lat/lng` nil forever, so every map/proximity
+        /// consumer (373 proximitySlug, 305 + 502 laneCoords, Broker
+        /// 402 laneForMap) was permanently inert. This init follows the
+        /// proven `Models/Load.swift` `mergeLocation` pattern: decode
+        /// both slots, fold the coord into the echo. Honest absence
+        /// stays honest — no coord on the wire → nil lat/lng → the
+        /// screens keep their "awaiting coords" gate (no map, no
+        /// fabricated point).
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+
+            // Identity — strict, mirrors the prior synthesized decode.
+            self.id         = try c.decode(String.self, forKey: .id)
+            self.loadNumber = try c.decode(String.self, forKey: .loadNumber)
+            self.status     = try c.decode(String.self, forKey: .status)
+            self.shipperId  = try c.decodeIfPresent(Int.self, forKey: .shipperId)
+            self.driverId   = try c.decodeIfPresent(Int.self, forKey: .driverId)
+            self.catalystId = try c.decodeIfPresent(Int.self, forKey: .catalystId)
+
+            // Cargo
+            self.cargoType   = try c.decodeIfPresent(String.self, forKey: .cargoType)
+            self.hazmatClass = try c.decodeIfPresent(String.self, forKey: .hazmatClass)
+            self.unNumber    = try c.decodeIfPresent(String.self, forKey: .unNumber)
+            self.weight      = try c.decodeIfPresent(String.self, forKey: .weight)
+            self.weightUnit  = try c.decodeIfPresent(String.self, forKey: .weightUnit)
+            self.commodity     = try c.decodeIfPresent(String.self, forKey: .commodity)
+            self.commodityName = try c.decodeIfPresent(String.self, forKey: .commodityName)
+            self.ergGuide      = try c.decodeIfPresent(Int.self, forKey: .ergGuide)
+            self.equipmentType = try c.decodeIfPresent(String.self, forKey: .equipmentType)
+            self.spectraMatchVerified = try c.decodeIfPresent(Bool.self, forKey: .spectraMatchVerified)
+
+            // Geography — decode the narrow echoes + top-level coord
+            // slots, then merge so `pickupLocation?.lat/.lng` works.
+            self.origin      = try c.decodeIfPresent(LoadAddress.self, forKey: .origin)
+            self.destination = try c.decodeIfPresent(LoadAddress.self, forKey: .destination)
+            let pickupEcho   = try c.decodeIfPresent(LoadCityState.self, forKey: .pickupLocation)
+            let deliveryEcho = try c.decodeIfPresent(LoadCityState.self, forKey: .deliveryLocation)
+            let pickupCoord   = (try? c.decodeIfPresent(LoadCoord.self, forKey: .pickupCoord)) ?? nil
+            let deliveryCoord = (try? c.decodeIfPresent(LoadCoord.self, forKey: .deliveryCoord)) ?? nil
+            self.pickupLocation   = Self.mergeCityState(echo: pickupEcho, coord: pickupCoord)
+            self.deliveryLocation = Self.mergeCityState(echo: deliveryEcho, coord: deliveryCoord)
+            self.distance     = try c.decodeIfPresent(Double.self, forKey: .distance)
+            self.distanceUnit = try c.decodeIfPresent(String.self, forKey: .distanceUnit)
+
+            // Dates
+            self.pickupDate            = try c.decodeIfPresent(String.self, forKey: .pickupDate)
+            self.deliveryDate          = try c.decodeIfPresent(String.self, forKey: .deliveryDate)
+            self.estimatedDeliveryDate = try c.decodeIfPresent(String.self, forKey: .estimatedDeliveryDate)
+            self.actualDeliveryDate    = try c.decodeIfPresent(String.self, forKey: .actualDeliveryDate)
+            self.createdAt             = try c.decodeIfPresent(String.self, forKey: .createdAt)
+            self.updatedAt             = try c.decodeIfPresent(String.self, forKey: .updatedAt)
+            self.biddingEnds           = try c.decodeIfPresent(String.self, forKey: .biddingEnds)
+
+            // Money
+            self.rate             = try c.decodeIfPresent(String.self, forKey: .rate)
+            self.currency         = try c.decodeIfPresent(String.self, forKey: .currency)
+            self.suggestedRateMin = try c.decodeIfPresent(Double.self, forKey: .suggestedRateMin)
+            self.suggestedRateMax = try c.decodeIfPresent(Double.self, forKey: .suggestedRateMax)
+
+            // Multi-modal
+            self.transportMode     = try c.decodeIfPresent(String.self, forKey: .transportMode)
+            self.vesselClass       = try c.decodeIfPresent(String.self, forKey: .vesselClass)
+            self.multiVehicleCount = try c.decodeIfPresent(Int.self, forKey: .multiVehicleCount)
+            self.permitType        = try c.decodeIfPresent(String.self, forKey: .permitType)
+            self.originPort        = try c.decodeIfPresent(String.self, forKey: .originPort)
+            self.destPort          = try c.decodeIfPresent(String.self, forKey: .destPort)
+            self.worldscalePct     = try c.decodeIfPresent(String.self, forKey: .worldscalePct)
+            self.worldscaleFlat    = try c.decodeIfPresent(String.self, forKey: .worldscaleFlat)
+            self.rateUnit          = try c.decodeIfPresent(String.self, forKey: .rateUnit)
+
+            // Misc
+            self.notes = try c.decodeIfPresent(String.self, forKey: .notes)
+
+            // Resolved parties — tolerant: drift → nil, never a throw.
+            self.driver   = (try? c.decodeIfPresent(LoadParty.self, forKey: .driver)) ?? nil
+            self.catalyst = (try? c.decodeIfPresent(LoadParty.self, forKey: .catalyst)) ?? nil
+            self.shipper  = (try? c.decodeIfPresent(LoadParty.self, forKey: .shipper)) ?? nil
+        }
+
+        /// Folds a top-level `{lat,lng}` route anchor into the narrow
+        /// city/state echo (`Models/Load.swift` `mergeLocation`
+        /// pattern). The coord slot wins only when the echo carries no
+        /// real coords; a 0,0 null-island pair is treated as absent —
+        /// never rendered as a point.
+        private static func mergeCityState(echo: LoadCityState?, coord: LoadCoord?) -> LoadCityState? {
+            guard let lat = coord?.lat, let lng = coord?.lng,
+                  !(lat == 0 && lng == 0) else { return echo }
+            guard let e = echo else {
+                return LoadCityState(city: nil, state: nil, lat: lat, lng: lng,
+                                     address: nil, zipCode: nil)
+            }
+            if let eLat = e.lat, let eLng = e.lng, !(eLat == 0 && eLng == 0) { return e }
+            return LoadCityState(city: e.city, state: e.state, lat: lat, lng: lng,
+                                 address: e.address, zipCode: e.zipCode)
+        }
 
         // MARK: Derived
 
