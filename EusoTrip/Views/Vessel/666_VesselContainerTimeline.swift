@@ -12,16 +12,22 @@
 //    vesselShipments.getContainerTracking  → { container, movements }  (vesselProcedure · server/routers/vesselShipments.ts:583)
 //    vesselShipments.recordContainerMovement → { success }            (Add-event CTA · server/routers/vesselShipments.ts:609)
 //
+//  ZERO-FALLBACK (2026-06-09 · B21 fix): the hardcoded 7-node canonical chain (incl. a fake LIVE
+//  AIS ping at 31.2°N 142.8°W) is DELETED — the timeline renders ONLY live movement rows, and the
+//  previously-dead EusoEmptyState is the real empty state for unknown/quiet boxes. The hero
+//  derives lane/spec/status/ETA from the live container row with em-dash absence — no invented
+//  vessel name, lane or ETA.
+//
 //  NAV (VesselOperatorNavController): HOME · SHIPMENTS(current) · [orb] · COMPLIANCE · ME.
-//  transportMode=vessel · CNSHA→USLGB trans-Pacific import · ISO 6346 · VES-YYMMDD-XXXXX.
+//  transportMode=vessel · ISO 6346 · per-box drill-in.
 //
 
 import SwiftUI
 
 struct VesselContainerTimelineScreen: View {
     let theme: Theme.Palette
-    /// ISO 6346 box id this timeline is drilled into. The SVG canon box is
-    /// MSKU 7829301 (the trans-Pacific import on MV EUSO MERIDIAN v.118E).
+    /// ISO 6346 box id this timeline is drilled into (query scope only — when the
+    /// box is unknown server-side the screen renders its honest empty state).
     var containerNumber: String = "MSKU 7829301"
 
     var body: some View {
@@ -108,37 +114,7 @@ private struct VesselContainerTimelineBody: View {
     @State private var addAck: String? = nil
     @State private var shareAck: String? = nil
 
-    // MARK: Canonical chain (verbatim node strings from the SVG)
-    private let canonicalNodes: [TimelineNode] = [
-        TimelineNode(timestamp: "May 12 · 09:20 CST",
-                     title: "Booking confirmed",
-                     sub: "CNSHA · Maersk · DU shipper-of-record",
-                     state: .done),
-        TimelineNode(timestamp: "May 14 · 14:05 CST",
-                     title: "Gate-in at origin",
-                     sub: "Shanghai Yangshan Terminal 2",
-                     state: .done),
-        TimelineNode(timestamp: "May 16 · 22:40 CST",
-                     title: "Loaded aboard vessel",
-                     sub: "MV EUSO MERIDIAN v.118E · bay 14 tier 82",
-                     state: .done),
-        TimelineNode(timestamp: "May 17 · 06:10 CST",
-                     title: "Vessel departed",
-                     sub: "CNSHA outbound · pilot away",
-                     state: .done),
-        TimelineNode(timestamp: "May 24 · 11:08 UTC · LIVE",
-                     title: "In transit · AIS ping",
-                     sub: "N Pacific · 31.2°N 142.8°W · 18.4 kn",
-                     state: .current),
-        TimelineNode(timestamp: "Jun 02 · est",
-                     title: "ETA discharge",
-                     sub: "USLGB · Pier T · berth window 06:00",
-                     state: .future),
-        TimelineNode(timestamp: "Jun 04 · est",
-                     title: "Gate-out · drayage",
-                     sub: "Long Beach · first-mile to consignee",
-                     state: .future),
-    ]
+    // B21: the hardcoded canonical 7-node chain is gone — only live movements render.
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -170,7 +146,8 @@ private struct VesselContainerTimelineBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer()
-                Text("VES-260523")
+                // Live shipment ref when the box is assigned — em-dash otherwise.
+                Text(tracking?.container?.assignedShipmentId.map { "SHIPMENT \($0)" } ?? "—")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -204,9 +181,12 @@ private struct VesselContainerTimelineBody: View {
                     .foregroundStyle(Brand.info)
             }
             VStack(alignment: .leading, spacing: 3) {
-                Text("Shanghai → Long Beach")
+                // Live current-location description — em-dash when the box is unknown
+                // (no invented lane string).
+                Text(tracking?.container?.currentLocation?.description ?? "—")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
                 Text(heroSpec)
                     .font(.system(size: 11, weight: .medium, design: .monospaced)).tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
@@ -217,7 +197,7 @@ private struct VesselContainerTimelineBody: View {
                 Text(heroStatus)
                     .font(.system(size: 11, weight: .bold)).tracking(0.6)
                     .foregroundStyle(LinearGradient.primary)
-                Text("ETA Jun 02")
+                Text(tracking?.container?.id.map { "BOX #\($0)" } ?? "—")
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -230,14 +210,11 @@ private struct VesselContainerTimelineBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    /// "40HC dry · MV EUSO MERIDIAN v.118E" — reads the live ISO type when the
-    /// server returns one, otherwise the canon spec from the SVG.
+    /// Live ISO size/type spec — em-dash when the box is unknown. No invented vessel name.
     private var heroSpec: String {
-        let canon = "40HC dry · MV EUSO MERIDIAN v.118E"
-        guard let c = tracking?.container else { return canon }
-        let size = (c.sizeType ?? c.isoType).map { humanSize($0) }
-        if let size { return "\(size) · MV EUSO MERIDIAN v.118E" }
-        return canon
+        guard let c = tracking?.container,
+              let size = (c.sizeType ?? c.isoType).map({ humanSize($0) }) else { return "—" }
+        return size
     }
 
     private func humanSize(_ raw: String) -> String {
@@ -252,8 +229,7 @@ private struct VesselContainerTimelineBody: View {
         }
     }
 
-    /// "ON WATER" — derives from the live container status, defaulting to the
-    /// canon "ON WATER" import status.
+    /// Live container status — em-dash when the box is unknown (never a default "ON WATER").
     private var heroStatus: String {
         switch (tracking?.container?.status ?? "").lowercased() {
         case "in_transit": return "ON WATER"
@@ -261,8 +237,8 @@ private struct VesselContainerTimelineBody: View {
         case "at_depot":   return "AT DEPOT"
         case "loaded":     return "LOADED"
         case "empty":      return "EMPTY"
-        case "":           return "ON WATER"
-        default:           return (tracking?.container?.status ?? "ON WATER").replacingOccurrences(of: "_", with: " ").uppercased()
+        case "":           return "—"
+        default:           return (tracking?.container?.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased()
         }
     }
 
@@ -303,13 +279,12 @@ private struct VesselContainerTimelineBody: View {
         "EVENT CHAIN · \(displayNodes.count) NODES · getContainerTracking"
     }
 
-    /// The chain we render. When the server has live movement rows for this
-    /// box we map those to nodes; otherwise we fall back to the canonical
-    /// 7-node chain so the timeline reads verbatim per the SVG until the box
-    /// accrues its real movement stream.
+    /// The chain we render — LIVE movement rows only. An unknown/quiet box yields
+    /// an empty chain and the honest EusoEmptyState above renders (B21: the
+    /// canonical-fixture fallback is deleted).
     private var displayNodes: [TimelineNode] {
         guard let movements = tracking?.movements, !movements.isEmpty else {
-            return canonicalNodes
+            return []
         }
         // Server returns newest-first (orderBy desc timestamp). The timeline
         // reads oldest → newest top-to-bottom, with the most recent row as

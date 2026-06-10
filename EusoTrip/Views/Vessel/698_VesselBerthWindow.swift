@@ -29,9 +29,9 @@ import SwiftUI
 struct VesselBerthWindowScreen: View {
     let theme: Theme.Palette
     /// Default-valued so the screen is constructable as
-    /// VesselBerthWindowScreen(theme: p) from ScreenRegistry. USLGB Long
-    /// Beach Pier T is the canonical port in the wireframe; the real
-    /// portId is resolved at the booking layer when known.
+    /// VesselBerthWindowScreen(theme: p) from ScreenRegistry. 0 = no terminal
+    /// threaded: the screen renders an honest "no terminal selected" state —
+    /// port identity comes from getPortDetails, never a hardcoded USLGB/Pier T.
     var portId: Int = 0
 
     var body: some View {
@@ -73,9 +73,15 @@ private struct VesselBerthWindowBody: View {
 
     @Environment(\.palette) private var palette
     @State private var assignments: [BerthAssignment698] = []
+    /// Live port identity from getPortDetails — nil until resolved (em-dash labels).
+    @State private var port: PortDetail698? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var now = Date()
+
+    /// Honest port labels — live row or em-dash; never a hardcoded USLGB/Pier T.
+    private var portCodeLabel: String { port?.unlocode?.uppercased() ?? "—" }
+    private var portNameLabel: String { port?.name ?? "—" }
 
     // Gantt geometry — verbatim from the SVG card (400-wide card, the inner
     // plot runs x=56..384 across 0..24h, lanes are 54pt tall).
@@ -101,6 +107,14 @@ private struct VesselBerthWindowBody: View {
                     LifecycleCard(accentDanger: true) {
                         Text(err).font(EType.caption).foregroundStyle(Brand.danger)
                     }
+                } else if portId <= 0 {
+                    EusoEmptyState(systemImage: "rectangle.split.3x1",
+                                   title: "No terminal selected",
+                                   subtitle: "Open a port from a booking to see its berth × time occupancy. No fabricated berths.")
+                } else if displayBerths.isEmpty {
+                    EusoEmptyState(systemImage: "rectangle.split.3x1",
+                                   title: "No berth schedule",
+                                   subtitle: "getBerthSchedule returned no assignments for \(portNameLabel == "—" ? "this terminal" : portNameLabel) in the next 24h.")
                 } else {
                     headerBand
                     legend
@@ -131,7 +145,7 @@ private struct VesselBerthWindowBody: View {
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()
-            Text("USLGB · PIER T")
+            Text(portCodeLabel)
                 .font(EType.mono(.micro)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
         }
@@ -167,7 +181,7 @@ private struct VesselBerthWindowBody: View {
                 Text("BERTHS BUSY")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
-                Text("Long Beach · Pier T")
+                Text(portNameLabel)
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
             }
@@ -668,16 +682,29 @@ private struct VesselBerthWindowBody: View {
     private func load() async {
         loading = true; loadError = nil
         now = Date()
+        guard portId > 0 else { assignments = []; port = nil; loading = false; return }
         struct BerthIn: Encodable { let portId: Int }
         do {
-            let rows: [BerthAssignment698] = try await EusoTripAPI.shared.query(
+            async let rows: [BerthAssignment698] = EusoTripAPI.shared.query(
                 "vesselShipments.getBerthSchedule", input: BerthIn(portId: portId))
-            self.assignments = rows
+            // Live port identity (name + UN/LOCODE) for the header labels —
+            // getPortDetails returns null for an unknown port ⇒ em-dash labels.
+            async let detail: PortDetail698? = EusoTripAPI.shared.query(
+                "vesselShipments.getPortDetails", input: BerthIn(portId: portId))
+            let (r, p) = try await (rows, detail)
+            self.assignments = r
+            self.port = p
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
     }
+}
+
+/// Live port identity row (subset of the ports table getPortDetails spreads).
+private struct PortDetail698: Decodable {
+    let name: String?
+    let unlocode: String?
 }
 
 #Preview("698 · Vessel Berth Window · Night") { VesselBerthWindowScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }

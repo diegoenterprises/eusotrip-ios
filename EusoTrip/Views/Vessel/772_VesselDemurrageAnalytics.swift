@@ -93,6 +93,22 @@ private struct VesselDemurrageAnalyticsBody: View {
     private var total: Double { rows.reduce(0) { $0 + $1.amount } }
     private var avoidable: Double { rows.filter { $0.isAvoidable }.reduce(0) { $0 + $1.amount } }
 
+    // Honest derived labels (2026-06-09 · C1 cluster fix) — every identity/tariff
+    // string below computes from the decoded rows; em-dash when absent. No hardcoded
+    // "$150/day · 4 free days", no invented VES- ref, no fabricated Dec–May window.
+    private var windowLabel: String {
+        guard let first = months.first?.label, let last = months.last?.label else { return "—" }
+        return first == last ? first.uppercased() : "\(first.uppercased()) – \(last.uppercased())"
+    }
+    private var avgRateLabel: String {
+        let ratesByDay = rows.compactMap { Double($0.ratePerDay ?? "") }.filter { $0 > 0 }
+        guard !ratesByDay.isEmpty else { return "" }
+        let avg = ratesByDay.reduce(0, +) / Double(ratesByDay.count)
+        return String(format: "avg $%.0f/day · ", avg)
+    }
+    private var disputedCount: Int { rows.filter { ($0.status ?? "").lowercased() == "disputed" }.count }
+    private var waivedCount: Int { rows.filter { ($0.status ?? "").lowercased() == "waived" }.count }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -130,12 +146,12 @@ private struct VesselDemurrageAnalyticsBody: View {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · DEMURRAGE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
-                Text("DEC – MAY").font(.system(size: 9, weight: .heavy)).tracking(1.0).monospaced().foregroundStyle(palette.textTertiary)
+                Text(windowLabel).font(.system(size: 9, weight: .heavy)).tracking(1.0).monospaced().foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline) {
                 Text("D&D Analytics").font(.system(size: 28, weight: .heavy)).foregroundStyle(palette.textPrimary)
                 Spacer()
-                Text("VES-260524-5A37CC").font(.system(size: 11)).monospaced().foregroundStyle(palette.textSecondary)
+                Text("\(rows.count) charge\(rows.count == 1 ? "" : "s")").font(.system(size: 11)).monospaced().foregroundStyle(palette.textSecondary)
             }
         }
     }
@@ -145,8 +161,8 @@ private struct VesselDemurrageAnalyticsBody: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(money(total)).font(.system(size: 30, weight: .heavy)).monospacedDigit().foregroundStyle(palette.textPrimary)
-                    Text("demurrage & detention · 6 months · \(totalDays) days").font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.textSecondary)
-                    Text("$150/day · 4 free days · across \(rows.count) charges").font(.system(size: 11)).foregroundStyle(palette.textTertiary)
+                    Text("demurrage & detention · \(months.count) month\(months.count == 1 ? "" : "s") · \(totalDays) days").font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.textSecondary)
+                    Text("\(avgRateLabel)across \(rows.count) charge\(rows.count == 1 ? "" : "s")").font(.system(size: 11)).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
@@ -208,7 +224,8 @@ private struct VesselDemurrageAnalyticsBody: View {
             OrbeSang(state: .idle, diameter: 32)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(money(avoidable)) of D&D is disputable").font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text("Pre-file ISF earlier at USLGB to cut the recurring spike").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                // Derived from the decoded rows only — no fabricated port/tactic advice.
+                Text("\(disputedCount) disputed · \(waivedCount) waived in this window").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)
         }

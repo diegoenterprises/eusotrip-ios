@@ -33,9 +33,12 @@
 //          status (the zone row ships act temp + status only). "FSMA log" has no inline write path here
 //          (recordFSMATemp needs a temp-entry sheet) — flagged STUB, re-runs load().
 //
-//  0 mock data on load · honest empty/error states — values render from real state; seed story lives
-//  ONLY in #Preview-reachable PreCoolHold820.seeds (shown until the first live zone row lands, mirroring
-//  the SVG). RoundedRectangle/Capsule chips are file-private, suffixed _820 to avoid cross-file private
+//  ZERO-FALLBACK (2026-06-09 · C1 fix): NO seed rows anywhere. When getLatestByZone returns no
+//  zones the honest "Awaiting pre-cool telemetry" empty state renders and the "Verify pre-cool"
+//  CTA is DISABLED — the FSMA attestation mutation can ONLY fire with (a) a real load scope
+//  (loadId > 0) and (b) a live zone reading whose tempC feeds verifyPreCool. The screen can
+//  never attest from fabricated telemetry. Counters derive from live rows only (0 when empty).
+//  RoundedRectangle/Capsule chips are file-private, suffixed _820 to avoid cross-file private
 //  collisions, built from sibling 757's gradient-rim grammar.
 //
 
@@ -45,9 +48,11 @@ import SwiftUI
 
 struct VesselReeferPreCoolScreen: View {
     let theme: Theme.Palette
-    /// Active reefer FCL booking the pre-cool gate scopes to. Defaulted for zero-arg/registry use.
-    var loadId: Int = 260524
-    init(theme: Theme.Palette, loadId: Int = 260524) { self.theme = theme; self.loadId = loadId }
+    /// Active reefer FCL booking the pre-cool gate scopes to. 0 (registry/zero-arg use) means
+    /// "no load threaded": telemetry reads fall back to the operator's own latest readings
+    /// across loads, and the FSMA verify CTA stays DISABLED — attesting needs a real loadId.
+    var loadId: Int = 0
+    init(theme: Theme.Palette, loadId: Int = 0) { self.theme = theme; self.loadId = loadId }
 
     var body: some View {
         Shell(theme: theme) {
@@ -97,22 +102,22 @@ private struct VesselReeferPreCoolBody820: View {
     @State private var verifyDone = false
     @State private var verifyError: String? = nil
 
-    // Total reefer holds the gate spans (wireframe-true fleet of 12 until live rows land).
-    private let fleetCount = 12
-
-    // Derived gate counters — the three faces of one tick read THIS state ----
+    // Derived gate counters — the three faces of one tick read THIS state.
+    // ALL derive from live zone rows only: 0/0 when no telemetry, never a seeded floor.
 
     private var holdRows: [PreCoolHold820] { Self.holds(from: zones) }
-    private var verifiedCount: Int {
-        let live = holdRows.filter { $0.band == .verified }.count
-        return live > 0 ? live : 10  // seed-true until the first live zone row lands
-    }
-    private var monitored: Int { zones.isEmpty ? fleetCount : max(zones.count, verifiedCount) }
+    private var verifiedCount: Int { holdRows.filter { $0.band == .verified }.count }
+    private var monitored: Int { holdRows.count }
     private var pendingCount: Int { max(0, monitored - verifiedCount) }
     /// FSMA is always required for reefer/food-grade cargo (21 CFR 1.908) — the gate exists for it.
     private var fsmaRequired: Bool { true }
     private var fsmaOK: Bool { (fsma?.isCompliant ?? false) || (fsma?.preCoolVerified ?? false) }
     private var verifyProgress: Double { monitored == 0 ? 0 : Double(verifiedCount) / Double(monitored) }
+
+    /// THE critical gate (C1): verifyPreCool may only fire with a REAL load scope AND a live
+    /// zone reading carrying a real temperature. No seeds, no default temps, no loadId 0 writes.
+    private var liveLead: PreCoolHold820? { holdRows.first { $0.band != .verified && $0.tempC != nil } }
+    private var canVerify: Bool { loadId > 0 && !zones.isEmpty && liveLead != nil }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -150,7 +155,8 @@ private struct VesselReeferPreCoolBody820: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.primary)
             }
             Spacer()
-            Text("MAERSK · USLGB").font(EType.mono(.micro)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            // Honest scope chip: the real load when threaded, em-dash otherwise (no invented carrier/port).
+            Text(loadId > 0 ? "LOAD \(loadId)" : "—").font(EType.mono(.micro)).tracking(1.0).foregroundStyle(palette.textTertiary)
         }
     }
 
@@ -158,7 +164,7 @@ private struct VesselReeferPreCoolBody820: View {
         HStack(alignment: .center) {
             Text("Pre-cool verify").font(.system(size: 28, weight: .bold)).tracking(-0.4).foregroundStyle(palette.textPrimary)
             Spacer()
-            Text("synced live").font(EType.mono(.caption)).foregroundStyle(palette.textSecondary)
+            Text(zones.isEmpty ? "no telemetry" : "synced live").font(EType.mono(.caption)).foregroundStyle(palette.textSecondary)
         }
     }
 
@@ -327,7 +333,8 @@ private struct VesselReeferPreCoolBody820: View {
                 Text("\(monitored) reefers").font(EType.mono(.caption)).foregroundStyle(palette.textTertiary)
             }
             Text("verifyPreCool gate · setpoint pulldown before stuffing").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
-            Text("Carrier Maersk · Eusorone Technologies (DU) · VES-260524-PC41").font(EType.mono(.caption)).foregroundStyle(palette.textTertiary)
+            // Honest scope line — real load ref or em-dash; never an invented carrier/booking string.
+            Text(loadId > 0 ? "LOAD \(loadId) · live zone telemetry" : "— · no load threaded").font(EType.mono(.caption)).foregroundStyle(palette.textTertiary)
         }
         .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCardSoft)
@@ -341,11 +348,20 @@ private struct VesselReeferPreCoolBody820: View {
         VStack(alignment: .leading, spacing: 8) {
             if let e = verifyError { Text(e).font(EType.caption).foregroundStyle(Brand.danger) }
             if verifyDone { Text("Pre-cool verified · FSMA attestation written.").font(EType.caption).foregroundStyle(Brand.success) }
+            if !canVerify {
+                // C1 honest state: the attestation CTA is hard-disabled without live telemetry
+                // on a real load — the screen may never attest from seeds or defaults.
+                Text(loadId > 0 ? "No live telemetry — pre-cool cannot be attested until a zone reports in."
+                                : "No load threaded — open a reefer booking to attest its pre-cool.")
+                    .font(EType.caption).foregroundStyle(palette.textTertiary)
+            }
             HStack(spacing: Space.s2) {
                 CTAButton(title: verifying ? "Verifying…" : "Verify pre-cool",
                           action: { Task { await verify() } },
                           isLoading: verifying)
                     .frame(maxWidth: .infinity)
+                    .disabled(!canVerify)
+                    .opacity(canVerify ? 1 : 0.45)
                 Button(action: { Task { await load() } }) {  // recordFSMATemp — STUB · named-gap (no temp-entry sheet here), re-runs load()
                     Text("FSMA log")
                         .font(EType.title).foregroundStyle(palette.textPrimary)
@@ -364,13 +380,20 @@ private struct VesselReeferPreCoolBody820: View {
     private func load() async {
         loading = true; loadError = nil
         do {
+            // getLatestByZone takes an OPTIONAL loadId — when no load is threaded (0) the
+            // input omits it and the proc returns the operator's own latest readings.
             async let z: [String: ReeferZoneReading820] = EusoTripAPI.shared.query(
-                "reeferTemp.getLatestByZone", input: LoadIn820(loadId: loadId))
-            async let f: FSMAStatus820 = EusoTripAPI.shared.query(
-                "reeferTemp.getFSMAStatus", input: LoadIn820(loadId: loadId))
-            let (zoneMap, fsmaRow) = try await (z, f)
+                "reeferTemp.getLatestByZone", input: LoadIn820(loadId: loadId > 0 ? loadId : nil))
+            let zoneMap = try await z
             self.zones = zoneMap
-            self.fsma = fsmaRow
+            // getFSMAStatus REQUIRES a real loadId — only ask with a threaded load,
+            // otherwise the FSMA tile reads its honest un-attested "REQ" state.
+            if loadId > 0 {
+                self.fsma = try await EusoTripAPI.shared.query(
+                    "reeferTemp.getFSMAStatus", input: FSMAIn820(loadId: loadId))
+            } else {
+                self.fsma = nil
+            }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -378,13 +401,17 @@ private struct VesselReeferPreCoolBody820: View {
     }
 
     private func verify() async {
+        // C1 gate: attest ONLY from a live zone reading on a real load. Never from
+        // seeds, never with a default temperature, never against loadId 0.
+        guard loadId > 0, let lead = liveLead, let temp = lead.tempC else {
+            verifyError = "No live telemetry — pre-cool cannot be attested."
+            return
+        }
         verifying = true; verifyError = nil
-        // verifyPreCool reeferTemp.ts:380 — attest the lead pending hold's trailer temp at setpoint.
-        let lead = holdRows.first { $0.band != .verified }
         do {
             let _: VerifyOut820 = try await EusoTripAPI.shared.mutation(
                 "reeferTemp.verifyPreCool",
-                input: VerifyIn820(loadId: loadId, trailerTemp: lead?.tempC ?? -20.0, unit: "C"))
+                input: VerifyIn820(loadId: loadId, trailerTemp: temp, unit: "C"))
             verifyDone = true
             await load()
         } catch {
@@ -394,9 +421,9 @@ private struct VesselReeferPreCoolBody820: View {
     }
 
     // MARK: Hold derivation (client-side band typing — see STUB note)
+    // ZERO-FALLBACK: empty zones ⇒ empty rows ⇒ the honest empty state renders. No seeds.
 
     private static func holds(from zones: [String: ReeferZoneReading820]) -> [PreCoolHold820] {
-        if zones.isEmpty { return PreCoolHold820.seeds }
         let order = ["front", "center", "rear"]
         return order.compactMap { key -> PreCoolHold820? in
             guard let z = zones[key] else { return nil }
@@ -420,11 +447,12 @@ private struct VesselReeferPreCoolBody820: View {
 
 // MARK: - Per-file typed inputs / outputs (NO module-level EmptyInput; suffixed _820)
 
-private struct LoadIn820: Encodable { let loadId: Int }
+private struct LoadIn820: Encodable { let loadId: Int? }
+private struct FSMAIn820: Encodable { let loadId: Int }
 private struct VerifyIn820: Encodable { let loadId: Int; let trailerTemp: Double; let unit: String }
 private struct VerifyOut820: Decodable { let success: Bool? }
 
-// MARK: - Hold model + seeds (overwritten by getLatestByZone)
+// MARK: - Hold model (rows derive ONLY from live getLatestByZone readings — no seeds)
 
 private struct PreCoolHold820: Identifiable {
     let id = UUID()
@@ -435,16 +463,6 @@ private struct PreCoolHold820: Identifiable {
     let pill: String
     let valText: String
     let tempC: Double?
-
-    /// Story mirrors the SVG: one verified hold, one pulling-down, one FSMA-required.
-    static let seeds: [PreCoolHold820] = [
-        PreCoolHold820(band: .verified, title: "Hold 1 · setpoint −20.0°C",
-                       meta: "MRKU220148 · at setpoint", pill: "VERIFIED", valText: "−20.0°", tempC: -20.0),
-        PreCoolHold820(band: .pulling, title: "Hold 4 · pulling down",
-                       meta: "TLLU449302 · −12.4° now", pill: "PENDING", valText: "−12.4°", tempC: -12.4),
-        PreCoolHold820(band: .fsma, title: "Hold 3 · setpoint −18.1°C",
-                       meta: "checkFSMARequired · ok", pill: "FSMA", valText: "−18.1°", tempC: -18.1)
-    ]
 }
 
 #Preview("820 · Vessel Reefer Pre-Cool · Night") {

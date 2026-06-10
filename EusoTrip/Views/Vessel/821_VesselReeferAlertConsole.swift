@@ -28,10 +28,11 @@
 //      wired server-side — surfaced by 799/702). Per-alert setpoint-DEVIATION typing on the row is derived
 //      CLIENT-SIDE from tempF vs the FSMA setpoint (the wire ships absolute tempF only).
 //
-//  0 mock data on load · honest empty/error states — values render from real state; if getAlerts returns
-//  no rows the bespoke empty state shows. Design-time seeds live ONLY in #Preview-reachable state and are
-//  overwritten by getAlerts on .task/.refreshable. ReeferAlert821 / AlertUnit821 are file-scoped bespoke
-//  types suffixed by the screen number to avoid cross-file private collisions.
+//  ZERO-FALLBACK (2026-06-09 · C1 fix): NO seed alerts anywhere — state starts empty, getAlerts
+//  overwrites UNCONDITIONALLY (an honest zero-alert response renders the empty state, never three
+//  fabricated excursions), and acknowledgeAlert only fires on a REAL positive alertId parsed from
+//  a live row. ReeferAlert821 / AlertUnit821 are file-scoped bespoke types suffixed by the screen
+//  number to avoid cross-file private collisions.
 //
 
 import SwiftUI
@@ -40,11 +41,12 @@ import SwiftUI
 
 struct VesselReeferAlertConsoleScreen: View {
     let theme: Theme.Palette
-    /// Active reefer FCL booking the console scopes to. Defaulted so the screen is
-    /// constructable from any zero-arg registry call site.
-    var loadId: Int = 260524
+    /// Active reefer FCL booking the console scopes to. 0 (registry/zero-arg use) means
+    /// "no load threaded": getAlerts omits the loadId filter and returns the operator's
+    /// own live alerts across loads — real rows or the honest empty state, never seeds.
+    var loadId: Int = 0
 
-    init(theme: Theme.Palette, loadId: Int = 260524) {
+    init(theme: Theme.Palette, loadId: Int = 0) {
         self.theme = theme; self.loadId = loadId
     }
 
@@ -82,7 +84,7 @@ private struct VesselReeferAlertConsoleBody821: View {
     @Environment(\.palette) private var palette
     let loadId: Int
 
-    @State private var alerts: [ReeferAlert821] = ReeferAlert821.seeds
+    @State private var alerts: [ReeferAlert821] = []   // live rows only — no seed excursions
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -143,7 +145,8 @@ private struct VesselReeferAlertConsoleBody821: View {
                     .foregroundStyle(LinearGradient.primary)
             }
             Spacer()
-            Text("MAERSK · USLGB")
+            // Honest scope chip: the real load when threaded, em-dash otherwise (no invented carrier/port).
+            Text(loadId > 0 ? "LOAD \(loadId)" : "—")
                 .font(EType.mono(.micro)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
         }
@@ -378,7 +381,8 @@ private struct VesselReeferAlertConsoleBody821: View {
             }
             Text("acknowledgeAlert closes the loop · CET temp log signed · 21 CFR 1.908")
                 .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
-            Text("Carrier Maersk · Eusorone Technologies (DU) · VES-260524-AL77")
+            // Honest scope line — real load ref or em-dash; never an invented carrier/booking string.
+            Text(loadId > 0 ? "LOAD \(loadId) · live alert feed" : "— · all loads · live alert feed")
                 .font(EType.mono(.caption)).foregroundStyle(palette.textTertiary)
         }
         .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
@@ -437,11 +441,13 @@ private struct VesselReeferAlertConsoleBody821: View {
 
     private func load() async {
         loading = true; loadError = nil
-        struct AlertsIn821: Encodable { let loadId: Int; let limit: Int }
+        struct AlertsIn821: Encodable { let loadId: Int?; let limit: Int }
         do {
+            // loadId is optional on the wire — omitted (nil) when no load is threaded.
             let rows: [ReeferAlert821] = try await EusoTripAPI.shared.query(
-                "reeferTemp.getAlerts", input: AlertsIn821(loadId: loadId, limit: 20))
-            if !rows.isEmpty { alerts = rows }
+                "reeferTemp.getAlerts", input: AlertsIn821(loadId: loadId > 0 ? loadId : nil, limit: 20))
+            // UNCONDITIONAL overwrite: an honest zero-alert response clears the queue.
+            alerts = rows
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -449,7 +455,8 @@ private struct VesselReeferAlertConsoleBody821: View {
     }
 
     private func acknowledge() async {
-        guard let alert = firstOpenAlert, let alertId = Int(alert.id) else {
+        // C1 gate: only a REAL server-minted alert id (positive int) may be acknowledged.
+        guard let alert = firstOpenAlert, let alertId = Int(alert.id), alertId > 0 else {
             ackError = "No open excursion to acknowledge."
             return
         }
@@ -466,20 +473,6 @@ private struct VesselReeferAlertConsoleBody821: View {
         }
         acking = false
     }
-}
-
-// MARK: - Design-time seeds (overwritten by getAlerts on .task/.refreshable)
-// Story mirrors the SVG: one critical excursion, one door-ajar warning, one recovered/acked.
-
-private extension ReeferAlert821 {
-    static let seeds: [ReeferAlert821] = [
-        ReeferAlert821(id: "0", severity: "critical", message: "Hold 7 · +5.6° excursion",
-                       zone: "Hold 7", tempF: 44.1, acknowledged: false, createdAt: nil),
-        ReeferAlert821(id: "0", severity: "warning",  message: "Hold 9 · door ajar",
-                       zone: "Hold 9", tempF: nil,  acknowledged: false, createdAt: nil),
-        ReeferAlert821(id: "0", severity: "info",     message: "Hold 2 · recovered",
-                       zone: "Hold 2", tempF: -0.4, acknowledged: true,  createdAt: nil)
-    ]
 }
 
 #Preview("821 · Vessel Reefer Alert Console · Night") {

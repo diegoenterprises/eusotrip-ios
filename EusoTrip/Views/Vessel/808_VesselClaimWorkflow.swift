@@ -26,9 +26,13 @@
 //        the real mutation is named so the-oath can wire the picker, NOT faked.
 //    RBAC: protectedProcedure (vessel operator).
 //
-//  The hero figure, SLA clock and the two blocking items are NOT carried by getClaimWorkflow, so they
-//  render as honest design-time seeds (overwritten only by what the endpoint actually returns); the
-//  ESang line is the same fused advisory grammar. 0 mock data on the wire · honest loading/error states.
+//  ZERO-FALLBACK (2026-06-09 · B18 fix): the previous build rendered a permanent fabricated story
+//  ("$34,200" hero · "38h" SLA · invented blocking items · CLM-260524-A38FB12C7E) that no load path
+//  ever overwrote. Now the screen anchors to a REAL claim: freightClaims.getClaims(limit:1) resolves
+//  the newest live claim id, freightClaims.getClaimById(:246) hydrates the claim amount (decoded
+//  tolerantly — the server currently hardcodes amount:0, fixed in a parallel server lane; 0/absent
+//  renders an em-dash, never an invented figure), and getClaimWorkflow drives the lifecycle strip.
+//  SLA hours and blocking items have NO server source today → em-dash + honest "none on file" row.
 //  RimCard808 / secondaryButton808 are file-scoped bespoke helpers (the canonical port's RimCard /
 //  SecondaryButton are not shared app symbols) built from sibling 757's gradient-rim grammar.
 //
@@ -68,30 +72,57 @@ private struct VesselClaimWorkflowBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
 
-    @State private var claimId = "CLM-260524-A38FB12C7E"
-    @State private var subline = "CLM-260524-A38FB12C7E · USOAK → USHOU · reefer produce"
-    @State private var vesselLine = "CLAIM TOTAL · MV CMA-CGM MARCO POLO 0TPXE"
-    @State private var claimTotal = "$34,200"
-    @State private var claimSub = "claim total · 12 cartons short · reserve $30k"
-    @State private var claimMeta = "VES-260524-9F2C41A0E7 · adjuster LB"
-    @State private var stagePill = "INVESTIGATION"
-    @State private var slaHours = "38h"
-    @State private var stageOfFive = "3 / 6"
-    @State private var lifecycleCaption = "Surveyor PDF blocks stage 4 · carrier ack'd in 8h · on-time 92%"
-    @State private var esangLine = "clears in ~6h · SLA holds with 32h to spare · live tick"
+    // B18: nil/empty initial state — everything below hydrates from the live claim.
+    @State private var claim: Claim808? = nil
+    @State private var stages: [ClaimStage808] = []
+    @State private var currentStepName: String? = nil
+    @State private var nextStepName: String? = nil
+    @State private var stageOf: String = "—"
 
-    @State private var stages: [ClaimStage808] = [
-        ClaimStage808(label: "Filed",        date: "05-24",   state: .done),
-        ClaimStage808(label: "Review",       date: "05-24",   state: .done),
-        ClaimStage808(label: "Investig.",    date: "38h SLA", state: .active),
-        ClaimStage808(label: "Decision",     date: "",        state: .future),
-        ClaimStage808(label: "Settle",       date: "",        state: .future),
-        ClaimStage808(label: "Close",        date: "",        state: .future)
-    ]
-    @State private var blocking: [BlockingItem808] = [
-        BlockingItem808(title: "Surveyor inspection PDF", sub: "received 05-25 · partial · pages 3–7 missing", pill: "PARTIAL", stage: "stage 3", sev: .warn),
-        BlockingItem808(title: "Carrier BOL signature · rev-2", sub: "CMA-CGM countersign pending · rev-2", pill: "PENDING", stage: "stage 4", sev: .danger)
-    ]
+    /// Blocking items have NO server source today (getClaimWorkflow carries none) —
+    /// the ledger renders its honest "none on file" row until a real feed exists.
+    private let blocking: [BlockingItem808] = []
+
+    // MARK: Derived display (live claim or em-dash — never an invented figure)
+
+    private var claimTotal: String {
+        guard let amt = claim?.amount, amt > 0 else { return "—" }
+        let f = NumberFormatter(); f.numberStyle = .currency; f.currencyCode = "USD"; f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: amt)) ?? "$\(Int(amt))"
+    }
+    private var subline: String {
+        guard let c = claim else { return "No claim resolved yet" }
+        var parts = [c.claimNumber ?? c.id ?? "—"]
+        if let o = c.load?.origin, let d = c.load?.destination, !o.isEmpty, !d.isEmpty { parts.append("\(o) → \(d)") }
+        if let t = c.type, !t.isEmpty { parts.append(t.replacingOccurrences(of: "_", with: " ")) }
+        return parts.joined(separator: " · ")
+    }
+    private var claimSub: String {
+        guard let c = claim else { return "—" }
+        let d = c.description ?? ""
+        return d.isEmpty ? "claim total" : d
+    }
+    private var claimMeta: String {
+        guard let c = claim else { return "—" }
+        var parts: [String] = []
+        if let ln = c.load?.loadNumber, !ln.isEmpty, ln != "-" { parts.append(ln) }
+        if let fd = c.filedDate, !fd.isEmpty { parts.append("filed \(fd)") }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+    private var stagePill: String {
+        if let s = currentStepName, !s.isEmpty { return s.uppercased() }
+        return (claim?.status ?? "—").replacingOccurrences(of: "_", with: " ").uppercased()
+    }
+    private var headerBadge: String {
+        guard let c = claim else { return "—" }
+        let t = (c.type ?? "claim").replacingOccurrences(of: "_", with: " ").uppercased()
+        let s = (c.status ?? "open").replacingOccurrences(of: "_", with: " ").uppercased()
+        return "\(t) · \(s)"
+    }
+    private var lifecycleCaption: String {
+        if let next = nextStepName { return "Current: \(currentStepName ?? "—") · next: \(next)" }
+        return currentStepName.map { "Current: \($0)" } ?? "—"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -106,12 +137,16 @@ private struct VesselClaimWorkflowBody: View {
                     RimCard808 { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
                     RimCard808 { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                } else if claim == nil {
+                    EusoEmptyState(systemImage: "doc.text.magnifyingglass",
+                                   title: "No claims on file",
+                                   subtitle: "File a freight claim from a booking to track its lifecycle here.")
                 } else {
                     claimHero
-                    Text("CLAIM LIFECYCLE · getClaimWorkflow · STAGE \(stageOfFive)")
+                    Text("CLAIM LIFECYCLE · getClaimWorkflow · STAGE \(stageOf)")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     lifecycleCard
-                    Text("BLOCKING ITEMS · \(blocking.count) OPEN · addClaimEvidence (STUB · needs picker)")
+                    Text("BLOCKING ITEMS · addClaimEvidence (STUB · needs picker)")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     blockingCard
                     esangCard
@@ -119,6 +154,8 @@ private struct VesselClaimWorkflowBody: View {
                         CTAButton(title: "Advance stage",
                                   action: { Task { await advance() } },
                                   trailingIcon: "arrow.forward.circle")
+                            .disabled(claim?.id == nil)
+                            .opacity(claim?.id == nil ? 0.45 : 1)
                         secondaryButton808(title: "Document") { Task { await document() } }
                     }
                 }
@@ -136,7 +173,8 @@ private struct VesselClaimWorkflowBody: View {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · CLAIM WORKFLOW").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
-                Text("CARGO DAMAGE · OPEN").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(Brand.danger)
+                // Live claim type · status — em-dash until a real claim resolves.
+                Text(headerBadge).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(claim == nil ? palette.textTertiary : Brand.danger)
             }
             HStack(spacing: 6) {
                 Text("Claims").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textSecondary)
@@ -148,17 +186,20 @@ private struct VesselClaimWorkflowBody: View {
         RimCard808 {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(vesselLine).font(.system(size: 9, weight: .heavy)).tracking(0.9).foregroundStyle(palette.textTertiary)
+                    Text("CLAIM TOTAL · getClaimById").font(.system(size: 9, weight: .heavy)).tracking(0.9).foregroundStyle(palette.textTertiary)
+                    // B18: the hero renders the REAL decoded amount — em-dash for 0/absent
+                    // (server amount:0 stub is being fixed in a parallel lane).
                     Text(claimTotal).font(.system(size: 44, weight: .bold)).tracking(-1)
                         .foregroundStyle(palette.textPrimary).monospacedDigit()
-                    Text(claimSub).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(palette.textSecondary)
+                    Text(claimSub).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(palette.textSecondary).lineLimit(2)
                     Text(claimMeta).font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textTertiary)
                 }
                 Spacer(minLength: 0)
                 VStack(alignment: .trailing, spacing: 6) {
                     StatusPill(text: stagePill, kind: .warning)
-                    Text(slaHours).font(.system(size: 20, weight: .heavy)).tracking(-0.3).foregroundStyle(Brand.danger).monospacedDigit()
-                    Text("SLA TO STAGE 4").font(.system(size: 9, weight: .heavy)).tracking(0.3).foregroundStyle(palette.textTertiary)
+                    // No SLA feed exists server-side — honest em-dash, never an invented clock.
+                    Text("—").font(.system(size: 20, weight: .heavy)).tracking(-0.3).foregroundStyle(palette.textTertiary).monospacedDigit()
+                    Text("SLA · NOT TRACKED").font(.system(size: 9, weight: .heavy)).tracking(0.3).foregroundStyle(palette.textTertiary)
                 }
             }
         }
@@ -177,6 +218,12 @@ private struct VesselClaimWorkflowBody: View {
 
     private var blockingCard: some View {
         VStack(spacing: 0) {
+            if blocking.isEmpty {
+                Text("No blocking items on file — evidence and signature blockers appear here when the claims feed carries them.")
+                    .font(EType.caption).foregroundStyle(palette.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 14)
+            }
             ForEach(Array(blocking.enumerated()), id: \.element.id) { idx, b in
                 HStack(alignment: .top, spacing: 12) {
                     BlockChip808(sev: b.sev)
@@ -203,8 +250,10 @@ private struct VesselClaimWorkflowBody: View {
         HStack(spacing: 12) {
             Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Advance to Decision once surveyor PDF lands").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
-                Text("ESang · \(esangLine)").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                // Derived from the LIVE workflow ladder only — no fabricated advice.
+                Text(nextStepName.map { "Next stage: \($0)" } ?? "Workflow up to date")
+                    .font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text("ESang · \(lifecycleCaption)").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)
         }
@@ -236,16 +285,32 @@ private struct VesselClaimWorkflowBody: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: Data — decodes the REAL freightClaims.getClaimWorkflow shape (:459).
-    private struct Step808: Decodable { let step: Int?; let name: String?; let completed: Bool? }
-    private struct Workflow808: Decodable { let currentStep: Int?; let steps: [Step808]? }
+    // MARK: Data — anchors to a REAL claim, then decodes the REAL server shapes.
 
     private func load() async {
         loading = true; loadError = nil
         do {
-            let w: Workflow808 = try await EusoTripAPI.shared.query(
-                "freightClaims.getClaimWorkflow",
-                input: ["claimId": claimId])
+            // 1. Resolve the newest live claim (real `claim_<n>` id) — the workflow
+            //    may never anchor to an invented claim reference.
+            struct ClaimsIn808: Encodable { let limit: Int; let offset: Int }
+            struct ClaimsResp808: Decodable { let claims: [Claim808] }
+            let list: ClaimsResp808 = try await EusoTripAPI.shared.query(
+                "freightClaims.getClaims", input: ClaimsIn808(limit: 1, offset: 0))
+            guard let anchor = list.claims.first, let cid = anchor.id else {
+                claim = nil; stages = []; loading = false
+                return
+            }
+
+            // 2. Hydrate the claim detail (amount · lane · parties) + the workflow ladder.
+            struct ByIdIn808: Encodable { let id: String }
+            struct WfIn808: Encodable { let claimId: String }
+            async let detail: Claim808? = EusoTripAPI.shared.query(
+                "freightClaims.getClaimById", input: ByIdIn808(id: cid))
+            async let wf: Workflow808 = EusoTripAPI.shared.query(
+                "freightClaims.getClaimWorkflow", input: WfIn808(claimId: cid))
+            let (d, w) = try await (detail, wf)
+            claim = d ?? anchor
+
             if let s = w.steps, !s.isEmpty {
                 // currentStep is 1-indexed on the wire; clamp into range.
                 let cur = max(1, min(w.currentStep ?? 1, s.count))
@@ -255,10 +320,14 @@ private struct VesselClaimWorkflowBody: View {
                         ? .done
                         : (n == cur ? .active : .future)
                     return ClaimStage808(label: shortLabel(st.name),
-                                         date: n == cur ? slaHours + " SLA" : "",
+                                         date: "",
                                          state: state)
                 }
-                stageOfFive = "\(cur) / \(s.count)"
+                stageOf = "\(cur) / \(s.count)"
+                currentStepName = s.first { ($0.step ?? 0) == cur }?.name
+                nextStepName = s.first { ($0.step ?? 0) == cur + 1 }?.name
+            } else {
+                stages = []; stageOf = "—"; currentStepName = nil; nextStepName = nil
             }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -274,13 +343,18 @@ private struct VesselClaimWorkflowBody: View {
     }
 
     private func advance() async {
-        // freightClaims.updateClaimStatus EXISTS :393 — pushes the next status,
-        // writes the incident row, then we re-load the live workflow.
+        // freightClaims.updateClaimStatus EXISTS :393 — pushes the next status on the
+        // REAL anchored claim, then re-loads the live workflow. Gated on a live id.
+        guard let cid = claim?.id else { return }
         struct AdvanceIn808: Encodable { let id: String; let status: String }
         struct Ack808: Decodable { let success: Bool? }
-        _ = try? await EusoTripAPI.shared.mutation(
-            "freightClaims.updateClaimStatus",
-            input: AdvanceIn808(id: claimId, status: "investigating")) as Ack808
+        do {
+            let _: Ack808 = try await EusoTripAPI.shared.mutation(
+                "freightClaims.updateClaimStatus",
+                input: AdvanceIn808(id: cid, status: "investigating"))
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
         await load()
     }
 
@@ -290,6 +364,52 @@ private struct VesselClaimWorkflowBody: View {
         await load()
     }
 }
+
+// MARK: - Wire shapes (mirror freightClaims.getClaims / getClaimById / getClaimWorkflow)
+
+private struct ClaimLoad808: Decodable {
+    let loadNumber: String?
+    let origin: String?
+    let destination: String?
+    let commodity: String?
+}
+
+private struct Claim808: Decodable {
+    let id: String?
+    let claimNumber: String?
+    let type: String?
+    let status: String?
+    let description: String?
+    let amount: Double?
+    let filedDate: String?
+    let load: ClaimLoad808?
+
+    private enum CodingKeys: String, CodingKey { case id, claimNumber, type, status, description, amount, filedDate, load }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id          = try? c.decodeIfPresent(String.self, forKey: .id)
+        claimNumber = try? c.decodeIfPresent(String.self, forKey: .claimNumber)
+        type        = try? c.decodeIfPresent(String.self, forKey: .type)
+        status      = try? c.decodeIfPresent(String.self, forKey: .status)
+        description = try? c.decodeIfPresent(String.self, forKey: .description)
+        // Tolerant amount: Double on the wire today (hardcoded 0 server-side, fix in
+        // flight) — also accept a DECIMAL-string so the parallel server fix can land
+        // either shape without re-breaking this hero (zero-fallback doctrine).
+        if let d = try? c.decodeIfPresent(Double.self, forKey: .amount) {
+            amount = d
+        } else if let s = try? c.decodeIfPresent(String.self, forKey: .amount) {
+            amount = Double(s)
+        } else {
+            amount = nil
+        }
+        filedDate   = try? c.decodeIfPresent(String.self, forKey: .filedDate)
+        load        = try? c.decodeIfPresent(ClaimLoad808.self, forKey: .load)
+    }
+}
+
+private struct Step808: Decodable { let step: Int?; let name: String?; let completed: Bool? }
+private struct Workflow808: Decodable { let currentStep: Int?; let steps: [Step808]? }
 
 private struct BlockChip808: View {
     let sev: BlockSev808
