@@ -42,6 +42,15 @@
 //  models, so the maneuver line carries the live remaining-distance
 //  heading + the delivery city/state, never a fabricated exit string.
 //
+//  Map-layer adoption (2026-06-10): the geofence pill is now DYNAMIC —
+//  it reads the company's real `tracking.getGeofences` row covering
+//  the delivery coordinate and renders the wireframe's "GEOFENCE ·
+//  0.4 MI · ARMING DASH-CAM ON ENTRY" grammar with the row's own
+//  radius. No fence row ⇒ the distance-free arming line. The §3c
+//  receiver RING is not drawn here because the 020 wireframe carries
+//  no map surface (verified Dark + Light) — on 020 the pill IS the
+//  fence grammar; the ring lives on the 013/018/035 map cluster.
+//
 //  Powered by ESANG AI™.
 //
 
@@ -77,6 +86,16 @@ struct ApproachingDelivery: View {
     @State private var etaISO: String?
     /// The most-recent appointment row for this load (window source).
     @State private var appointment: AppointmentsAPI.ByLoadAppointment?
+
+    /// REAL geofence radius (meters) covering the receiver, from the
+    /// company's `tracking.getGeofences` row matched against the load's
+    /// delivery coordinate (map-layer adoption 2026-06-10). Lights the
+    /// wireframe's "GEOFENCE · 0.4 MI · …" pill grammar with the row's
+    /// own radius. nil when no fence row covers the receiver → the pill
+    /// states the arming behavior without a distance (honest absence;
+    /// the 020 wireframe carries no map surface, so the §3c ring itself
+    /// has no canvas here — the pill IS the fence grammar on 020).
+    @State private var fenceRadiusMeters: Double?
 
     enum Register { case night, afternoon }
     let register: Register
@@ -250,13 +269,27 @@ struct ApproachingDelivery: View {
         HStack(spacing: 6) {
             Circle().fill(LinearGradient.diagonal).frame(width: 6, height: 6)
             // The dash-cam arms on geofence entry (real behavior). The
-            // trigger radius is a server-side geofence config not on the
-            // wire, so we state the behavior without a fabricated "0.4 MI"
-            // distance literal.
-            Text("ARMING DASH-CAM ON ENTRY")
+            // trigger radius is now read from the company's REAL
+            // `tracking.getGeofences` row covering the receiver
+            // (resolveDeliveryFence) — the wireframe's "GEOFENCE ·
+            // 0.4 MI · ARMING DASH-CAM ON ENTRY" pill grammar, with the
+            // row's own radius. When no fence row exists we state the
+            // behavior without a distance — never a fabricated "0.4 MI".
+            Text(geofencePillText)
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                 .foregroundStyle(palette.textSecondary)
         }
+    }
+
+    /// "GEOFENCE · 0.4 MI · ARMING DASH-CAM ON ENTRY" when a real
+    /// server fence radius is on file for the receiver, else the
+    /// distance-free arming line (honest absence).
+    private var geofencePillText: String {
+        guard let m = fenceRadiusMeters, m > 0 else {
+            return "ARMING DASH-CAM ON ENTRY"
+        }
+        let mi = m / Self.metersPerMile
+        return String(format: "GEOFENCE · %.1f MI · ARMING DASH-CAM ON ENTRY", mi)
     }
 
     // MARK: Facility card
@@ -476,7 +509,27 @@ struct ApproachingDelivery: View {
         // apptText falls through to deliveryDate, then "-".
         appointment = try? await EusoTripAPI.shared.appointments
             .getByLoad(loadId: lifecycle.loadId)
-        if let load { await refreshLiveNav(for: load) }
+        if let load {
+            await refreshLiveNav(for: load)
+            await resolveDeliveryFence(for: load)
+        }
+    }
+
+    /// Looks up the company's REAL geofence row covering the delivery
+    /// coordinate (`tracking.getGeofences` → nearest active circle row
+    /// whose center sits within max(its radius, 1.5 km) of the
+    /// receiver) and caches its radius for the geofence pill. No row /
+    /// no coords / proc failure ⇒ nil ⇒ the pill renders without a
+    /// distance — never a fabricated radius.
+    @MainActor
+    private func resolveDeliveryFence(for load: Load) async {
+        guard let delivery = load.deliveryLocation,
+              !(delivery.lat == 0 && delivery.lng == 0) else {
+            fenceRadiusMeters = nil
+            return
+        }
+        fenceRadiusMeters = await EusoTripAPI.shared.trackingGeofences
+            .fence(near: delivery.lat, delivery.lng)?.radiusMeters
     }
 
     /// Computes the live remaining leg from the driver's current GPS
