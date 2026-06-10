@@ -234,6 +234,14 @@
     <line x1="118" y1="395" x2="125" y2="465" stroke="#0AC2C2" stroke-width="2" opacity="0.7"/>
     <g transform="translate(135 425)"><line x1="0" y1="0" x2="0" y2="14" stroke="#0AC2C2" stroke-width="1.5"/><path d="M -4 12 L 4 12 L 0 18 Z" fill="#0AC2C2" opacity="0.9"/></g>
     <circle cx="148" cy="448" r="5" fill="#0F1320" stroke="#3A4258" stroke-width="1"/>
+    <!-- Bow draft marks (metres) — the loaded waterline reads against the
+         ladder; breathes with the swell shimmer (.draft-fade). -->
+    <g class="draft-fade" font-family="Inter, system-ui, sans-serif" font-weight="700"
+       font-size="6" fill="#FFFFFF">
+      <text x="170" y="444" text-anchor="start">11M</text><line x1="162" y1="442" x2="167" y2="442" stroke="#FFFFFF" stroke-width="1"/>
+      <text x="170" y="456" text-anchor="start">10M</text><line x1="162" y1="454" x2="167" y2="454" stroke="#FFFFFF" stroke-width="1"/>
+      <text x="170" y="468" text-anchor="start">9M</text><line x1="162" y1="466" x2="167" y2="466" stroke="#FFFFFF" stroke-width="1"/>
+    </g>
   </g>
 
   <!-- ========== ISO TANK CONTAINER (helper definition) ========== -->
@@ -296,7 +304,9 @@
         <rect x="-10" y="-10" width="20" height="10" fill="#000000"/>
         <g transform="rotate(-45)"><text y="2" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="9" fill="#FFFFFF">8</text></g>
       </g>
-      <!-- UN-ID panel — jurisdiction variant (renderer reveals exactly one via ctx-* root class) -->
+      <!-- UN-ID panel — jurisdiction variant: the renderer toggles display on the
+           .country-US / .country-MX / .country-CA groups directly (normalized
+           guarded pattern; default = US visible, MX/CA display:none via CSS) -->
       <!-- country-US: 49 CFR 172.332 orange ID panel, UN1830 (sulphuric acid example) -->
       <g class="country-US" transform="translate(36 44)">
         <rect x="0" y="0" width="28" height="8" fill="#F08000" stroke="#000000" stroke-width="0.5"/>
@@ -430,8 +440,8 @@
   <!-- ========== BOW SPRAY MIST ========== -->
   <g filter="url(#foamBlur)" opacity="0.6">
     <circle class="bow-spray" cx="115" cy="455" r="5" fill="#FFFFFF"/>
-    <circle class="bow-spray" cx="118" cy="450" r="4" fill="#FFFFFF" style="animation-delay:-0.5s"/>
-    <circle class="bow-spray" cx="112" cy="458" r="3" fill="#FFFFFF" style="animation-delay:-1s"/>
+    <circle class="bow-spray" cx="118" cy="450" r="4" fill="#FFFFFF" style="animation: bow-spray 1.6s ease-out -0.5s infinite"/>
+    <circle class="bow-spray" cx="112" cy="458" r="3" fill="#FFFFFF" style="animation: bow-spray 1.6s ease-out -1s infinite"/>
   </g>
 
   <!-- ========== EUSOTRIP BRAND LOCKUP ========== -->

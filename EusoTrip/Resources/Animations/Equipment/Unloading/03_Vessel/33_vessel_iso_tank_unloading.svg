@@ -26,7 +26,7 @@
       0%, 100% { opacity: 0.85; transform: scale(1); }
       50%      { opacity: 1;    transform: scale(1.04); }
     }
-    .progress-fill { transition: width 0.4s ease-out; }
+    /* .progress-fill — live scaleX(var(--load-progress)) data channel (attr transform); no decorative motion. */
     .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
     @keyframes chevron-pulse {
       0%, 100% { opacity: 0.3; }
@@ -34,17 +34,22 @@
     }
     /* ============ CARGO HANDLING MOTION ============ */
 
-    /* STS hoist: spreader sits empty on the deck slot at start, latches the tank,
-       then hoists it clear. Accelerate-out-of-rest on lift (loaded inertia),
-       gentle settle on the empty return down. Loop joins at the deck pose
-       (0%/100% both translateY(0)) — no pop. */
-    .crane-ascend { animation: crane-ascend 6s infinite; }
+    /* STS hoist: spreader sits empty on the deck slot at start, latches the
+       tank, then hoists it clear. The loaded-inertia acceleration and the
+       gentle empty-return settle are SHAPED IN THE KEYFRAME PERCENTAGES on a
+       linear clock — per-frame animation-timing-function is not an engine
+       feature, so the easing is baked into intermediate frames. Loop joins
+       at the deck pose (0%/100% both translateY(0)) — no pop. */
+    .crane-ascend { animation: crane-ascend 6s linear infinite; }
     @keyframes crane-ascend {
-      0%   { transform: translateY(0); }
-      14%  { transform: translateY(0);        animation-timing-function: cubic-bezier(0.4,0,0.6,1); }
-      40%  { transform: translateY(-180px); }
-      60%  { transform: translateY(-180px); animation-timing-function: cubic-bezier(0.33,0,0.2,1); }
-      85%, 100% { transform: translateY(0); }
+      0%   { transform: translateY(0); }       /* spreader locked on the tank */
+      14%  { transform: translateY(0); }       /* twist-locks engage */
+      20%  { transform: translateY(-14px); }   /* breaks free gently… */
+      32%  { transform: translateY(-118px); }  /* …main hoist at speed… */
+      40%  { transform: translateY(-180px); }  /* …slows to the beam */
+      60%  { transform: translateY(-180px); }  /* traverse to the quay */
+      68%  { transform: translateY(-118px); }  /* empty return lowers fast… */
+      85%, 100% { transform: translateY(0); }  /* …and settles to the deck */
     }
     .trolley-traverse { animation: trolley-traverse 6s ease-in-out infinite; }
     @keyframes trolley-traverse {
@@ -1040,9 +1045,15 @@
 
   <g>
     <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.6"/>
-    <rect class="progress-fill" x="60" y="555" width="540" height="6" rx="3"
-          fill="#F2B27A"
-          style="--load-progress: 0.5;"/>
+    <!-- LIVE PROGRESS CHANNEL: the host feeds the load-progress CSS var (0…1,
+         BindableEquipmentAnimation cssVars) and the fill scales from its left
+         edge via scaleX(var()). The 0.5 fallback matches this document's baked
+         50% sample state; the runtime overrides it with the real lifecycle
+         percent. -->
+    <g transform="translate(60 555)">
+      <rect class="progress-fill" transform="scaleX(var(--load-progress, 0.5))"
+            x="0" y="0" width="1080" height="6" rx="3" fill="#F2B27A"/>
+    </g>
     <text x="1140" y="548" text-anchor="end"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="10" letter-spacing="1.4"

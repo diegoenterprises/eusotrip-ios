@@ -26,7 +26,7 @@
       0%, 100% { opacity: 0.85; transform: scale(1); }
       50%      { opacity: 1;    transform: scale(1.04); }
     }
-    .progress-fill { transition: width 0.4s ease-out; }
+    /* .progress-fill — live scaleX(var(--load-progress)) data channel (attr transform); no decorative motion. */
     .chevron { animation: chevron-pulse 2.2s ease-in-out infinite; }
     @keyframes chevron-pulse {
       0%, 100% { opacity: 0.3; }
@@ -35,14 +35,19 @@
     /* ============ CARGO HANDLING MOTION ============ */
 
     /* STS hoist lowers the laden spreader to the deck slot.
-       Decelerating cubic-bezier on the way down (controlled set-down),
-       gentle ease back up for the empty return reeve. Loop joins at the
+       The hoist deceleration (controlled set-down) and the gentle empty
+       return are SHAPED IN THE KEYFRAME PERCENTAGES on a linear clock —
+       per-frame animation-timing-function is not an engine feature, so the
+       easing is baked into intermediate frames. Loop joins at the
        fully-raised pose (0%/100% both -180px) so there is no pop. */
-    .crane-descend { animation: crane-descend 6s infinite; }
+    .crane-descend { animation: crane-descend 6s linear infinite; }
     @keyframes crane-descend {
-      0%   { transform: translateY(-180px); animation-timing-function: cubic-bezier(0.33,0,0.2,1); }
-      35%  { transform: translateY(0); }
-      58%  { transform: translateY(0);      animation-timing-function: cubic-bezier(0.4,0,0.4,1); }
+      0%   { transform: translateY(-180px); }
+      9%   { transform: translateY(-92px); }   /* fast initial lower… */
+      22%  { transform: translateY(-18px); }   /* …decelerating… */
+      35%  { transform: translateY(0); }       /* …controlled set-down */
+      58%  { transform: translateY(0); }       /* twist-locks release */
+      66%  { transform: translateY(-22px); }   /* empty reeve eases away */
       85%, 100% { transform: translateY(-180px); }
     }
 
@@ -1056,9 +1061,15 @@
 
   <g>
     <rect x="60" y="555" width="1080" height="6" rx="3" fill="#E5E2EF" opacity="0.6"/>
-    <rect class="progress-fill" x="60" y="555" width="540" height="6" rx="3"
-          fill="#0AC2C2"
-          style="--load-progress: 0.5;"/>
+    <!-- LIVE PROGRESS CHANNEL: the host feeds the load-progress CSS var (0…1,
+         BindableEquipmentAnimation cssVars) and the fill scales from its left
+         edge via scaleX(var()). The 0.5 fallback matches this document's baked
+         50% sample state; the runtime overrides it with the real lifecycle
+         percent. -->
+    <g transform="translate(60 555)">
+      <rect class="progress-fill" transform="scaleX(var(--load-progress, 0.5))"
+            x="0" y="0" width="1080" height="6" rx="3" fill="#0AC2C2"/>
+    </g>
     <text x="1140" y="548" text-anchor="end"
           font-family="Inter, system-ui, sans-serif"
           font-weight="700" font-size="10" letter-spacing="1.4"
