@@ -139,7 +139,13 @@ enum SVGCSSParser {
         for chunk in body.split(separator: ";") {
             guard let colon = chunk.firstIndex(of: ":") else { continue }
             let key = chunk[chunk.startIndex..<colon].trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            let val = chunk[chunk.index(after: colon)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            var val = chunk[chunk.index(after: colon)...].trimmingCharacters(in: .whitespacesAndNewlines)
+            // Importance is a cascade concern; our buckets already apply
+            // reduced-motion AFTER normal/dark, so the marker is just noise
+            // that would defeat value comparisons ("none !important" != "none").
+            if val.hasSuffix("!important") {
+                val = String(val.dropLast("!important".count)).trimmingCharacters(in: .whitespaces)
+            }
             if !key.isEmpty && !val.isEmpty { out[key] = val }
         }
         return out

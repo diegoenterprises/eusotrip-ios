@@ -433,6 +433,12 @@ struct EquipmentAnimation: View {
     var flatbedChains: Bool     = false
     var flatbedEdgeProtectors: Bool = false
     var oversizePermits: Bool   = false
+    /// COUNTRY-GROUP TOGGLE (Wave E engine API, additive — Wave C wires the
+    /// real load region into call sites). Selects which of the authored
+    /// `.country-US/-MX/-CA` regulatory groups (placards, credentials,
+    /// emergency contacts) the SVG renders. nil = US default — the engine
+    /// guarantees exactly ONE country group per render, never multiple.
+    var country: SVGCountry?    = nil
 
     var body: some View {
         ZStack {
@@ -561,7 +567,7 @@ struct EquipmentAnimation: View {
     @ViewBuilder
     private var content: some View {
         if let svg = EquipmentAnimationCache.shared.svg(for: equipment) {
-            NativeSVGView(svgString: svg)
+            NativeSVGView(svgString: svg, country: country)
                 .padding(2)
         } else {
             // Honest fallback — never a fabricated silhouette.
