@@ -161,7 +161,7 @@ enum HomeWidgetCatalog {
     /// Universal widgets — available to every role. Mirrors web's
     /// `UNIVERSAL_WIDGETS` (client/src/lib/widgetLibrary.ts:57).
     static let universal: [HomeWidgetDef] = [
-        .init(id: "weather",            name: "Weather",            summary: "Live weather with 5-day forecast",     icon: "sun.max.fill",            category: .productivity,   roles: allRoles, defaultSize: (6, 6), iosRenderable: true),
+        .init(id: "weather",            name: "Weather",            summary: "Live conditions, hourly band, lane weather + 5-day forecast", icon: "sun.max.fill", category: .productivity, roles: allRoles, defaultSize: (6, 6), iosRenderable: true, availableSizes: [.half, .full]),
         .init(id: "calendar",           name: "Calendar",           summary: "Schedule and appointments",            icon: "calendar",                category: .productivity,   roles: allRoles, defaultSize: (12, 8), iosRenderable: false),
         .init(id: "notes",              name: "Quick Notes",        summary: "Sticky notes and reminders",           icon: "note.text",               category: .productivity,   roles: allRoles, defaultSize: (6, 6), iosRenderable: false),
         .init(id: "tasks",              name: "Tasks",              summary: "Personal to-dos",                      icon: "checklist",               category: .productivity,   roles: allRoles, defaultSize: (6, 6), iosRenderable: false),
@@ -863,7 +863,11 @@ struct DriverHome: View {
         case "next_delivery":   AnyView(NextDeliveryWidget(summary: vm.activeLoadSummary))
         case "hos_tracker":     AnyView(HosTrackerWidget())
         case "earnings_summary":AnyView(EarningsSummaryWidget(available: vm.walletAvailable, availableDisplay: vm.walletAvailableDisplay))
-        case "weather_alerts":  AnyView(WeatherAlertsWidget(snapshot: vm.weather))
+        case "weather_alerts":  AnyView(WeatherAlertsWidget(snapshot: vm.weather, lane: vm.laneWeather))
+        // Cross-platform layouts saved on web can carry the universal
+        // "weather" tile — render the real card (compact at half span)
+        // instead of silently dropping the slot to EmptyView.
+        case "weather":         AnyView(WeatherTileWidget(snapshot: vm.weather, lane: vm.laneWeather))
         case "messages":        AnyView(MessagesWidget())
         case "notifications":   AnyView(NotificationsWidget())
         case "haul":            AnyView(TheHaulWeeklyTile())
@@ -936,7 +940,11 @@ struct DriverHome: View {
                         // than flash an error — matches the §13 "neutral
                         // empty state on the client, no fake data" rule.
                         if let w = vm.weather {
-                            WeatherCard(snapshot: w)
+                            // Route-aware: when a load is active the card
+                            // also renders the lane strip (pickup →
+                            // delivery live conditions + freight flags)
+                            // from HERE Destination Weather.
+                            WeatherCard(snapshot: w, lane: vm.laneWeather)
                         } else if vm.weatherAvailability == .needsLocation {
                             enableLocationCard
                         }
@@ -2075,16 +2083,55 @@ struct NotificationsWidget: View {
     }
 }
 
+// MARK: - WeatherTileWidget (catalog widget id: "weather" — universal)
+//
+// Span-aware wrapper around the canonical WeatherCard so the universal
+// cross-platform "weather" tile renders the real freight weather card:
+// `.half` → the compact one-row glance, `.full` → the full card with
+// the lane strip. Reads the same live snapshot the hero renders.
+
+struct WeatherTileWidget: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.homeWidgetSpan) private var span
+    let snapshot: WeatherSnapshot?
+    var lane: LaneWeather? = nil
+
+    var body: some View {
+        if let s = snapshot {
+            WeatherCard(
+                snapshot: s,
+                lane: span == .half ? nil : lane,
+                style: span == .half ? .compact : .full
+            )
+        } else {
+            // No live snapshot — honest neutral state, no fabricated sky.
+            Text("Enable location for live weather.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .padding(Space.s3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .eusoCard(radius: Radius.lg)
+        }
+    }
+}
+
 // MARK: - WeatherAlertsWidget (catalog widget id: "weather_alerts")
 //
-// Tight route-relevant weather card — surfaces the next actionable
-// alert (e.g. "Light rain in 5h around pickup window") + visibility
-// + wind gust risk. Reads from the same WeatherSnapshot the hero
+// Route-relevant weather tile — level-100 rebuild (2026-06-11):
+//   • Severe-alert line with real NWS CAP severity color.
+//   • Active-load lane row (pickup → delivery live conditions) +
+//     freight flags (high-profile wind, chain-law, low-vis, reefer).
+//   • Wind (+gust) / visibility / humidity readouts — live or em-dash.
+//   • Span-aware: `.half` stays a tight glance, `.full` adds a
+//     6-hour mini band.
+// Reads from the same WeatherSnapshot + LaneWeather the hero
 // WeatherCard renders — composable, no second fetch.
 
 struct WeatherAlertsWidget: View {
     @Environment(\.palette) private var palette
+    @Environment(\.homeWidgetSpan) private var span
     let snapshot: WeatherSnapshot?
+    var lane: LaneWeather? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -2099,7 +2146,24 @@ struct WeatherAlertsWidget: View {
                 if let s = snapshot { Text(s.city).font(.system(size: 9, weight: .heavy)).tracking(0.4).foregroundStyle(palette.textTertiary) }
             }
             if let s = snapshot {
-                if let alert = s.nextAlert, !alert.isEmpty {
+                // Headline — active CAP bulletin wins (severity-colored),
+                // then the forward-looking nextAlert nudge, then current.
+                if let top = s.topAlert ?? lane?.topAlert {
+                    HStack(spacing: 5) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(top.severity.color)
+                        Text(top.event)
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1)
+                        Text(top.severity.label)
+                            .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(Capsule().fill(top.severity.color))
+                    }
+                } else if let alert = s.nextAlert, !alert.isEmpty {
                     Text(alert)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
@@ -2109,12 +2173,78 @@ struct WeatherAlertsWidget: View {
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                 }
+
                 HStack(spacing: 12) {
-                    Label("\(s.windMph) mph", systemImage: "wind")
+                    Label(s.windDisplay, systemImage: "wind")
+                        .foregroundStyle(s.windHazard ? Brand.warning : palette.textSecondary)
                     Label("\(s.visibilityMi) mi", systemImage: "eye")
+                        .foregroundStyle(s.visibilityHazard ? Brand.warning : palette.textSecondary)
+                    Label(s.humidityDisplay, systemImage: "humidity")
+                        .foregroundStyle(palette.textSecondary)
                 }
                 .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(palette.textSecondary)
+
+                // Active-load lane — live pickup → delivery readings.
+                if let lane, !lane.isEmpty {
+                    HStack(spacing: 6) {
+                        ForEach(Array(lane.points.enumerated()), id: \.offset) { idx, point in
+                            if idx > 0 {
+                                Image(systemName: "arrow.right")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundStyle(palette.textTertiary)
+                            }
+                            HStack(spacing: 4) {
+                                Image(systemName: point.snapshot.symbol)
+                                    .symbolRenderingMode(.hierarchical)
+                                    .font(.system(size: 10))
+                                Text("\(point.city) \(point.snapshot.tempDisplay)")
+                                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(palette.textPrimary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    if !lane.flags.isEmpty {
+                        VStack(alignment: .leading, spacing: 3) {
+                            ForEach(lane.flags) { flag in
+                                HStack(spacing: 4) {
+                                    Image(systemName: flag.icon)
+                                        .font(.system(size: 8, weight: .bold))
+                                    Text(flag.label)
+                                        .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                                        .lineLimit(1)
+                                }
+                                .foregroundStyle(flag.accent.color)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Capsule().fill(flag.accent.color.opacity(0.14)))
+                            }
+                        }
+                    }
+                }
+
+                // Full-width span earns the 6-hour mini band.
+                if span == .full, !s.hourly.isEmpty {
+                    HStack(spacing: 0) {
+                        ForEach(s.hourly.prefix(6)) { hour in
+                            VStack(spacing: 2) {
+                                Text(hour.hourLabel)
+                                    .font(.system(size: 8, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(palette.textTertiary)
+                                Image(systemName: hour.symbol)
+                                    .symbolRenderingMode(.hierarchical)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(palette.textSecondary)
+                                Text("\(hour.tempF)°")
+                                    .font(.system(size: 10, weight: .heavy, design: .rounded))
+                                    .monospacedDigit()
+                                    .foregroundStyle(palette.textPrimary)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+                    .padding(.top, 2)
+                }
             } else {
                 Text("Enable location for live route weather.")
                     .font(EType.caption)

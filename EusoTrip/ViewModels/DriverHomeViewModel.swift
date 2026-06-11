@@ -176,6 +176,14 @@ final class DriverHomeViewModel: ObservableObject {
     /// fabricating conditions.
     @Published var weather: WeatherSnapshot? = nil
 
+    /// Route-aware lane weather for the ACTIVE load — live HERE
+    /// Destination Weather at the pickup and the delivery coordinates
+    /// (the same observation/forecastHourly/nwsAlerts product set the
+    /// platform's hereMaps.weatherAt proc normalises server-side).
+    /// Nil when no load is assigned or HERE returned nothing usable —
+    /// the WeatherCard simply collapses its lane strip. Never seeded.
+    @Published var laneWeather: LaneWeather? = nil
+
     /// Structured reason the weather card is in its current state.
     /// Drives the dashboard's decision to render a `WeatherCard`
     /// (when `.live`), a gradient "Enable location for live weather"
@@ -438,6 +446,10 @@ final class DriverHomeViewModel: ObservableObject {
                 Task { [weak self] in
                     await self?.refreshWeatherForUpcomingLoad()
                 }
+            } else {
+                // No active load — the lane strip has nothing honest to
+                // show. Clear any leftover lane from a delivered load.
+                self.laneWeather = nil
             }
 
             self.isOffline = false
@@ -462,35 +474,76 @@ final class DriverHomeViewModel: ObservableObject {
     /// is non-nil — matches the "route weather when a load is
     /// active, local weather otherwise" doctrine.
     private func refreshWeatherForUpcomingLoad() async {
-        // Prefer the delivery coord — that's the weather the driver
-        // is about to arrive in. Fall back to pickup when delivery
-        // lat/lng isn't populated on the Load record.
-        let target: (lat: Double, lng: Double, city: String)? = {
-            guard let load = activeLoad else { return nil }
-            if let drop = load.deliveryLocation, drop.lat != 0, drop.lng != 0 {
-                return (drop.lat, drop.lng, drop.cityState)
-            }
-            if let pu = load.pickupLocation, pu.lat != 0, pu.lng != 0 {
-                return (pu.lat, pu.lng, pu.cityState)
-            }
-            return nil
-        }()
-        guard let target else { return }
+        guard let load = activeLoad else { return }
 
-        do {
-            let place = try await HereWeatherClient.shared.report(
-                at: CLLocationCoordinate2D(latitude: target.lat, longitude: target.lng)
+        // Both ends of the lane, when coordinates exist on the record.
+        let pickup: (lat: Double, lng: Double, city: String)? = {
+            guard let pu = load.pickupLocation, pu.lat != 0, pu.lng != 0 else { return nil }
+            return (pu.lat, pu.lng, pu.cityState)
+        }()
+        let delivery: (lat: Double, lng: Double, city: String)? = {
+            guard let drop = load.deliveryLocation, drop.lat != 0, drop.lng != 0 else { return nil }
+            return (drop.lat, drop.lng, drop.cityState)
+        }()
+        guard pickup != nil || delivery != nil else { return }
+
+        // Reefer detection off the live load record — gates the
+        // ambient-extreme freight flag (never invents a temp band).
+        let tempControlled: Bool = {
+            let hint = "\(load.cargoType ?? "") \(load.commodityName ?? "")".lowercased()
+            return hint.contains("reefer") || hint.contains("refriger")
+                || hint.contains("temp-controlled") || hint.contains("temperature controlled")
+                || hint.contains("frozen") || hint.contains("cold chain")
+        }()
+
+        // One HERE Destination Weather report per lane end, concurrent.
+        // Each leg degrades to nil independently (401/403/network) so a
+        // pickup-only or delivery-only lane still renders honestly.
+        async let originPlace: HereWeatherPlace? = {
+            guard let pu = pickup else { return nil }
+            return try? await HereWeatherClient.shared.report(
+                at: CLLocationCoordinate2D(latitude: pu.lat, longitude: pu.lng)
             )
-            if let snap = WeatherSnapshot.fromHereWeather(place, city: target.city) {
-                self.weather = snap
-                self.weatherAvailability = .live
-            }
-        } catch {
-            // HERE unavailable (401 / 403 / network) — fall through
-            // to the WeatherKit snapshot that's already on-screen.
-            #if DEBUG
-            print("[DriverHomeVM] HERE weather fetch failed: \(error.localizedDescription)")
-            #endif
+        }()
+        async let destPlace: HereWeatherPlace? = {
+            guard let del = delivery else { return nil }
+            return try? await HereWeatherClient.shared.report(
+                at: CLLocationCoordinate2D(latitude: del.lat, longitude: del.lng)
+            )
+        }()
+
+        let originResolved = await originPlace
+        let destResolved = await destPlace
+
+        let originSnap: WeatherSnapshot? = {
+            guard let place = originResolved, let pu = pickup else { return nil }
+            return WeatherSnapshot.fromHereWeather(place, city: pu.city)
+        }()
+        let destSnap: WeatherSnapshot? = {
+            guard let place = destResolved, let del = delivery else { return nil }
+            return WeatherSnapshot.fromHereWeather(place, city: del.city)
+        }()
+
+        // Lane strip — both ends when available.
+        let lane = LaneWeather(
+            origin: (pickup != nil && originSnap != nil)
+                ? LaneWeather.Point(role: "PICKUP", city: pickup!.city, snapshot: originSnap!)
+                : nil,
+            destination: (delivery != nil && destSnap != nil)
+                ? LaneWeather.Point(role: "DELIVERY", city: delivery!.city, snapshot: destSnap!)
+                : nil,
+            isTempControlled: tempControlled
+        )
+        self.laneWeather = lane.isEmpty ? nil : lane
+
+        // Hero snapshot policy (user direction 2026-04-24): destination
+        // weather replaces the parked-here WeatherKit snapshot while a
+        // load is active — the driver cares where the truck is going.
+        // Falls back to the pickup snapshot pre-haul, then to whatever
+        // WeatherKit already painted.
+        if let snap = destSnap ?? originSnap {
+            self.weather = snap
+            self.weatherAvailability = .live
         }
     }
 
@@ -502,6 +555,7 @@ final class DriverHomeViewModel: ObservableObject {
         self.isOffline = true
         self.activeLoad = nil
         self.activeLoadSummary = nil
+        self.laneWeather = nil
         self.hos = nil
         self.walletAvailable = nil
         // Leave `signedInDriverFirstName` untouched — if the session

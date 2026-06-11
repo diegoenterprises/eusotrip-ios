@@ -173,6 +173,7 @@ final class WeatherService: NSObject, ObservableObject {
             struct Properties: Decodable {
                 let observationStations: String
                 let forecast: String
+                let forecastHourly: String?
                 let relativeLocation: RelLoc?
             }
             struct RelLoc: Decodable { let properties: RelLocProps }
@@ -188,7 +189,11 @@ final class WeatherService: NSObject, ObservableObject {
                 struct Quant: Decodable { let value: Double? }
                 let temperature: Quant?
                 let windSpeed: Quant?
+                let windGust: Quant?
                 let visibility: Quant?
+                let relativeHumidity: Quant?
+                let heatIndex: Quant?
+                let windChill: Quant?
                 let textDescription: String?
                 let icon: String?
             }
@@ -247,6 +252,29 @@ final class WeatherService: NSObject, ObservableObject {
         let conditionText = p.textDescription ?? "Conditions unknown"
         let symbol = Self.nwsSymbol(for: conditionText, iconURL: p.icon)
 
+        // Level-100 depth — humidity straight off the station; feels-like
+        // from heatIndex (warm) or windChill (cold) when the station
+        // reports one; gust converted km/h → mph. All nil-safe: a station
+        // that omits the field yields nil and the card renders "—".
+        let humidityPct: Int? = p.relativeHumidity?.value.map { Int($0.rounded()) }
+        let feelsLikeF: Int? = {
+            if let hi = p.heatIndex?.value { return Int((hi * 9.0 / 5.0 + 32.0).rounded()) }
+            if let wc = p.windChill?.value { return Int((wc * 9.0 / 5.0 + 32.0).rounded()) }
+            return nil
+        }()
+        let windGustMph: Int? = p.windGust?.value.map { Int(($0 * 0.621371).rounded()) }
+
+        // Hourly band + active CAP alerts — both real NWS feeds; each
+        // degrades to empty on failure without sinking the snapshot.
+        async let hourlyTask = Self.fetchNWSHourly(
+            hourlyURL: points.properties.forecastHourly.flatMap(URL.init(string:)),
+            headers: headers
+        )
+        async let alertsTask = Self.fetchNWSAlerts(lat: lat, lon: lon, headers: headers)
+        let hourly = await hourlyTask
+        let alerts = await alertsTask
+        let precipChancePct: Int? = hourly.first?.precipChancePct
+
         let cityFromPlacemark: String = {
             if let p = placemark {
                 let loc = p.locality ?? p.subAdministrativeArea ?? p.administrativeArea ?? "Nearby"
@@ -283,11 +311,12 @@ final class WeatherService: NSObject, ObservableObject {
             return "today · H \(today.highF)° / L \(today.lowF)°"
         }()
 
-        // Severity accent — promote to .warn on hazard text or low
-        // visibility / strong wind, .watch on moderate condition. NWS
-        // doesn't ship a numeric severity so we infer from the
-        // textDescription, mirroring the Open-Meteo branch's logic.
+        // Severity accent — real CAP severity wins; otherwise promote to
+        // .warn on hazard text or low visibility / strong wind, .watch on
+        // moderate condition (inferred from textDescription, mirroring
+        // the Open-Meteo branch's logic).
         let accent: WeatherSnapshot.Accent = {
+            if alerts.contains(where: { $0.severity >= .severe }) { return .warn }
             let t = conditionText.lowercased()
             let severeText = t.contains("thunder") || t.contains("blizzard") ||
                              t.contains("hurricane") || t.contains("tropical") ||
@@ -296,7 +325,7 @@ final class WeatherService: NSObject, ObservableObject {
                              t.contains("fog") || t.contains("haze") ||
                              t.contains("drizzle") || t.contains("flurr")
             if severeText || windMph >= 25 || visMi <= 2 { return .warn }
-            if watchText { return .watch }
+            if watchText || alerts.contains(where: { $0.severity == .moderate }) { return .watch }
             return .calm
         }()
 
@@ -309,8 +338,125 @@ final class WeatherService: NSObject, ObservableObject {
             symbol: symbol,
             nextAlert: nextAlert,
             accent: accent,
-            daily: daily
+            daily: daily,
+            feelsLikeF: feelsLikeF,
+            humidityPct: humidityPct,
+            windGustMph: windGustMph,
+            precipChancePct: precipChancePct,
+            hourly: hourly,
+            alerts: alerts
         )
+    }
+
+    /// Next-12-hours band from NWS `forecastHourly`. Returns `[]` on
+    /// any failure so the snapshot still ships without an hourly band
+    /// (the card collapses the strip — no fabricated hours).
+    private static func fetchNWSHourly(
+        hourlyURL: URL?,
+        headers: [String: String]
+    ) async -> [WeatherSnapshot.HourlyForecast] {
+        guard let hourlyURL else { return [] }
+        struct HourlyResp: Decodable {
+            struct Properties: Decodable { let periods: [Period] }
+            struct Period: Decodable {
+                let startTime: String
+                let temperature: Int?
+                let temperatureUnit: String?
+                let probabilityOfPrecipitation: Quant?
+                let windSpeed: String?
+                let shortForecast: String?
+                let icon: String?
+            }
+            struct Quant: Decodable { let value: Double? }
+            let properties: Properties
+        }
+
+        var req = URLRequest(url: hourlyURL)
+        req.timeoutInterval = 6
+        for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
+        guard
+            let (data, resp) = try? await URLSession.shared.data(for: req),
+            let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+            let payload = try? JSONDecoder().decode(HourlyResp.self, from: data)
+        else { return [] }
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+        let cutoff = Date().addingTimeInterval(-1800)
+
+        return payload.properties.periods
+            .compactMap { p -> WeatherSnapshot.HourlyForecast? in
+                guard
+                    let date = iso.date(from: p.startTime),
+                    date >= cutoff,
+                    let t = p.temperature
+                else { return nil }
+                // NWS hourly windSpeed arrives as a display string
+                // ("10 mph") — parse the leading integer; nil when absent.
+                let wind: Int? = p.windSpeed
+                    .flatMap { $0.split(separator: " ").first }
+                    .flatMap { Int($0) }
+                let tempF = (p.temperatureUnit ?? "F").uppercased() == "C"
+                    ? Int((Double(t) * 9.0 / 5.0 + 32.0).rounded())
+                    : t
+                return WeatherSnapshot.HourlyForecast(
+                    date: date,
+                    tempF: tempF,
+                    symbol: nwsSymbol(for: p.shortForecast ?? "", iconURL: p.icon),
+                    precipChancePct: p.probabilityOfPrecipitation?.value.map { Int($0.rounded()) },
+                    windMph: wind
+                )
+            }
+            .prefix(12)
+            .map { $0 }
+    }
+
+    /// Active CAP bulletins for the point from api.weather.gov/alerts.
+    /// Real NWS severity vocabulary — Minor/Moderate/Severe/Extreme.
+    /// Returns `[]` on failure (no alerts ≠ fabricated calm; the card
+    /// simply shows no ribbon).
+    private static func fetchNWSAlerts(
+        lat: Double,
+        lon: Double,
+        headers: [String: String]
+    ) async -> [WeatherSnapshot.SevereAlert] {
+        struct AlertsResp: Decodable {
+            struct Feature: Decodable { let properties: Props }
+            struct Props: Decodable {
+                let event: String?
+                let headline: String?
+                let severity: String?
+                let ends: String?
+                let expires: String?
+            }
+            let features: [Feature]
+        }
+        guard let url = URL(string: "https://api.weather.gov/alerts/active?point=\(lat),\(lon)") else {
+            return []
+        }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 6
+        for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
+        guard
+            let (data, resp) = try? await URLSession.shared.data(for: req),
+            let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+            let payload = try? JSONDecoder().decode(AlertsResp.self, from: data)
+        else { return [] }
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime]
+
+        return payload.features.compactMap { f -> WeatherSnapshot.SevereAlert? in
+            guard let event = f.properties.event, !event.isEmpty else { return nil }
+            let ends = (f.properties.ends ?? f.properties.expires).flatMap { iso.date(from: $0) }
+            return WeatherSnapshot.SevereAlert(
+                event: event,
+                severity: WeatherSnapshot.AlertSeverity(capString: f.properties.severity),
+                headline: f.properties.headline,
+                endsAt: ends
+            )
+        }
+        .sorted { $0.severity.rank > $1.severity.rank }
     }
 
     /// Fold NWS's interleaved day/night period list into 5 daily
@@ -460,8 +606,8 @@ final class WeatherService: NSObject, ObservableObject {
         comps.queryItems = [
             URLQueryItem(name: "latitude", value: String(lat)),
             URLQueryItem(name: "longitude", value: String(lon)),
-            URLQueryItem(name: "current", value: "temperature_2m,wind_speed_10m,weather_code"),
-            URLQueryItem(name: "hourly", value: "visibility"),
+            URLQueryItem(name: "current", value: "temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code"),
+            URLQueryItem(name: "hourly", value: "visibility,temperature_2m,weather_code,precipitation_probability,wind_speed_10m"),
             URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
             URLQueryItem(name: "wind_speed_unit", value: "mph"),
@@ -555,6 +701,16 @@ final class WeatherService: NSObject, ObservableObject {
             payload: payload
         )
 
+        // Level-100 depth — feels-like / humidity / gust from the
+        // `current` block; hourly band from the parallel hourly arrays
+        // starting at the slot nearest now. Open-Meteo ships no CAP
+        // bulletins, so `alerts` stays honestly empty on this path.
+        let feelsLikeF: Int? = payload.current.apparent_temperature.map { Int($0.rounded()) }
+        let humidityPct: Int? = payload.current.relative_humidity_2m.map { Int($0.rounded()) }
+        let windGustMph: Int? = payload.current.wind_gusts_10m.map { Int($0.rounded()) }
+        let hourly: [WeatherSnapshot.HourlyForecast] = Self.composeOpenMeteoHourly(payload: payload)
+        let precipChancePct: Int? = hourly.first?.precipChancePct
+
         // 75th firing: `approximate` is always false now — the Dallas
         // fallback was removed, so we only reach this path for the
         // driver's real resolved coordinate.
@@ -567,8 +723,64 @@ final class WeatherService: NSObject, ObservableObject {
             symbol: symbol,
             nextAlert: nextAlert,
             accent: accent,
-            daily: daily
+            daily: daily,
+            feelsLikeF: feelsLikeF,
+            humidityPct: humidityPct,
+            windGustMph: windGustMph,
+            precipChancePct: precipChancePct,
+            hourly: hourly
         )
+    }
+
+    /// Fold Open-Meteo's parallel hourly arrays into the next-12-hours
+    /// band. Index alignment is by timestamp (the same scheme the
+    /// visibility lookup above uses); short arrays just truncate the
+    /// band — no synthesized hours.
+    private static func composeOpenMeteoHourly(
+        payload: OpenMeteoResponse
+    ) -> [WeatherSnapshot.HourlyForecast] {
+        guard
+            let times = payload.hourly?.time,
+            let temps = payload.hourly?.temperature_2m,
+            !times.isEmpty
+        else { return [] }
+
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = TimeZone(identifier: payload.timezone ?? "UTC")
+        df.dateFormat = "yyyy-MM-dd'T'HH:mm"
+
+        let cutoff = Date().addingTimeInterval(-1800)
+        var out: [WeatherSnapshot.HourlyForecast] = []
+        for i in times.indices {
+            guard out.count < 12 else { break }
+            guard
+                let date = df.date(from: times[i]),
+                date >= cutoff,
+                temps.indices.contains(i)
+            else { continue }
+            let code = (payload.hourly?.weather_code?.indices.contains(i) == true)
+                ? payload.hourly!.weather_code![i] : 0
+            let (_, symbol) = openMeteoCondition(for: code)
+            let precip: Int? = {
+                guard let arr = payload.hourly?.precipitation_probability,
+                      arr.indices.contains(i) else { return nil }
+                return arr[i]
+            }()
+            let wind: Int? = {
+                guard let arr = payload.hourly?.wind_speed_10m,
+                      arr.indices.contains(i) else { return nil }
+                return Int(arr[i].rounded())
+            }()
+            out.append(WeatherSnapshot.HourlyForecast(
+                date: date,
+                tempF: Int(temps[i].rounded()),
+                symbol: symbol,
+                precipChancePct: precip,
+                windMph: wind
+            ))
+        }
+        return out
     }
 
     /// Parse the Open-Meteo daily block into our 5-day forecast array.
@@ -674,12 +886,19 @@ final class WeatherService: NSObject, ObservableObject {
 
         struct Current: Decodable {
             let temperature_2m: Double
+            let apparent_temperature: Double?
+            let relative_humidity_2m: Double?
             let wind_speed_10m: Double
+            let wind_gusts_10m: Double?
             let weather_code: Int
         }
         struct Hourly: Decodable {
             let time: [String]
             let visibility: [Double]
+            let temperature_2m: [Double]?
+            let weather_code: [Int]?
+            let precipitation_probability: [Int?]?
+            let wind_speed_10m: [Double]?
         }
         struct Daily: Decodable {
             let time: [String]?
@@ -805,6 +1024,46 @@ final class WeatherService: NSObject, ObservableObject {
             }
         }()
 
+        // Level-100 depth — feels-like / humidity / gust straight off
+        // the WeatherKit current observation; hourly band from the next
+        // 12 hours; alerts mapped onto the NWS CAP severity ladder.
+        let feelsLikeF = Int(current.apparentTemperature.converted(to: .fahrenheit).value.rounded())
+        let humidityPct = Int((current.humidity * 100).rounded())
+        let windGustMph: Int? = current.wind.gust.map {
+            Int($0.converted(to: .milesPerHour).value.rounded())
+        }
+        let now = Date()
+        let hourly: [WeatherSnapshot.HourlyForecast] = weather.hourlyForecast.forecast
+            .filter { $0.date >= now.addingTimeInterval(-1800) }
+            .prefix(12)
+            .map { hour in
+                WeatherSnapshot.HourlyForecast(
+                    date: hour.date,
+                    tempF: Int(hour.temperature.converted(to: .fahrenheit).value.rounded()),
+                    symbol: hour.symbolName,
+                    precipChancePct: Int((hour.precipitationChance * 100).rounded()),
+                    windMph: Int(hour.wind.speed.converted(to: .milesPerHour).value.rounded())
+                )
+            }
+        let precipChancePct: Int? = hourly.first?.precipChancePct
+        let alerts: [WeatherSnapshot.SevereAlert] = (weather.weatherAlerts ?? []).map { alert in
+            let sev: WeatherSnapshot.AlertSeverity = {
+                switch alert.severity {
+                case .minor:    return .minor
+                case .moderate: return .moderate
+                case .severe:   return .severe
+                case .extreme:  return .extreme
+                default:        return .unknown
+                }
+            }()
+            return WeatherSnapshot.SevereAlert(
+                event: alert.summary,
+                severity: sev,
+                headline: nil,
+                endsAt: nil
+            )
+        }
+
         return WeatherSnapshot(
             city: city,
             tempF: tempF,
@@ -814,7 +1073,13 @@ final class WeatherService: NSObject, ObservableObject {
             symbol: symbol,
             nextAlert: nextAlert.isEmpty ? nil : nextAlert,
             accent: accent,
-            daily: daily
+            daily: daily,
+            feelsLikeF: feelsLikeF,
+            humidityPct: humidityPct,
+            windGustMph: windGustMph,
+            precipChancePct: precipChancePct,
+            hourly: hourly,
+            alerts: alerts
         )
     }
 

@@ -80,12 +80,10 @@ extension WeatherSnapshot {
         let symbol = Self.symbol(for: obs)
 
         // Next-alert line — first meaningful change in the next 6
-        // hourly slots, or today's H/L.
+        // hourly slots, or today's H/L. Severe bulletins now ride the
+        // card's dedicated alert ribbon (snapshot.alerts), so this pill
+        // stays a forward-looking condition nudge.
         let nextAlert: String? = {
-            if let nws = place.nwsAlerts?.alerts?.first {
-                let kind = (nws.type ?? "Alert").uppercased()
-                return "⚠︎ \(kind) · tap for details"
-            }
             let horizon = (place.hourlyForecasts?.forecasts ?? []).prefix(6)
             for (i, h) in horizon.enumerated() {
                 if let desc = h.description,
@@ -102,19 +100,72 @@ extension WeatherSnapshot {
             return nil
         }()
 
+        // NWS bulletins → the CAP severity ladder the ribbon renders.
+        let alerts: [WeatherSnapshot.SevereAlert] = {
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime]
+            return (place.nwsAlerts?.alerts ?? []).map { a in
+                WeatherSnapshot.SevereAlert(
+                    event: (a.type ?? "Weather alert").capitalized,
+                    severity: WeatherSnapshot.AlertSeverity(capString: a.severity),
+                    headline: a.description,
+                    endsAt: a.validUntilTimeLocal.flatMap { iso.date(from: $0) }
+                )
+            }
+            .sorted { $0.severity.rank > $1.severity.rank }
+        }()
+
         // Accent — severe NWS alerts promote to warn; heavy wind or
         // low visibility promotes to watch.
         let accent: WeatherSnapshot.Accent = {
-            if let alerts = place.nwsAlerts?.alerts {
-                if alerts.contains(where: { ($0.severity ?? "").lowercased() == "severe" || ($0.severity ?? "").lowercased() == "extreme" }) {
-                    return .warn
-                }
+            if alerts.contains(where: { $0.severity >= .severe }) {
+                return .warn
             }
             if windMph >= 25 || visibilityMi <= 2 {
                 return .watch
             }
             return .calm
         }()
+
+        // Feels-like ("comfort" in HERE vocabulary) + humidity.
+        let feelsLikeF: Int? = {
+            if let f = obs.comfortFahrenheit { return Int(f.rounded()) }
+            if let c = obs.comfort { return Int((c * 9.0 / 5.0 + 32).rounded()) }
+            return nil
+        }()
+        let humidityPct: Int? = obs.humidity.map { Int($0.rounded()) }
+
+        // Next-12-hours band from `forecastHourly` — same product the
+        // platform's hereMaps.weatherAt proc normalises server-side.
+        let hourly: [WeatherSnapshot.HourlyForecast] = {
+            let iso = ISO8601DateFormatter()
+            iso.formatOptions = [.withInternetDateTime]
+            let cutoff = Date().addingTimeInterval(-1800)
+            var out: [WeatherSnapshot.HourlyForecast] = []
+            for h in (place.hourlyForecasts?.forecasts ?? []) {
+                guard out.count < 12 else { break }
+                guard
+                    let ts = h.time,
+                    let date = iso.date(from: ts),
+                    date >= cutoff
+                else { continue }
+                let tempF: Int? = {
+                    if let f = h.temperatureFahrenheit { return Int(f.rounded()) }
+                    if let c = h.temperature { return Int((c * 9.0 / 5.0 + 32).rounded()) }
+                    return nil
+                }()
+                guard let tempF else { continue }
+                out.append(WeatherSnapshot.HourlyForecast(
+                    date: date,
+                    tempF: tempF,
+                    symbol: Self.dailySymbol(for: h.iconName ?? h.description ?? ""),
+                    precipChancePct: h.precipitationProbability.map { Int($0.rounded()) },
+                    windMph: h.windSpeedMph.map { Int($0.rounded()) }
+                ))
+            }
+            return out
+        }()
+        let precipChancePct: Int? = hourly.first?.precipChancePct
 
         // 5-day daily look-ahead. HERE ships weekday labels out of
         // the box — we keep them when present and synthesize from
@@ -171,7 +222,12 @@ extension WeatherSnapshot {
             symbol: symbol,
             nextAlert: nextAlert,
             accent: accent,
-            daily: daily
+            daily: daily,
+            feelsLikeF: feelsLikeF,
+            humidityPct: humidityPct,
+            precipChancePct: precipChancePct,
+            hourly: hourly,
+            alerts: alerts
         )
     }
 
