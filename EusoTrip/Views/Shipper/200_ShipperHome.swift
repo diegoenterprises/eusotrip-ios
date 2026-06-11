@@ -35,17 +35,20 @@ import SwiftUI
 
 struct ShipperHome: View {
     @Environment(\.palette) private var palette
-    /// Set by ShipperWidgetBoard on each rendered tile to the user's chosen
-    /// span. `.compact` tiles render a condensed, glanceable body; `.half`
-    /// tiles keep their natural body but live in a half-width column. Tiles
-    /// that read this shrink; tiles that ignore it still render correctly.
-    @Environment(\.homeWidgetSpan) private var widgetSpan
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = ShipperDashboardStore()
     @StateObject private var alerts    = ShipperAlertsStore()
     @StateObject private var active    = ShipperActiveLoadsStore()
     @StateObject private var recent    = ShipperRecentLoadsStore()
+    /// Rate-per-mile + on-time aggregates derived from REAL procs —
+    /// `shippers.getMyLoads` (rate ÷ distance over the shipper's actual
+    /// load rows) and `shippers.getCatalystPerformance` (server-computed
+    /// on-time SQL, weighted across catalysts). The slim
+    /// `shippers.getDashboardStats` envelope hardcodes both to 0
+    /// (server WIRE-GAP), so without this store the two stat tiles
+    /// rendered a permanent em-dash.
+    @StateObject private var aggregates = ShipperHomeAggregatesStore()
     // Real company identity for the header subhead — `shippers.getProfile`
     // (companyName). NEVER a founder default; empty/unavailable → "—".
     @StateObject private var profile   = ShipperProfileStore()
@@ -113,13 +116,21 @@ struct ShipperHome: View {
         .init(id: "news",             sizes: [.full, .half]),
     ]
 
-    private func shipperHomeRender(_ id: String) -> AnyView {
+    /// Per-tile renderer. The span arrives as an EXPLICIT parameter from
+    /// ShipperWidgetBoard — NOT via `@Environment(\.homeWidgetSpan)` on
+    /// ShipperHome itself. The previous environment read resolved against
+    /// ShipperHome's OWN environment (always `.full`, since the board's
+    /// `.environment(...)` modifier wraps the rendered tile, not this
+    /// screen), which is why choosing "Compact" in the size picker changed
+    /// nothing on screen — founder evidence 2026-06-11. Passing the span
+    /// down the call chain makes every size tier actually re-layout.
+    private func shipperHomeRender(_ id: String, _ span: HomeWidgetSpan) -> AnyView {
         switch id {
-        case "activeLoads":       AnyView(activeLoadsSection)
-        case "esang":             AnyView(esangStrip)
-        case "spend_summary":     AnyView(spendSummaryWidget)
-        case "attention_alerts":  AnyView(attentionAlertsWidget)
-        case "recent":            AnyView(recentActivitySection)
+        case "activeLoads":       AnyView(activeLoadsSection(span))
+        case "esang":             AnyView(esangStrip(span))
+        case "spend_summary":     AnyView(spendSummaryWidget(span))
+        case "attention_alerts":  AnyView(attentionAlertsWidget(span))
+        case "recent":            AnyView(recentActivitySection(span))
         case "news":              AnyView(NewsCarouselWidget())
         default:                  AnyView(EmptyView())
         }
@@ -152,7 +163,7 @@ struct ShipperHome: View {
                         slots: shipperWidgetSlots,
                         role: "SHIPPER",
                         storageKey: widgetLayoutKey,
-                        render: { id in shipperHomeRender(id) }
+                        render: { id, span in shipperHomeRender(id, span) }
                     )
                     Color.clear.frame(height: 96) // bottom-nav clearance
                 }
@@ -200,10 +211,11 @@ struct ShipperHome: View {
         async let c: Void = active.refresh()
         async let d: Void = recent.refresh()
         async let p: Void = profile.refresh()
+        async let ag: Void = aggregates.refresh()
         async let av: Void = loadAvatar()
         async let w: WeatherSnapshot? = WeatherService.shared.fetchCurrent()
         let snap = await w
-        _ = await (a, b, c, d, p, av)
+        _ = await (a, b, c, d, p, ag, av)
         weather = snap
         // Resolve CTA visibility from the post-fetch authorization
         // status so the home renders an "Enable location" affordance
@@ -720,7 +732,12 @@ struct ShipperHome: View {
         // Trails are honest descriptors only — the dashboard envelope carries
         // no period-over-period delta, so we never fabricate "+3 this wk" /
         // "−6% vs Mar" / "+1.2 pts" trend numerals. Each metric value itself
-        // binds to a real `shippers.getDashboardStats` field.
+        // binds to a real `shippers.getDashboardStats` field — except
+        // rate/mi + on-time, which that envelope hardcodes to 0 (server
+        // WIRE-GAP); those two bind to ShipperHomeAggregatesStore's real
+        // derivations (`getMyLoads` rate÷distance, `getCatalystPerformance`
+        // weighted on-time). Dashboard value still wins if the server ever
+        // starts emitting a non-zero figure.
         HStack(spacing: Space.s2) {
             statTile(label: "Active", value: "\(s.activeLoads)",
                      trail: "in flight",
@@ -728,15 +745,32 @@ struct ShipperHome: View {
             statTile(label: "Bids pending", value: "\(s.pendingBids)",
                      trail: "awaiting award",
                      trailColor: palette.textSecondary)
-            statTile(label: "Rate / mi", value: rateValue(s.ratePerMile),
+            statTile(label: "Rate / mi", value: rateValue(resolvedRatePerMile(s)),
                      trail: "avg",
                      trailColor: palette.textSecondary,
                      gradientNumeral: true, valueSize: 22)
-            statTile(label: "On-time", value: percentValue(s.onTimeRate),
+            statTile(label: "On-time", value: percentValue(resolvedOnTimeRate(s)),
                      trail: "delivery rate",
                      trailColor: palette.textSecondary,
                      gradientNumeral: true)
         }
+    }
+
+    /// Real rate/mi — prefer the dashboard envelope when the server emits a
+    /// non-zero value; otherwise the aggregate derived from the shipper's
+    /// actual load rows (Σ rate ÷ Σ distance via `shippers.getMyLoads`).
+    /// 0 when neither source has data → renders an honest em-dash.
+    private func resolvedRatePerMile(_ s: ShipperAPI.DashboardStats) -> Double {
+        if s.ratePerMile > 0 { return s.ratePerMile }
+        return (aggregates.state.value ?? nil)?.ratePerMile ?? 0
+    }
+
+    /// Real on-time fraction (0–1) — dashboard envelope first, then the
+    /// load-weighted `shippers.getCatalystPerformance` aggregate (server
+    /// computes on-time per catalyst via actual vs estimated delivery SQL).
+    private func resolvedOnTimeRate(_ s: ShipperAPI.DashboardStats) -> Double {
+        if s.onTimeRate > 0 { return s.onTimeRate }
+        return (aggregates.state.value ?? nil)?.onTimeRate ?? 0
     }
 
     private var statSkeleton: some View {
@@ -779,7 +813,7 @@ struct ShipperHome: View {
     // MARK: - Active loads — list of in-flight rows w/ 8-stage strip
 
     @ViewBuilder
-    private var activeLoadsSection: some View {
+    private func activeLoadsSection(_ span: HomeWidgetSpan) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
                 Text("Active loads".uppercased())
@@ -801,7 +835,7 @@ struct ShipperHome: View {
                 if rows.isEmpty {
                     activeLoadsEmptyState
                 } else {
-                    activeLoadsList(rows)
+                    activeLoadsList(rows, span: span)
                 }
             case .empty:
                 activeLoadsEmptyState
@@ -867,10 +901,10 @@ struct ShipperHome: View {
         }
     }
 
-    private func activeLoadsList(_ rows: [ShipperAPI.ActiveLoad]) -> some View {
+    private func activeLoadsList(_ rows: [ShipperAPI.ActiveLoad], span: HomeWidgetSpan) -> some View {
         // `.compact` span → glance at the single most-urgent load; `.full`
         // span → the standard three-row stack.
-        let cap = widgetSpan == .compact ? 1 : 3
+        let cap = span == .compact ? 1 : 3
         return VStack(spacing: 0) {
             ForEach(Array(rows.prefix(cap).enumerated()), id: \.element.id) { idx, row in
                 activeRowView(row)
@@ -1040,28 +1074,31 @@ struct ShipperHome: View {
 
     // MARK: - eSang strip
 
-    private var esangStrip: some View {
+    private func esangStrip(_ span: HomeWidgetSpan) -> some View {
         Button(action: {
             NotificationCenter.default.post(name: .eusoShippereSangOpen, object: nil)
         }) {
-            HStack(spacing: Space.s3) {
-                OrbeSang(state: .idle, diameter: 32)
+            HStack(spacing: span == .compact ? Space.s2 : Space.s3) {
+                OrbeSang(state: .idle, diameter: span == .compact ? 24 : 32)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(esangHeadline)
-                        .font(EType.bodyStrong)
+                        .font(span == .compact ? EType.caption.weight(.semibold) : EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text(esangSubline)
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
+                    // `.compact` → single-line glance (headline only).
+                    if span != .compact {
+                        Text(esangSubline)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer(minLength: Space.s2)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(palette.textSecondary)
             }
-            .padding(Space.s3)
+            .padding(span == .compact ? Space.s2 : Space.s3)
             // Bespoke EusoCard surface — iridescent rim + glow on the
             // eSang strip so the AI signal row reads as a lit surface
             // (matches the SVG eSang panel + DriverHome treatment).
@@ -1092,7 +1129,7 @@ struct ShipperHome: View {
     // MARK: - Recent activity (kept — EXTRA-OK per parity audit)
 
     @ViewBuilder
-    private var recentActivitySection: some View {
+    private func recentActivitySection(_ span: HomeWidgetSpan) -> some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack(spacing: 6) {
                 Image(systemName: "clock.fill")
@@ -1112,7 +1149,7 @@ struct ShipperHome: View {
                                    subtitle: "Once a load delivers, it'll show up here with the lane and rate.")
                 } else {
                     VStack(spacing: Space.s2) {
-                        ForEach(rows.prefix(widgetSpan == .compact ? 1 : 3)) { recentRow($0) }
+                        ForEach(rows.prefix(span == .compact ? 1 : 3)) { recentRow($0) }
                     }
                 }
             case .empty:
@@ -1255,7 +1292,7 @@ struct ShipperHome: View {
     // MARK: - Spend summary widget
 
     @ViewBuilder
-    private var spendSummaryWidget: some View {
+    private func spendSummaryWidget(_ span: HomeWidgetSpan) -> some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack(spacing: 6) {
                 Image(systemName: "dollarsign.circle.fill")
@@ -1270,9 +1307,9 @@ struct ShipperHome: View {
             case .loading:
                 listSkeleton
             case .loaded(let maybe):
-                if let s = maybe { spendTiles(s) } else { spendTiles(emptyStats) }
+                if let s = maybe { spendTiles(s, span: span) } else { spendTiles(emptyStats, span: span) }
             case .empty:
-                spendTiles(emptyStats)
+                spendTiles(emptyStats, span: span)
             case .error(let e):
                 inlineError(e) { Task { await dashboard.refresh() } }
             }
@@ -1280,8 +1317,13 @@ struct ShipperHome: View {
     }
 
     @ViewBuilder
-    private func spendTiles(_ s: ShipperAPI.DashboardStats) -> some View {
-        if widgetSpan == .compact {
+    private func spendTiles(_ s: ShipperAPI.DashboardStats, span: HomeWidgetSpan) -> some View {
+        // On-time binds to the same resolved aggregate the 4-stat strip
+        // uses (dashboard envelope first, then the real catalyst-
+        // performance derivation) and renders an honest em-dash when no
+        // source has data — the previous `percent(0)` printed a
+        // fabricated-looking "0.0%" on every fresh account.
+        if span == .compact {
             // Condensed glance row — single lit card with the three numbers
             // inline, so the widget shrinks to a one-line height.
             HStack(spacing: Space.s4) {
@@ -1289,7 +1331,7 @@ struct ShipperHome: View {
                 Divider().frame(height: 22).overlay(palette.borderFaint)
                 compactStat(value: "\(s.pendingBids)", label: "bids", gradient: false)
                 Divider().frame(height: 22).overlay(palette.borderFaint)
-                compactStat(value: percent(s.onTimeRate), label: "on-time", gradient: true)
+                compactStat(value: percentValue(resolvedOnTimeRate(s)), label: "on-time", gradient: true)
                 Spacer(minLength: 0)
             }
             .padding(Space.s3)
@@ -1301,7 +1343,7 @@ struct ShipperHome: View {
                          gradientNumeral: true, valueSize: 18)
                 statTile(label: "Bids open",   value: "\(s.pendingBids)",
                          trail: "awaiting award", trailColor: palette.textSecondary)
-                statTile(label: "On-time",     value: percent(s.onTimeRate),
+                statTile(label: "On-time",     value: percentValue(resolvedOnTimeRate(s)),
                          trail: "delivery rate",  trailColor: Brand.success,
                          gradientNumeral: true)
             }
@@ -1325,7 +1367,7 @@ struct ShipperHome: View {
     // MARK: - Attention alerts widget
 
     @ViewBuilder
-    private var attentionAlertsWidget: some View {
+    private func attentionAlertsWidget(_ span: HomeWidgetSpan) -> some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -1351,7 +1393,7 @@ struct ShipperHome: View {
                     EusoEmptyState(systemImage: "checkmark.circle", title: "All clear",
                                    subtitle: "No loads need attention right now.")
                 } else {
-                    let cap = widgetSpan == .compact ? 1 : 3
+                    let cap = span == .compact ? 1 : 3
                     VStack(spacing: 0) {
                         ForEach(Array(rows.prefix(cap).enumerated()), id: \.element.id) { idx, r in
                             attentionRow(loadId: r.id,
@@ -1417,14 +1459,26 @@ struct ShipperWidgetBoard: View {
     let role: String
     /// Per-user UserDefaults cache key (shared with the cross-platform grid).
     let storageKey: String
-    /// id → tile view. EmptyView when unrecognized (stale saved layout).
-    let render: (String) -> AnyView
+    /// (id, resolved span) → tile view. EmptyView when unrecognized (stale
+    /// saved layout). The span is passed EXPLICITLY — relying on the
+    /// `.environment(\.homeWidgetSpan, …)` injection alone silently fails
+    /// when the host screen reads the key on itself rather than inside the
+    /// rendered tile (the founder's "Compact does nothing" bug).
+    let render: (String, HomeWidgetSpan) -> AnyView
 
     @State private var order: [String] = []
     @State private var sizes: [String: HomeWidgetSpan] = [:]
     @State private var editing: Bool = false
     @State private var hoverSlot: String? = nil
     @State private var hydrated: Bool = false
+
+    // ── Drag-to-resize (founder ask 2026-06-11: mirror the web grid's
+    // corner-drag, translated to touch). State for the in-flight gesture:
+    // which tile is being resized, the tier index the drag started at,
+    // and the live tier so each snap fires exactly one haptic.
+    @State private var resizingSlot: String? = nil
+    @State private var resizeBaseIndex: Int = 0
+    @State private var resizeLiveIndex: Int = 0
 
     private var canonicalOrder: [String] { slots.map(\.id) }
     private func slot(for id: String) -> Slot? { slots.first { $0.id == id } }
@@ -1530,9 +1584,13 @@ struct ShipperWidgetBoard: View {
     @ViewBuilder
     private func slotView(_ id: String) -> some View {
         let activeSpan = span(for: id)
-        let inner = render(id).environment(\.homeWidgetSpan, activeSpan)
+        // Span flows through the render closure (the load-bearing path) AND
+        // the environment (for shared components that read the key inside
+        // their own body, e.g. catalog tiles reused across role homes).
+        let inner = render(id, activeSpan).environment(\.homeWidgetSpan, activeSpan)
         if editing {
             let isHover = hoverSlot == id
+            let isResizing = resizingSlot == id
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 14, weight: .semibold))
@@ -1541,13 +1599,15 @@ struct ShipperWidgetBoard: View {
                 inner
             }
             .overlay(alignment: .topTrailing) { resizeChip(for: id, active: activeSpan) }
+            .overlay(alignment: .bottomTrailing) { resizeHandle(for: id, active: activeSpan) }
             .background(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .strokeBorder(
-                        isHover ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
-                        lineWidth: isHover ? 2 : 1
+                        (isHover || isResizing) ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                        lineWidth: (isHover || isResizing) ? 2 : 1
                     )
                     .animation(.easeOut(duration: 0.12), value: hoverSlot)
+                    .animation(.easeOut(duration: 0.12), value: resizingSlot)
             )
             .draggable(id) {
                 Text(id)
@@ -1575,10 +1635,10 @@ struct ShipperWidgetBoard: View {
         }
     }
 
-    /// The bespoke size chooser shown on every tile in edit mode. Tapping
-    /// cycles Compact → Half → Full (only across the spans this widget
-    /// allows); long-press opens the explicit Menu picker. Both paths write
-    /// the same `sizes[id]` the layout persists.
+    /// The explicit size picker shown on every tile in edit mode — tap to
+    /// choose Compact / Half / Full from the spans this widget allows.
+    /// Writes the same `sizes[id]` the corner drag handle does, so both
+    /// affordances persist through the identical layout slot.
     @ViewBuilder
     private func resizeChip(for id: String, active: HomeWidgetSpan) -> some View {
         let avail = availableSizes(for: id)
@@ -1606,6 +1666,93 @@ struct ShipperWidgetBoard: View {
         .buttonStyle(.plain)
         .padding(6)
         .accessibilityLabel("Resize \(id) widget. Current size \(active.menuLabel).")
+    }
+
+    // MARK: Drag-to-resize — the web grid's corner-drag, translated to touch
+
+    /// Size tiers this widget can snap between, ordered smallest → largest
+    /// (compact < half < full). The drag handle walks this ladder.
+    private func orderedTiers(for id: String) -> [HomeWidgetSpan] {
+        let rank: [HomeWidgetSpan: Int] = [.compact: 0, .half: 1, .full: 2]
+        return availableSizes(for: id).sorted { (rank[$0] ?? 2) < (rank[$1] ?? 2) }
+    }
+
+    /// Points of corner-drag travel per size tier. Tuned so a thumb swipe
+    /// across roughly a quarter of the screen crosses one tier.
+    private static let resizeStepPoints: CGFloat = 84
+
+    /// Corner drag handle — trailing-bottom grabber shown on every
+    /// resizable tile in edit mode. Dragging outward (down/right) grows
+    /// the widget a tier; inward (up/left) shrinks it. Each snap lands
+    /// with a haptic tick + spring re-layout, mirroring the web
+    /// platform's corner-drag resize semantics on touch. Tiles with a
+    /// single declared span render no handle (nothing to resize).
+    @ViewBuilder
+    private func resizeHandle(for id: String, active: HomeWidgetSpan) -> some View {
+        let tiers = orderedTiers(for: id)
+        if tiers.count > 1 {
+            let isResizing = resizingSlot == id
+            ZStack {
+                // Corner rails — two concentric quarter-arcs reading as a
+                // "grab corner" affordance (bespoke, not a stock glyph).
+                CornerGrabberShape()
+                    .stroke(
+                        isResizing ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary),
+                        style: StrokeStyle(lineWidth: 2, lineCap: .round)
+                    )
+                    .frame(width: 14, height: 14)
+            }
+            .frame(width: 36, height: 36, alignment: .bottomTrailing)
+            .padding(.trailing, 8)
+            .padding(.bottom, 8)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 4)
+                    .onChanged { value in
+                        if resizingSlot != id {
+                            // Gesture start — anchor on the current tier.
+                            resizingSlot = id
+                            let idx = tiers.firstIndex(of: span(for: id)) ?? (tiers.count - 1)
+                            resizeBaseIndex = idx
+                            resizeLiveIndex = idx
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        }
+                        // Outward (down/right) grows, inward shrinks —
+                        // average the two axes so a pure-diagonal pull
+                        // tracks 1:1 with the finger.
+                        let travel = (value.translation.width + value.translation.height) / 2
+                        let steps = Int((travel / Self.resizeStepPoints).rounded())
+                        let target = max(0, min(tiers.count - 1, resizeBaseIndex + steps))
+                        if target != resizeLiveIndex {
+                            resizeLiveIndex = target
+                            withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                                sizes[id] = tiers[target]
+                            }
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        }
+                    }
+                    .onEnded { _ in
+                        resizingSlot = nil
+                        cacheLocally()
+                        Task { await persist() }
+                    }
+            )
+            .overlay(alignment: .topTrailing) {
+                // Live tier readout while dragging — floats above the
+                // handle so the thumb never covers it.
+                if isResizing {
+                    Text(span(for: id).menuLabel.uppercased())
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(LinearGradient.diagonal, in: Capsule())
+                        .offset(x: -2, y: -26)
+                        .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                        .allowsHitTesting(false)
+                }
+            }
+            .accessibilityLabel("Resize \(id) widget by dragging. Current size \(active.menuLabel).")
+        }
     }
 
     /// Two-way binding for a widget's span — animates the repack and
@@ -1702,6 +1849,29 @@ struct ShipperWidgetBoard: View {
         }
         for s in canonicalOrder where !seen.contains(s) { out.append(s) }
         return out
+    }
+}
+
+// MARK: - CornerGrabberShape — bespoke resize-corner affordance
+//
+// Two nested L-strokes hugging the bottom-trailing corner — the touch
+// translation of the web grid's corner-drag chevron. Drawn as a Shape so
+// it strokes crisply at any scale and inherits whatever style (gradient
+// while resizing, tertiary at rest) the handle applies.
+
+struct CornerGrabberShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        // Outer L — full corner.
+        p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        // Inner L — inset echo.
+        let inset: CGFloat = rect.width * 0.45
+        p.move(to: CGPoint(x: rect.minX + inset, y: rect.maxY - inset * 0.1))
+        p.addLine(to: CGPoint(x: rect.maxX - inset * 0.1, y: rect.maxY - inset * 0.1))
+        p.addLine(to: CGPoint(x: rect.maxX - inset * 0.1, y: rect.minY + inset))
+        return p
     }
 }
 

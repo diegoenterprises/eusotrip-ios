@@ -207,15 +207,18 @@ final class SparkBriefStore: ObservableObject {
     }
 
     /// Auto-load entry point driven by the card's `.task`. Fetches the
-    /// cached brief once on appear and — if none exists yet — silently
-    /// generates one so the role never has to press a "Run now" button.
-    /// Debounced via `didAutoLoad` so view-identity churn / redraws
-    /// don't re-trigger the fanout.
+    /// cached brief once on appear and — if none exists yet OR the cached
+    /// one is stale (>18h, i.e. the overnight cron missed) — silently
+    /// generates a fresh one so the role never reads a fossil. Founder
+    /// evidence 2026-06-11: the shipper Home brief sat at "16d ago" with
+    /// zero chips because the old guard only regenerated on `nil`, never
+    /// on stale. The stale brief stays on screen while the re-run lands
+    /// (no blank flash).
     func autoLoad() async {
         guard !didAutoLoad else { return }
         didAutoLoad = true
         await refresh()
-        if brief == nil && !running {
+        if (brief == nil || isStale) && !running {
             await runNow()
         }
     }
@@ -245,8 +248,14 @@ final class SparkBriefStore: ObservableObject {
             if let b = resp.brief {
                 self.brief = b
                 self.sampledAt = b.sampledAt
+                self.lastError = nil
             } else if !resp.ok {
                 self.lastError = resp.reason ?? "Spark refused to run."
+            } else {
+                // ok but no inline brief in the envelope — re-pull the
+                // persisted row so the refresh affordance ALWAYS lands
+                // fresh content when the server accepted the run.
+                await refresh()
             }
         } catch {
             self.lastError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
@@ -264,6 +273,7 @@ final class SparkBriefStore: ObservableObject {
 
 struct SparkBriefCard: View {
     let role: SparkRole
+    @Environment(\.palette) private var palette
     @StateObject private var store: SparkBriefStore
     @State private var showDetail: Bool = false
 
@@ -272,40 +282,76 @@ struct SparkBriefCard: View {
         _store = StateObject(wrappedValue: SparkBriefStore(role: role))
     }
 
+    /// The CURRENT brief message text, cleaned for humans. The synthesis
+    /// pass occasionally hands back the sentence wrapped in quotes or as
+    /// a one-key JSON object — unwrap to the sentence so the widget never
+    /// renders raw JSON as "the brief" (founder evidence 2026-06-11: "the
+    /// headline isn't the brief"). nil when no real brief content exists,
+    /// which routes the card to its honest empty state.
+    private var displayHeadline: String? {
+        guard var h = store.brief?.headline?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+            !h.isEmpty else { return nil }
+        if h.hasPrefix("{"), let data = h.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let s = (obj["headline"] ?? obj["text"] ?? obj["summary"]) as? String,
+               !s.isEmpty {
+                h = s
+            } else if let first = obj.values.compactMap({ $0 as? String }).first(where: { !$0.isEmpty }) {
+                h = first
+            }
+        }
+        h = h.trimmingCharacters(in: CharacterSet(charactersIn: "\"“”` \n"))
+        return h.isEmpty ? nil : h
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Eyebrow
+            // Eyebrow — role badge + REAL relative sample age.
             HStack(spacing: 8) {
                 Image(systemName: role.sfSymbol)
-                    .font(.caption2.weight(.bold))
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
                 Text(role.eyebrow)
-                    .font(.caption2.weight(.bold))
-                    .tracking(0.8)
+                    .font(EType.micro).tracking(0.8)
+                    .foregroundStyle(palette.textPrimary)
                 Spacer()
-                if let age = store.sampledAgeHuman {
+                if store.running {
+                    Text("UPDATING…")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(LinearGradient.diagonal)
+                } else if let age = store.sampledAgeHuman {
                     Text(age)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
+                        .font(EType.micro).tracking(0.4)
+                        .foregroundStyle(palette.textTertiary)
                 }
             }
-            .foregroundStyle(.secondary)
 
-            // Headline
-            if let head = store.brief?.headline, !head.isEmpty {
+            // The brief message itself.
+            if let head = displayHeadline {
                 Text(head)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
                     .lineLimit(3)
                     .multilineTextAlignment(.leading)
             } else if store.loading || store.running {
-                ProgressView().controlSize(.small)
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text(store.running ? "ESANG is composing your brief…" : "Loading your brief…")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
             } else {
-                Text("No ESANG brief yet. Refresh to generate one.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                // Honest empty — no brief exists server-side yet.
+                Text("No ESANG brief yet.")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("Tap refresh to generate one from your live load data.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
             }
 
-            // Chips + Run button
+            // Chips — REAL counts from the brief's structured arrays.
             if store.brief != nil {
                 ChipRow(role: role, brief: store.brief)
             }
@@ -316,15 +362,17 @@ struct SparkBriefCard: View {
                         showDetail = true
                     } label: {
                         Label("Open Brief", systemImage: "doc.text.magnifyingglass")
-                            .font(.footnote.weight(.semibold))
+                            .font(EType.caption.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(LinearGradient.diagonal, in: Capsule())
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                    .buttonStyle(.plain)
                 }
                 Spacer()
-                // Subtle refresh only — the brief already auto-loads on
-                // appear (and self-generates if none exists), so this is
-                // never a required first tap. It re-pulls on demand.
+                // Refresh — fires the real `spark.run<Role>Brief` mutation
+                // (a fresh fanout over live load data), then re-pulls the
+                // persisted row if the envelope came back without one.
                 Button {
                     Task { await store.runNow() }
                 } label: {
@@ -333,10 +381,10 @@ struct SparkBriefCard: View {
                     } else {
                         Image(systemName: "arrow.clockwise")
                             .font(.footnote.weight(.semibold))
+                            .foregroundStyle(palette.textSecondary)
                     }
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
                 .controlSize(.small)
                 .disabled(store.running)
                 .accessibilityLabel("Refresh ESANG brief")
@@ -344,21 +392,20 @@ struct SparkBriefCard: View {
 
             if let err = store.lastError {
                 Text(err)
-                    .font(.caption2)
-                    .foregroundStyle(Color.red)
+                    .font(EType.micro)
+                    .foregroundStyle(Brand.danger)
+                    .lineLimit(2)
             }
         }
         .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color(.secondarySystemBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
-        )
+        // Bespoke EusoCard surface — iridescent rim + glow so the brief
+        // reads as a first-class lit card (was a flat system-gray box).
+        .eusoCard(radius: Radius.lg)
         .task { await store.autoLoad() }
-        .sheet(isPresented: $showDetail) {
+        // Full-screen (push-style) presentation per nav doctrine — the
+        // brief detail is a destination, not a pull-up sheet. Mirrors the
+        // MessagesScreen precedent on every role home.
+        .fullScreenCover(isPresented: $showDetail) {
             SparkBriefDetailSheet(role: role, brief: store.brief)
         }
     }
