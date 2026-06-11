@@ -3616,6 +3616,12 @@ struct ChatMessage: Identifiable, Equatable {
     /// When true, render the "message unsent" placeholder instead of
     /// the original content. Flipped by `messages.unsendMessage`.
     var unsent: Bool = false
+    /// I3 render floor (2026-06-10): true when the server row is an
+    /// image/document attachment whose fileUrl could not be resolved
+    /// (pre-S3 `getMessages` never joined `message_attachments`). The
+    /// bubble renders the photo-placeholder tile — the raw
+    /// "[image] filename.jpg" DB marker must NEVER reach a bubble as text.
+    var attachmentUnavailable: Bool = false
 
     enum Sender: String, Equatable { case me, other }
 }

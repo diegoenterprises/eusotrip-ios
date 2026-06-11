@@ -25,19 +25,62 @@
 import SwiftUI
 
 /// Parsed+baked document cache so each unique SVG is compiled once, not per frame.
+///
+/// Emergency I4 (2026-06-10): the FIRST parse of any document runs on a
+/// background queue, never the main thread. Parsing is cheap on the shipped
+/// corpus (1.5-4ms/frame harness-verified), but unbounded input on the main
+/// thread violates the watchdog budget BY DESIGN — `NativeSVGView` shows a
+/// clear placeholder for the few-ms gap and re-renders off the warmed cache.
 final class SVGDocumentCache {
     static let shared = SVGDocumentCache()
     private final class Box { let doc: SVGDocument; init(_ d: SVGDocument) { doc = d } }
     private let cache = NSCache<NSString, Box>()
+    /// Serial utility queue every cache-miss parse runs on.
+    private let parseQueue = DispatchQueue(label: "com.eusotrip.svg.parse", qos: .userInitiated)
     private init() { cache.countLimit = 256 }
 
-    func document(for svg: String) -> SVGDocument? {
+    /// Pure cache lookup — NEVER parses. Safe on any thread including main.
+    func cachedDocument(for svg: String) -> SVGDocument? {
         // Key on the FULL string: `String(svg.hashValue)` could silently hand
         // back the wrong document on a hash collision (engine census, frame
         // pacing row). The NSString bridge cost is paid per body evaluation,
         // never per frame.
+        cache.object(forKey: svg as NSString)?.doc
+    }
+
+    /// Async accessor — cache hit resolves immediately; a miss parses on the
+    /// background queue and lands the result in the cache. This is the ONLY
+    /// path that may parse when called from the main actor.
+    func documentAsync(for svg: String) async -> SVGDocument? {
         let key = svg as NSString
         if let hit = cache.object(forKey: key) { return hit.doc }
+        return await withCheckedContinuation { continuation in
+            parseQueue.async { [cache] in
+                // Re-check under the serial queue — a sibling view may have
+                // parsed the same document while we were queued.
+                if let hit = cache.object(forKey: key) {
+                    continuation.resume(returning: hit.doc)
+                    return
+                }
+                assert(!Thread.isMainThread, "SVG first parse must stay off the main thread (I4)")
+                guard let doc = SVGParser.parse(string: svg) else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                cache.setObject(Box(doc), forKey: key)
+                continuation.resume(returning: doc)
+            }
+        }
+    }
+
+    /// Synchronous accessor retained for non-main callers (harnesses, tests).
+    /// DEBUG-asserts if a cache MISS would parse on the main thread — use
+    /// `documentAsync(for:)` from UI code instead.
+    func document(for svg: String) -> SVGDocument? {
+        let key = svg as NSString
+        if let hit = cache.object(forKey: key) { return hit.doc }
+        assert(!Thread.isMainThread,
+               "SVGDocumentCache.document(for:) parsed on the main thread — use documentAsync(for:) (I4)")
         guard let doc = SVGParser.parse(string: svg) else { return nil }
         cache.setObject(Box(doc), forKey: key)
         return doc
@@ -108,10 +151,14 @@ struct NativeSVGView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
     @State private var start = Date()
+    /// Set (to the svgString that parsed, or nil on a failed parse) when the
+    /// off-main first parse completes — the state write re-evaluates the body
+    /// against the warmed cache. (Emergency I4: first parse never on main.)
+    @State private var offMainParsedKey: String? = nil
 
     var body: some View {
         ZStack {
-            if let doc = SVGDocumentCache.shared.document(for: svgString) {
+            if let doc = SVGDocumentCache.shared.cachedDocument(for: svgString) {
                 content(doc)
                     // Identity per parsed document → an svgString swap is an
                     // insert+remove pair, which the .opacity transition turns
@@ -119,10 +166,20 @@ struct NativeSVGView: View {
                     .id(ObjectIdentifier(doc.root))
                     .transition(.opacity)
             } else {
+                // First parse for this document runs OFF the main thread:
+                // clear placeholder for the (few-ms) gap, then the state
+                // write below re-renders off the cache. A failed parse
+                // (malformed SVG) leaves the placeholder — same honest
+                // floor as before, minus the main-thread exposure.
                 Color.clear
+                    .task(id: svgString) {
+                        let doc = await SVGDocumentCache.shared.documentAsync(for: svgString)
+                        offMainParsedKey = doc != nil ? svgString : nil
+                    }
             }
         }
         .animation(.easeInOut(duration: 0.3), value: svgString)
+        .animation(.easeInOut(duration: 0.3), value: offMainParsedKey)
     }
 
     @ViewBuilder
