@@ -1306,7 +1306,7 @@ struct DriverMessagingSheet: View {
                         ForEach(messages, id: \.id) { m in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(m.senderName ?? "-").font(EType.caption).foregroundStyle(palette.textTertiary)
-                                Text(m.content).font(EType.body).foregroundStyle(palette.textPrimary)
+                                transcriptBody(m)
                             }
                             .padding(Space.s3)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1319,6 +1319,59 @@ struct DriverMessagingSheet: View {
             }
             composer
         }
+    }
+
+    /// I3 render floor (2026-06-10) — same defensive type gate as
+    /// DriverConversationView.toChat: an image/document row renders as an
+    /// attachment (the real image when the fileUrl resolves, the honest
+    /// placeholder tile when it doesn't). The raw "[image] filename.jpg"
+    /// DB marker must NEVER reach a bubble as text.
+    @ViewBuilder
+    private func transcriptBody(_ m: MessagingMessage) -> some View {
+        switch (m.type ?? "text").lowercased() {
+        case "image", "document", "file":
+            if let urlStr = m.metadata?.fileUrl, !urlStr.isEmpty,
+               let url = URL(string: urlStr) {
+                AsyncImage(url: url) { phase in
+                    switch phase {
+                    case .empty:
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .fill(palette.bgElev)
+                            .overlay(ProgressView().controlSize(.small))
+                    case .success(let img):
+                        img.resizable().scaledToFill()
+                    case .failure:
+                        attachmentPlaceholderTile
+                    @unknown default:
+                        Color.clear
+                    }
+                }
+                .frame(width: 220, height: 160)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            } else {
+                attachmentPlaceholderTile
+            }
+        default:
+            Text(m.content).font(EType.body).foregroundStyle(palette.textPrimary)
+        }
+    }
+
+    /// Photo-placeholder tile for an attachment whose fileUrl didn't resolve
+    /// (pre-S3 server) or failed to load — never raw marker text.
+    private var attachmentPlaceholderTile: some View {
+        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .fill(palette.bgElev)
+            .frame(width: 180, height: 120)
+            .overlay(
+                VStack(spacing: 4) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 20))
+                        .foregroundStyle(palette.textTertiary)
+                    Text("Attachment unavailable")
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            )
     }
 
     private var composer: some View {

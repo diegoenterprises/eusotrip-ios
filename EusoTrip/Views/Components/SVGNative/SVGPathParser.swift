@@ -6,6 +6,12 @@
 //  S/T control-point reflection, and elliptical arcs (A) converted to cubic
 //  béziers via the endpoint→center algorithm so they render exactly.
 //
+//  TOTALITY (Emergency I4, 2026-06-10): the token loop is guaranteed to
+//  terminate on ANY input. A number following Z/z (implicit-repeat of a
+//  zero-token command) used to never advance the index — an infinite loop
+//  on the main thread, i.e. the watchdog-kill (0x8badf00d) mechanism.
+//  Malformed paths now terminate and return the parsed prefix.
+//
 
 import SwiftUI
 import CoreGraphics
@@ -32,13 +38,25 @@ enum SVGPathParser {
         }
 
         while i < tokens.count {
+            // Totality anchor — every iteration MUST consume at least one
+            // token. Checked at the bottom of the loop so no grammar state
+            // (present or future) can ever spin the thread forever.
+            let iAtLoopStart = i
+
             var cmd: Character
             if case .command(let c) = tokens[i] {
                 cmd = c; i += 1; lastCmd = c
             } else {
-                // implicit repeat of the previous command (M→L, m→l per spec)
+                // implicit repeat of the previous command (M→L, m→l per spec).
+                //
+                // Z/z consume ZERO coordinate tokens, so "repeating" them on
+                // a trailing number (malformed input like "… z 5 10") would
+                // never advance `i` — an unbounded main-thread loop and the
+                // exact 0x8badf00d watchdog-kill mechanism. Per the SVG spec
+                // a closepath cannot be implicitly repeated; terminate with
+                // the parsed prefix instead.
+                if lastCmd == "Z" || lastCmd == "z" || lastCmd == " " { break }
                 cmd = lastCmd == "M" ? "L" : (lastCmd == "m" ? "l" : lastCmd)
-                if cmd == " " { break }
             }
             let rel = cmd.isLowercase
             switch Character(cmd.uppercased()) {
@@ -90,6 +108,13 @@ enum SVGPathParser {
             default:
                 i = tokens.count
             }
+
+            // Belt-and-suspenders totality guard: if this iteration consumed
+            // nothing (no token advanced), the grammar state cannot make
+            // progress — bail with the parsed prefix rather than loop forever.
+            // Explicit Z/z advance via the command token itself; every other
+            // command either consumes coordinates or jumps `i` to the end.
+            if i == iAtLoopStart { break }
         }
         return path
     }

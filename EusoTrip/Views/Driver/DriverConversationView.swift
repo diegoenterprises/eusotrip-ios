@@ -84,9 +84,24 @@ struct DriverConversationView: View {
         let summary: String
         let warnings: [String]
 
+        /// Explicit whitelist of classifier types that may claim a label —
+        /// mirrors the `humanType` switch below EXACTLY. The classifier's
+        /// catch-alls (`other`, `unknown`, empty) must NEVER ship a
+        /// "Detected: …" auto-caption or a confident chip (I3 2026-06-10:
+        /// the founder's thread showed a junk "Detected: Other" caption).
+        private static let knownTypes: Set<String> = [
+            "bill_of_lading", "proof_of_delivery", "manifest", "cargo_manifest",
+            "damage_report", "damage_photo", "cargo_damage", "rate_confirmation",
+            "load_tender", "weight_ticket", "scale_ticket", "run_ticket",
+            "lumper_receipt", "dvir", "inspection_report"
+        ]
+
         /// Low-confidence / unrecognized docs must read honestly — never
-        /// claim a type the classifier isn't sure of.
-        var isConfident: Bool { type != "unknown" && !type.isEmpty && confidence >= 0.6 }
+        /// claim a type the classifier isn't sure of. Confidence alone is
+        /// not enough: the type must be in the explicit whitelist, so
+        /// `other`/unknown/catch-alls render the neutral chip and ship
+        /// NO caption.
+        var isConfident: Bool { Self.knownTypes.contains(type) && confidence >= 0.6 }
 
         /// Human-facing label for the chip. Covers the common driver
         /// message attachments (BOL / POD / manifest / damage) and falls
@@ -496,7 +511,7 @@ struct DriverConversationView: View {
         HStack(spacing: 0) {
             Spacer(minLength: 36)
             VStack(alignment: .trailing, spacing: 4) {
-                if m.unsent || m.transfer != nil || m.imageData != nil || m.imageURL != nil {
+                if m.unsent || m.transfer != nil || m.imageData != nil || m.imageURL != nil || m.attachmentUnavailable {
                     // Non-text outbound content keeps its bespoke shell.
                     bubbleBody(m)
                         .frame(maxWidth: 280, alignment: .trailing)
@@ -581,9 +596,35 @@ struct DriverConversationView: View {
                     }
                 }
             }
+        } else if m.attachmentUnavailable {
+            attachmentUnavailableTile
         } else {
             EmptyView()
         }
+    }
+
+    /// I3 render floor — placeholder tile for an attachment row whose
+    /// fileUrl didn't resolve (same chrome as the AsyncImage `.failure`
+    /// branch). The driver sees an honest "photo we can't show yet",
+    /// never the raw "[image] filename" marker as bubble text.
+    private var attachmentUnavailableTile: some View {
+        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .fill(palette.tintNeutral)
+            .frame(width: 200, height: 132)
+            .overlay(
+                VStack(spacing: Space.s2) {
+                    Image(systemName: "photo")
+                        .font(.system(size: 22))
+                        .foregroundStyle(palette.textTertiary)
+                    Text("Attachment unavailable")
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint)
+            )
     }
 
     /// Bare clipped image used inside a bubble's attachment slot. Caption
@@ -662,6 +703,10 @@ struct DriverConversationView: View {
                     }
                 }
             }
+        } else if m.attachmentUnavailable {
+            // I3 render floor — attachment row with no resolvable fileUrl.
+            // Honest placeholder tile, never the raw "[image] …" marker.
+            attachmentUnavailableTile
         } else {
             // Plain text bubble.
             Text(m.text)
@@ -1156,9 +1201,14 @@ struct DriverConversationView: View {
                     // the attachments table. We ignore the returned
                     // `messageId` here because the WebSocket fan-out will
                     // land the same row and reconcile via serverId dedupe.
+                    //
+                    // I3 (client half of 0327/S3): NEVER ship raw
+                    // PhotosPicker bytes — normalize through the JPEG
+                    // ladder so a 12MP photo lands well under 1MB base64
+                    // instead of detonating the server column cap.
                     let result = try await EusoTripAPI.shared.messaging.uploadAttachment(
                         conversationId: thread.id,
-                        data: imageData,
+                        data: uploadPayload(imageData),
                         fileName: "photo-\(Int(Date().timeIntervalSince1970)).jpg",
                         mimeType: "image/jpeg"
                     )
@@ -1347,14 +1397,19 @@ struct DriverConversationView: View {
         chat.serverId = m.id
 
         switch (m.type ?? "text").lowercased() {
-        case "image":
+        case "image", "document", "file":
+            // I3 render floor (2026-06-10): an attachment row renders as an
+            // ATTACHMENT, never as its raw "[image] filename.jpg" DB-marker
+            // content. With a resolvable fileUrl we render the real image
+            // bubble; without one (the pre-S3 server never joined
+            // message_attachments into getMessages) we render the
+            // photo-placeholder tile. Either way the marker text is dropped
+            // — it must NEVER reach a bubble.
+            chat.text = ""
             if let url = m.metadata?.fileUrl, !url.isEmpty {
                 chat.imageURL = url
-                // The backend stores "[image] filename.jpg" as the
-                // content placeholder; don't render that as a caption
-                // because it's noise — use an empty string instead so
-                // the bubble shows just the image.
-                chat.text = ""
+            } else {
+                chat.attachmentUnavailable = true
             }
         case "payment_sent", "payment_request":
             if let amount = m.metadata?.amount {
@@ -1410,16 +1465,59 @@ struct DriverConversationView: View {
     /// compression used by the canonical classifier surfaces.
     private func compressedAttachment(_ data: Data, mime: DocumentRouterAPI.MimeType) -> Data {
         if mime == .png || data.count <= 900_000 { return data }
+        return jpegLadder(data, budget: 900_000) ?? data
+    }
+
+    /// I3 upload payload (client half of the 0327/S3 widen): bytes shipped
+    /// through `uploadAttachment` are ALWAYS normalized to JPEG via the
+    /// same ladder the classifier uses — never raw PhotosPicker bytes.
+    /// Budgeted at 700KB raw so the base64 data URL stays under ~1MB
+    /// (base64 inflates 4/3) — far below the 16MB MEDIUMTEXT cap, and PNG/
+    /// HEIC sources become real JPEG so the declared `image/jpeg` mime and
+    /// `.jpg` filename are honest.
+    private func uploadPayload(_ data: Data) -> Data {
+        jpegLadder(data, budget: 700_000) ?? data
+    }
+
+    /// Shared JPEG budget ladder (classifier + upload). Walks quality down
+    /// first, then steps the longest edge down — a 12MP frame can't fit a
+    /// sub-MB budget on quality alone. Returns nil only when the bytes
+    /// don't decode as an image at all.
+    private func jpegLadder(_ data: Data, budget: Int) -> Data? {
         #if canImport(UIKit)
-        guard let img = UIImage(data: data) else { return data }
+        guard let img = UIImage(data: data) else { return nil }
         for q in [CGFloat(0.85), 0.75, 0.65, 0.55, 0.45] {
-            if let d = img.jpegData(compressionQuality: q), d.count <= 900_000 { return d }
+            if let d = img.jpegData(compressionQuality: q), d.count <= budget { return d }
         }
-        return img.jpegData(compressionQuality: 0.45) ?? data
+        var work = img
+        for maxDim in [CGFloat(2048), 1600, 1280, 1024] {
+            work = downscaled(work, maxDimension: maxDim) ?? work
+            for q in [CGFloat(0.7), 0.55, 0.45] {
+                if let d = work.jpegData(compressionQuality: q), d.count <= budget { return d }
+            }
+        }
+        return work.jpegData(compressionQuality: 0.45)
         #else
-        return data
+        return nil
         #endif
     }
+
+    #if canImport(UIKit)
+    /// Aspect-preserving downscale to `maxDimension` on the longest edge.
+    private func downscaled(_ img: UIImage, maxDimension: CGFloat) -> UIImage? {
+        let longest = max(img.size.width, img.size.height)
+        guard longest > 0 else { return nil }
+        guard longest > maxDimension else { return img }
+        let scale = maxDimension / longest
+        let size = CGSize(width: (img.size.width * scale).rounded(),
+                          height: (img.size.height * scale).rounded())
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            img.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+    #endif
 }
 
 // MARK: - ChatMoneyTransferSheet (EusoWallet P2P)
