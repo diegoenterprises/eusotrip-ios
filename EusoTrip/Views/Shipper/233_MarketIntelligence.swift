@@ -227,6 +227,29 @@ private struct MarketIntelligenceBody: View {
                 Text("SHIPPER · MARKET INTELLIGENCE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 4)
+                // Explicit refresh affordance (founder 2026-06-11):
+                // pull-to-refresh alone is undiscoverable — mirror the
+                // brief widget's visible ↻ button. Spins while a manual
+                // reload is in flight; disabled to prevent stacking.
+                Button {
+                    guard !loading else { return }
+                    Task { await load() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(loading
+                                         ? AnyShapeStyle(palette.textTertiary)
+                                         : AnyShapeStyle(LinearGradient.diagonal))
+                        .rotationEffect(.degrees(loading ? 360 : 0))
+                        .animation(loading
+                                   ? .linear(duration: 1).repeatForever(autoreverses: false)
+                                   : .default,
+                                   value: loading)
+                }
+                .buttonStyle(.plain)
+                .disabled(loading)
+                .accessibilityLabel("Refresh market data")
             }
             Text("Market Intelligence")
                 .font(.system(size: 26, weight: .heavy))
