@@ -192,6 +192,16 @@ struct ShipperLoadDetail: View {
         // so observe a derived String key instead.
         .animation(.easeOut(duration: 0.18), value: detailStore.state.value??.status ?? "")
         .task {
+            // Emergency Wave I1 acceptance: a 205 can no longer mount
+            // with the id-0 sentinel — every nav path resolves a real
+            // load id (or lands on the unresolved placeholder). Assert
+            // in debug so any future regression screams immediately.
+            #if DEBUG
+            if loadId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || (Int(loadId).map { $0 <= 0 } ?? false) {
+                assertionFailure("[205] mounted with sentinel loadId '\(loadId)' — every nav entry must pass ShipperLoadIdResolver (Emergency I1)")
+            }
+            #endif
             await refreshAll()
             await loadListingTrust()
             joinLoadRoom()
@@ -1092,7 +1102,56 @@ struct ShipperLoadDetail: View {
     // overlay on top as a `.overlay` so the live status grammar still
     // reads at a glance.
 
+    // Emergency Wave I1 (2026-06-11) — the hero card now switches on
+    // the store state. Before, a null getById (`.empty`) and a failed
+    // one (`.error`) both rendered the same "Route loading…" skeleton
+    // as `.loading` — visually indistinguishable from a load that
+    // never finishes (the founder's dead 205). Each terminal state
+    // gets distinct copy; `.error` carries an inline retry.
     private var heroMap: some View {
+        Group {
+            switch detailStore.state {
+            case .loading:
+                heroPlaceholder(icon: "map", title: "Route loading…", subtitle: nil)
+            case .empty:
+                heroPlaceholder(
+                    icon: "doc.questionmark",
+                    title: "Load not found",
+                    subtitle: "This load is no longer in the system."
+                )
+            case .loaded(let opt):
+                if opt == nil {
+                    heroPlaceholder(
+                        icon: "doc.questionmark",
+                        title: "Load not found",
+                        subtitle: "This load is no longer in the system."
+                    )
+                } else {
+                    heroLoadedMap
+                }
+            case .error:
+                heroErrorState
+            }
+        }
+        .frame(height: 180)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .accessibilityLabel(heroAccessibilityLabel)
+    }
+
+    private var heroAccessibilityLabel: String {
+        switch detailStore.state {
+        case .loading:          return "Route loading"
+        case .empty:            return "Load not found"
+        case .loaded(let opt):
+            if opt == nil { return "Load not found" }
+            return "Live route, \(originLabel) to \(destinationLabel), \(progressPct)% complete, \(etaLine)"
+        case .error:            return "Couldn't load this route. Retry available."
+        }
+    }
+
+    private var heroLoadedMap: some View {
         ZStack(alignment: .topLeading) {
             if let lane = laneForMap {
                 // 2026-05-21: swapped the raster HereMapView (Maps Tile v3 —
@@ -1122,22 +1181,10 @@ struct ShipperLoadDetail: View {
                     addOns: .shipperTracking
                 )
             } else {
-                // No coords yet — show a neutral skeleton while the
-                // server's self-healing geocoder fills them in. Mirrors
-                // the rest of the wizard's pending-data tone.
-                Rectangle()
-                    .fill(palette.bgCard)
-                    .overlay(
-                        VStack(spacing: 6) {
-                            Image(systemName: "map")
-                                .font(.system(size: 18, weight: .heavy))
-                                .foregroundStyle(palette.textTertiary)
-                            Text("Route loading…")
-                                .font(.system(size: 11, weight: .heavy))
-                                .tracking(0.8)
-                                .foregroundStyle(palette.textTertiary)
-                        }
-                    )
+                // Detail is live but coords haven't been geocoded yet —
+                // neutral pending tone while the server's self-healing
+                // geocoder fills them in on the next read.
+                heroPlaceholder(icon: "map", title: "Route pending geocode", subtitle: nil)
             }
 
             // Status pills layered above the map (top-right ETA,
@@ -1159,11 +1206,59 @@ struct ShipperLoadDetail: View {
                 }
             }
         }
-        .frame(height: 180)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
-                    .strokeBorder(palette.borderFaint))
-        .accessibilityLabel("Live route, \(originLabel) to \(destinationLabel), \(progressPct)% complete, \(etaLine)")
+    }
+
+    private func heroPlaceholder(icon: String, title: String, subtitle: String?) -> some View {
+        Rectangle()
+            .fill(palette.bgCard)
+            .overlay(
+                VStack(spacing: 6) {
+                    Image(systemName: icon)
+                        .font(.system(size: 18, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                    Text(title)
+                        .font(.system(size: 11, weight: .heavy))
+                        .tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(EType.micro)
+                            .foregroundStyle(palette.textTertiary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, Space.s4)
+                    }
+                }
+            )
+    }
+
+    /// Hero-level error surface — distinct from loading AND from
+    /// not-found, with an inline retry so the founder never stares at
+    /// a silent skeleton after a transport/server failure.
+    private var heroErrorState: some View {
+        Rectangle()
+            .fill(palette.bgCard)
+            .overlay(
+                VStack(spacing: 8) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 12, weight: .heavy))
+                            .foregroundStyle(Brand.danger)
+                        Text("COULDN'T LOAD THIS LOAD")
+                            .font(.system(size: 11, weight: .heavy))
+                            .tracking(0.8)
+                            .foregroundStyle(Brand.danger)
+                    }
+                    Button(action: { Task { await refreshAll() } }) {
+                        Text("Retry")
+                            .font(EType.micro).tracking(0.6)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                            .background(LinearGradient.diagonal)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            )
     }
 
     /// Composes a HereMapView Lane from the load's pickup + delivery
@@ -2029,6 +2124,23 @@ struct ShipperLoadDetail: View {
         if lower.contains("unknown column") || lower.contains("er_bad_field") {
             return "Server-side schema is out of sync, missing column on `loads`. Apply the latest migrations on the deploy target."
         }
+        // Emergency Wave I1 — SQL-shaped leak gate (iOS belt to S2's
+        // server-side braces). Drizzle internals surface as
+        // "Failed query: select `id`, `load_number` … from loads …"
+        // — a raw SQL dump must NEVER render on the 205 error
+        // surface. Map every SQL-shaped message to the friendly
+        // deploy-drift copy; the full trace still lands in the
+        // device console + the "Copy details" affordance.
+        let sqlShaped = lower.contains("failed query")
+            || lower.contains("sqlstate")
+            || lower.contains("sql syntax")
+            || lower.contains("drizzle")
+            || lower.contains("er_parse_error")
+            || (lower.contains("select ") && lower.contains(" from "))
+        if sqlShaped {
+            print("[ShipperLoadDetail] SQL-shaped error suppressed from UI: \(raw)")
+            return "The server hit a database error reading this load — the deploy target is behind this build. Apply the latest migrations, then retry."
+        }
         if lower.contains("network") || lower.contains("offline")
             || lower.contains("could not connect") {
             return "We can't reach the server right now. Pull to refresh once you're back online."
@@ -2304,12 +2416,57 @@ private func shipperNavTrailing_205() -> [NavSlot] {
      NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
+// MARK: - Unresolved placeholder (Emergency Wave I1)
+
+/// What the registry mounts when 205 is reached with NO load context
+/// (deep-link alias without an id, catalog walk, or a nav regression).
+/// Replaces the old `loadId:"0"` sentinel mount, whose null-as-success
+/// server response rendered the loading skeleton forever. Explicit
+/// honest state + a real path to the loads list — never a fake detail.
+struct ShipperLoadDetailUnresolvedScreen: View {
+    let theme: Theme.Palette
+
+    var body: some View {
+        Shell(theme: theme) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                HStack(spacing: Space.s2) {
+                    Text("✦ SHIPPER · LOAD · DETAIL")
+                        .font(EType.micro).tracking(1.0)
+                        .foregroundStyle(LinearGradient.primary)
+                    Spacer()
+                }
+                .padding(.top, Space.s5)
+                IridescentHairline()
+                Spacer(minLength: Space.s5)
+                EusoEmptyState(
+                    systemImage: "shippingbox",
+                    title: "Select a load",
+                    subtitle: "Load detail opens from a specific load. Pick one from your loads list to see its live route, bids, and paperwork.",
+                    cta: (label: "Browse loads", action: {
+                        NotificationCenter.default.post(
+                            name: .eusoShipperLoadListOpen, object: nil)
+                    })
+                )
+                Spacer(minLength: Space.s5)
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, Space.s3)
+        } nav: {
+            BottomNav(
+                leading: shipperNavLeading_205(),
+                trailing: shipperNavTrailing_205(),
+                orbState: .idle
+            )
+        }
+    }
+}
+
 // MARK: - Previews
 
 #Preview("205 · Shipper · Load Detail · Night") {
     ShipperLoadDetailScreen(
         theme: Theme.dark,
-        loadId: "0",
+        loadId: "1077",
         previewLoadNumber: "LD-260427-A38FB12C7E",
         previewLane: "Houston, TX → Dallas, TX"
     )
@@ -2320,10 +2477,16 @@ private func shipperNavTrailing_205() -> [NavSlot] {
 #Preview("205 · Shipper · Load Detail · Afternoon") {
     ShipperLoadDetailScreen(
         theme: Theme.light,
-        loadId: "0",
+        loadId: "1077",
         previewLoadNumber: "LD-260427-A38FB12C7E",
         previewLane: "Houston, TX → Dallas, TX"
     )
     .environmentObject(EusoTripSession())
     .preferredColorScheme(.light)
+}
+
+#Preview("205 · Shipper · Unresolved · Night") {
+    ShipperLoadDetailUnresolvedScreen(theme: Theme.dark)
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.dark)
 }

@@ -13605,15 +13605,26 @@ struct LoadLifecycleTankerAPI {
 //     the in-flight Spectra-Match card (target % + last reading).
 //
 // Added 2026-04-24 (eusotrip-killers ledger-hygiene firing) to
-// remove the hardcoded `samples` array in 031. Other procedures
-// (identify, identifyWithAI, getLearningStats, askAboutProduct,
-// getCrudeTypes, getCrudesByCountry, getCrudeSpecs, saveToRunTicket,
-// getTerminalProductCatalog, autoIdentifyFromTerminal,
-// getProductMarketContext, getDestinationIntelligence,
-// quickDestinationMatch, getPipelineCompatibility,
-// getBlendingRecommendations) are reserved for follow-up bricks
-// (terminal product catalog, destination intelligence, etc.) and
-// will be added when those screens are wired.
+// remove the hardcoded `samples` array in 031.
+//
+// 2026-06-11 (Emergency Wave I2) — `identify` (MUTATION — the screen
+// previously sent it as a GET query and 405'd on every attempt),
+// `quickDestinationMatch` and `getDestinationIntelligence` (both
+// .query) land here for `424_SpectraMatch` / `425_PortIntelligence`.
+// The identify envelope is mirrored 1:1 from the server return at
+// `frontend/server/routers/spectraMatch.ts:120-185` (primaryMatch /
+// alternativeMatches / classification / ergInfo) — the prior client
+// decode contract shared ZERO required keys with the wire shape, so
+// it failed even when the verb was right. Destination shapes mirror
+// `services/spectraDestinationIntelligence.ts:79-152`.
+//
+// Remaining procedures (identifyWithAI, getLearningStats,
+// askAboutProduct, getCrudeTypes, getCrudesByCountry, getCrudeSpecs,
+// saveToRunTicket, getTerminalProductCatalog,
+// autoIdentifyFromTerminal, getProductMarketContext,
+// getPipelineCompatibility, getBlendingRecommendations) stay
+// reserved for follow-up bricks and will be added when those
+// screens are wired.
 
 struct SpectraMatchAPI {
     unowned let api: EusoTripAPI
@@ -13663,6 +13674,232 @@ struct SpectraMatchAPI {
         try await api.query(
             "spectraMatch.getHistory",
             input: GetHistoryInput(terminalId: terminalId, limit: limit)
+        )
+    }
+
+    // MARK: identify (MUTATION — POST)
+
+    /// Input for `spectraMatch.identify`. Mirrors the server's zod
+    /// object (spectraMatch.ts:38-62). Only the four spec-sheet
+    /// readings the 424 screen collects are sent; the rest of the
+    /// zod fields are optional server-side and synthesized Encodable
+    /// omits the nils from the wire.
+    struct IdentifyInput: Encodable {
+        let apiGravity: Double
+        let bsw: Double
+        var sulfur: Double? = nil
+        var pourPoint: Double? = nil
+    }
+
+    /// `primaryMatch` — the top crude/product match. `name` and
+    /// `confidence` are always present on the wire (the server
+    /// composes them from `matchCrudeOil`'s top row or the ESANG AI
+    /// override); `confidence` is 0-100 (crudeOilSpecsDB.ts:174
+    /// clamps `Math.min(100, …)`).
+    struct PrimaryMatch: Decodable, Hashable {
+        let id: String?
+        let name: String
+        let type: String?
+        let region: String?
+        let confidence: Double
+    }
+
+    /// One row of `alternativeMatches` (ranks 2-5 from the matcher).
+    struct AlternativeMatch: Decodable, Hashable {
+        let id: String?
+        let name: String
+        let type: String?
+        let country: String?
+        let region: String?
+        let confidence: Double?
+    }
+
+    /// API-gravity / sulfur classification buckets. `sulfurClass` is
+    /// null on the wire when the caller omitted sulfur.
+    struct Classification: Decodable, Hashable {
+        let apiClass: String?
+        let sulfurClass: String?
+    }
+
+    /// ERG 2024 emergency-response envelope — null when the matched
+    /// product has no ERG entry. Field types mirror the server
+    /// composition at spectraMatch.ts:168-184 (`unNumber` is the
+    /// interpolated "UN1267" string, `guideNumber` is the numeric
+    /// guide id from `ERGGuide.number`).
+    struct ERGInfo: Decodable, Hashable {
+        let unNumber: String?
+        let materialName: String?
+        let guideNumber: Int?
+        let guideTitle: String?
+        let hazardClass: String?
+        let isTIH: Bool?
+    }
+
+    /// Top-level envelope returned by `spectraMatch.identify` —
+    /// mirrored 1:1 from the server return shape. Everything beyond
+    /// `primaryMatch` decodes tolerantly so a server-side envelope
+    /// extension never bricks the screen.
+    struct IdentifyResult: Decodable {
+        let primaryMatch: PrimaryMatch
+        let alternativeMatches: [AlternativeMatch]?
+        let classification: Classification?
+        let ergInfo: ERGInfo?
+        let esangVerified: Bool?
+        let timestamp: String?
+    }
+
+    /// `spectraMatch.identify` — DB-backed crude/product matching
+    /// against the 130+ global crude grades. This is a `.mutation`
+    /// on the server (it fires gamification + learning events), so
+    /// it MUST go through the POST helper — the previous raw-string
+    /// GET call 405'd (`METHOD_NOT_SUPPORTED`) on every attempt.
+    func identify(
+        apiGravity: Double,
+        bsw: Double,
+        sulfur: Double? = nil,
+        pourPoint: Double? = nil
+    ) async throws -> IdentifyResult {
+        try await api.mutation(
+            "spectraMatch.identify",
+            input: IdentifyInput(
+                apiGravity: apiGravity,
+                bsw: bsw,
+                sulfur: sulfur,
+                pourPoint: pourPoint
+            )
+        )
+    }
+
+    // MARK: Destination intelligence (queries)
+
+    /// Facility location envelope inside a `DestinationMatch`.
+    struct DestinationLocation: Decodable, Hashable {
+        let city: String?
+        let state: String?
+        let country: String?
+        let lat: Double?
+        let lng: Double?
+    }
+
+    /// One destination facility match — mirrored from
+    /// `spectraDestinationIntelligence.ts:79` (`DestinationMatch`).
+    /// `operator` is a Swift keyword, hence the CodingKey remap.
+    struct DestinationMatch: Decodable, Hashable, Identifiable {
+        let facilityId: Int
+        let facilityName: String
+        let facilityType: String?
+        let operatorName: String?
+        let location: DestinationLocation?
+        /// 0-100 compatibility score.
+        let compatibilityScore: Double?
+        let matchReasons: [String]?
+        let warnings: [String]?
+        let accessModes: [String]?
+        let marketInsight: String?
+
+        var id: Int { facilityId }
+
+        private enum CodingKeys: String, CodingKey {
+            case facilityId, facilityName, facilityType
+            case operatorName = "operator"
+            case location, compatibilityScore, matchReasons
+            case warnings, accessModes, marketInsight
+        }
+    }
+
+    /// Pipeline-route suggestion — `PipelineRoute` on the server
+    /// (spectraDestinationIntelligence.ts:137).
+    struct PipelineRoute: Decodable, Hashable {
+        let pipelineName: String
+        let origin: String?
+        let destination: String?
+        let acceptsProduct: Bool?
+        let constraints: [String]?
+        let capacityBpd: Double?
+    }
+
+    /// Blending recommendation — `BlendingInsight` (ts:128).
+    struct BlendingInsight: Decodable, Hashable {
+        let targetProduct: String?
+        let blendWith: String?
+        let rationale: String?
+    }
+
+    struct QuickDestinationInput: Encodable {
+        let productName: String
+        var apiGravity: Double? = nil
+        var sulfurContent: Double? = nil
+    }
+
+    /// Envelope of `spectraMatch.quickDestinationMatch` — top 5
+    /// destinations + compatible pipelines + blending insights. The
+    /// server returns honest zeros/empties on its own failure path,
+    /// never throws to the client (spectraMatch.ts:787-789).
+    struct QuickDestinationResult: Decodable {
+        let topDestinations: [DestinationMatch]
+        let pipelineRoutes: [PipelineRoute]
+        let blendingInsights: [BlendingInsight]
+        let totalMatches: Int
+    }
+
+    /// `spectraMatch.quickDestinationMatch` — the founder-demanded
+    /// SpectraMatch→ports wire: called immediately after a
+    /// successful `identify()` so 424 can render "where can this
+    /// grade go" (backed by the 627 facilities + 542 ports in prod).
+    /// `.query` on the server — the existing GET client applies.
+    func quickDestinationMatch(
+        productName: String,
+        apiGravity: Double? = nil,
+        sulfurContent: Double? = nil
+    ) async throws -> QuickDestinationResult {
+        try await api.query(
+            "spectraMatch.quickDestinationMatch",
+            input: QuickDestinationInput(
+                productName: productName,
+                apiGravity: apiGravity,
+                sulfurContent: sulfurContent
+            )
+        )
+    }
+
+    struct DestinationIntelligenceInput: Encodable {
+        let productName: String
+        var category: String = "crude"
+        var apiGravity: Double? = nil
+        var sulfurContent: Double? = nil
+        var maxResults: Int = 25
+    }
+
+    /// Envelope of `spectraMatch.getDestinationIntelligence` — the
+    /// full capability-matched destination report. Same honest-empty
+    /// failure contract as quickDestinationMatch (ts:744-757).
+    struct DestinationIntelligence: Decodable {
+        let totalMatches: Int
+        let topDestinations: [DestinationMatch]
+        let pipelineRoutes: [PipelineRoute]?
+        let blendingInsights: [BlendingInsight]?
+        let generatedAt: String?
+    }
+
+    /// `spectraMatch.getDestinationIntelligence` — capability-based
+    /// facility/port matching for a product grade. 425 consults this
+    /// alongside `portIntelligence.findByProduct` so a grade with no
+    /// observed shipment traffic still resolves real capability rows
+    /// (the founder's "WTI 0.4% sulfur returned nothing" fix).
+    func getDestinationIntelligence(
+        productName: String,
+        apiGravity: Double? = nil,
+        sulfurContent: Double? = nil,
+        maxResults: Int = 25
+    ) async throws -> DestinationIntelligence {
+        try await api.query(
+            "spectraMatch.getDestinationIntelligence",
+            input: DestinationIntelligenceInput(
+                productName: productName,
+                apiGravity: apiGravity,
+                sulfurContent: sulfurContent,
+                maxResults: maxResults
+            )
         )
     }
 }
