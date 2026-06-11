@@ -156,11 +156,11 @@ actor HEREAuthService {
 
         let (data, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse else {
-            throw HereMapsError.providerError("No HTTP response from HERE OAuth")
+            throw HereMapsError.providerError("No HTTP response from the map auth endpoint")
         }
         guard (200..<300).contains(http.statusCode) else {
             let body = String(data: data, encoding: .utf8) ?? ""
-            throw HereMapsError.http(http.statusCode, "HERE OAuth: \(body)")
+            throw HereMapsError.http(http.statusCode, "Map auth: \(body)")
         }
 
         let payload: TokenResponse

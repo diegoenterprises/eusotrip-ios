@@ -270,7 +270,7 @@ struct ShipperLiveTracking: View {
         let inMotion = store.loads.count
         // §11 MATRIX-50 batch size — the canonical Diego portfolio.
         let matrixSize = 50
-        return "\(inMotion) in motion · \(matrixSize) MATRIX loads · HERE basemap · 20s refresh"
+        return "\(inMotion) in motion · \(matrixSize) MATRIX loads · Eusorone basemap · 20s refresh"
     }
 
     // MARK: Content state machine

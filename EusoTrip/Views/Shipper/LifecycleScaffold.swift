@@ -392,7 +392,7 @@ struct LifecycleMapCard: View {
                     .foregroundStyle(LinearGradient.diagonal)
                 Spacer(minLength: 0)
                 if HereMapsConfig.hasBearerCredentials {
-                    Text("HERE")
+                    Text("MAP DATA")
                         .font(.system(size: 8, weight: .heavy)).tracking(0.7)
                         .foregroundStyle(palette.textTertiary)
                         .padding(.horizontal, 5).padding(.vertical, 1.5)

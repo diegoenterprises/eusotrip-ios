@@ -2618,7 +2618,7 @@ struct HardwareCapabilitiesView: View {
                     .padding(8)
                     .background(palette.bgCardSoft)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-                Text("Paste a Polygon, MultiPolygon, Feature or FeatureCollection. Drivers see translucent dock-lane / staging-zone overlays on top of the HereMapView basemap.")
+                Text("Paste a Polygon, MultiPolygon, Feature or FeatureCollection. Drivers see translucent dock-lane / staging-zone overlays on top of the live map.")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textTertiary)
                 Button("Save terminal capabilities") {

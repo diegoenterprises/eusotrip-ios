@@ -154,7 +154,7 @@ struct eSangSmartStop: View {
         guard activeLoad != nil else {
             return "We'll surface ranked options as live route + parking data lands."
         }
-        return "Live ranking from EusoMap, OPIS, HERE Parking and FMCSA HOS rules."
+        return "Live ranking from EusoMap, OPIS, live parking data and FMCSA HOS rules."
     }
 
     // Stop card — fully neutral until SmartStopCandidateStore ships.
@@ -222,7 +222,7 @@ struct eSangSmartStop: View {
     /// Footer attribution — neutral system descriptor of the ranking
     /// inputs. No fixture candidate counts.
     private var footerAttribution: String {
-        "ESANG RANKS LIVE · DATA FUSED FROM EUSOMAP, OPIS, HERE PARKING, FMCSA HOS RULE"
+        "ESANG RANKS LIVE · DATA FUSED FROM EUSOMAP, OPIS, LIVE PARKING, FMCSA HOS RULE"
     }
 
     private var skipTitle: String { "Skip" }

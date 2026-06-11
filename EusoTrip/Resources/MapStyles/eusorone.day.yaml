@@ -1,0 +1,193 @@
+# EUSORONE DAY — canonical light basemap. Source: _EUSORONE_BASEMAP_SPEC_2026-06-10 §1.1
+# Wireframe authority: Driver 116/035 (roads), 013/018 (land/water), Dispatcher 413/536
+# (regional arterials, boundaries, labels). NO green, NO casings, NO halos, NO yellow motorways.
+sources:
+    omv:
+        type: OMV
+        max_zoom: 17
+        min_display_zoom: 1
+
+scene:
+    background:
+        color: '#E8EEF5'            # land/earth — Eusorone Day
+
+global:
+    label_font: ['Gilroy', 'SF Pro Display', 'FiraGO', sans-serif]
+
+layers:
+    water:
+        data: {source: omv, layer: water}
+        draw:
+            polygons:
+                order: 10
+                color: '#C8DCEA'
+        deep:
+            filter: {kind: [ocean, sea]}
+            draw: {polygons: {color: '#BFD3E1'}}
+        lines:                       # rivers / canals as lines
+            filter: {$geometry: line}
+            draw:
+                lines:
+                    order: 11
+                    color: '#C8DCEA'
+                    width: [[10, 0.5px], [14, 1.5px], [17, 3px]]
+
+    landuse:
+        data: {source: omv, layer: landuse}
+        # Parks, forests, gardens — recolored to slate; NEVER green (§1.3.3)
+        green:
+            filter: {kind: [park, forest, wood, garden, grass, nature_reserve, golf_course, cemetery, meadow, recreation_ground]}
+            draw:
+                polygons:
+                    order: 5
+                    color: '#E3EAF1'
+        built:
+            filter: {kind: [industrial, commercial, residential, airport, hospital, university, school]}
+            draw:
+                polygons:
+                    order: 4
+                    color: [0.894, 0.922, 0.949, 0.5]    # #E4EBF2 @ 0.5
+        # pedestrian/beach/everything else inherits the land background — no draw
+
+    buildings:
+        data: {source: omv, layer: buildings}
+        filter: {$zoom: {min: 16}}              # hidden below z16 (§1.1)
+        draw:
+            polygons:
+                order: 30
+                color: [0.051, 0.067, 0.090, 0.04]       # #0D1117 @ 0.04
+        # NO extrusion, NO outlines
+
+    roads:
+        data: {source: omv, layer: roads}
+        filter: {not: {kind: [ferry]}}           # ferries hidden
+        draw:
+            lines:
+                order: 20
+                cap: round                       # round caps everywhere — 035/116 grammar
+                join: round
+                outline: {width: 0}              # NO casing — unanimous canon (§1.3.5)
+        motorway:
+            filter: {kind: highway}
+            draw:
+                lines:
+                    order: 24
+                    # z<10 regional arterial slate (413/536) → z≥12 white ribbon (035/116)
+                    color: [[6, '#C7D0DC'], [10, '#C7D0DC'], [12, '#F2F2F4'], [14, '#FFFFFF']]
+                    width: [[6, 1.5px], [10, 3px], [13, 6px], [15, 9px], [17, 14px]]
+            centerline:              # dashed white accent — 413/536 light, z≥13
+                filter: {$zoom: {min: 13}}
+                draw:
+                    lines:
+                        order: 25
+                        color: [1.0, 1.0, 1.0, 0.7]
+                        width: 1.4px
+                        dash: [1, 9]
+        major_road:
+            filter: {kind: major_road}
+            primary:
+                filter: {kind_detail: [primary, trunk]}
+                draw:
+                    lines:
+                        order: 23
+                        color: [[8, '#C7D0DC'], [12, [1.0, 1.0, 1.0, 0.85]]]
+                        width: [[8, 1px], [12, 3px], [15, 6px], [17, 10px]]
+            secondary:
+                filter: {kind_detail: [secondary, tertiary]}
+                draw:
+                    lines:
+                        order: 22
+                        color: [[10, '#D6DCE5'], [13, [1.0, 1.0, 1.0, 0.70]]]
+                        width: [[10, 0.5px], [13, 2px], [15, 5px], [17, 8px]]
+        minor_road:
+            filter: {kind: [minor_road, path]}
+            draw:
+                lines:
+                    order: 21
+                    color: '#D6DCE5'
+                    width: [[13, 0.5px], [15, 1.5px], [17, 2.5px]]
+        rail:
+            filter: {kind: rail}
+            draw:
+                lines:
+                    order: 19
+                    color: [0.839, 0.863, 0.898, 0.5]    # #D6DCE5 @ 0.5
+                    width: 1px
+
+    boundaries:
+        data: {source: omv, layer: boundaries}
+        country:
+            filter: {kind: country}
+            draw:
+                lines:
+                    order: 40
+                    color: [0.690, 0.718, 0.753, 0.6]    # #B0B7C0 @ 0.6
+                    width: 1px
+                    dash: [2, 3]
+        region:
+            filter: {kind: [region, state]}
+            draw:
+                lines:
+                    order: 39
+                    color: [0.690, 0.718, 0.753, 0.6]
+                    width: 0.8px
+                    dash: [2, 3]
+
+    places:
+        data: {source: omv, layer: places}
+        # NO halos anywhere (§1.3.4): stroke width 0 on every text draw.
+        country:
+            filter: {kind: country}
+            draw:
+                text:
+                    order: 50
+                    text_source: name
+                    font:
+                        family: global.label_font
+                        size: [[3, 10px], [6, 12px]]
+                        weight: 800
+                        fill: '#9AA4B0'
+                        transform: uppercase
+                        stroke: {color: '#E8EEF5', width: 0}
+        region:
+            filter: {kind: [region, state]}
+            draw:
+                text:
+                    order: 49
+                    text_source: name
+                    font: {family: global.label_font, size: 10px, weight: 800,
+                           fill: '#9AA4B0', transform: uppercase,
+                           stroke: {color: '#E8EEF5', width: 0}}
+        locality:
+            filter: {kind: [locality, city, town]}
+            draw:
+                text:
+                    order: 48
+                    text_source: name
+                    font: {family: global.label_font, size: [[8, 10px], [12, 12px]],
+                           weight: 800, fill: '#0D1117',
+                           stroke: {color: '#E8EEF5', width: 0}}
+        village:
+            filter: {kind: [village, hamlet, neighbourhood, suburb]}
+            draw:
+                text:
+                    order: 47
+                    text_source: name
+                    font: {family: global.label_font, size: 9px, weight: 700,
+                           fill: '#8A96A3',
+                           stroke: {color: '#E8EEF5', width: 0}}
+
+    road_labels:
+        data: {source: omv, layer: roads}
+        filter: {$zoom: {min: 14}, name: true}
+        draw:
+            text:
+                order: 46
+                text_source: name
+                font: {family: global.label_font, size: 9px, weight: 700,
+                       fill: '#8A96A3', transform: uppercase,
+                       stroke: {color: '#E8EEF5', width: 0}}
+
+    pois:
+        data: {source: omv, layer: pois}
+        enabled: false               # zero POI icons in canon — markers are app overlays

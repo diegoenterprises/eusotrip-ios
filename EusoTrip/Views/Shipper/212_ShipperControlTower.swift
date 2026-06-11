@@ -268,9 +268,9 @@ struct ShipperControlTower: View {
 
     private var titleSubtitle: String {
         if case .loaded(let o, _, _) = store.state {
-            return "\(o.total.active) active · \(matrixSize) MATRIX loads · live HERE basemap"
+            return "\(o.total.active) active · \(matrixSize) MATRIX loads · live Eusorone basemap"
         }
-        return "Truck · rail · vessel, every load, every mode, real-time on the HERE basemap."
+        return "Truck · rail · vessel, every load, every mode, real-time on the Eusorone basemap."
     }
 
     // MARK: Content state machine

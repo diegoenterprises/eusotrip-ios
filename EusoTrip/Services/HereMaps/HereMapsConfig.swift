@@ -339,37 +339,37 @@ enum HereMapsError: Error, LocalizedError {
 
 /// HERE map tile styles matching EusoTrip's dark / light registers.
 ///
-/// 2026-06-09 — ENTERPRISE: `explore.night` and `logistics.night`
-/// verified 200 over Bearer on the upgraded account (the basic-tier
-/// 403s are history). Dark register renders HERE's real night raster;
-/// the 403-adaptive `nightStyleAvailable` gate stays as a safety net
-/// in case entitlements ever regress.
+/// RETIRED FROM UI 2026-05-29 — `BespokeMapCanvas` is the shipping iOS
+/// renderer and is the Eusorone basemap by construction. This raster
+/// machinery is retained for the true-street fallback tier only.
 ///
-/// Dark-register feel comes from a SwiftUI tint overlay on the
-/// MKMapView host (see `HereMapView.applyDarkOverlay(...)`) —
-/// matches the web platform's brand-tint CSS overlay strategy.
+/// REACTIVATION CONTRACT (_EUSORONE_BASEMAP_SPEC_2026-06-10 §3): the
+/// raster path may ONLY return to the UI wearing the
+/// `EusoroneTileRemapper` pipeline — fetched PNGs pass through a
+/// per-register Core Image color-cube LUT (palette → Eusorone Day
+/// `#E8EEF5` slate / Eusorone Night `#0B1120`) at LOAD time before they
+/// reach MapKit. The pre-2026-06-10 note here praising `explore.day`'s
+/// stock look ("mirror Apple Maps Standard") is SUPERSEDED by that
+/// spec: stock HERE cartography — yellow motorways, cream land, green
+/// parks, white label halos, cased roads — is rejected on every
+/// surface, every register.
 ///
-/// "explore" family is general-purpose — HERE also offers
-/// lite.day, topo.day, logistics.day, satellite.day, etc.
-///
-/// 2026-05-10: With OAuth Bearer auth in place (vs. the prior apikey
-/// query param), the HERE plan tier now serves `explore.night` for
-/// dark mode without a 403. If a future plan-tier change re-blocks
-/// `*.night`, `HereTileOverlay.loadTile(...)` already retries via the
-/// transparent-PNG fallback so the muted Apple basemap shows through
-/// gracefully — `nightStyleAvailable` flips false on the first 403
-/// and subsequent tiles request `.day` with the renderer's blue-slate
-/// tint applied on top.
+/// Under the contract BOTH registers remap from the single
+/// `explore.day` upstream (never fetch `explore.night` — HERE's night
+/// palette is HERE's, not ours; one upstream also halves URLCache and
+/// rate-limiter pressure). The `nightStyleAvailable` 403-fallback
+/// machinery below becomes dead at reactivation and is removed with it
+/// (§3.2). Enterprise raster verified 200 over Bearer on 2026-06-09.
 enum HereTileStyle {
     case dark
     case light
 
-    /// HERE `style=` query param. Light → `explore.day` (cream roads,
-    /// blue water, green parks — the look we want to mirror Apple
-    /// Maps Standard from the founder's reference screenshot). Dark →
-    /// `explore.night` first; the runtime fallback in
-    /// `HereTileOverlay.loadTile` swaps to `explore.day` if HERE
-    /// denies the night tier.
+    /// HERE `style=` query param — the raw UPSTREAM stream, not a look
+    /// we ever ship: at reactivation the fetched tile is palette-
+    /// remapped by `EusoroneTileRemapper` before display (§3.2). Per
+    /// the contract both registers will source `explore.day`; the
+    /// `.dark → explore.night` branch survives only until the remapper
+    /// lands, after which it and `nightStyleAvailable` are deleted.
     var rawValue: String {
         switch self {
         case .light: return "explore.day"
@@ -381,19 +381,21 @@ enum HereTileStyle {
     }
 
     /// Whether this style is currently rendering with HERE's real
-    /// night raster (`explore.night`) or the day-with-tint fallback.
-    /// `TintingTileOverlayRenderer` reads this to decide whether to
-    /// paint the dark slate-blue overlay (only needed when the day
-    /// raster is being repurposed for night).
+    /// night raster (`explore.night`) or the day fallback. The former
+    /// reader (`TintingTileOverlayRenderer`) was deleted in `8f710a3`;
+    /// no live call sites remain. Kept only so the rollback path
+    /// compiles — dies with `nightStyleAvailable` at reactivation,
+    /// when night comes from the LUT remap instead of a HERE style.
     var isRenderingNightRaster: Bool {
         self == .dark && HereTileStyle.nightStyleAvailable
     }
 
     /// Process-wide flag flipped by `HereTileOverlay` the first time
     /// HERE returns 403 on an `explore.night` tile — once the tier
-    /// rejects night once, every subsequent dark tile uses `.day` +
-    /// brand tint instead. Stays true (night-available) until that
-    /// 403 is observed.
+    /// rejects night once, every subsequent dark tile uses `.day`
+    /// instead. Stays true (night-available) until that 403 is
+    /// observed. DEAD at reactivation (§3.2): with both registers
+    /// remapping from `explore.day` there is no night fetch to 403.
     nonisolated(unsafe) static var nightStyleAvailable: Bool = true
 
     /// HERE Raster Tile v3 now accepts ONLY 100 / 200 / 400 — the older

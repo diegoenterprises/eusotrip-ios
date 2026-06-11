@@ -106,7 +106,7 @@ private struct DriversListBody: View {
     @ViewBuilder
     private var fleetMap: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("LIVE FLEET MAP · HERE basemap · gps_tracking heartbeat")
+            Text("LIVE FLEET MAP · Eusorone basemap · gps_tracking heartbeat")
                 .font(.system(size: 8, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(palette.textTertiary)
                 .lineLimit(1).minimumScaleFactor(0.6)

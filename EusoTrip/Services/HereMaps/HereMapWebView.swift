@@ -17,10 +17,12 @@
 //      `js.api.here.com` (HERE's own CDN, which is not whitelisted and
 //      403'd every tile → blank map).
 //
-//   2. DARK MODE. Picks `normal.night` vs `normal.day` OMV style from the
-//      SwiftUI color scheme. The old "night returns 403, use day for both"
-//      hack was a symptom of the referrer bug — with the referrer fixed,
-//      night tiles return 200.
+//   2. DARK MODE. Picks the bundled EUSORONE style documents
+//      (`Resources/MapStyles/eusorone.night.yaml` vs `eusorone.day.yaml`,
+//      _EUSORONE_BASEMAP_SPEC_2026-06-10 §4) from the SwiftUI color
+//      scheme, served to the WebView over the `euso-style://` custom
+//      scheme. `window.__setDark` swaps the STYLE document — never a CSS
+//      filter, never HERE's stock normal.day/normal.night cartography.
 //
 //  Layer model: a screen declares what it wants via `[HereMapLayer]`
 //  (heatmap / markers / route polyline / ad-zone polygons / mission pins /
@@ -194,6 +196,15 @@ public struct HereVectorMapView: View {
 // kept (marked `private`, unreferenced) for reference + fast rollback;
 // it intentionally has no remaining call sites. Delete freely once the
 // native renderer has soaked in production.
+//
+// REACTIVATION CONTRACT (_EUSORONE_BASEMAP_SPEC_2026-06-10 §4): this
+// bridge may only come back rendering the bundled Eusorone style
+// documents — which is now true by construction: `buildHTML` loads
+// `euso-style://styles/eusorone.{day,night}.yaml` (served from the app
+// bundle by `EusoroneStyleSchemeHandler` below) and `__setDark` re-bases
+// with the other register's document. Stock HERE styles are not
+// reachable from this file anymore — there is deliberately NO fallback
+// to `createDefaultLayers` (that was the stock-cartography leak).
 
 private struct HereMapWebViewRepresentable: UIViewRepresentable {
     let center: HereLatLng
@@ -217,6 +228,10 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         config.allowsInlineMediaPlayback = true
         config.defaultWebpagePreferences.allowsContentJavaScript = true
         config.userContentController = userContent
+        // Serve the bundled Eusorone basemap style documents (§4 of the
+        // basemap spec) to the page over the euso-style:// scheme.
+        config.setURLSchemeHandler(EusoroneStyleSchemeHandler(),
+                                   forURLScheme: EusoroneStyleSchemeHandler.scheme)
 
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.isOpaque = false
@@ -350,7 +365,7 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             <!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"/>
             <style>html,body{margin:0;height:100%;background:#0b0b0f;color:#fff;font:12px -apple-system}
             .e{height:100%;display:flex;align-items:center;justify-content:center;opacity:.6;text-align:center;padding:12px}</style>
-            </head><body><div class="e">HERE JS apiKey not configured.<br/>Set HERE_JS_API_KEY in xcconfig.</div></body></html>
+            </head><body><div class="e">Map key not configured.<br/>Set HERE_JS_API_KEY in xcconfig.</div></body></html>
             """
         }
         let dragFlags = interactive
@@ -385,9 +400,13 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             }, 80);
           }
 
+          // THE EUSORONE BASEMAP (_EUSORONE_BASEMAP_SPEC_2026-06-10 §4):
+          // both registers load the bundled canonical style documents,
+          // served from the app bundle by EusoroneStyleSchemeHandler.
+          // Register flips swap the STYLE document — never a CSS filter.
           function styleUrl(d){
-            return d ? "https://js.api.here.com/v3/3.1/styles/omv/normal.night.yaml"
-                     : "https://js.api.here.com/v3/3.1/styles/omv/normal.day.yaml";
+            return d ? "euso-style://styles/eusorone.night.yaml"
+                     : "euso-style://styles/eusorone.day.yaml";
           }
           function buildBase(d){
             try{
@@ -395,10 +414,11 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
               var style = new H.map.render.Style(styleUrl(d));
               var prov = new H.service.omv.Provider(omv, style);
               return new H.map.layer.TileLayer(prov, { tileSize: 512 });
-            }catch(e){ log("base err "+e);
-              try{ var dl=platform.createDefaultLayers({tileSize:512,ppi:400});
-                   return (d&&dl.vector.normal.mapnight)?dl.vector.normal.mapnight:dl.vector.normal.map; }
-              catch(e2){ return null; } }
+            }catch(e){ log("base err "+e); return null; }
+            // NO createDefaultLayers fallback: that path rendered HERE's
+            // stock cartography, which the basemap spec rejects outright.
+            // Failure here degrades to the honest "basemap unavailable"
+            // state below instead of a stock-branded map.
           }
 
           try{
@@ -696,6 +716,63 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         })();
         </script></body></html>
         """
+    }
+}
+
+// MARK: - Eusorone style scheme handler
+
+/// Serves the bundled Eusorone basemap style documents
+/// (`Resources/MapStyles/eusorone.day.yaml` / `eusorone.night.yaml` —
+/// _EUSORONE_BASEMAP_SPEC_2026-06-10 §4) to the WKWebView over the
+/// custom `euso-style://` scheme, e.g.
+/// `euso-style://styles/eusorone.day.yaml`.
+///
+/// The HERE JS SDK fetches the style document with XHR from the page's
+/// (https) origin, so the response carries a permissive
+/// `Access-Control-Allow-Origin` header — without it WebKit blocks the
+/// cross-scheme read and the map falls to the honest "basemap
+/// unavailable" state instead of rendering.
+private final class EusoroneStyleSchemeHandler: NSObject, WKURLSchemeHandler {
+    static let scheme = "euso-style"
+
+    func webView(_ webView: WKWebView, start urlSchemeTask: WKURLSchemeTask) {
+        guard let url = urlSchemeTask.request.url else {
+            urlSchemeTask.didFailWithError(URLError(.badURL))
+            return
+        }
+        // "eusorone.day.yaml" → bundle resource "eusorone.day" + "yaml",
+        // inside the MapStyles folder reference.
+        let file = url.lastPathComponent
+        let name = (file as NSString).deletingPathExtension
+        guard file.hasSuffix(".yaml"),
+              let styleURL = Bundle.main.url(forResource: name,
+                                             withExtension: "yaml",
+                                             subdirectory: "MapStyles"),
+              let data = try? Data(contentsOf: styleURL),
+              let response = HTTPURLResponse(
+                  url: url,
+                  statusCode: 200,
+                  httpVersion: "HTTP/1.1",
+                  headerFields: [
+                      "Content-Type": "application/x-yaml; charset=utf-8",
+                      "Content-Length": String(data.count),
+                      "Access-Control-Allow-Origin": "*",
+                      "Cache-Control": "no-cache",
+                  ])
+        else {
+            // Missing bundle resource = honest failure (the JS catch logs
+            // "base err" and renders the unavailable state) — never a
+            // silent swap to stock cartography.
+            urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+        urlSchemeTask.didReceive(response)
+        urlSchemeTask.didReceive(data)
+        urlSchemeTask.didFinish()
+    }
+
+    func webView(_ webView: WKWebView, stop urlSchemeTask: WKURLSchemeTask) {
+        // Bundle reads complete synchronously in `start` — nothing to cancel.
     }
 }
 #endif

@@ -13,13 +13,22 @@
 //  `url(forTilePath:)` is URL-only (no header hook), we override
 //  `loadTile(at:result:)` so the Bearer header can attach to the request.
 //
-//  Dark vs light comes from the `style=` query param:
-//    - explore.night  → HERE's dark vector style
-//    - explore.day    → HERE's light vector style
+//  RETIRED FROM UI 2026-05-29: `HereTileOverlay(` has zero live call
+//  sites — `BespokeMapCanvas` is the shipping renderer. REACTIVATION
+//  CONTRACT (_EUSORONE_BASEMAP_SPEC_2026-06-10 §3.2): this overlay may
+//  only return to the UI with `loadTile(at:result:)` routing every
+//  fetched PNG through `EusoroneTileRemapper.shared.remap(_:register:)`
+//  (per-register CIColorCube LUT, cached per tile) before calling
+//  `result` — stock HERE palette never reaches the screen. At
+//  reactivation BOTH registers remap from the single `explore.day`
+//  upstream and the `nightStyleAvailable` 403 machinery below is
+//  removed. Remap failure returns the ORIGINAL tile + posts
+//  `eusoBasemapRemapDegraded` once — never a blank tile.
 //
 //  HERE PPI levels (v3 schema as of 2026-06): 100, 200, 400 ONLY —
 //  other values 400-reject with E622002. 200 ppi + tile size 512 is
-//  retina-friendly on iPhone.
+//  retina-friendly on iPhone (the label-size trap is solved — keep
+//  tileSize 256 pt / sizePx 512 / ppi 200 exactly).
 //
 //  Docs: https://developer.here.com/documentation/maps-api-for-javascript/dev_guide/topics/map-tile-service.html
 //
@@ -147,11 +156,14 @@ final class HereTileOverlay: MKTileOverlay {
                 }
                 // 403 on an `explore.night` tile = HERE plan tier rejects
                 // the night style. Mark the process-wide flag so all
-                // subsequent dark tiles request `explore.day` and the
-                // TintingTileOverlayRenderer applies the blue-slate dark
-                // overlay on top instead. Then transparently re-fetch
-                // this single tile with the day style so the user
-                // doesn't see a one-tile blank flash during the swap.
+                // subsequent dark tiles request `explore.day`, then
+                // transparently re-fetch this single tile with the day
+                // style so the user doesn't see a one-tile blank flash.
+                // (The old TintingTileOverlayRenderer reader was deleted
+                // in `8f710a3`.) This whole branch is DEAD at
+                // reactivation — §3.2: both registers remap from
+                // `explore.day` via EusoroneTileRemapper, so no night
+                // fetch exists to 403.
                 if http.statusCode == 403 && HereTileStyle.nightStyleAvailable {
                     HereTileStyle.nightStyleAvailable = false
                     NotificationCenter.default.post(

@@ -306,7 +306,7 @@ enum LegalDocCopy {
             1. What is a cookie?
             ─────────────────────────────────────────────
 
-            A cookie is a small text file that a website places on your browser's storage. Cookies let the site remember you between visits and between page loads. Cookies set by eusotrip.com directly are "first-party"; cookies set by domains we partner with (Stripe, HERE, Apple, Sentry) are "third-party."
+            A cookie is a small text file that a website places on your browser's storage. Cookies let the site remember you between visits and between page loads. Cookies set by eusotrip.com directly are "first-party"; cookies set by domains we partner with (Stripe, Apple, Sentry, and our map-data provider) are "third-party."
 
             EusoTrip also uses adjacent client-side storage technologies that behave like cookies for our purposes:
             • localStorage / sessionStorage - short-term browser cache for UI preferences (last-opened dashboard, theme, time zone).
@@ -357,7 +357,7 @@ enum LegalDocCopy {
             When you interact with these features, the partner's cookies may also be set on the relevant subdomain:
 
             • Stripe (stripe.com) - payment / EusoWallet card vault. Stripe sets fraud-detection cookies on their checkout iframe (__stripe_mid, __stripe_sid). Governed by Stripe's privacy policy.
-            • HERE Technologies (here.com) - map tiles + routing. HERE sets short-lived cookies for tile CDN routing.
+            • Our map-data provider (here.com) - map tiles + routing. The provider sets short-lived cookies for tile CDN routing.
             • Apple Pay / Apple Wallet - when adding pickup credentials. Apple's privacy policy governs these.
             • Plaid (plaid.com) - bank account linking for ACH. Plaid sets identity cookies during the linking flow only.
             • Sentry.io - error monitoring. Sets a single cookie (sentry-trace) tied to your session for error correlation.
@@ -479,7 +479,7 @@ enum LegalDocCopy {
             • EusoWallet - payments, escrow, settlements and the Apple Wallet integration.
             • Zeun - fleet maintenance, fuel, breakdown, mechanic-network platform.
             • The Haul - gamification, missions, leaderboard, rewards.
-            • The HERE-backed multi-modal routing layer + the equipment-animation reactive overlay system.
+            • The multi-modal routing layer + the equipment-animation reactive overlay system.
             • The multi-modal data model (TransportMode, VesselClass, PortDirectory, LoadCapacityCalculator).
             • All migration scripts, server projections and tRPC routers under /frontend/server/.
 

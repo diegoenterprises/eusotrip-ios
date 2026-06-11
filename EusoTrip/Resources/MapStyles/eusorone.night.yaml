@@ -1,0 +1,174 @@
+# EUSORONE NIGHT — canonical dark basemap. Source: _EUSORONE_BASEMAP_SPEC_2026-06-10 §1.2
+# Roads = raised dark ribbons (035); centerline = 536-Dark 0.10 treatment; NO green/halos/casings.
+sources:
+    omv:
+        type: OMV
+        max_zoom: 17
+        min_display_zoom: 1
+
+scene:
+    background:
+        color: '#0B1120'            # land/earth — Eusorone Night
+
+global:
+    label_font: ['Gilroy', 'SF Pro Display', 'FiraGO', sans-serif]
+
+layers:
+    water:
+        data: {source: omv, layer: water}
+        draw:
+            polygons:
+                order: 10
+                color: '#051625'
+        deep:
+            filter: {kind: [ocean, sea]}
+            draw: {polygons: {color: '#04111C'}}
+        lines:
+            filter: {$geometry: line}
+            draw:
+                lines:
+                    order: 11
+                    color: '#051625'
+                    width: [[10, 0.5px], [14, 1.5px], [17, 3px]]
+
+    landuse:
+        data: {source: omv, layer: landuse}
+        green:
+            filter: {kind: [park, forest, wood, garden, grass, nature_reserve, golf_course, cemetery, meadow, recreation_ground]}
+            draw:
+                polygons:
+                    order: 5
+                    color: '#0D1524'
+        built:
+            filter: {kind: [industrial, commercial, residential, airport, hospital, university, school]}
+            draw:
+                polygons:
+                    order: 4
+                    color: [0.047, 0.075, 0.125, 0.5]    # #0C1320 @ 0.5
+
+    buildings:
+        data: {source: omv, layer: buildings}
+        filter: {$zoom: {min: 16}}
+        draw:
+            polygons:
+                order: 30
+                color: [1.0, 1.0, 1.0, 0.04]             # #FFFFFF @ 0.04
+
+    roads:
+        data: {source: omv, layer: roads}
+        filter: {not: {kind: [ferry]}}
+        draw:
+            lines:
+                order: 20
+                cap: round
+                join: round
+                outline: {width: 0}                      # NO casing
+        motorway:
+            filter: {kind: highway}
+            draw:
+                lines:
+                    order: 24
+                    color: [0.165, 0.200, 0.251, 0.95]   # #2A3340 @ 0.95
+                    width: [[6, 1.5px], [10, 3px], [13, 6px], [15, 9px], [17, 14px]]
+            centerline:                                  # 536-Dark deliberate 0.10 — NOT 413's 0.7
+                filter: {$zoom: {min: 13}}
+                draw:
+                    lines:
+                        order: 25
+                        color: [1.0, 1.0, 1.0, 0.10]
+                        width: 1.4px
+                        dash: [1, 9]
+        major_road:
+            filter: {kind: major_road}
+            draw:
+                lines:
+                    order: 22
+                    color: '#232932'
+                    width: [[8, 1px], [12, 3px], [15, 5px], [17, 9px]]
+        minor_road:
+            filter: {kind: [minor_road, path]}
+            draw:
+                lines:
+                    order: 21
+                    color: '#161B27'
+                    width: [[13, 0.5px], [15, 1.5px], [17, 2.5px]]
+        rail:
+            filter: {kind: rail}
+            draw:
+                lines:
+                    order: 19
+                    color: [0.137, 0.161, 0.196, 0.6]    # #232932 @ 0.6
+                    width: 1px
+
+    boundaries:
+        data: {source: omv, layer: boundaries}
+        country:
+            filter: {kind: country}
+            draw:
+                lines:
+                    order: 40
+                    color: [0.227, 0.255, 0.314, 0.6]    # #3A4150 @ 0.6
+                    width: 1px
+                    dash: [2, 3]
+        region:
+            filter: {kind: [region, state]}
+            draw:
+                lines:
+                    order: 39
+                    color: [0.227, 0.255, 0.314, 0.6]
+                    width: 0.8px
+                    dash: [2, 3]
+
+    places:
+        data: {source: omv, layer: places}
+        country:
+            filter: {kind: country}
+            draw:
+                text:
+                    order: 50
+                    text_source: name
+                    font: {family: global.label_font, size: [[3, 10px], [6, 12px]],
+                           weight: 800, fill: '#6E7681', transform: uppercase,
+                           stroke: {color: '#0B1120', width: 0}}
+        region:
+            filter: {kind: [region, state]}
+            draw:
+                text:
+                    order: 49
+                    text_source: name
+                    font: {family: global.label_font, size: 10px, weight: 800,
+                           fill: '#6E7681', transform: uppercase,
+                           stroke: {color: '#0B1120', width: 0}}
+        locality:
+            filter: {kind: [locality, city, town]}
+            draw:
+                text:
+                    order: 48
+                    text_source: name
+                    font: {family: global.label_font, size: [[8, 10px], [12, 12px]],
+                           weight: 800, fill: '#F5F5F7',
+                           stroke: {color: '#0B1120', width: 0}}
+        village:
+            filter: {kind: [village, hamlet, neighbourhood, suburb]}
+            draw:
+                text:
+                    order: 47
+                    text_source: name
+                    font: {family: global.label_font, size: 9px, weight: 700,
+                           fill: '#AAB2BB',
+                           stroke: {color: '#0B1120', width: 0}}
+
+    road_labels:
+        data: {source: omv, layer: roads}
+        filter: {$zoom: {min: 14}, name: true}
+        draw:
+            text:
+                order: 46
+                text_source: name
+                font: {family: global.label_font, size: 9px, weight: 700,
+                       fill: '#AAB2BB', transform: uppercase,
+                       stroke: {color: '#0B1120', width: 0}}
+
+    pois:
+        data: {source: omv, layer: pois}
+        enabled: false
