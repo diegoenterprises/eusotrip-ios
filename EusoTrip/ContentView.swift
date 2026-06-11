@@ -403,17 +403,19 @@ enum ScreenRegistry {
         // `shippers.getBidsForLoad`. Cohort B day-1: every field
         // surfaces verbatim from the server, missing optionals
         // render as em-dash sentinels — never fabricated values.
-        // The dev-chrome registry entry uses loadId="0" purely as
-        // a placeholder so the next/prev walk doesn't break; the
-        // real navigation path is the sheet from 201.
+        //
+        // Emergency Wave I1 (2026-06-11) — the registry entry no
+        // longer mounts the `loadId:"0"` sentinel. The server
+        // returns `null` AS SUCCESS for id<=0, so a sentinel mount
+        // rendered the loading skeleton forever (the founder's dead
+        // 205). 205 requires a real load id: every real path routes
+        // through `ShipperSurface.activeLoadId` (captured via the
+        // ShipperLoadIdResolver gate); reaching THIS entry means no
+        // load context exists, so it renders the explicit
+        // "Select a load" state — never a fake detail.
         list.append(
             .init(id: "205", title: "Shipper · Load Detail", role: .shipper) { p in
-                AnyView(ShipperLoadDetailScreen(
-                    theme: p,
-                    loadId: "0",
-                    previewLoadNumber: nil,
-                    previewLane: nil
-                ))
+                AnyView(ShipperLoadDetailUnresolvedScreen(theme: p))
             }
         )
         // 2026-04-26 — eusotrip-killers 124th firing
@@ -809,7 +811,12 @@ enum ScreenRegistry {
         list.append(.init(id: "422", title: "Shipper · My Terminals",            role: .shipper) { p in AnyView(MyTerminalsScreen(theme: p)) })
         list.append(.init(id: "423", title: "Shipper · Facility Search",         role: .shipper) { p in AnyView(FacilitySearchScreen(theme: p)) })
         list.append(.init(id: "424", title: "Shipper · Spectra-Match",           role: .shipper) { p in AnyView(SpectraMatchScreen(theme: p)) })
-        list.append(.init(id: "425", title: "Shipper · Port Intelligence",       role: .shipper) { p in AnyView(PortIntelligenceScreen(theme: p)) })
+        // Wave I1/I2 contract: `product` defaults to nil here (bare
+        // open = manual search). The 424→425 handoff carries the
+        // matched grade through `ShipperSurface.activePortIntelProduct`,
+        // which overrides this registration with
+        // `PortIntelligenceScreen(theme:product:)` pre-filled.
+        list.append(.init(id: "425", title: "Shipper · Port Intelligence",       role: .shipper) { p in AnyView(PortIntelligenceScreen(theme: p, product: nil)) })
         list.append(.init(id: "426", title: "Shipper · Demurrage Charges",       role: .shipper) { p in AnyView(DemurrageChargesScreen(theme: p)) })
         list.append(.init(id: "427", title: "Shipper · Cross-Border Shipping",   role: .shipper) { p in AnyView(CrossBorderShippingScreen(theme: p)) })
         list.append(.init(id: "428", title: "Shipper · Carrier Capacity",        role: .shipper) { p in AnyView(CarrierCapacityScreen(theme: p)) })

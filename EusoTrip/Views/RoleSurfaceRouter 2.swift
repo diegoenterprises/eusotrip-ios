@@ -167,35 +167,6 @@ struct DriverSurfaceHost: View {
     }
 }
 
-// MARK: - Shipper load-id resolver (Emergency Wave I1)
-
-/// The ONE normalization gate every shipper load-context nav entry
-/// passes through before it can become `activeLoadId`. Kills the
-/// raw-id family (282/316/327/333 posted `load_NNN`-form ids straight
-/// out of server handles; `loads.getById` resolves "load_1077" via a
-/// loadNumber lookup that never matches, returns `null` AS SUCCESS,
-/// and 205 skeleton'd forever) and the `"0"` sentinel (server returns
-/// null for id<=0 — same forever-skeleton).
-///
-///   • strips the `load_` prefix (case-insensitive)
-///   • rejects empty / whitespace ids
-///   • rejects non-positive numeric ids (the registry sentinel)
-///   • passes loadNumber forms ("LD-…") through untouched — the
-///     server's resolveLoadId handles those via loadNumber lookup
-enum ShipperLoadIdResolver {
-    static func normalize(_ raw: String?) -> String? {
-        guard var id = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !id.isEmpty else { return nil }
-        if id.lowercased().hasPrefix("load_") {
-            id = String(id.dropFirst("load_".count))
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        guard !id.isEmpty else { return nil }
-        if let n = Int(id), n <= 0 { return nil }
-        return id
-    }
-}
-
 // MARK: - Shipper surface
 
 /// Top-level Shipper container. Holds the currently-rendered shipper
@@ -236,13 +207,6 @@ struct ShipperSurface: View {
     /// screen with the real loadId instead of the registry's `"0"`
     /// sentinel.
     @State private var activeLoadId: String? = nil
-    /// Captured from the 424→425 handoff (`.eusoShipperNavSwap` with
-    /// `userInfo["product"]`). When non-nil and the current screen is
-    /// 425, we construct `PortIntelligenceScreen(product:)` so Port
-    /// Intelligence opens pre-filled with the SpectraMatch grade and
-    /// auto-searches. Overwritten on every 425 swap (nil when absent)
-    /// so a stale grade never leaks into a later bare open.
-    @State private var activePortIntelProduct: String? = nil
     /// Set when an action triggers SFSafariViewController to open a
     /// web continuation (load edit, settlement approve flow, etc.).
     /// Cleared when the sheet dismisses.
@@ -300,19 +264,6 @@ struct ShipperSurface: View {
             default: break
             }
         }
-        // 424→425 handoff (Emergency Wave I2): a captured product
-        // grade overrides the registry's bare 425 so Port
-        // Intelligence mounts pre-filled with the SpectraMatch best
-        // match and auto-searches. Same override mechanism 205/222
-        // use for activeLoadId.
-        if currentScreenId == "425",
-           let grade = activePortIntelProduct, !grade.isEmpty {
-            return ProductionScreen(id: "425",
-                                    title: "Shipper · Port Intelligence",
-                                    role: .shipper) { p in
-                AnyView(PortIntelligenceScreen(theme: p, product: grade))
-            }
-        }
         // 200 (Home) is the canonical fallback. RBAC is also enforced
         // here — if for any reason the registry is missing 200 (build
         // mistake), we fall through to a hard error surface rather
@@ -360,7 +311,6 @@ struct ShipperSurface: View {
             .modifier(ShipperNotificationListeners(
                 screenStack: $screenStack,
                 activeLoadId: $activeLoadId,
-                activePortIntelProduct: $activePortIntelProduct,
                 avatarPickerOpen: $avatarPickerOpen,
                 showeSang: $showeSang,
                 webContinuationURL: $webContinuationURL,
@@ -698,29 +648,6 @@ private struct ShipperEnvInjections: ViewModifier {
             }
             .environment(\.openURL, OpenURLAction { url in
                 if let id = ShipperWebToNativeMap.screenId(for: url) {
-                    // Emergency Wave I1 — the "load"→"205" alias used
-                    // to swap to 205 WITHOUT ever setting the load
-                    // context, mounting the registry sentinel. Route
-                    // load-detail deep-links through the load-open
-                    // path (which captures activeLoadId via the one
-                    // resolver gate); a load deep-link with no
-                    // resolvable id falls back to the loads list —
-                    // never a bare 205.
-                    if id == "205" {
-                        if let lid = ShipperLoadIdResolver.normalize(
-                            ShipperWebToNativeMap.loadId(for: url)) {
-                            NotificationCenter.default.post(
-                                name: .eusoShipperLoadOpen, object: nil,
-                                userInfo: ["loadId": lid]
-                            )
-                        } else {
-                            NotificationCenter.default.post(
-                                name: .eusoShipperNavSwap, object: nil,
-                                userInfo: ["screenId": "201"]
-                            )
-                        }
-                        return .handled
-                    }
                     NotificationCenter.default.post(
                         name: .eusoShipperNavSwap, object: nil,
                         userInfo: ["screenId": id]
@@ -741,7 +668,6 @@ private struct ShipperEnvInjections: ViewModifier {
 private struct ShipperNotificationListeners: ViewModifier {
     @Binding var screenStack: [String]
     @Binding var activeLoadId: String?
-    @Binding var activePortIntelProduct: String?
     @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
     @Binding var webContinuationURL: URL?
@@ -755,7 +681,6 @@ private struct ShipperNotificationListeners: ViewModifier {
             .modifier(ShipperNavReceivers(
                 screenStack: $screenStack,
                 activeLoadId: $activeLoadId,
-                activePortIntelProduct: $activePortIntelProduct,
                 avatarPickerOpen: $avatarPickerOpen,
                 showeSang: $showeSang,
                 pushedDetail: $pushedDetail,
@@ -778,7 +703,6 @@ private struct ShipperNotificationListeners: ViewModifier {
 private struct ShipperNavReceivers: ViewModifier {
     @Binding var screenStack: [String]
     @Binding var activeLoadId: String?
-    @Binding var activePortIntelProduct: String?
     @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
     @Binding var pushedDetail: RoleDetailPush?
@@ -803,24 +727,6 @@ private struct ShipperNavReceivers: ViewModifier {
                 guard RoleAccess.canRender(role: .shipper, screenId: id) else {
                     screenStack = ["200"]
                     return
-                }
-                // Emergency Wave I1 — load-context capture. 282/316/
-                // 327/333 post NavSwap with screenId "205" + a loadId
-                // payload that was previously DROPPED here, so 205
-                // mounted on the registry sentinel and skeleton'd
-                // forever. Every id passes the one resolver gate
-                // (strips `load_NNN`, rejects the `"0"` sentinel).
-                if id == "205" || id == "222" {
-                    if let lid = ShipperLoadIdResolver.normalize(
-                        note.userInfo?["loadId"] as? String) {
-                        activeLoadId = lid
-                    }
-                }
-                // Wave I2 — 424→425 grade handoff. Overwritten on
-                // every 425 swap (nil when absent) so a stale grade
-                // never leaks into a later bare open.
-                if id == "425" {
-                    activePortIntelProduct = note.userInfo?["product"] as? String
                 }
                 // Any explicit screen swap leaves the generic detail
                 // layer behind — clear it so a stale detail never paints
@@ -852,33 +758,16 @@ private struct ShipperNavReceivers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .eusoShipperBrowseCarriers)) { _ in
                 guard RoleAccess.canRender(role: .shipper, screenId: "224") else { return }
                 withAnimation(.easeInOut(duration: 0.22)) {
-                    // 224 is NOT a tab root — it APPENDS, so a 205/222
-                    // drilled beneath stays on the stack. Clearing the
-                    // load context here (the old behavior) meant the
-                    // back gesture popped onto a 205 whose loadId was
-                    // gone → registry sentinel → forever-skeleton.
-                    // Only clear once no load-context screen remains.
+                    activeLoadId = nil
                     pushOrTab("224")
-                    clearLoadContextIfUnreferenced()
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadListOpen)) { _ in
                 withAnimation(.easeInOut(duration: 0.22)) {
+                    activeLoadId = nil
                     pushOrTab("201")
-                    clearLoadContextIfUnreferenced()
                 }
             }
-    }
-
-    /// Emergency Wave I1 — `activeLoadId` may only be cleared when no
-    /// load-context screen (205 load detail / 222 live tracking)
-    /// remains anywhere on the nav stack. Tab-root pushes collapse the
-    /// stack so the clear proceeds; appending pushes keep the drilled
-    /// detail alive underneath and the context with it.
-    private func clearLoadContextIfUnreferenced() {
-        if !screenStack.contains(where: { $0 == "205" || $0 == "222" }) {
-            activeLoadId = nil
-        }
     }
 }
 
@@ -894,14 +783,8 @@ private struct ShipperLoadReceivers: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            // Emergency Wave I1 — every load-open entry passes the ONE
-            // `ShipperLoadIdResolver` gate: `load_NNN` handles open the
-            // same detail as numeric ids, and a sentinel/empty id can
-            // never mount a 205 (the registry placeholder renders the
-            // honest "select a load" state instead of a fake detail).
             .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadOpen)) { note in
-                guard let id = ShipperLoadIdResolver.normalize(
-                    note.userInfo?["loadId"] as? String) else { return }
+                guard let id = note.userInfo?["loadId"] as? String else { return }
                 withAnimation(.easeInOut(duration: 0.22)) {
                     activeLoadId = id
                     pushOrTab("205")
@@ -909,15 +792,11 @@ private struct ShipperLoadReceivers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoShipperLoadOpenMap)) { note in
                 guard RoleAccess.canRender(role: .shipper, screenId: "222") else { return }
-                if let id = ShipperLoadIdResolver.normalize(
-                    note.userInfo?["loadId"] as? String) {
-                    activeLoadId = id
-                }
+                if let id = note.userInfo?["loadId"] as? String { activeLoadId = id }
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab("222") }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoShipperSettlementOpenLoad)) { note in
-                guard let id = ShipperLoadIdResolver.normalize(
-                    note.userInfo?["loadId"] as? String) else { return }
+                guard let id = note.userInfo?["loadId"] as? String else { return }
                 withAnimation(.easeInOut(duration: 0.22)) {
                     activeLoadId = id
                     pushOrTab("205")
@@ -925,12 +804,8 @@ private struct ShipperLoadReceivers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoShipperPostLoadDismiss)) { _ in
                 withAnimation(.easeInOut(duration: 0.22)) {
-                    // Collapse FIRST, clear SECOND — the load context
-                    // may only drop once no 205/222 remains mounted.
-                    // (Wave I1: clearing while a 205 was still on the
-                    // stack re-rendered it on the registry sentinel.)
-                    screenStack = ["200"]
                     activeLoadId = nil
+                    screenStack = ["200"]
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .eusoShippereSangOpen)) { _ in
@@ -1069,32 +944,10 @@ enum ShipperWebToNativeMap {
         case "handoff":               return "238"
         case "apple-pay":             return "239"
         case "carplay":               return "240"
-        // `/shipper/loads` (bare) is the list; `/shipper/loads/<id>`
-        // and `/shipper/load/<id>` are the detail. The detail screen
-        // requires a load id — `loadId(for:)` below extracts it and
-        // the openURL interceptor routes through the load-open path
-        // so 205 never mounts on the registry sentinel (Wave I1).
-        case "loads":                 return segments.count >= 3 ? "205" : "201"
+        case "loads":                 return "201"
         case "load":                  return "205"
         default:                      return nil
         }
-    }
-
-    /// Extracts the load id segment from a shipper load deep-link
-    /// (`/shipper/load/<id>` or `/shipper/loads/<id>`). Returns nil
-    /// when the link carries no id — the caller falls back to the
-    /// loads list rather than mounting a bare detail.
-    static func loadId(for url: URL) -> String? {
-        guard let host = url.host,
-              host == "app.eusotrip.com" || host == "eusotrip.com" else {
-            return nil
-        }
-        let segments = url.pathComponents.filter { $0 != "/" }
-        guard segments.first == "shipper", segments.count >= 3,
-              segments[1] == "load" || segments[1] == "loads" else {
-            return nil
-        }
-        return segments[2]
     }
 }
 
