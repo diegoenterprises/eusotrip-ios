@@ -422,10 +422,13 @@ struct ShipperSurface: View {
         switch key {
         // In-app deep-links
         case "shipper.partner.detail":
-            if let id = userInfo["partnerId"] as? String
-                ?? userInfo["catalystId"] as? String {
-                activeLoadId = id
-            }
+            // Emergency Wave I1 — this used to write the partnerId /
+            // catalystId into `activeLoadId`. Nothing consumed it
+            // (281 has no `current` override), so the only effect was
+            // LOAD-context pollution: a numeric partner id parked in
+            // `activeLoadId` mounts 205/222 with the WRONG load on
+            // any later swap that doesn't carry its own loadId.
+            // Partner ids never enter the load context.
             withAnimation(.easeInOut(duration: 0.22)) {
                 pushOrTab("281")
             }
