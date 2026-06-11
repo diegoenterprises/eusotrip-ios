@@ -3445,13 +3445,89 @@ final class ShipperDashboardStore: BaseDynamicStore<ShipperAPI.DashboardStats?> 
 //
 // Drives the "Active loads" card list on Shipper Home.
 // MCP-verified at `frontend/server/routers/shippers.ts:109`.
+//
+// ID-AXIS RESILIENCE (founder evidence 2026-06-11 — "these arent
+// loading"): the slim `getActiveLoads` proc scopes by the raw
+// `ctx.user.id` only, while `getMyLoads` deliberately unions ALL the
+// identifiers a signed-in shipper may own (email-resolved DB id, raw
+// auth-provider id, companyId, every teammate id) — the server-side
+// fix for the documented "65 total / no rows" bug that never reached
+// the Home procs. When the slim proc returns nothing (or fails), this
+// store falls back to the union-scoped `getMyLoads`, client-filters to
+// the in-flight status set, and maps the rows into the same ActiveLoad
+// projection — REAL rows from the REAL proc, never an invention.
 
 @MainActor
 final class ShipperActiveLoadsStore: BaseDynamicListStore<ShipperAPI.ActiveLoad> {
     var limit: Int = 10
 
+    /// Lifecycle statuses that count as "in flight" on the Home card —
+    /// superset of the server's slim-proc filter so loads in bid/award
+    /// stages still surface.
+    static let inFlightStatuses: Set<String> = [
+        "posted", "bidding", "awarded", "assigned", "accepted",
+        "dispatched", "at_pickup", "pickup", "loading", "loaded",
+        "in_transit", "at_delivery", "delivering", "unloading",
+    ]
+
     override func fetch() async throws -> [ShipperAPI.ActiveLoad] {
-        try await EusoTripAPI.shared.shipper.getActiveLoads(limit: limit)
+        do {
+            let primary = try await EusoTripAPI.shared.shipper.getActiveLoads(limit: limit)
+            if !primary.isEmpty { return primary }
+            return try await unionFallback()
+        } catch {
+            // Slim proc failed outright — surface the union rows if that
+            // proc works; rethrow the original error when both fail.
+            if let rows = try? await unionFallback() { return rows }
+            throw error
+        }
+    }
+
+    private func unionFallback() async throws -> [ShipperAPI.ActiveLoad] {
+        let mine = try await EusoTripAPI.shared.shipper.getMyLoads(status: nil, limit: 50, offset: 0)
+        return mine
+            .filter { Self.inFlightStatuses.contains($0.status.lowercased()) }
+            .prefix(limit)
+            .map { Self.asActiveLoad($0) }
+    }
+
+    /// Project a union-scoped MyLoad row into the ActiveLoad shape the
+    /// Home card renders. Every field maps from real server data; fields
+    /// the getMyLoads projection doesn't carry stay nil so the row's
+    /// honest fallbacks ("Awaiting driver") engage.
+    static func asActiveLoad(_ m: ShipperAPI.MyLoad) -> ShipperAPI.ActiveLoad {
+        ShipperAPI.ActiveLoad(
+            id: m.id,
+            loadNumber: m.loadNumber,
+            status: m.status,
+            origin: m.origin.isEmpty ? "Unknown" : m.origin,
+            destination: m.destination.isEmpty ? "Unknown" : m.destination,
+            catalyst: m.catalyst?.name ?? "Unassigned",
+            driver: m.driver?.name ?? "",
+            driverId: numericTail(m.driver?.id),
+            catalystId: numericTail(m.catalyst?.id),
+            eta: m.eta,
+            rate: m.rate ?? 0,
+            cargoType: m.equipment,
+            commodity: m.product.isEmpty ? nil : m.product,
+            unNumber: nil,
+            hazmatClass: m.hazmatClass,
+            weightDisplay: m.weight > 0 ? "\(Int(m.weight)) lbs" : nil,
+            cargoSummary: nil,
+            distance: m.distance,
+            miles: m.miles,
+            transportMode: m.transportMode,
+            multiVehicleCount: m.multiVehicleCount,
+            permitType: m.permitType,
+            rateUnit: m.rateUnit,
+            worldscalePct: m.worldscalePct
+        )
+    }
+
+    /// "car_12" / "d_7" → 12 / 7. Server prefixes ids on the wire.
+    static func numericTail(_ s: String?) -> Int? {
+        guard let s else { return nil }
+        return Int(s.filter(\.isNumber))
     }
 }
 
@@ -3471,13 +3547,106 @@ final class ShipperAlertsStore: BaseDynamicListStore<ShipperAPI.LoadAlert> {
 //
 // Drives the recent-activity feed below the active-loads card.
 // MCP-verified at `frontend/server/routers/shippers.ts:191`.
+//
+// Same id-axis resilience as ShipperActiveLoadsStore: the slim proc
+// scopes by raw `ctx.user.id` only; when it returns nothing the store
+// falls back to the union-scoped `getMyLoads` (newest-first server
+// ordering) so the feed shows the shipper's real history.
 
 @MainActor
 final class ShipperRecentLoadsStore: BaseDynamicListStore<ShipperAPI.RecentLoad> {
     var limit: Int = 5
 
     override func fetch() async throws -> [ShipperAPI.RecentLoad] {
-        try await EusoTripAPI.shared.shipper.getRecentLoads(limit: limit)
+        do {
+            let primary = try await EusoTripAPI.shared.shipper.getRecentLoads(limit: limit)
+            if !primary.isEmpty { return primary }
+            return try await unionFallback()
+        } catch {
+            if let rows = try? await unionFallback() { return rows }
+            throw error
+        }
+    }
+
+    private func unionFallback() async throws -> [ShipperAPI.RecentLoad] {
+        let mine = try await EusoTripAPI.shared.shipper.getMyLoads(status: nil, limit: limit, offset: 0)
+        return mine.prefix(limit).map { m in
+            ShipperAPI.RecentLoad(
+                id: m.id,
+                loadNumber: m.loadNumber,
+                status: m.status,
+                origin: m.origin.isEmpty ? "Unknown" : m.origin,
+                destination: m.destination.isEmpty ? "Unknown" : m.destination,
+                // getMyLoads emits ISO-8601 (or null); the feed renders the
+                // server's YYYY-MM-DD form — same projection, same honesty.
+                deliveredAt: String((m.deliveredAt ?? "").prefix(10)),
+                rate: m.rate ?? 0,
+                distance: m.distance,
+                miles: m.miles
+            )
+        }
+    }
+}
+
+// MARK: - ShipperHomeAggregatesStore — real rate/mi + on-time aggregates
+//
+// The slim `shippers.getDashboardStats` envelope HARDCODES ratePerMile
+// and onTimeRate to 0 (server WIRE-GAP, shippers.ts:381-382), so the
+// Home stat strip rendered a permanent em-dash on both tiles. This
+// store derives the two figures from REAL procs instead:
+//
+//   • ratePerMile — Σ(rate) ÷ Σ(distance) over the shipper's actual
+//     load rows from union-scoped `shippers.getMyLoads` (rate > 0,
+//     distance > 0, cancelled/draft excluded). Pure arithmetic over
+//     server rows — no invention.
+//   • onTimeRate — load-weighted average of the server-computed
+//     per-catalyst on-time SQL (`shippers.getCatalystPerformance`,
+//     actualDeliveryDate <= estimatedDeliveryDate) over the last
+//     quarter. 0–1 fraction to match the Home formatter.
+//
+// Either side resolves to nil when its source has no qualifying rows —
+// the tile then renders the honest em-dash, never a fabricated number.
+
+struct ShipperHomeAggregates: Hashable {
+    let ratePerMile: Double?
+    let onTimeRate: Double?
+}
+
+@MainActor
+final class ShipperHomeAggregatesStore: BaseDynamicStore<ShipperHomeAggregates?> {
+    override func fetch() async throws -> ShipperHomeAggregates? {
+        let loadsTask = Task { try await EusoTripAPI.shared.shipper.getMyLoads(status: nil, limit: 100, offset: 0) }
+        let perfTask  = Task { try await EusoTripAPI.shared.shipper.getCatalystPerformance(period: .quarter) }
+
+        // Each aggregate degrades independently — one proc failing must
+        // not blank the other tile.
+        let rows = (try? await loadsTask.value) ?? []
+        let perf = (try? await perfTask.value) ?? []
+
+        let priced = rows.filter { m in
+            let status = m.status.lowercased()
+            guard status != "cancelled", status != "draft" else { return false }
+            let dist = m.distance ?? m.miles ?? 0
+            return (m.rate ?? 0) > 0 && dist > 0
+        }
+        let totalRate = priced.reduce(0.0) { $0 + ($1.rate ?? 0) }
+        let totalMiles = priced.reduce(0.0) { $0 + ($1.distance ?? $1.miles ?? 0) }
+        let ratePerMile: Double? = totalMiles > 0 ? totalRate / totalMiles : nil
+
+        let weighted = perf.filter { $0.totalLoads > 0 }
+        let loadSum = weighted.reduce(0) { $0 + $1.totalLoads }
+        let onTimeSum = weighted.reduce(0.0) { $0 + Double($1.onTimeRate) / 100.0 * Double($1.totalLoads) }
+        let onTimeRate: Double? = loadSum > 0 ? onTimeSum / Double(loadSum) : nil
+
+        if ratePerMile == nil && onTimeRate == nil { return nil }
+        return ShipperHomeAggregates(ratePerMile: ratePerMile, onTimeRate: onTimeRate)
+    }
+
+    override func foldState(
+        _ value: ShipperHomeAggregates?
+    ) -> RemoteState<ShipperHomeAggregates?> {
+        guard let v = value else { return .empty }
+        return .loaded(v)
     }
 }
 
