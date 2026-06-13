@@ -251,11 +251,29 @@ final class WatchCommandHandler: NSObject, ObservableObject {
             actions: actions
         )
 
+        // Dedup a re-delivered wrist turn. WCSession can deliver the same
+        // `esang.exchange` envelope more than once (sendMessage falls back
+        // to transferUserInfo on failure, and transferUserInfo itself
+        // retries until ack), which would otherwise post a DUPLICATE
+        // message every redelivery. Derive a STABLE key the server dedupes
+        // on (userId + idempotencyKey): prefer a wrist-supplied
+        // exchange/turn id if the watch ever sends one, else hash the
+        // conversation + content + the watch's own `ts`. `ts` is stamped
+        // once at the wrist send-site and carried verbatim through every
+        // redelivery, so the same logical turn always maps to the same key
+        // while distinct turns (different content or ts) don't collide.
+        let idempotencyKey = exchangeIdempotencyKey(
+            message: message,
+            conversationId: conversationId,
+            content: content
+        )
+
         do {
             let result = try await api.messaging.sendMessage(
                 conversationId: conversationId,
                 content: content,
-                type: "voice_message"
+                type: "voice_message",
+                idempotencyKey: idempotencyKey
             )
             return [
                 "ok": true,
@@ -330,6 +348,58 @@ final class WatchCommandHandler: NSObject, ObservableObject {
             parts.append("actions: \(actionLabels.joined(separator: ", "))")
         }
         return parts.joined(separator: "\n")
+    }
+
+    /// Derives a STABLE idempotency key for a wrist `esang.exchange` turn so
+    /// a re-delivered envelope collapses on the server instead of inserting
+    /// a duplicate message.
+    ///
+    ///   1. If the wrist supplied an explicit `exchangeId` / `turnId`, trust
+    ///      it verbatim (prefixed so it can't collide with another source's
+    ///      keyspace) — that's the canonical per-turn identity.
+    ///   2. Otherwise hash the stable inputs the wrist DID send:
+    ///      conversationId + content + the watch's own `ts`. WCSession
+    ///      redelivery preserves these bytes identically, so the same
+    ///      logical turn always yields the same key, while a genuinely new
+    ///      turn (different content or `ts`) yields a different one.
+    ///
+    /// The watch stamps `ts` once at the send-site and carries it through
+    /// every redelivery, which is what makes the fallback hash stable rather
+    /// than minting a fresh key per delivery.
+    private func exchangeIdempotencyKey(
+        message: [String: Any],
+        conversationId: String,
+        content: String
+    ) -> String {
+        if let exchangeId = (message["exchangeId"] as? String)
+            ?? (message["turnId"] as? String),
+           !exchangeId.isEmpty {
+            return "watch-exchange:\(exchangeId)"
+        }
+        // The wrist sends `ts` as a Double (epoch seconds). Use it as the
+        // stable nonce; fall back to a degenerate "0" only if absent so the
+        // key is still deterministic for that (rare) envelope shape.
+        let ts: String = {
+            if let d = message["ts"] as? Double { return String(d) }
+            if let i = message["ts"] as? Int { return String(i) }
+            if let s = message["ts"] as? String, !s.isEmpty { return s }
+            return "0"
+        }()
+        let seed = "\(conversationId)\u{1F}\(content)\u{1F}\(ts)"
+        return "watch-exchange:\(stableHash(seed))"
+    }
+
+    /// FNV-1a 64-bit hash, rendered as a fixed-width hex string. Deterministic
+    /// across launches/processes (unlike `Hasher`, which is per-process seeded),
+    /// which is exactly what an idempotency nonce needs.
+    private func stableHash(_ string: String) -> String {
+        var hash: UInt64 = 0xcbf29ce484222325
+        let prime: UInt64 = 0x100000001b3
+        for byte in string.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* prime
+        }
+        return String(format: "%016llx", hash)
     }
 
     // MARK: - Activation (open-on-phone hand-off)
