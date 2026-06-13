@@ -615,7 +615,10 @@ final class EsangSession: ObservableObject {
             replyText = response.spokenText.isEmpty ? response.text : response.spokenText
             lastActions = response.actions
             suggestions = response.suggestions
-            appendHistory(transcript: text, reply: replyText, intent: response.intent)
+            // Mint the stable per-turn id ONCE here, at turn creation, and
+            // carry it onto the phone hand-off so re-deliveries / re-forwards
+            // of this same exchange dedup on the server.
+            let exchangeId = appendHistory(transcript: text, reply: replyText, intent: response.intent)
 
             // Dispatch any structured actions (accept load, navigate, etc.)
             await VoiceActionDispatcher.shared.dispatch(
@@ -626,6 +629,7 @@ final class EsangSession: ObservableObject {
 
             if syncToPhone {
                 connectivity.forwardToPhone(
+                    exchangeId: exchangeId.uuidString,
                     transcript: text,
                     reply: replyText,
                     intent: response.intent,
@@ -728,12 +732,17 @@ final class EsangSession: ObservableObject {
 
     // MARK: - History
 
-    private func appendHistory(transcript: String, reply: String, intent: String) {
-        history.insert(
-            EsangTurn(transcript: transcript, reply: reply, intent: intent, timestamp: Date()),
-            at: 0
-        )
+    /// Inserts a turn and returns its stable `id`. That id is minted ONCE
+    /// here at turn-creation time and is the canonical per-exchange
+    /// identity used as the `exchangeId` on the phone hand-off, so a
+    /// re-forwarded / re-delivered turn maps to the same server-side
+    /// idempotency key instead of duplicating the message.
+    @discardableResult
+    private func appendHistory(transcript: String, reply: String, intent: String) -> UUID {
+        let turn = EsangTurn(transcript: transcript, reply: reply, intent: intent, timestamp: Date())
+        history.insert(turn, at: 0)
         if history.count > maxHistory { history.removeLast(history.count - maxHistory) }
+        return turn.id
     }
 
     // MARK: - Audio helpers

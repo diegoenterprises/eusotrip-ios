@@ -917,23 +917,83 @@ private struct DriverCashOutSheet: View {
     @State private var ack: WalletExtrasAPI.RequestPayoutAck?
 
     private var parsedAmount: Double? {
-        // Parse locale-awarely: in many locales the comma is the DECIMAL
-        // separator (e.g. "12,50" = 12.5), so we must not strip commas as
-        // thousands separators. Drop the currency symbol, then let a
-        // .decimal NumberFormatter in the current locale interpret the text.
-        let cleaned = amountText
+        Self.parseMonetary(amountText)
+    }
+
+    /// Robust, locale-correct monetary parse for the cash-out field.
+    ///
+    /// The previous `.decimal` NumberFormatter + `Double(cleaned)` fallback
+    /// was buggy two ways: (1) a lone separator like "1,234" was silently
+    /// read as 1234 in en_US (grouping) yet 1.234 in de_DE (decimal) — the
+    /// same keystrokes meaning wildly different money; (2) the `Double()`
+    /// fallback bypassed the locale entirely and accepted shapes the
+    /// validator never intended (e.g. "1e3", "  5 ", a bare ".5"), which
+    /// could slip a value past the min/balance gate. We instead:
+    ///   • strip the locale + "$" currency symbols and all whitespace,
+    ///   • accept ONLY ASCII digits, the locale grouping separator, and the
+    ///     locale decimal separator (anything else → reject),
+    ///   • REJECT an ambiguous lone-separator input that could be read as
+    ///     either grouping or decimal (e.g. "1,234" / "1.234" with exactly
+    ///     3 trailing digits and no other separator) rather than guessing,
+    ///   • REJECT empty, and
+    ///   • REJECT non-positive (≤ 0) results.
+    /// The min ($1) and available-balance ceiling are enforced separately in
+    /// `validationError` / `canSubmit` so a syntactically-valid-but-too-small
+    /// amount still surfaces the right inline message.
+    static func parseMonetary(_ raw: String) -> Double? {
+        let locale = Locale.current
+        let decimalSep = locale.decimalSeparator ?? "."
+        let groupSep = locale.groupingSeparator ?? ","
+
+        var cleaned = raw
             .replacingOccurrences(of: "$", with: "")
-            .trimmingCharacters(in: .whitespaces)
+        if let symbol = locale.currencySymbol {
+            cleaned = cleaned.replacingOccurrences(of: symbol, with: "")
+        }
+        cleaned = cleaned.components(separatedBy: .whitespacesAndNewlines).joined()
         if cleaned.isEmpty { return nil }
+
+        // Reject any character that isn't an ASCII digit or a known separator.
+        let allowed = Set("0123456789" + decimalSep + groupSep)
+        guard cleaned.allSatisfy({ allowed.contains($0) }) else { return nil }
+
+        let decimalCount = cleaned.components(separatedBy: decimalSep).count - 1
+        let groupCount = cleaned.components(separatedBy: groupSep).count - 1
+
+        // At most one decimal point; grouping never appears after a decimal.
+        if decimalCount > 1 { return nil }
+        if decimalCount == 1, let dotIdx = cleaned.range(of: decimalSep) {
+            let fractional = cleaned[dotIdx.upperBound...]
+            if fractional.contains(groupSep) { return nil }
+        }
+
+        // Ambiguity guard: a single separator that is BOTH the grouping and
+        // a plausible decimal — "1,234" in en_US — is genuinely ambiguous.
+        // When the only separator present is the grouping separator, exactly
+        // once, followed by exactly 3 digits and no decimal separator, we
+        // cannot tell 1,234 (=1234) from 1,234 (=1.234). Refuse rather than
+        // silently pick one reading.
+        if decimalSep != groupSep,
+           decimalCount == 0,
+           groupCount == 1,
+           let gIdx = cleaned.range(of: groupSep) {
+            let trailing = cleaned[gIdx.upperBound...]
+            if trailing.count == 3, trailing.allSatisfy({ $0.isNumber }) {
+                return nil
+            }
+        }
+
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
-        formatter.locale = .current
-        if let number = formatter.number(from: cleaned) {
-            return number.doubleValue
-        }
-        // Fallback: a bare "12.50" with a period decimal in a comma-decimal
-        // locale won't parse above — try the period as the decimal separator.
-        return Double(cleaned)
+        formatter.locale = locale
+        // Reject trailing/garbage by requiring the formatter to consume it all.
+        guard let number = formatter.number(from: cleaned) else { return nil }
+        let value = number.doubleValue
+
+        // Non-positive amounts (0, "-5" → caught above by the allowed-char
+        // set, but 0 still reaches here) are never a valid cash-out.
+        guard value.isFinite, value > 0 else { return nil }
+        return value
     }
 
     private var selectedMethod: WalletPaymentMethod? {

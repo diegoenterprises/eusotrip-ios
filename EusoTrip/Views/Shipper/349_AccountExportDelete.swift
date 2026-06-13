@@ -47,7 +47,7 @@ private struct ExportDeleteBody: View {
                 if deleteCancelled { deleteCancelledCard }
                 if let err = actionError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 exportCard
-                deleteCard
+                if !deleteCancelled { deleteCard }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 56)

@@ -153,7 +153,6 @@ private enum ModeFilter: String, CaseIterable, Identifiable {
 
 struct ShipperControlTower: View {
     @Environment(\.palette) private var palette
-    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var store = ControlTowerStore()
     @State private var modeFilter: ModeFilter = .all

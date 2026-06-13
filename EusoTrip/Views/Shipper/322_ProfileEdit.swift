@@ -35,6 +35,26 @@ private struct ProfileEditBody: View {
     @State private var saved = false
     @State private var actionError: String? = nil
 
+    // Dirty-check baseline — the exact values `load()` (or the last
+    // successful `save()`) pulled from the server. `save()` diffs each
+    // field against this snapshot and only sends the ones that actually
+    // changed, so an untouched field is omitted from the request and the
+    // server (which keys every column on `input.X !== undefined`) leaves
+    // it alone. This prevents blank-overwrite at the source while still
+    // letting an explicit clear ("" different from a non-empty baseline)
+    // reach the server as a real value it can honor.
+    @State private var loaded = LoadedProfile()
+    private struct LoadedProfile {
+        var contactName = ""; var email = ""; var phone = ""
+        var address = ""; var website = ""
+        var city = ""; var state = ""; var zipCode = ""; var country = ""
+        var legalName = ""; var ein = ""; var description = ""
+    }
+
+    /// Allowed country codes for the picker. Kept in one place so the
+    /// `Picker` options and the load-time normalization can't drift.
+    private static let countryOptions = ["USA", "CA", "MX"]
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -98,7 +118,7 @@ private struct ProfileEditBody: View {
         VStack(alignment: .leading, spacing: 4) {
             Text("COUNTRY").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
             Picker("Country", selection: $country) {
-                ForEach(["USA", "CA", "MX"], id: \.self) { c in Text(c).tag(c) }
+                ForEach(Self.countryOptions, id: \.self) { c in Text(c).tag(c) }
             }
             .pickerStyle(.menu)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -152,8 +172,21 @@ private struct ProfileEditBody: View {
             contactName = p.contactName; email = p.email; phone = p.phone
             address = p.address; website = p.website
             city = p.city; state = p.state; zipCode = p.zipCode
-            if !p.country.isEmpty { country = p.country }
+            // Normalize the server's country against the picker allowlist.
+            // A value the picker can't render (legacy "United States",
+            // a full name, or anything outside ["USA","CA","MX"]) would
+            // leave the SwiftUI selection binding with no matching tag,
+            // breaking the picker. Fall back to the current safe default
+            // ("USA") rather than corrupt the control.
+            if Self.countryOptions.contains(p.country) { country = p.country }
             legalName = p.legalName; ein = p.ein; companyDescription = p.description
+            // Snapshot exactly what we just displayed (including the
+            // normalized `country`) as the dirty-check baseline.
+            loaded = LoadedProfile(
+                contactName: contactName, email: email, phone: phone,
+                address: address, website: website,
+                city: city, state: state, zipCode: zipCode, country: country,
+                legalName: legalName, ein: ein, description: companyDescription)
         } catch let apiErr as EusoTripAPIError {
             actionError = "Couldn't load profile: \(apiErr.errorDescription ?? "network error")"
         } catch {
@@ -164,11 +197,19 @@ private struct ProfileEditBody: View {
 
     private func save() async {
         sending = true; actionError = nil
+        // DIRTY-CHECK input. Every field is optional; a `nil` field is
+        // omitted entirely from the encoded JSON (synthesized `Encodable`
+        // uses `encodeIfPresent` for optionals), which the server reads as
+        // `input.X === undefined` and leaves that column untouched. Only
+        // fields whose current value differs from the loaded baseline are
+        // sent — so we never blank-overwrite an untouched field, and a
+        // field the user deliberately cleared ("" vs a non-empty baseline)
+        // still reaches the server as an explicit value it can honor.
         struct In: Encodable {
-            let contactName: String; let email: String; let phone: String
-            let address: String; let website: String
-            let city: String; let state: String; let zipCode: String; let country: String
-            let legalName: String; let ein: String; let description: String
+            let contactName: String?; let email: String?; let phone: String?
+            let address: String?; let website: String?
+            let city: String?; let state: String?; let zipCode: String?; let country: String?
+            let legalName: String?; let ein: String?; let description: String?
         }
         // Server echoes the persisted row back so we can re-confirm what landed.
         struct Out: Decodable {
@@ -178,12 +219,27 @@ private struct ProfileEditBody: View {
             let city: String?; let state: String?; let zipCode: String?; let country: String?
             let legalName: String?; let ein: String?; let description: String?
         }
+        // Returns the new value only when it differs from the baseline,
+        // otherwise nil (→ omitted from the request).
+        func diff(_ current: String, _ base: String) -> String? {
+            current == base ? nil : current
+        }
+        let input = In(
+            contactName: diff(contactName, loaded.contactName),
+            email:       diff(email, loaded.email),
+            phone:       diff(phone, loaded.phone),
+            address:     diff(address, loaded.address),
+            website:     diff(website, loaded.website),
+            city:        diff(city, loaded.city),
+            state:       diff(state, loaded.state),
+            zipCode:     diff(zipCode, loaded.zipCode),
+            country:     diff(country, loaded.country),
+            legalName:   diff(legalName, loaded.legalName),
+            ein:         diff(ein, loaded.ein),
+            description: diff(companyDescription, loaded.description))
         do {
-            let out: Out = try await EusoTripAPI.shared.mutation("shippers.updateProfile", input: In(
-                contactName: contactName, email: email, phone: phone, address: address, website: website,
-                city: city, state: state, zipCode: zipCode, country: country,
-                legalName: legalName, ein: ein, description: companyDescription))
-            // Re-prefill from the authoritative persisted values.
+            let out: Out = try await EusoTripAPI.shared.mutation("shippers.updateProfile", input: input)
+            // Re-prefill from the authoritative persisted values…
             if let v = out.contactName { contactName = v }
             if let v = out.email { email = v }
             if let v = out.phone { phone = v }
@@ -192,10 +248,17 @@ private struct ProfileEditBody: View {
             if let v = out.city { city = v }
             if let v = out.state { state = v }
             if let v = out.zipCode { zipCode = v }
-            if let v = out.country, !v.isEmpty { country = v }
+            if let v = out.country, Self.countryOptions.contains(v) { country = v }
             if let v = out.legalName { legalName = v }
             if let v = out.ein { ein = v }
             if let v = out.description { companyDescription = v }
+            // …and re-baseline so a second save in the same session only
+            // sends the next set of edits (not the ones we just persisted).
+            loaded = LoadedProfile(
+                contactName: contactName, email: email, phone: phone,
+                address: address, website: website,
+                city: city, state: state, zipCode: zipCode, country: country,
+                legalName: legalName, ein: ein, description: companyDescription)
             saved = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

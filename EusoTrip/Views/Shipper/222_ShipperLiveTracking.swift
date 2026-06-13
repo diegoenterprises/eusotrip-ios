@@ -147,7 +147,6 @@ final class ShipperLiveTrackingStore: ObservableObject {
 
 struct ShipperLiveTracking: View {
     @Environment(\.palette) private var palette
-    @Environment(\.openURL) private var openURL
     // Sheet→push (NAV remediation 2026-05-30): the per-load telemetry
     // detail renders in-stack via the surface's `\.rolePushDetail` layer
     // (slide-in + BespokeBackBar) instead of a slide-up sheet.
