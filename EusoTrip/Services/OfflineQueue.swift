@@ -24,13 +24,24 @@
 //        integrity footgun. Those stay strictly online-only and surface
 //        a hard error when offline.
 //
-//  Each entry carries the minimal payload + an idempotency key so a
-//  replay that races a manual retry (or a duplicate flush) is collapsed
-//  server-side instead of double-applying. The keys are generated at
-//  enqueue time and are stable across persistence — they survive an app
-//  kill / cold relaunch, which is the whole point: a driver who flips
-//  ON-DUTY in a dead spot, force-quits, and relaunches in coverage still
-//  gets that legal event up to the server.
+//  Each entry carries the minimal payload + an idempotency key, minted at
+//  enqueue and sent to the server on replay (as the optional
+//  `idempotencyKey` input field) so a replay that races a manual retry
+//  (or a duplicate flush) doesn't double-apply. The key is honored two
+//  ways, depending on the proc:
+//
+//      • sendMessage + submitPOD are record-creating — the server dedupes
+//        on (userId + idempotencyKey) and returns the prior result
+//        instead of inserting a duplicate row.
+//      • changeHosStatus + executeTransition + acceptLoad are naturally
+//        idempotent via the server's duty-status / FSM state guards
+//        (re-applying an already-applied state is a no-op); they accept
+//        the key only so its Zod schema doesn't strip/reject it.
+//
+//  The keys are stable across persistence — they survive an app kill /
+//  cold relaunch, which is the whole point: a driver who flips ON-DUTY in
+//  a dead spot, force-quits, and relaunches in coverage still gets that
+//  legal event up to the server, exactly once.
 //
 //  Reachability: there is no shared phone-wide network monitor today
 //  (only a local one inside 364_OfflineBanner), so — exactly like the
@@ -291,43 +302,58 @@ final class OfflineQueue: ObservableObject {
         pending.removeAll { $0.key == key }
     }
 
-    /// Dispatch one queued action to its real EusoTripAPI method. The
-    /// idempotency key is carried where the server schema accepts one;
-    /// for procs that don't (yet) take a key, the server-side mutation
-    /// is itself idempotent for the driver+load+state tuple.
+    /// Dispatch one queued action to its real EusoTripAPI method, passing
+    /// the action's stored idempotency key through to the server so a
+    /// replay collapses instead of double-applying:
+    ///
+    ///   • `sendMessage` / `submitPOD` are record-creating — the server
+    ///     dedupes on (userId + idempotencyKey) and returns the prior
+    ///     result instead of inserting a duplicate.
+    ///   • `changeHosStatus` / `executeTransition` / `acceptLoad` are
+    ///     naturally idempotent via the server's FSM / duty-status state
+    ///     guards (re-applying an already-applied state is a no-op); they
+    ///     accept the key only so its Zod schema doesn't strip/reject it.
+    ///
+    /// The key is minted at enqueue and persisted, so it is stable across
+    /// an app kill / cold relaunch — the same key reaches the server on
+    /// the first replay and on any racing manual retry.
     private func replay(_ action: QueuedAction) async throws {
         let api = EusoTripAPI.shared
         switch action {
-        case .changeHosStatus(let status, let location, let remark, let loadId, _, _):
+        case .changeHosStatus(let status, let location, let remark, let loadId, _, let key):
             let code = HOSDutyCode(rawValue: status) ?? .offDuty
             _ = try await api.hos.changeStatus(
                 status: code,
                 source: "ios-offline",
                 location: location,
                 remark: remark,
-                loadId: loadId
+                loadId: loadId,
+                idempotencyKey: key
             )
-        case .sendMessage(let conversationId, let content, let type, _, _):
+        case .sendMessage(let conversationId, let content, let type, _, let key):
             _ = try await api.messaging.sendMessage(
                 conversationId: conversationId,
                 content: content,
-                type: type
+                type: type,
+                idempotencyKey: key
             )
-        case .submitPOD(let loadId, let receiverName, let photoBase64, let signatureBase64, let notes, _, _):
+        case .submitPOD(let loadId, let receiverName, let photoBase64, let signatureBase64, let notes, _, let key):
             _ = try await api.pod.submitPOD(
                 loadId: loadId,
                 receiverName: receiverName,
                 photoBase64: photoBase64,
                 signatureBase64: signatureBase64,
-                notes: notes
+                notes: notes,
+                idempotencyKey: key
             )
-        case .executeTransition(let loadId, let transitionId, _, _):
+        case .executeTransition(let loadId, let transitionId, _, let key):
             _ = try await api.loadLifecycle.executeTransition(
                 loadId: loadId,
-                transitionId: transitionId
+                transitionId: transitionId,
+                idempotencyKey: key
             )
-        case .acceptLoad(let loadId, _, _):
-            _ = try await api.drivers.acceptLoad(loadId: loadId)
+        case .acceptLoad(let loadId, _, let key):
+            _ = try await api.drivers.acceptLoad(loadId: loadId, idempotencyKey: key)
         }
     }
 

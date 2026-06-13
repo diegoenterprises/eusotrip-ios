@@ -2342,7 +2342,8 @@ struct HOSAPI {
         odometer: Double? = nil,
         remark: String? = nil,
         loadId: String? = nil,
-        ts: Date = Date()
+        ts: Date = Date(),
+        idempotencyKey: String? = nil
     ) async throws -> HOSChangeStatusResult {
         // Server contract (MCP-verified at
         // `frontend/server/routers/hos.ts:94`) is:
@@ -2367,15 +2368,23 @@ struct HOSAPI {
         // schema. `remark` is mapped to `notes` which IS on the
         // server schema.
         _ = (source, lat, lon, odometer, loadId, ts)
+        // `idempotencyKey` is accepted but not relied upon for dedup:
+        // `hos.changeStatus` is naturally idempotent server-side via the
+        // §395 duty-status state guard (re-applying the same status is a
+        // no-op), so the offline-outbox key is only declared so Zod
+        // doesn't strip/reject it when the queue replays. Encoded only
+        // when non-nil so a normal online call stays byte-identical.
         struct Input: Encodable {
             let newStatus: String
             let location: String
             let notes: String?
+            let idempotencyKey: String?
         }
         let input = Input(
             newStatus: status.rawValue,
             location: location,
-            notes: remark
+            notes: remark,
+            idempotencyKey: idempotencyKey
         )
         return try await api.mutation("hos.changeStatus", input: input)
     }
@@ -3986,14 +3995,22 @@ struct PODAPI {
         receiverName: String,
         photoBase64: String? = nil,
         signatureBase64: String? = nil,
-        notes: String? = nil
+        notes: String? = nil,
+        idempotencyKey: String? = nil
     ) async throws -> PODAck {
+        // `pod.submitPOD` is a record-creating mutation, so a replayed
+        // offline-outbox entry would otherwise insert a duplicate POD.
+        // When `idempotencyKey` is present the server dedupes on
+        // (userId + idempotencyKey) and returns the prior result instead
+        // of inserting again. Encoded only when non-nil so a normal
+        // online submit stays byte-identical.
         struct Input: Encodable {
             let loadId: Int
             let receiverName: String
             let photoBase64: String?
             let signatureBase64: String?
             let notes: String?
+            let idempotencyKey: String?
         }
         return try await api.mutation(
             "pod.submitPOD",
@@ -4002,7 +4019,8 @@ struct PODAPI {
                 receiverName: receiverName,
                 photoBase64: photoBase64,
                 signatureBase64: signatureBase64,
-                notes: notes
+                notes: notes,
+                idempotencyKey: idempotencyKey
             )
         )
     }
@@ -4705,9 +4723,21 @@ struct DriversAPI {
     /// `drivers.acceptLoad` — driver takes ownership of the offered load.
     /// Server sets `driverId = currentUser.id`, `status = 'assigned'`.
     @discardableResult
-    func acceptLoad(loadId: String) async throws -> AcceptDeclineAck {
-        struct Input: Encodable { let loadId: String }
-        return try await api.mutation("drivers.acceptLoad", input: Input(loadId: loadId))
+    func acceptLoad(loadId: String, idempotencyKey: String? = nil) async throws -> AcceptDeclineAck {
+        // `drivers.acceptLoad` is naturally idempotent server-side: the
+        // accept FSM guard only fires on an offered load and is a no-op
+        // once the driver already owns it, so the offline-outbox key is
+        // declared purely so Zod doesn't strip/reject it on replay.
+        // Encoded only when non-nil — a normal online accept is
+        // byte-identical.
+        struct Input: Encodable {
+            let loadId: String
+            let idempotencyKey: String?
+        }
+        return try await api.mutation(
+            "drivers.acceptLoad",
+            input: Input(loadId: loadId, idempotencyKey: idempotencyKey)
+        )
     }
 
     /// `drivers.declineLoad` — driver refuses the offered load. Server
@@ -5663,16 +5693,24 @@ struct MessagingAPI {
     func sendMessage(
         conversationId: String,
         content: String,
-        type: String = "text"
+        type: String = "text",
+        idempotencyKey: String? = nil
     ) async throws -> MessagingSendResult {
+        // `messages.sendMessage` is a record-creating mutation, so a
+        // replayed offline-outbox entry would otherwise post a duplicate
+        // message. When `idempotencyKey` is present the server dedupes on
+        // (userId + idempotencyKey) and returns the prior result instead
+        // of inserting again. Encoded only when non-nil so a normal
+        // online send stays byte-identical.
         struct Input: Encodable {
             let conversationId: String
             let content: String
             let type: String
+            let idempotencyKey: String?
         }
         return try await api.mutation(
             "messages.sendMessage",
-            input: Input(conversationId: conversationId, content: content, type: type)
+            input: Input(conversationId: conversationId, content: content, type: type, idempotencyKey: idempotencyKey)
         )
     }
 
@@ -13644,14 +13682,22 @@ struct LoadLifecycleAPI {
         transitionId: String,
         location: ExecuteLocation? = nil,
         data: [String: String]? = nil,
-        compliance: ComplianceBlock? = nil
+        compliance: ComplianceBlock? = nil,
+        idempotencyKey: String? = nil
     ) async throws -> TransitionResult {
+        // `loadLifecycle.executeTransition` is naturally idempotent
+        // server-side: the FSM guard rejects a transition that doesn't
+        // apply to the load's current state, so replaying an already-
+        // landed flip is a no-op. The offline-outbox key is declared
+        // purely so Zod doesn't strip/reject it on replay. Encoded only
+        // when non-nil — a normal online transition is byte-identical.
         struct Input: Encodable {
             let loadId: String
             let transitionId: String
             let location: ExecuteLocation?
             let data: [String: String]?
             let complianceChecks: ComplianceBlock?
+            let idempotencyKey: String?
         }
         return try await api.mutation(
             "loadLifecycle.executeTransition",
@@ -13660,7 +13706,8 @@ struct LoadLifecycleAPI {
                 transitionId: transitionId,
                 location: location,
                 data: data,
-                complianceChecks: compliance
+                complianceChecks: compliance,
+                idempotencyKey: idempotencyKey
             )
         )
     }
