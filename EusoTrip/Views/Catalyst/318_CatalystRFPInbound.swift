@@ -104,7 +104,7 @@ private struct RFPInboundBody: View {
                 Text("CATALYST · RFP · INBOUND").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Inbound RFPs").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("MATRIX-50 contract awards").font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("Contract awards").font(EType.caption).foregroundStyle(palette.textSecondary)
             Text("\(rfps.count) RFPS · \(envelope?.activeRFPs ?? 0) ACTIVE")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textSecondary)
         }

@@ -1079,6 +1079,10 @@ enum ShipperWebToNativeMap {
         // so 205 never mounts on the registry sentinel (Wave I1).
         case "loads":                 return segments.count >= 3 ? "205" : "201"
         case "load":                  return "205"
+        case "market-intelligence",
+             "market-pricing",
+             "market",
+             "pricing":               return "330"
         default:                      return nil
         }
     }

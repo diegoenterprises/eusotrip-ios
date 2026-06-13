@@ -400,7 +400,7 @@ extension View {
     ZStack {
         Theme.dark.bgPage.ignoresSafeArea()
         VStack(spacing: 0) {
-            BespokeBackBar(title: "Contract · EUSO-2120 Volume Commitment That Is Very Long") {}
+            BespokeBackBar(title: "Contract · Volume Commitment That Is Very Long") {}
             BespokeBackBar(title: "Live Tracking") {}
             BespokeBackBar(title: nil) {}
             Spacer()

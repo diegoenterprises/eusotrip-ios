@@ -304,7 +304,7 @@ struct ShipperRFPDetail: View {
                 .foregroundStyle(palette.textPrimary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.78)
-            Text("Eusorone Technologies · \(bids.count) bids · MATRIX-50")
+            Text("Eusorone Technologies · \(bids.count) bids")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }

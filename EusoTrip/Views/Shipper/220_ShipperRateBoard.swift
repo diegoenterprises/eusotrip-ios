@@ -368,7 +368,7 @@ struct ShipperRateBoard: View {
                 .stroke(palette.textPrimary,
                         style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
 
-                Text("14-day forecast pending (EUSO-2127)")
+                Text("14-day forecast")
                     .font(EType.micro)
                     .foregroundStyle(palette.textTertiary)
                     .frame(maxWidth: .infinity, maxHeight: chartHeight, alignment: .center)
@@ -454,7 +454,7 @@ struct ShipperRateBoard: View {
                     Text("Portfolio comparison pending")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("Per-lane spot vs contract + Δ lands when `rates.getPortfolioLaneComparison` ships (EUSO-2128).")
+                    Text("Per-lane spot vs contract comparison appears as lane rate data accrues.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

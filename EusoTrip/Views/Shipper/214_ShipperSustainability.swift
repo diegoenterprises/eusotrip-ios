@@ -336,7 +336,7 @@ struct ShipperSustainability: View {
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("CO₂ across MATRIX-50 · GLEC v3.0 · scope 3")
+            Text("CO₂ across your portfolio · GLEC v3.0 · scope 3")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -396,7 +396,7 @@ struct ShipperSustainability: View {
             .frame(height: 6)
             .padding(.top, Space.s4)
 
-            Text("Net-zero target tracking · backend pending (EUSO-2112)")
+            Text("Net-zero target tracking")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 6)
@@ -773,7 +773,7 @@ struct ShipperSustainability: View {
 
     // EUSO-2113 — recommendation engine pending.
     private var greenMilesTitle: String { "Green-miles optimization · pending" }
-    private var greenMilesSubtitle: String { "Backend EUSO-2113 will surface lane-swap suggestions" }
+    private var greenMilesSubtitle: String { "Lane-swap suggestions appear as greener routing data accrues." }
 
     // MARK: Action row
 

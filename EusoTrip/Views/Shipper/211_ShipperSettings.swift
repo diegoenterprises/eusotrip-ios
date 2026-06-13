@@ -88,7 +88,7 @@ struct ShipperSettings: View {
     private var aboutHeadline: String {
         "EusoTrip 2027 · v\(Self.shortVersion) (build \(Self.buildNumber))"
     }
-    private let aboutSub = "Doctrine §11 Diego canon · MATRIX-50-2026-04-26 active"
+    private let aboutSub = "EusoTrip 2027 · Eusorone Technologies, Inc"
 
     // §11.4 SECURITY card placeholder copy (EUSO-2105 / EUSO-2106).
     // Mirrors Diego's actual device stack per persona canon — never

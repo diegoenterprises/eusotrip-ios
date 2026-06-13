@@ -322,7 +322,7 @@ struct ShipperFocusModeWidget: View {
             Text("Powered by FocusFilter · iOS Focus engine")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
-            Text("companyId 1 · Eusorone Technologies · MATRIX-50-2026-04-26")
+            Text("Eusorone Technologies, Inc")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
         }

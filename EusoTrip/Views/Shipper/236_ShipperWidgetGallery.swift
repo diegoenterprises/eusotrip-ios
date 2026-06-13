@@ -66,7 +66,7 @@ struct ShipperWidgetGallery: View {
         headline:          "Lane + 8-stage strip + ETA",
         entryIdAndDims:    "MediumWidgetEntry · WidgetKit · 338×158",
         payloadEyebrow:    "PAYLOAD · 7 ELEMENTS",
-        payloadCaption:    "MATRIX-50 row 3 · NH₃",
+        payloadCaption:    "Lane + ETA · NH₃",
         relativeAgo:       "added 4d ago",
         ctaLabel:          "Reinstall widget",
         // 0 lane, 1 equipment, 2 8-stage strip, 3 ETA, 4 status pill,
@@ -315,7 +315,7 @@ struct ShipperWidgetGallery: View {
             Text("Powered by WidgetKit · Apple Home Screen widgets")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
-            Text("companyId 1 · Eusorone Technologies · MATRIX-50-2026-04-26")
+            Text("Eusorone Technologies, Inc")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
         }

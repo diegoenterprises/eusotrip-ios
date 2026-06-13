@@ -718,7 +718,7 @@ struct ShipperHotZones: View {
                         .minimumScaleFactor(0.85)
                     // EUSO-2138 — recommendation engine not shipped; copy
                     // surfaces a generic invitation to post against capacity.
-                    Text("Cold zone capacity opens · save vs spot pending EUSO-2138")
+                    Text("Cold-zone savings comparison appears as zone capacity data accrues.")
                         .font(.system(size: 11))
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1)

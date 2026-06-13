@@ -72,7 +72,7 @@ struct ShipperAppIntents: View {
         headline:          "Hey Siri, \u{201C}post that load again\u{201D}",
         bindingAndCount:   "PostLoadIntent · loads.create · 5\u{00D7} recent",
         enrollmentEyebrow: "INTENTS · 7 ENROLLED",
-        enrollmentCaption: "MATRIX-50 · last LD-260427-A38FB12C7E",
+        enrollmentCaption: "7 enrolled · last run 12m ago",
         relativeAgo:       "ran 12m ago",
         ctaLabel:          "Run shortcut",
         // 0 PostLoadIntent, 1 LoadStatusIntent, 2 NextDeliveryIntent,
@@ -87,7 +87,7 @@ struct ShipperAppIntents: View {
             initials:     "PL",
             title:        "Post a load",
             siriPhrase:   "post that load again",
-            binding:      "loads.create · MATRIX-50",
+            binding:      "loads.create",
             enabled:      true
         ),
         Intent(
@@ -354,7 +354,7 @@ struct ShipperAppIntents: View {
             Text("Powered by App Intents · Apple Siri Shortcuts")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
-            Text("companyId 1 · Eusorone Technologies · MATRIX-50-2026-04-26")
+            Text("Eusorone Technologies, Inc")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
         }

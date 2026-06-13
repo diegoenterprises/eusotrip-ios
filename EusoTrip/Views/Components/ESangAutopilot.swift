@@ -700,6 +700,8 @@ enum eSangRoleDispatcher {
              "track":                       return "222"
         case "rate-board", "rates":         return "220"
         case "wallet", "eusowallet":        return "290"
+        case "market-intelligence", "market-pricing",
+             "market", "pricing":           return "330"
         default:                            return nil
         }
     }

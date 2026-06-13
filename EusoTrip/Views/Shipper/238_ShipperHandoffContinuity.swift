@@ -74,7 +74,7 @@ struct ShipperHandoffContinuity: View {
         headline:           "Pick up on Mac",
         bindingAndCount:    "NSUserActivity · LD-260427-A38FB12C7E",
         passthroughEyebrow: "DEVICES · 3 PAIRED",
-        passthroughCaption: "MATRIX-50 · row 1 · Houston\u{2192}Dallas",
+        passthroughCaption: "Houston\u{2192}Dallas",
         relativeAgo:        "passed 38s ago",
         ctaLabel:           "Run on Mac",
         // 0 iPhone, 1 MacBook Pro, 2 iPad
@@ -334,7 +334,7 @@ struct ShipperHandoffContinuity: View {
             Text("Powered by Continuity · Apple Handoff · Universal Clipboard")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
-            Text("companyId 1 · Eusorone Technologies · MATRIX-50-2026-04-26")
+            Text("Eusorone Technologies, Inc")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
         }

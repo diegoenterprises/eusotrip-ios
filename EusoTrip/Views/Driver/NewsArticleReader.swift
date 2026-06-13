@@ -479,7 +479,118 @@ struct NewsArticleReader: View {
         .background(palette.bgPage)
     }
 
+    /// The web load failed (bad/blocked URL, ATS refusal, timeout, or a
+    /// publisher CSP/X-Frame-Options block). Founder doctrine is to keep
+    /// the driver in-app, so when we already hold a substantial
+    /// `article.summary` from the feed payload we don't push them to
+    /// Safari — we render that summary as a clean, scrollable, selectable
+    /// in-app reader with the same reader chrome (source pill + category)
+    /// and demote Retry / Open-in-Safari to secondary actions. Only when
+    /// the summary is too thin to read on its own do we fall back to the
+    /// bare Retry / Open-in-Safari card.
+    @ViewBuilder
     private func errorOverlay(url: URL) -> some View {
+        // ~100 chars is roughly a full sentence — below that the summary
+        // is a headline fragment, not something worth reading on its own.
+        if article.summary.trimmingCharacters(in: .whitespacesAndNewlines).count >= 100 {
+            summaryFallback(url: url)
+        } else {
+            bareRetryCard(url: url)
+        }
+    }
+
+    /// In-app readable view of `article.summary` — the graceful path when
+    /// the publisher's page won't load but we have real text to show.
+    private func summaryFallback(url: URL) -> some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    // Reader eyebrow — source + category, matching the
+                    // top-bar and the translated-article reader.
+                    HStack(spacing: Space.s2) {
+                        CategoryTag(category: article.typedCategory, compact: true)
+                        Text(article.source)
+                            .font(EType.micro).tracking(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                            .lineLimit(1)
+                    }
+
+                    Text(article.title)
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(article.summary)
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineSpacing(6)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    // Honest note: this is the feed summary, not the full
+                    // publisher article. Offer the full page without
+                    // implying the in-app load is "coming".
+                    Text("Showing the summary — the full article page couldn't load.")
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                        .lineSpacing(3)
+
+                    Spacer(minLength: Space.s6)
+                }
+                .padding(.horizontal, Space.s4)
+                .padding(.top, Space.s4)
+                .padding(.bottom, Space.s6)
+            }
+
+            IridescentHairline()
+
+            // Secondary actions — try the web view again, or open the
+            // publisher's page in the in-app Safari modal.
+            HStack(spacing: Space.s2) {
+                Button {
+                    retryWebLoad(url: url)
+                } label: {
+                    Text("Try web view")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(palette.bgCardSoft)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderSoft)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    inAppSafariSession = NewsSafariSession(id: UUID(), url: url)
+                } label: {
+                    Text("Open in Safari")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(palette.bgCardSoft)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderFaint)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(palette.bgPage)
+    }
+
+    /// Thin-summary path: nothing substantial to read in-app, so keep
+    /// the original Retry / Open-in-Safari card.
+    private func bareRetryCard(url: URL) -> some View {
         VStack(spacing: Space.s3) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 28, weight: .semibold))
@@ -497,14 +608,7 @@ struct NewsArticleReader: View {
             }
             HStack(spacing: Space.s2) {
                 Button {
-                    // Retry — re-hit the original article URL and, if
-                    // a translation was active before the failure, the
-                    // coordinator will re-run the Translate injection
-                    // on the fresh load.
-                    failedToLoad = false
-                    isLoading = true
-                    loadProgress = 0
-                    webViewLoadURL?(url)
+                    retryWebLoad(url: url)
                 } label: {
                     Text("Retry")
                         .font(EType.bodyStrong)
@@ -538,6 +642,16 @@ struct NewsArticleReader: View {
         .padding(Space.s5)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(palette.bgPage)
+    }
+
+    /// Re-hit the original article URL. If a translation was active
+    /// before the failure, the coordinator re-runs the Translate
+    /// injection on the fresh load.
+    private func retryWebLoad(url: URL) {
+        failedToLoad = false
+        isLoading = true
+        loadProgress = 0
+        webViewLoadURL?(url)
     }
 
     private var noURLState: some View {
@@ -633,6 +747,22 @@ private struct ArticleWebView: UIViewRepresentable {
             webView.evaluateJavaScript(js) { value, _ in
                 completion((value as? String) ?? "")
             }
+        }
+
+        // URL-validity guard: WKWebView will choke on a malformed feed
+        // URL (no scheme, mailto:, javascript:, a bare relative path) —
+        // sometimes with a stuck spinner rather than a clean didFail.
+        // We only ever want to drive the web view to real web pages.
+        // Anything else short-circuits to the failed state so the
+        // reader's in-app summary fallback takes over immediately,
+        // keeping the driver inside EusoTrip instead of stalling.
+        let scheme = url.scheme?.lowercased()
+        guard scheme == "http" || scheme == "https" else {
+            Task { @MainActor in
+                isLoading = false
+                failed = true
+            }
+            return webView
         }
 
         webView.load(URLRequest(url: url))

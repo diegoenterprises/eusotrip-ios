@@ -386,7 +386,7 @@ struct ShipperAgreements: View {
                 .font(.system(size: 34, weight: .bold))
                 .tracking(-0.6)
                 .foregroundStyle(palette.textPrimary)
-            Text("Eusorone Technologies · volume commitments · MATRIX-50")
+            Text("Eusorone Technologies · volume commitments")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
