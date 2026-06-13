@@ -3627,6 +3627,16 @@ struct ChatMessage: Identifiable, Equatable {
     /// bubble renders the photo-placeholder tile — the raw
     /// "[image] filename.jpg" DB marker must NEVER reach a bubble as text.
     var attachmentUnavailable: Bool = false
+    /// Unified Outbox state: true when this outbound message was sent
+    /// while offline and persisted to `OfflineQueue.shared` for replay.
+    /// The bubble shows a "Queued · will send when you reconnect" footer
+    /// instead of the read receipt; cleared (the message stamps a real
+    /// serverId) when the outbox replays it on reconnect.
+    var queuedOffline: Bool = false
+    /// The outbox idempotency key for a `queuedOffline` bubble, so the
+    /// `.eusoOutboxReplayed` observer can match the replayed action back
+    /// to its optimistic bubble and reconcile it.
+    var outboxKey: String? = nil
 
     enum Sender: String, Equatable { case me, other }
 }
