@@ -58,6 +58,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - tRPC decode shapes
 
@@ -170,6 +171,13 @@ private struct CatalystAwardedCelM04Body: View {
 
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
+
+    /// Decoded HERE Routing v8 section polyline for the awarded
+    /// pickup→delivery corridor — the REAL road geometry painted on the
+    /// basemap (mirrors the Driver 013 pattern). Empty until the route
+    /// resolves; the map then falls back to the straight pickup→delivery
+    /// base line, never a fabricated bezier "map" or a hardcoded path.
+    @State private var routePolyline: [HereLatLng] = []
 
     // MARK: Derived — CEL identity (from catalysts.getProfile)
 
@@ -664,95 +672,130 @@ private struct CatalystAwardedCelM04Body: View {
         "LANE LOCKED · \(laneMilesDisplay) · Tender window: pending"
     }
 
-    private var laneMap: some View {
-        ZStack(alignment: .topLeading) {
-            Canvas { ctx, size in
-                // Solid route line origin → destination (post-award flip).
-                var route = Path()
-                route.move(to: CGPoint(x: size.width * 0.16, y: size.height * 0.62))
-                route.addQuadCurve(to: CGPoint(x: size.width * 0.80, y: size.height * 0.40),
-                                   control: CGPoint(x: size.width * 0.50, y: size.height * 0.22))
-                ctx.stroke(route, with: .linearGradient(
-                    Gradient(colors: [Brand.blue, Brand.magenta]),
-                    startPoint: .zero, endPoint: CGPoint(x: size.width, y: 0)),
-                    lineWidth: 2.4)
+    /// Resolves the awarded load's REAL pickup → delivery coordinates off
+    /// the `loads.getById` envelope (`pickupLocation.lat/.lng` +
+    /// `deliveryLocation.lat/.lng` — the slots the server self-heals via
+    /// HERE geocode). Returns nil (→ honest "awaiting coords" placeholder)
+    /// when either endpoint hasn't been geocoded yet. The exact gate
+    /// 502_CatalystMatchDetail.laneCoords uses — non-nil + non-zero on
+    /// both lat/lng. No fabrication, no client-side place-name geocoding.
+    private var laneCoords: (pickupLat: Double, pickupLng: Double,
+                             deliveryLat: Double, deliveryLng: Double)? {
+        guard let p = load?.pickupLocation,
+              let d = load?.deliveryLocation,
+              let pLat = p.lat, let pLng = p.lng,
+              let dLat = d.lat, let dLng = d.lng,
+              !(pLat == 0 && pLng == 0),
+              !(dLat == 0 && dLng == 0) else { return nil }
+        return (pLat, pLng, dLat, dLng)
+    }
 
-                // Dashed dispatch route from the CEL hub to the pickup.
-                var hub = Path()
-                hub.move(to: CGPoint(x: size.width * 0.66, y: size.height * 0.26))
-                hub.addQuadCurve(to: CGPoint(x: size.width * 0.16, y: size.height * 0.62),
-                                 control: CGPoint(x: size.width * 0.42, y: size.height * 0.08))
-                ctx.stroke(hub, with: .color(palette.textTertiary),
-                           style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+    /// Real HERE map of the awarded lane (replaces the former decorative
+    /// Canvas bezier). Renders ONLY when the server provided real
+    /// pickup/delivery coords; otherwise an honest "awaiting coords"
+    /// placeholder — never a fabricated route. The route line prefers the
+    /// decoded HERE Routing v8 section polyline (curved road geometry,
+    /// fetched in `refreshRoutePolyline`) and falls back to the straight
+    /// pickup→delivery base line until that resolves (mirrors Driver 013).
+    @ViewBuilder
+    private var laneMap: some View {
+        if let coords = laneCoords {
+            let midLat = (coords.pickupLat + coords.deliveryLat) / 2
+            let midLng = (coords.pickupLng + coords.deliveryLng) / 2
+            let straight: [HereLatLng] = [
+                HereLatLng(coords.pickupLat, coords.pickupLng),
+                HereLatLng(coords.deliveryLat, coords.deliveryLng)
+            ]
+            // Prefer the decoded HERE section polyline (real road geometry);
+            // fall back to the straight pickup→delivery line until it lands.
+            let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : straight
+            ZStack(alignment: .topLeading) {
+                HereLiveMapView(
+                    center: .init(midLat, midLng),
+                    zoom: 6,
+                    route: line,
+                    baseLayers: [
+                        .route(polyline: line, colorHex: "#1473FF"),
+                        .markers([
+                            .init(at: .init(coords.pickupLat, coords.pickupLng),
+                                  kind: .pickup, label: originPinLabel),
+                            .init(at: .init(coords.deliveryLat, coords.deliveryLng),
+                                  kind: .delivery, label: destPinLabel)
+                        ])
+                    ],
+                    addOns: .shipperTracking
+                )
+                .frame(height: 120)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+
+                // AWARDED chip overlay (top-right · single post-award member)
+                HStack {
+                    Spacer(minLength: 0)
+                    Text("AWARDED")
+                        .font(.system(size: 7, weight: .heavy))
+                        .tracking(0.3)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8)
+                        .frame(height: 14)
+                        .background(LinearGradient.primary)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                .padding(10)
+
+                // LANE LOCKED banner (bottom-left)
+                VStack {
+                    Spacer(minLength: 0)
+                    Text(laneLockedBanner)
+                        .font(.system(size: 8, weight: .heavy))
+                        .tracking(0.3)
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(palette.bgCard.opacity(0.85))
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                .padding(12)
             }
             .frame(height: 120)
-
-            // Pins (solid) — placed in the same proportional spots.
-            GeometryReader { geo in
-                let w = geo.size.width
-                let h: CGFloat = 120
-                ZStack {
-                    Circle().fill(LinearGradient.diagonal).frame(width: 12, height: 12)
-                        .position(x: w * 0.16, y: h * 0.62)
-                    Circle().fill(LinearGradient.diagonal).frame(width: 12, height: 12)
-                        .position(x: w * 0.80, y: h * 0.40)
-                    Circle().strokeBorder(LinearGradient.diagonal, lineWidth: 1.4)
-                        .frame(width: 14, height: 14)
-                        .position(x: w * 0.66, y: h * 0.26)
-                    Text(originPinLabel)
+            .frame(maxWidth: .infinity)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        } else {
+            // Coord gate (Driver 013 / 502 pattern): no real fix on one or
+            // both endpoints yet (awarded load carries only city names) —
+            // honest placeholder, never a demo bezier, never a client-side
+            // geocode of the city string.
+            ZStack {
+                VStack(spacing: 6) {
+                    Image(systemName: "map")
+                        .font(.system(size: 18, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                    Text("Awaiting lane coordinates")
+                        .font(.system(size: 11, weight: .heavy))
+                        .tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    Text(laneLockedBanner)
                         .font(.system(size: 8, weight: .heavy))
-                        .foregroundStyle(palette.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .position(x: w * 0.16 + 30, y: h * 0.62 + 12)
-                    Text(destPinLabel)
-                        .font(.system(size: 8, weight: .heavy))
-                        .foregroundStyle(palette.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .position(x: w * 0.80, y: h * 0.40 - 14)
-                    Text("CEL hub")
-                        .font(.system(size: 7))
+                        .tracking(0.3)
                         .foregroundStyle(palette.textSecondary)
-                        .position(x: w * 0.66, y: h * 0.26 + 14)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
             }
             .frame(height: 120)
-
-            // AWARDED chip overlay (top-right · single post-award member)
-            HStack {
-                Spacer(minLength: 0)
-                Text("AWARDED")
-                    .font(.system(size: 7, weight: .heavy))
-                    .tracking(0.3)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8)
-                    .frame(height: 14)
-                    .background(LinearGradient.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            }
-            .padding(10)
-
-            // LANE LOCKED banner (bottom-left)
-            VStack {
-                Spacer(minLength: 0)
-                Text(laneLockedBanner)
-                    .font(.system(size: 8, weight: .heavy))
-                    .tracking(0.3)
-                    .foregroundStyle(LinearGradient.diagonal)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
-            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         }
-        .frame(height: 120)
-        .frame(maxWidth: .infinity)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
     // MARK: - Roster card (awarded CEL + every losing competitor)
@@ -1146,6 +1189,42 @@ private struct CatalystAwardedCelM04Body: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
+    // MARK: - HERE route geometry (Driver 013 pattern)
+
+    /// Resolves the awarded pickup→delivery corridor via HERE Routing v8
+    /// and decodes its section polyline into the live route line painted
+    /// on the basemap — the real curved road geometry, not a straight
+    /// 2-point segment or a decorative bezier. Truck-aware via the default
+    /// `.standardUSSemiLoaded` profile (this surface holds a `LoadDetail`,
+    /// not the full `Load` that `TruckProfile.from(load:)` needs; the
+    /// default profile is the same baseEquipment `HereRoutingClient`
+    /// applies). On any failure (missing coords, HERE error) the polyline
+    /// stays empty and the map keeps the straight pickup→delivery base
+    /// line — never a fabricated path.
+    @MainActor
+    private func refreshRoutePolyline() async {
+        guard let coords = laneCoords else {
+            routePolyline = []
+            return
+        }
+        let stops = HereStops(
+            origin: CLLocationCoordinate2D(latitude: coords.pickupLat, longitude: coords.pickupLng),
+            destination: CLLocationCoordinate2D(latitude: coords.deliveryLat, longitude: coords.deliveryLng)
+        )
+        do {
+            let resp = try await HereRoutingClient.shared.route(
+                stops: stops, profile: .standardUSSemiLoaded)
+            guard let section = resp.routes.first?.sections.first else {
+                routePolyline = []
+                return
+            }
+            let decoded = HereRoutingClient.polyline(for: section)
+            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
+        } catch {
+            routePolyline = []
+        }
+    }
+
     // MARK: - Network
 
     private func fetch() async {
@@ -1178,6 +1257,12 @@ private struct CatalystAwardedCelM04Body: View {
             self.bids     = (try? await bidsTask)     ?? []
             self.drivers  = (try? await driversTask)  ?? []
             self.identity = (try? await identityTask) ?? nil
+
+            // Once the load (and thus its real pickup/delivery coords) is
+            // on file, fetch + decode the truck route so the lane map
+            // paints the real road geometry instead of a straight line.
+            // Honest no-op when the load lacks geocoded endpoints.
+            await refreshRoutePolyline()
         } catch {
             self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

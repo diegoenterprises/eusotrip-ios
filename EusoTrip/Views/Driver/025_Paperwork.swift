@@ -28,6 +28,27 @@ struct Paperwork: View {
     @State private var showBol: Bool = false
     @State private var isStartingBreak: Bool = false
 
+    // MARK: - POD desync auto-advance (FSM owns pod_pending now)
+    //
+    // BLOCKER fix (2026-06-13): after `pod.submitPOD` the load lands at
+    // `unloaded` and the server no longer force-sets `pod_pending` (the
+    // FSM owns that hop). Without an explicit nudge the POD flow dead-ends
+    // here with the driver stuck at `unloaded`. On hydrate we detect that
+    // status and fire UNLOADED_TO_POD_PENDING once via the live lifecycle
+    // path (which auto-captures GPS), so the close-out advances on its own.
+
+    /// One-shot guard so the auto-advance fires at most once per screen
+    /// mount and only against the `unloaded` status. Flips true the moment
+    /// we attempt the transition (success or fail) so a re-entrant `.task`
+    /// or a refresh can't double-fire it.
+    @State private var didAttemptPodAdvance: Bool = false
+
+    /// Honest failure surface for the auto-advance. nil when the hop
+    /// succeeded or was never needed; carries the real server/transport
+    /// reason when UNLOADED_TO_POD_PENDING is rejected — never swallowed,
+    /// never faked into a "done" state.
+    @State private var podAdvanceError: String?
+
     // MARK: - Live close-out sources (real procs only; honest em-dash otherwise)
     //
     // De-fabrication (2026-06-07): the BOL header (#, shipper/consignee,
@@ -259,6 +280,7 @@ struct Paperwork: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                podAdvanceBanner
                 bolCard
                 metricStrip
                 breakCard
@@ -349,6 +371,52 @@ struct Paperwork: View {
             }
         }
         .padding(.top, 4)
+    }
+
+    // MARK: POD auto-advance banner (honest failure surface)
+
+    /// Renders only when the UNLOADED → POD PENDING auto-advance failed.
+    /// Carries the real server/transport reason so the driver knows the
+    /// close-out is stalled rather than silently believing it advanced.
+    @ViewBuilder
+    private var podAdvanceBanner: some View {
+        if let msg = podAdvanceError {
+            HStack(alignment: .top, spacing: Space.s3) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Brand.warning)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("POD STEP STALLED")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(palette.textTertiary)
+                    Text(msg)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    Task {
+                        didAttemptPodAdvance = false
+                        podAdvanceError = nil
+                        await lifecycle.refresh()
+                        await advancePodIfUnloaded()
+                    }
+                } label: {
+                    Text("Retry")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(Brand.warning)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(Space.s4)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(Brand.warning.opacity(0.5), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        }
     }
 
     // MARK: BOL card
@@ -650,6 +718,63 @@ struct Paperwork: View {
                     freeTimeMinutes: freeTimeMinutesDefault,
                     cargoType: activeLoad?.cargoType ?? "general"
                 )
+        }
+
+        // POD desync fix — once the load + its lifecycle have hydrated,
+        // auto-advance off `unloaded` so the close-out doesn't dead-end.
+        await advancePodIfUnloaded()
+    }
+
+    /// If the hydrated load is sitting at `unloaded`, fire the
+    /// UNLOADED_TO_POD_PENDING lifecycle transition once so the POD flow
+    /// advances without the driver manually nudging it. The FSM now owns
+    /// `pod_pending` (the server stopped force-setting it after
+    /// `pod.submitPOD`), so this screen is responsible for the hop.
+    ///
+    /// Guarded twice over: `didAttemptPodAdvance` makes it one-shot, and
+    /// the status check makes it fire ONLY for `unloaded` — never for a
+    /// load already at `pod_pending`/`delivered`/etc. The transition goes
+    /// through `lifecycle.execute(...)`, which auto-captures the device GPS
+    /// fix. On failure we surface the real reason on `podAdvanceError`
+    /// rather than pretending the load advanced.
+    private func advancePodIfUnloaded() async {
+        guard !didAttemptPodAdvance else { return }
+
+        // Resolve the live status, preferring the lifecycle's last-applied
+        // state over the load envelope's column (they should agree, but the
+        // FSM is the source of truth for the current hop).
+        let status = (lifecycle.currentState ?? activeLoad?.status ?? "").lowercased()
+        guard status == "unloaded" else { return }
+
+        // Mark the attempt before firing so a re-entrant `.task` (the screen
+        // re-runs hydration on re-appear) can't double-issue the transition.
+        didAttemptPodAdvance = true
+
+        // Find the server-offered UNLOADED_TO_POD_PENDING hop. The FSM
+        // exposes it in `availableTransitions` for a load at `unloaded`;
+        // matching by `transitionId` keeps us aligned with the canonical
+        // name (DriverNavController issues the same id for 024 → 025).
+        let target = lifecycle.availableTransitions.first {
+            $0.transitionId.uppercased() == "UNLOADED_TO_POD_PENDING"
+        }
+        guard let transition = target else {
+            // No legal hop on the wire — honestly say so instead of forging
+            // an advance. This means the FSM doesn't yet offer it (e.g. a
+            // server-side guard hasn't cleared), which is the truth.
+            podAdvanceError = "POD step couldn't auto-advance — the lifecycle did not offer UNLOADED → POD PENDING for this load. Pull to refresh or contact dispatch."
+            return
+        }
+
+        // `execute(...)` auto-captures GPS and refreshes the lifecycle on
+        // success. On failure it sets `lifecycle.lastError`; mirror that
+        // honestly so the driver sees a real reason, not a dead-end.
+        let ok = await lifecycle.execute(transition)
+        if ok {
+            podAdvanceError = nil
+        } else {
+            let reason = lifecycle.lastError?.localizedDescription
+            podAdvanceError = "POD step couldn't auto-advance" +
+                (reason.map { " — \($0)" } ?? " — the lifecycle transition was rejected. Pull to refresh or contact dispatch.")
         }
     }
 

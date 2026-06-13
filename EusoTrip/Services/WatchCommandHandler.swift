@@ -197,12 +197,139 @@ final class WatchCommandHandler: NSObject, ObservableObject {
     /// Pulse sends `esang.exchange` after every wrist conversation round-trip.
     /// We treat it like an activation + surface the transcript so the iOS
     /// eSang chat has the latest exchange preloaded if the driver taps through.
+    ///
+    /// Persistence: the wrist already SPOKE the reply locally, but that voice
+    /// turn lived only on the watch. We now write it through the real
+    /// `messages.sendMessage` path so the exchange reaches the backend and
+    /// shows up in the driver's ESANG thread on the phone/web like any other
+    /// message. The wrist envelope carries no `conversationId`, so we resolve
+    /// a sensible default (load thread if the wrist supplied a `loadId`,
+    /// otherwise the existing ESANG/assistant conversation). If we genuinely
+    /// can't resolve a conversation, we DON'T fabricate one — we keep the
+    /// UI-cache + report the honest gap in the reply dict.
     private func handleExchange(_ message: [String: Any]) async -> [String: Any] {
-        lastWatchTranscript = message["transcript"] as? String
+        let transcript = (message["transcript"] as? String) ?? ""
+        let reply = (message["reply"] as? String) ?? ""
+        let intent = (message["intent"] as? String) ?? ""
+        let actions = (message["actions"] as? [[String: Any]]) ?? []
+
+        // Keep the existing UI-cache behaviour (toast banner + realtime
+        // refresh) regardless of whether persistence succeeds.
+        lastWatchTranscript = transcript.isEmpty ? nil : transcript
         // Don't force a deeplink — the wrist already spoke the reply.
         // Just notify realtime surface so any open iOS view can refresh.
         NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
-        return ["ok": true]
+
+        // Nothing to persist if the wrist sent an empty turn.
+        guard !transcript.isEmpty || !reply.isEmpty else {
+            return ["ok": true, "persisted": false, "reason": "empty exchange"]
+        }
+
+        // Resolve the conversation to write into.
+        guard let conversationId = await resolveExchangeConversationId(message) else {
+            // Honest gap — no conversation context and no ESANG thread to
+            // attach to. The wrist's exchange stays cached for the UI but
+            // does NOT silently pretend it reached the backend.
+            return [
+                "ok": true,
+                "persisted": false,
+                "reason": "no conversation context for voice turn",
+            ]
+        }
+
+        // The `messages.sendMessage` proc accepts only (conversationId,
+        // content, type) — there is no structured-metadata field for intent
+        // or the action list. So we fold the salient context into the
+        // message body honestly: the spoken transcript + ESANG's reply, and
+        // a compact intent/actions trailer when present. (GAP: a metadata
+        // field on sendMessage would let intent/actions persist as structured
+        // data instead of inline text — see report.)
+        let content = composeVoiceTurnBody(
+            transcript: transcript,
+            reply: reply,
+            intent: intent,
+            actions: actions
+        )
+
+        do {
+            let result = try await api.messaging.sendMessage(
+                conversationId: conversationId,
+                content: content,
+                type: "voice_message"
+            )
+            return [
+                "ok": true,
+                "persisted": true,
+                "messageId": result.id,
+                "conversationId": result.conversationId,
+            ]
+        } catch {
+            // Surface the REAL failure — the caller (and the wrist) should
+            // know the turn didn't land. No fake success.
+            NSLog("[WatchCommandHandler] esang.exchange persist failed: \(error.localizedDescription)")
+            return [
+                "ok": false,
+                "persisted": false,
+                "reason": error.localizedDescription,
+            ]
+        }
+    }
+
+    /// Picks the conversation a wrist voice turn should be written into.
+    ///
+    ///   1. If the wrist supplied a `loadId`, use it — the messages router
+    ///      treats a load id as a stable conversation key for dispatch
+    ///      threads (same convention as the 053 ESANG dispatch chat).
+    ///   2. Otherwise fall back to the driver's existing ESANG / AI-assistant
+    ///      conversation, identified by name the same way `MessagesScreen`
+    ///      does (`esang` / `ai assistant`).
+    ///
+    /// Returns `nil` when neither exists — we refuse to invent a conversation
+    /// (`createConversation` needs participant ids we don't have on the wrist
+    /// hand-off path), so the caller reports the honest gap instead.
+    private func resolveExchangeConversationId(_ message: [String: Any]) async -> String? {
+        if let loadId = message["loadId"] as? String, !loadId.isEmpty {
+            return loadId
+        }
+        if let loadIdInt = message["loadId"] as? Int {
+            return String(loadIdInt)
+        }
+        // Look up the ESANG/assistant thread from the live inbox.
+        guard let conversations = try? await api.messaging.getConversations() else {
+            return nil
+        }
+        let esang = conversations.first { convo in
+            let hay = ((convo.participantName ?? convo.name) + " "
+                       + (convo.type ?? "")).lowercased()
+            return hay.contains("esang") || hay.contains("ai assistant")
+        }
+        return esang?.id
+    }
+
+    /// Builds the persisted body for a wrist voice turn. Folds the spoken
+    /// transcript, ESANG's reply, and (when present) the routed intent +
+    /// action labels into a single readable string, since `sendMessage`
+    /// has no structured-metadata field.
+    private func composeVoiceTurnBody(
+        transcript: String,
+        reply: String,
+        intent: String,
+        actions: [[String: Any]]
+    ) -> String {
+        var parts: [String] = []
+        if !transcript.isEmpty { parts.append("Driver (Watch): \(transcript)") }
+        if !reply.isEmpty { parts.append("ESANG: \(reply)") }
+        if !intent.isEmpty { parts.append("intent: \(intent)") }
+        let actionLabels = actions.compactMap { action -> String? in
+            let label = (action["label"] as? String) ?? ""
+            let type = (action["type"] as? String) ?? ""
+            let chosen = label.isEmpty ? type : label
+            return chosen.isEmpty ? nil : chosen
+        }
+        if !actionLabels.isEmpty {
+            parts.append("actions: \(actionLabels.joined(separator: ", "))")
+        }
+        return parts.joined(separator: "\n")
     }
 
     // MARK: - Activation (open-on-phone hand-off)

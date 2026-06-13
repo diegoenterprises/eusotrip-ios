@@ -101,7 +101,8 @@ struct TheHaulMissions: View {
                 row: row,
                 isInFlight: inFlightMissionId == row.id,
                 onStart: { Task { await start(row) } },
-                onClaim: { Task { await claim(row) } }
+                onClaim: { Task { await claim(row) } },
+                onCancel: { Task { await cancel(row) } }
             )
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
@@ -588,6 +589,19 @@ struct TheHaulMissions: View {
         }
     }
 
+    private func cancel(_ row: TheHaulMissionsStore.Row) async {
+        guard inFlightMissionId == nil else { return }
+        inFlightMissionId = row.id
+        let err = await store.cancelMission(missionId: row.id)
+        inFlightMissionId = nil
+        if let err {
+            showToast(err, isError: true)
+        } else {
+            showToast("Mission cancelled", isError: false)
+            openMissionId = nil
+        }
+    }
+
     // MARK: - Format helpers
 
     private func shortDay(_ iso: String) -> String {
@@ -620,6 +634,10 @@ private struct MissionDetailSheet: View {
     let isInFlight: Bool
     let onStart: () -> Void
     let onClaim: () -> Void
+    let onCancel: () -> Void
+
+    /// Drives the destructive-action confirmation before a cancel call fires.
+    @State private var showCancelConfirm = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -634,6 +652,14 @@ private struct MissionDetailSheet: View {
             .padding(.horizontal, Space.s5)
             .padding(.top, Space.s4)
             .padding(.bottom, Space.s8)
+        }
+        .alert("Cancel this mission?", isPresented: $showCancelConfirm) {
+            Button("Cancel mission", role: .destructive) {
+                onCancel()
+            }
+            Button("Keep going", role: .cancel) {}
+        } message: {
+            Text("Cancelling drops your current progress on this mission. You can pick it back up from Available later if it's still running.")
         }
     }
 
@@ -821,21 +847,54 @@ private struct MissionDetailSheet: View {
             .disabled(isInFlight)
             .accessibilityLabel("Start this mission")
         case .active:
-            // Active missions have no inline action — progress is driven
-            // by real-world events (load delivered, safety check cleared).
-            VStack(spacing: Space.s2) {
-                Text("Keep going")
-                    .font(EType.bodyStrong)
-                    .foregroundColor(palette.textPrimary)
-                Text("Progress updates as you complete qualifying loads, safety checks or streaks.")
-                    .font(EType.caption)
-                    .foregroundColor(palette.textSecondary)
-                    .multilineTextAlignment(.center)
+            // Active missions have no inline *advance* action — progress is
+            // driven by real-world events (load delivered, safety check
+            // cleared). The driver can, however, cancel an active mission and
+            // drop its accrued progress.
+            VStack(spacing: Space.s3) {
+                VStack(spacing: Space.s2) {
+                    Text("Keep going")
+                        .font(EType.bodyStrong)
+                        .foregroundColor(palette.textPrimary)
+                    Text("Progress updates as you complete qualifying loads, safety checks or streaks.")
+                        .font(EType.caption)
+                        .foregroundColor(palette.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(Space.s4)
+                .frame(maxWidth: .infinity)
+                .eusoCard(radius: Radius.md)
+
+                cancelMissionCTA
             }
-            .padding(Space.s4)
-            .frame(maxWidth: .infinity)
-            .eusoCard(radius: Radius.md)
         }
+    }
+
+    /// Destructive "Cancel mission" control. Only reachable from the `.active`
+    /// branch above — claimable / available missions never surface it.
+    private var cancelMissionCTA: some View {
+        Button {
+            showCancelConfirm = true
+        } label: {
+            HStack(spacing: 8) {
+                if isInFlight {
+                    ProgressView().controlSize(.small).tint(palette.danger)
+                } else {
+                    Image(systemName: "xmark.circle")
+                }
+                Text(isInFlight ? "Cancelling…" : "Cancel mission")
+            }
+            .font(EType.body).fontWeight(.semibold)
+            .foregroundColor(palette.danger)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md)
+                    .strokeBorder(palette.danger.opacity(0.5), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isInFlight)
+        .accessibilityLabel("Cancel this mission")
     }
 
     private func progressCaption(current: Double, target: Double, unit: String?) -> String {

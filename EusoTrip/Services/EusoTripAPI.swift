@@ -1051,6 +1051,11 @@ final class EusoTripAPI: ObservableObject {
     /// 330B composite-breakdown procs are added to that existing struct.)
     lazy var vehicles: VehiclesAPI = VehiclesAPI(api: self)
 
+    /// `interstate.*` — driver-side interstate compliance + the life-safety
+    /// SOS emergency surface. Verified against
+    /// `frontend/server/routers/interstate.ts` (`createSOS` ~line 263).
+    lazy var interState: InterStateAPI = InterStateAPI(api: self)
+
     // MARK: Low-level tRPC invocation
 
     /// GET /api/trpc/<path>?input=<url-encoded-JSON>
@@ -6356,6 +6361,60 @@ struct WalletExtrasAPI {
         try await api.queryNoInput("wallet.getPayoutMethods")
     }
 
+    // MARK: Request payout (canonical `wallet.requestPayout`)
+    //
+    // Verified against `frontend/server/routers/wallet.ts:760`. Executes a
+    // real Stripe Connect payout against the driver's available balance;
+    // the wallet is only debited AFTER Stripe confirms, so a thrown error
+    // here means the balance is untouched (surface the message verbatim —
+    // it tells the driver why, e.g. "connect your bank account" / payouts
+    // not enabled / insufficient balance / outstanding carrier debt).
+    //
+    // The cash-out picker should source destinations from the existing
+    // `listPaymentMethods()` above (`wallet.getPayoutMethods`); each
+    // `WalletPaymentMethod.id` is the `payoutMethodId` ("pm_N") to pass
+    // here. NO separate list method was added — that one already exists.
+
+    struct RequestPayoutInput: Encodable {
+        let amount: Double
+        let payoutMethodId: String
+        let instant: Bool
+    }
+
+    /// Server return (wallet.ts:897): { id: "payout_N", amount, fee,
+    /// netAmount, status, estimatedArrival, createdAt }. `status` is
+    /// "processing" for instant or "pending" for standard; `estimatedArrival`
+    /// / `createdAt` are ISO-8601 strings.
+    struct RequestPayoutAck: Decodable {
+        let id: String
+        let amount: Double
+        let fee: Double
+        let netAmount: Double
+        let status: String
+        let estimatedArrival: String?
+        let createdAt: String?
+    }
+
+    /// `wallet.requestPayout` — withdraws `amount` (USD, server min $1.00)
+    /// to the chosen payout method via Stripe Connect. Set `instant: true`
+    /// for a debit-card instant payout (server applies the instant fee);
+    /// `false` (default) for a standard ACH payout. Throws on any failure
+    /// with no wallet debit — propagate the error to the UI.
+    func requestPayout(
+        amount: Double,
+        payoutMethodId: String,
+        instant: Bool = false
+    ) async throws -> RequestPayoutAck {
+        try await api.mutation(
+            "wallet.requestPayout",
+            input: RequestPayoutInput(
+                amount: amount,
+                payoutMethodId: payoutMethodId,
+                instant: instant
+            )
+        )
+    }
+
     // MARK: Earnings summary (canonical `earnings.getSummary` + YTD)
     //
     // Backend doesn't expose a single `wallet.getEarningsSummary` — the
@@ -6704,6 +6763,18 @@ struct GamificationAPI {
     func claimMissionReward(missionId: Int) async throws -> MissionActionResult {
         try await api.mutation(
             "gamification.claimMissionReward",
+            input: MissionIdInput(missionId: missionId)
+        )
+    }
+
+    /// `gamification.cancelMission` — abandons an active (`in_progress` /
+    /// `not_started`) mission so the driver can start a new one. Returns
+    /// `success: false` with a message when the mission isn't in the
+    /// caller's active set or is already completed / claimed / cancelled
+    /// (gamification.ts:1033). Mirrors the start/claim shape exactly.
+    func cancelMission(missionId: Int) async throws -> MissionActionResult {
+        try await api.mutation(
+            "gamification.cancelMission",
             input: MissionIdInput(missionId: missionId)
         )
     }
@@ -7081,6 +7152,79 @@ struct FleetCanonicalAPI {
                 odometer: w.odometer
             )
         }
+    }
+}
+
+// MARK: - InterStateAPI (canonical `interstate.*`)
+//
+// Driver-side interstate compliance + the life-safety SOS emergency
+// surface. Verified against `frontend/server/routers/interstate.ts`
+// (`createSOS` ~line 263). The SOS mutation dual-writes `sos_alerts`
+// (dispatch fanout) + `sos_events` (audited ledger) and fans the alert
+// out over WebSocket to every party on the load plus the dispatch/admin
+// role rooms; it returns only the lean ack below.
+
+struct InterStateAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: - createSOS
+    //
+    // Server return (interstate.ts:415): { sosId, notifiedCount }.
+    // `sosId` is the `sos_alerts` row id (drives the real-time dispatch
+    // fanout); `notifiedCount` is how many involved/role users were
+    // alerted. Life-safety event — do NOT swallow the throw at the UI
+    // layer; surface a retry.
+
+    struct CreateSOSAck: Decodable {
+        let sosId: Int
+        let notifiedCount: Int
+    }
+
+    /// tRPC input for `interstate.createSOS`. Optional `description` /
+    /// `stateCode` are encoded with `encodeIfPresent` semantics (Swift's
+    /// synthesized encoder omits nil optionals), which matches the
+    /// server's `.optional()` zod fields. `severity` defaults to "high"
+    /// server-side; we send it explicitly so the picker value is honored.
+    struct CreateSOSInput: Encodable {
+        let loadId: Int
+        /// "medical" | "mechanical" | "hazmat_spill" | "accident" |
+        /// "threat" | "weather" | "other"
+        let alertType: String
+        /// "low" | "medium" | "high" | "critical"
+        let severity: String
+        let latitude: Double
+        let longitude: Double
+        let description: String?
+        let stateCode: String?
+    }
+
+    /// `interstate.createSOS` — raises a life-safety SOS for the given
+    /// load at the supplied coordinates. `alertType` must be one of:
+    /// medical | mechanical | hazmat_spill | accident | threat | weather
+    /// | other. `severity` must be one of: low | medium | high | critical
+    /// (server default high). Returns the `sosId` + the count of users
+    /// notified.
+    func createSOS(
+        loadId: Int,
+        alertType: String,
+        severity: String = "high",
+        latitude: Double,
+        longitude: Double,
+        description: String? = nil,
+        stateCode: String? = nil
+    ) async throws -> CreateSOSAck {
+        try await api.mutation(
+            "interstate.createSOS",
+            input: CreateSOSInput(
+                loadId: loadId,
+                alertType: alertType,
+                severity: severity,
+                latitude: latitude,
+                longitude: longitude,
+                description: description,
+                stateCode: stateCode
+            )
+        )
     }
 }
 

@@ -517,7 +517,16 @@ enum TripPhase: String, CaseIterable, Codable {
     case atReceiverGate        = "delivery_checkin"    // 021 → delivery_checkin (pre-dock-assignment)
     case dockAssigned          = "delivery_checkin_dock_assigned" // 022 → delivery_checkin + dock assigned (UI-substate)
     case backingIn             = "backing_in"          // 023 → backing_in (tanker) + backingAssist wizard
-    case unloading             = "unloading"           // 024 → unloading + discharge wizard
+    case unloading             = "unloading"           // 024 → unloading + discharge wizard (non-tanker delivery)
+    // Tanker delivery discharge bricks (040→044). These are the DELIVERY
+    // analog of the pickup tanker bricks (028→032): only reached when the
+    // active load is a tanker, so non-tanker loads skip straight from
+    // `.backingIn` to `.unloading` (024) and keep the unchanged flow.
+    case dischargeInProgress   = "discharging"         // 040 → backend discharging (product flowing off the rig)
+    case dischargeComplete     = "vapor_purging"       // 041 → backend vapor_purging (discharge done, vapor purge)
+    case disconnectAndVerify   = "disconnecting"       // 042 → backend disconnecting (dry-disconnect + verify)
+    case disconnectConfirmed   = "released"            // 043 → backend released (hose released, binder closed)
+    case connectDropHose       = "connect_drop_hose"   // 044 → multi-drop connectHose wizard at delivery (UI sub-state of released)
     case paperwork             = "pod_pending"         // 025 → pod_pending
     case offDuty               = "off_duty"            // 026 Off Duty (UI-only; HOS duty_status=off_duty)
     case nextLoadBrief         = "next_load_brief"     // 027 Next Load Brief (UI-only)
@@ -546,6 +555,11 @@ enum TripPhase: String, CaseIterable, Codable {
         case .dockAssigned:        return "022"
         case .backingIn:           return "023"
         case .unloading:           return "024"
+        case .dischargeInProgress: return "040"
+        case .dischargeComplete:   return "041"
+        case .disconnectAndVerify: return "042"
+        case .disconnectConfirmed: return "043"
+        case .connectDropHose:     return "044"
         case .paperwork:           return "025"
         case .offDuty:             return "026"
         case .nextLoadBrief:       return "027"
@@ -574,6 +588,11 @@ enum TripPhase: String, CaseIterable, Codable {
         case .dockAssigned:        return "Dock assigned"
         case .backingIn:           return "Backing in"
         case .unloading:           return "Unloading"
+        case .dischargeInProgress: return "Discharge in progress"
+        case .dischargeComplete:   return "Discharge complete"
+        case .disconnectAndVerify: return "Disconnect · verify"
+        case .disconnectConfirmed: return "Disconnect confirmed"
+        case .connectDropHose:     return "Connect drop hose"
         case .paperwork:           return "Paperwork"
         case .offDuty:             return "Off duty"
         case .nextLoadBrief:       return "Next load brief"
@@ -590,11 +609,26 @@ enum TripPhase: String, CaseIterable, Codable {
         }
     }
 
-    /// Default forward transition invoked when the primary CTA on the
-    /// phase's screen is tapped. Models the happy path through the
-    /// entire 010→027 trip lifecycle; loops back to `.idle` from 027
+    /// Default (non-tanker) forward transition invoked when the primary
+    /// CTA on the phase's screen is tapped. Models the happy path through
+    /// the entire 010→027 trip lifecycle; loops back to `.idle` from 027
     /// so a completed trip returns to the dashboard.
-    var happyPathNext: TripPhase {
+    ///
+    /// For TANKER loads the delivery leg runs the extra discharge bricks
+    /// 040→044 — `DriverTripController.advance()` calls
+    /// `happyPathNext(isTanker:)` so the `.backingIn` → … and the
+    /// terminal discharge → `.paperwork` hops fork on equipment. This
+    /// no-argument property keeps the non-tanker contract (every existing
+    /// call-site, dev-chrome, and preview stays byte-for-byte the same).
+    var happyPathNext: TripPhase { happyPathNext(isTanker: false) }
+
+    /// Forward transition with the tanker delivery-discharge fork applied.
+    /// When `isTanker` is true the delivery leg becomes
+    /// `.backingIn → .dischargeInProgress → .dischargeComplete →
+    /// .disconnectAndVerify → .disconnectConfirmed → .connectDropHose →
+    /// .paperwork`. When false the legacy `.backingIn → .unloading →
+    /// .paperwork` hop is preserved unchanged.
+    func happyPathNext(isTanker: Bool) -> TripPhase {
         switch self {
         case .idle:                return .pretripDVIR
         case .pretripDVIR:         return .dvirSubmitted
@@ -613,8 +647,16 @@ enum TripPhase: String, CaseIterable, Codable {
         case .approachingDelivery: return .atReceiverGate
         case .atReceiverGate:      return .dockAssigned
         case .dockAssigned:        return .backingIn
-        case .backingIn:           return .unloading
+        // Delivery-discharge fork: tanker → 040 discharge bricks;
+        // everything else → 024 unloading (unchanged).
+        case .backingIn:           return isTanker ? .dischargeInProgress : .unloading
         case .unloading:           return .paperwork
+        // Tanker discharge brick chain 040→044, then close out at 025.
+        case .dischargeInProgress: return .dischargeComplete
+        case .dischargeComplete:   return .disconnectAndVerify
+        case .disconnectAndVerify: return .disconnectConfirmed
+        case .disconnectConfirmed: return .connectDropHose
+        case .connectDropHose:     return .paperwork
         case .paperwork:           return .offDuty
         case .offDuty:             return .nextLoadBrief
         case .nextLoadBrief:       return .idle
@@ -645,6 +687,15 @@ enum TripPhase: String, CaseIterable, Codable {
         case .dockAssigned:        return .atReceiverGate
         case .backingIn:           return .dockAssigned
         case .unloading:           return .backingIn
+        // Tanker discharge chain reverse walk (040→044).
+        case .dischargeInProgress: return .backingIn
+        case .dischargeComplete:   return .dischargeInProgress
+        case .disconnectAndVerify: return .dischargeComplete
+        case .disconnectConfirmed: return .disconnectAndVerify
+        case .connectDropHose:     return .disconnectConfirmed
+        // Dev-chrome reverse default mirrors the no-arg `happyPathNext`
+        // (non-tanker `.unloading`); the live tanker walk drives forward
+        // from `.connectDropHose` and never reverses through here.
         case .paperwork:           return .unloading
         case .offDuty:             return .paperwork
         case .nextLoadBrief:       return .offDuty
@@ -686,6 +737,12 @@ enum TripPhase: String, CaseIterable, Codable {
         case .dockAssigned:        return .deliveryCheckin   // same backend status; UI-only split
         case .backingIn:           return .backingIn          // tanker sub-state
         case .unloading:           return .unloading
+        // Tanker delivery-discharge bricks 040→044 → backend sub-states.
+        case .dischargeInProgress: return .discharging         // 040 flowing off the rig
+        case .dischargeComplete:   return .vaporPurging         // 041 vapor purge after discharge
+        case .disconnectAndVerify: return .disconnecting        // 042 dry-disconnect + verify
+        case .disconnectConfirmed: return .released             // 043 hose released, binder closed
+        case .connectDropHose:     return .released             // 044 multi-drop UI sub-state of released (connectHose wizard)
         case .paperwork:           return .podPending
         case .offDuty:             return nil
         case .nextLoadBrief:       return nil
@@ -725,8 +782,27 @@ enum TripPhase: String, CaseIterable, Codable {
         case (.enrouteLoaded, .approachingDelivery):       return "IN_TRANSIT_TO_AT_DELIVERY"
         // 020 → 021 gate check-in (at_delivery → delivery_checkin)
         case (.approachingDelivery, .atReceiverGate):      return "AT_DELIVERY_TO_CHECKIN"
-        // 022/023 → 024 backing-in → unloading (delivery_checkin → unloading)
+        // 022/023 → 024 backing-in → unloading (delivery_checkin → unloading; non-tanker)
         case (.backingIn, .unloading):                     return "DELIVERY_CHECKIN_TO_UNLOADING"
+        // Tanker delivery-discharge bricks 040→044 (per
+        // `server/routers/loadLifecycleTanker.ts`). Each hop flips
+        // `loads.status` (+ writes the matching `tanker_sub_state`):
+        //   023 backing-in → 040 discharging
+        case (.backingIn, .dischargeInProgress):           return "DELIVERY_CHECKIN_TO_DISCHARGING"
+        //   040 discharging → 041 vapor_purging (meter hits zero remaining)
+        case (.dischargeInProgress, .dischargeComplete):   return "DISCHARGING_TO_VAPOR_PURGING"
+        //   041 vapor_purging → 042 disconnecting (purge proven, begin dry-disconnect)
+        case (.dischargeComplete, .disconnectAndVerify):   return "VAPOR_PURGING_TO_DISCONNECTING"
+        //   042 disconnecting → 043 released (4-step ladder confirmed, hose released)
+        case (.disconnectAndVerify, .disconnectConfirmed): return "DISCONNECTING_TO_RELEASED"
+        //   044 connect-drop-hose is a multi-drop UI sub-state of
+        //   `released`; mating the next leg's drop hose runs the
+        //   `connectHose` bayOps wizard rather than a `loads.status`
+        //   flip, so `.disconnectConfirmed → .connectDropHose` returns
+        //   nil here (no status change) — handled below.
+        //   043/044 released → 025 pod_pending (close out the drop)
+        case (.disconnectConfirmed, .paperwork),
+             (.connectDropHose, .paperwork):               return "RELEASED_TO_POD_PENDING"
         // 024 → 025 paperwork (unloading → unloaded → pod_pending).
         // The backend models this as UNLOADING_TO_UNLOADED; POD_PENDING
         // is reached automatically via UNLOADED_TO_POD_PENDING after
@@ -753,6 +829,14 @@ enum TripPhase: String, CaseIterable, Codable {
         switch self {
         case .dockAssigned, .backingIn: return .backingAssist
         case .unloading:                return .discharge
+        // Tanker delivery-discharge bricks run their own bayOps wizards:
+        // 040 meters the product off (discharge), 042 runs the
+        // dry-disconnect ladder (disconnect), 044 mates the next drop
+        // hose on a multi-drop (connectHose). 041/043 are confirmation
+        // surfaces with no live wizard.
+        case .dischargeInProgress:      return .discharge
+        case .disconnectAndVerify:      return .disconnect
+        case .connectDropHose:          return .connectHose
         // `delivery_checkin` additionally expects `connectHose` after
         // backingAssist completes — we surface that through the
         // wizard-step hand-off in `DriverTripController.advanceWizard`
@@ -932,6 +1016,14 @@ extension TripPhase {
         case .unloading:        return .unloading
         case .unloaded:         return .unloading      // disconnect wizard runs here; UI stays on 024
         case .podPending:       return .paperwork
+        // Tanker delivery-discharge bricks 040→044. The backend re-uses
+        // `disconnecting` for both the PICKUP detach (032) and the
+        // DELIVERY disconnect (042); disambiguate by where the UI is —
+        // anything at/after `backingIn` (the delivery leg) routes to the
+        // discharge bricks, while pickup-side phases keep their 028→032
+        // mapping below.
+        case .discharging:      return .dischargeInProgress  // 040
+        case .vaporPurging:     return .dischargeComplete     // 041
         case .delivered,
              .complete:         return .nextLoadBrief
         // Pre-driver / contract-side — no driver screen, hold position
@@ -954,12 +1046,38 @@ extension TripPhase {
         case .connecting:       return .pickupArrival           // 029
         case .loadingLocked:    return .pickupLoading           // 030
         case .loadLockedFilled: return .spectraMatchVerdict     // 031
-        case .detaching,
-             .disconnecting:    return .detachSequence          // 032
-        case .brakesSet, .discharging, .vaporPurging, .released:
-            // Tanker sub-states not yet surfaced in the driver UI —
-            // controller holds position and (optionally) raises a banner.
+        case .detaching:        return .detachSequence          // 032 (pickup-side hose detach)
+        case .disconnecting:
+            // `disconnecting` is re-used by both the pickup detach (032)
+            // and the delivery dry-disconnect (042). Disambiguate by leg:
+            // if the UI is already on the delivery-discharge leg, route
+            // to 042; otherwise it's the pickup detach.
+            return from.isTankerDeliveryLeg ? .disconnectAndVerify : .detachSequence
+        case .released:
+            // Hose released. On the delivery leg this is 043; pre-delivery
+            // it has no driver screen, so hold position.
+            return from.isTankerDeliveryLeg ? .disconnectConfirmed : from
+        case .brakesSet:
+            // Tanker sub-state not surfaced in the driver UI — controller
+            // holds position and (optionally) raises a banner.
             return from
+        }
+    }
+
+    /// True when this phase is on the tanker DELIVERY discharge leg
+    /// (screens 040→044, plus `.backingIn` which immediately precedes it).
+    /// Used to disambiguate backend statuses that the server re-uses
+    /// across the pickup and delivery legs (e.g. `disconnecting`,
+    /// `released`) so the reverse lookup routes to the delivery brick
+    /// rather than the pickup detach.
+    var isTankerDeliveryLeg: Bool {
+        switch self {
+        case .backingIn, .unloading,
+             .dischargeInProgress, .dischargeComplete,
+             .disconnectAndVerify, .disconnectConfirmed, .connectDropHose:
+            return true
+        default:
+            return false
         }
     }
 }
@@ -994,6 +1112,38 @@ final class DriverTripController: ObservableObject {
     /// active trip the UI branches to the `no active load` path. Once
     /// they accept a tender the controller assigns the real `Load` here.
     @Published var currentLoad: Load? = nil
+
+    /// True when the active load is a tanker — gates the delivery-side
+    /// discharge bricks 040→044 so only tanker rigs run the extra
+    /// closed-loop discharge sequence; every other equipment type keeps
+    /// the single `.unloading` (024) → `.paperwork` (025) hop.
+    ///
+    /// Honest detection (no fabricated "is tanker"): the load is a tanker
+    /// when it is already tracking a live `tanker_sub_state`
+    /// (`Load.tankerSubState`, the authoritative signal the backend sets
+    /// the moment a tanker enters bay-ops) OR its cargo / commodity /
+    /// permit text matches the tanker family — the same heuristic the
+    /// pickup-side screens (014) already use. With no load bound this is
+    /// false, so the non-tanker flow is the safe default.
+    var isTankerLoad: Bool {
+        guard let load = currentLoad else { return false }
+        // Authoritative: a live tanker_sub_state means the backend has
+        // already classified this load as a tanker in bay-ops.
+        if let sub = load.tankerSubState?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sub.isEmpty {
+            return true
+        }
+        // Text heuristic over the fields a tanker load populates.
+        let hay = [load.cargoType, load.commodityName, load.permitType]
+            .compactMap { $0?.lowercased() }
+            .joined(separator: " ")
+        return hay.contains("tank")
+            || hay.contains("petroleum")
+            || hay.contains("crude")
+            || hay.contains("fuel")
+            || hay.contains("liquid")
+            || hay.contains("chemical")
+    }
 
     /// Active bayOps wizard, if any. The UI reads this to decide which
     /// sub-screen to render inside phases that spawn a wizard (e.g.,
@@ -1032,7 +1182,7 @@ final class DriverTripController: ObservableObject {
     /// prefer `transition(to:)` which both updates local state and
     /// fires the tRPC mutation.
     func advance() {
-        phase = phase.happyPathNext
+        phase = phase.happyPathNext(isTanker: isTankerLoad)
     }
 
     /// Walk one phase backward. Used by the dev-chrome Prev arrow when

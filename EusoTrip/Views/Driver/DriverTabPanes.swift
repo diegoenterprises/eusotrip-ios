@@ -337,15 +337,20 @@ struct DriverTripsPane: View {
                 await refreshPulse()
             }
         }
-        // Emergency sheet — surfaces the SOS triage surface. Wires into
-        // `trpc.interstate.createSOS` on the server per web parity, and
-        // (per user request 2026-04-19) dual-fires `zeunMechanics
-        // .reportBreakdown` when the driver picks the Breakdown tile so
-        // the ticket lands in the Zeun mechanic queue. The
-        // `onOpenZeun` callback lets a non-emergency mechanical issue
-        // skip the SOS broadcast and head straight into the full Zeun
-        // flow (VIN, fault codes, photos, telemetry, DIY guides, repair-
-        // provider matching) over on the Loads tab.
+        // Emergency sheet — surfaces the SOS triage surface. The sheet's
+        // submit() now calls the REAL `interstate.createSOS` proc
+        // (`EusoTripAPI.shared.interState.createSOS`) per web parity:
+        // it resolves the loadId from `trip.currentLoad`, the lat/lng
+        // from `DriverLocationResolver`, and fires the life-safety
+        // broadcast (no more mock DispatchQueue stub). On a failed
+        // broadcast it surfaces a user-facing retry alert rather than
+        // silently dismissing. When the driver picks the Breakdown tile,
+        // a successful broadcast then hands off via the `onOpenZeun`
+        // callback below into the full Zeun flow (VIN, fault codes,
+        // photos, telemetry, DIY guides, repair-provider matching) over
+        // on the Loads tab — that screen files the detailed
+        // `zeunMechanics.reportBreakdown` that lands the ticket in the
+        // mechanic queue.
         .sheet(isPresented: $showSOSSheet) {
             SOSEmergencySheet(onOpenZeun: {
                 driverNavHandler?("loads")

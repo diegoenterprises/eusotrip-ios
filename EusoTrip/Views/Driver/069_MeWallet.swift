@@ -108,6 +108,7 @@ struct MeWallet: View {
     @StateObject private var ten99 = Tax1099Store()
 
     @State private var showAddPayout: Bool = false
+    @State private var showCashOut: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -135,6 +136,42 @@ struct MeWallet: View {
             })
             .eusoSheetX()
         }
+        .sheet(isPresented: $showCashOut) {
+            DriverCashOutSheet(
+                available: availableBalance,
+                currencyCode: balanceCurrency,
+                methods: linkedMethods,
+                onAddMethod: {
+                    showCashOut = false
+                    showAddPayout = true
+                },
+                onCompleted: {
+                    Task { await reload() }
+                }
+            )
+            .eusoSheetX()
+        }
+    }
+
+    /// Live available balance for the cash-out validator. Falls back to
+    /// 0 in any non-loaded state so the sheet caps the amount honestly
+    /// rather than letting a stale/optimistic value through.
+    private var availableBalance: Double {
+        if case .loaded(let b) = balance.state { return b.available }
+        return 0
+    }
+
+    private var balanceCurrency: String {
+        if case .loaded(let b) = balance.state { return b.currency }
+        return "USD"
+    }
+
+    /// Linked payout methods sourced from the §7 store (wallet.getPayoutMethods).
+    /// Empty when nothing is linked — the sheet shows the "add a method first"
+    /// state in that case.
+    private var linkedMethods: [WalletPaymentMethod] {
+        if case .loaded(let rows) = methods.state { return rows }
+        return []
     }
 
     // Fan out every store in parallel. UpcomingSettlements + factoring
@@ -271,21 +308,30 @@ struct MeWallet: View {
     // MARK: §2 — Quick actions
 
     private var quickActions: some View {
-        // ONE real, working action. No dead pills, no stub dialogs.
-        // "Add payout" opens the real AddPaymentAccountSheet (Plaid
-        // + Stripe side-by-side) — the same flow 077 uses. Manage
-        // existing methods is reachable via the bottom nav (Wallet
-        // tab → 077 entry from DriverTabPanes). Transfer / Deposit /
-        // Withdraw pills are intentionally absent until the
-        // corresponding wallet mutations ship server-side. Adding
-        // them now would be a "no dead buttons" violation per the
-        // 2027 motivation directive.
-        actionPill(
-            title: "Add payout method",
-            systemImage: "plus.circle.fill",
-            style: .primary
-        ) {
-            showAddPayout = true
+        // TWO real, working actions. No dead pills, no stub dialogs.
+        // "Cash out" opens the real DriverCashOutSheet — pick a linked
+        // payout method, enter an amount (capped at available balance,
+        // min $1), choose instant vs standard, and call the live
+        // `wallet.requestPayout` Stripe Connect mutation. "Add payout
+        // method" opens AddPaymentAccountSheet (Plaid + Stripe). Both
+        // back working flows; nothing here is a stub. The cash-out
+        // mutation shipped server-side, so the previously-absent
+        // Withdraw pill is now honest to surface.
+        HStack(spacing: Space.s2) {
+            actionPill(
+                title: "Cash out",
+                systemImage: "arrow.down.to.line.circle.fill",
+                style: .primary
+            ) {
+                showCashOut = true
+            }
+            actionPill(
+                title: "Add method",
+                systemImage: "plus.circle.fill",
+                style: .secondary
+            ) {
+                showAddPayout = true
+            }
         }
     }
 
@@ -834,6 +880,466 @@ struct MeWallet: View {
         // Try ISO-8601 with time
         let iso8601 = ISO8601DateFormatter()
         if let date = iso8601.date(from: iso) {
+            let out = DateFormatter()
+            out.dateFormat = "MMM d"
+            return out.string(from: date)
+        }
+        return nil
+    }
+}
+
+// MARK: - Cash-out sheet (inline)
+//
+// Real withdraw flow backed by `wallet.requestPayout`
+// (EusoTripAPI.shared.walletExtras.requestPayout). Pick a linked payout
+// method, enter an amount validated against the live available balance
+// (server min $1.00), choose instant vs standard ACH, then fire the
+// mutation. Stripe Connect only debits the wallet AFTER it confirms, so a
+// thrown error means the balance is untouched — we surface the server
+// message verbatim. On success we show the honest payout ack (fee, net,
+// ETA) and signal the parent to refresh the balance.
+
+private struct DriverCashOutSheet: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    let available: Double
+    let currencyCode: String
+    let methods: [WalletPaymentMethod]
+    let onAddMethod: () -> Void
+    let onCompleted: () -> Void
+
+    @State private var selectedMethodId: String?
+    @State private var amountText: String = ""
+    @State private var instant: Bool = false
+    @State private var submitting: Bool = false
+    @State private var errorText: String?
+    @State private var ack: WalletExtrasAPI.RequestPayoutAck?
+
+    private var parsedAmount: Double? {
+        let cleaned = amountText
+            .replacingOccurrences(of: "$", with: "")
+            .replacingOccurrences(of: ",", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        return Double(cleaned)
+    }
+
+    private var selectedMethod: WalletPaymentMethod? {
+        methods.first { $0.id == selectedMethodId }
+    }
+
+    // Instant payouts require a method flagged `instantPayoutEligible`.
+    private var instantAvailable: Bool {
+        selectedMethod?.isInstant ?? false
+    }
+
+    private var validationError: String? {
+        guard let amt = parsedAmount else { return nil }
+        if amt < 1 { return "Minimum cash-out is \(currency(1)). " }
+        if amt > available { return "Amount exceeds your available balance." }
+        return nil
+    }
+
+    private var canSubmit: Bool {
+        !submitting
+            && selectedMethodId != nil
+            && parsedAmount != nil
+            && (parsedAmount ?? 0) >= 1
+            && (parsedAmount ?? 0) <= available
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                header
+                if let ack = ack {
+                    successCard(ack)
+                } else if methods.isEmpty {
+                    noMethodState
+                } else {
+                    availableRow
+                    methodPicker
+                    amountField
+                    speedPicker
+                    if let v = validationError {
+                        inlineError(v)
+                    }
+                    if let e = errorText {
+                        inlineError(e)
+                    }
+                    submitButton
+                }
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.top, Space.s5)
+            .padding(.bottom, Space.s8)
+        }
+        .onAppear {
+            // Default to the linked default method, else the first.
+            if selectedMethodId == nil {
+                selectedMethodId = methods.first(where: { $0.isDefault })?.id
+                    ?? methods.first?.id
+            }
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: Space.s1) {
+            Text("Cash out")
+                .font(EType.h1)
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("Withdraw to a linked bank or card")
+                .font(EType.caption)
+                .foregroundStyle(palette.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var availableRow: some View {
+        HStack {
+            Text("AVAILABLE")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            Spacer()
+            Text(currency(available))
+                .font(EType.bodyStrong)
+                .monospacedDigit()
+                .foregroundStyle(palette.textPrimary)
+        }
+        .padding(Space.s3)
+        .eusoCard(radius: Radius.md)
+    }
+
+    private var noMethodState: some View {
+        VStack(spacing: Space.s3) {
+            EusoEmptyState(
+                systemImage: "creditcard",
+                title: "Add a payout method first",
+                subtitle: "Link a bank account or debit card to cash out your balance."
+            )
+            Button {
+                onAddMethod()
+            } label: {
+                Text("Add a payout method")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(Color.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Space.s3)
+                    .background(
+                        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                            .fill(LinearGradient.diagonal)
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(Space.s3)
+        .eusoCard(radius: Radius.lg)
+    }
+
+    private var methodPicker: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("TO")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            VStack(spacing: Space.s2) {
+                ForEach(methods) { m in
+                    methodOption(m)
+                }
+            }
+        }
+    }
+
+    private func methodOption(_ m: WalletPaymentMethod) -> some View {
+        let selected = m.id == selectedMethodId
+        return Button {
+            selectedMethodId = m.id
+            // If the new method can't do instant, drop back to standard.
+            if !(m.isInstant) { instant = false }
+        } label: {
+            HStack(spacing: Space.s3) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(palette.bgCard)
+                        .frame(width: 40, height: 40)
+                    Image(systemName: m.kind == "bank" ? "building.columns.fill" : "creditcard.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(m.institution)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("••\(m.mask)\(m.isInstant ? " · instant" : "")")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer()
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(
+                        selected
+                        ? AnyShapeStyle(LinearGradient.diagonal)
+                        : AnyShapeStyle(palette.textTertiary)
+                    )
+            }
+            .padding(Space.s3)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(
+                        selected
+                        ? AnyShapeStyle(LinearGradient.diagonal)
+                        : AnyShapeStyle(palette.borderFaint),
+                        lineWidth: selected ? 1.5 : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var amountField: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("AMOUNT")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            HStack(spacing: Space.s2) {
+                Text("$")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(palette.textSecondary)
+                TextField("0.00", text: $amountText)
+                    .keyboardType(.decimalPad)
+                    .font(.system(size: 22, weight: .bold))
+                    .monospacedDigit()
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                Button {
+                    amountText = trimmedAmount(available)
+                } label: {
+                    Text("MAX")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .padding(.horizontal, Space.s2)
+                        .padding(.vertical, 4)
+                        .overlay(
+                            Capsule().strokeBorder(palette.borderFaint, lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(Space.s3)
+            .eusoCard(radius: Radius.md)
+        }
+    }
+
+    private var speedPicker: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("SPEED")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            HStack(spacing: Space.s2) {
+                speedOption(
+                    title: "Standard",
+                    subtitle: "1–2 business days",
+                    isInstant: false
+                )
+                speedOption(
+                    title: "Instant",
+                    subtitle: instantAvailable ? "Fee applies · minutes" : "Not available on this method",
+                    isInstant: true
+                )
+            }
+        }
+    }
+
+    private func speedOption(title: String, subtitle: String, isInstant: Bool) -> some View {
+        let selected = instant == isInstant
+        let disabled = isInstant && !instantAvailable
+        return Button {
+            guard !disabled else { return }
+            instant = isInstant
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(disabled ? palette.textTertiary : palette.textPrimary)
+                Text(subtitle)
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Space.s3)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(
+                        selected && !disabled
+                        ? AnyShapeStyle(LinearGradient.diagonal)
+                        : AnyShapeStyle(palette.borderFaint),
+                        lineWidth: selected && !disabled ? 1.5 : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.6 : 1)
+    }
+
+    private func inlineError(_ text: String) -> some View {
+        HStack(spacing: Space.s2) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Brand.danger)
+            Text(text)
+                .font(EType.caption)
+                .foregroundStyle(Brand.danger)
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(Brand.danger.opacity(0.55), lineWidth: 1)
+        )
+    }
+
+    private var submitButton: some View {
+        Button {
+            Task { await submit() }
+        } label: {
+            HStack(spacing: Space.s2) {
+                if submitting {
+                    ProgressView()
+                        .tint(.white)
+                } else {
+                    Image(systemName: "arrow.down.to.line.circle.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(Color.white)
+                }
+                Text(submitButtonTitle)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(Color.white)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Space.s3)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .fill(LinearGradient.diagonal)
+            )
+            .opacity(canSubmit ? 1 : 0.5)
+        }
+        .buttonStyle(.plain)
+        .disabled(!canSubmit)
+    }
+
+    private var submitButtonTitle: String {
+        if submitting { return "Requesting…" }
+        if let amt = parsedAmount, amt >= 1 {
+            return "Cash out \(currency(amt))"
+        }
+        return "Cash out"
+    }
+
+    private func successCard(_ ack: WalletExtrasAPI.RequestPayoutAck) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("Cash-out requested")
+                    .font(EType.title)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+            }
+            IridescentHairline()
+            ackRow(label: "Amount", value: currency(ack.amount))
+            if ack.fee > 0 {
+                ackRow(label: "Instant fee", value: currency(ack.fee))
+            }
+            ackRow(label: "Net to you", value: currency(ack.netAmount))
+            ackRow(label: "Status", value: ack.status.capitalized)
+            if let eta = formatEta(ack.estimatedArrival) {
+                ackRow(label: "Estimated arrival", value: eta)
+            }
+            Button {
+                onCompleted()
+                dismiss()
+            } label: {
+                Text("Done")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(Color.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Space.s3)
+                    .background(
+                        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                            .fill(LinearGradient.diagonal)
+                    )
+            }
+            .buttonStyle(.plain)
+            .padding(.top, Space.s1)
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg)
+    }
+
+    private func ackRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer()
+            Text(value)
+                .font(EType.bodyStrong)
+                .monospacedDigit()
+                .foregroundStyle(palette.textPrimary)
+        }
+    }
+
+    private func submit() async {
+        guard canSubmit, let amt = parsedAmount, let methodId = selectedMethodId else { return }
+        submitting = true
+        errorText = nil
+        do {
+            let result = try await EusoTripAPI.shared.walletExtras.requestPayout(
+                amount: amt,
+                payoutMethodId: methodId,
+                instant: instant
+            )
+            ack = result
+        } catch {
+            // Surface the server message verbatim — it tells the driver
+            // exactly why (insufficient balance, payouts not enabled,
+            // outstanding carrier debt, etc.). The wallet is untouched
+            // on failure.
+            errorText = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        submitting = false
+    }
+
+    private func currency(_ v: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = currencyCode
+        f.maximumFractionDigits = 2
+        return f.string(from: NSNumber(value: v)) ?? "$\(v)"
+    }
+
+    /// Plain numeric string (no symbol/grouping) for the amount field —
+    /// keeps the decimal-pad input parseable when MAX is tapped.
+    private func trimmedAmount(_ v: Double) -> String {
+        String(format: "%.2f", v)
+    }
+
+    private func formatEta(_ iso: String?) -> String? {
+        guard let iso = iso, !iso.isEmpty else { return nil }
+        let iso8601 = ISO8601DateFormatter()
+        if let date = iso8601.date(from: iso) {
+            let out = DateFormatter()
+            out.dateFormat = "MMM d"
+            return out.string(from: date)
+        }
+        let inFmt = DateFormatter()
+        inFmt.dateFormat = "yyyy-MM-dd"
+        if let date = inFmt.date(from: String(iso.prefix(10))) {
             let out = DateFormatter()
             out.dateFormat = "MMM d"
             return out.string(from: date)

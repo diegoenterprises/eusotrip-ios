@@ -938,6 +938,64 @@ final class TheHaulMissionsStore: BaseDynamicStore<TheHaulMissionsStore.Snapshot
             return error.localizedDescription
         }
     }
+
+    /// Cancel an in-flight or available mission. Optimistically flips the
+    /// matching row to `available` (the bucket that holds `cancelled` /
+    /// `expired` rows) the moment the call returns so the 061 UI doesn't
+    /// flash the mission back into the Active list between the mutation and
+    /// the refresh response. Returns the server's reason string on failure,
+    /// or nil on success — the caller can surface it in a toast.
+    @discardableResult
+    func cancelMission(missionId: Int) async -> String? {
+        do {
+            let result = try await EusoTripAPI.shared.gamification
+                .cancelMission(missionId: missionId)
+            if result.success, case .loaded(var snap) = state {
+                // Pull the row out of whichever bucket holds it, mark it
+                // cancelled, and drop it into `available` (which carries the
+                // cancelled / expired states per the Bucket doc above).
+                let hit = (snap.active + snap.completed + snap.available)
+                    .first { $0.id == missionId }
+                var cancelledRow: Row?
+                if let hit {
+                    let cancelledRaw = GamificationAPI.Mission(
+                        id: hit.raw.id,
+                        code: hit.raw.code,
+                        name: hit.raw.name,
+                        description: hit.raw.description,
+                        type: hit.raw.type,
+                        category: hit.raw.category,
+                        targetType: hit.raw.targetType,
+                        targetValue: hit.raw.targetValue,
+                        targetUnit: hit.raw.targetUnit,
+                        rewardType: hit.raw.rewardType,
+                        rewardValue: hit.raw.rewardValue,
+                        xpReward: hit.raw.xpReward,
+                        currentProgress: hit.raw.currentProgress,
+                        status: "cancelled",
+                        completedAt: hit.raw.completedAt,
+                        startsAt: hit.raw.startsAt,
+                        endsAt: hit.raw.endsAt
+                    )
+                    cancelledRow = Self.row(from: cancelledRaw, bucket: .available)
+                }
+                snap = Snapshot(
+                    active:    snap.active.filter    { $0.id != missionId },
+                    completed: snap.completed.filter { $0.id != missionId },
+                    available: snap.available.filter { $0.id != missionId }
+                        + (cancelledRow.map { [$0] } ?? [])
+                )
+                state = foldState(snap)
+            }
+            await refresh()
+            return result.success ? nil : (result.message ?? "Couldn't cancel this mission.")
+        } catch {
+            if !DynamicStoreUtil.isTransientCancellation(error) {
+                lastError = error
+            }
+            return error.localizedDescription
+        }
+    }
 }
 
 // MARK: - RewardsStore — `gamification.getRewardsCatalog` (canonical)
@@ -2326,11 +2384,25 @@ final class TripLifecycleStore: ObservableObject {
         }
         inflightTransitionId = transition.transitionId
         defer { inflightTransitionId = nil }
+        // GPS-on-transition: callers that hand us an explicit location win;
+        // otherwise auto-capture the device fix so the lifecycle event lands
+        // with real coordinates instead of nothing. If CoreLocation can't
+        // give us a fix (denied / timed out), we honestly send nil rather
+        // than fabricating a 0,0 — the server treats a missing location as
+        // "not captured", which is the truth.
+        var resolvedLocation = location
+        if resolvedLocation == nil,
+           let coord = await DriverLocationResolver.shared.currentCoordinate() {
+            resolvedLocation = LoadLifecycleAPI.ExecuteLocation(
+                lat: coord.latitude,
+                lng: coord.longitude
+            )
+        }
         do {
             let result = try await EusoTripAPI.shared.loadLifecycle.executeTransition(
                 loadId: loadId,
                 transitionId: transition.transitionId,
-                location: location,
+                location: resolvedLocation,
                 data: data,
                 compliance: compliance
             )
