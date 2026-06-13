@@ -18,7 +18,11 @@ private struct ExportDeleteBody: View {
     @State private var exporting = false
     @State private var deleting = false
     @State private var exportUrl: String? = nil
+    @State private var exportQueued = false
     @State private var deleteRequested = false
+    @State private var deleteScheduledFor: String? = nil
+    @State private var cancellingDelete = false
+    @State private var deleteCancelled = false
     @State private var actionError: String? = nil
     @State private var confirmDelete: Bool = false
     @State private var confirmText: String = ""
@@ -39,6 +43,8 @@ private struct ExportDeleteBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 if let url = exportUrl { exportReadyCard(url) }
+                else if exportQueued { exportQueuedCard }
+                if deleteCancelled { deleteCancelledCard }
                 if let err = actionError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 exportCard
                 deleteCard
@@ -75,6 +81,22 @@ private struct ExportDeleteBody: View {
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 .background(LinearGradient.diagonal).clipShape(Capsule())
             }.buttonStyle(.plain).disabled(exporting)
+        }
+    }
+
+    private var exportQueuedCard: some View {
+        LifecycleCard(accentGradient: true) {
+            LifecycleSection(label: "EXPORT QUEUED", icon: "clock.badge.checkmark")
+            Text("Export queued. We'll email a secure download link to your account email when your ZIP is ready (loads, settlements, contacts, documents).")
+                .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var deleteCancelledCard: some View {
+        LifecycleCard(accentGradient: true) {
+            LifecycleSection(label: "DELETION CANCELLED", icon: "checkmark.circle")
+            Text("Your account deletion was cancelled. Nothing will be purged.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -143,6 +165,19 @@ private struct ExportDeleteBody: View {
                 Text("DELETION REQUESTED · 30-day window started.").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Brand.danger).clipShape(Capsule())
+                if let purge = scheduledPurgeLabel {
+                    Text("Scheduled purge · \(purge)").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textSecondary)
+                }
+                Text("Change your mind any time before the window closes and your account stays active.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                Button { Task { await cancelDelete() } } label: {
+                    HStack(spacing: 6) {
+                        if cancellingDelete { ProgressView().tint(.white) }
+                        Text(cancellingDelete ? "Cancelling…" : "Cancel deletion").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(LinearGradient.diagonal).clipShape(Capsule())
+                }.buttonStyle(.plain).disabled(cancellingDelete)
             } else {
                 Toggle("I understand this is permanent.", isOn: $confirmDelete).font(EType.caption)
                 if confirmDelete {
@@ -170,7 +205,10 @@ private struct ExportDeleteBody: View {
         struct Out: Decodable { let url: String? }
         do {
             let r: Out = try await EusoTripAPI.shared.queryNoInput("users.requestDataExport")
+            // A direct URL means the ZIP is ready now; a null URL means the
+            // export was queued and the link will arrive by email.
             exportUrl = r.url
+            exportQueued = (r.url == nil)
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -179,14 +217,57 @@ private struct ExportDeleteBody: View {
 
     private func requestDelete() async {
         deleting = true; actionError = nil
+        struct Out: Decodable { let success: Bool; let scheduledFor: String? }
+        do {
+            let r: Out = try await EusoTripAPI.shared.mutation("users.requestAccountDeletion", input: ["": ""] as [String: String])
+            deleteScheduledFor = r.scheduledFor
+            deleteRequested = true
+            deleteCancelled = false
+        } catch {
+            actionError = friendlyDeletionError(error)
+        }
+        deleting = false
+    }
+
+    private func cancelDelete() async {
+        cancellingDelete = true; actionError = nil
         struct Out: Decodable { let success: Bool }
         do {
-            let _ : Out = try await EusoTripAPI.shared.mutation("users.requestAccountDeletion", input: ["": ""] as [String: String])
-            deleteRequested = true
+            let _ : Out = try await EusoTripAPI.shared.mutation("users.cancelAccountDeletion", input: ["": ""] as [String: String])
+            deleteRequested = false
+            deleteScheduledFor = nil
+            confirmDelete = false
+            confirmText = ""
+            deleteCancelled = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
-        deleting = false
+        cancellingDelete = false
+    }
+
+    /// Maps the server's active-loads rejection to a plain-language inline
+    /// message; falls back to the raw API error for anything else.
+    private func friendlyDeletionError(_ error: Error) -> String {
+        let raw = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        let lowered = raw.lowercased()
+        if lowered.contains("active load") || lowered.contains("active loads") {
+            return "You can't delete your account while you have active loads. Close or cancel them first."
+        }
+        return raw
+    }
+
+    /// Human-readable purge date from the server's `scheduledFor` ISO string,
+    /// or nil when the server didn't return one (then we show no date).
+    private var scheduledPurgeLabel: String? {
+        guard let raw = deleteScheduledFor, !raw.isEmpty else { return nil }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = iso.date(from: raw) ?? ISO8601DateFormatter().date(from: raw)
+        guard let date else { return nil }
+        let out = DateFormatter()
+        out.dateStyle = .medium
+        out.timeStyle = .none
+        return out.string(from: date)
     }
 }
 

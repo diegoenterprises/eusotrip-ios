@@ -372,13 +372,13 @@ struct ShipperSettlementDetail: View {
                         .padding(.top, Space.s3)
                 }
 
-                sectionLabel("DOCUMENTS · BACKEND PENDING")
+                sectionLabel("DOCUMENTS")
                     .padding(.top, Space.s5)
                 documentsStrip
                     .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s2)
 
-                sectionLabel("ACTIVITY · BACKEND PENDING")
+                sectionLabel("ACTIVITY")
                     .padding(.top, Space.s5)
                 activityPlaceholder
                     .padding(.horizontal, Space.s3)
@@ -779,7 +779,7 @@ struct ShipperSettlementDetail: View {
                 Text("Activity timeline pending")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("`earnings.getSettlementActivity` lands when the audit-trail endpoint ships (EUSO-2144).")
+                Text("No activity recorded for this settlement yet.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

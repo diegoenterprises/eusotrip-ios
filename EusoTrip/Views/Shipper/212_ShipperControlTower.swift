@@ -158,9 +158,6 @@ struct ShipperControlTower: View {
     @StateObject private var store = ControlTowerStore()
     @State private var modeFilter: ModeFilter = .all
 
-    // §11 MATRIX-50 batch size — Diego seed canon.
-    private let matrixSize = 50
-
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
@@ -268,9 +265,9 @@ struct ShipperControlTower: View {
 
     private var titleSubtitle: String {
         if case .loaded(let o, _, _) = store.state {
-            return "\(o.total.active) active · \(matrixSize) MATRIX loads · live HERE basemap"
+            return "\(o.total.active) active · \(o.total.inTransit) in transit · all modes"
         }
-        return "Truck · rail · vessel, every load, every mode, real-time on the HERE basemap."
+        return "Truck · rail · vessel — every load, every mode, one command view."
     }
 
     // MARK: Content state machine

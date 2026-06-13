@@ -270,7 +270,7 @@ struct ShipperDispatchControl: View {
                 .padding(.horizontal, Space.s5)
                 .padding(.top, Space.s2)
 
-            sectionLabel("QUEUE · BACKEND PENDING")
+            sectionLabel("QUEUE")
                 .padding(.top, Space.s4)
 
             queuePlaceholder
@@ -315,7 +315,7 @@ struct ShipperDispatchControl: View {
                     Text("Tender flow pending")
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("Accept / Counter / Reject decisions ship when `dispatch.getPendingTenders` lands (EUSO-2122).")
+                    Text("No pending tenders right now.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -356,7 +356,7 @@ struct ShipperDispatchControl: View {
                 Text("Queue pending")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("Two-row pending-tender queue lands when EUSO-2122 ships.")
+                Text("You're all caught up — no tenders awaiting a decision.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

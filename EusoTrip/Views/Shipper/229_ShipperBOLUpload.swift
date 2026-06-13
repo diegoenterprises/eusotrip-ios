@@ -341,7 +341,7 @@ struct ShipperBOLUpload: View {
 
                 // Lane + spec are NOT in the documents.getAll projection
                 // (EUSO-2147). Honest em-dash, no fabricated lane.
-                Text("Lane - · spec - (EUSO-2147)")
+                Text("Lane — · spec —")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
@@ -393,7 +393,7 @@ struct ShipperBOLUpload: View {
     private func kpiQuartet(_ doc: DocumentsAPI.Document) -> some View {
         HStack(spacing: 0) {
             // PAGES not in projection → honest "-" w/ gap ref.
-            kpiCellView(label: "PAGES", value: "-", style: .primary, sub: "EUSO-2147")
+            kpiCellView(label: "PAGES", value: "-", style: .primary, sub: "—")
             kpiDivider
             // SIZE is live.
             kpiCellView(label: "SIZE", value: humanBytes(doc.size), style: .gradient, sub: "on file")
@@ -402,7 +402,7 @@ struct ShipperBOLUpload: View {
             kpiCellView(label: "INTEGRITY", value: "-", style: .primary, sub: "SHA-256")
             kpiDivider
             // No signatory endpoint (EUSO-2148) → honest "-".
-            kpiCellView(label: "SIGNED", value: "-", style: .primary, sub: "EUSO-2148")
+            kpiCellView(label: "SIGNED", value: "-", style: .primary, sub: "—")
         }
         .padding(.vertical, Space.s4)
         .frame(maxWidth: .infinity)
@@ -478,7 +478,7 @@ struct ShipperBOLUpload: View {
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text("Per-party signing (method · device · timestamp) ships with documents.bol.getSignatories · EUSO-2148")
+                    Text("Per-party signing records appear here once the BOL is signed.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(2)

@@ -111,7 +111,7 @@ private struct OutboundBidsBody: View {
                 Text("CATALYST · BIDS · OUTBOUND").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Outbound Bids").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("MATRIX-50 broker auctions").font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("Broker auctions").font(EType.caption).foregroundStyle(palette.textSecondary)
             Text("\(total) BIDS · \(stats?.pending ?? 0) PENDING")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textSecondary)
         }

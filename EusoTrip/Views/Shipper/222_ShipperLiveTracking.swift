@@ -268,9 +268,7 @@ struct ShipperLiveTracking: View {
 
     private var titleSubtitle: String {
         let inMotion = store.loads.count
-        // §11 MATRIX-50 batch size — the canonical Diego portfolio.
-        let matrixSize = 50
-        return "\(inMotion) in motion · \(matrixSize) MATRIX loads · HERE basemap · 20s refresh"
+        return "\(inMotion) in motion · live positions · 20s refresh"
     }
 
     // MARK: Content state machine
@@ -295,8 +293,6 @@ struct ShipperLiveTracking: View {
                 mapHero
                 shipmentsSection
                     .padding(.horizontal, Space.s3)
-                    .padding(.top, Space.s4)
-                geofenceRibbon
                     .padding(.top, Space.s4)
             }
         }
@@ -556,7 +552,7 @@ struct ShipperLiveTracking: View {
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
                 Button(action: tapViewAll) {
-                    Text("View all 50")
+                    Text("View all")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                 }
@@ -743,36 +739,7 @@ struct ShipperLiveTracking: View {
     // MARK: Geofence ribbon (placeholder · EUSO-2132)
 
     private var geofenceRibbon: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: Space.s2) {
-                pinGlyph
-                Text("GEOFENCE EVENTS · BACKEND PENDING")
-                    .font(EType.micro).tracking(0.5)
-                    .foregroundStyle(palette.textPrimary)
-                Spacer()
-                Text("EUSO-2132")
-                    .font(EType.micro).tracking(0.3)
-                    .foregroundStyle(palette.textSecondary)
-            }
-            Text("`telemetry.getGeofenceEvents` lands when backend ships the event stream.")
-                .font(.system(size: 10))
-                .foregroundStyle(palette.textSecondary)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, Space.s3)
-        .padding(.vertical, Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            ZStack {
-                palette.bgCard
-                LinearGradient(colors: [Brand.success.opacity(0.10),
-                                        Brand.blue.opacity(0.10)],
-                               startPoint: .leading, endPoint: .trailing)
-            }
-        )
-        .overlay(alignment: .top) {
-            Rectangle().fill(palette.borderFaint).frame(height: 1)
-        }
+        EmptyView()
     }
 
     private var pinGlyph: some View {

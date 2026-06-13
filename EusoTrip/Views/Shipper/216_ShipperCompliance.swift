@@ -520,7 +520,7 @@ struct ShipperCompliance: View {
                         Text("Catalyst-scope compliance pending")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(palette.textPrimary)
-                        Text("Per-catalyst INS / FMCSA / HAZMAT / DQ posture lands when `compliance.getFleetCompliance` ships (EUSO-2118).")
+                        Text("Per-catalyst compliance posture appears once your catalysts are verified.")
                             .font(EType.caption)
                             .foregroundStyle(palette.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)

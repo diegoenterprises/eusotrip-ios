@@ -331,7 +331,7 @@ private struct DispatcherHomeBody: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Tender queue unavailable")
                             .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                        Text("dispatch.getPendingTenders is a named gap (EUSO-2122). \(te)")
+                        Text("Couldn't load pending tenders. \(te)")
                             .font(EType.caption).foregroundStyle(Brand.danger)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

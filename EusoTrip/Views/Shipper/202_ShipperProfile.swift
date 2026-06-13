@@ -376,10 +376,29 @@ struct ShipperProfile: View {
 
     private var progressLine: String {
         guard let next = nextTier else { return "MAXED" }
+        let nextLabel = next.label.capitalized
+        // The tier gate requires ALL THREE metrics (loads AND on-time AND
+        // spend) to cross the next threshold — so a high loads count can
+        // sit at Bronze when on-time/spend lag. Showing "72 / 10" reads as
+        // broken math. Instead surface only the GATING metric(s) still
+        // unmet, never the already-satisfied ones.
+        let t = next.threshold
         let s = statsStore.state.value ?? nil
-        let target = next.threshold.loads
-        let count = max(0, s?.totalLoads ?? 0)
-        return "\(count) / \(target) to \(next.label.capitalized)"
+        let loads   = max(0, s?.totalLoads  ?? 0)
+        let onTime  = max(0, s?.onTimeRate  ?? 0)
+        let spend   = max(0, s?.totalSpend  ?? 0)
+
+        var gaps: [String] = []
+        if t.loads  > 0, loads  < t.loads  { gaps.append("\(t.loads - loads) loads") }
+        if t.onTime > 0, onTime < t.onTime { gaps.append("\(t.onTime - onTime)% on-time") }
+        if t.spend  > 0, spend  < t.spend  { gaps.append("\(dollars(Double(t.spend - spend))) spend") }
+
+        if gaps.isEmpty {
+            // Every metric is met but the tier hasn't rolled over yet
+            // (server-side aggregation cadence) — stay honest, no fraction.
+            return "\(currentTier.label.capitalized) · \(nextLabel) ready"
+        }
+        return "Need \(gaps.joined(separator: " · ")) → \(nextLabel)"
     }
 
     private var unlockBlurb: String {

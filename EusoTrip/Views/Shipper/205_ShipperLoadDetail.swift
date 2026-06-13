@@ -1048,7 +1048,7 @@ struct ShipperLoadDetail: View {
         if let un = d.unNumber, !un.isEmpty {
             return "\(un) HAZMAT"
         }
-        if let c = d.cargoType, !c.isEmpty { return c.uppercased() }
+        if let c = d.cargoType, !c.isEmpty { return cleanLabel(c).uppercased() }
         return "DETAIL"
     }
 
@@ -1387,9 +1387,9 @@ struct ShipperLoadDetail: View {
     private var lifecycleProductLabel: String {
         guard let d = liveDetail else { return "LOADING" }
         if let un = d.unNumber, !un.isEmpty {
-            return "\(un) HAZMAT \((d.equipmentType ?? "TANKER").uppercased())"
+            return "\(un) HAZMAT \(cleanLabel(d.equipmentType ?? "TANKER").uppercased())"
         }
-        if let c = d.cargoType, !c.isEmpty { return c.uppercased() }
+        if let c = d.cargoType, !c.isEmpty { return cleanLabel(c).uppercased() }
         return "DRY VAN"
     }
 
@@ -1467,11 +1467,11 @@ struct ShipperLoadDetail: View {
         }
         if let equip = d.equipmentType, !equip.isEmpty, d.weightValue > 0 {
             let weightK = Int(d.weightValue / 1000.0)
-            pills.append(MoneyPill(text: "\(equip) · \(weightK)K",
+            pills.append(MoneyPill(text: "\(cleanLabel(equip)) · \(weightK)K",
                                    tint: palette.bgCardSoft,
                                    label: palette.textPrimary))
         } else if let equip = d.equipmentType, !equip.isEmpty {
-            pills.append(MoneyPill(text: equip,
+            pills.append(MoneyPill(text: cleanLabel(equip),
                                    tint: palette.bgCardSoft,
                                    label: palette.textPrimary))
         }
@@ -1583,7 +1583,7 @@ struct ShipperLoadDetail: View {
     private func carrierMetaLine(for d: LoadsAPI.LoadDetail) -> String {
         var parts: [String] = []
         if let id = d.catalystId { parts.append("ID \(id)") }
-        if let equip = d.equipmentType { parts.append(equip) }
+        if let equip = d.equipmentType { parts.append(cleanLabel(equip)) }
         return parts.isEmpty ? "-" : parts.joined(separator: " · ")
     }
 
@@ -1795,7 +1795,7 @@ struct ShipperLoadDetail: View {
                 scheduleRow(label: "Commodity", value: commodity)
             }
             if let equip = d.equipmentType, !equip.isEmpty {
-                scheduleRow(label: "Equipment", value: equip)
+                scheduleRow(label: "Equipment", value: cleanLabel(equip))
             }
             // 2026-05-17 — Multi-modal payload surfacing. Mode is always
             // present (server defaults to "truck"); the rest only render
@@ -2021,6 +2021,30 @@ struct ShipperLoadDetail: View {
         }
     }
 
+    /// Strip machine tokens (bracketed enum keys, key=value pairs) that
+    /// occasionally bleed into server equipment/cargo display strings,
+    /// e.g. "Tanker · Hazmat [tanker_hazmat] · vertical=truck" → "Tanker · Hazmat".
+    /// Display-layer only — never apply to values used as lexicon keys
+    /// (loadEquipmentRaw) or sent to the server. Never returns empty for
+    /// a non-empty input.
+    private func cleanLabel(_ s: String) -> String {
+        var out = s
+        // remove "[anything]" bracket tokens (with any leading whitespace)
+        out = out.replacingOccurrences(
+            of: #"\s*\[[^\]]*\]"#, with: "", options: .regularExpression)
+        // remove "key=value" tokens (vertical=truck, rate-unit=per_mile, …),
+        // dropping any leading separator/bullet too
+        out = out.replacingOccurrences(
+            of: #"\s*[·•]?\s*[A-Za-z_-]+=\S+"#, with: "", options: .regularExpression)
+        // collapse doubled separators left behind by the removals
+        out = out.replacingOccurrences(
+            of: #"\s*·\s*·\s*"#, with: " · ", options: .regularExpression)
+        let trimmed = out.trimmingCharacters(in: CharacterSet(charactersIn: " ·•"))
+        // Guard: never return empty for a non-empty input.
+        if trimmed.isEmpty { return s.trimmingCharacters(in: .whitespaces) }
+        return trimmed
+    }
+
     private func humanCargoType(_ raw: String?) -> String {
         guard let r = raw, !r.isEmpty else { return "-" }
         switch r.lowercased() {
@@ -2032,7 +2056,7 @@ struct ShipperLoadDetail: View {
         case "refrigerated": return "Refrigerated"
         case "container":    return "Container"
         case "bulk":         return "Bulk"
-        default:             return r.capitalized
+        default:             return cleanLabel(r).capitalized
         }
     }
 

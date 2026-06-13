@@ -317,7 +317,7 @@ struct ShipperRFP: View {
                 .font(.system(size: 34, weight: .bold))
                 .tracking(-0.6)
                 .foregroundStyle(palette.textPrimary)
-            Text("Eusorone Technologies · request for proposals · MATRIX-50")
+            Text("Eusorone Technologies · request for proposals")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }

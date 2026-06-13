@@ -9,14 +9,13 @@
 //
 //  Surface: per-load Wallet pickup-credential pass + per-card Apple Pay
 //  authoring. Ninth Arc L brick after 231→232→233→234→235→236→237→238.
-//  Hero = active `.pkpass` for the MATRIX-50 row 1 pickup window
-//  (LD-260427-A38FB12C7E · Houston→Dallas · MC-306 Gasoline UN1203 ·
-//  $1,900). Tapping "Add to Wallet" fires PKAddPassesViewController.
-//  Two cards below: passes-in-Wallet (3 rows mapping to MATRIX-50 rows
-//  1/2/3) and Apple Pay methods (Visa default + Amex backup, both on
-//  the Eusorone Technologies merchant account).
+//  Hero = the shipper's active `.pkpass` pickup window, fetched live
+//  from wallet.shipperPassesSnapshot. Tapping "Add to Wallet" fires
+//  PKAddPassesViewController. Two cards below: passes-in-Wallet and
+//  Apple Pay methods (live Stripe Customer cards), both on the
+//  Eusorone Technologies merchant account.
 //
-//  §11 Diego canon · §11.2/§11.4 MATRIX-50 lane canon all anchored.
+//  §11 Diego canon anchored.
 //  Doctrine: §2 nav, §3 numbers-first, §4.3 single hairline, §7 breathe
 //  density, §17.2 width-locked status grammar, §19.2 file-scoped helpers
 //  (GradientPassHeader, GradientCapsuleCTA, DecorativeQRGrid,
@@ -307,7 +306,7 @@ struct ShipperApplePayWallet: View {
 
     /// Translate a server `ShipperPassRow` into the hero card's
     /// ActiveWalletPass shape. Adds the human-formatted ETA + the
-    /// "MATRIX-50" eyebrow (server doesn't know about the cohort).
+    /// "ACTIVE PASS" eyebrow (with the load reference when present).
     private static func heroFromRow(_ row: WalletAPI.ShipperPassRow) -> ActiveWalletPass {
         let etaText: String = {
             guard let iso = row.deliveryDate ?? row.pickupDate else { return "TBD" }
@@ -357,12 +356,14 @@ struct ShipperApplePayWallet: View {
             escrowLine: escrowLine,
             carrierTier: String(row.id.suffix(2)).first.map(String.init) ?? "A",
             ctaLabel: "Add to Wallet",
-            // Founder ask 2026-05-19 — canonical SVG section label
-            // "ACTIVE PASS · MATRIX-50 ROW 1" should show when an
-            // active load exists. Default to row 1 when the server
-            // doesn't tag a cohort; downstream cohort tagging
-            // (server-side metadata.matrix50.row) will flip this.
-            matrixRowLabel: "ACTIVE PASS · MATRIX-50 ROW 1"
+            // Section eyebrow for the active pass. When the server
+            // returns a human load reference, surface it ("ACTIVE
+            // PASS · LD-…"); otherwise fall back to the plain label
+            // rather than inventing a cohort tag.
+            matrixRowLabel: {
+                let ref = row.id.trimmingCharacters(in: .whitespaces)
+                return ref.isEmpty ? "ACTIVE PASS" : "ACTIVE PASS · \(ref)"
+            }()
         )
     }
 
@@ -668,7 +669,7 @@ struct ShipperApplePayWallet: View {
             Text("Powered by Apple Pay · PassKit · Wallet")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
-            Text("companyId 1 · Eusorone Technologies · MATRIX-50-2026-04-26")
+            Text("Eusorone Technologies, Inc")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
         }
@@ -773,7 +774,7 @@ struct ShipperApplePayWallet: View {
             passBannerText = "Pass added to Apple Wallet"
         case .signingUnavailable(let qrPayload, let shortCode):
             passBannerKind = .info
-            passBannerText = "Wallet signing offline - show the in-app QR + code \(shortCode) at the gate."
+            passBannerText = "Show this in-app pass — present the QR or code \(shortCode) at the gate."
             inlineQrPayload = qrPayload
             inlineShortCode = shortCode
         case .failure(let message):
@@ -883,8 +884,9 @@ private struct ActiveWalletPass {
     let escrowLine:  String
     let carrierTier: String
     let ctaLabel:    String
-    /// Optional eyebrow ("ACTIVE PASS · MATRIX-50 ROW 1" etc.). nil
-    /// when the server didn't tag the load with a cohort label.
+    /// Optional eyebrow ("ACTIVE PASS · LD-…"). nil when there's no
+    /// load reference to append, in which case the section falls back
+    /// to the plain "ACTIVE PASS" label.
     let matrixRowLabel: String?
 }
 

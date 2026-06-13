@@ -254,7 +254,7 @@ struct ShipperReports: View {
             Text("Reports")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("Export MATRIX-50 metrics · CSV · XLSX · PDF · API")
+            Text("Export your metrics · CSV · XLSX · PDF · API")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }

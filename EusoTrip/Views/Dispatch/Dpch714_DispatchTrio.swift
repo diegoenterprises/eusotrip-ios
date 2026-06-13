@@ -336,7 +336,7 @@ private struct FleetMapBody: View {
     private var fleetMap: some View {
         if !truckMarkers.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text("LIVE FLEET MAP · HERE basemap · gps_tracking heartbeat")
+                Text("LIVE FLEET MAP · live GPS")
                     .font(.system(size: 8, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1).minimumScaleFactor(0.6)
@@ -371,7 +371,7 @@ private struct FleetMapBody: View {
                     Text("No fleet positions")
                         .font(.system(size: 13, weight: .heavy))
                         .foregroundStyle(palette.textPrimary)
-                    Text("Awaiting a gps_tracking heartbeat from a fleet driver")
+                    Text("Waiting for a live GPS signal from a fleet driver")
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1).minimumScaleFactor(0.7)

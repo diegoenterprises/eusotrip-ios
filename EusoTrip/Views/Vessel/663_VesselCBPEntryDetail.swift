@@ -295,7 +295,7 @@ private struct VesselCBPEntryDetailBody: View {
             // PORT-GAP caption — mirrors the canonical SVG hairline note.
             // getHoldStatus is unwrapped (DescartesABIService.ts:356) but
             // has no tRPC procedure in vesselShipments.ts.
-            Text("Intensified-exam detail pending getHoldStatus wiring (named gap).")
+            Text("Intensified-exam detail appears once CBP posts the hold status.")
                 .font(.system(size: 10, weight: .regular))
                 .foregroundStyle(palette.textTertiary)
         }

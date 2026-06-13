@@ -21,6 +21,13 @@ private struct WalletBalance: Decodable, Hashable {
     let escrow: Double?
     let total: Double?
     let monthVolume: Double?
+    // `wallet.getBalance` also returns lifetime in/out totals; decode
+    // them so the breakdown surfaces real activity when a wallet has
+    // moved money. (tRPC decode ignores any field we don't list, so
+    // the remaining server fields — currency/lastUpdated/stripeBalance/
+    // paymentMethods — simply pass through untouched.)
+    let totalReceived: Double?
+    let totalSpent: Double?
 }
 
 private struct WalletHomeBody: View {
@@ -75,6 +82,11 @@ private struct WalletHomeBody: View {
             LifecycleRow(label: "Reserved",  value: usd(b.reserved))
             LifecycleRow(label: "Escrow",    value: usd(b.escrow))
             LifecycleRow(label: "Total",     value: usd(b.total))
+            // Lifetime activity — surfaced only when real money has
+            // moved. `usd` renders an honest em-dash at zero/nil, so a
+            // brand-new wallet shows "-" rather than a fabricated value.
+            LifecycleRow(label: "Received",  value: usd(b.totalReceived))
+            LifecycleRow(label: "Spent",     value: usd(b.totalSpent))
         }
     }
 

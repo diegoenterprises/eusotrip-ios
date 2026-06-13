@@ -465,7 +465,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
     private func liveFleetMap(_ l: ActiveLoadRow_375) -> some View {
         if let fix = liveDriverFix {
             VStack(alignment: .leading, spacing: 6) {
-                Text("LIVE FLEET MAP · HERE basemap · gps_tracking heartbeat")
+                Text("LIVE FLEET MAP · live GPS")
                     .font(.system(size: 8, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1).minimumScaleFactor(0.6)
@@ -623,7 +623,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
-                Text("Eusorone Technologies · companyId 1 · IN-TRANSIT echo")
+                Text("Eusorone Technologies · in transit")
                     .font(.system(size: 8, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
