@@ -369,7 +369,9 @@ private struct AssignReceiptBody: View {
                     }
                 }
                 Spacer()
-                Text("0.94").font(.body.weight(.heavy).monospacedDigit()).foregroundStyle(.green)
+                Text(l.bestMatchScore.map { String(format: "%.2f", $0) } ?? "—")
+                    .font(.body.weight(.heavy).monospacedDigit())
+                    .foregroundStyle(l.bestMatchScore == nil ? palette.textTertiary : .green)
             }
         }
     }
@@ -378,7 +380,7 @@ private struct AssignReceiptBody: View {
         let cols = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
         return LazyVGrid(columns: cols, spacing: 8) {
             kpi("GROSS", "$\(l.rate ?? "-")", "line haul", .green)
-            kpi("FSC", "$\(l.fsc ?? "-")", "18% line-haul", .blue)
+            kpi("FSC", l.fsc.map { "$\($0)" } ?? "—", "fuel surcharge", .blue)
             kpi("DISTANCE", "\(Int(l.distance ?? 0)) mi", "to destination", .blue)
             kpi("ETA PICKUP", etaText(l.pickupDate), "window open", .blue)
         }

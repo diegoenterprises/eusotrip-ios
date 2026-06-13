@@ -818,13 +818,25 @@ struct ShipperApplePayWallet: View {
                 // dependent settlements) stays in sync.
                 await MainActor.run {
                     paymentMethods = paymentMethods.map {
-                        PaymentMethod(
+                        let isDefault = $0.id == method.id
+                        // Rebuild the spec deterministically from its own
+                        // fields rather than string-replacing the word.
+                        // Format (see methodFromRow): "name · default|backup
+                        // · expires mm/yy" — the three components are joined
+                        // by " · ", so we swap only the middle token by index
+                        // and leave the name + expiry exactly as they were.
+                        // String-replacing collided when "default"/"backup"
+                        // appeared in the billing name and double-flipped.
+                        var parts = $0.spec.components(separatedBy: " · ")
+                        if parts.count >= 2 {
+                            parts[1] = isDefault ? "default" : "backup"
+                        }
+                        return PaymentMethod(
                             id: $0.id,
                             brand: $0.brand,
                             maskedPAN: $0.maskedPAN,
-                            spec: $0.spec.replacingOccurrences(of: " · default ·", with: " · backup ·")
-                                       .replacingOccurrences(of: " · backup ·", with: $0.id == method.id ? " · default ·" : " · backup ·"),
-                            tag: $0.id == method.id ? .defaultMethod : .backup
+                            spec: parts.joined(separator: " · "),
+                            tag: isDefault ? .defaultMethod : .backup
                         )
                     }
                     passBannerKind = .success

@@ -741,8 +741,8 @@ enum TripPhase: String, CaseIterable, Codable {
         case .dischargeInProgress: return .discharging         // 040 flowing off the rig
         case .dischargeComplete:   return .vaporPurging         // 041 vapor purge after discharge
         case .disconnectAndVerify: return .disconnecting        // 042 dry-disconnect + verify
-        case .disconnectConfirmed: return .released             // 043 hose released, binder closed
-        case .connectDropHose:     return .released             // 044 multi-drop UI sub-state of released (connectHose wizard)
+        case .disconnectConfirmed: return .podPending           // 043 hose released → tanker FSM lands pod_pending (no delivery-side `released` state)
+        case .connectDropHose:     return .podPending           // 044 multi-drop UI sub-state of pod_pending (connectHose wizard; load stays pod_pending)
         case .paperwork:           return .podPending
         case .offDuty:             return nil
         case .nextLoadBrief:       return nil
@@ -1122,7 +1122,22 @@ extension TripPhase {
         case .backingIn:        return .backingIn
         case .unloading:        return .unloading
         case .unloaded:         return .unloading      // disconnect wizard runs here; UI stays on 024
-        case .podPending:       return .paperwork
+        case .podPending:
+            // `pod_pending` is the server status both for the normal
+            // close-out (→ 025 paperwork) AND for the tanker delivery
+            // disconnect (043) and its multi-drop sub-state (044) — the
+            // tanker FSM lands `pod_pending` at the 043 hop (there is no
+            // delivery-side `released` state). Disambiguate by leg, and
+            // (like `delivery_checkin`) prefer the phase closest to
+            // `from` so the UI doesn't skip the 043/044 substates:
+            //   • already at 043/044 → hold that phase
+            //   • delivery leg pre-043 (042) → 043 just landed → 043
+            //   • otherwise (non-tanker / pickup side) → 025 paperwork
+            switch from {
+            case .disconnectConfirmed, .connectDropHose: return from
+            case _ where from.isTankerDeliveryLeg:       return .disconnectConfirmed
+            default:                                     return .paperwork
+            }
         // Tanker delivery-discharge bricks 040→044. The backend re-uses
         // `disconnecting` for both the PICKUP detach (032) and the
         // DELIVERY disconnect (042); disambiguate by where the UI is —
@@ -1161,9 +1176,11 @@ extension TripPhase {
             // to 042; otherwise it's the pickup detach.
             return from.isTankerDeliveryLeg ? .disconnectAndVerify : .detachSequence
         case .released:
-            // Hose released. On the delivery leg this is 043; pre-delivery
-            // it has no driver screen, so hold position.
-            return from.isTankerDeliveryLeg ? .disconnectConfirmed : from
+            // Pickup-side hose-released state only — the delivery
+            // disconnect (043) lands `pod_pending`, NOT `released`, so
+            // the server never emits `released` on the delivery leg.
+            // No driver screen on the pickup side, so hold position.
+            return from
         case .brakesSet:
             // Tanker sub-state not surfaced in the driver UI — controller
             // holds position and (optionally) raises a banner.
@@ -1174,9 +1191,11 @@ extension TripPhase {
     /// True when this phase is on the tanker DELIVERY discharge leg
     /// (screens 040→044, plus `.backingIn` which immediately precedes it).
     /// Used to disambiguate backend statuses that the server re-uses
-    /// across the pickup and delivery legs (e.g. `disconnecting`,
-    /// `released`) so the reverse lookup routes to the delivery brick
-    /// rather than the pickup detach.
+    /// across the pickup and delivery legs (e.g. `disconnecting`, shared
+    /// by the pickup detach and the delivery dry-disconnect; and
+    /// `pod_pending`, shared by the normal close-out and the tanker 043/044
+    /// bricks) so the reverse lookup routes to the delivery brick rather
+    /// than the pickup detach / generic paperwork.
     var isTankerDeliveryLeg: Bool {
         switch self {
         case .backingIn, .unloading,

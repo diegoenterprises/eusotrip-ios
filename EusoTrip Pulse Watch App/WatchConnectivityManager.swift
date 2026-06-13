@@ -224,13 +224,24 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
     /// Forward a round-trip conversation (user said / Esang replied) so
     /// the iPhone's Esang surface renders it. iOS handler treats this as
     /// an activation event and fires the three phone-side paths.
-    func forwardToPhone(transcript: String, reply: String, intent: String, actions: [VoiceAction]) {
+    ///
+    /// `exchangeId` is the STABLE per-turn identity minted ONCE when the
+    /// turn was created (the `EsangTurn.id`), threaded through here so it
+    /// rides every transmit of this exchange. The phone derives its
+    /// idempotency key from this id verbatim, so a WCSession re-delivery
+    /// of the same envelope — or a higher-layer re-forward of the same
+    /// logical turn — collapses on the server instead of inserting a
+    /// duplicate message. Without it the phone falls back to hashing
+    /// content + `ts`, which only holds for re-deliveries of a SINGLE
+    /// send and re-stamps a fresh `ts` (→ a fresh key) on any re-forward.
+    func forwardToPhone(exchangeId: String, transcript: String, reply: String, intent: String, actions: [VoiceAction]) {
         guard let session, session.activationState == .activated else { return }
         let actionPayloads: [[String: Any]] = actions.map { a in
             ["type": a.type, "label": a.label ?? ""]
         }
         let payload: [String: Any] = [
             "op": "esang.exchange",
+            "exchangeId": exchangeId,
             "transcript": transcript,
             "reply": reply,
             "intent": intent,

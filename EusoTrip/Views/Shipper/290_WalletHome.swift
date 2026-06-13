@@ -24,10 +24,41 @@ private struct WalletBalance: Decodable, Hashable {
     // `wallet.getBalance` also returns lifetime in/out totals; decode
     // them so the breakdown surfaces real activity when a wallet has
     // moved money. (tRPC decode ignores any field we don't list, so
-    // the remaining server fields — currency/lastUpdated/stripeBalance/
+    // the remaining server fields — lastUpdated/stripeBalance/
     // paymentMethods — simply pass through untouched.)
     let totalReceived: Double?
     let totalSpent: Double?
+    // Server always returns a `currency` String ("USD"); carry it so the
+    // wallet can render in the account's real currency if it ever differs.
+    let currency: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case available, pending, reserved, escrow, total, monthVolume
+        case totalReceived, totalSpent, currency
+    }
+
+    init(from decoder: Decoder) throws {
+        // Defensive decode: every field is optional and tolerated as a
+        // number OR a numeric String, so a server shape drift (e.g. a
+        // decimal returned as a String) can never throw and blank the
+        // whole wallet. Missing/null/unparseable → nil → honest em-dash.
+        let c = try? decoder.container(keyedBy: CodingKeys.self)
+        func num(_ key: CodingKeys) -> Double? {
+            guard let c = c else { return nil }
+            if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return d }
+            if let s = try? c.decodeIfPresent(String.self, forKey: key) { return Double(s) }
+            return nil
+        }
+        available     = num(.available)
+        pending       = num(.pending)
+        reserved      = num(.reserved)
+        escrow        = num(.escrow)
+        total         = num(.total)
+        monthVolume   = num(.monthVolume)
+        totalReceived = num(.totalReceived)
+        totalSpent    = num(.totalSpent)
+        currency      = (try? c?.decodeIfPresent(String.self, forKey: .currency)) ?? nil
+    }
 }
 
 private struct WalletHomeBody: View {
@@ -194,23 +225,73 @@ private struct ShipperCashOutSheet: View {
     @State private var ack: WalletExtrasAPI.RequestPayoutAck? = nil
 
     private var parsedAmount: Double? {
-        // Parse locale-awarely: in many locales the comma is the DECIMAL
-        // separator (e.g. "12,50" = 12.5), so we must not strip commas as
-        // thousands separators. Drop the currency symbol, then let a
-        // .decimal NumberFormatter in the current locale interpret the text.
+        // Robust, locale-aware monetary parse. The old `.decimal`
+        // NumberFormatter parse was buggy in two ways:
+        //   1) it did a LENIENT prefix parse, so "5 cats", "1.2.3" or
+        //      "1e3" yielded a number that silently passed validation
+        //      while the field showed something else; and
+        //   2) "1,234" is genuinely AMBIGUOUS — 1234 in the US, 1.234 in
+        //      a comma-decimal locale — so accepting it could withdraw a
+        //      wildly wrong amount.
+        // We instead constrain the input to a single, unambiguous
+        // monetary number for the user's locale and reject anything else
+        // (empty, negative, multiple separators, stray characters,
+        // ambiguous grouping) by returning nil.
         let cleaned = amountText
             .replacingOccurrences(of: "$", with: "")
-            .trimmingCharacters(in: .whitespaces)
-        if cleaned.isEmpty { return nil }
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.locale = .current
-        if let number = formatter.number(from: cleaned) {
-            return number.doubleValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty else { return nil }
+
+        // Sign is never valid for a withdrawal amount.
+        if cleaned.contains("-") || cleaned.contains("+") { return nil }
+
+        let decimalSep = Locale.current.decimalSeparator ?? "."
+        let groupSep = Locale.current.groupingSeparator ?? ","
+
+        // Allowed characters: digits, the locale decimal separator, and the
+        // locale grouping separator. Anything else (letters, "e", a second
+        // symbol, whitespace inside) is rejected outright — no prefix parse.
+        var allowed = CharacterSet.decimalDigits
+        allowed.insert(charactersIn: decimalSep)
+        allowed.insert(charactersIn: groupSep)
+        if cleaned.unicodeScalars.contains(where: { !allowed.contains($0) }) { return nil }
+
+        // At most one decimal separator.
+        let decimalCount = cleaned.components(separatedBy: decimalSep).count - 1
+        if decimalCount > 1 { return nil }
+
+        // Reject ambiguous grouping: a grouping separator is only honoured
+        // when it unambiguously groups thousands (no decimal present means
+        // "1,234" could be either 1234 or 1.234 — we refuse it). Once the
+        // user types a decimal separator the grouping is unambiguous.
+        if cleaned.contains(groupSep) {
+            if decimalCount == 0 { return nil }
+            // Decimal present → strip grouping and reparse on a fixed,
+            // period-decimal basis so the value is deterministic.
         }
-        // Fallback: a bare "12.50" with a period decimal in a comma-decimal
-        // locale won't parse above — try the period as the decimal separator.
-        return Double(cleaned)
+
+        // Normalise to a canonical "1234.56" form and parse with a strict
+        // Double init (no lenient prefix behaviour).
+        var canonical = cleaned.replacingOccurrences(of: groupSep, with: "")
+        if decimalSep != "." {
+            canonical = canonical.replacingOccurrences(of: decimalSep, with: ".")
+        }
+        guard let value = Double(canonical), value.isFinite, value >= 0 else { return nil }
+        return value
+    }
+
+    /// Full available balance as a string the locale-aware `parsedAmount`
+    /// can round-trip: two fraction digits, the locale decimal separator,
+    /// and NO grouping separator (grouping without a decimal is rejected as
+    /// ambiguous, so we omit it entirely for a deterministic value).
+    private var maxAmountText: String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.locale = .current
+        f.usesGroupingSeparator = false
+        f.minimumFractionDigits = 2
+        f.maximumFractionDigits = 2
+        return f.string(from: NSNumber(value: available)) ?? String(format: "%.2f", available)
     }
 
     private var selectedMethod: WalletPaymentMethod? {
@@ -348,7 +429,7 @@ private struct ShipperCashOutSheet: View {
                         .foregroundStyle(palette.textPrimary)
                     Spacer()
                     Button {
-                        amountText = String(format: "%.2f", available)
+                        amountText = maxAmountText
                     } label: {
                         Text("MAX").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(LinearGradient.diagonal)
                             .padding(.horizontal, 8).padding(.vertical, 4)
