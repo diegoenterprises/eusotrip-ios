@@ -226,6 +226,9 @@ ENTRIES = [
     ("V7082026060200000011A1", "V7082026060200000012A1",
      "708_VesselShipmentCO2.swift",
      "EusoTrip/Views/Vessel/708_VesselShipmentCO2.swift"),
+    ("OFQU2026061300000011A1", "OFQU2026061300000012A1",
+     "OfflineQueue.swift",
+     "EusoTrip/Services/OfflineQueue.swift"),
 ]
 
 

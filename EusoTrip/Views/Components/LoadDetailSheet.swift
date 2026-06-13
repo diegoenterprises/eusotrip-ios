@@ -1704,6 +1704,8 @@ struct LoadDetailSheet: View {
                         return "Bid URL was malformed. Refresh the load board and try again."
                     case .empty:
                         return "Server returned an empty response. Try again."
+                    case .queuedForOfflineReplay:
+                        return "You're offline — this will be sent automatically when you reconnect."
                     }
                 }
                 if ns.domain == NSURLErrorDomain { return "Network unavailable. Check your connection and try again." }

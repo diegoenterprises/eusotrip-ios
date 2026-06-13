@@ -204,6 +204,13 @@ final class HOSLiveStore: ObservableObject {
             await refreshLogs()
             flashToast(result.message ?? "Status set to \(new.shortLabel)")
             return result.ok
+        } catch EusoTripAPIError.queuedForOfflineReplay {
+            // Offline — the duty-status change was persisted to the Unified
+            // Outbox and will replay on reconnect. Keep the optimistic
+            // picker highlight (we do NOT re-poll, which would clobber it
+            // with the stale server snapshot) and tell the driver honestly.
+            flashToast("Duty status queued — will sync when you reconnect")
+            return true
         } catch {
             // Roll back by re-polling
             if let fresh = try? await api.hos.getStatus() {
@@ -251,6 +258,14 @@ final class HOSLiveStore: ObservableObject {
             }
             flashToast(result.message ?? "Log certified")
             return result.ok
+        } catch EusoTripAPIError.queuedForOfflineReplay {
+            // Defensive: certification isn't an enqueue-eligible mutation
+            // today (a §395.8(g) signature is a legal event we don't replay
+            // silently), so this branch normally won't fire — but if the
+            // eligibility table ever grows to include it, surface the same
+            // honest queued message instead of a hard error.
+            flashToast("Duty status queued — will sync when you reconnect")
+            return true
         } catch {
             flashToast("Certify failed — \(error.localizedDescription)")
             return false
@@ -276,6 +291,12 @@ final class HOSLiveStore: ObservableObject {
             await refreshLogs()
             flashToast(result.message ?? "Remark added")
             return result.ok
+        } catch EusoTripAPIError.queuedForOfflineReplay {
+            // Defensive: §395.8(j) remarks aren't enqueue-eligible today,
+            // so this normally won't fire — but if the outbox ever covers
+            // them, show the honest queued message rather than a hard fail.
+            flashToast("Duty status queued — will sync when you reconnect")
+            return true
         } catch {
             flashToast("Remark failed — \(error.localizedDescription)")
             return false

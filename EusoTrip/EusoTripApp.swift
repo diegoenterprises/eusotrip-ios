@@ -160,6 +160,11 @@ struct EusoTripApp: App {
                 // same-actor call (the prior `await` produced the
                 // "No 'async' operations occur within 'await'" warning).
                 WeatherService.shared.requestPermissionIfNeeded()
+                // Unified Outbox — start the reachability hub once so it
+                // can drain the offline action queue on the next
+                // .unsatisfied → .satisfied network edge. Idempotent;
+                // `flush()` itself no-ops until a bearer token is present.
+                OfflineReachabilityHub.shared.start()
             }
             // Canonical global sign-out listener. Every Sign-out cell in
             // the app (Me hub, Settings hub, Driver Me, Shipper Me hero
@@ -191,6 +196,9 @@ struct EusoTripApp: App {
                     // inbox. Paired watches get the same count mirrored
                     // through `WatchAuthBridge` below.
                     UnreadMessageStore.shared.refresh()
+                    // Unified Outbox — drain anything persisted from a
+                    // prior offline session now that we have a bearer.
+                    Task { await OfflineQueue.shared.flush() }
                     // Forward every realtime Socket.IO fan-out
                     // (LOAD_STATE_CHANGED, HOS_WARNING, etc.) to the
                     // paired watch so the wrist reflects server events

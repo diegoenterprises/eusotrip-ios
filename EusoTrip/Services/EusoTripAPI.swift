@@ -30,6 +30,13 @@ enum EusoTripAPIError: Error, LocalizedError {
     case unauthenticated
     case trpcError(String)
     case empty
+    /// The device is offline and the mutation was an enqueue-eligible,
+    /// idempotent driver action (HOS / message / POD / load transition /
+    /// accept) — it has been persisted to `OfflineQueue.shared` and will
+    /// replay on reconnect. Callers should surface a friendly "queued —
+    /// will sync" state rather than a hard failure. NEVER thrown for
+    /// reads or money mutations (those fail hard when offline).
+    case queuedForOfflineReplay
 
     var errorDescription: String? {
         switch self {
@@ -40,6 +47,7 @@ enum EusoTripAPIError: Error, LocalizedError {
         case .unauthenticated:          return "Authentication required."
         case .trpcError(let m):         return m
         case .empty:                    return "Empty response."
+        case .queuedForOfflineReplay:   return "You're offline — this will sync when you reconnect."
         }
     }
 }
@@ -1217,11 +1225,103 @@ final class EusoTripAPI: ObservableObject {
         }
         req.httpBody = body
 
-        return try await perform(req)
+        do {
+            return try await perform(req)
+        } catch {
+            // Unified Outbox: when the device is offline and this is an
+            // enqueue-eligible, idempotent driver mutation, persist it to
+            // OfflineQueue.shared and surface `.queuedForOfflineReplay` so
+            // the caller can show a friendly "queued — will sync" state.
+            // Success behavior is untouched; reads and money mutations are
+            // never routed here (the eligibility table is path-gated). The
+            // already-encoded `{"json": …}` body carries the exact payload
+            // we need to reconstruct the QueuedAction.
+            if OfflineQueue.isNetworkUnreachable(error),
+               Self.enqueueIfOfflineEligible(path: path, body: body) {
+                throw EusoTripAPIError.queuedForOfflineReplay
+            }
+            throw error
+        }
     }
 
     func mutationNoInput<Output: Decodable>(_ path: String) async throws -> Output {
         return try await mutation(path, input: TRPCEmptyInput())
+    }
+
+    // MARK: Offline-outbox eligibility
+    //
+    // Maps a tRPC mutation path to its OfflineQueue enqueue, decoding the
+    // payload from the already-encoded `{"json": <input>}` request body.
+    // ONLY the five idempotent driver mutations are eligible — reads never
+    // reach this `mutation` path at all, and money mutations (payout /
+    // escrow / P2P transfer) are deliberately ABSENT from the table so a
+    // debit can never be silently replayed hours later out of the user's
+    // sight. Returns true iff the action was enqueued.
+    //
+    // @MainActor: the sole caller is the @MainActor `mutation` method, so
+    // the enqueue runs synchronously on the main actor (no Task hop, no
+    // ordering race against the throw that the caller awaits).
+    @MainActor
+    static func enqueueIfOfflineEligible(path: String, body: Data) -> Bool {
+        // Re-entrancy guard: when OfflineQueue.flush() replays a queued
+        // action it goes right back through this same `mutation` path. If
+        // the network dropped again mid-replay we must NOT enqueue a
+        // duplicate — the original entry is still in the queue and will
+        // retry on the next edge. `isFlushing` is the in-flight signal.
+        if OfflineQueue.shared.isFlushing { return false }
+
+        // Envelope the encoder produced: { "json": <input> }.
+        struct Env<T: Decodable>: Decodable { let json: T }
+        let dec = JSONDecoder()
+
+        switch path {
+        case "hos.changeStatus":
+            // Server input is { newStatus, location, notes? }.
+            struct In: Decodable { let newStatus: String; let location: String; let notes: String? }
+            guard let p = try? dec.decode(Env<In>.self, from: body).json else { return false }
+            OfflineQueue.shared.enqueueChangeHosStatus(
+                status: p.newStatus, location: p.location, remark: p.notes, loadId: nil
+            )
+            return true
+
+        case "messages.sendMessage":
+            struct In: Decodable { let conversationId: String; let content: String; let type: String }
+            guard let p = try? dec.decode(Env<In>.self, from: body).json else { return false }
+            OfflineQueue.shared.enqueueSendMessage(
+                conversationId: p.conversationId, content: p.content, type: p.type
+            )
+            return true
+
+        case "pod.submitPOD":
+            struct In: Decodable {
+                let loadId: Int; let receiverName: String
+                let photoBase64: String?; let signatureBase64: String?; let notes: String?
+            }
+            guard let p = try? dec.decode(Env<In>.self, from: body).json else { return false }
+            OfflineQueue.shared.enqueueSubmitPOD(
+                loadId: p.loadId, receiverName: p.receiverName,
+                photoBase64: p.photoBase64, signatureBase64: p.signatureBase64, notes: p.notes
+            )
+            return true
+
+        case "loadLifecycle.executeTransition":
+            struct In: Decodable { let loadId: String; let transitionId: String }
+            guard let p = try? dec.decode(Env<In>.self, from: body).json else { return false }
+            OfflineQueue.shared.enqueueExecuteTransition(
+                loadId: p.loadId, transitionId: p.transitionId
+            )
+            return true
+
+        case "drivers.acceptLoad":
+            struct In: Decodable { let loadId: String }
+            guard let p = try? dec.decode(Env<In>.self, from: body).json else { return false }
+            OfflineQueue.shared.enqueueAcceptLoad(loadId: p.loadId)
+            return true
+
+        default:
+            // Not enqueue-eligible (reads, money mutations, everything else).
+            return false
+        }
     }
 
     // MARK: Shared transport

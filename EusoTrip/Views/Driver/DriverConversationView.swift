@@ -140,6 +140,9 @@ struct DriverConversationView: View {
     /// WebSocket observer handle for `.eusoMessageReceived`. Registered
     /// in `.onAppear` and torn down in `.onDisappear`.
     @State private var realtimeObserver: NSObjectProtocol? = nil
+    /// Unified Outbox observer handle for `.eusoOutboxReplayed`. Reconciles
+    /// any `queuedOffline` bubble once the queue replays it on reconnect.
+    @State private var outboxObserver: NSObjectProtocol? = nil
 
     // ──────────── Unsend message state ────────────
     //
@@ -199,6 +202,17 @@ struct DriverConversationView: View {
             }
             realtimeObserver = token
 
+            // Unified Outbox — reconcile queued-offline bubbles when the
+            // queue replays them on reconnect.
+            let outboxToken = NotificationCenter.default.addObserver(
+                forName: .eusoOutboxReplayed, object: nil, queue: .main
+            ) { note in
+                Task { @MainActor in
+                    handleOutboxReplayed(note)
+                }
+            }
+            outboxObserver = outboxToken
+
             // Hand the finalized dictation transcript back into the draft.
             // Append so a dictation can extend a half-typed message rather
             // than clobber it.
@@ -212,6 +226,10 @@ struct DriverConversationView: View {
                 NotificationCenter.default.removeObserver(realtimeObserver)
             }
             realtimeObserver = nil
+            if let outboxObserver {
+                NotificationCenter.default.removeObserver(outboxObserver)
+            }
+            outboxObserver = nil
             RealtimeService.shared.leaveConversation(thread.id)
             UnreadMessageStore.shared.didCloseConversation(thread.id)
             voice.cancel()
@@ -520,19 +538,33 @@ struct DriverConversationView: View {
                     // we render the time + receipt together just below).
                     ChatBubbleSent(text: m.text)
                 }
-                HStack(spacing: 4) {
-                    Text(clock(m.time))
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                        .foregroundStyle(palette.textTertiary)
-                    // Doctrine §2.1: brand accent on "read" state must be the
-                    // gradient, not a flat Brand.info tint. §2.3: ternary
-                    // shape-style branches wrapped in AnyShapeStyle so
-                    // SwiftUI compiles on iOS 17.
-                    Image(systemName: m.read ? "checkmark.circle.fill" : "checkmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(m.read
-                                         ? AnyShapeStyle(LinearGradient.diagonal)
-                                         : AnyShapeStyle(palette.textTertiary))
+                if m.queuedOffline {
+                    // Unified Outbox state — sent while offline, persisted
+                    // for replay. Honest footer instead of a read receipt
+                    // the message hasn't earned yet.
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Brand.warning)
+                        Text("Queued · will send when you reconnect")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.3)
+                            .foregroundStyle(Brand.warning)
+                    }
+                } else {
+                    HStack(spacing: 4) {
+                        Text(clock(m.time))
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                            .foregroundStyle(palette.textTertiary)
+                        // Doctrine §2.1: brand accent on "read" state must be the
+                        // gradient, not a flat Brand.info tint. §2.3: ternary
+                        // shape-style branches wrapped in AnyShapeStyle so
+                        // SwiftUI compiles on iOS 17.
+                        Image(systemName: m.read ? "checkmark.circle.fill" : "checkmark")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(m.read
+                                             ? AnyShapeStyle(LinearGradient.diagonal)
+                                             : AnyShapeStyle(palette.textTertiary))
+                    }
                 }
             }
         }
@@ -1242,6 +1274,22 @@ struct DriverConversationView: View {
                 }
                 _ = localId // keep the localId alive for future debug
                 lastErrorMessage = nil
+            } catch EusoTripAPIError.queuedForOfflineReplay {
+                // Offline — EusoTripAPI persisted this send to the Unified
+                // Outbox. KEEP the optimistic bubble (don't roll it back),
+                // flip it to the `.queuedOffline` state so it shows a
+                // "Queued · will send when you reconnect" footer, and link
+                // it to the queued action's idempotency key so the
+                // `.eusoOutboxReplayed` observer can reconcile it on
+                // reconnect. Only plain-text sends reach this branch — the
+                // attachment path uploads bytes and isn't enqueue-eligible.
+                if let idx = messages.firstIndex(where: { $0.id == anchor }) {
+                    messages[idx].queuedOffline = true
+                    messages[idx].outboxKey = OfflineQueue.shared.keyForPendingMessage(
+                        conversationId: thread.id, content: text
+                    )
+                }
+                lastErrorMessage = nil
             } catch {
                 // Roll the optimistic bubble back and surface the error.
                 messages.removeAll { $0.id == anchor }
@@ -1254,6 +1302,29 @@ struct DriverConversationView: View {
                     attachmentScan = scan
                 }
             }
+        }
+    }
+
+    // MARK: Outbox reconciliation
+
+    /// Reconcile a queued-offline bubble once the Unified Outbox replays
+    /// it on reconnect. The `.eusoOutboxReplayed` notification carries the
+    /// replayed action's idempotency `key`; we match it to the bubble's
+    /// `outboxKey` and clear the queued state. As a belt-and-suspenders
+    /// step we also reload the transcript so the bubble picks up its real
+    /// serverId / read state from the server's canonical copy.
+    @MainActor
+    private func handleOutboxReplayed(_ note: Notification) {
+        guard let key = note.userInfo?["key"] as? String else { return }
+        var matched = false
+        if let idx = messages.firstIndex(where: { $0.outboxKey == key }) {
+            messages[idx].queuedOffline = false
+            matched = true
+        }
+        // If the key wasn't linked (enqueue/throw ordering race) but this
+        // thread has any queued bubbles, refetch to reconcile them all.
+        if matched || messages.contains(where: { $0.queuedOffline }) {
+            Task { await loadTranscript() }
         }
     }
 
