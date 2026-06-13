@@ -3427,6 +3427,35 @@ struct eSangAPI {
         /// dispatch. Passed through so eSang can pull live load + HOS
         /// context server-side.
         let loadId: String?
+        /// ── ESANG vision grounding (autopilot only) ──
+        /// A JPEG screenshot of the live screen, base64-encoded, captured
+        /// ONLY during user-initiated hands-free autopilot turns so ESANG
+        /// can ground a `<<<ACTION:tap:CX x CY>>>` on a visible control.
+        /// `nil` (and OMITTED from the wire payload) for every text / coach
+        /// chat, so those request bodies stay byte-identical to today.
+        let screenB64: String?
+        /// Pixel width of the captured screenshot (origin top-left). Lets
+        /// the server reason about aspect ratio when grounding a tap point.
+        let screenW: Int?
+        /// Pixel height of the captured screenshot. See `screenW`.
+        let screenH: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case currentPage, loadId, screenB64, screenW, screenH
+        }
+
+        /// Custom encode so the three vision keys are OMITTED entirely when
+        /// nil (not encoded as JSON null). A text/coach chat — which never
+        /// sets them — therefore serializes to exactly the prior two-key
+        /// `{ currentPage, loadId }` shape, byte-for-byte.
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(currentPage, forKey: .currentPage)
+            try c.encode(loadId, forKey: .loadId)
+            if let screenB64 { try c.encode(screenB64, forKey: .screenB64) }
+            if let screenW { try c.encode(screenW, forKey: .screenW) }
+            if let screenH { try c.encode(screenH, forKey: .screenH) }
+        }
     }
 
     /// Mirror of the backend `ESANGResponse` payload. We only decode the
@@ -3444,18 +3473,33 @@ struct eSangAPI {
     /// production eSang (Gemini-backed) and returns the assistant reply.
     /// `currentPage` / `loadId` are optional context hints; pass them when
     /// available so replies factor in the caller's surface.
+    ///
+    /// `screenB64` / `screenW` / `screenH` carry an optional live screenshot
+    /// for ESANG VISION GROUNDING — supplied ONLY by the hands-free autopilot
+    /// turn so ESANG can return a `<<<ACTION:tap:CX x CY>>>` grounded on a
+    /// visible on-screen control. They default to nil and, when nil, are
+    /// OMITTED from the request body (see `ChatContext.encode`), so every
+    /// text / coach chat sends the exact same payload it does today.
     func chat(
         message: String,
         currentPage: String? = nil,
-        loadId: String? = nil
+        loadId: String? = nil,
+        screenB64: String? = nil,
+        screenW: Int? = nil,
+        screenH: Int? = nil
     ) async throws -> ChatResponse {
         struct Input: Encodable {
             let message: String
             let context: ChatContext?
         }
-        let ctx: ChatContext? = (currentPage == nil && loadId == nil)
-            ? nil
-            : ChatContext(currentPage: currentPage, loadId: loadId)
+        // Build a context object only when at least one hint is present.
+        // The vision keys ride the SAME `context` field — no new endpoint.
+        let hasContext = currentPage != nil || loadId != nil
+            || screenB64 != nil || screenW != nil || screenH != nil
+        let ctx: ChatContext? = hasContext
+            ? ChatContext(currentPage: currentPage, loadId: loadId,
+                          screenB64: screenB64, screenW: screenW, screenH: screenH)
+            : nil
         return try await api.mutation(
             "esang.chat",
             input: Input(message: message, context: ctx)

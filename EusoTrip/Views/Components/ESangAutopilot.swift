@@ -105,6 +105,15 @@ enum eSangAction: Equatable {
     /// undo-all signal any surface that applied an autopilot mutation
     /// listens for to roll back.
     case undoAll
+    /// ESANG VISION GROUNDING — tap a visible on-screen control. `x`/`y`
+    /// are NORMALIZED (0…1, top-left origin) coordinates into the key
+    /// window, as returned by the server's vision model from the captured
+    /// screenshot (`<<<ACTION:tap:CX x CY>>>`). The actual hit-test +
+    /// accessibility activation lives in `ContentView` (it owns the key
+    /// window + overlay); the dispatcher just posts `.esangTapAtPoint`
+    /// carrying the normalized point. Both values are clamped to 0…1 at
+    /// parse time so a bad model output can never index off-screen.
+    case tapAt(x: Double, y: Double)
 }
 
 /// The iOS top-level tab names ESANG can navigate to. These are the four
@@ -282,6 +291,33 @@ enum eSangAutopilot {
                 path = arg.isEmpty ? nil : arg.trimmingCharacters(in: .whitespaces)
                 return .execute(key: key, path: path)
             }
+        case "tap", "tap-at", "tap_at", "tapat", "click", "press":
+            // ESANG VISION GROUNDING. Arg is "CX x CY" — two normalized
+            // coordinates (0…1, top-left origin) split on a literal `x`
+            // (e.g. "0.52 x 0.83"). Be forgiving about the separator and
+            // whitespace; also accept a comma-separated pair as a fallback
+            // ("0.52, 0.83"). Both components are clamped to 0…1 so a stray
+            // model output can never drive a tap off the key window. A pair
+            // we can't parse into two Doubles is a silent skip (never a
+            // hallucinated tap).
+            let lowered = arg.lowercased()
+            let pieces: [Substring]
+            if lowered.contains("x") {
+                pieces = lowered.split(separator: "x", maxSplits: 1,
+                                       omittingEmptySubsequences: true)
+            } else if lowered.contains(",") {
+                pieces = lowered.split(separator: ",", maxSplits: 1,
+                                       omittingEmptySubsequences: true)
+            } else {
+                pieces = lowered.split(separator: " ", maxSplits: 1,
+                                       omittingEmptySubsequences: true)
+            }
+            guard pieces.count == 2,
+                  let cx = Double(pieces[0].trimmingCharacters(in: .whitespaces)),
+                  let cy = Double(pieces[1].trimmingCharacters(in: .whitespaces)),
+                  cx.isFinite, cy.isFinite else { return nil }
+            let clamp: (Double) -> Double = { min(max($0, 0), 1) }
+            return .tapAt(x: clamp(cx), y: clamp(cy))
         case "autopilot", "auto-pilot", "auto_pilot", "handsfree", "hands-free":
             return .autopilot
         case "undo_all", "undo-all", "undoall", "undo", "revert", "rollback":
@@ -418,6 +454,13 @@ extension Notification.Name {
     /// target path. Surfaces that own a matching CTA observe this and
     /// fire the same code path the on-screen button does.
     static let esangExecuteAction = Notification.Name("esangExecuteAction")
+    /// ESANG VISION GROUNDING — tap a visible control at a NORMALIZED
+    /// point. `userInfo["x"]` / `userInfo["y"]` are Doubles in 0…1
+    /// (top-left origin). Posted by the dispatcher on a `.tapAt` action;
+    /// `ContentView` observes it, hit-tests the key window's accessibility
+    /// tree, and activates the deepest activatable element at that point
+    /// (with a visible pulse). Role-agnostic.
+    static let esangTapAtPoint = Notification.Name("esangTapAtPoint")
 }
 
 @MainActor
@@ -587,6 +630,18 @@ enum eSangRoleDispatcher {
 
         case .undoAll:
             NotificationCenter.default.post(name: .esangUndoAll, object: nil)
+            return true
+
+        case .tapAt(let x, let y):
+            // ESANG VISION GROUNDING. Hand the normalized point to the
+            // key-window activator in ContentView (role-agnostic — it
+            // hit-tests whatever surface is on top). We only marshal the
+            // notification here; the activation + visible pulse + honest
+            // "couldn't tap there" feedback live there.
+            NotificationCenter.default.post(
+                name: .esangTapAtPoint, object: nil,
+                userInfo: ["x": x, "y": y]
+            )
             return true
         }
     }

@@ -3092,6 +3092,16 @@ struct ContentView: View {
             // wants to listen can observe the notification and re-run
             // its loader.
             NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
+        case .tapAt(let x, let y):
+            // ESANG VISION GROUNDING (Driver path). Post the normalized
+            // point; the key-window activator (mounted on the autopilot
+            // overlay, see `EusoAutopilotMount`) hit-tests + activates the
+            // control there, pulses, and gives honest feedback if nothing
+            // activatable sits under the point.
+            NotificationCenter.default.post(
+                name: .esangTapAtPoint, object: nil,
+                userInfo: ["x": x, "y": y]
+            )
         }
     }
 
@@ -3733,6 +3743,7 @@ final class EusoAutopilotEngine: ObservableObject {
         }
     }
 
+    @MainActor
     private func handleTranscript(_ transcript: String) {
         let text = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isActive, !text.isEmpty else {
@@ -3747,6 +3758,17 @@ final class EusoAutopilotEngine: ObservableObject {
         awaitingReply = true
         let dispatchRole = role
         let driverAction = onDriverAction
+        // ── ESANG VISION GROUNDING ──
+        // PRIVACY: this screenshot is captured ONLY here, inside a
+        // user-initiated hands-free AUTOPILOT turn (we're inside the engine's
+        // own transcript handler, which only runs while `isActive`). It is
+        // sent to ESANG so the model can ground a `<<<ACTION:tap:CX x CY>>>`
+        // on a control the operator can actually see. No capture happens for
+        // text or coach chat, and capture is best-effort — a nil snapshot
+        // still sends a perfectly good text-only command (autopilot keeps
+        // working). `drawHierarchy(in:afterScreenUpdates:)` MUST run on the
+        // main thread, so we snapshot here (this handler is `@MainActor`).
+        let shot = EusoAutopilotEngine.captureKeyWindowForVision()
         Task {
             var reply = ""
             do {
@@ -3757,17 +3779,32 @@ final class EusoAutopilotEngine: ObservableObject {
                 // transcript in an explicit autopilot directive so the model
                 // drives the app. (Belt-and-suspenders for the server prompt;
                 // the matching server-side autopilot.* branch lands separately.)
+                // When a screenshot rode along, ESANG can ground a tap on a
+                // VISIBLE control via the vision token; only advertise that
+                // grammar when we actually attached an image (else the model
+                // would hallucinate coordinates with nothing to look at).
+                let tapGrammar = shot != nil ? """
+
+                <<<ACTION:tap:CX x CY>>>     — tap a control you can SEE in the attached screenshot. CX and CY are NORMALIZED 0..1 coordinates (top-left origin): CX=0 is the left edge, CX=1 the right; CY=0 the top, CY=1 the bottom. Use this only for an on-screen button/cell with no navigate/back equivalent.
+                """ : ""
                 let piloted = """
                 [EUSOTRIP AUTOPILOT] You are ESANG driving the app hands-free for a \(dispatchRole.rawValue). The operator spoke the command below. Reply with a SHORT spoken confirmation (under 12 words), then the EXACT control tokens to execute it — emit them literally, one per action, using this grammar:
                 <<<ACTION:navigate:/PATH>>>  — drive the screen there. Valid PATHs include /home /loads /me /trips /wallet /settlements /compliance /marketplace /dispatch/planner /shipper/settlements /rail/marketplace /vessel/bookings plus any visible tab name.
-                <<<ACTION:back>>>            — go back one screen.
-                Rules: NEVER refuse a navigation request; if the exact screen is unclear pick the closest tab and STILL emit a navigate token. Do not describe the tokens.
+                <<<ACTION:back>>>            — go back one screen.\(tapGrammar)
+                Rules: NEVER refuse a navigation request; if the exact screen is unclear pick the closest tab and STILL emit a navigate token. Prefer navigate/back over tap when an equivalent exists. Do not describe the tokens.
                 Operator command: \(text)
                 """
                 let resp = try await EusoTripAPI.shared.esang.chat(
                     message: piloted,
                     currentPage: "autopilot.\(dispatchRole.rawValue)",
-                    loadId: nil
+                    loadId: nil,
+                    // ESANG VISION GROUNDING — attach the live screenshot
+                    // (nil when capture failed; the chat then sends the exact
+                    // text-only payload it did before and autopilot still
+                    // navigates/executes — it just can't ground a tap).
+                    screenB64: shot?.b64,
+                    screenW: shot?.width,
+                    screenH: shot?.height
                 )
                 reply = resp.message
             } catch {
@@ -3806,6 +3843,258 @@ final class EusoAutopilotEngine: ObservableObject {
             }
         }
     }
+
+    /// Handle an ESANG vision-grounded tap. Activates the control under the
+    /// normalized point (with a visible pulse). On a MISS — no activatable
+    /// element there — we do NOT fail silently: ESANG speaks an honest line,
+    /// the HUD shows it, and the mic re-arms so the operator can retry or
+    /// give a different command. Main-actor only (touches UIKit + the loop).
+    @MainActor
+    func handleTapAtPoint(nx: Double, ny: Double) {
+        #if canImport(UIKit)
+        Self.activateAccessibilityElement(atNormalized: nx, ny: ny) { [weak self] in
+            // ── Honest miss path ──
+            guard let self else { return }
+            let line = "I see it but couldn't tap there."
+            self.statusLine = line
+            Task { await ESangTTSPlayer.shared.speak(line, serverAudioBase64: nil) }
+            // Re-arm so autopilot keeps listening (don't strand the loop).
+            self.awaitingReply = false
+            if self.isActive { self.startListening() }
+        }
+        #else
+        // No UIKit — can't tap; stay honest and re-arm.
+        statusLine = "Tap isn't available here."
+        awaitingReply = false
+        if isActive { startListening() }
+        #endif
+    }
+
+    // MARK: - ESANG vision grounding (capture + activate)
+
+    /// A captured screen for ESANG vision grounding: the base64 JPEG plus
+    /// the downscaled pixel dimensions the tap-grounder reasons over.
+    struct VisionShot {
+        let b64: String
+        let width: Int
+        let height: Int
+    }
+
+    /// Snapshot the active key window for ESANG vision grounding, downscale
+    /// to a ~1024px long edge, JPEG-encode (quality ~0.5), and base64. Runs
+    /// on the main actor because `drawHierarchy(in:afterScreenUpdates:)`
+    /// MUST be called on the main thread. Returns `nil` on any failure (no
+    /// window, empty bounds, or no UIKit) — the caller then sends a
+    /// text-only command, so autopilot never silently dies on a bad capture.
+    ///
+    /// PRIVACY: only ever invoked from `handleTranscript`, i.e. inside a
+    /// user-initiated hands-free autopilot turn. Never for text/coach chat.
+    @MainActor
+    static func captureKeyWindowForVision() -> VisionShot? {
+        #if canImport(UIKit)
+        guard let window = activeKeyWindow() else { return nil }
+        let bounds = window.bounds
+        guard bounds.width > 1, bounds.height > 1 else { return nil }
+
+        // Render the window hierarchy at native scale into an image. Read
+        // the scale from the trait collection (non-deprecated; `window.screen`
+        // is deprecated on newer SDKs) and clamp to a sane floor.
+        let format = UIGraphicsImageRendererFormat()
+        let displayScale = window.traitCollection.displayScale
+        format.scale = displayScale > 0 ? displayScale : 2
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(bounds: bounds, format: format)
+        let full = renderer.image { _ in
+            // afterScreenUpdates:false — capture what's on screen NOW,
+            // synchronously, without forcing a relayout pass (cheaper and
+            // avoids re-entrancy with an in-flight layout).
+            _ = window.drawHierarchy(in: bounds, afterScreenUpdates: false)
+        }
+
+        // Downscale so the long edge is ~1024px — small enough to keep the
+        // upload light, large enough for the grounder to read a control.
+        let longEdge = max(full.size.width, full.size.height)
+        let target: CGFloat = 1024
+        let scale = longEdge > target ? target / longEdge : 1
+        let outSize = CGSize(width: (full.size.width * scale).rounded(),
+                             height: (full.size.height * scale).rounded())
+        let scaledFormat = UIGraphicsImageRendererFormat()
+        scaledFormat.scale = 1          // 1:1 — outSize is already in pixels
+        scaledFormat.opaque = true
+        let down = UIGraphicsImageRenderer(size: outSize, format: scaledFormat)
+            .image { _ in full.draw(in: CGRect(origin: .zero, size: outSize)) }
+
+        guard let jpeg = down.jpegData(compressionQuality: 0.5) else { return nil }
+        return VisionShot(b64: jpeg.base64EncodedString(),
+                          width: Int(outSize.width),
+                          height: Int(outSize.height))
+        #else
+        return nil
+        #endif
+    }
+
+    #if canImport(UIKit)
+    /// The foreground-active key window across all connected scenes (the
+    /// surface the operator is actually looking at). Falls back to any
+    /// key window, then any window, so a snapshot/activation still has a
+    /// target even mid scene-transition.
+    @MainActor
+    static func activeKeyWindow() -> UIWindow? {
+        let scenes = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+        // Prefer the foreground-active scene's key window.
+        if let active = scenes.first(where: { $0.activationState == .foregroundActive }),
+           let key = active.keyWindow ?? active.windows.first(where: { $0.isKeyWindow }) {
+            return key
+        }
+        // Fall back to any key window across scenes, then any window.
+        let allWindows = scenes.flatMap { $0.windows }
+        return allWindows.first(where: { $0.isKeyWindow }) ?? allWindows.first
+    }
+
+    /// ESANG VISION GROUNDING — activate a control at a NORMALIZED point.
+    /// `nx`/`ny` are 0…1 (top-left origin). Converts to a window-space
+    /// CGPoint, hit-tests the window's ACCESSIBILITY tree (recursing
+    /// `accessibilityElements` / `subviews`) for the DEEPEST element whose
+    /// `accessibilityActivationPoint`/`accessibilityFrame` contains the
+    /// point AND which reports `accessibilityActivate()` == true, then
+    /// activates it. Pulses a small expanding ring at the point so the tap
+    /// is visible. If nothing activatable sits under the point, calls
+    /// `onMiss` so the caller can speak/show an honest message and re-arm
+    /// the mic — never a silent no-op. Main-actor only.
+    @MainActor
+    static func activateAccessibilityElement(atNormalized nx: Double,
+                                             ny: Double,
+                                             onMiss: () -> Void) {
+        guard let window = activeKeyWindow() else { onMiss(); return }
+        let bounds = window.bounds
+        let windowPoint = CGPoint(x: CGFloat(min(max(nx, 0), 1)) * bounds.width,
+                                  y: CGFloat(min(max(ny, 0), 1)) * bounds.height)
+        // accessibilityFrame is in SCREEN coordinates; convert once.
+        let screenPoint = window.convert(windowPoint, to: nil)
+
+        // Always show the pulse first — the operator sees WHERE ESANG aimed
+        // even if the hit-test comes up empty (honest feedback either way).
+        pulse(at: windowPoint, in: window)
+
+        if let target = deepestActivatable(in: window,
+                                           screenPoint: screenPoint) {
+            // Activate via the accessibility action — drives the same code
+            // path VoiceOver's double-tap fires, so it works for SwiftUI
+            // buttons, list rows, and UIKit controls alike.
+            let didActivate = target.accessibilityActivate()
+            if !didActivate { onMiss() }
+        } else {
+            onMiss()
+        }
+    }
+
+    /// Recurse the accessibility/view tree under `root`, returning the
+    /// DEEPEST element whose accessibility frame contains the point and
+    /// which can be activated. Depth-first so a leaf control wins over its
+    /// container. Checks both `NSObject` accessibility elements (SwiftUI
+    /// vends these) and `UIView` subviews.
+    @MainActor
+    private static func deepestActivatable(in root: NSObject,
+                                           screenPoint: CGPoint) -> NSObject? {
+        var best: NSObject?
+
+        func frameContains(_ obj: NSObject) -> Bool {
+            // `accessibilityFrame` is in SCREEN coordinates. For a UIView it
+            // can be .zero until the element is queried for a11y; fall back
+            // to the view's own bounds converted to screen space (bounds →
+            // window via `convert(_:to: v.window)`, then window → screen via
+            // `window.convert(_:to: nil)`).
+            var frame = obj.accessibilityFrame
+            if frame == .zero, let v = obj as? UIView, v.bounds.width > 0,
+               let win = v.window {
+                let inWindow = v.convert(v.bounds, to: win)
+                frame = win.convert(inWindow, to: nil)
+            }
+            return frame.contains(screenPoint)
+        }
+        func isActivatable(_ obj: NSObject) -> Bool {
+            // A hidden / a11y-hidden view is never a tap target.
+            if let v = obj as? UIView, (v.isHidden || v.alpha < 0.01) { return false }
+            if obj.accessibilityElementsHidden { return false }
+            // A control that actively reports an activate success is ideal;
+            // but `accessibilityActivate()` has side-effects, so we DON'T
+            // call it during the search — we treat "has an activation trait
+            // or is a UIControl/known activatable" as eligible and let the
+            // real call happen once on the winner.
+            let traits = obj.accessibilityTraits
+            let activatableTraits: UIAccessibilityTraits =
+                [.button, .link, .keyboardKey, .adjustable]
+            if !traits.intersection(activatableTraits).isEmpty { return true }
+            if obj is UIControl { return true }
+            // SwiftUI tappable elements expose `.isAccessibilityElement`
+            // with a button trait; some custom ones only set
+            // `isAccessibilityElement`. Treat a leaf a11y element as
+            // eligible — the final `accessibilityActivate()` is the real
+            // gate (it returns false for genuinely inert elements).
+            if obj.isAccessibilityElement { return true }
+            return false
+        }
+
+        func recurse(_ obj: NSObject) {
+            // Descend into explicit accessibility children first (SwiftUI),
+            // then UIView subviews. A deeper hit overwrites a shallower one.
+            if let elements = obj.accessibilityElements as? [NSObject] {
+                for child in elements where frameContains(child) {
+                    if isActivatable(child) { best = child }
+                    recurse(child)
+                }
+            }
+            if let view = obj as? UIView {
+                // Front-most subviews are last in `subviews`; iterate in
+                // reverse so the top-most control wins ties.
+                for sub in view.subviews.reversed() where frameContains(sub) {
+                    if isActivatable(sub) { best = sub }
+                    recurse(sub)
+                }
+            }
+        }
+
+        recurse(root)
+        return best
+    }
+
+    /// Render a brief expanding-ring pulse at `point` (window coords) on the
+    /// key window so an ESANG-driven tap is VISIBLE to the operator. Pure
+    /// CoreAnimation — self-removing, non-interactive, never blocks touch.
+    @MainActor
+    private static func pulse(at point: CGPoint, in window: UIWindow) {
+        let diameter: CGFloat = 56
+        let ring = UIView(frame: CGRect(x: point.x - diameter / 2,
+                                        y: point.y - diameter / 2,
+                                        width: diameter, height: diameter))
+        ring.isUserInteractionEnabled = false
+        ring.layer.cornerRadius = diameter / 2
+        ring.layer.borderWidth = 2.5
+        // EusoTrip signature glow — high-contrast so it reads on any surface.
+        ring.layer.borderColor = UIColor(red: 0.42, green: 0.78,
+                                         blue: 1.0, alpha: 0.95).cgColor
+        ring.backgroundColor = UIColor(red: 0.42, green: 0.78,
+                                       blue: 1.0, alpha: 0.18)
+        window.addSubview(ring)
+
+        let expand = CABasicAnimation(keyPath: "transform.scale")
+        expand.fromValue = 0.35
+        expand.toValue = 1.0
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 1.0
+        fade.toValue = 0.0
+        let group = CAAnimationGroup()
+        group.animations = [expand, fade]
+        group.duration = 0.55
+        group.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        ring.layer.add(group, forKey: "esangTapPulse")
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+            ring.removeFromSuperview()
+        }
+    }
+    #endif
 }
 
 /// Root-mounted overlay that owns the autopilot engine, listens for the
@@ -3842,6 +4131,17 @@ private struct EusoAutopilotMount: View {
         // Allow any surface to cancel autopilot.
         .onReceive(NotificationCenter.default.publisher(for: .esangExitAutopilot)) { _ in
             if engine.isActive { engine.deactivate() }
+        }
+        // ESANG VISION GROUNDING — a parsed `<<<ACTION:tap:CX x CY>>>` posts
+        // `.esangTapAtPoint` (via the role/driver dispatcher). Hit-test the
+        // key window's accessibility tree, activate the control there, pulse
+        // it, and give honest feedback on a miss. `.onReceive` delivers on
+        // the main run loop, so the engine call is main-actor-safe.
+        .onReceive(NotificationCenter.default.publisher(for: .esangTapAtPoint)) { note in
+            let nx = (note.userInfo?["x"] as? Double) ?? -1
+            let ny = (note.userInfo?["y"] as? Double) ?? -1
+            guard (0...1).contains(nx), (0...1).contains(ny) else { return }
+            engine.handleTapAtPoint(nx: nx, ny: ny)
         }
         // Pending-latch path: the orb long-press may have fired before this
         // overlay subscribed (it presents a frame after the press). Consume
