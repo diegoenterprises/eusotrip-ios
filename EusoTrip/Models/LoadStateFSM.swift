@@ -143,6 +143,37 @@ public enum VesselOverlay: String, CaseIterable, Codable, Hashable, Sendable {
     case pickupAvailable         = "VESSEL.PICKUP_AVAILABLE"   // for drayage leg 2
 }
 
+/// Tanker delivery-side discharge overlay (49 CFR 177 / API RP 1004 /
+/// closed-loop discharge). These are the DELIVERY analog of the pickup
+/// bricks 028→032: once a tanker rig is backed in at the receiver, the
+/// happy path runs an extra closed-loop discharge sequence the dry-van
+/// flow never sees — meter the product off, purge vapor, dry-disconnect
+/// and verify, confirm released, then (multi-drop) mate the next drop
+/// hose. Each case maps 1:1 onto a registered driver screen 040→044 and
+/// to a backend `loadLifecycleTanker.ts` sub-state; the FSM only routes
+/// here when the load is a tanker (see `TripPhase.tankerDeliveryScreenId`
+/// / `DriverTripController.isTankerLoad`), so non-tanker loads are
+/// unaffected and keep the single `unloading` (024) → `paperwork` (025)
+/// hop.
+public enum TankerDeliveryOverlay: String, CaseIterable, Codable, Hashable, Sendable {
+    case dischargeInProgress  = "TANKER.DISCHARGE_IN_PROGRESS"   // 040 · backend discharging
+    case dischargeComplete    = "TANKER.DISCHARGE_COMPLETE"      // 041 · backend vapor_purging
+    case disconnectAndVerify  = "TANKER.DISCONNECT_AND_VERIFY"   // 042 · backend disconnecting
+    case disconnectConfirmed  = "TANKER.DISCONNECT_CONFIRMED"    // 043 · backend released
+    case connectDropHose      = "TANKER.CONNECT_DROP_HOSE"       // 044 · multi-drop connectHose at delivery
+
+    /// The registered driver ScreenRegistry id this sub-state renders.
+    public var screenId: String {
+        switch self {
+        case .dischargeInProgress: return "040"
+        case .dischargeComplete:   return "041"
+        case .disconnectAndVerify: return "042"
+        case .disconnectConfirmed: return "043"
+        case .connectDropHose:     return "044"
+        }
+    }
+}
+
 // MARK: - Composite state for a vehicle
 
 /// A full state envelope: base state + every applicable overlay.
@@ -156,6 +187,7 @@ public struct CompositeLoadState: Codable, Hashable, Sendable {
     public let avHandoff: Set<AvHandoffOverlay>
     public let rail: Set<RailOverlay>
     public let vessel: Set<VesselOverlay>
+    public let tankerDelivery: Set<TankerDeliveryOverlay>
 
     public init(
         base: LoadState,
@@ -166,7 +198,8 @@ public struct CompositeLoadState: Codable, Hashable, Sendable {
         crossBorder: Set<CrossBorderOverlay> = [],
         avHandoff: Set<AvHandoffOverlay> = [],
         rail: Set<RailOverlay> = [],
-        vessel: Set<VesselOverlay> = []
+        vessel: Set<VesselOverlay> = [],
+        tankerDelivery: Set<TankerDeliveryOverlay> = []
     ) {
         self.base = base
         self.hazmat = hazmat
@@ -177,6 +210,7 @@ public struct CompositeLoadState: Codable, Hashable, Sendable {
         self.avHandoff = avHandoff
         self.rail = rail
         self.vessel = vessel
+        self.tankerDelivery = tankerDelivery
     }
 
     /// Required overlay sets for a given (vertical, mode, crossBorder) tuple.
@@ -186,17 +220,21 @@ public struct CompositeLoadState: Codable, Hashable, Sendable {
         isCrossBorder: Bool,
         isAvDispatch: Bool
     ) -> (hazmat: Bool, reefer: Bool, livestock: Bool, heavyHaul: Bool,
-          crossBorder: Bool, avHandoff: Bool, rail: Bool, vessel: Bool) {
+          crossBorder: Bool, avHandoff: Bool, rail: Bool, vessel: Bool,
+          tankerDelivery: Bool) {
         let overlay = vertical.complianceOverlay
         return (
-            hazmat:      overlay == .hazmat || overlay == .tanker,
-            reefer:      overlay == .coldChain,
-            livestock:   overlay == .livestock,
-            heavyHaul:   overlay == .heavyHaul,
-            crossBorder: isCrossBorder,
-            avHandoff:   isAvDispatch,
-            rail:        mode == .rail,
-            vessel:      mode == .vessel
+            hazmat:         overlay == .hazmat || overlay == .tanker,
+            reefer:         overlay == .coldChain,
+            livestock:      overlay == .livestock,
+            heavyHaul:      overlay == .heavyHaul,
+            crossBorder:    isCrossBorder,
+            avHandoff:      isAvDispatch,
+            rail:           mode == .rail,
+            vessel:         mode == .vessel,
+            // Tanker discharge bricks 040→044 only run for tanker loads
+            // on the truck (and tanker-equivalent) delivery leg.
+            tankerDelivery: overlay == .tanker
         )
     }
 }

@@ -59,9 +59,12 @@
 //  code reading, photos) — making it a follow-up step keeps the
 //  life-safety broadcast unblocked.
 //
-//  Live network wiring lands in `ESDK-driver-sos-wave-1`; today the
-//  submit button simulates the createSOS round-trip and then routes
-//  to the Zeun screen for mechanical types.
+//  Live network wiring is in: `submit()` resolves the loadId from the
+//  active trip, the lat/lng from `DriverLocationResolver`, and calls
+//  the real `EusoTripAPI.shared.interState.createSOS(...)` mutation. On
+//  success it dismisses (and routes mechanical types to the Zeun
+//  breakdown screen via `onOpenZeun`); on failure it surfaces a
+//  user-facing retry alert rather than silently swallowing the throw.
 //
 //  Powered by ESANG AI™.
 //
@@ -161,6 +164,15 @@ struct SOSEmergencySheet: View {
     @State private var notes: String = ""
     @State private var submitting: Bool = false
 
+    /// User-facing failure surface. SOS is life-safety — if the
+    /// `interstate.createSOS` broadcast fails to land we MUST tell the
+    /// driver (so they can retry, or fall back to a 911 voice call)
+    /// rather than silently dismissing as if dispatch had heard them.
+    @State private var submitError: String? = nil
+    private var showError: Binding<Bool> {
+        Binding(get: { submitError != nil }, set: { if !$0 { submitError = nil } })
+    }
+
     init(onOpenZeun: (() -> Void)? = nil) {
         self.onOpenZeun = onOpenZeun
     }
@@ -200,6 +212,16 @@ struct SOSEmergencySheet: View {
         }
         // Uniform cafe-door entrance.
         .screenTileRoot()
+        // Life-safety failure surface — never silently swallow a failed
+        // SOS broadcast. If `interstate.createSOS` throws, the sheet
+        // stays open and the driver gets an actionable alert so they can
+        // retry or escalate to a 911 voice call.
+        .alert("Couldn't send SOS", isPresented: showError) {
+            Button("Retry") { submit() }
+            Button("Dismiss", role: .cancel) { submitError = nil }
+        } message: {
+            Text(submitError ?? "We couldn't reach dispatch. Call 911 if this is life-threatening, then try again.")
+        }
     }
 
     // MARK: Header
@@ -460,34 +482,77 @@ struct SOSEmergencySheet: View {
     /// Fires the SOS broadcast (web parity: `interstate.createSOS`
     /// only). On success, if the selected type was `mechanical`,
     /// dismisses and hands off to the Zeun breakdown screen so the
-    /// driver can file the detailed report. For all other types we
-    /// just dismiss — dispatch + safety + admin have already been
-    /// notified by the broadcast.
+    /// driver can file the detailed `zeunMechanics.reportBreakdown`
+    /// follow-up (VIN, fault codes, symptoms, telemetry, photos). For
+    /// all other types we just dismiss — dispatch + safety + admin have
+    /// already been notified by the broadcast.
     ///
-    /// Replaced with the real tRPC call in `ESDK-driver-sos-wave-1`:
-    ///
-    ///     let sos = try await trpc.interstate.createSOS.mutate(
-    ///         loadId: load.id,
-    ///         alertType: sel.rawValue,
-    ///         severity: severity.rawValue,
-    ///         latitude: here.lat, longitude: here.lng,
-    ///         description: notes.isEmpty ? nil : notes
-    ///     )
-    ///     // On success:
-    ///     if sel == .mechanical { onOpenZeun?() } else { dismiss() }
+    /// LIVE WIRING (no longer a mock): resolves the loadId from the
+    /// active trip, the lat/lng from `DriverLocationResolver`, maps the
+    /// selected tile + severity to the server enums, and calls
+    /// `EusoTripAPI.shared.interState.createSOS(...)`. The throw is
+    /// surfaced — never swallowed — because a failed SOS is a
+    /// life-safety event the driver must know about.
     private func submit() {
+        guard let sel = selected else { return }
+        // We must have an active load to anchor the SOS to — the server
+        // keys the dispatch/role fanout off `loadId`. The button is only
+        // reachable from the active-trip surface, but guard honestly.
+        guard let loadId = trip.currentLoad?.id else {
+            submitError = "No active load is bound to this trip yet. Reopen your active load, then send the SOS — or call 911 directly if this is life-threatening."
+            return
+        }
+
+        let wasMechanical = sel == .mechanical
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        // `originState` is the closest honest state hint on the load.
+        // The server treats `stateCode` as optional, so nil is fine when
+        // the load row doesn't carry one.
+        let stateCode = trip.currentLoad?.originState
+
         submitting = true
-        let wasMechanical = selected == .mechanical
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
-            submitting = false
-            dismiss()
-            if wasMechanical {
-                // Post-dismiss hand-off to the Zeun breakdown screen.
-                // Small delay so the SOS sheet finishes animating away
-                // before the Zeun nav transition starts.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                    onOpenZeun?()
+        submitError = nil
+
+        Task { @MainActor in
+            // Best-effort one-shot device fix. Coordinates are required
+            // by the server, so if we can't get a fix we fail loudly
+            // rather than posting (0,0) / a fabricated position.
+            let coord = await DriverLocationResolver.shared.currentCoordinate()
+            guard let coord else {
+                submitting = false
+                submitError = "We couldn't read your location, which dispatch needs to find you. Enable Location for EusoTrip in Settings (or call 911 if this is life-threatening), then try again."
+                return
+            }
+
+            do {
+                _ = try await EusoTripAPI.shared.interState.createSOS(
+                    loadId: loadId,
+                    alertType: sel.rawValue,          // matches server alertType enum
+                    severity: severity.rawValue,      // low | medium | high | critical
+                    latitude: coord.latitude,
+                    longitude: coord.longitude,
+                    description: trimmedNotes.isEmpty ? nil : trimmedNotes,
+                    stateCode: stateCode
+                )
+                submitting = false
+                dismiss()
+                if wasMechanical {
+                    // Post-dismiss hand-off to the Zeun breakdown screen,
+                    // where the driver files the detailed
+                    // `zeunMechanics.reportBreakdown` (VIN, fault codes,
+                    // symptoms, canDrive, photos, telemetry) that lands
+                    // the ticket in the mechanic queue. Small delay so the
+                    // SOS sheet finishes animating away before the Zeun
+                    // nav transition starts.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        onOpenZeun?()
+                    }
                 }
+            } catch {
+                // Life-safety: keep the sheet open and tell the driver so
+                // they can retry or fall back to a 911 voice call.
+                submitting = false
+                submitError = "We couldn't reach dispatch (\(error.localizedDescription)). Call 911 if this is life-threatening, then tap Retry."
             }
         }
     }

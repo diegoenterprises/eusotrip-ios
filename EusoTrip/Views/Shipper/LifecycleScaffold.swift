@@ -351,7 +351,18 @@ import MapKit
 /// no fake pins.
 struct LifecycleMapCard: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
     @ObservedObject private var geocodeStore = LifecycleGeocodeStore.shared
+
+    /// Decoded HERE Routing v8 section polyline for the pickup→delivery
+    /// corridor — the REAL curved road geometry painted on the basemap
+    /// (mirrors the Driver 013 pattern). Empty until the route resolves;
+    /// the map then falls back to the straight pickup→delivery base line,
+    /// never a fabricated path. Truck/rail modes fetch this; vessel mode
+    /// stays on the straight great-circle line (road routing doesn't apply
+    /// to an ocean leg).
+    @State private var routePolyline: [HereLatLng] = []
+
     let live: ShipperAPI.LifecycleSnapshot
     /// Stable load identifier — used as the geocode-cache key so the
     /// fallback HERE Geocoding round-trip only fires once per load+side
@@ -417,6 +428,67 @@ struct LifecycleMapCard: View {
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        // Fetch + decode the REAL HERE road route once both endpoints are
+        // geocoded (truck/rail). Re-keys on the resolved pickup/delivery so
+        // it refires only when the actual coordinates change, not on every
+        // re-render. Vessel mode skips routing (great-circle, not roads).
+        .task(id: routeTaskKey(pins)) {
+            await refreshRoutePolyline(pins)
+        }
+    }
+
+    /// Transport vertical for THIS load, resolved from the signed-in
+    /// user's role — the same `TripVertical(role:)` signal the rest of
+    /// the lifecycle scaffold uses (`resolveProduct`, ShipperLoadCycleView).
+    /// Vessel ⇒ great-circle (no road routing); truck/rail ⇒ HERE Routing.
+    private var vertical: TripVertical {
+        TripVertical(role: session.user?.role)
+    }
+
+    /// Stable identity for the route-fetch task: the rounded pickup +
+    /// delivery coords (7 dp matches HERE's precision). nil-coalesced to
+    /// "none" so the task is a no-op until both endpoints resolve. Vessel
+    /// loads return a constant so the road-route fetch never fires.
+    private func routeTaskKey(
+        _ pins: (pickup: HereLatLng?, delivery: HereLatLng?, truck: HereLatLng?)
+    ) -> String {
+        guard vertical != .vessel,
+              let p = pins.pickup, let d = pins.delivery else { return "none" }
+        return String(format: "%.5f,%.5f→%.5f,%.5f", p.lat, p.lng, d.lat, d.lng)
+    }
+
+    /// Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
+    /// its section polyline into the live route line — the real curved road
+    /// geometry, not a straight 2-point segment. Truck-aware via the default
+    /// `.standardUSSemiLoaded` profile. On any failure (missing coords, HERE
+    /// error) the polyline stays empty and the map keeps the straight
+    /// pickup→delivery base line — never a fabricated path. Vessel mode is
+    /// skipped entirely (an ocean leg is a great circle, not a road route).
+    @MainActor
+    private func refreshRoutePolyline(
+        _ pins: (pickup: HereLatLng?, delivery: HereLatLng?, truck: HereLatLng?)
+    ) async {
+        guard vertical != .vessel,
+              let p = pins.pickup, let d = pins.delivery else {
+            routePolyline = []
+            return
+        }
+        let stops = HereStops(
+            origin: CLLocationCoordinate2D(latitude: p.lat, longitude: p.lng),
+            destination: CLLocationCoordinate2D(latitude: d.lat, longitude: d.lng)
+        )
+        do {
+            let resp = try await HereRoutingClient.shared.route(
+                stops: stops, profile: .standardUSSemiLoaded)
+            guard let section = resp.routes.first?.sections.first else {
+                routePolyline = []
+                return
+            }
+            let decoded = HereRoutingClient.polyline(for: section)
+            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
+        } catch {
+            routePolyline = []
+        }
     }
 
     private var emptyMap: some View {
@@ -521,7 +593,15 @@ struct LifecycleMapCard: View {
             present.map { $0.lat }.reduce(0, +) / Double(max(present.count, 1)),
             present.map { $0.lng }.reduce(0, +) / Double(max(present.count, 1))
         )
-        let routePts = [pins.pickup, pins.delivery].compactMap { $0 }
+        // Straight pickup→delivery base line — the honest fallback when no
+        // road route is on file yet (and the great-circle line for vessel).
+        let straightPts = [pins.pickup, pins.delivery].compactMap { $0 }
+        // Prefer the decoded HERE Routing v8 road geometry (real curves);
+        // fall back to the straight 2-point line until it resolves, or
+        // permanently for vessel mode (ocean leg = great circle, no roads).
+        let routePts: [HereLatLng] = (vertical != .vessel && routePolyline.count >= 2)
+            ? routePolyline
+            : straightPts
 
         var markers: [HereMarker] = []
         if let p = pins.pickup   { markers.append(HereMarker(at: p, kind: .pickup,   label: "Pickup")) }
@@ -536,7 +616,7 @@ struct LifecycleMapCard: View {
 
         return HereLiveMapView(
             center: center,
-            zoom: routePts.count >= 2 ? 6 : 9,
+            zoom: straightPts.count >= 2 ? 6 : 9,
             route: routePts,
             baseLayers: baseLayers,
             addOns: .shipperTracking
