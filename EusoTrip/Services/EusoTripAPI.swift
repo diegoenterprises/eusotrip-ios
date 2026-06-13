@@ -13926,6 +13926,81 @@ struct LoadLifecycleTankerAPI {
             input: Input(loadId: loadId)
         )
     }
+
+    // MARK: - executeTankerTransition
+
+    /// Ack returned by `loadLifecycleTanker.executeTankerTransition`.
+    /// Mirrors the server return shape field-for-field
+    /// (`loadLifecycleTanker.ts` `executeTankerTransition` mutation):
+    /// `{ loadId, fromState, toState, subState, actorRole, appliedAt }`.
+    /// `subState` is `null` on the wire when the hop carried no chip.
+    struct TankerTransitionAck: Decodable, Equatable {
+        let loadId: Int
+        let fromState: String
+        let toState: String
+        /// The applied `TANKER_SUB_FSM` chip, or `nil` when the target
+        /// state carried no sub-state.
+        let subState: String?
+        let actorRole: String
+        /// ISO-8601 timestamp the server stamped on the transition.
+        let appliedAt: String
+    }
+
+    /// `loadLifecycleTanker.executeTankerTransition` — advance a tanker
+    /// load along the dedicated `TANKER_FSM` (the tanker discharge chain
+    /// is NOT driven by the generic `loadLifecycle.executeTransition`
+    /// transition-id machine; it has its own router + FSM tables). The
+    /// server validates the hop against `TANKER_FSM` (GUARD 1,
+    /// `canTransition`) and, when supplied, the chip against
+    /// `TANKER_SUB_FSM` (GUARD 2, `isLegalSubState`), then flips
+    /// `loads.status` to `toState` and stamps `tanker_sub_state`.
+    /// DRIVER + DISPATCH write.
+    ///
+    /// `toState` is a top-level `TANKER_FSM` state (verbatim, e.g.
+    /// `"discharging"`, `"vapor_purging"`, `"disconnecting"`,
+    /// `"pod_pending"`, `"delivered"`); `subState` is the optional
+    /// `TANKER_SUB_FSM` chip for that state (e.g. `"DISCHARGE_FLOWING"`,
+    /// `"DISCONNECT_VENTED"`), omitted when the target carries no chip.
+    /// `latitude` / `longitude` / `notes` ride the optional `payload`
+    /// envelope; each is omitted from the encoded input when nil so a
+    /// chip-only or bare-state advance is byte-minimal on the wire.
+    func executeTankerTransition(
+        loadId: String,
+        toState: String,
+        subState: String? = nil,
+        latitude: Double? = nil,
+        longitude: Double? = nil,
+        notes: String? = nil
+    ) async throws -> TankerTransitionAck {
+        struct Payload: Encodable {
+            let latitude: Double?
+            let longitude: Double?
+            let notes: String?
+        }
+        struct Input: Encodable {
+            let loadId: String
+            let toState: String
+            let subState: String?
+            let payload: Payload?
+        }
+        // Build the payload only when at least one field is present, so
+        // a bare-state hop encodes no `payload` key at all (the server's
+        // `payload` is `.optional()`); the encoder omits nil members of
+        // the payload itself the same way the sibling builders do.
+        let hasPayload = latitude != nil || longitude != nil || notes != nil
+        let payload = hasPayload
+            ? Payload(latitude: latitude, longitude: longitude, notes: notes)
+            : nil
+        return try await api.mutation(
+            "loadLifecycleTanker.executeTankerTransition",
+            input: Input(
+                loadId: loadId,
+                toState: toState,
+                subState: subState,
+                payload: payload
+            )
+        )
+    }
 }
 
 // MARK: - spectraMatchRouter

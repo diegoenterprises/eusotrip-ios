@@ -784,25 +784,29 @@ enum TripPhase: String, CaseIterable, Codable {
         case (.approachingDelivery, .atReceiverGate):      return "AT_DELIVERY_TO_CHECKIN"
         // 022/023 → 024 backing-in → unloading (delivery_checkin → unloading; non-tanker)
         case (.backingIn, .unloading):                     return "DELIVERY_CHECKIN_TO_UNLOADING"
-        // Tanker delivery-discharge bricks 040→044 (per
-        // `server/routers/loadLifecycleTanker.ts`). Each hop flips
-        // `loads.status` (+ writes the matching `tanker_sub_state`):
-        //   023 backing-in → 040 discharging
-        case (.backingIn, .dischargeInProgress):           return "DELIVERY_CHECKIN_TO_DISCHARGING"
-        //   040 discharging → 041 vapor_purging (meter hits zero remaining)
-        case (.dischargeInProgress, .dischargeComplete):   return "DISCHARGING_TO_VAPOR_PURGING"
-        //   041 vapor_purging → 042 disconnecting (purge proven, begin dry-disconnect)
-        case (.dischargeComplete, .disconnectAndVerify):   return "VAPOR_PURGING_TO_DISCONNECTING"
-        //   042 disconnecting → 043 released (4-step ladder confirmed, hose released)
-        case (.disconnectAndVerify, .disconnectConfirmed): return "DISCONNECTING_TO_RELEASED"
-        //   044 connect-drop-hose is a multi-drop UI sub-state of
-        //   `released`; mating the next leg's drop hose runs the
-        //   `connectHose` bayOps wizard rather than a `loads.status`
-        //   flip, so `.disconnectConfirmed → .connectDropHose` returns
-        //   nil here (no status change) — handled below.
-        //   043/044 released → 025 pod_pending (close out the drop)
-        case (.disconnectConfirmed, .paperwork),
-             (.connectDropHose, .paperwork):               return "RELEASED_TO_POD_PENDING"
+        // Tanker delivery-discharge bricks 040→044 do NOT use the generic
+        // `loadLifecycle.executeTransition` (transitionId) mechanism — the
+        // tanker FSM lives on a SEPARATE router,
+        // `server/routers/loadLifecycleTanker.ts`, whose
+        // `executeTankerTransition` mutation takes `{ loadId, toState,
+        // subState? }` keyed off the `TANKER_FSM` / `TANKER_SUB_FSM`
+        // tables, NOT a named generic transition id. The previously-emitted
+        // ids (`DELIVERY_CHECKIN_TO_DISCHARGING`, `DISCHARGING_TO_VAPOR_PURGING`,
+        // `VAPOR_PURGING_TO_DISCONNECTING`, `DISCONNECTING_TO_RELEASED`,
+        // `RELEASED_TO_POD_PENDING`) exist in NEITHER catalog, so the generic
+        // router rejected them with `Unknown transition` and the tanker
+        // load never advanced server-side. Return `nil` here so the generic
+        // path is skipped; the tanker hops are routed through
+        // `tankerTransition(to:)` (below) onto `executeTankerTransition`
+        // instead. See the BLOCKER note on `tankerTransition(to:)` — the
+        // client method + the advance-closure branch are not yet wired.
+        case (.backingIn, .dischargeInProgress),
+             (.dischargeInProgress, .dischargeComplete),
+             (.dischargeComplete, .disconnectAndVerify),
+             (.disconnectAndVerify, .disconnectConfirmed),
+             (.disconnectConfirmed, .connectDropHose),
+             (.disconnectConfirmed, .paperwork),
+             (.connectDropHose, .paperwork):               return nil
         // 024 → 025 paperwork (unloading → unloaded → pod_pending).
         // The backend models this as UNLOADING_TO_UNLOADED; POD_PENDING
         // is reached automatically via UNLOADED_TO_POD_PENDING after
@@ -815,6 +819,109 @@ enum TripPhase: String, CaseIterable, Codable {
         // complianceChecks.podSigned=true.
         case (.paperwork, .offDuty):                       return "POD_TO_DELIVERED"
         default:                                           return nil
+        }
+    }
+
+    /// The REAL tanker-FSM advance descriptor for a delivery-discharge hop
+    /// (bricks 040→044), per `server/routers/loadLifecycleTanker.ts`.
+    ///
+    /// The tanker lifecycle is NOT driven by the generic
+    /// `loadLifecycle.executeTransition(transitionId:)` machine — it has a
+    /// dedicated router whose `executeTankerTransition` mutation takes
+    /// `{ loadId, toState, subState? }`:
+    ///   • `toState`  — a top-level `TANKER_FSM` state name (verbatim
+    ///                  server enum string).
+    ///   • `subState` — an optional `TANKER_SUB_FSM` chip for that state
+    ///                  (verbatim server enum strings); `nil` when the
+    ///                  target state declares no chip for this hop.
+    /// The server validates the hop against `TANKER_FSM` (GUARD 1,
+    /// `canTransition`) and the chip against `TANKER_SUB_FSM` (GUARD 2,
+    /// `isLegalSubState`), so the values below mirror those tables exactly
+    /// (MCP-verified against `loadLifecycleTanker.ts` TANKER_FSM /
+    /// TANKER_SUB_FSM, 2026-06-13).
+    ///
+    /// ── SERVER-LEGAL DISCHARGE CHAIN ──────────────────────────────
+    /// The deployed `TANKER_FSM` delivery side only admits this route:
+    ///   `unloading → discharging → vapor_purging → disconnecting →
+    ///    pod_pending → delivered`
+    /// Two constraints fall out of GUARD 1 (`row.includes(to)`, so a
+    /// same-state `from==to` advance is ILLEGAL) and the fact that
+    /// `discharging` is reachable ONLY from `unloading`:
+    ///   1. The 040 chip pair `DISCHARGE_FLOWING` / `DISCHARGE_COMPLETE`
+    ///      cannot be two `executeTankerTransition` calls onto the SAME
+    ///      `discharging` state — the second would be a `discharging →
+    ///      discharging` no-hop that GUARD 1 rejects. So the iOS bricks
+    ///      map to DISTINCT toStates, one server hop apiece:
+    ///        040 dischargeInProgress → `discharging`  (DISCHARGE_FLOWING)
+    ///        041 dischargeComplete   → `vapor_purging`
+    ///        042 disconnectAndVerify → `disconnecting` (DISCONNECT_VENTED)
+    ///        043 disconnectConfirmed → `pod_pending`
+    ///        025 paperwork (close)   → `delivered`
+    ///      The two discharge chips still surface in the UI; the meter
+    ///      telemetry (`recordMeterFrame`) carries the FLOWING→COMPLETE
+    ///      progression within the `discharging` state, and the
+    ///      `DISCHARGE_COMPLETE` chip is implied by the 041 hop landing.
+    ///   2. The 040 ENTRY (`.backingIn → .dischargeInProgress`) needs the
+    ///      load to already be at `unloading`. The server is at
+    ///      `delivery_checkin` coming out of 023, so the entry is PRIMED
+    ///      by the GENERIC `DELIVERY_CHECKIN_TO_UNLOADING` transition
+    ///      (the same id the non-tanker `.backingIn → .unloading` hop
+    ///      fires) BEFORE the first tanker call. `tankerEntryPrimingId`
+    ///      returns that id; `DriverTripController.advance()` issues it
+    ///      first, then this tanker hop. No state is fabricated — both
+    ///      are real, server-legal transitions.
+    ///
+    /// Returns `nil` for hops that are purely UI (no `loads.status` flip):
+    /// `.disconnectConfirmed → .connectDropHose` mates the next drop hose
+    /// via the `connectHose` bayOps wizard while the load stays in
+    /// `pod_pending`, so no tanker transition fires there.
+    func tankerTransition(to next: TripPhase) -> (toState: String, subState: String?)? {
+        switch (self, next) {
+        //   023 backing-in → 040 discharging (product flowing off the rig).
+        //   Entry is primed to `unloading` first — see `tankerEntryPrimingId`.
+        case (.backingIn, .dischargeInProgress):
+            return (LoadStatus.discharging.rawValue, "DISCHARGE_FLOWING")
+        //   040 discharging → 041 vapor_purging (meter hits zero remaining;
+        //   the DISCHARGE_COMPLETE chip is implied by this hop landing).
+        case (.dischargeInProgress, .dischargeComplete):
+            return (LoadStatus.vaporPurging.rawValue, nil)
+        //   041 vapor_purging → 042 disconnecting (purge proven, begin dry-disconnect)
+        case (.dischargeComplete, .disconnectAndVerify):
+            return (LoadStatus.disconnecting.rawValue, "DISCONNECT_VENTED")
+        //   042 disconnecting → 043 pod_pending (4-step ladder confirmed,
+        //   hose released, drop closed out into POD-pending)
+        case (.disconnectAndVerify, .disconnectConfirmed):
+            return (LoadStatus.podPending.rawValue, nil)
+        //   044 connect-drop-hose is a multi-drop UI sub-state; mating the
+        //   next drop hose runs the `connectHose` bayOps wizard, not a
+        //   status flip — no tanker transition fires (load stays pod_pending).
+        case (.disconnectConfirmed, .connectDropHose):
+            return nil
+        //   043/044 → 025 close-out: pod_pending → delivered
+        case (.disconnectConfirmed, .paperwork),
+             (.connectDropHose, .paperwork):
+            return (LoadStatus.delivered.rawValue, nil)
+        default:
+            return nil
+        }
+    }
+
+    /// The GENERIC `loadLifecycle` transition-id that must fire BEFORE the
+    /// first tanker discharge call so the load is at `unloading` — the
+    /// only server state from which `TANKER_FSM` admits `→ discharging`.
+    /// Non-nil only for the discharge-chain ENTRY hop
+    /// (`.backingIn → .dischargeInProgress`); `nil` everywhere else.
+    ///
+    /// `DriverTripController.advance()` issues this generic transition
+    /// first, then `tankerTransition(to:)`’s `unloading → discharging`
+    /// hop. Both are real, server-validated transitions — nothing is
+    /// synthesized client-side to bridge the FSM.
+    func tankerEntryPrimingId(to next: TripPhase) -> String? {
+        switch (self, next) {
+        case (.backingIn, .dischargeInProgress):
+            return "DELIVERY_CHECKIN_TO_UNLOADING"
+        default:
+            return nil
         }
     }
 
@@ -1181,8 +1288,68 @@ final class DriverTripController: ObservableObject {
     /// into. For production transitions that also write to the backend,
     /// prefer `transition(to:)` which both updates local state and
     /// fires the tRPC mutation.
+    ///
+    /// Backend bridge — TWO routers:
+    ///   • Generic hops (`transitionId(to:)` non-nil) ride the generic
+    ///     `loadLifecycle.executeTransition` machine. The env closure in
+    ///     ContentView already fires those after this returns.
+    ///   • Tanker delivery-discharge hops (040→044) ride the SEPARATE
+    ///     `loadLifecycleTanker.executeTankerTransition` router, which the
+    ///     generic env closure cannot reach (it short-circuits when
+    ///     `transitionId(to:)` is nil — which it intentionally is for
+    ///     these hops). So we fire the tanker transition HERE, keyed off
+    ///     `tankerTransition(to:)` (+ the `unloading` priming step the
+    ///     entry hop needs). Only fires for a tanker load with a bound
+    ///     `currentLoad`; non-tanker advances are byte-for-byte unchanged.
     func advance() {
+        let from = phase
         phase = phase.happyPathNext(isTanker: isTankerLoad)
+        let to = phase
+        fireTankerTransitionIfNeeded(from: from, to: to)
+    }
+
+    /// Fire the dedicated tanker-FSM transition for a delivery-discharge
+    /// hop (bricks 040→044), if this `(from, to)` pair is one. Routed to
+    /// `loadLifecycleTanker.executeTankerTransition` — NOT the generic
+    /// `loadLifecycle.executeTransition`, which has no entry in either
+    /// catalog for these hops (the root-cause of the tanker dead-end).
+    ///
+    /// The discharge-chain ENTRY (`.backingIn → .dischargeInProgress`)
+    /// first issues the generic `DELIVERY_CHECKIN_TO_UNLOADING` so the
+    /// load reaches `unloading` — the only state from which `TANKER_FSM`
+    /// admits `→ discharging` — then the tanker `unloading → discharging`
+    /// hop. Both are real, server-validated transitions.
+    ///
+    /// No-op when the hop isn't a tanker discharge hop, when there's no
+    /// bound load, or for the UI-only `.disconnectConfirmed →
+    /// .connectDropHose` sub-state (whose `tankerTransition` is nil).
+    private func fireTankerTransitionIfNeeded(from: TripPhase, to: TripPhase) {
+        guard isTankerLoad, let loadId = currentLoad?.id else { return }
+        guard let hop = from.tankerTransition(to: to) else { return }
+        let loadIdStr = String(loadId)
+        let primingId = from.tankerEntryPrimingId(to: to)
+        // The generic path doesn't capture a GPS fix at this call site
+        // (the env closure passes only loadId + transitionId), so we pass
+        // no lat/long here either — the server payload is `.optional()`
+        // and the chip + state carry the lived progression. When a
+        // location source is plumbed into this controller it threads in
+        // via the `latitude:`/`longitude:` params already on the method.
+        Task { [api = EusoTripAPI.shared] in
+            // 1) Prime the load to `unloading` via the generic machine so
+            //    the tanker `→ discharging` entry is FSM-legal.
+            if let primingId {
+                _ = try? await api.loadLifecycle.executeTransition(
+                    loadId: loadIdStr,
+                    transitionId: primingId
+                )
+            }
+            // 2) Fire the tanker-FSM hop on its dedicated router.
+            _ = try? await api.loadLifecycleTanker.executeTankerTransition(
+                loadId: loadIdStr,
+                toState: hop.toState,
+                subState: hop.subState
+            )
+        }
     }
 
     /// Walk one phase backward. Used by the dev-chrome Prev arrow when

@@ -194,10 +194,22 @@ private struct ShipperCashOutSheet: View {
     @State private var ack: WalletExtrasAPI.RequestPayoutAck? = nil
 
     private var parsedAmount: Double? {
+        // Parse locale-awarely: in many locales the comma is the DECIMAL
+        // separator (e.g. "12,50" = 12.5), so we must not strip commas as
+        // thousands separators. Drop the currency symbol, then let a
+        // .decimal NumberFormatter in the current locale interpret the text.
         let cleaned = amountText
             .replacingOccurrences(of: "$", with: "")
-            .replacingOccurrences(of: ",", with: "")
             .trimmingCharacters(in: .whitespaces)
+        if cleaned.isEmpty { return nil }
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = .current
+        if let number = formatter.number(from: cleaned) {
+            return number.doubleValue
+        }
+        // Fallback: a bare "12.50" with a period decimal in a comma-decimal
+        // locale won't parse above — try the period as the decimal separator.
         return Double(cleaned)
     }
 

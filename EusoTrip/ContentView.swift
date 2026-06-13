@@ -3851,6 +3851,11 @@ final class EusoAutopilotEngine: ObservableObject {
     /// give a different command. Main-actor only (touches UIKit + the loop).
     @MainActor
     func handleTapAtPoint(nx: Double, ny: Double) {
+        // Defense-in-depth: never drive a real screen tap unless autopilot is
+        // actively listening. The `.esangTapAtPoint` observer already gates on
+        // this, but `handleTapAtPoint` is a public method — guard here too so
+        // no caller can stage an unsolicited tap outside hands-free autopilot.
+        guard isActive else { return }
         #if canImport(UIKit)
         Self.activateAccessibilityElement(atNormalized: nx, ny: ny) { [weak self] in
             // ── Honest miss path ──
@@ -4138,6 +4143,14 @@ private struct EusoAutopilotMount: View {
         // it, and give honest feedback on a miss. `.onReceive` delivers on
         // the main run loop, so the engine call is main-actor-safe.
         .onReceive(NotificationCenter.default.publisher(for: .esangTapAtPoint)) { note in
+            // SAFETY GATE: a vision tap is a REAL screen interaction, so it
+            // must only ever fire while hands-free autopilot is armed. A
+            // plain (non-autopilot) ESANG chat reply also parses
+            // `<<<ACTION:…>>>` tokens (see `.esangActionHandler` on the coach
+            // sheet), so a reply that happens to carry a `tap:CX x CY` token
+            // could otherwise post `.esangTapAtPoint` and trigger an
+            // unsolicited tap. Ignore the signal unless the engine is active.
+            guard engine.isActive else { return }
             let nx = (note.userInfo?["x"] as? Double) ?? -1
             let ny = (note.userInfo?["y"] as? Double) ?? -1
             guard (0...1).contains(nx), (0...1).contains(ny) else { return }
