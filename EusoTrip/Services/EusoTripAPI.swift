@@ -14218,6 +14218,45 @@ struct ShipperAPI {
         /// Empty string when not set. Client formats this for display.
         let memberSince: String
         let website: String
+        // Extra editable company columns surfaced by `shippers.getProfile`.
+        // Server emits empty strings when the `companies` row hasn't been
+        // hydrated — the edit form pre-fills these and surfaces blanks as
+        // em-dashes. Decoded with safe defaults so older payloads still parse.
+        let city: String
+        let state: String
+        let zipCode: String
+        let country: String
+        let legalName: String
+        let ein: String
+        let description: String
+
+        private enum CodingKeys: String, CodingKey {
+            case id, companyName, contactName, email, phone, address
+            case dotNumber, mcNumber, verified, memberSince, website
+            case city, state, zipCode, country, legalName, ein, description
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id          = try c.decode(String.self, forKey: .id)
+            companyName = try c.decode(String.self, forKey: .companyName)
+            contactName = try c.decode(String.self, forKey: .contactName)
+            email       = try c.decode(String.self, forKey: .email)
+            phone       = try c.decode(String.self, forKey: .phone)
+            address     = try c.decode(String.self, forKey: .address)
+            dotNumber   = try c.decode(String.self, forKey: .dotNumber)
+            mcNumber    = try c.decode(String.self, forKey: .mcNumber)
+            verified    = try c.decode(Bool.self, forKey: .verified)
+            memberSince = try c.decode(String.self, forKey: .memberSince)
+            website     = try c.decode(String.self, forKey: .website)
+            city        = try c.decodeIfPresent(String.self, forKey: .city) ?? ""
+            state       = try c.decodeIfPresent(String.self, forKey: .state) ?? ""
+            zipCode     = try c.decodeIfPresent(String.self, forKey: .zipCode) ?? ""
+            country     = try c.decodeIfPresent(String.self, forKey: .country) ?? ""
+            legalName   = try c.decodeIfPresent(String.self, forKey: .legalName) ?? ""
+            ein         = try c.decodeIfPresent(String.self, forKey: .ein) ?? ""
+            description = try c.decodeIfPresent(String.self, forKey: .description) ?? ""
+        }
     }
 
     func getProfile() async throws -> Profile {

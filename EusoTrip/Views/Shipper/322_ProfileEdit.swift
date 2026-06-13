@@ -21,6 +21,15 @@ private struct ProfileEditBody: View {
     @State private var phone: String = ""
     @State private var address: String = ""
     @State private var website: String = ""
+    // Location (companies.city/state/zipCode/country)
+    @State private var city: String = ""
+    @State private var state: String = ""
+    @State private var zipCode: String = ""
+    @State private var country: String = "USA"
+    // Company identity (companies.legalName/ein/description)
+    @State private var legalName: String = ""
+    @State private var ein: String = ""
+    @State private var companyDescription: String = ""
     @State private var loading = true
     @State private var sending = false
     @State private var saved = false
@@ -33,6 +42,8 @@ private struct ProfileEditBody: View {
                 if saved { LifecycleCard(accentGradient: true) { Text("Profile updated.").font(EType.body).foregroundStyle(palette.textPrimary) } }
                 if let err = actionError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 fieldsCard
+                locationCard
+                companyCard
                 ctaRow
                 Color.clear.frame(height: 96)
             }
@@ -59,6 +70,55 @@ private struct ProfileEditBody: View {
             field("Phone", text: $phone)
             field("Address", text: $address)
             field("Website", text: $website)
+        }
+    }
+
+    private var locationCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "LOCATION", icon: "mappin.and.ellipse")
+            field("City", text: $city)
+            HStack(spacing: 10) {
+                field("State", text: $state)
+                field("ZIP code", text: $zipCode)
+            }
+            countryPicker
+        }
+    }
+
+    private var companyCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "COMPANY", icon: "building.2")
+            field("Legal name", text: $legalName)
+            field("EIN", text: $ein)
+            multilineField("Description", text: $companyDescription)
+        }
+    }
+
+    private var countryPicker: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("COUNTRY").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+            Picker("Country", selection: $country) {
+                ForEach(["USA", "CA", "MX"], id: \.self) { c in Text(c).tag(c) }
+            }
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(palette.bgCard.opacity(0.6))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
+    private func multilineField(_ label: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label.uppercased()).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+            TextField(label, text: text, axis: .vertical)
+                .lineLimit(3...6)
+                .textFieldStyle(.plain).autocorrectionDisabled(false)
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(palette.bgCard.opacity(0.6))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
     }
 
@@ -91,6 +151,9 @@ private struct ProfileEditBody: View {
             let p = try await EusoTripAPI.shared.shipper.getProfile()
             contactName = p.contactName; email = p.email; phone = p.phone
             address = p.address; website = p.website
+            city = p.city; state = p.state; zipCode = p.zipCode
+            if !p.country.isEmpty { country = p.country }
+            legalName = p.legalName; ein = p.ein; companyDescription = p.description
         } catch let apiErr as EusoTripAPIError {
             actionError = "Couldn't load profile: \(apiErr.errorDescription ?? "network error")"
         } catch {
@@ -101,10 +164,38 @@ private struct ProfileEditBody: View {
 
     private func save() async {
         sending = true; actionError = nil
-        struct In: Encodable { let contactName: String; let email: String; let phone: String; let address: String; let website: String }
-        struct Out: Decodable { let success: Bool }
+        struct In: Encodable {
+            let contactName: String; let email: String; let phone: String
+            let address: String; let website: String
+            let city: String; let state: String; let zipCode: String; let country: String
+            let legalName: String; let ein: String; let description: String
+        }
+        // Server echoes the persisted row back so we can re-confirm what landed.
+        struct Out: Decodable {
+            let success: Bool
+            let contactName: String?; let email: String?; let phone: String?
+            let address: String?; let website: String?
+            let city: String?; let state: String?; let zipCode: String?; let country: String?
+            let legalName: String?; let ein: String?; let description: String?
+        }
         do {
-            let _ : Out = try await EusoTripAPI.shared.mutation("shippers.updateProfile", input: In(contactName: contactName, email: email, phone: phone, address: address, website: website))
+            let out: Out = try await EusoTripAPI.shared.mutation("shippers.updateProfile", input: In(
+                contactName: contactName, email: email, phone: phone, address: address, website: website,
+                city: city, state: state, zipCode: zipCode, country: country,
+                legalName: legalName, ein: ein, description: companyDescription))
+            // Re-prefill from the authoritative persisted values.
+            if let v = out.contactName { contactName = v }
+            if let v = out.email { email = v }
+            if let v = out.phone { phone = v }
+            if let v = out.address { address = v }
+            if let v = out.website { website = v }
+            if let v = out.city { city = v }
+            if let v = out.state { state = v }
+            if let v = out.zipCode { zipCode = v }
+            if let v = out.country, !v.isEmpty { country = v }
+            if let v = out.legalName { legalName = v }
+            if let v = out.ein { ein = v }
+            if let v = out.description { companyDescription = v }
             saved = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
