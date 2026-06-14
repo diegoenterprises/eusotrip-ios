@@ -143,11 +143,27 @@ struct eSangDispatchChat: View {
 
     /// Live RPM-vs-lane-avg sentence from rates.compareLaneRate, or "—".
     private var rpmComparisonDisplay: String? {
-        guard let c = lane, c.marketAvgRPM > 0 else { return nil }
-        let delta = c.yourRPM - c.marketAvgRPM
+        // Only assert a "vs lane avg" delta when the server returned a
+        // comparable benchmark with a real market avg — never fabricate
+        // a delta off a missing/zero band.
+        guard let c = lane, c.comparable, let avg = c.marketAvgRPM, avg > 0 else { return nil }
+        // CANONICAL: read the server's normalized own-rate value (already
+        // in the benchmark's canonical unit + currency) — never re-divide
+        // yourRPM. Both sides of the delta are then in the same unit.
+        let own = c.normValue ?? c.yourRPM
+        let delta = own - avg
         let sign = delta >= 0 ? "+" : "−"
-        return String(format: "$%.2f/mi · %@$%.2f vs lane avg",
-                      c.yourRPM, sign, abs(delta))
+        let pfx: String = {
+            switch c.currency.uppercased() {
+            case "CAD": return "CA$"
+            case "MXN": return "MX$"
+            default:    return "$"
+            }
+        }()
+        let unitLabel = (c.unit ?? c.canonicalUnit)
+            .replacingOccurrences(of: "$/", with: "")
+        return String(format: "%@%.2f/%@ · %@%@%.2f vs lane avg",
+                      pfx, own, unitLabel, sign, pfx, abs(delta))
     }
 
     /// Driver greeting name from the session — never a hardcoded persona.
