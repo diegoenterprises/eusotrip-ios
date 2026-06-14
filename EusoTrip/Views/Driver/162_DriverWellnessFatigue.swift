@@ -112,6 +112,94 @@ private struct WellnessResources162: Decodable {
     }
 }
 
+// MARK: - Weather-impact derivation (the dormant factor, made REAL)
+//
+// §3 marks `factors.weatherImpact` dormant on the server payload (it ships a
+// string but the assessment doesn't fold it into the score). We light it up
+// HONESTLY here from the live current-location snapshot (WeatherService) —
+// the same pipeline Driver Home reads — so the fatigue tier rises when adverse
+// weather STACKS the way fatigue research says it does: driving at night, into
+// low visibility, through winter precip (freezing / snow). Strictly derived
+// from live `weatherCode` / `visibilityMi` + the local hour; when there is no
+// snapshot the impact is the neutral zero ("none") — never invented.
+private struct WeatherImpact162 {
+    /// 0…100 additive bump folded onto the server's base riskScore. 0 when
+    /// no snapshot or benign conditions.
+    let bump: Int
+    /// The factor word shown in the footnote + cell: "none" | "low" |
+    /// "moderate" | "elevated" | "severe".
+    let word: String
+    /// The contributing-condition chips ("NIGHT", "LOW VIS", "WINTER PRECIP",
+    /// "FOG") — drawn bespoke on the cell. Empty when benign.
+    let drivers: [String]
+    /// The live weatherCode for the bespoke glyph (0 → neutral cloud).
+    let weatherCode: Int
+    /// True only when a live snapshot backed this (else the cell shows the
+    /// honest "no live weather" state rather than a fabricated "clear").
+    let hasData: Bool
+
+    /// Tomorrow.io winter-precip family (snow + freezing rain / ice pellets).
+    private static let winterCodes: Set<Int> = [
+        5000, 5001, 5100, 5101,             // snow / flurries / heavy snow
+        6000, 6001, 6200, 6201,             // freezing drizzle / rain
+        7000, 7101, 7102                    // ice pellets
+    ]
+    /// Fog family — the low-vis condition codes.
+    private static let fogCodes: Set<Int> = [2000, 2100]
+
+    /// Build from the live snapshot (nil → the honest neutral, no-data state).
+    /// `hour` is injected for testability; defaults to the device's local hour.
+    init(snapshot: WeatherSnapshot?, hour: Int = Calendar.current.component(.hour, from: Date())) {
+        guard let s = snapshot else {
+            self = WeatherImpact162(bump: 0, word: "none", drivers: [], weatherCode: 0, hasData: false)
+            return
+        }
+        let code = s.weatherCode
+
+        // ── the three stacking fatigue multipliers (all live-derived) ──
+        // Night window 21:00–05:59 — the circadian low when fatigue crashes
+        // are most severe (FMCSA HOS rationale).
+        let isNight = hour >= 21 || hour < 6
+        // Low visibility — fog code OR a measured ≤ 2 mi reading (the
+        // snapshot's own CMV slow-down threshold).
+        let lowVis = Self.fogCodes.contains(code) || s.visibilityHazard
+        // Winter precip — freezing / snow weatherCodes, OR the snapshot's
+        // text-derived wintry flag (≤34°F frozen-precip signature) as a
+        // fallback for the legacy WeatherKit/NWS paths that only carry text.
+        let winter = Self.winterCodes.contains(code) || s.wintryHazard
+        // Thunderstorm — a discrete severe stacker.
+        let storm = code == 8000
+
+        var b = 0
+        var chips: [String] = []
+        if winter { b += 22; chips.append("WINTER PRECIP") }
+        if lowVis { b += 16; chips.append(Self.fogCodes.contains(code) ? "FOG" : "LOW VIS") }
+        if storm  { b += 14; chips.append("STORM") }
+        if isNight { b += 10; chips.append("NIGHT") }
+        // Stacking premium — adverse weather AT NIGHT compounds: when any
+        // hazard coincides with the circadian low, add a small synergy term
+        // (research: night + degraded conditions is super-additive on risk).
+        if isNight && (winter || lowVis || storm) { b += 8 }
+
+        let bumped = min(100, b)
+        let word: String
+        switch bumped {
+        case 0:        word = "none"
+        case 1...12:   word = "low"
+        case 13...26:  word = "moderate"
+        case 27...40:  word = "elevated"
+        default:       word = "severe"
+        }
+        self = WeatherImpact162(bump: bumped, word: word, drivers: chips,
+                                weatherCode: code, hasData: true)
+    }
+
+    private init(bump: Int, word: String, drivers: [String], weatherCode: Int, hasData: Bool) {
+        self.bump = bump; self.word = word; self.drivers = drivers
+        self.weatherCode = weatherCode; self.hasData = hasData
+    }
+}
+
 // MARK: - Screen
 
 struct DriverWellnessFatigue_162: View {
@@ -126,16 +214,26 @@ struct DriverWellnessFatigue_162: View {
     @State private var loadError: String? = nil
     @State private var actionAck: String? = nil
     @State private var checkInPresented = false
+    /// Live current-location snapshot — the SAME source Driver Home uses
+    /// (WeatherService.shared.fetchCurrent → server weather.byLatLon /
+    /// WeatherKit chain, no Tomorrow.io key in the bundle). Drives the
+    /// REAL fatigue weather factor (factors.weatherImpact is dormant on
+    /// the server payload — §3). Stays nil when CoreLocation is denied or
+    /// no service produced a reading → the weather factor is honestly
+    /// neutral (0 / "none"), never fabricated.
+    @State private var weather: WeatherSnapshot? = nil
     /// Set only by the DEBUG preview init so `.task` doesn't overwrite seeded
     /// sample data with a network call. Always false in production.
     @State private var seeded = false
 
     init() {}
     #if DEBUG
-    fileprivate init(risk: FatigueRisk162, score: WellnessScore162, resources: WellnessResources162) {
+    fileprivate init(risk: FatigueRisk162, score: WellnessScore162,
+                     resources: WellnessResources162, weather: WeatherSnapshot? = nil) {
         _risk = State(initialValue: risk)
         _score = State(initialValue: score)
         _resources = State(initialValue: resources)
+        _weather = State(initialValue: weather)
         _loading = State(initialValue: false)
         _seeded = State(initialValue: true)
     }
@@ -148,19 +246,57 @@ struct DriverWellnessFatigue_162: View {
         return s
     }
 
-    /// Risk level word + tint. Server enum: low | moderate | elevated | critical.
-    private var riskLevelWord: String {
-        switch (risk?.riskLevel ?? "").lowercased() {
-        case "low":      return "Low"
-        case "moderate": return "Moderate"
-        case "elevated": return "Elevated"
-        case "critical": return "Critical"
-        case "":         return loading ? "…" : "-"
-        default:         return (risk?.riskLevel ?? "-").capitalized
+    /// The REAL weather factor — derived live from the current-location
+    /// snapshot. Neutral zero when no snapshot (honest, never fabricated).
+    private var weatherImpact: WeatherImpact162 { WeatherImpact162(snapshot: weather) }
+
+    /// The displayed risk score: the server's base assessment PLUS the live
+    /// weather bump (the dormant factor, now active), capped at 100. When the
+    /// server gave no score we surface nothing (nil) — the weather bump is an
+    /// ADDITION to a real assessment, never a fabricated standalone score.
+    private var effectiveRiskScore: Int? {
+        guard let base = risk?.riskScore else { return nil }
+        return min(100, max(0, base) + weatherImpact.bump)
+    }
+    /// True when the live weather actually raised the tier vs the server base
+    /// — drives the bespoke "+N weather" annotation on the gauge.
+    private var weatherRaisedScore: Bool {
+        weatherImpact.bump > 0 && risk?.riskScore != nil
+    }
+
+    /// The server's level ladder, as a comparable rank so the weather bump can
+    /// promote it. low=0 moderate=1 elevated=2 critical=3.
+    private func levelRank(forScore s: Int) -> Int {
+        switch s {
+        case ..<30:  return 0   // low
+        case ..<55:  return 1   // moderate
+        case ..<80:  return 2   // elevated
+        default:     return 3   // critical
         }
     }
+    private func word(forRank r: Int) -> String {
+        switch r { case 0: return "Low"; case 1: return "Moderate"; case 2: return "Elevated"; default: return "Critical" }
+    }
+
+    /// Risk level word + tint. Server enum: low | moderate | elevated |
+    /// critical — PROMOTED when the live weather bump pushes the effective
+    /// score into a higher band (so an adverse-weather night reads truthfully
+    /// as the worse tier the stacked conditions warrant).
+    private var riskLevelWord: String {
+        let serverWord = (risk?.riskLevel ?? "").lowercased()
+        guard !serverWord.isEmpty else { return loading ? "…" : "-" }
+        let baseRank: Int = {
+            switch serverWord {
+            case "low": return 0; case "moderate": return 1
+            case "elevated": return 2; case "critical": return 3
+            default: return risk?.riskScore.map(levelRank(forScore:)) ?? 0
+            }
+        }()
+        let effRank = effectiveRiskScore.map(levelRank(forScore:)) ?? baseRank
+        return word(forRank: max(baseRank, effRank))
+    }
     private var riskColor: Color {
-        switch (risk?.riskLevel ?? "").lowercased() {
+        switch riskLevelWord.lowercased() {
         case "low":      return Brand.success
         case "moderate": return Brand.warning
         case "elevated": return Brand.escort      // amber→violet step before red
@@ -168,9 +304,9 @@ struct DriverWellnessFatigue_162: View {
         default:         return palette.textTertiary
         }
     }
-    /// 0…1 gauge fraction from the 0–100 risk score.
+    /// 0…1 gauge fraction from the 0–100 EFFECTIVE risk score (base + weather).
     private var riskFraction: CGFloat {
-        guard let s = risk?.riskScore else { return 0 }
+        guard let s = effectiveRiskScore else { return 0 }
         return CGFloat(max(0, min(100, s))) / 100.0
     }
 
@@ -187,13 +323,18 @@ struct DriverWellnessFatigue_162: View {
         return "in \(m)m"
     }
 
-    /// "time-of-day low · route highway · weather none" footnote, from factors.
+    /// "time-of-day low · route highway · weather moderate" footnote. The
+    /// weather clause is the LIVE-derived factor when we have a snapshot
+    /// (overriding the dormant server string); it falls back to the server's
+    /// string only when no snapshot is available — honest either way.
     private var factorFootnote: String {
         guard let f = risk?.factors else { return "-" }
+        let wi = weatherImpact
+        let weatherWord = wi.hasData ? wi.word : dash(f.weatherImpact).lowercased()
         let parts = [
             "time-of-day \(dash(f.timeOfDayFactor).lowercased())",
             "route \(dash(f.routeDifficulty).lowercased())",
-            "weather \(dash(f.weatherImpact).lowercased())",
+            "weather \(weatherWord)",
         ]
         return parts.joined(separator: " · ")
     }
@@ -334,20 +475,45 @@ struct DriverWellnessFatigue_162: View {
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(num(risk?.riskScore))
+                Text(num(effectiveRiskScore))
                     .font(.system(size: 34, weight: .semibold)).kerning(-0.3)
                     .foregroundStyle(LinearGradient.diagonal)
                 Text("/ 100 · \(riskLevelWord)")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 0)
+                // Bespoke "+N weather" annotation — drawn ONLY when the live
+                // snapshot actually raised the score, so the driver sees the
+                // weather contribution honestly (never a phantom delta).
+                if weatherRaisedScore {
+                    HStack(spacing: 4) {
+                        WeatherIcons.symbolView(for: weatherImpact.weatherCode, size: 13)
+                        Text("+\(weatherImpact.bump) weather")
+                            .font(.system(size: 10, weight: .heavy)).tracking(0.3)
+                            .foregroundStyle(riskColor)
+                    }
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(riskColor.opacity(0.14))
+                    .clipShape(Capsule())
+                }
             }
 
-            // Risk gauge rail (track + gradient fill scaled to riskFraction)
+            // Risk gauge rail (track + gradient fill scaled to riskFraction).
+            // The base-score notch shows where the assessment sat BEFORE the
+            // live weather bump — so the weather contribution is legible, not
+            // hidden inside a single bar.
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.08))
                     Capsule().fill(LinearGradient.diagonal)
                         .frame(width: max(0, geo.size.width * riskFraction))
+                    if weatherRaisedScore, let base = risk?.riskScore {
+                        let baseFrac = CGFloat(max(0, min(100, base))) / 100.0
+                        Rectangle()
+                            .fill(Color.white.opacity(0.55))
+                            .frame(width: 1.5, height: 10)
+                            .offset(x: max(0, geo.size.width * baseFrac - 0.75))
+                    }
                 }
             }
             .frame(height: 6)
@@ -358,10 +524,62 @@ struct DriverWellnessFatigue_162: View {
             Text(factorFootnote)
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textTertiary)
+
+            weatherFactorRow
         }
         .padding(Space.s5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .eusoCard(radius: Radius.lg, intensity: .feature)
+    }
+
+    // MARK: Weather factor (the dormant factor, lit up bespoke)
+    //
+    // A thin, screen-consistent row inside the hero card: the live weather
+    // glyph + the derived factor word + the contributing-condition chips
+    // (NIGHT / LOW VIS / WINTER PRECIP …). When there is no live snapshot it
+    // states that honestly ("no live weather") rather than implying clear
+    // conditions; when benign it reads "no weather load on fatigue".
+    private var weatherFactorRow: some View {
+        let wi = weatherImpact
+        return HStack(alignment: .center, spacing: Space.s2) {
+            WeatherIcons.symbolView(for: wi.weatherCode, size: 18)
+                .opacity(wi.hasData ? 1 : 0.4)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("WEATHER LOAD")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    if wi.hasData {
+                        Text(wi.word.uppercased())
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                            .foregroundStyle(wi.bump > 0 ? riskColor : Brand.success)
+                    }
+                }
+                if !wi.hasData {
+                    Text("No live weather · location off")
+                        .font(EType.mono(.micro)).tracking(0.3)
+                        .foregroundStyle(palette.textTertiary)
+                } else if wi.drivers.isEmpty {
+                    Text("No weather load on fatigue right now")
+                        .font(EType.mono(.micro)).tracking(0.3)
+                        .foregroundStyle(palette.textSecondary)
+                } else {
+                    // Bespoke contributing-condition chips (the stack).
+                    HStack(spacing: 5) {
+                        ForEach(wi.drivers, id: \.self) { chip in
+                            Text(chip)
+                                .font(.system(size: 8.5, weight: .heavy)).tracking(0.4)
+                                .foregroundStyle(palette.textPrimary)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(riskColor.opacity(0.16))
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 2)
     }
 
     // MARK: Wellness-score card (composite + grade + 3 sub-rails)
@@ -592,8 +810,11 @@ struct DriverWellnessFatigue_162: View {
 
     private func load() async {
         loading = true; loadError = nil
-        // Three independent self-scoped reads, run concurrently. NONE pass a
-        // driverId → the server's resolveDriver() falls back to ctx.user (self).
+        // Three independent self-scoped reads + the live weather snapshot, run
+        // concurrently. The wellness reads pass NO driverId → the server's
+        // resolveDriver() falls back to ctx.user (self). The weather fetch is
+        // best-effort: a miss leaves `weather == nil` → the factor is honestly
+        // neutral, and it NEVER fails the wellness summary.
         async let r: FatigueRisk162? = fetchRisk()
         async let s: WellnessScore162? = fetchScore()
         async let res: WellnessResources162? = fetchResources()
@@ -604,6 +825,11 @@ struct DriverWellnessFatigue_162: View {
         if rr == nil && ss == nil && rres == nil {
             loadError = "Couldn’t load your wellness summary. Pull to retry."
         }
+        // Live current-location snapshot — same MainActor-isolated service the
+        // Driver Home dashboard reads. Best-effort: nil on denied/offline →
+        // the weather factor degrades to the honest neutral, never failing the
+        // wellness summary above.
+        weather = await WeatherService.shared.fetchCurrent()
         loading = false
     }
 
@@ -786,8 +1012,26 @@ private extension WellnessResources162 {
         lastCheckIn: ISO8601DateFormatter().string(from: Date().addingTimeInterval(-2 * 86400)))
 }
 
-#Preview("162 · Driver Wellness & Fatigue · Night") {
+private extension WeatherSnapshot {
+    /// A winter-precip + low-visibility snapshot — exercises the lit-up
+    /// weather factor (WINTER PRECIP + LOW VIS chips + the gauge bump).
+    /// weatherCode 6001 = Freezing Rain. Preview-only; never shipped.
+    static let sampleAdverse = WeatherSnapshot(
+        city: "Cheyenne, WY", tempF: 28, windMph: 18, visibilityMi: 1,
+        condition: "Freezing rain", symbol: "cloud.sleet.fill",
+        weatherCode: 6001, dataSource: .tomorrowIO,
+        nextAlert: nil, accent: .warn)
+}
+
+#Preview("162 · Driver Wellness & Fatigue · Calm") {
     DriverWellnessFatigue_162(risk: .sample, score: .sample, resources: .sample)
+        .preferredColorScheme(.dark)
+        .environment(\.palette, Theme.dark)
+}
+
+#Preview("162 · Driver Wellness & Fatigue · Adverse weather") {
+    DriverWellnessFatigue_162(risk: .sample, score: .sample, resources: .sample,
+                              weather: .sampleAdverse)
         .preferredColorScheme(.dark)
         .environment(\.palette, Theme.dark)
 }
