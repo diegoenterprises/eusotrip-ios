@@ -118,13 +118,24 @@ struct EnRouteRoadIntelStrip: View {
     @Environment(\.palette) private var palette
     @StateObject private var store = RoadIntelStore()
 
+    /// §3 weather store — owns `weather.forLoad` for the 4th "WEATHER
+    /// AHEAD" chip. Only hydrated when a caller supplies `loadId`; the
+    /// 013/018 call sites (no load context) pass nil and the chip simply
+    /// never mounts — fully backward compatible.
+    @StateObject private var wx = WeatherCardStore()
+
     /// Where to center the intel lookup. Usually the driver's live
     /// coordinate via `DriverLocationResolver`. Callers can pass an
     /// explicit coord (e.g. the active leg waypoint) for a preview.
     let explicitCenter: CLLocationCoordinate2D?
 
-    init(center: CLLocationCoordinate2D? = nil) {
+    /// The active load whose §3 lane weather feeds the WEATHER AHEAD chip.
+    /// nil ⇒ no weather chip (HERE flow/incidents/cameras only).
+    let loadId: String?
+
+    init(center: CLLocationCoordinate2D? = nil, loadId: String? = nil) {
         self.explicitCenter = center
+        self.loadId = loadId
     }
 
     var body: some View {
@@ -138,12 +149,26 @@ struct EnRouteRoadIntelStrip: View {
             }
         }
         .task { await load() }
+        .task(id: loadId) { await loadWeather() }
+        .onDisappear { wx.stop() }
     }
 
     private var hasAny: Bool {
         store.worstFlow != nil
             || store.topIncident != nil
             || store.nearestCamera != nil
+            || weatherAhead != nil
+    }
+
+    /// The §3 actionable lane risk for the WEATHER AHEAD chip — only when
+    /// a loadId was supplied AND the server marked the card + lane impact
+    /// `available` AND the tier is actionable (watch+). nil ⇒ chip hidden
+    /// (clear / none / enterprise-gated / no load context). The chip is the
+    /// SAME forLoad/laneImpact severity the 035 route band reads.
+    private var weatherAhead: WeatherForLoad.LaneImpact? {
+        guard loadId != nil,
+              let card = wx.card, card.available, card.hasLaneRisk else { return nil }
+        return card.laneImpact
     }
 
     private var chipRow: some View {
@@ -167,6 +192,11 @@ struct EnRouteRoadIntelStrip: View {
                 }
                 if let cam = store.nearestCamera {
                     cameraChip(cam)
+                }
+                // 4th chip — §3 WEATHER AHEAD, from forLoad/laneImpact.
+                // Hidden when clear/none/unavailable (weatherAhead == nil).
+                if let li = weatherAhead {
+                    weatherAheadChip(li)
                 }
             }
             .padding(.horizontal, 2)
@@ -220,9 +250,14 @@ struct EnRouteRoadIntelStrip: View {
         let type = (det?.type ?? "incident").uppercased()
         let color = incidentColor(det?.criticality)
         return HStack(spacing: 5) {
-            Image(systemName: incidentGlyph(det?.type))
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(color)
+            if (det?.type ?? "").lowercased() == "weather" {
+                // Bespoke storm glyph for a weather incident — never an SF Symbol.
+                WeatherIcons.symbolView(for: 8000, size: 12)
+            } else {
+                Image(systemName: incidentGlyph(det?.type))
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(color)
+            }
             Text(type)
                 .font(.system(size: 10, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(color)
@@ -271,6 +306,40 @@ struct EnRouteRoadIntelStrip: View {
         .chipBackdrop(color: Brand.warning, palette: palette)
     }
 
+    /// 4th chip — §3 WEATHER AHEAD. Bespoke (WeatherIcons), tinted to the
+    /// §3 risk-tier color. The glyph reads the live origin `weatherCode`
+    /// when present (a real condition glyph), else the neutral alert glyph;
+    /// the trailing text is the §3 peakLeg label/time when present, never
+    /// fabricated. Built to match the `chipBackdrop` capsule idiom of the
+    /// HERE chips so the four chips read as one strip.
+    private func weatherAheadChip(_ li: WeatherForLoad.LaneImpact) -> some View {
+        let color = li.riskTier.color
+        let code = wx.card?.origin?.realtime?.weatherCode ?? 0
+        let peak: String? = {
+            guard let p = li.peakLeg else { return nil }
+            let raw = p.time.isEmpty ? p.label : p.time
+            let t = raw.trimmingCharacters(in: .whitespaces)
+            return t.isEmpty ? nil : t
+        }()
+        return HStack(spacing: 5) {
+            if code != 0 {
+                WeatherIcons.symbolView(for: code, size: 13)
+            } else {
+                WeatherIcons.utility(.alert, size: 11, tint: color)
+            }
+            Text("WEATHER")
+                .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(color)
+            if let peak {
+                Text("· \(peak.uppercased())")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(1)
+            }
+        }
+        .chipBackdrop(color: color, palette: palette)
+    }
+
     // MARK: Logic
 
     private func load() async {
@@ -286,6 +355,15 @@ struct EnRouteRoadIntelStrip: View {
             return
         }
         await store.refresh(center: live)
+    }
+
+    /// Hydrate the §3 lane weather for the WEATHER AHEAD chip. One-shot —
+    /// the owning screen (035) drives its own auto-refresh on its primary
+    /// weather store; here we just need a current read for the chip. No-op
+    /// when no loadId was supplied.
+    private func loadWeather() async {
+        guard let loadId else { return }
+        await wx.load(loadId: loadId)
     }
 
     private func flowLabel(jamFactor: Double) -> (String, Color) {
@@ -312,7 +390,7 @@ struct EnRouteRoadIntelStrip: View {
         case "roadworks":    return "cone.fill"
         case "closure":      return "xmark.octagon.fill"
         case "hazard":       return "exclamationmark.triangle.fill"
-        case "weather":      return "cloud.bolt.rain.fill"
+        // "weather" incidents render the bespoke WeatherIcons storm glyph (see incidentChip), not an SF Symbol.
         case "masstransit":  return "bus.fill"
         case "disaster":     return "flame.fill"
         default:             return "exclamationmark.circle.fill"

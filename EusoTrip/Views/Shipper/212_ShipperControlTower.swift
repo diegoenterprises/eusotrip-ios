@@ -68,9 +68,23 @@ final class ControlTowerStore: ObservableObject {
     /// loads are gated out server-side AND below.
     @Published private(set) var positions: [ActiveLoadPosition] = []
 
+    /// Count of caller loads currently inside active weather, surfaced by
+    /// the same `getActivePositions` proc (Waves 1-3b-server). This is the
+    /// real `weatherAffected` field — honest 0 when the weather feeds are
+    /// enterprise-gated (the WEATHER KPI cell reads "0" not a fabrication).
+    @Published private(set) var weatherAffected: Int = 0
+
     /// One active-load map position. Mirrors the
     /// `controlTower.getActivePositions` row shape. `lat`/`lng` come
     /// straight off `loads.pickupLocation` (real geocoded DB coords).
+    ///
+    /// 2026-06-14 (Waves 1-3b-server LIVE): the proc now decorates each
+    /// position with the weather feeds' per-load read —
+    /// `riskTier` (the §3 none/watch/elevated/severe ladder),
+    /// `weatherHeadline` (the active corridor advisory headline), and
+    /// `weatherAvailable` (enterprise gate). All three are OPTIONAL: the
+    /// weather feeds are enterprise-gated, so today they decode `nil` /
+    /// `available:false` and the screen reads honestly (no pins, KPI 0).
     struct ActiveLoadPosition: Decodable, Identifiable, Hashable {
         let id: Int
         let loadNumber: String?
@@ -78,6 +92,16 @@ final class ControlTowerStore: ObservableObject {
         let mode: String?
         let lat: Double
         let lng: Double
+        // Weather decoration (Waves 1-3b-server). Absent today (gated).
+        let riskTierRaw: String?
+        let weatherHeadline: String?
+        let weatherAvailable: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case id, loadNumber, status, mode, lat, lng
+            case riskTierRaw = "riskTier"
+            case weatherHeadline, weatherAvailable
+        }
 
         /// Null-island gate (013:427 doctrine) — a load whose pickup is
         /// (0,0) is un-geocoded; drop it rather than frame the Atlantic.
@@ -85,11 +109,25 @@ final class ControlTowerStore: ObservableObject {
             guard !(lat == 0 && lng == 0) else { return nil }
             return HereLatLng(lat, lng)
         }
+
+        /// The §3 risk ladder resolved off the wire string. Honest `.none`
+        /// when the key is absent (gated) — never a fabricated severity.
+        var riskTier: LaneRiskTier { LaneRiskTier(server: riskTierRaw) }
+
+        /// A storm-grade pickup: only elevated/severe earns a map pin so
+        /// the control-tower map flags genuine weather exposure, not noise.
+        /// `watch`/`none` (and the gated `nil` case) draw no pin.
+        var isStormPin: Bool {
+            riskTier == .elevated || riskTier == .severe
+        }
     }
 
     private struct ActivePositionsEnvelope: Decodable {
         let positions: [ActiveLoadPosition]
         let total: Int
+        /// Caller's in-flight loads currently inside active weather, from
+        /// the same proc (Waves 1-3b-server). Optional → honest 0 today.
+        let weatherAffected: Int?
     }
 
     private let api: EusoTripAPI
@@ -117,6 +155,8 @@ final class ControlTowerStore: ObservableObject {
             let (overview, exceptions, activity, envelope) = try await (o, exc, act, pos)
 
             positions = (envelope?.positions ?? []).filter { $0.fix != nil }
+            // Real weatherAffected count off the same proc. Gated → 0.
+            weatherAffected = envelope?.weatherAffected ?? 0
 
             let allZero =
                 overview.total.active == 0 &&
@@ -201,7 +241,7 @@ struct ShipperControlTower: View {
         case .empty:   return "empty"
         case .error:   return "error"
         case .loaded(let o, let e, let a):
-            return "loaded-\(o.total.active)-\(o.total.inTransit)-\(e.totalExceptions)-\(a.count)"
+            return "loaded-\(o.total.active)-\(o.total.inTransit)-\(e.totalExceptions)-\(a.count)-wx\(store.weatherAffected)-st\(stormPositions.count)"
         }
     }
 
@@ -338,6 +378,36 @@ struct ShipperControlTower: View {
             .padding(.horizontal, Space.s3)
             .padding(.top, 10)
         }
+        // Bespoke on-map storm legend — the WeatherIcons storm glyph + a
+        // real count of elevated/severe pickups now pinned on the map.
+        // Honestly absent when no position is storm-grade (gated today).
+        .overlay(alignment: .bottomTrailing) {
+            if !stormPositions.isEmpty {
+                stormMapLegend(count: stormPositions.count)
+                    .padding(.trailing, Space.s3)
+                    .padding(.bottom, Space.s3)
+            }
+        }
+    }
+
+    /// Bespoke storm-legend chip pinned to the map — the WeatherIcons
+    /// `.storm` condition glyph + the count of storm-grade pickups now on
+    /// the map. Width-locked chip grammar (§17.2). Never shown at count 0.
+    private func stormMapLegend(count: Int) -> some View {
+        HStack(spacing: 6) {
+            WeatherIcons.symbolView(for: 8000, size: 16)
+            Text("\(count) storm")
+                .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                .foregroundStyle(.white)
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(
+            Capsule().fill(Brand.danger.opacity(0.92))
+        )
+        .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 0.75))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(count) pickups in elevated or severe weather, pinned on the map")
     }
 
     // MARK: Map data plumbing (real loads.pickupLocation coords)
@@ -347,6 +417,14 @@ struct ShipperControlTower: View {
     /// lat/lng (`controlTower.getActivePositions`). Each pin carries the
     /// load `id` so its tap routes through `onSelectMarker` → load detail.
     /// Empty array ⇒ the map honestly frames CONUS with no pins.
+    ///
+    /// 2026-06-14 (Waves 1-3b-server): a SECOND, weather-grade layer is
+    /// appended — one `.weather` pin per pickup whose §3 `riskTier` is
+    /// elevated/severe (`isStormPin`), positioned at the SAME real
+    /// geocoded coords. These ride the canonical native weather-disc
+    /// marker (coordinate-accurate; the renderer projects them). When the
+    /// weather feeds are gated (no riskTier on any position), this layer
+    /// is empty → no storm pins, exactly as honest as the KPI 0.
     private var loadMarkerLayers: [HereMapLayer] {
         let markers: [HereMarker] = store.positions.compactMap { p in
             guard let fix = p.fix else { return nil }
@@ -357,8 +435,25 @@ struct ShipperControlTower: View {
                 id: String(p.id)
             )
         }
-        guard !markers.isEmpty else { return [] }
-        return [.markers(markers)]
+        let storms: [HereMarker] = stormPositions.compactMap { p in
+            guard let fix = p.fix else { return nil }
+            return HereMarker(
+                at: fix,
+                kind: .weather,
+                label: p.weatherHeadline ?? p.loadNumber ?? "LD-\(p.id)",
+                id: String(p.id)
+            )
+        }
+        var layers: [HereMapLayer] = []
+        if !markers.isEmpty { layers.append(.markers(markers)) }
+        if !storms.isEmpty { layers.append(.markers(storms)) }
+        return layers
+    }
+
+    /// Active positions flagged elevated/severe by the §3 risk ladder —
+    /// the storm-grade pickups. Empty when the weather feeds are gated.
+    private var stormPositions: [ControlTowerStore.ActiveLoadPosition] {
+        store.positions.filter { $0.isStormPin }
     }
 
     /// Frame the lane spread: centroid of the plotted pickups when we
@@ -442,6 +537,17 @@ struct ShipperControlTower: View {
                     trail: exceptionCount > 0 ? "detention · late" : nil,
                     trailColor: palette.textSecondary)
             kpiDivider
+            // WEATHER — real `weatherAffected` count from getActivePositions
+            // (Waves 1-3b-server). Fills the admitted ON-TIME gap with a
+            // metric the feeds actually ship. Bespoke WeatherIcons storm
+            // glyph leads the value; honest 0 (neutral) when none/gated.
+            kpiCell(label: "WEATHER",
+                    value: "\(store.weatherAffected)",
+                    valueStyle: store.weatherAffected > 0 ? .danger : .neutral,
+                    trail: store.weatherAffected > 0 ? "in active wx" : nil,
+                    trailColor: palette.textSecondary,
+                    glyphCode: store.weatherAffected > 0 ? 8000 : nil)
+            kpiDivider
             // EUSO-2108 — backend doesn't ship onTimeRate yet.
             kpiCell(label: "ON-TIME",
                     value: "-",
@@ -466,12 +572,17 @@ struct ShipperControlTower: View {
                          value: String,
                          valueStyle: ValueStyle,
                          trail: String?,
-                         trailColor: Color?) -> some View {
+                         trailColor: Color?,
+                         glyphCode: Int? = nil) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if let glyphCode {
+                    WeatherIcons.symbolView(for: glyphCode, size: 16)
+                        .alignmentGuide(.firstTextBaseline) { d in d[.bottom] - 3 }
+                }
                 Group {
                     switch valueStyle {
                     case .gradient: Text(value).foregroundStyle(LinearGradient.diagonal)
@@ -527,14 +638,27 @@ struct ShipperControlTower: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("View all exceptions")
                 }
-                if merged.isEmpty {
+                if merged.isEmpty && stormWeatherExceptions.isEmpty {
                     Text("No exceptions across modes.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 } else {
-                    HStack(spacing: Space.s2) {
-                        ForEach(merged.prefix(2)) { ex in
-                            exceptionChip(ex)
+                    if !merged.isEmpty {
+                        HStack(spacing: Space.s2) {
+                            ForEach(merged.prefix(2)) { ex in
+                                exceptionChip(ex)
+                            }
+                        }
+                    }
+                    // Weather loads as exception chips — the elevated/severe
+                    // pickups from getActivePositions (Waves 1-3b-server),
+                    // surfaced alongside the ETA/late exceptions. Bespoke
+                    // WeatherIcons storm glyph; honestly absent when gated.
+                    if !stormWeatherExceptions.isEmpty {
+                        HStack(spacing: Space.s2) {
+                            ForEach(stormWeatherExceptions.prefix(2)) { p in
+                                weatherExceptionChip(p)
+                            }
                         }
                     }
                 }
@@ -584,6 +708,52 @@ struct ShipperControlTower: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Exception, \(badge), \(lane), load \(ex.id)")
+    }
+
+    /// Weather-grade pickups surfaced as exception entries — elevated/
+    /// severe §3 riskTier off `getActivePositions`. Empty when the feeds
+    /// are gated, so the weather-chip row honestly disappears.
+    private var stormWeatherExceptions: [ControlTowerStore.ActiveLoadPosition] {
+        stormPositions
+    }
+
+    /// Bespoke weather exception chip — WeatherIcons storm glyph + the
+    /// risk tier badge + the live corridor headline (or the load lane).
+    /// Taps open that load's detail, mirroring the ETA-exception chip.
+    private func weatherExceptionChip(_ p: ControlTowerStore.ActiveLoadPosition) -> some View {
+        let tier = p.riskTier
+        let badge = tier.rawValue.uppercased()
+        let headline = (p.weatherHeadline?.isEmpty == false)
+            ? p.weatherHeadline!
+            : (p.loadNumber ?? "LD-\(p.id)")
+        return Button(action: { openLoad(String(p.id)) }) {
+            HStack(spacing: 6) {
+                WeatherIcons.symbolView(for: 8000, size: 18)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(badge)
+                        .font(.system(size: 10, weight: .heavy))
+                        .tracking(0.4)
+                        .foregroundStyle(tier.color)
+                        .lineLimit(1)
+                    Text(headline)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, Space.s3)
+            .padding(.vertical, Space.s2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md)
+                    .strokeBorder(tier.color.opacity(0.45))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Weather exception, \(badge), \(headline), load \(p.id)")
     }
 
     private func exceptionBadge(_ ex: ControlTowerAPI.ExceptionRow) -> String {

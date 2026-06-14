@@ -11,7 +11,13 @@
 //  Data:
 //    weather.getAlerts         (EXISTS weather.ts:437)  → [{id,eventType,severity,headline,states,onsetAt,…}]
 //    weather.getImpactedLoads  (EXISTS weather.ts:481)  → [{loadId,loadNumber,origin,destination,alertSeverity,…}]
-//    weather.getRouteConditions(EXISTS weather.ts:392)  → {origin,destination,overallRisk,segments,advisories}
+//    weather.getRouteConditions(EXISTS weather.ts:392)  → {available?,origin,destination,
+//        overallRisk, segments:[{from,to,risk,condition,weatherCode,windGust,visibility,
+//        precipitationIntensity,floods[],overallRisk}], advisories:[{eventType,severity,
+//        headline,expiresAt}]}  — Tomorrow.io-sourced; per-segment weather is enterprise-
+//        gated (available:false / nil today), so the screen renders an HONEST empty corridor.
+//        Input: {origin:{city,state}, destination:{city,state}} — derived from the first
+//        REAL impacted load's "City, ST" endpoints; never invented.
 //
 
 import SwiftUI
@@ -57,18 +63,67 @@ private struct ImpactedLoad578: Decodable, Identifiable {
     let alertSeverity: String?
 }
 
+/// `weather.getRouteConditions` — the corridor envelope. The server is now
+/// Tomorrow.io-sourced; every weather field is enterprise-gated, so all the
+/// new keys are OPTIONAL and stay nil today (we render the honest empty
+/// state). `available` is the gate flag (absent on the legacy alert-only
+/// path → treated as `nil`, which the screen reads as "feed not configured").
 private struct RouteConditions578: Decodable {
-    let overallRisk: String?
+    let available: Bool?
+    let overallRisk: String?           // "low"|"moderate"|"high"|"extreme"|"unknown"
     let segments: [RouteSegment578]?
-    let advisories: [String]?
+    let advisories: [RouteAdvisory578]?
+    // origin/destination are echoed back as {city,state} — kept for the
+    // corridor caption so we label the REAL endpoints, never invented cities.
+    let origin: RoutePlace578?
+    let destination: RoutePlace578?
 }
 
-private struct RouteSegment578: Decodable, Identifiable {
-    let id: Int
+private struct RoutePlace578: Decodable {
+    let city: String?
+    let state: String?
+    var label: String {
+        switch (city, state) {
+        case let (c?, s?): return "\(c), \(s)"
+        case let (c?, nil): return c
+        case let (nil, s?): return s
+        default: return "—"
+        }
+    }
+}
+
+/// Corridor advisory OBJECT (server changed [String] → [{…}]). Every field
+/// optional so a partial row still decodes.
+private struct RouteAdvisory578: Decodable, Identifiable {
+    let eventType: String?
+    let severity: String?
+    let headline: String?
+    let expiresAt: String?
+    // Stable identity for ForEach (server carries no id on advisories).
+    var id: String { (headline ?? eventType ?? "advisory") + (expiresAt ?? "") }
+}
+
+/// A corridor segment with the new Tomorrow.io per-segment weather. EVERY
+/// field is optional → `Decodable` synthesizes cleanly and the row collapses
+/// to its honest endpoints when the enterprise feed is dark. (ForEach keys on
+/// the enumerated offset, so no `Identifiable`/synthetic id is needed.)
+private struct RouteSegment578: Decodable {
     let from: String?
     let to: String?
-    let risk: String?
+    let risk: String?                   // per-segment riskTier ladder
     let condition: String?
+    // Tomorrow.io per-segment metrics (gated; nil until the key lands).
+    let weatherCode: Int?
+    let windGust: Double?               // mph
+    let visibility: Double?             // mi
+    let precipitationIntensity: Double? // in/hr
+    let floods: [RouteFlood578]?
+    let overallRisk: String?            // per-segment envelope echo
+}
+
+private struct RouteFlood578: Decodable {
+    let severity: String?
+    let headline: String?
 }
 
 // MARK: - Body
@@ -80,6 +135,7 @@ private struct RailRouteWeatherBody: View {
 
     @State private var alerts: [WeatherAlert578] = []
     @State private var impacted: [ImpactedLoad578] = []
+    @State private var route: RouteConditions578? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -129,6 +185,7 @@ private struct RailRouteWeatherBody: View {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     mapHero
+                    corridorSection
                     alertsList
                     if impactedCount > 0 { impactedFooter }
                     ctaPair
@@ -341,16 +398,272 @@ private struct RailRouteWeatherBody: View {
         }
     }
 
+    // MARK: - Corridor weather (weather.getRouteConditions)
+
+    /// riskTier ladder → Brand color (none/low → info, watch/moderate →
+    /// warning, elevated/high/severe/extreme → danger). Bound to the real
+    /// server string, never a hardcoded severity.
+    private func corridorRiskColor(_ raw: String?) -> Color {
+        switch (raw ?? "").lowercased() {
+        case "extreme", "severe", "high", "elevated": return Brand.danger
+        case "moderate", "watch":                     return Brand.warning
+        case "low", "none", "clear":                  return Brand.success
+        default:                                       return palette.textTertiary
+        }
+    }
+
+    /// Render the corridor card only when there's REAL content AND the feed
+    /// hasn't explicitly reported itself dark. The enterprise gate is honored
+    /// two ways: an explicit `available == false` always collapses to the
+    /// empty state; absent/`true` falls through to "show whatever real
+    /// segments/advisories the server returned" (so live advisory objects on
+    /// the current server still surface). No content → empty state.
+    private var corridorAvailable: Bool {
+        guard let r = route else { return false }
+        if r.available == false { return false }
+        return !(r.segments?.isEmpty ?? true) || !(r.advisories?.isEmpty ?? true)
+    }
+
+    private var corridorSection: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("CORRIDOR WEATHER")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text("getRouteConditions")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(palette.textTertiary)
+            }
+
+            if !corridorAvailable {
+                corridorEmpty
+            } else {
+                let segs = route?.segments ?? []
+                let advs = route?.advisories ?? []
+                VStack(spacing: 0) {
+                    if let cap = corridorCaption {
+                        corridorHeaderRow(cap)
+                        if !segs.isEmpty || !advs.isEmpty {
+                            Divider().overlay(palette.borderFaint)
+                        }
+                    }
+                    ForEach(Array(segs.enumerated()), id: \.offset) { idx, seg in
+                        segmentRow(seg)
+                        if idx < segs.count - 1 || !advs.isEmpty {
+                            Divider().padding(.leading, 52).overlay(palette.borderFaint)
+                        }
+                    }
+                    ForEach(Array(advs.enumerated()), id: \.offset) { idx, adv in
+                        advisoryRow(adv)
+                        if idx < advs.count - 1 {
+                            Divider().padding(.leading, 52).overlay(palette.borderFaint)
+                        }
+                    }
+                }
+                .background(palette.bgCard)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+            }
+        }
+    }
+
+    /// "Austin, TX → Dallas, TX · overall HIGH" — REAL echoed endpoints.
+    private var corridorCaption: String? {
+        guard let r = route, let o = r.origin, let d = r.destination else { return nil }
+        let oL = o.label, dL = d.label
+        guard oL != "—" || dL != "—" else { return nil }
+        let risk = (r.overallRisk ?? "").lowercased()
+        let riskStr = risk.isEmpty || risk == "unknown" ? "" : " · overall \(risk.uppercased())"
+        return "\(oL) → \(dL)\(riskStr)"
+    }
+
+    private func corridorHeaderRow(_ caption: String) -> some View {
+        HStack(spacing: 10) {
+            WeatherIcons.utility(.route, size: 16, tint: corridorRiskColor(route?.overallRisk))
+            Text(caption)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+            Spacer()
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+    }
+
+    /// One corridor leg: condition glyph (Tomorrow.io weatherCode) + the
+    /// endpoints + a riskTier dot, with the gated metrics (gust · vis ·
+    /// precip) shown only when present.
+    private func segmentRow(_ seg: RouteSegment578) -> some View {
+        let risk = seg.risk ?? seg.overallRisk
+        let color = corridorRiskColor(risk)
+        let title: String = {
+            switch (seg.from, seg.to) {
+            case let (f?, t?): return "\(f) → \(t)"
+            case let (f?, nil): return f
+            case let (nil, t?): return t
+            default:           return seg.condition ?? "Segment"
+            }
+        }()
+        return HStack(alignment: .top, spacing: 12) {
+            // Tomorrow.io condition glyph (honest unknown-cloud at code 0).
+            WeatherIcons.symbolView(for: seg.weatherCode ?? 0, size: 28)
+                .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    if let c = seg.condition, !c.isEmpty,
+                       title != c {
+                        Text(c)
+                            .font(.system(size: 11))
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+                let metrics = segmentMetrics(seg)
+                if !metrics.isEmpty {
+                    HStack(spacing: 12) {
+                        ForEach(metrics) { metric in
+                            HStack(spacing: 4) {
+                                WeatherIcons.utility(metric.glyph, size: 13, tint: palette.textTertiary)
+                                Text(metric.value)
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(palette.textSecondary)
+                            }
+                        }
+                    }
+                }
+                ForEach(Array((seg.floods ?? []).enumerated()), id: \.offset) { _, flood in
+                    HStack(spacing: 5) {
+                        WeatherIcons.utility(.alert, size: 12, tint: Brand.danger)
+                        Text(flood.headline ?? "Flood advisory")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Brand.danger)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            Spacer(minLength: 8)
+            if let risk, !risk.isEmpty {
+                Text(risk.uppercased())
+                    .font(.system(size: 10, weight: .bold)).kerning(0.4)
+                    .foregroundStyle(color)
+                    .padding(.horizontal, 9).padding(.vertical, 4)
+                    .background(Capsule().fill(color.opacity(0.12)))
+            }
+        }
+        .padding(14)
+    }
+
+    /// One gated per-segment metric chip (glyph + value). Identifiable on its
+    /// glyph kind (each kind appears at most once per segment).
+    private struct SegMetric578: Identifiable {
+        let glyph: WeatherIcons.Utility
+        let value: String
+        var id: WeatherIcons.Utility { glyph }
+    }
+
+    /// The gated per-segment metrics (gust · visibility · precip). Each is
+    /// shown ONLY when its field is present → honest collapse otherwise.
+    private func segmentMetrics(_ seg: RouteSegment578) -> [SegMetric578] {
+        var out: [SegMetric578] = []
+        if let g = seg.windGust { out.append(.init(glyph: .wind, value: "\(Int(g.rounded())) mph")) }
+        if let v = seg.visibility {
+            out.append(.init(glyph: .eye, value: "\(v.formatted(.number.precision(.fractionLength(0...1)))) mi"))
+        }
+        if let p = seg.precipitationIntensity {
+            out.append(.init(glyph: .precip, value: "\(p.formatted(.number.precision(.fractionLength(0...2)))) in/h"))
+        }
+        return out
+    }
+
+    /// Corridor advisory OBJECT row (eventType/severity/headline/expiresAt).
+    private func advisoryRow(_ adv: RouteAdvisory578) -> some View {
+        let color = corridorRiskColor(adv.severity)
+        let title = adv.headline ?? adv.eventType ?? "Advisory"
+        let exp = adv.expiresAt.flatMap(relativeExpiry)
+        return HStack(alignment: .top, spacing: 12) {
+            WeatherIcons.utility(.alert, size: 18, tint: color)
+                .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(2)
+                HStack(spacing: 6) {
+                    if let et = adv.eventType, !et.isEmpty {
+                        Text(et)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    if let exp { Text("· \(exp)").font(.system(size: 11)).foregroundStyle(palette.textTertiary) }
+                }
+            }
+            Spacer(minLength: 8)
+            if let sev = adv.severity, !sev.isEmpty {
+                Text(sev.uppercased())
+                    .font(.system(size: 10, weight: .bold)).kerning(0.4)
+                    .foregroundStyle(color)
+                    .padding(.horizontal, 9).padding(.vertical, 4)
+                    .background(Capsule().fill(color.opacity(0.12)))
+            }
+        }
+        .padding(14)
+    }
+
+    private func relativeExpiry(_ iso: String) -> String? {
+        guard let date = ISO8601DateFormatter().date(from: iso) else { return nil }
+        let secs = Int(date.timeIntervalSinceNow)
+        if secs <= 0 { return "expired" }
+        if secs < 3600 { return "expires \(secs / 60)m" }
+        if secs < 86400 { return "expires \(secs / 3600)h" }
+        return "expires \(secs / 86400)d"
+    }
+
+    /// Honest empty corridor — enterprise-gated weather feed is dark, so we
+    /// read well NOW and light up the moment the key lands. Bespoke glyph
+    /// (WeatherIcons.route), not an SF Symbol.
+    private var corridorEmpty: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(palette.textTertiary.opacity(0.10))
+                    .frame(width: 40, height: 40)
+                WeatherIcons.utility(.route, size: 20, tint: palette.textTertiary)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("No corridor weather")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Text(impacted.isEmpty
+                     ? "No active shipment on this corridor — per-segment gusts, visibility and precip populate once a load is in transit."
+                     : "Per-segment weather is enterprise-gated. Gusts, visibility, precip and flood advisories light up the moment the feed is configured.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(palette.bgCard)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .strokeBorder(palette.borderFaint))
+    }
+
     // MARK: - Alerts list
 
     private var alertsList: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("ROUTE CONDITIONS")
+                Text("ACTIVE ALERTS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getRouteConditions")
+                Text("getAlerts")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -376,7 +689,7 @@ private struct RailRouteWeatherBody: View {
     }
 
     private func alertRow(_ alert: WeatherAlert578) -> some View {
-        let (chipColor, chipIcon) = alertChipInfo(alert.eventType ?? "")
+        let chipColor = alertChipInfo(alert.eventType ?? "").0
         let (pillLabel, pillColor) = severityPillInfo(alert.severity ?? "")
         let title = alert.headline.map { String($0.prefix(48)) } ?? (alert.eventType ?? "-")
         let stateSub = statesLabel(alert.states)
@@ -388,9 +701,7 @@ private struct RailRouteWeatherBody: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(chipColor.opacity(0.14))
                     .frame(width: 40, height: 40)
-                Image(systemName: chipIcon)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(chipColor)
+                alertGlyph(alert.eventType ?? "", size: 22)
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -425,6 +736,28 @@ private struct RailRouteWeatherBody: View {
         if et.contains("clear") || et.contains("sun") { return (Brand.success, "sun.max.fill") }
         if et.contains("fog")  { return (palette.textSecondary, "cloud.fog.fill") }
         return (palette.textSecondary, "cloud.fill")
+    }
+
+    /// Bespoke condition glyph for an NWS alert type — WeatherIcons, never an SF Symbol.
+    @ViewBuilder private func alertGlyph(_ eventType: String, size: CGFloat) -> some View {
+        let et = eventType.lowercased()
+        if et.contains("ice") || et.contains("freez") {
+            WeatherIcons.symbolView(for: 6201, size: size)
+        } else if et.contains("snow") || et.contains("winter") || et.contains("blizzard") {
+            WeatherIcons.symbolView(for: 5101, size: size)
+        } else if et.contains("wind") {
+            WeatherIcons.utility(.wind, size: size, tint: Brand.warning)
+        } else if et.contains("flood") {
+            WeatherIcons.utility(.precip, size: size, tint: Brand.info)
+        } else if et.contains("tornado") || et.contains("hurricane") || et.contains("thunder") || et.contains("storm") {
+            WeatherIcons.symbolView(for: 8000, size: size)
+        } else if et.contains("clear") || et.contains("sun") {
+            WeatherIcons.symbolView(for: 1000, size: size)
+        } else if et.contains("fog") {
+            WeatherIcons.symbolView(for: 2000, size: size)
+        } else {
+            WeatherIcons.symbolView(for: 1102, size: size)
+        }
     }
 
     private func severityPillInfo(_ severity: String) -> (String, Color) {
@@ -486,6 +819,26 @@ private struct RailRouteWeatherBody: View {
 
     // MARK: - Load
 
+    /// Input for `weather.getRouteConditions` — origin/destination as
+    /// {city,state}. We never invent these: they're parsed from a REAL
+    /// impacted load's "City, ST" endpoints (the only corridor on file for
+    /// this surface). No load → no call → honest empty corridor.
+    private struct RouteConditionsInput: Encodable {
+        struct Place: Encodable { let city: String; let state: String }
+        let origin: Place
+        let destination: Place
+    }
+
+    /// Parse a server "City, ST" endpoint string into {city,state}; nil when
+    /// the string is "Unknown"/empty/malformed (so we never query garbage).
+    private func parsePlace(_ s: String?) -> RouteConditionsInput.Place? {
+        guard let raw = s?.trimmingCharacters(in: .whitespaces), !raw.isEmpty,
+              raw.lowercased() != "unknown" else { return nil }
+        let parts = raw.split(separator: ",", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        return .init(city: parts[0], state: parts[1])
+    }
+
     private func load() async {
         loading = true; loadError = nil
         do {
@@ -494,6 +847,19 @@ private struct RailRouteWeatherBody: View {
             let (a, i) = try await (alertsResult, impactedResult)
             self.alerts   = a
             self.impacted = i
+
+            // Corridor conditions are computed for the first REAL impacted
+            // load's origin→destination. No impacted load (or unparseable
+            // endpoints) → leave `route` nil → honest "No corridor weather".
+            if let first = i.first,
+               let o = parsePlace(first.origin),
+               let d = parsePlace(first.destination) {
+                self.route = try? await EusoTripAPI.shared.query(
+                    "weather.getRouteConditions",
+                    input: RouteConditionsInput(origin: o, destination: d))
+            } else {
+                self.route = nil
+            }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

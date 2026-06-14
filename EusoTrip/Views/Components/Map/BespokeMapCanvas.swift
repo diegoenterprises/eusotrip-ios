@@ -1596,6 +1596,21 @@ extension BespokeMapCanvas {
             paintEndpoint(&context, at: c, marker: style.originMarker)
         case .delivery:
             paintEndpoint(&context, at: c, marker: style.destMarker)
+        case .weather:
+            // Bespoke storm marker — danger disc + amber bolt (the WeatherIcons storm grammar at map scale).
+            let r: CGFloat = 7.5
+            let disc = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2))
+            context.fill(disc, with: .color(Color(hex: "#FF5A4D")))
+            context.stroke(disc, with: .color(.white.opacity(0.9)), lineWidth: 1.4)
+            var bolt = Path()
+            bolt.move(to: CGPoint(x: c.x + 1.6, y: c.y - 4.2))
+            bolt.addLine(to: CGPoint(x: c.x - 2.6, y: c.y + 0.6))
+            bolt.addLine(to: CGPoint(x: c.x - 0.2, y: c.y + 0.6))
+            bolt.addLine(to: CGPoint(x: c.x - 1.6, y: c.y + 4.2))
+            bolt.addLine(to: CGPoint(x: c.x + 2.9, y: c.y - 1.1))
+            bolt.addLine(to: CGPoint(x: c.x + 0.5, y: c.y - 1.1))
+            bolt.closeSubpath()
+            context.fill(bolt, with: .color(Color(hex: "#FFD24A")))
         default:
             // Branded teardrop-equivalent: a filled disc in the kind's hue with
             // a white core, matching the HERE marker color palette.
