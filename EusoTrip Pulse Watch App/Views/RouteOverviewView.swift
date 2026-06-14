@@ -91,15 +91,13 @@ struct RouteOverviewView: View {
                     .font(.system(size: 11, weight: .semibold))
                     .lineLimit(2)
             }
-            if let weather = route.weatherFlag {
-                HStack(spacing: 4) {
-                    Image(systemName: "cloud.rain.fill")
-                        .foregroundStyle(Color.esangAmber)
-                    Text(weather)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.top, 2)
+            // Bespoke per-load weather chip — glyph from WatchWeatherGlyph
+            // (ported verbatim from the lane-impact reference), text from
+            // the REAL flag/headline the pipeline handed down. No SF
+            // Symbol, no emoji. Renders nothing when there is no signal.
+            if let severity = route.weatherSeverity {
+                WatchWeatherChip(severity: severity, label: route.weatherFlagDisplay)
+                    .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -171,21 +169,51 @@ final class RouteProgressStore: ObservableObject {
     @Published var etaText: String = "—"
     @Published var milesRemainingText: String = "—"
     @Published var nextWaypoint: String = "Pending"
+
+    /// The raw, REAL weather signal that reached the wrist. Sourced (in
+    /// priority order) from:
+    ///   1. `weather.forLoad → laneImpact` — the canonical per-load
+    ///      tri-modal severity (riskTier + headline) that the phone's v3
+    ///      card renders. This is the strongest signal: it's the same
+    ///      Tomorrow.io-backed lane analysis the founder's weather surface
+    ///      uses.
+    ///   2. `routeOptimization.getProgress.weatherFlag` — a coarse route-
+    ///      level flag string ("severe-thunderstorm" | "wind-advisory" | …).
+    ///      Used only when laneImpact is unavailable.
+    /// Stays nil when neither source reports weather — we never fabricate.
     @Published var weatherFlag: String?
+
+    /// Human-readable label for the chip. The lane-impact headline when we
+    /// have it, otherwise a prettified flag string. Honest "—" never shown
+    /// here because the chip itself is hidden when `weatherSeverity == nil`.
+    @Published var weatherHeadline: String?
+
+    /// Bespoke glyph bucket derived from the real signal. nil → the view
+    /// renders no weather chip at all (honest empty, not a default storm).
+    var weatherSeverity: WatchWeatherSeverity? { WatchWeatherSeverity.from(flag: weatherFlag) }
+
+    /// The string the chip prints: the real lane-impact headline if the
+    /// server sent one, else the flag prettified ("wind-advisory" → "Wind
+    /// advisory"). Both come straight from server fields.
+    var weatherFlagDisplay: String {
+        if let h = weatherHeadline, !h.isEmpty { return h }
+        guard let f = weatherFlag, !f.isEmpty else { return "—" }
+        return f.replacingOccurrences(of: "-", with: " ").capitalizedFirst
+    }
 
     func refresh(auth: AuthStore, loadId: String?) async {
         guard auth.isSignedIn, let loadId else { return }
+        let client = EsangClient(auth: auth)
+
+        // --- Route progress (ETA / miles / waypoint + coarse weather flag) ---
         do {
-            let client = EsangClient(auth: auth)
             let data = try await client.queryJSON(
                 "routeOptimization.getProgress",
                 input: ["loadId": loadId]
             )
             struct Envelope: Decodable {
                 struct Result: Decodable {
-                    struct DataContainer: Decodable {
-                        let json: Progress
-                    }
+                    struct DataContainer: Decodable { let json: Progress }
                     let data: DataContainer
                 }
                 let result: Result
@@ -201,9 +229,51 @@ final class RouteProgressStore: ObservableObject {
             etaText = p.etaMinutes.map { formatEta($0) } ?? etaText
             milesRemainingText = p.milesRemaining.map { String(format: "%.0f", $0) } ?? milesRemainingText
             nextWaypoint = p.nextWaypoint ?? nextWaypoint
+            // Coarse route flag is the baseline weather signal.
             weatherFlag = p.weatherFlag
+            weatherHeadline = nil
         } catch {
-            // keep last known
+            // keep last known — honest staleness, no fabrication.
+        }
+
+        // --- Canonical per-load lane impact (preferred weather signal) ---
+        // weather.forLoad is the same tRPC the phone's v3 card uses. When
+        // it reports an actionable riskTier we override the coarse route
+        // flag with the richer severity + headline. When it's unavailable
+        // or returns `none`, we keep whatever getProgress gave us.
+        do {
+            let data = try await client.queryJSON(
+                "weather.forLoad",
+                input: ["loadId": loadId]
+            )
+            struct Envelope: Decodable {
+                struct Result: Decodable {
+                    struct DataContainer: Decodable { let json: ForLoad }
+                    let data: DataContainer
+                }
+                let result: Result
+            }
+            struct ForLoad: Decodable {
+                struct LaneImpact: Decodable {
+                    let available: Bool?
+                    let riskTier: String?
+                    let headline: String?
+                }
+                let laneImpact: LaneImpact?
+            }
+            let env = try JSONDecoder().decode(Envelope.self, from: data)
+            if let li = env.result.data.json.laneImpact,
+               li.available == true,
+               let tier = li.riskTier?.lowercased(),
+               tier != "none", !tier.isEmpty {
+                // Lane impact wins — feed the bespoke severity off the
+                // canonical riskTier, label off the canonical headline.
+                weatherFlag = tier
+                weatherHeadline = li.headline
+            }
+        } catch {
+            // weather.forLoad unreachable → fall back to the route flag
+            // already set above. Honest: no fabricated severity.
         }
     }
 
@@ -212,5 +282,14 @@ final class RouteProgressStore: ObservableObject {
         let m = minutes % 60
         if h == 0 { return "\(m)m" }
         return String(format: "%dh %02dm", h, m)
+    }
+}
+
+private extension String {
+    /// Capitalises only the first character, leaving the rest as-is — so
+    /// "wind advisory" → "Wind advisory" (not "Wind Advisory").
+    var capitalizedFirst: String {
+        guard let first = first else { return self }
+        return first.uppercased() + dropFirst()
     }
 }

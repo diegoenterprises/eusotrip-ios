@@ -152,6 +152,7 @@ private struct CatalystLoadDetail: View {
                 } else if let l = load {
                     routeInfoStrip(l)
                     routeMapCard(l)
+                    routeWeatherPanel(l)
                     lifecycleCard(l)
                     moneyAndReceivableCard(l)
                     assignmentCard(l)
@@ -349,8 +350,13 @@ private struct CatalystLoadDetail: View {
     // 205_ShipperLoadDetail hero embed: the OMV vector renderer
     // (HereLiveMapView) with the pickup/delivery pins + a route
     // connector on the vector basemap, and the carrier-side situational
-    // add-ons (.shipperTracking = weather + traffic + sponsored
-    // ad-zones; no driver-only gamification fan-out). Coords bind ONLY
+    // add-ons (.shipperTracking = traffic + sponsored ad-zones; no
+    // driver-only gamification fan-out). The per-load WEATHER that used
+    // to live dormant inside this `.shipperTracking` add-on is now
+    // PROMOTED into the explicit bespoke `routeWeatherPanel` below the
+    // map (see `routeWeatherPanel(_:)`) — it renders the §3 per-load
+    // forecast + LaneImpact through the Wave-1 v3 weather components,
+    // never a generic basemap overlay. Coords bind ONLY
     // to the REAL `pickupLocation.lat/.lng` + `deliveryLocation.lat/.lng`
     // the server self-heals onto `loads.getById` — never a fabricated
     // lane. When either endpoint hasn't been geocoded yet (Driver 013
@@ -435,6 +441,39 @@ private struct CatalystLoadDetail: View {
         let origin = p.cityState.isEmpty ? "Origin" : p.cityState
         let dest = d.cityState.isEmpty ? "Dest" : d.cityState
         return (pLat, pLng, dLat, dLng, origin, dest)
+    }
+
+    // MARK: - Route weather panel (bespoke, promoted from the dormant add-on)
+    //
+    // The §3 per-load weather — origin/destination realtime + the
+    // mode-aware LaneImpact (truck ETA risk · rail dwell · vessel berth
+    // window) + hourly/daily timelines + government alerts — rendered
+    // through the Wave-1 v3 bespoke weather corpus (SkyStageHero ·
+    // HourlyRibbon · RouteCellDiagram · DayRangeBar) via the Foundation-
+    // phase `PerLoadWeatherCard`. This REPLACES the dormant weather flag
+    // that used to ride inside the HERE `.shipperTracking` map add-on —
+    // a real, expandable card, not a basemap overlay. Push-nav layout
+    // (it lives inline in the scroll stack, never a slide-up modal).
+    //
+    // `isActive` drives the faster (~30 s) auto-refresh + the card's
+    // default-expanded state for loads that are mid-haul; idle loads get
+    // a one-shot fetch + the collapsed dashboard tile (tap to expand).
+    // The card owns its own honest empty/stale/unavailable states — when
+    // the lane has no live weather yet it collapses to "No live weather
+    // for this lane yet"; nothing here is fabricated.
+    private func routeWeatherPanel(_ l: LoadsAPI.LoadDetail) -> some View {
+        PerLoadWeatherCard(loadId: l.id, isActive: isLoadActive(l))
+    }
+
+    /// A load is "active" (live-tracked) for weather-refresh purposes once
+    /// it's in the pickup→delivery window — the same lifecycle band the
+    /// strip paints as in-flight. Mirrors `LifecycleStage.from` so the two
+    /// surfaces agree on what "in progress" means.
+    private func isLoadActive(_ l: LoadsAPI.LoadDetail) -> Bool {
+        switch LifecycleStage.from(loadStatus: l.status) {
+        case .pickup, .inTransit, .delivery: return true
+        default:                             return false
+        }
     }
 
     // MARK: - 8-stage lifecycle strip

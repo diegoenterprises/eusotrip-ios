@@ -40,18 +40,39 @@ struct DriverLoadLiveActivity: Widget {
                     HStack {
                         Label("\(context.state.milesRemaining) mi", systemImage: "road.lanes")
                             .font(.system(size: 11))
+                        // Bespoke per-load weather chip — only when the
+                        // next-leg severity flag is populated in the
+                        // content state (server push or phone update).
+                        // No SF Symbol, no emoji on the weather surface.
+                        if let severity = WatchWeatherSeverity.from(flag: context.state.weatherFlag) {
+                            WatchWeatherChip(
+                                severity: severity,
+                                label: weatherLabel(context.state.weatherFlag)
+                            )
+                        }
                         Spacer()
                         Label(driveTime(for: context.state.hosDriveRemainingMinutes), systemImage: "clock.fill")
                             .font(.system(size: 11))
                     }
                 }
             } compactLeading: {
-                Image(systemName: "shippingbox.fill")
+                // Surface a bespoke weather glyph on the compact pill when
+                // the leg is flagged, so the driver sees the alert without
+                // expanding. Falls back to the load glyph when clear.
+                if let severity = WatchWeatherSeverity.from(flag: context.state.weatherFlag) {
+                    WatchWeatherGlyph(severity: severity, size: 14)
+                } else {
+                    Image(systemName: "shippingbox.fill")
+                }
             } compactTrailing: {
                 Text("\(context.state.etaMinutes)m")
                     .font(.system(size: 12, weight: .semibold, design: .rounded))
             } minimal: {
-                Image(systemName: "shippingbox.fill")
+                if let severity = WatchWeatherSeverity.from(flag: context.state.weatherFlag) {
+                    WatchWeatherGlyph(severity: severity, size: 14)
+                } else {
+                    Image(systemName: "shippingbox.fill")
+                }
             }
         }
     }
@@ -61,6 +82,16 @@ struct DriverLoadLiveActivity: Widget {
         let m = minutes % 60
         return String(format: "%dh %02dm", h, m)
     }
+}
+
+/// Prettifies the raw content-state flag for the chip label. The flag is
+/// a real server-supplied string ("severe-thunderstorm", "wind-advisory",
+/// a lane riskTier, …); we only reformat it, never fabricate.
+private func weatherLabel(_ flag: String?) -> String {
+    guard let f = flag?.trimmingCharacters(in: .whitespacesAndNewlines), !f.isEmpty else { return "—" }
+    let spaced = f.replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: "_", with: " ")
+    guard let first = spaced.first else { return spaced }
+    return first.uppercased() + spaced.dropFirst()
 }
 
 private struct LockScreenLoadView: View {
@@ -91,6 +122,12 @@ private struct LockScreenLoadView: View {
             Text(context.state.nextWaypoint)
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
+
+            // Bespoke per-load weather chip — rendered only when the
+            // next-leg severity flag is set. Honest empty otherwise.
+            if let severity = WatchWeatherSeverity.from(flag: context.state.weatherFlag) {
+                WatchWeatherChip(severity: severity, label: weatherLabel(context.state.weatherFlag))
+            }
 
             HStack {
                 Label("\(context.state.etaMinutes)m ETA", systemImage: "timer")
