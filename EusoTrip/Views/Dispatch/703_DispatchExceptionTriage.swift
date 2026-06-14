@@ -5,14 +5,19 @@
 //  Web peer: `frontend/client/src/pages/DispatchExceptions.tsx`.
 //  2026-05-21 extension lands the eusotrip-killers team's unified
 //  operations-alert center on iOS. Previously this screen only
-//  rendered `dispatch.getExceptions` rows; now it merges three
+//  rendered `dispatch.getExceptions` rows; now it merges four
 //  real-time sources into a single list:
 //
 //    • dispatch.getExceptions       — stale-load + HOS + check-call
 //    • zeunMechanics.getFleetBreakdowns — driver-reported mechanical
 //    • eld.getDriverStatus          — live HOS violations + warnings
+//    • weather.getImpactedLoads     — in-transit loads inside an active
+//                                     NWS severe-weather alert (Wave 1-3b
+//                                     server feeds). Each severe/elevated
+//                                     cell becomes a triage row; honestly
+//                                     empty when no lane is impacted.
 //
-//  Each row carries a source badge (LOAD / ZEUN / ELD) and an
+//  Each row carries a source badge (LOAD / ZEUN / ELD / WX) and an
 //  appropriate severity color. The "Mark resolved" button only
 //  fires for `load` source rows (the others resolve at their own
 //  closeout flows — mechanic closes the Zeun ticket, driver resets
@@ -162,6 +167,22 @@ private struct EldDriverStatusRow: Decodable, Hashable {
     }
 }
 
+/// `weather.getImpactedLoads` row — an in-transit load whose pickup or
+/// delivery state is inside an active NWS weather alert (weather.ts:481).
+/// Shape: `{ loadId, loadNumber, status, origin, destination,
+/// alertSeverity, alertHeadline }`. The proc returns `[]` when no alerts
+/// are active or no in-transit load is affected, so the WEATHER source
+/// stays honestly empty until real weather impacts a real load.
+private struct WeatherImpactedLoadRow: Decodable, Hashable {
+    let loadId: Int
+    let loadNumber: String?
+    let status: String?
+    let origin: String?
+    let destination: String?
+    let alertSeverity: String?     // NWS: "Extreme" | "Severe" | "Moderate" | "Minor" | null
+    let alertHeadline: String?     // e.g. "Winter Storm Warning until 6 PM"
+}
+
 /// Unified UI alert row. `source` drives the badge + the resolve
 /// button visibility.
 private struct UnifiedAlert: Identifiable, Hashable {
@@ -181,26 +202,36 @@ private struct UnifiedAlert: Identifiable, Hashable {
 }
 
 private enum AlertSource: String, Hashable {
-    case load, zeun, eld
+    case load, zeun, eld, weather
     var label: String {
         switch self {
-        case .load: return "LOAD"
-        case .zeun: return "ZEUN"
-        case .eld:  return "ELD"
+        case .load:    return "LOAD"
+        case .zeun:    return "ZEUN"
+        case .eld:     return "ELD"
+        case .weather: return "WX"
         }
     }
+    /// SF symbol for the source badge. `weather` is bespoke (renders via
+    /// WeatherIcons in `alertCard`), so it has no SF symbol — see
+    /// `usesWeatherGlyph`.
     var symbol: String {
         switch self {
-        case .load: return "shippingbox.fill"
-        case .zeun: return "wrench.and.screwdriver.fill"
-        case .eld:  return "clock.badge.exclamationmark"
+        case .load:    return "shippingbox.fill"
+        case .zeun:    return "wrench.and.screwdriver.fill"
+        case .eld:     return "clock.badge.exclamationmark"
+        case .weather: return ""
         }
     }
+    /// The weather source draws its badge glyph through WeatherIcons (the
+    /// bespoke condition/alert corpus) rather than an SF symbol — ZERO
+    /// SF Symbols on the weather path per the bespoke doctrine.
+    var usesWeatherGlyph: Bool { self == .weather }
     var color: Color {
         switch self {
-        case .load: return .purple
-        case .zeun: return .orange
-        case .eld:  return .cyan
+        case .load:    return .purple
+        case .zeun:    return .orange
+        case .eld:     return .cyan
+        case .weather: return WeatherIcons.drop   // the v2 widget's --drop token
         }
     }
 }
@@ -243,6 +274,7 @@ private struct OperationsAlertsBody: View {
     @State private var loadExceptions: [DispatchExceptionRow] = []
     @State private var breakdowns: [DispatchTriageBreakdownRow] = []
     @State private var drivers: [EldDriverStatusRow] = []
+    @State private var weatherImpacted: [WeatherImpactedLoadRow] = []
     @State private var loading: Bool = true
     @State private var loadError: String?
     @State private var actionError: String?
@@ -253,8 +285,14 @@ private struct OperationsAlertsBody: View {
     @State private var search: String = ""
 
     private enum SourceFilter: String, CaseIterable {
-        case all, load, zeun, eld
-        var label: String { self == .all ? "ALL" : rawValue.uppercased() }
+        case all, load, zeun, eld, weather
+        var label: String {
+            switch self {
+            case .all:     return "ALL"
+            case .weather: return "WX"
+            default:       return rawValue.uppercased()
+            }
+        }
     }
     private enum SeverityFilter: String, CaseIterable {
         case all, critical, high, warning, info
@@ -303,7 +341,7 @@ private struct OperationsAlertsBody: View {
             Text("Operations alerts")
                 .font(.system(size: 22, weight: .heavy))
                 .foregroundStyle(palette.textPrimary)
-            Text("Load exceptions, Zeun breakdowns and ELD violations, one queue.")
+            Text("Load exceptions, Zeun breakdowns, ELD violations and severe-weather lanes, one queue.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -316,12 +354,41 @@ private struct OperationsAlertsBody: View {
         let high     = alerts.filter { $0.severity == .high }.count
         let zeun     = alerts.filter { $0.source   == .zeun }.count
         let eld      = alerts.filter { $0.source   == .eld  }.count
+        let wx       = alerts.filter { $0.source   == .weather }.count
         return HStack(spacing: Space.s2) {
             LifecycleStatTile(label: "CRITICAL",  value: "\(critical)", icon: "exclamationmark.octagon.fill", danger: critical > 0)
             LifecycleStatTile(label: "HIGH",      value: "\(high)",     icon: "exclamationmark.triangle.fill")
             LifecycleStatTile(label: "ZEUN",      value: "\(zeun)",     icon: "wrench.and.screwdriver.fill")
             LifecycleStatTile(label: "ELD/HOS",   value: "\(eld)",      icon: "clock.badge.exclamationmark")
+            // WEATHER tile is bespoke (WeatherIcons glyph, ZERO SF Symbol) —
+            // it mirrors the LifecycleStatTile idiom but renders the v2 alert
+            // glyph rather than an SF symbol, per the bespoke doctrine.
+            weatherStatTile(count: wx)
         }
+    }
+
+    /// Bespoke WEATHER stat tile — the LifecycleStatTile layout reproduced
+    /// inline so the weather metric can use a WeatherIcons glyph instead of
+    /// an SF symbol. Honest: shows the live count, em-dash treatment is the
+    /// shared "0" the other tiles use.
+    @ViewBuilder
+    private func weatherStatTile(count: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                WeatherIcons.utility(.alert, size: 11, tint: count > 0 ? Brand.danger : WeatherIcons.drop)
+                Text("WEATHER").font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Text("\(count)").font(.system(size: 15, weight: .heavy))
+                .foregroundStyle(count > 0 ? Brand.danger : palette.textPrimary)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .strokeBorder(count > 0 ? Brand.danger.opacity(0.4) : palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     private var searchField: some View {
@@ -400,16 +467,33 @@ private struct OperationsAlertsBody: View {
         }
     }
 
+    /// Bespoke source badge. The LOAD/ZEUN/ELD sources keep their SF-symbol
+    /// labels (untouched); the WEATHER source renders the bespoke WeatherIcons
+    /// `.alert` glyph (the v2 weather corpus) so there is ZERO SF Symbol on
+    /// the weather path, per the bespoke doctrine.
+    @ViewBuilder
+    private func sourceBadge(_ source: AlertSource) -> some View {
+        HStack(spacing: 5) {
+            if source.usesWeatherGlyph {
+                WeatherIcons.utility(.alert, size: 11, tint: source.color)
+            } else {
+                Image(systemName: source.symbol)
+                    .font(.system(size: 9, weight: .heavy))
+            }
+            Text(source.label)
+                .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Capsule().fill(source.color.opacity(0.18)))
+        .foregroundStyle(source.color)
+    }
+
     @ViewBuilder
     private func alertCard(_ a: UnifiedAlert) -> some View {
         LifecycleCard(accentDanger: a.severity == .critical || a.severity == .high) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Label(a.source.label, systemImage: a.source.symbol)
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Capsule().fill(a.source.color.opacity(0.18)))
-                        .foregroundStyle(a.source.color)
+                    sourceBadge(a.source)
                     Spacer()
                     Text(a.severity.label)
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
@@ -464,7 +548,8 @@ private struct OperationsAlertsBody: View {
         async let exc: Void = loadExceptionsSrc()
         async let zeun: Void = loadBreakdowns()
         async let eld: Void = loadDrivers()
-        _ = await (exc, zeun, eld)
+        async let wx: Void = loadWeather()
+        _ = await (exc, zeun, eld, wx)
         loading = false
     }
 
@@ -506,6 +591,21 @@ private struct OperationsAlertsBody: View {
             drivers = r
         } catch {
             // Best-effort: same reasoning as breakdowns.
+        }
+    }
+
+    private func loadWeather() async {
+        do {
+            // weather.getImpactedLoads — in-transit loads inside an active
+            // NWS weather alert. No input; returns [] when nothing is
+            // impacted (or weather is enterprise-gated / unavailable), so
+            // the WEATHER source is honestly empty until a real alert lands.
+            let r: [WeatherImpactedLoadRow] = try await EusoTripAPI.shared
+                .queryNoInput("weather.getImpactedLoads")
+            weatherImpacted = r
+        } catch {
+            // Best-effort: weather is an additive 4th source. A failure here
+            // (proc absent, feed not licensed) must NOT blow away the queue.
         }
     }
 
@@ -624,6 +724,49 @@ private struct OperationsAlertsBody: View {
             }
         }
 
+        // 4. WEATHER — in-transit loads inside an active NWS alert
+        //    (weather.getImpactedLoads). Each impacted load in a severe /
+        //    elevated cell becomes a triage row. The §3 riskTier ladder
+        //    (none/watch/elevated/severe) and the NWS severity strings both
+        //    collapse here: severe→critical, elevated/severe-NWS→high.
+        //    Moderate/minor/absent stay honestly OUT of the triage queue
+        //    (those belong on the per-load weather card, not the exception
+        //    triage) — so a clear/watch lane never fabricates an alert row.
+        for w in weatherImpacted {
+            let sev = weatherSeverity(w.alertSeverity)
+            // Honesty gate: only severe/elevated cells are triage-worthy.
+            guard sev == .critical || sev == .high else { continue }
+            let headline = w.alertHeadline?.trimmingCharacters(in: .whitespaces)
+            let lane: String? = {
+                let o = (w.origin ?? "").trimmingCharacters(in: .whitespaces)
+                let d = (w.destination ?? "").trimmingCharacters(in: .whitespaces)
+                let oo = o.isEmpty || o == "Unknown" ? nil : o
+                let dd = d.isEmpty || d == "Unknown" ? nil : d
+                switch (oo, dd) {
+                case let (.some(a), .some(b)): return "\(a) → \(b)"
+                case let (.some(a), nil):      return a
+                case let (nil, .some(b)):      return b
+                default:                       return nil
+                }
+            }()
+            out.append(UnifiedAlert(
+                id: "wx-\(w.loadId)",
+                source: .weather,
+                severity: sev,
+                title: (headline?.isEmpty == false ? headline! : "Active weather on lane"),
+                description: lane.map { "In-transit load is routed through active severe weather along \($0)." }
+                    ?? "In-transit load is routed through an active severe-weather alert.",
+                driverName: nil,
+                vehicle: nil,
+                loadNumber: w.loadNumber,
+                location: lane,
+                createdAt: nil,                 // proc carries no per-row timestamp
+                transportMode: nil,
+                multiVehicleCount: nil,
+                resolvableExceptionId: nil      // resolves when the alert expires / load clears the cell
+            ))
+        }
+
         // Sort: severity → recency.
         out.sort { l, r in
             if l.severity != r.severity { return l.severity < r.severity }
@@ -652,6 +795,20 @@ private struct OperationsAlertsBody: View {
     }
 
     // MARK: helpers
+
+    /// Map the weather cell's risk → the screen AlertSeverity. Accepts both
+    /// the NWS `alertSeverity` strings (Extreme/Severe/Moderate/Minor) from
+    /// getImpactedLoads AND the §3 riskTier ladder (none/watch/elevated/
+    /// severe) so the same merge holds if the source swaps to laneImpact.
+    private func weatherSeverity(_ raw: String?) -> AlertSeverity {
+        switch (raw ?? "").lowercased() {
+        case "extreme", "severe":            return .critical
+        case "elevated":                     return .high
+        case "moderate":                     return .warning
+        case "watch", "minor":               return .info
+        default:                             return .info
+        }
+    }
 
     private func timeAgo(_ iso: String) -> String {
         let f = ISO8601DateFormatter()

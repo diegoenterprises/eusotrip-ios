@@ -88,6 +88,15 @@ struct EnRouteDrive: View {
     @StateObject private var hos = HOSLiveStore()
     @State private var activeLoad: Load?
 
+    /// §3 per-load weather for the ACTIVE haul — the canonical
+    /// `weather.forLoad` store (origin/dest realtime + LaneImpact peakLeg/
+    /// riskTier/drivers). Drives the bespoke route-cell hazard band over the
+    /// active route + the severe-cell ETA annotation. Honesty doctrine: the
+    /// store keeps last-good + `isStale` on failure and the card is
+    /// enterprise-gated server-side (expect `available:false` / nil today),
+    /// so every weather affordance HIDES until a real actionable risk lands.
+    @StateObject private var wx = WeatherCardStore()
+
     /// Decoded HERE Routing v8 section polyline for the main-haul leg
     /// (pickup → delivery, truck-aware). Drives the live route line on
     /// the HERE basemap. Empty until the route resolves — when empty
@@ -179,6 +188,80 @@ struct EnRouteDrive: View {
     private var pingX: CGFloat { register == .dark ? 0.50 : 0.48 }
     private var pingY: CGFloat { register == .dark ? 0.68 : 0.66 }
 
+    // MARK: §3 weather — live or honest-empty (Waves 1-3b-server)
+    //
+    // Every weather affordance below reads from `wx.card` (weather.forLoad).
+    // Weather is enterprise-gated server-side, so the card arrives with
+    // `available:false` / a `LaneImpact` whose `riskTier == .none` until the
+    // key lands — and EVERY accessor returns nil/false in that state so the
+    // band + chip + ETA pill stay hidden. No fabricated risk, ever.
+
+    /// The §3 LaneImpact for the active load — only when the server marked
+    /// the per-load card AND the lane impact `available` and the tier is
+    /// actionable (watch+). nil ⇒ no band, no pill (honest absence).
+    private var activeLaneImpact: WeatherForLoad.LaneImpact? {
+        guard let card = wx.card, card.available, card.hasLaneRisk else { return nil }
+        return card.laneImpact
+    }
+
+    /// The §3 risk tier driving the band intensity + ETA pill — nil when
+    /// no actionable lane risk is live.
+    private var weatherRiskTier: LaneRiskTier? {
+        activeLaneImpact.map { $0.riskTier }
+    }
+
+    /// The peak leg the route reduction surfaced ("I-83 N · 4 PM") — the
+    /// band labels itself from this, never a fabricated segment.
+    private var weatherPeakLeg: WeatherForLoad.LaneImpact.PeakLeg? {
+        activeLaneImpact?.peakLeg
+    }
+
+    /// True when a §3 driver indicates a freezing / wet-pavement hazard
+    /// (ICE PELLETS / FREEZING / SLEET / wet PRECIP) — drives the
+    /// ice/wet-pavement-ahead warning chip. Reads the server-formatted
+    /// driver fields/values verbatim; absent ⇒ chip hidden.
+    private var pavementHazard: PavementHazard? {
+        guard let drivers = activeLaneImpact?.drivers else { return nil }
+        for d in drivers {
+            let f = d.field.lowercased()
+            let v = d.value.lowercased()
+            // Em-dash / empty values never trip the chip (honest).
+            let hasValue = !v.isEmpty && v != "—" && v != "-"
+            if (f.contains("ice") || f.contains("freez") || f.contains("sleet")
+                || v.contains("ice") || v.contains("freez") || v.contains("sleet")), hasValue {
+                return .ice
+            }
+            if (f.contains("precip") || f.contains("rain")), hasValue,
+               weatherRiskTier?.isActionable == true {
+                return .wet
+            }
+        }
+        return nil
+    }
+
+    /// Hazard kind for the pavement-ahead warning chip.
+    private enum PavementHazard {
+        case ice, wet
+        var label: String { self == .ice ? "ICE AHEAD" : "WET PAVEMENT AHEAD" }
+        var glyph: WeatherIcons.Glyph { self == .ice ? .sleet : .rain }
+        var tone: Color { self == .ice ? Brand.info : WeatherV3.drop }
+    }
+
+    /// A SEVERE / ELEVATED cell crossing the NEXT leg → the ETA card gets a
+    /// bespoke weather-risk pill. nil ⇒ no annotation (watch tier stays on
+    /// the band only; the ETA pill is reserved for the loudest tiers).
+    private var etaWeatherFlag: (label: String, tone: Color)? {
+        guard let li = activeLaneImpact else { return nil }
+        switch li.riskTier {
+        case .severe, .elevated:
+            let head = (li.headline ?? "").trimmingCharacters(in: .whitespaces)
+            return (head.isEmpty ? "WEATHER ON NEXT LEG" : head.uppercased(),
+                    li.riskTier.color)
+        case .watch, .none:
+            return nil
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             // Map canvas — fills the whole screen behind every overlay
@@ -197,10 +280,21 @@ struct EnRouteDrive: View {
                     hazmatBand
                         .padding(.horizontal, 14)
                 }
+                // §3 route-cell weather band — a translucent hazard band over
+                // the active load's peak leg + an ice/wet-pavement warning
+                // chip when the §3 drivers indicate it. Renders ONLY on a real
+                // actionable lane risk (weatherRiskTier != nil); hidden when
+                // the card is enterprise-gated / clear (honest absence).
+                if let tier = weatherRiskTier {
+                    weatherRouteBand(tier: tier)
+                        .padding(.horizontal, 14)
+                }
                 // HERE Dynamic Map Content — live Real-Time Traffic,
                 // Road Alerts (incidents), and Safety Cameras. Chips
-                // hide per-layer when HERE returns nothing.
-                EnRouteRoadIntelStrip()
+                // hide per-layer when HERE returns nothing. The active
+                // load id also feeds the §3 "WEATHER AHEAD" 4th chip
+                // (hidden when the lane is clear / enterprise-gated).
+                EnRouteRoadIntelStrip(loadId: activeLoad.map { String($0.id) })
                     .padding(.horizontal, 14)
                 Spacer()
             }
@@ -253,6 +347,8 @@ struct EnRouteDrive: View {
         // Uniform cafe-door entrance.
         .screenTileRoot()
         .task { await hydrateLiveTrip() }
+        // §3 weather store stops with the screen (cancels the 30s active poll).
+        .onDisappear { wx.stop() }
     }
 
     private func hydrateLiveTrip() async {
@@ -268,6 +364,9 @@ struct EnRouteDrive: View {
         if let load = activeLoad {
             await refreshRoutePolyline(for: load)
             await resolveReceiverFence(for: load)
+            // §3 weather for the active haul — in-progress refresh (~30s).
+            // Idempotent: startAutoRefresh stops any prior poll first.
+            wx.startAutoRefresh(loadId: String(load.id), inProgress: true)
         }
         _ = await hosBoot
     }
@@ -451,6 +550,162 @@ struct EnRouteDrive: View {
         .shadow(color: Brand.danger.opacity(0.28), radius: 10, y: 3)
     }
 
+    // MARK: §3 route-cell weather band (over the active load route)
+
+    /// A bespoke floating panel that draws the §3 weather hazard CROSSING
+    /// the active route — the same showpiece idiom as `RouteCellDiagram`
+    /// (a curved road with a translucent hazard column over the peak leg),
+    /// rendered inline here over the map canvas. The band intensity tracks
+    /// `tier` (severe sits mid-lane, lesser tiers shift toward the
+    /// destination so it reads "later"), the peak label comes straight from
+    /// the §3 `peakLeg`, and an ice/wet-pavement-ahead chip surfaces when
+    /// the §3 drivers indicate freezing / wet pavement. Every glyph is a
+    /// `WeatherIcons` glyph — zero SF Symbols. Honest: the caller only
+    /// mounts this when `weatherRiskTier != nil`.
+    @ViewBuilder
+    private func weatherRouteBand(tier: LaneRiskTier) -> some View {
+        let bandColor = tier == .severe ? WeatherV3.danger
+            : (tier == .watch ? Brand.warning : WeatherV3.danger.opacity(0.85))
+        VStack(alignment: .leading, spacing: 7) {
+            // header row — route glyph · WEATHER ON ROUTE · tier pill
+            HStack(spacing: 7) {
+                WeatherIcons.utility(.route, size: 13, tint: WeatherV3.nodeOrigin)
+                Text("WEATHER ON ROUTE")
+                    .font(EType.mono(.micro)).tracking(0.8)
+                    .fontWeight(.heavy)
+                    .foregroundStyle(.white.opacity(0.82))
+                Spacer(minLength: 4)
+                Text(tier.rawValue.uppercased())
+                    .font(EType.mono(.micro)).tracking(0.6)
+                    .fontWeight(.heavy)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(Capsule().fill(bandColor.opacity(0.22)))
+                    .overlay(Capsule().strokeBorder(bandColor.opacity(0.5), lineWidth: 1))
+            }
+
+            // the hazard band crossing the route — a curved road with the
+            // translucent weather column over the peak leg + the §3 peak
+            // label drawn over the band.
+            weatherBandCanvas(tier: tier)
+                .frame(height: 46)
+
+            // ice / wet-pavement-ahead warning chip — only when a §3 driver
+            // indicates it (pavementHazard != nil); otherwise hidden.
+            if let hazard = pavementHazard {
+                HStack(spacing: 6) {
+                    WeatherGlyph(kind: hazard.glyph)
+                        .frame(width: 16, height: 16)
+                    Text(hazard.label)
+                        .font(EType.mono(.micro)).tracking(0.7)
+                        .fontWeight(.heavy)
+                        .foregroundStyle(.white)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(Capsule().fill(hazard.tone.opacity(0.18)))
+                .overlay(Capsule().strokeBorder(hazard.tone.opacity(0.55), lineWidth: 1))
+            }
+        }
+        .padding(12)
+        .background(.ultraThinMaterial)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg)
+                .strokeBorder(bandColor.opacity(0.4), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        .shadow(color: bandColor.opacity(0.22), radius: 12, y: 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(weatherBandA11y(tier: tier))
+    }
+
+    /// The Canvas showpiece — a curved route stroke with a translucent
+    /// vertical hazard column over the peak leg + origin/dest nodes + a
+    /// peak marker. Mirrors `RouteCellDiagram`'s truck idiom on a compact
+    /// 320×46 stage. Pure geometry + the live tier — no fabricated data.
+    private func weatherBandCanvas(tier: LaneRiskTier) -> some View {
+        Canvas { ctx, size in
+            let w = size.width, h = size.height
+            func P(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+                CGPoint(x: x / 320.0 * w, y: y / 46.0 * h)
+            }
+            // band center tracks the tier: severe mid-lane, lesser later.
+            let bandX: CGFloat = {
+                switch tier {
+                case .severe:   return 178
+                case .elevated: return 206
+                case .watch:    return 232
+                case .none:     return 256
+                }
+            }()
+            let bandColor = tier == .watch ? Brand.warning : WeatherV3.danger
+
+            // translucent hazard column (soft left→right fade, glows mid).
+            let bw: CGFloat = 46 / 320.0 * w
+            let bx = bandX / 320.0 * w
+            ctx.fill(
+                Path(CGRect(x: bx - bw / 2, y: 0, width: bw, height: h)),
+                with: .linearGradient(
+                    Gradient(colors: [bandColor.opacity(0), bandColor.opacity(0.5), bandColor.opacity(0)]),
+                    startPoint: CGPoint(x: bx - bw / 2, y: 0),
+                    endPoint: CGPoint(x: bx + bw / 2, y: 0)))
+
+            // route curve — base stroke + dashed iridescent centerline.
+            var road = Path()
+            road.move(to: P(20, 34))
+            road.addCurve(to: P(300, 16), control1: P(110, 8), control2: P(160, 40))
+            ctx.stroke(road, with: .color(Color.white.opacity(0.18)),
+                       style: StrokeStyle(lineWidth: 6, lineCap: .round))
+            ctx.stroke(road, with: .linearGradient(
+                Gradient(colors: [WeatherV3.auroraA, WeatherV3.auroraB, WeatherV3.auroraC]),
+                startPoint: .zero, endPoint: CGPoint(x: w, y: 0)),
+                style: StrokeStyle(lineWidth: 2.4, lineCap: .round, dash: [1, 7]))
+
+            // origin + dest nodes.
+            func node(_ p: CGPoint, ring: Color) {
+                let r: CGFloat = 4
+                let rect = CGRect(x: p.x - r, y: p.y - r, width: r * 2, height: r * 2)
+                ctx.fill(Path(ellipseIn: rect), with: .color(.black.opacity(0.6)))
+                ctx.stroke(Path(ellipseIn: rect), with: .color(ring), style: StrokeStyle(lineWidth: 2))
+            }
+            node(P(20, 34), ring: WeatherV3.nodeOrigin)
+            node(P(300, 16), ring: WeatherV3.nodeDest)
+
+            // peak marker on the band.
+            let mk = P(bandX, 26)
+            let mr: CGFloat = 5
+            let mrect = CGRect(x: mk.x - mr, y: mk.y - mr, width: mr * 2, height: mr * 2)
+            ctx.fill(Path(ellipseIn: mrect), with: .color(bandColor))
+            ctx.stroke(Path(ellipseIn: mrect), with: .color(.white), style: StrokeStyle(lineWidth: 1.6))
+
+            // §3 peak-leg label over the band — real peakLeg only.
+            if let peak = weatherPeakLeg {
+                let raw = peak.time.isEmpty ? peak.label : peak.time
+                let text = raw.trimmingCharacters(in: .whitespaces).uppercased()
+                if !text.isEmpty {
+                    ctx.draw(
+                        Text(text).font(.system(size: 10, weight: .heavy))
+                            .foregroundColor(Color(red: 1.0, green: 0.84, blue: 0.82)),
+                        at: P(bandX, 8), anchor: .center)
+                }
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    private func weatherBandA11y(tier: LaneRiskTier) -> String {
+        var s = "Weather on route, \(tier.rawValue) risk"
+        if let peak = weatherPeakLeg {
+            let p = [peak.label, peak.time]
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " · ")
+            if !p.isEmpty { s += ", peak leg \(p)" }
+        }
+        if let hazard = pavementHazard { s += ", \(hazard.label.lowercased())" }
+        return s
+    }
+
     // MARK: Map control rail (right edge)
 
     private var mapControlRail: some View {
@@ -542,6 +797,25 @@ struct EnRouteDrive: View {
                     Text(etaSub)
                         .font(EType.mono(.micro)).tracking(0.4)
                         .foregroundStyle(palette.textSecondary)
+                    // §3 severe/elevated-cell annotation — a bespoke weather
+                    // pill when a loud cell crosses the next leg. The
+                    // headline reads straight from the §3 LaneImpact; hidden
+                    // when no severe/elevated risk is live (honest).
+                    if let flag = etaWeatherFlag {
+                        HStack(spacing: 5) {
+                            WeatherIcons.utility(.alert, size: 11, tint: flag.tone)
+                            Text(flag.label)
+                                .font(EType.mono(.micro)).tracking(0.5)
+                                .fontWeight(.heavy)
+                                .foregroundStyle(flag.tone)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(flag.tone.opacity(0.14)))
+                        .overlay(Capsule().strokeBorder(flag.tone.opacity(0.45), lineWidth: 0.5))
+                        .padding(.top, 3)
+                        .accessibilityLabel("Weather risk on the next leg: \(flag.label)")
+                    }
                 }
                 Spacer()
                 // Voice mute toggle

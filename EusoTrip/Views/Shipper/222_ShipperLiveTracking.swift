@@ -87,6 +87,23 @@ final class ShipperLiveTrackingStore: ObservableObject {
     @Published private(set) var positions: [Int: ShipperTelemetryAPI.LiveLocation] = [:]
     @Published private(set) var lastRefresh: Date? = nil
 
+    /// §3 per-load weather risk, keyed by `loadId` (== `ActiveLoad.id`).
+    /// Sourced from the LIVE `weather.laneImpactActive` proc — the caller's
+    /// active loads, each a §3 LaneImpact { loadId, riskTier, headline }.
+    /// Weather is enterprise-gated server-side, so today this map is empty
+    /// (`available:false` / no key) → the rows show NO pill. It lights up
+    /// per-load when the key lands. Nothing fabricated: only a `.watch`+
+    /// tier with a real loadId ever enters the map.
+    @Published private(set) var weatherRisk: [String: LiveLoadWeatherRisk] = [:]
+
+    /// One per-load weather-risk entry. `tier` is `.watch`/`.elevated`/
+    /// `.severe` only — a `.none`/absent tier is never stored, so the
+    /// presence of a key already means "show a pill".
+    struct LiveLoadWeatherRisk: Hashable {
+        let tier: LaneRiskTier
+        let headline: String?
+    }
+
     private let api: EusoTripAPI
     private var pollTask: Task<Void, Never>? = nil
 
@@ -120,11 +137,55 @@ final class ShipperLiveTrackingStore: ObservableObject {
             }
             self.loads = inTransit
             await fanFetchPositions(for: inTransit)
+            // §3 weather risk — best-effort, never fails the board (weather is
+            // enterprise-gated, so today this resolves to an empty map and the
+            // rows simply carry no pill).
+            await fetchWeatherRisk()
             self.lastRefresh = Date()
             self.phase = .loaded
         } catch {
             self.phase = .error("Couldn't reach tracking service.")
         }
+    }
+
+    /// Pull `weather.laneImpactActive` and fold it into `weatherRisk`, keyed
+    /// by loadId. Honest throughout: a proc miss, `available:false`, an empty
+    /// `loads[]`, or a `.none` tier all collapse to NO entry — never a
+    /// fabricated risk. Only `.watch`/`.elevated`/`.severe` with a real
+    /// loadId is stored, so a present key always means a real pill.
+    private func fetchWeatherRisk() async {
+        struct In: Encodable { let limit: Int }
+        struct Resp: Decodable {
+            let available: Bool?
+            let loads: [Row]?
+            struct Row: Decodable {
+                let loadId: String?
+                let riskTier: String?
+                let headline: String?
+            }
+        }
+        let resp: Resp
+        do {
+            resp = try await api.query("weather.laneImpactActive", input: In(limit: 25))
+        } catch {
+            return  // proc absent / gated → leave the map as-is (no pills).
+        }
+        guard resp.available != false, let rows = resp.loads else {
+            self.weatherRisk = [:]
+            return
+        }
+        var next: [String: LiveLoadWeatherRisk] = [:]
+        for row in rows {
+            guard let id = row.loadId, !id.isEmpty else { continue }
+            let tier = LaneRiskTier(server: row.riskTier)
+            guard tier.isActionable else { continue }   // drop .none / absent
+            let headline = row.headline?.trimmingCharacters(in: .whitespaces)
+            next[id] = LiveLoadWeatherRisk(
+                tier: tier,
+                headline: (headline?.isEmpty == false) ? headline : nil
+            )
+        }
+        self.weatherRisk = next
     }
 
     private func fanFetchPositions(for loads: [ShipperAPI.ActiveLoad]) async {
@@ -597,6 +658,9 @@ struct ShipperLiveTracking: View {
 
     private func shipmentRow(_ l: ShipperAPI.ActiveLoad) -> some View {
         let pos = l.driverId.flatMap { store.positions[$0] }
+        // §3 per-load weather risk (keyed by loadId == ActiveLoad.id). Nil
+        // when there's no real risk OR the feed is gated → no pill, no tint.
+        let risk = store.weatherRisk[l.id]
         let rim: RimKind = {
             if l.driverId == nil { return .neutral }
             if let p = pos, p.stale { return .warn }
@@ -606,13 +670,14 @@ struct ShipperLiveTracking: View {
             rimBar(for: rim)
                 .frame(width: 3)
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
+                HStack(spacing: 6) {
                     Text(l.loadNumber)
                         .font(.system(size: 10, weight: .heavy).monospaced())
                         .tracking(0.5)
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1)
-                    Spacer()
+                    Spacer(minLength: 4)
+                    if let risk { weatherRiskPill(risk) }
                     statusPill(l.status, rim: rim)
                 }
                 Text("\(l.origin) → \(l.destination)")
@@ -644,14 +709,61 @@ struct ShipperLiveTracking: View {
             .padding(.vertical, Space.s3)
         }
         .frame(minHeight: 88)
-        .background(palette.bgCard)
+        .background(rowBackground(for: risk))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(palette.borderFaint)
+                .strokeBorder(rowBorderColor(for: risk))
         )
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(l.origin) to \(l.destination), \(l.status), load \(l.loadNumber)")
+        .accessibilityLabel(rowAccessibilityLabel(l, risk: risk))
+    }
+
+    /// Row fill — the standard card, washed with the severe risk tint when a
+    /// `.severe` cell is on the lane so the most dangerous loads read at a
+    /// glance. `.watch`/`.elevated` keep the standard card (the pill carries
+    /// the signal); no-risk rows are untouched. Honest: never tinted without
+    /// a real `.severe` tier from the feed.
+    @ViewBuilder
+    private func rowBackground(for risk: ShipperLiveTrackingStore.LiveLoadWeatherRisk?) -> some View {
+        if let risk, risk.tier == .severe {
+            risk.tier.color.opacity(0.10).background(palette.bgCard)
+        } else {
+            palette.bgCard
+        }
+    }
+
+    private func rowBorderColor(for risk: ShipperLiveTrackingStore.LiveLoadWeatherRisk?) -> Color {
+        if let risk, risk.tier == .severe { return risk.tier.color.opacity(0.45) }
+        return palette.borderFaint
+    }
+
+    private func rowAccessibilityLabel(_ l: ShipperAPI.ActiveLoad,
+                                       risk: ShipperLiveTrackingStore.LiveLoadWeatherRisk?) -> String {
+        var label = "\(l.origin) to \(l.destination), \(l.status), load \(l.loadNumber)"
+        if let risk {
+            label += ", weather risk \(risk.tier.rawValue)"
+            if let h = risk.headline { label += ", \(h)" }
+        }
+        return label
+    }
+
+    /// §3 weather-risk pill — bespoke. WeatherIcons `.alert` glyph + the
+    /// riskTier color (watch=warning, elevated/severe=danger), in a soft
+    /// tinted capsule. Rendered ONLY when the store holds a real
+    /// `.watch`/`.elevated`/`.severe` entry for this load; absent otherwise.
+    private func weatherRiskPill(_ risk: ShipperLiveTrackingStore.LiveLoadWeatherRisk) -> some View {
+        let tint = risk.tier.color
+        return HStack(spacing: 4) {
+            WeatherIcons.utility(.alert, size: 9, tint: tint)
+            Text(risk.tier.rawValue.uppercased())
+                .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                .foregroundStyle(tint)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Capsule().fill(tint.opacity(0.16)))
+        .overlay(Capsule().strokeBorder(tint.opacity(0.40), lineWidth: 1))
+        .accessibilityHidden(true)
     }
 
     private enum RimKind { case gradient, warn, neutral }

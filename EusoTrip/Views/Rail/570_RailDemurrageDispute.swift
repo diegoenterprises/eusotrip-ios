@@ -12,6 +12,10 @@
 //    railDemurrageAuto.dashboard           (EXISTS railDemurrageAuto.ts:18)      → KPI summary
 //    railDemurrageAuto.reportByDwellReason (EXISTS railDemurrageAuto.ts:93)      → attribution rows
 //    railDemurrageAuto.createDispute       (EXISTS railDemurrageAuto.ts:78)      → File-dispute CTA
+//    weather.historical {lat,lon,from,to}  (LIVE; Enterprise-gated)             → cited historical
+//      weather evidence auto-attached when a dwell reason is "weather" (max gust / min vis /
+//      peak condition + gov-alert overlap). Enterprise-gated → honest "available with the
+//      enterprise feed" em-dash state until it returns available:true; never a fabricated report.
 //
 
 import SwiftUI
@@ -47,6 +51,51 @@ private struct DemurrageCharge570: Decodable {
     let contestedUsd: Double?
     let contestedDays: Int?
     let status: String?
+    // Facility geo + dwell window — anchor the cited historical-weather
+    // lookup. All optional: when the charge proc omits them (today, until
+    // the yard geocode + placed/released window land on the wire) the
+    // evidence call is honestly gated rather than fabricated.
+    let facilityLat: Double?
+    let facilityLon: Double?
+    let placedAt: String?        // ISO8601 — dwell window start (car placed)
+    let releasedAt: String?      // ISO8601 — dwell window end (released/now)
+}
+
+// MARK: - Historical weather evidence (weather.historical envelope)
+
+/// The cited historical-weather report attached when a dwell reason is
+/// "weather" — decodes `weather.historical({lat,lon,from,to})` 1:1. The
+/// proc is Enterprise-gated (Tomorrow.io history tier): until the key
+/// lands it returns `available:false` / nulls, so every field is optional
+/// and the screen renders the honest "available with the enterprise feed"
+/// state rather than inventing a max gust / min visibility / peak code.
+private struct HistoricalWeatherEvidence570: Decodable {
+    let available: Bool?
+    /// Peak gust over the dwell window, mph (the high-profile / yard metric).
+    let maxGustMph: Double?
+    /// Worst (minimum) visibility over the window, miles.
+    let minVisibilityMi: Double?
+    /// The most-hazardous Tomorrow.io weatherCode seen + its phrase — the
+    /// "peak condition" the citation leads with.
+    let peakWeatherCode: Int?
+    let peakCondition: String?
+    /// Government bulletins that overlapped the dwell window — the
+    /// gov-alert overlap that turns a weather dwell into carrier-exonerating
+    /// evidence. Same row shape as weather.getAlerts / getRouteConditions
+    /// advisories (eventType · severity · headline · expiresAt).
+    let govAlerts: [GovAlert570]?
+    let source: String?
+    let computedAt: String?
+
+    struct GovAlert570: Decodable, Identifiable {
+        let eventType: String?
+        let severity: String?
+        let headline: String?
+        let expiresAt: String?
+        var id: String { (headline ?? eventType ?? "alert") + (expiresAt ?? "") }
+    }
+
+    var isAvailable: Bool { available == true }
 }
 
 private struct DemurrageDashboard570: Decodable {
@@ -78,6 +127,12 @@ private struct RailDemurrageDisputeBody: View {
     @State private var loadError: String? = nil
     @State private var isFiling = false
 
+    // Cited historical-weather evidence for the "weather" dwell reason.
+    // nil while not yet requested / not applicable; non-nil holds the
+    // envelope (which is itself honest: available:false until enterprise).
+    @State private var weatherEvidence: HistoricalWeatherEvidence570? = nil
+    @State private var loadingEvidence = false
+
     // MARK: Derived
 
     private var accruedLabel: String  { charge?.accruedUsd.map { "$\(Int($0))" } ?? dashboard?.totalAccruedUsd.map { "$\(Int($0))" } ?? "-" }
@@ -92,6 +147,28 @@ private struct RailDemurrageDisputeBody: View {
     private var disputeIdCaption: String { charge?.id ?? "DEM--" }
 
     private func contestDisp(_ d: String?) -> Bool { (d ?? "").lowercased() == "contest" }
+
+    /// True when a dwell-attribution row attributes dwell to weather — the
+    /// trigger to fetch + attach the cited historical-weather report.
+    private func isWeatherReason(_ r: String?) -> Bool {
+        (r ?? "").lowercased().contains("weather")
+    }
+
+    /// The weather dwell row, when one exists (drives the evidence section
+    /// + the contestable amount the citation backs).
+    private var weatherDwellRow: DwellAttribution570? {
+        attributions.first { isWeatherReason($0.reason) }
+    }
+
+    /// "May 21 – May 23" — the dwell window the citation covers, from the
+    /// charge's placed/released ISO stamps. nil when the window is absent.
+    private var dwellWindowLabel: String? {
+        let iso = ISO8601DateFormatter()
+        guard let from = charge?.placedAt.flatMap(iso.date(from:)) else { return nil }
+        let to = charge?.releasedAt.flatMap(iso.date(from:)) ?? Date()
+        let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("MMM d")
+        return "\(f.string(from: from)) – \(f.string(from: to))"
+    }
 
     private var chargeContextSub: String {
         let days = charge?.daysAccrued ?? 0
@@ -115,6 +192,7 @@ private struct RailDemurrageDisputeBody: View {
                     heroCard
                     kpiStrip
                     attributionList
+                    if weatherDwellRow != nil { weatherEvidenceSection }
                     ctaPair
                 }
                 Color.clear.frame(height: 96)
@@ -262,11 +340,14 @@ private struct RailDemurrageDisputeBody: View {
         }
     }
 
+    /// SF glyph for the non-weather dwell reasons. The "weather" reason is
+    /// NOT handled here — it renders the bespoke `WeatherIcons` glyph in
+    /// `attributionRow` (keyed off the cited report's peak weatherCode), per
+    /// the weather-bespoke doctrine — so this never returns a weather symbol.
     private func reasonIcon(_ reason: String?) -> String {
         switch (reason ?? "").lowercased() {
         case let r where r.contains("congestion") || r.contains("ramp"): return "chart.line.uptrend.xyaxis"
         case let r where r.contains("consignee") || r.contains("building"): return "building.2"
-        case let r where r.contains("weather"): return "cloud.fill"
         case let r where r.contains("gate") || r.contains("outage"): return "exclamationmark.circle"
         default: return "clock"
         }
@@ -307,9 +388,18 @@ private struct RailDemurrageDisputeBody: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(chipColor.opacity(0.14))
                     .frame(width: 40, height: 40)
-                Image(systemName: reasonIcon(reason))
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(chipColor)
+                if isWeatherReason(reason) {
+                    // Bespoke weather glyph — keyed off the cited report's
+                    // peak weatherCode when it has resolved, else the neutral
+                    // cloud (WeatherIcons never guesses a condition).
+                    WeatherIcons.symbolView(
+                        for: weatherEvidence?.peakWeatherCode ?? 0, size: 22
+                    )
+                } else {
+                    Image(systemName: reasonIcon(reason))
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(chipColor)
+                }
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(label)
@@ -333,6 +423,161 @@ private struct RailDemurrageDisputeBody: View {
             }
         }
         .padding(16)
+    }
+
+    // MARK: - Weather evidence (cited historical report)
+
+    /// The §"weather dwell → cited historical evidence" surface. Renders
+    /// when a dwell row attributes time to weather. Honest by construction:
+    /// while `weather.historical` is Enterprise-gated it returns
+    /// `available:false`/nulls, so we show the "available with the
+    /// enterprise feed" em-dash state — never a fabricated max gust / vis /
+    /// peak condition. When the key lands and `available:true` arrives, the
+    /// same view fills with the cited readings + the gov-alert overlap.
+    private var weatherEvidenceSection: some View {
+        let ev = weatherEvidence
+        let resolved = ev?.isAvailable == true
+
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("WEATHER EVIDENCE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text("weather.historical")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(palette.textTertiary)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                // Header row: glyph + title + auto-attach status pill.
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Brand.info.opacity(0.14))
+                            .frame(width: 40, height: 40)
+                        WeatherIcons.symbolView(for: ev?.peakWeatherCode ?? 0, size: 24)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Cited historical weather")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                        Text(dwellWindowLabel.map { "\(charge?.facilityName ?? "Facility") · \($0)" }
+                             ?? (charge?.facilityName ?? "Facility dwell window"))
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .tracking(0.3)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    let pillText  = loadingEvidence ? "FETCHING" : (resolved ? "ATTACHED" : "ENTERPRISE")
+                    let pillColor = loadingEvidence ? palette.textTertiary : (resolved ? Brand.success : Brand.info)
+                    Text(pillText)
+                        .font(.system(size: 10, weight: .bold)).kerning(0.4)
+                        .foregroundStyle(pillColor)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Capsule().fill(pillColor.opacity(0.14)))
+                }
+
+                Divider().overlay(palette.borderFaint)
+
+                if resolved {
+                    // ── Cited readings: max gust / min vis / peak condition ──
+                    HStack(spacing: 18) {
+                        evidenceMetric(.wind, "MAX GUST",
+                                       ev?.maxGustMph.map { "\(Int($0.rounded())) mph" } ?? "—")
+                        evidenceMetric(.eye, "MIN VIS",
+                                       ev?.minVisibilityMi.map {
+                                           "\($0.formatted(.number.precision(.fractionLength(0...1)))) mi"
+                                       } ?? "—")
+                        evidenceMetric(.precip, "PEAK COND",
+                                       ev?.peakCondition ?? "—")
+                    }
+
+                    // ── Government bulletin overlap ──
+                    if let alerts = ev?.govAlerts, !alerts.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(alerts) { govAlertRow($0) }
+                        }
+                    }
+
+                    Text(citationFooter(ev))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                } else {
+                    // ── Honest Enterprise-gated empty state ──
+                    HStack(alignment: .top, spacing: 10) {
+                        WeatherIcons.utility(.alert, size: 16, tint: Brand.info)
+                            .padding(.top, 1)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Historical weather evidence available with the enterprise feed")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(palette.textPrimary)
+                            Text("Once the Tomorrow.io history tier is licensed, the max gust, minimum visibility, peak condition and any overlapping government bulletins for this dwell window auto-attach as a cited exhibit.")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                }
+            }
+            .padding(16)
+            .background(palette.bgCard)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(resolved ? Brand.info.opacity(0.45) : palette.borderFaint)
+            )
+        }
+    }
+
+    /// One cited reading tile (glyph + label + live value or "—").
+    private func evidenceMetric(_ glyph: WeatherIcons.Utility, _ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                WeatherIcons.utility(glyph, size: 13, tint: palette.textTertiary)
+                Text(label)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Text(value)
+                .font(.system(size: 15, weight: .heavy)).monospacedDigit()
+                .foregroundStyle(value == "—" ? palette.textTertiary : palette.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// One overlapping government bulletin row inside the citation.
+    private func govAlertRow(_ a: HistoricalWeatherEvidence570.GovAlert570) -> some View {
+        let sev = WeatherSnapshot.AlertSeverity(capString: a.severity)
+        let title = a.headline ?? a.eventType ?? "Government bulletin"
+        return HStack(spacing: 8) {
+            WeatherIcons.utility(.alert, size: 13, tint: sev.color)
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+            Spacer()
+            Text(sev.label)
+                .font(.system(size: 9, weight: .heavy)).kerning(0.4)
+                .foregroundStyle(sev.color)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(Capsule().fill(sev.color.opacity(0.14)))
+        }
+    }
+
+    /// The provenance footer — "Tomorrow.io history · computed 2m ago".
+    /// Each clause omitted honestly when its field is absent.
+    private func citationFooter(_ ev: HistoricalWeatherEvidence570?) -> String {
+        var parts: [String] = []
+        if let s = ev?.source, !s.isEmpty { parts.append(s) }
+        if let iso = ev?.computedAt, let d = ISO8601DateFormatter().date(from: iso) {
+            let secs = max(0, Int(Date().timeIntervalSince(d)))
+            let ago = secs < 60 ? "just now" : (secs < 3600 ? "\(secs/60)m ago" : "\(secs/3600)h ago")
+            parts.append("computed \(ago)")
+        }
+        parts.append("attached as dispute exhibit")
+        return parts.joined(separator: " · ")
     }
 
     // MARK: - CTA pair
@@ -375,6 +620,46 @@ private struct RailDemurrageDisputeBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+
+        // A weather dwell reason → fetch + auto-attach the cited historical
+        // weather report. Best-effort: a miss must never fail the dispute
+        // surface (the section degrades to its honest Enterprise state).
+        if weatherDwellRow != nil { await loadWeatherEvidence() }
+    }
+
+    /// Pull `weather.historical({lat,lon,from,to})` for the facility + the
+    /// dwell window and stash the envelope as cited evidence. The proc is
+    /// Enterprise-gated, so today it returns `available:false`/nulls and the
+    /// section shows the honest "available with the enterprise feed" state.
+    /// Never fabricates: when the facility geo or window is absent we still
+    /// call with what the charge supplies and bind whatever the server
+    /// honestly returns.
+    private func loadWeatherEvidence() async {
+        loadingEvidence = true
+        defer { loadingEvidence = false }
+        // The Tomorrow.io history product is anchored on lat/lon + a time
+        // window. Encode null-as-absent so the server can gate honestly when
+        // the facility geocode or placed/released stamps haven't landed.
+        struct HistoricalIn: Encodable {
+            let lat: Double?
+            let lon: Double?
+            let from: String?
+            let to: String?
+        }
+        let input = HistoricalIn(
+            lat: charge?.facilityLat,
+            lon: charge?.facilityLon,
+            from: charge?.placedAt,
+            to: charge?.releasedAt
+        )
+        do {
+            let ev: HistoricalWeatherEvidence570 = try await EusoTripAPI.shared.query(
+                "weather.historical", input: input)
+            self.weatherEvidence = ev
+        } catch {
+            // Keep the honest empty section; never blank or invent a report.
+            self.weatherEvidence = nil
+        }
     }
 
     private func fileDispute() async {

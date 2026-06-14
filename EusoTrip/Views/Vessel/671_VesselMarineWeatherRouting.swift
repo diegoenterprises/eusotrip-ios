@@ -157,6 +157,7 @@ private struct VesselMarineWeatherRoutingBody: View {
             IridescentHairline()
             VStack(alignment: .leading, spacing: Space.s4) {
                 mapHero
+                marineConditions
                 voyageLegs
                 esangAdvisory
                 cta
@@ -200,9 +201,8 @@ private struct VesselMarineWeatherRoutingBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 5) {
-                Image(systemName: "sparkle")
-                    .font(.system(size: 8, weight: .heavy))
-                    .foregroundStyle(LinearGradient.primary)
+                // Bespoke marine glyph (WeatherIcons .wave) — never an SF Symbol.
+                WeatherIcons.utility(.wave, size: 10, tint: Brand.magenta)
                 Text("VESSEL OPERATOR · WEATHER")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
@@ -285,12 +285,77 @@ private struct VesselMarineWeatherRoutingBody: View {
         )
     }
 
+    // MARK: - Marine conditions strip (getMarineWeather · route midpoint)
+
+    /// The marine forecast at the resolved route midpoint — significant
+    /// wave / wind gust / visibility from `getMarineWeather.current`,
+    /// rendered through the canonical metric-tile idiom with the bespoke
+    /// WeatherIcons `.wave` / `.wind` / `.eye` glyphs (the PerLoadWeatherCard
+    /// metricsGrid pattern). Honest: hidden entirely until the feed resolves
+    /// (current == nil / feed unavailable) — never a fabricated reading.
+    @ViewBuilder
+    private var marineConditions: some View {
+        if let c = marine?.current, marineHasAnyValue(c) {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text("MARINE CONDITIONS · getMarineWeather(midpoint)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(Color(hex: 0x6E7681))
+                HStack(spacing: 8) {
+                    // Significant wave height (sig wave) — .wave glyph.
+                    marineTile(.wave,
+                               value: c.waveHeight.map { String(format: "%.1f m", $0) },
+                               key: "SIG WAVE")
+                    // Wind gust — .wind glyph (gust preferred, sustained fallback).
+                    marineTile(.wind,
+                               value: (c.windGust ?? c.windSpeed).map { String(format: "%.0f kt", $0) },
+                               key: c.windGust != nil ? "GUST" : "WIND")
+                    // Visibility — .eye glyph.
+                    marineTile(.eye,
+                               value: c.visibility.map { String(format: "%.0f nm", $0) },
+                               key: "VIS")
+                }
+            }
+        }
+    }
+
+    /// True when the marine current carries at least one of the three fields
+    /// we surface — so the strip never frames on an all-"—" payload.
+    private func marineHasAnyValue(_ c: MarineForecastCurrent671) -> Bool {
+        c.waveHeight != nil || c.windGust != nil || c.windSpeed != nil || c.visibility != nil
+    }
+
+    /// One marine metric tile — the PerLoadWeatherCard.metricTile idiom:
+    /// bespoke glyph over a monospaced value + key in a translucent chip.
+    /// Honest "—" when the field is nil.
+    private func marineTile(_ glyph: WeatherIcons.Utility, value: String?, key: String) -> some View {
+        VStack(spacing: 3) {
+            WeatherIcons.utility(glyph, size: 17, tint: Color(red: 0.81, green: 0.88, blue: 1.0))
+            Text(value ?? "—")
+                .font(.system(size: 13, weight: .heavy))
+                .monospacedDigit()
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(key)
+                .font(.system(size: 9.5)).tracking(0.3)
+                .foregroundStyle(palette.textSecondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 9).padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(Color.white.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+        )
+    }
+
     /// No-endpoints / no-IMO placeholder so the hero never frames on null island.
     private var heroAwaiting: some View {
         VStack(spacing: 4) {
-            Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(Color(hex: 0x6E8198))
+            // Bespoke route glyph — never an SF Symbol.
+            WeatherIcons.utility(.route, size: 18, tint: Color(hex: 0x6E8198))
             Text(loading ? "Resolving voyage endpoints…" : "Awaiting routable ports")
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(Color(hex: 0x8FA3BF))
@@ -332,16 +397,17 @@ private struct VesselMarineWeatherRoutingBody: View {
                     Text(err).font(EType.caption).foregroundStyle(Brand.danger)
                 }
             } else if endpointsUnavailable {
-                EusoEmptyState(
-                    systemImage: "point.topleft.down.to.point.bottomright.curvepath",
+                marineEmptyPane(
+                    glyph: .route,
                     title: "No routable voyage",
                     subtitle: "This booking has no origin/destination ports on file, so route weather can't be computed. Assign a loading + discharge port and per-leg sea-state populates here.")
             } else if feedUnavailable {
-                // DTN marine-weather feed not configured — server returned null.
-                EusoEmptyState(
-                    systemImage: "cloud.sun.rain",
+                // Tomorrow.io marine feed not configured (available:false) —
+                // server returned null. Honest empty that lights up on key.
+                marineEmptyPane(
+                    glyph: .wave,
                     title: "Marine-weather feed unavailable",
-                    subtitle: "DTN route-weather is not configured for this voyage. Per-leg wind, swell and sea-state will populate the moment the feed is live.",
+                    subtitle: "Route-weather is not configured for this voyage. Per-leg significant wave, wind gust and visibility populate the moment the marine feed is live.",
                     comingSoon: true
                 )
             } else if let segs = route?.segments, !segs.isEmpty {
@@ -356,12 +422,52 @@ private struct VesselMarineWeatherRoutingBody: View {
                 .padding(Space.s4)
                 .background(legCardBackground)
             } else {
-                EusoEmptyState(
-                    systemImage: "point.topleft.down.to.point.bottomright.curvepath",
+                marineEmptyPane(
+                    glyph: .route,
                     title: "No voyage legs",
                     subtitle: "Route-weather segments for this voyage will appear here.")
             }
         }
+    }
+
+    /// Bespoke empty pane — the EusoEmptyState aesthetic with a real
+    /// WeatherIcons glyph in the gradient chip (ZERO SF Symbols). Used for
+    /// the no-route / feed-unavailable honest states so the screen reads
+    /// well now and lights up the moment the marine key lands.
+    private func marineEmptyPane(glyph: WeatherIcons.Utility, title: String, subtitle: String, comingSoon: Bool = false) -> some View {
+        VStack(alignment: .center, spacing: Space.s4) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.tintNeutral)
+                    .frame(width: 56, height: 56)
+                WeatherIcons.utility(glyph, size: 24, tint: Brand.magenta)
+            }
+            VStack(spacing: Space.s2) {
+                Text(title)
+                    .font(EType.h2)
+                    .foregroundStyle(palette.textPrimary)
+                    .multilineTextAlignment(.center)
+                Text(subtitle)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if comingSoon {
+                StatusPill(text: "Coming soon", kind: .info)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Space.s6)
+        .padding(.horizontal, Space.s4)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(Color(hex: 0x1C2128))
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Empty. \(title). \(subtitle)")
     }
 
     private var legCardBackground: some View {
@@ -395,19 +501,69 @@ private struct VesselMarineWeatherRoutingBody: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: 8)
-                Text("\(seaState) \(waveStr)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(color)
+                // Sea-state risk + significant wave, led by the bespoke
+                // .wave glyph (never an SF Symbol).
+                HStack(spacing: 4) {
+                    WeatherIcons.utility(.wave, size: 13, tint: color)
+                    Text("\(seaState) \(waveStr)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(color)
+                }
             }
-            HStack {
-                Text(legDetail(seg))
-                    .font(.system(size: 11))
-                    .foregroundStyle(palette.textSecondary)
-                Spacer()
-            }
-            .padding(.leading, 22)
+            // Per-leg marine metrics — each value led by its bespoke
+            // WeatherIcons glyph (.wind / .wave / .eye), bound to the real
+            // segment fields. Hidden when the segment carries no readings.
+            legMetrics(seg)
+                .padding(.leading, 22)
         }
         .padding(.vertical, Space.s2)
+    }
+
+    /// The per-leg metric row: wind (.wind), swell (.wave), visibility
+    /// (.eye) — each glyph + value rendered only when its field is present,
+    /// then any server risk factors as supporting text. Honest "getMarineWeather"
+    /// caption when the segment is value-less (partial DTN payload).
+    @ViewBuilder
+    private func legMetrics(_ seg: RouteWeatherSegment671) -> some View {
+        let glyphTint = Color(red: 0.81, green: 0.88, blue: 1.0)
+        HStack(spacing: 10) {
+            if let w = seg.windSpeed {
+                metricInline(.wind, String(format: "%.0f kt", w), tint: glyphTint)
+            }
+            if let s = seg.swellHeight {
+                metricInline(.wave, String(format: "swell %.1f m", s), tint: glyphTint)
+            }
+            if let v = seg.visibility {
+                metricInline(.eye, String(format: "%.0f nm", v), tint: glyphTint)
+            }
+            if seg.windSpeed == nil && seg.swellHeight == nil && seg.visibility == nil,
+               (seg.riskFactors?.isEmpty ?? true) {
+                Text("getMarineWeather")
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Spacer(minLength: 0)
+        }
+        if let factors = seg.riskFactors, !factors.isEmpty {
+            HStack(spacing: 6) {
+                WeatherIcons.utility(.alert, size: 11, tint: Brand.warning)
+                Text(factors.joined(separator: " · "))
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    /// One inline metric: bespoke glyph + monospaced value.
+    private func metricInline(_ glyph: WeatherIcons.Utility, _ value: String, tint: Color) -> some View {
+        HStack(spacing: 4) {
+            WeatherIcons.utility(glyph, size: 12, tint: tint)
+            Text(value)
+                .font(.system(size: 11))
+                .monospacedDigit()
+                .foregroundStyle(palette.textSecondary)
+        }
     }
 
     /// Title per leg — first = departure port, last = discharge port, middle
@@ -418,17 +574,6 @@ private struct VesselMarineWeatherRoutingBody: View {
         if isFirst { return "\(originLabel) departure" }
         if (seg.riskLevel ?? "").lowercased() == "moderate" { return "Mid-passage (current)" }
         return "Open-water leg"
-    }
-
-    private func legDetail(_ seg: RouteWeatherSegment671) -> String {
-        var parts: [String] = []
-        if let w = seg.windSpeed { parts.append(String(format: "Wind %.0f kt", w)) }
-        if let s = seg.swellHeight { parts.append(String(format: "swell %.1f m", s)) }
-        if let factors = seg.riskFactors, !factors.isEmpty {
-            parts.append(factors.joined(separator: " · "))
-        }
-        if let v = seg.visibility { parts.append(String(format: "vis %.0f nm", v)) }
-        return parts.isEmpty ? "getMarineWeather" : parts.joined(separator: " · ")
     }
 
     // MARK: - ESang advisory
