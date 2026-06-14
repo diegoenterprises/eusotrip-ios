@@ -11883,16 +11883,33 @@ struct RatesAPI {
         let yourRate: Double
         let yourRPM: Double
         let distance: Double
-        let marketAvgRPM: Double
-        let marketMinRPM: Double
-        let marketMaxRPM: Double
-        let percentile: Int
-        /// "ABOVE_MARKET" | "AT_MARKET" | "BELOW_MARKET"
-        let position: String
+        // 2026-06-13 — the canonical LaneComparison envelope. The
+        // server is the SOLE authority on whether a rate is even
+        // *comparable*; clients ONLY format what it returns and must
+        // NEVER re-derive a verdict, re-divide by distance, or guess a
+        // unit. When `comparable == false` the position/percentile/
+        // filled-slider MUST stay hidden (zero-fabrication mandate) and
+        // the card falls back to the honest reason in `referenceReason`.
+        //
+        // market{Min,Avg,Max}RPM are OPTIONAL because the server omits
+        // them entirely when it can't benchmark the rate (e.g. a WS%
+        // tanker rate with no per-load Worldscale-100 flat to convert
+        // against, or an unconvertible unit). Decoding them as `Double?`
+        // (rather than defaulting to 0) keeps an old/blank field from
+        // silently rendering a $0.00 market band.
+        let marketAvgRPM: Double?
+        let marketMinRPM: Double?
+        let marketMaxRPM: Double?
+        /// nil when not comparable — render NO percentile number then.
+        let percentile: Int?
+        /// "ABOVE_MARKET" | "AT_MARKET" | "BELOW_MARKET" | nil
+        /// nil when not comparable — render NO position pill then.
+        let position: String?
         let sampleSize: Int
-        let savingsVsAvg: Double
+        let savingsVsAvg: Double?
         let recommendation: String
-        /// "platform_data" | "national_benchmark" | "gemini"
+        /// "platform_data" | "national_reference" | "national_benchmark"
+        /// | "gemini" | "unconvertible"
         let source: String
         /// 2026-05-19 — mode-aware unit + transport mode echoed back
         /// by the server. Optional for back-compat with older deploys
@@ -11900,6 +11917,110 @@ struct RatesAPI {
         let unit: String?
         let unitLong: String?
         let transportMode: String?
+
+        // MARK: Canonical envelope (2026-06-13)
+
+        /// TRUE only when source == platform_data AND sampleSize >= 3
+        /// AND the input normalized cleanly into the benchmark's
+        /// canonical unit + currency. The single gate that turns the
+        /// rich verdict card on. Defaults to FALSE when absent so an
+        /// old server (that doesn't emit it) can never fabricate a
+        /// verdict on the client.
+        let comparable: Bool
+        /// When comparable == false: why. One of
+        /// 'needs_ws100_flat' | 'unit_unconvertible' |
+        /// 'insufficient_data' | 'unconvertible'. nil when comparable.
+        let referenceReason: String?
+        /// TRUE only when a WS% rate was converted to $/MT via a
+        /// provided per-load Worldscale-100 flat. Gate for showing the
+        /// converted $/unit alongside the WS% input.
+        let worldscaleConverted: Bool
+        /// 'USD' | 'MXN' | 'CAD' — the currency the benchmark is in.
+        /// Compare ONLY within the same currency; label the unit.
+        let currency: String
+        /// '$/mi' | '$/ton-mi' | '$/MT' | '$/FEU' | '$/bbl' | '$/hr'.
+        let canonicalUnit: String
+        /// 0…100 percentile band the rate sits in (server-computed).
+        /// Optional — only present when comparable.
+        let percentileBand: Int?
+        /// CANONICAL normalized value of the *user's own* rate in the
+        /// benchmark's canonical unit + currency (e.g. $/FEU, $/ton-mi,
+        /// WS%→$/MT). This is the single source of truth for the 'your
+        /// rate' marker, the $-per-unit subtitle, and the slider
+        /// position — the client MUST read this and NEVER re-divide
+        /// yourRPM by distance again. nil only on old servers; callers
+        /// fall back to yourRPM then (mirrors web's num(normValue) ??
+        /// num(yourRPM)).
+        let normValue: Double?
+        /// 2026-06-13 — honest provenance of the market benchmark the
+        /// card is comparing against (e.g. Baltic BDTI, DAT, national
+        /// reference). When `verdictEligible == false` this is a
+        /// reference-only citation: render the label, NEVER a
+        /// percentile / position / filled slider.
+        let benchmarkCitation: BenchmarkCitation?
+
+        /// A small, honest provenance receipt for the market benchmark.
+        struct BenchmarkCitation: Decodable, Equatable {
+            let provider: String
+            let index: String
+            let sourceUrl: String
+            let licensing: String
+            let connected: Bool
+            let verdictEligible: Bool
+            let label: String
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case lane, yourRate, yourRPM, distance
+            case marketAvgRPM, marketMinRPM, marketMaxRPM
+            case percentile, position, sampleSize, savingsVsAvg
+            case recommendation, source, unit, unitLong, transportMode
+            case comparable, referenceReason, worldscaleConverted
+            case currency, canonicalUnit
+            case percentileBand
+            case normValue, benchmarkCitation
+            // The envelope sends min/avg/max under the canonical
+            // marketMin/marketAvg/marketMax keys too — accept either.
+            case marketMin, marketAvg, marketMax
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.lane     = (try? c.decode(String.self, forKey: .lane)) ?? ""
+            self.yourRate = (try? c.decode(Double.self, forKey: .yourRate)) ?? 0
+            self.yourRPM  = (try? c.decode(Double.self, forKey: .yourRPM)) ?? 0
+            self.distance = (try? c.decode(Double.self, forKey: .distance)) ?? 0
+            // Accept both the legacy *RPM keys and the canonical
+            // market{Min,Avg,Max} keys. Prefer whichever is present.
+            self.marketMinRPM = try c.decodeIfPresent(Double.self, forKey: .marketMinRPM)
+                ?? c.decodeIfPresent(Double.self, forKey: .marketMin)
+            self.marketAvgRPM = try c.decodeIfPresent(Double.self, forKey: .marketAvgRPM)
+                ?? c.decodeIfPresent(Double.self, forKey: .marketAvg)
+            self.marketMaxRPM = try c.decodeIfPresent(Double.self, forKey: .marketMaxRPM)
+                ?? c.decodeIfPresent(Double.self, forKey: .marketMax)
+            self.percentile  = try c.decodeIfPresent(Int.self, forKey: .percentile)
+            self.position    = try c.decodeIfPresent(String.self, forKey: .position)
+            self.sampleSize  = (try? c.decode(Int.self, forKey: .sampleSize)) ?? 0
+            self.savingsVsAvg = try c.decodeIfPresent(Double.self, forKey: .savingsVsAvg)
+            self.recommendation = (try? c.decode(String.self, forKey: .recommendation)) ?? ""
+            self.source         = (try? c.decode(String.self, forKey: .source)) ?? "unconvertible"
+            self.unit           = try c.decodeIfPresent(String.self, forKey: .unit)
+            self.unitLong       = try c.decodeIfPresent(String.self, forKey: .unitLong)
+            self.transportMode  = try c.decodeIfPresent(String.self, forKey: .transportMode)
+            // Safe envelope defaults: absent comparable ⇒ FALSE so an
+            // old server can't trip the rich card. Absent currency/unit
+            // ⇒ honest USD / canonical default.
+            self.comparable          = (try? c.decode(Bool.self, forKey: .comparable)) ?? false
+            self.referenceReason     = try c.decodeIfPresent(String.self, forKey: .referenceReason)
+            self.worldscaleConverted = (try? c.decode(Bool.self, forKey: .worldscaleConverted)) ?? false
+            self.currency            = (try? c.decode(String.self, forKey: .currency)) ?? "USD"
+            self.canonicalUnit       = (try? c.decode(String.self, forKey: .canonicalUnit))
+                ?? (try? c.decode(String.self, forKey: .unit))
+                ?? "$/mi"
+            self.percentileBand      = try c.decodeIfPresent(Int.self, forKey: .percentileBand)
+            self.normValue           = try c.decodeIfPresent(Double.self, forKey: .normValue)
+            self.benchmarkCitation   = try c.decodeIfPresent(BenchmarkCitation.self, forKey: .benchmarkCitation)
+        }
     }
 
     func compareLaneRate(
@@ -11911,7 +12032,19 @@ struct RatesAPI {
         lookbackDays: Int = 90,
         transportMode: String = "truck",
         rateUnit: String? = nil,
-        commodity: String? = nil
+        commodity: String? = nil,
+        // 2026-06-13 — canonical-envelope inputs. The server needs the
+        // raw rate UNIT (so it can normalize without guessing), plus —
+        // for vessel WS% tanker rates — the Worldscale percent typed in
+        // the field AND the per-load Worldscale-100 flat to convert it
+        // against. If `worldscaleFlatRef` is nil the server returns
+        // referenceReason='needs_ws100_flat' rather than inventing a
+        // WS-100 feed. equipmentType + country let the server pick the
+        // right benchmark cohort + currency.
+        worldscalePct: Double? = nil,
+        worldscaleFlatRef: Double? = nil,
+        equipmentType: String? = nil,
+        country: String? = nil
     ) async throws -> LaneComparison {
         struct Input: Encodable {
             let originState: String
@@ -11923,6 +12056,10 @@ struct RatesAPI {
             let transportMode: String
             let rateUnit: String?
             let commodity: String?
+            let worldscalePct: Double?
+            let worldscaleFlatRef: Double?
+            let equipmentType: String?
+            let country: String?
         }
         return try await api.query(
             "rates.compareLaneRate",
@@ -11935,7 +12072,11 @@ struct RatesAPI {
                 lookbackDays: lookbackDays,
                 transportMode: transportMode,
                 rateUnit: rateUnit,
-                commodity: commodity
+                commodity: commodity,
+                worldscalePct: worldscalePct,
+                worldscaleFlatRef: worldscaleFlatRef,
+                equipmentType: equipmentType,
+                country: country
             )
         )
     }

@@ -1584,11 +1584,27 @@ struct LoadDetailSheet: View {
     // MARK: Rate meter (above-market pill)
 
     private func rateMeterPill(_ cmp: RatesAPI.LaneComparison) -> some View {
+        // Canonical envelope: the server is the SOLE authority on
+        // whether the rate is comparable. NEVER show a position/
+        // percentile/market band when comparable == false — fall back
+        // to the honest reason (zero-fabrication mandate).
+        let position = cmp.position ?? ""
+        let percentile = cmp.percentile ?? 0
         let (label, color, glyph): (String, Color, String) = {
-            switch cmp.position {
-            case "ABOVE_MARKET": return ("ABOVE MARKET · \(cmp.percentile)th pct", Brand.success, "arrow.up.right.circle.fill")
-            case "BELOW_MARKET": return ("BELOW MARKET · \(cmp.percentile)th pct", Brand.danger, "arrow.down.right.circle.fill")
-            default:             return ("AT MARKET · \(cmp.percentile)th pct",     Brand.warning, "equal.circle.fill")
+            guard cmp.comparable else {
+                switch cmp.referenceReason {
+                case "needs_ws100_flat":
+                    return ("ENTER WS-100 FLAT TO BENCHMARK", palette.textTertiary, "info.circle")
+                case "unit_unconvertible", "unconvertible":
+                    return ("CAN'T BENCHMARK THIS RATE TYPE YET", palette.textTertiary, "questionmark.circle")
+                default:
+                    return ("REFERENCE ONLY · n=\(cmp.sampleSize)", palette.textTertiary, "chart.bar")
+                }
+            }
+            switch position {
+            case "ABOVE_MARKET": return ("ABOVE MARKET · \(percentile)th pct", Brand.success, "arrow.up.right.circle.fill")
+            case "BELOW_MARKET": return ("BELOW MARKET · \(percentile)th pct", Brand.danger, "arrow.down.right.circle.fill")
+            default:             return ("AT MARKET · \(percentile)th pct",     Brand.warning, "equal.circle.fill")
             }
         }()
         return VStack(alignment: .leading, spacing: 6) {
@@ -1601,17 +1617,36 @@ struct LoadDetailSheet: View {
                     .tracking(0.6)
                     .foregroundStyle(color)
                 Spacer(minLength: 0)
-                Text(String(format: "$%.2f / $%.2f / $%.2f /mi",
-                            cmp.marketMinRPM, cmp.marketAvgRPM, cmp.marketMaxRPM))
-                    .font(EType.micro.monospacedDigit())
-                    .foregroundStyle(palette.textTertiary)
+                // Market band only when the server actually returned one
+                // AND the rate is comparable — no $0.00/$0.00 fabrication.
+                // Currency-aware glyph + canonical unit so a MX/CA or
+                // $/FEU / $/ton-mi lane labels honestly (not a hardcoded
+                // '$.../mi').
+                if cmp.comparable,
+                   let lo = cmp.marketMinRPM, let avg = cmp.marketAvgRPM, let hi = cmp.marketMaxRPM {
+                    let pfx = rateMeterCurrencyPrefix(cmp.currency)
+                    let unitLabel = (cmp.unit ?? cmp.canonicalUnit)
+                        .replacingOccurrences(of: "$/", with: "")
+                    Text(String(format: "%@%.2f / %@%.2f / %@%.2f /%@",
+                                pfx, lo, pfx, avg, pfx, hi, unitLabel))
+                        .font(EType.micro.monospacedDigit())
+                        .foregroundStyle(palette.textTertiary)
+                }
             }
-            Text(cmp.recommendation)
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            if cmp.source == "national_benchmark" {
+            if !cmp.recommendation.isEmpty {
+                Text(cmp.recommendation)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !cmp.comparable {
+                if cmp.referenceReason == "insufficient_data" || cmp.referenceReason == nil {
+                    Text("Reference only · n=\(cmp.sampleSize) comparable loads")
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            } else if cmp.source == "national_benchmark" || cmp.source == "national_reference" {
                 Text("National benchmark · \(cmp.sampleSize) lane comps")
                     .font(EType.micro)
                     .foregroundStyle(palette.textTertiary)
@@ -1619,6 +1654,21 @@ struct LoadDetailSheet: View {
                 Text("Platform data · \(cmp.sampleSize) lane comps · last 90d")
                     .font(EType.micro)
                     .foregroundStyle(palette.textTertiary)
+            }
+            // Honest benchmark provenance label (e.g. 'Baltic BDTI ·
+            // reference only · feed not connected'). LABEL ONLY — the
+            // verdict pill above is gated on cmp.comparable, so a
+            // verdictEligible=false citation never adds a verdict.
+            if let citation = cmp.benchmarkCitation, !citation.label.isEmpty {
+                HStack(spacing: 5) {
+                    Image(systemName: citation.connected ? "checkmark.seal" : "info.circle")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                    Text(citation.label)
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(Space.s3)
@@ -1631,6 +1681,16 @@ struct LoadDetailSheet: View {
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .strokeBorder(color.opacity(0.5))
         )
+    }
+
+    /// Currency-aware symbol (CAD→'CA$', MXN→'MX$', else '$') so the
+    /// market band on a MX/CA lane labels honestly.
+    private func rateMeterCurrencyPrefix(_ c: String) -> String {
+        switch c.uppercased() {
+        case "CAD": return "CA$"
+        case "MXN": return "MX$"
+        default:    return "$"
+        }
     }
 
     // MARK: Booking action
