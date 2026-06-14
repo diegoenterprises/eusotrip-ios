@@ -30,7 +30,47 @@ struct WeatherSnapshot: Hashable {
     /// Short human phrase — "Partly cloudy".
     let condition: String
     /// SF Symbol glyph that pairs with the condition (cloud.sun.fill etc.).
+    /// Retained for the legacy compact paths + accessibility text; the v2
+    /// expanded surface draws the custom `WeatherIcons` glyph keyed off
+    /// `weatherCode` instead.
     let symbol: String
+
+    // ── Tomorrow.io v2 backbone ─────────────────────────────────────
+    //
+    // The Tomorrow.io `weatherCode` (the exact field — NOT the
+    // Day/Night/FullDay variants) is the single source of truth for the
+    // custom glyph set in `WeatherIcons.swift`. Defaults to 0 ("Unknown")
+    // so the legacy WeatherKit / NWS / Open-Meteo compose paths — which
+    // pre-date the Tomorrow.io wiring and only know SF Symbols — still
+    // build and render their `#i-cloud` fallback honestly. The mapper
+    // also infers a best-effort code from the SF symbol so those paths
+    // light a real glyph rather than the unknown cloud.
+    var weatherCode: Int = 0
+
+    /// Where this snapshot came from — drives the attribution line
+    /// ("Conditions · Tomorrow.io" only when Tomorrow.io actually
+    /// produced the data; never fabricated onto a fallback).
+    var dataSource: DataSource = .unknown
+
+    /// UV index 0–11+. Nil when the source omits it.
+    var uvIndex: Int? = nil
+
+    /// Highest-priority active government bulletin in the v2 single-alert
+    /// shape (title/severity/until). Distinct from `alerts[]` (the full
+    /// CAP list the flip side renders); this is the one the hero alert
+    /// bar + collapsed pill show. Nil → no bar/pill rendered (honest:
+    /// "no alert" is live information, never a fabricated "all clear").
+    var alert: ActiveAlert? = nil
+
+    /// Per-load ETA-risk segments for the LANE IMPACT panel — populated
+    /// by `weather.laneImpact` (Tomorrow.io `/v4/route`, time-aware).
+    /// Nil/empty → the panel collapses (between loads, Enterprise route
+    /// tier absent, or the call returned no data). Never seeded.
+    var laneImpact: [LaneImpactSegment]? = nil
+
+    /// When this snapshot was produced (server `updatedAt` or fetch
+    /// time). Drives "updated Nm ago". Nil → that clause is omitted.
+    var observedAt: Date? = nil
     /// "5h · light rain · pickup window" — the driver-actionable forecast line.
     let nextAlert: String?
     /// Accent color choice — blue for clear/dry, warning for hazard watch.
@@ -61,12 +101,17 @@ struct WeatherSnapshot: Hashable {
     struct HourlyForecast: Hashable, Identifiable {
         let date: Date
         let tempF: Int
-        /// SF Symbol for the hour's condition.
+        /// SF Symbol for the hour's condition (legacy paths + a11y).
         let symbol: String
         /// 0–100, nil when not supplied.
         let precipChancePct: Int?
         /// mph, nil when not supplied.
         let windMph: Int?
+        /// Tomorrow.io weatherCode for the hour — drives the v2 custom
+        /// glyph in the 8-hour strip. Defaults to 0; the WeatherIcons
+        /// mapper infers from `symbol` when this is unset so the legacy
+        /// paths still render a real glyph.
+        var weatherCode: Int = 0
 
         var id: Date { date }
 
@@ -196,6 +241,248 @@ struct WeatherSnapshot: Hashable {
         }
     }
 
+    // MARK: - Tomorrow.io v2 supporting types
+
+    /// Which upstream produced this snapshot. Only `.tomorrowIO` earns
+    /// the "Conditions · Tomorrow.io" attribution; the rest keep their
+    /// own honest provenance so the source line never lies about where
+    /// a number came from.
+    enum DataSource: String, Hashable {
+        case tomorrowIO   // server weather.byLatLon (Tomorrow.io-backed)
+        case weatherKit   // Apple WeatherKit
+        case nws          // api.weather.gov
+        case openMeteo    // open-meteo.com
+        case here         // HERE Destination Weather (lane points)
+        case unknown
+
+        /// The attribution string shown on the expanded card's source
+        /// line. Tomorrow.io is the v2 backbone; every other provider
+        /// is named truthfully rather than mislabeled as Tomorrow.io.
+        var attribution: String {
+            switch self {
+            case .tomorrowIO: return "Tomorrow.io"
+            case .weatherKit: return "Apple Weather"
+            case .nws:        return "NWS"
+            case .openMeteo:  return "Open-Meteo"
+            case .here:       return "HERE"
+            case .unknown:    return "live source"
+            }
+        }
+    }
+
+    /// The single hero/collapsed government alert in the v2 shape. The
+    /// CAP `alerts[]` array (used by the flip side) is the full list;
+    /// this is the one promoted to the bar + pill.
+    struct ActiveAlert: Hashable {
+        /// "Flood watch"
+        let title: String
+        let severity: AlertSeverity
+        /// When the bulletin expires — nil → open-ended/unknown.
+        let until: Date?
+
+        /// "until 7 PM" or nil.
+        var untilDisplay: String? {
+            guard let until else { return nil }
+            let f = DateFormatter()
+            f.locale = .current
+            f.setLocalizedDateFormatFromTemplate("ha")
+            return "until \(f.string(from: until))"
+        }
+    }
+
+    /// Transport mode of a lane-impact segment — picks the mode chip
+    /// glyph + tint in the LANE IMPACT panel.
+    enum LaneMode: String, Hashable {
+        case truck, rail, vessel
+
+        var color: Color {
+            switch self {
+            case .truck:  return Brand.blue
+            case .rail:   return Brand.rail
+            case .vessel: return Brand.vessel
+            }
+        }
+    }
+
+    /// Coarse ETA-risk tier for a lane segment. Tomorrow.io `/v4/route`
+    /// worst-case → tier server-side; the client only renders it.
+    ///
+    /// §3 contract vocabulary is `none|watch|elevated|severe`. The legacy
+    /// case was `.clear`; the server emits `"none"` (and "clear" for the
+    /// older payloads), so the decoder maps both onto `.none`.
+    enum RiskTier: String, Hashable, Comparable {
+        case none, watch, elevated, severe
+
+        var rank: Int {
+            switch self {
+            case .none:     return 0
+            case .watch:    return 1
+            case .elevated: return 2
+            case .severe:   return 3
+            }
+        }
+
+        var color: Color {
+            switch self {
+            case .none:     return Brand.success
+            case .watch:    return Brand.warning
+            case .elevated: return Brand.warning
+            case .severe:   return Brand.danger
+            }
+        }
+
+        static func < (lhs: RiskTier, rhs: RiskTier) -> Bool { lhs.rank < rhs.rank }
+    }
+
+    /// §3 `peakLeg: { label, time } | null` — the worst leg the route
+    /// reduction surfaced ("I-35", "4 PM"). Drawn as the danger band's
+    /// position + label on the route-cell diagram.
+    struct PeakLeg: Hashable {
+        /// "I-35" / "Lenexa–Shawnee segment" / "Port of Houston berth".
+        let label: String
+        /// "4 PM" / "14:00–18:00".
+        let time: String
+
+        /// "I-35 · 4 PM" — the combined chip text.
+        var display: String {
+            let l = label.trimmingCharacters(in: .whitespaces)
+            let t = time.trimmingCharacters(in: .whitespaces)
+            if l.isEmpty { return t }
+            if t.isEmpty { return l }
+            return "\(l) · \(t)"
+        }
+    }
+
+    /// §3 `drivers: { field, value }[]` — one mode-specific metric tile.
+    /// Tri-modal worst-case fields (truck PRECIP/CROSSWIND/VISIBILITY ·
+    /// rail YARD VIS/CROSSWIND/STREAMFLOW · vessel SIG WAVE/GUST @ BERTH/
+    /// VISIBILITY). `value` is the formatted live reading or "—" when the
+    /// Tomorrow.io field was absent — never fabricated.
+    struct Driver: Hashable, Identifiable {
+        /// "CROSSWIND" / "SIG WAVE" / "STREAMFLOW".
+        let field: String
+        /// "31 mph" / "2.4 m" / "Rising" / "—".
+        let value: String
+
+        var id: String { field }
+    }
+
+    /// §3 `recommendation: { text, action, protects }` — ESang's one
+    /// actionable suggestion, server-authored from the route reduction.
+    /// `action` is the highlighted verb-phrase ("Move pickup to 1:30 PM"),
+    /// `protects` the outcome it preserves ("the Dallas appointment").
+    struct Recommendation: Hashable {
+        /// The framing clause — "the cell crosses the I-35 leg at 4 PM".
+        let text: String
+        /// The highlighted action — "Move pickup to 1:30 PM".
+        let action: String
+        /// What it protects — "the Dallas appointment".
+        let protects: String
+    }
+
+    /// One load's weather-driven ETA risk on its lane — the LANE IMPACT
+    /// differentiator. Conforms verbatim to the §3 `LaneImpact` contract
+    /// (`loadId · mode · riskTier · headline · peakLeg{label,time} ·
+    /// drivers[]{field,value} · recommendation{text,action,protects} ·
+    /// source · computedAt`). Every field is server-derived from the live
+    /// `/v4/route` reduction (worst-case precip / gust / visibility per
+    /// leg) → never invented client-side.
+    ///
+    /// The `route` / `pickupTime` / `etaDelayMin` / `esangSuggestion`
+    /// fields are EusoTrip render helpers retained alongside the contract
+    /// (the route-cell diagram needs the lane string + pickup; the
+    /// collapsed strip needs the compact delay). When the server supplies
+    /// the structured §3 form the diagram + ESang panel read from it;
+    /// when only the legacy flat form arrives they degrade through these.
+    struct LaneImpactSegment: Hashable, Identifiable {
+        // ── §3 contract fields ──────────────────────────────────────
+        /// "LD-260615"
+        let loadId: String
+        let mode: LaneMode
+        let riskTier: RiskTier
+        /// §3 `headline` — "+40 min ETA risk" | "~6h dwell" |
+        /// "Crane hold 14:00–18:00". The big risk readout in the route
+        /// footer. Empty → derived from `etaDelayMin`.
+        let headline: String
+        /// §3 `peakLeg: { label, time } | null` — the worst leg + its
+        /// time. Drives the danger-band position + "4 PM CELL" label.
+        let peakLeg: PeakLeg?
+        /// §3 `drivers` — the 3 mode-specific metric tiles. Each value is
+        /// a live worst-case reading or "—". Empty → tiles collapse.
+        let drivers: [Driver]
+        /// §3 `recommendation: { text, action, protects }`. Nil → the
+        /// ESang orb line collapses.
+        let recommendation: Recommendation?
+        /// §3 `computedAt` — when the route reduction ran. Nil → omitted.
+        let computedAt: Date?
+
+        // ── EusoTrip render helpers (alongside the contract) ─────────
+        /// "Austin → Dallas · I-35" — the lane string the route-cell
+        /// diagram labels its origin/destination nodes from.
+        let route: String
+        /// Scheduled pickup time the route call was anchored to.
+        let pickupTime: Date?
+        /// Estimated ETA delay in minutes from the weather on the lane.
+        /// Nil → no measurable delay (the footer shows "on time").
+        let etaDelayMin: Int?
+        /// Legacy flat ESang line — server-authored. Used only when the
+        /// structured `recommendation` is absent (older payloads).
+        let esangSuggestion: String?
+
+        var id: String { loadId }
+
+        /// The risk readout shown in the route footer — the §3 `headline`
+        /// when present, else the derived ETA-delay form.
+        var headlineDisplay: String {
+            let h = headline.trimmingCharacters(in: .whitespaces)
+            return h.isEmpty ? etaDelayDisplay : h
+        }
+
+        /// "+40 min" / "+1 min" / "on time".
+        var etaDelayDisplay: String {
+            guard let m = etaDelayMin, m > 0 else { return "on time" }
+            return "+\(m) min"
+        }
+
+        /// "+40m" — compact form for the collapsed lane strip.
+        var etaDelayCompact: String {
+            guard let m = etaDelayMin, m > 0 else { return "on time" }
+            return "+\(m)m"
+        }
+
+        /// "pickup 3:30 PM" or nil.
+        var pickupDisplay: String? {
+            guard let pickupTime else { return nil }
+            let f = DateFormatter()
+            f.locale = .current
+            f.setLocalizedDateFormatFromTemplate("h:mm a")
+            return "pickup \(f.string(from: pickupTime))"
+        }
+
+        /// The label drawn under the route's origin node — the first
+        /// segment of `route` (before "→"), uppercased. "" when absent.
+        var originLabel: String {
+            routeEndpoints.origin
+        }
+
+        /// The label drawn under the route's destination node — the
+        /// second segment of `route` (after "→"), uppercased.
+        var destinationLabel: String {
+            routeEndpoints.destination
+        }
+
+        /// Split "Austin → Dallas · I-35" into ("AUSTIN", "DALLAS · I-35").
+        private var routeEndpoints: (origin: String, destination: String) {
+            let parts = route.components(separatedBy: "→")
+            guard parts.count >= 2 else {
+                return (route.uppercased(), "")
+            }
+            let o = parts[0].trimmingCharacters(in: .whitespaces).uppercased()
+            let d = parts[1].trimmingCharacters(in: .whitespaces).uppercased()
+            return (o, d)
+        }
+    }
+
     /// "72°"
     var tempDisplay: String { "\(tempF)°" }
 
@@ -227,6 +514,100 @@ struct WeatherSnapshot: Hashable {
     /// Highest-severity active alert — drives the ribbon.
     var topAlert: SevereAlert? {
         alerts.max(by: { $0.severity.rank < $1.severity.rank })
+    }
+
+    // ── Tomorrow.io v2 display helpers ──────────────────────────────
+
+    /// "UV 7" or "—".
+    var uvDisplay: String {
+        guard let uv = uvIndex else { return "—" }
+        return "UV \(uv)"
+    }
+
+    /// "18%" precip chance or "—".
+    var precipChanceDisplay: String {
+        guard let p = precipChancePct else { return "—" }
+        return "\(p)%"
+    }
+
+    /// Visibility "10 mi".
+    var visibilityDisplay: String { "\(visibilityMi) mi" }
+
+    /// The hero/collapsed alert, preferring the explicit v2 `alert` and
+    /// falling back to the top CAP bulletin so legacy paths that only
+    /// populate `alerts[]` still light the bar.
+    var heroAlert: ActiveAlert? {
+        if let alert { return alert }
+        guard let top = topAlert else { return nil }
+        return ActiveAlert(title: top.event, severity: top.severity, until: top.endsAt)
+    }
+
+    /// The v2 attribution line:
+    /// "Conditions · Tomorrow.io · weatherCode 1101 · updated 2m ago".
+    /// Each clause is omitted honestly when its data is absent — the
+    /// weatherCode clause only shows for a real (non-zero) code, and the
+    /// "updated" clause only when we know `observedAt`.
+    var attributionLine: String {
+        var parts: [String] = ["Conditions · \(dataSource.attribution)"]
+        if weatherCode != 0 {
+            parts.append("weatherCode \(weatherCode)")
+        }
+        if let updated = updatedAgoDisplay {
+            parts.append("updated \(updated)")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// "2m ago" / "just now" / "1h ago" — nil when `observedAt` unknown.
+    var updatedAgoDisplay: String? {
+        guard let observedAt else { return nil }
+        let secs = max(0, Int(Date().timeIntervalSince(observedAt)))
+        if secs < 60 { return "just now" }
+        let mins = secs / 60
+        if mins < 60 { return "\(mins)m ago" }
+        let hours = mins / 60
+        return "\(hours)h ago"
+    }
+
+    /// Index of the "peak" hour in `hourly` to highlight in the v2 strip
+    /// — the hour with the most hazardous condition (worst weatherCode
+    /// severity, breaking ties by highest precip chance). Nil when the
+    /// band is empty or nothing rises above benign. Derived strictly
+    /// from live hourly readings — never a fabricated spike.
+    var peakHourIndex: Int? {
+        guard !hourly.isEmpty else { return nil }
+        func hazard(_ h: HourlyForecast) -> Int {
+            // Severity bucket from the Tomorrow.io code family (or 0).
+            let code = h.weatherCode
+            let bucket: Int
+            switch code {
+            case 8000:                          bucket = 5   // thunderstorm
+            case 4201, 6201, 7101:              bucket = 4   // heavy rain / freezing / ice
+            case 4001, 5101, 6001, 6200, 7000:  bucket = 3   // rain / heavy snow / freezing
+            case 4000, 4200, 5000, 5001, 5100, 6000, 7102: bucket = 2 // drizzle / snow / sleet
+            case 2000, 2100:                    bucket = 1   // fog
+            default:                            bucket = 0
+            }
+            return bucket * 1000 + (h.precipChancePct ?? 0)
+        }
+        let scored = hourly.enumerated().max { hazard($0.element) < hazard($1.element) }
+        guard let best = scored, hazard(best.element) > 0 else { return nil }
+        return best.offset
+    }
+
+    /// The collapsed dashboard "lane strip" line: "2 active loads in
+    /// this cell · LD-260615". Nil when there's no lane impact. Honest:
+    /// the count is the real segment count, the id is the worst-risk
+    /// load's id.
+    var collapsedLaneStrip: (text: String, loadId: String, delay: String)? {
+        guard let segs = laneImpact, !segs.isEmpty else { return nil }
+        let worst = segs.max { $0.riskTier < $1.riskTier } ?? segs[0]
+        let noun = segs.count == 1 ? "load" : "loads"
+        return (
+            text: "\(segs.count) active \(noun) in this cell",
+            loadId: worst.loadId,
+            delay: worst.etaDelayCompact
+        )
     }
 
     // ── Freight thresholds (derived from live values — never invented) ──

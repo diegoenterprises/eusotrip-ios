@@ -37,8 +37,12 @@ struct WeatherCard: View {
     /// Route-aware lane weather for the active load. Nil → the lane
     /// strip collapses (between loads, or HERE unavailable).
     var lane: LaneWeather? = nil
-    /// `.full` = hero card with flip; `.compact` = one-row glance.
+    /// `.full` = the v2 two-state card (collapsed dashboard ↔ expanded
+    /// full view); `.compact` = one-row glance for half-tier slots.
     var style: Style = .full
+    /// Start the `.full` card expanded (e.g. when pushed as its own
+    /// screen). Default collapsed for the dashboard tile.
+    var startExpanded: Bool = false
 
     enum Style { case full, compact }
 
@@ -46,9 +50,23 @@ struct WeatherCard: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Flip state. Tap the card → rotates 180° on Y, revealing the
-    /// 5-day forecast + alert detail. Tap again → rotates back.
-    @State private var flipped: Bool = false
+    /// v2 two-state. `false` = collapsed dashboard card; `true` =
+    /// expanded full view. Tapping the collapsed card expands it; the
+    /// expanded header's chevron collapses it back. Replaces the prior
+    /// flip-card (the 5-day forecast now lives inline in the expanded
+    /// view as the v2 7-day chip row).
+    @State private var expanded: Bool
+
+    init(snapshot: WeatherSnapshot,
+         lane: LaneWeather? = nil,
+         style: Style = .full,
+         startExpanded: Bool = false) {
+        self.snapshot = snapshot
+        self.lane = lane
+        self.style = style
+        self.startExpanded = startExpanded
+        _expanded = State(initialValue: startExpanded)
+    }
 
     private var isNight: Bool {
         // Local clock is the *primary* night gate. The previous order
@@ -83,471 +101,727 @@ struct WeatherCard: View {
         }
     }
 
-    // MARK: Full — flip card
+    // MARK: Full — v2 two-state (collapsed dashboard ↔ expanded full view)
 
     private var fullBody: some View {
-        // A classic 3D card-flip: front and back both rotate around the
-        // Y axis. `.opacity` gates which face is visible during the
-        // middle of the turn. Under Reduce Motion the flip is an
-        // instant swap — no 3D rotation.
-        ZStack {
-            frontFace
-                .opacity(flipped ? 0 : 1)
-                .rotation3DEffect(.degrees(reduceMotion ? 0 : (flipped ? 180 : 0)),
-                                  axis: (x: 0, y: 1, z: 0),
-                                  perspective: 0.55)
-            backFace
-                .opacity(flipped ? 1 : 0)
-                .rotation3DEffect(.degrees(reduceMotion ? 0 : (flipped ? 0 : -180)),
-                                  axis: (x: 0, y: 1, z: 0),
-                                  perspective: 0.55)
-        }
-        .contentShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        .onTapGesture {
-            if reduceMotion {
-                flipped.toggle()
+        Group {
+            if expanded {
+                expandedView
             } else {
-                withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) {
-                    flipped.toggle()
-                }
+                collapsedCard
             }
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilitySummary)
-        .accessibilityAddTraits(.isButton)
+    }
+
+    private func toggleExpanded() {
+        if reduceMotion {
+            expanded.toggle()
+        } else {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.84)) {
+                expanded.toggle()
+            }
+        }
     }
 
     private var accessibilitySummary: String {
-        if flipped {
-            return "5-day forecast for \(snapshot.city). Tap to return to current conditions."
-        }
         var parts: [String] = [
             "Weather, \(snapshot.city), \(snapshot.condition), \(snapshot.tempDisplay)",
             "feels like \(snapshot.feelsLikeDisplay)",
             "wind \(snapshot.windDisplay), visibility \(snapshot.visibilityMi) miles"
         ]
-        if let alert = snapshot.topAlert {
-            parts.append("Active alert: \(alert.event), severity \(alert.severity.label)")
+        if let a = snapshot.heroAlert {
+            parts.append("Active alert: \(a.title), severity \(a.severity.label)")
         }
-        if let lane, !lane.isEmpty {
-            let lanePart = lane.points
-                .map { "\($0.role.lowercased()) \($0.city) \($0.snapshot.tempDisplay) \($0.snapshot.condition)" }
-                .joined(separator: ", ")
-            parts.append("Lane: \(lanePart)")
-            for flag in lane.flags { parts.append(flag.label.lowercased()) }
+        if let segs = snapshot.laneImpact, !segs.isEmpty {
+            parts.append("\(segs.count) loads in this cell")
+            for s in segs {
+                parts.append("\(s.loadId), \(s.route), ETA risk \(s.etaDelayDisplay)")
+            }
         }
-        parts.append("Tap to see the 5-day forecast.")
+        parts.append(expanded ? "Tap the chevron to collapse." : "Tap to expand the full forecast.")
         return parts.joined(separator: ", ")
     }
 
-    // MARK: Front — current conditions + hourly + lane
+    // MARK: Collapsed — dashboard card
 
-    private var frontFace: some View {
+    /// The v2 COLLAPSED state: sky gradient · icon + location + condition
+    /// + temp · H/L + alert pill · lane strip · EXPAND chevron. Tapping
+    /// anywhere expands. Every line is live or hidden — the alert pill
+    /// only renders with a real `heroAlert`, the lane strip only with
+    /// real `laneImpact`.
+    private var collapsedCard: some View {
         ZStack(alignment: .topLeading) {
-            SkyBackdrop(isNight: isNight,
-                        condition: condition,
-                        accent: snapshot.accent.color,
-                        animated: !reduceMotion)
+            SkyStageHero(weatherCode: snapshot.weatherCode, compact: true)
                 .allowsHitTesting(false)
 
-            VStack(alignment: .leading, spacing: Space.s3) {
-                headerRow
-                if let alert = snapshot.topAlert ?? lane?.topAlert {
-                    alertRibbon(alert)
+            VStack(alignment: .leading, spacing: 11) {
+                // top: glyph · location/condition · temp
+                HStack(alignment: .center, spacing: 13) {
+                    WeatherIcons.symbolView(for: snapshot.weatherCode, size: 46)
+                        .shadow(color: WeatherV3.sun.opacity(0.25), radius: 6, y: 4)
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 5) {
+                            WeatherIcons.utility(.pin, size: 12, tint: WeatherV3.nodeOrigin)
+                            Text(snapshot.city.uppercased())
+                                .font(.system(size: 12, weight: .heavy)).tracking(0.6)
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+                        }
+                        Text(collapsedConditionLine)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: Space.s2)
+                    superscriptTemp(snapshot.tempF, size: 42, supSize: 18)
                 }
-                metaChipsRow
-                if !snapshot.hourly.isEmpty {
-                    hourlyBand
-                }
-                if let lane, !lane.isEmpty {
-                    laneStrip(lane)
-                }
-            }
-            .padding(Space.s4)
-            .frame(maxWidth: .infinity, alignment: .leading)
 
-            // Tiny flip-hint chevron in the bottom-right so a first-time
-            // user knows the card is interactive.
-            VStack {
-                Spacer()
-                HStack {
+                // meta: H/L + alert pill
+                HStack(spacing: 8) {
+                    if let today = snapshot.daily.first {
+                        Text("H \(today.highF)° · L \(today.lowF)°")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.92))
+                    }
+                    if let a = snapshot.heroAlert {
+                        alertPill(a)
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                // lane strip — N loads in this cell · LD-xxx · +Nm
+                if let strip = snapshot.collapsedLaneStrip {
+                    HStack(spacing: 9) {
+                        WeatherIcons.utility(.route, size: 18, tint: Color(red: 0.80, green: 0.74, blue: 1.0))
+                        (Text(strip.text + " · ")
+                            .foregroundStyle(Color(red: 0.93, green: 0.92, blue: 0.96))
+                         + Text(strip.loadId)
+                            .foregroundStyle(.white).bold())
+                            .font(.system(size: 12))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        Text(strip.delay)
+                            .font(.system(size: 12, weight: .heavy))
+                            .monospacedDigit()
+                            .foregroundStyle(Color(red: 1.0, green: 0.82, blue: 0.80))
+                    }
+                    .padding(.horizontal, 11).padding(.vertical, 9)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(Color.white.opacity(0.06)))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+                    )
+                }
+
+                // EXPAND chevron
+                HStack(spacing: 6) {
                     Spacer()
-                    Image(systemName: "arrow.2.squarepath")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.55))
-                        .padding(6)
-                        .background(Circle().fill(.white.opacity(0.12)))
-                        .padding(Space.s2)
-                        .allowsHitTesting(false)
+                    Text("EXPAND")
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.6)
+                    WeatherIcons.utility(.chev, size: 13, tint: .white.opacity(0.6))
+                    Spacer()
                 }
+                .foregroundStyle(.white.opacity(0.6))
+                .padding(.top, 1)
             }
+            .padding(.horizontal, 16).padding(.vertical, 15)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        .overlay(cardStroke)
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+        )
         .shadow(color: Color.black.opacity(isNight ? 0.35 : 0.18), radius: 18, y: 10)
+        .contentShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .onTapGesture { toggleExpanded() }
+        .accessibilityAddTraits(.isButton)
+        .transition(.opacity)
     }
 
-    private var headerRow: some View {
-        HStack(alignment: .top, spacing: Space.s3) {
-            glyphBadge(size: 44, glyphSize: 22)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(snapshot.city.uppercased())
-                    .font(EType.micro).tracking(0.6)
-                    .foregroundStyle(contentSecondary)
-                Text(snapshot.condition)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(contentPrimary)
-                    .lineLimit(1)
-                Text("Feels \(snapshot.feelsLikeDisplay)")
-                    .font(EType.caption)
-                    .foregroundStyle(contentSecondary)
-                    .padding(.top, 2)
-            }
-
-            Spacer(minLength: Space.s2)
-
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(snapshot.tempDisplay)
-                    .font(.system(size: 32, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(contentPrimary)
-                    .shadow(color: .black.opacity(isNight ? 0.35 : 0.12), radius: 2, y: 1)
-                if let alert = snapshot.nextAlert {
-                    Text(alert.uppercased())
-                        .font(EType.micro).tracking(0.6)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Capsule().fill(snapshot.accent.color.opacity(0.85)))
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
-                }
-            }
+    /// "Partly cloudy · feels 91°" — drops the feels clause when absent.
+    private var collapsedConditionLine: String {
+        if let f = snapshot.feelsLikeF {
+            return "\(snapshot.condition) · feels \(f)°"
         }
+        return snapshot.condition
     }
 
-    /// Severe-weather ribbon — fill = real CAP severity color.
-    private func alertRibbon(_ alert: WeatherSnapshot.SevereAlert) -> some View {
-        HStack(spacing: Space.s2) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 11, weight: .bold))
-            Text(alert.event.uppercased())
-                .font(EType.micro).tracking(0.6)
-                .lineLimit(1)
-            Spacer(minLength: Space.s1)
-            Text([alert.severity.label, alert.untilDisplay].compactMap { $0 }.joined(separator: " · "))
-                .font(EType.micro).tracking(0.4)
+    /// Collapsed alert pill — gradient danger fill, real severity.
+    private func alertPill(_ alert: WeatherSnapshot.ActiveAlert) -> some View {
+        HStack(spacing: 5) {
+            WeatherIcons.utility(.alert, size: 13, tint: .white)
+            Text(alert.title.uppercased())
+                .font(.system(size: 11, weight: .heavy)).tracking(0.2)
                 .lineLimit(1)
         }
         .foregroundStyle(.white)
-        .padding(.horizontal, Space.s3).padding(.vertical, 6)
+        .padding(.horizontal, 10).padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                .fill(alert.severity.color.opacity(0.88))
+            Capsule().fill(
+                LinearGradient(colors: [alert.severity.color.opacity(0.95),
+                                        alert.severity.color.opacity(0.66)],
+                               startPoint: .leading, endPoint: .trailing)
+            )
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.30), lineWidth: 0.5)
-        )
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
     }
 
-    /// Glass chips: wind (+gust), visibility, humidity, precip chance.
-    /// Chips whose live value crosses a freight threshold pick up the
-    /// hazard tint so the row reads at a glance from the driver's seat.
-    private var metaChipsRow: some View {
-        HStack(spacing: Space.s2) {
-            metaChip(icon: "wind",
-                     value: snapshot.windDisplay,
-                     hazard: snapshot.windHazard)
-            metaChip(icon: "eye",
-                     value: "\(snapshot.visibilityMi) mi",
-                     hazard: snapshot.visibilityHazard)
-            metaChip(icon: "humidity",
-                     value: snapshot.humidityDisplay,
-                     hazard: false)
-            if let p = snapshot.precipChancePct {
-                metaChip(icon: "drop.fill",
-                         value: "\(p)%",
-                         hazard: false)
-            }
-            Spacer(minLength: 0)
+    // MARK: Expanded — full view
+
+    /// The v2 EXPANDED state: hero · gov ALERT bar · 4 metrics · 8h
+    /// hourly (peak highlighted) · LANE IMPACT panel · 7-day chips ·
+    /// "Conditions · Tomorrow.io · weatherCode NNNN · updated Nm ago".
+    private var expandedView: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            heroBlock
+            // §D.1.5 — exactly one iridescent hairline per screen, set
+            // between the hero stage and the operational Lane Impact.
+            hairline.padding(.horizontal, 16)
+            laneImpactPanel
+            dayChips
+            sourceLine
         }
+        .transition(.opacity)
     }
 
-    private func metaChip(icon: String, value: String, hazard: Bool) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 9, weight: .bold))
-            Text(value)
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-        }
-        .foregroundStyle(hazard ? Color.white : Color.white.opacity(0.9))
-        .padding(.horizontal, 8).padding(.vertical, 4)
-        .background(
-            Capsule().fill(hazard ? Brand.warning.opacity(0.55) : Color.white.opacity(0.14))
-        )
-        .overlay(
-            Capsule().strokeBorder(Color.white.opacity(hazard ? 0.45 : 0.18), lineWidth: 0.5)
-        )
-    }
-
-    /// Next-12-hours strip. Horizontal scroll, fixed-width cells —
-    /// hour label, condition glyph, temp, precip% (≥ 10% only).
-    private var hourlyBand: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 2) {
-                ForEach(snapshot.hourly) { hour in
-                    VStack(spacing: 3) {
-                        Text(hour.hourLabel)
-                            .font(.system(size: 9, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.7))
-                        Image(systemName: hour.symbol)
-                            .symbolRenderingMode(.hierarchical)
-                            .font(.system(size: 13))
-                            .foregroundStyle(.white)
-                            .frame(height: 16)
-                        Text("\(hour.tempF)°")
-                            .font(.system(size: 12, weight: .heavy, design: .rounded))
-                            .monospacedDigit()
-                            .foregroundStyle(.white)
-                        if let precip = hour.precipDisplay {
-                            Text(precip)
-                                .font(.system(size: 8, weight: .bold, design: .rounded))
-                                .foregroundStyle(Color(red: 0.62, green: 0.85, blue: 1.0))
-                        } else {
-                            // Keep the row height stable so a dry hour
-                            // doesn't shift the strip's baseline.
-                            Text(" ")
-                                .font(.system(size: 8, weight: .bold, design: .rounded))
-                        }
-                    }
-                    .frame(width: 42)
-                }
-            }
-            .padding(.vertical, 6)
-            .padding(.horizontal, 4)
-        }
-        .background(
-            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                .fill(Color.white.opacity(0.10))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.14), lineWidth: 0.5)
-        )
-    }
-
-    /// Active-load lane: pickup → delivery live conditions + freight
-    /// flags. Everything in this strip is a live HERE reading — the
-    /// strip simply doesn't render between loads.
-    private func laneStrip(_ lane: LaneWeather) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(spacing: Space.s2) {
-                Image(systemName: "point.topleft.down.to.point.bottomright.curvepath.fill")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.8))
-                Text("ACTIVE LOAD LANE")
-                    .font(EType.micro).tracking(0.8)
-                    .foregroundStyle(.white.opacity(0.8))
-                Spacer(minLength: 0)
-            }
-
-            HStack(spacing: Space.s2) {
-                if let o = lane.origin {
-                    lanePointCell(o)
-                }
-                if lane.origin != nil && lane.destination != nil {
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.65))
-                }
-                if let d = lane.destination {
-                    lanePointCell(d)
-                }
-                Spacer(minLength: 0)
-            }
-
-            if !lane.flags.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(lane.flags) { flag in
-                        HStack(spacing: 5) {
-                            Image(systemName: flag.icon)
-                                .font(.system(size: 9, weight: .bold))
-                            Text(flag.label)
-                                .font(EType.micro).tracking(0.5)
-                                .lineLimit(1)
-                        }
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Capsule().fill(flag.accent.color.opacity(0.80)))
-                        .overlay(Capsule().strokeBorder(Color.white.opacity(0.30), lineWidth: 0.5))
-                    }
-                }
-            }
-        }
-        .padding(Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                .fill(Color.black.opacity(0.18))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.5)
-        )
-    }
-
-    private func lanePointCell(_ point: LaneWeather.Point) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(point.role)
-                .font(.system(size: 8, weight: .heavy)).tracking(0.8)
-                .foregroundStyle(.white.opacity(0.65))
-            Text(point.city)
-                .font(.system(size: 12, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-            HStack(spacing: 4) {
-                Image(systemName: point.snapshot.symbol)
-                    .symbolRenderingMode(.hierarchical)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white)
-                Text(point.snapshot.tempDisplay)
-                    .font(.system(size: 12, weight: .heavy, design: .rounded))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-                Text(point.snapshot.windDisplay)
-                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.7))
-            }
-        }
-    }
-
-    // MARK: Back — 5-day forecast + alert detail
-
-    private var backFace: some View {
-        // The back shares the front's atmospheric backdrop so the card
-        // feels like the same object turning — only the foreground
-        // content swaps.
+    /// The v3 sky-stage hero — the bespoke `SkyStageHero` (aurora ribbon
+    /// + cloud forms + route motif) BEHIND the readout: location/condition
+    /// + superscript-degree temp/feels/H-L + hero glyph, gov alert bar,
+    /// 4 metric tiles, the hourly ribbon. The stage mood is driven by the
+    /// live `weatherCode`.
+    private var heroBlock: some View {
         ZStack(alignment: .topLeading) {
-            SkyBackdrop(isNight: isNight,
-                        condition: condition,
-                        accent: snapshot.accent.color,
-                        animated: !reduceMotion)
-                .allowsHitTesting(false)
-            // Dim the backdrop slightly so the rows of white text always
-            // clear the contrast bar against a noisy day sky.
-            Color.black.opacity(isNight ? 0.15 : 0.22)
+            SkyStageHero(weatherCode: snapshot.weatherCode)
                 .allowsHitTesting(false)
 
-            VStack(alignment: .leading, spacing: Space.s2) {
-                HStack(alignment: .center, spacing: Space.s2) {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.85))
-                    Text("5-day forecast")
-                        .font(EType.micro).tracking(0.8)
-                        .foregroundStyle(.white.opacity(0.85))
-                    Spacer()
-                    Text(snapshot.city)
-                        .font(EType.micro).tracking(0.4)
-                        .foregroundStyle(.white.opacity(0.65))
-                        .lineLimit(1)
-                }
-
-                // If the upstream API didn't return daily data, show a
-                // neutral fallback rather than an empty back face.
-                if snapshot.daily.isEmpty {
-                    Text("Forecast unavailable")
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .padding(.top, 6)
-                    if let alert = snapshot.nextAlert {
-                        Text(alert)
-                            .font(EType.caption)
-                            .foregroundStyle(.white.opacity(0.7))
-                    }
-                } else {
-                    VStack(spacing: 4) {
-                        ForEach(snapshot.daily.prefix(5)) { day in
-                            forecastRow(day: day)
+            VStack(alignment: .leading, spacing: 0) {
+                // hero top: text column + collapse chevron + hero glyph
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            WeatherIcons.utility(.pin, size: 13, tint: WeatherV3.nodeOrigin)
+                            Text(snapshot.city.uppercased())
+                                .font(.system(size: 13, weight: .heavy)).tracking(0.6)
+                                .foregroundStyle(.white)
+                        }
+                        Text(snapshot.condition)
+                            .font(.system(size: 14))
+                            .foregroundStyle(.white.opacity(0.84))
+                        superscriptTemp(snapshot.tempF, size: 60, supSize: 22)
+                            .padding(.top, 6)
+                        Text("Feels like \(snapshot.feelsLikeDisplay)")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .padding(.top, 2)
+                        if let today = snapshot.daily.first {
+                            Text("Today · H \(today.highF)° · L \(today.lowF)°")
+                                .font(.system(size: 12, weight: .semibold))
+                                .monospacedDigit()
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 11).padding(.vertical, 5)
+                                .background(Capsule().fill(Color.white.opacity(0.14)))
+                                .overlay(Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+                                .padding(.top, 10)
                         }
                     }
+                    Spacer(minLength: Space.s2)
+                    VStack(spacing: 10) {
+                        // collapse affordance (chevron up)
+                        Button(action: toggleExpanded) {
+                            WeatherIcons.utility(.chev, size: 16, tint: .white.opacity(0.85))
+                                .rotationEffect(.degrees(180))
+                                .padding(7)
+                                .background(Circle().fill(Color.white.opacity(0.14)))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Collapse weather")
+                        WeatherIcons.symbolView(for: snapshot.weatherCode, size: 64)
+                            .shadow(color: WeatherV3.sun.opacity(0.25), radius: 8, y: 6)
+                    }
                 }
 
-                // Full alert detail — every active bulletin with its
-                // CAP severity, sorted most-severe first upstream.
-                let allAlerts = snapshot.alerts.isEmpty ? (lane?.topAlert.map { [$0] } ?? []) : snapshot.alerts
-                if !allAlerts.isEmpty {
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(allAlerts.prefix(3)) { alert in
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(alert.severity.color)
-                                    .frame(width: 6, height: 6)
-                                Text(alert.event)
-                                    .font(.system(size: 11, weight: .bold, design: .rounded))
-                                    .foregroundStyle(.white)
-                                    .lineLimit(1)
-                                Spacer(minLength: 4)
-                                Text([alert.severity.label, alert.untilDisplay].compactMap { $0 }.joined(separator: " · "))
-                                    .font(.system(size: 9, weight: .semibold, design: .rounded))
-                                    .foregroundStyle(.white.opacity(0.75))
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
-                    .padding(.top, 4)
+                // gov ALERT bar
+                if let a = snapshot.heroAlert {
+                    alertBar(a).padding(.top, 13)
                 }
-                Spacer(minLength: 0)
+
+                // 4 metrics
+                metricsGrid.padding(.top, 13)
+
+                // hourly ribbon — the v3 temp polyline over a precip area
+                if snapshot.hourly.count >= 2 {
+                    HourlyRibbon(hours: snapshot.hourly, peakIndex: snapshot.peakHourIndex)
+                        .padding(.top, 14)
+                        .padding(.horizontal, -16)
+                }
             }
-            .padding(Space.s4)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-        .overlay(cardStroke)
-        .shadow(color: Color.black.opacity(isNight ? 0.35 : 0.18), radius: 18, y: 10)
+        .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.4), radius: 18, y: 10)
     }
 
+    /// The §D.1.5 superscript-degree readout — the big temp with a small
+    /// raised "°" and `monospacedDigit`. White on the sky stage.
+    private func superscriptTemp(_ value: Int, size: CGFloat, supSize: CGFloat) -> some View {
+        HStack(alignment: .top, spacing: 1) {
+            Text("\(value)")
+                .font(.system(size: size, weight: .ultraLight))
+                .monospacedDigit()
+            Text("°")
+                .font(.system(size: supSize, weight: .light))
+                .padding(.top, size * 0.12)
+        }
+        .foregroundStyle(.white)
+    }
+
+    /// Government ALERT bar — gradient danger fill, real CAP severity +
+    /// expiry. Only shown when `heroAlert` is non-nil (honest).
+    private func alertBar(_ alert: WeatherSnapshot.ActiveAlert) -> some View {
+        HStack(spacing: 9) {
+            WeatherIcons.utility(.alert, size: 18, tint: .white)
+            Text(alert.title)
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+            Spacer(minLength: Space.s1)
+            Text([alert.severity.label, alert.untilDisplay].compactMap { $0 }.joined(separator: " · "))
+                .font(.system(size: 11, weight: .heavy)).tracking(0.3)
+                .foregroundStyle(.white.opacity(0.92))
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(LinearGradient(colors: [alert.severity.color.opacity(0.95),
+                                              alert.severity.color.opacity(0.6)],
+                                     startPoint: .leading, endPoint: .trailing))
+        )
+        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+            .strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+    }
+
+    /// 4 glass metric tiles: wind · visibility · humidity · precip.
+    /// Each renders the v2 utility glyph + live value (em-dash if absent)
+    /// + uppercase key. Wind/visibility pick up a hazard tint when their
+    /// live value crosses a freight threshold.
+    private var metricsGrid: some View {
+        HStack(spacing: 8) {
+            metricTile(.wind,   value: snapshot.windDisplay,           key: "WIND",       hazard: snapshot.windHazard)
+            metricTile(.eye,    value: snapshot.visibilityDisplay,     key: "VISIBILITY", hazard: snapshot.visibilityHazard)
+            metricTile(.humid,  value: snapshot.humidityDisplay,       key: "HUMIDITY",   hazard: false)
+            metricTile(.precip, value: snapshot.precipChanceDisplay,   key: "PRECIP",     hazard: false)
+        }
+    }
+
+    private func metricTile(_ glyph: WeatherIcons.Utility, value: String, key: String, hazard: Bool) -> some View {
+        VStack(spacing: 3) {
+            WeatherIcons.utility(glyph, size: 17, tint: Color(red: 0.81, green: 0.88, blue: 1.0))
+            Text(value)
+                .font(.system(size: 13, weight: .heavy))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(key)
+                .font(.system(size: 9.5)).tracking(0.3)
+                .foregroundStyle(.white.opacity(0.7))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 9).padding(.horizontal, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(hazard ? Brand.warning.opacity(0.30) : Color.white.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(Color.white.opacity(hazard ? 0.40 : 0.18), lineWidth: 0.5)
+        )
+    }
+
+    /// The single iridescent hairline (§D.1.5) — the v3 aurora stops
+    /// (blue→magenta→pink), fading at both ends.
+    private var hairline: some View {
+        Rectangle()
+            .fill(LinearGradient(
+                colors: [.clear, WeatherV3.auroraA.opacity(0.7), WeatherV3.auroraB.opacity(0.95),
+                         WeatherV3.auroraC.opacity(0.7), .clear],
+                startPoint: .leading, endPoint: .trailing))
+            .frame(height: 1)
+    }
+
+    // MARK: Expanded — LANE IMPACT panel
+
+    /// The differentiator: per-load route-cell diagram (weather drawn
+    /// crossing the actual lane) + the §3 footer + the mode-specific
+    /// driver tiles + the ESang recommendation. Renders ONLY when
+    /// `laneImpact` has real segments — collapses entirely between loads
+    /// or when the route tier is absent.
     @ViewBuilder
-    private func forecastRow(day: WeatherSnapshot.DailyForecast) -> some View {
-        HStack(spacing: Space.s2) {
-            Text(day.weekdayLabel)
-                .font(.system(size: 13, weight: .heavy, design: .rounded))
-                .foregroundStyle(.white)
-                .frame(width: 48, alignment: .leading)
-            Image(systemName: day.symbol)
-                .symbolRenderingMode(.hierarchical)
-                .font(.system(size: 15))
-                .foregroundStyle(.white)
-                .frame(width: 22)
-            // Precip chip. Hidden when probability is too low to be
-            // worth showing so the row stays clean on clear days.
-            if let precip = day.precipDisplay {
-                HStack(spacing: 2) {
-                    Image(systemName: "drop.fill")
-                        .font(.system(size: 8, weight: .bold))
-                    Text(precip)
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+    private var laneImpactPanel: some View {
+        if let segs = snapshot.laneImpact, !segs.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                // header: route glyph · LANE IMPACT · N-loads pill
+                HStack(spacing: 8) {
+                    WeatherIcons.utility(.route, size: 15, tint: WeatherV3.nodeOrigin)
+                    Text(laneHeaderTitle(segs))
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(.white.opacity(0.7))
+                    Spacer()
+                    Text("\(segs.count) LOAD\(segs.count == 1 ? "" : "S") IN THIS CELL")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9).padding(.vertical, 3)
+                        .background(Capsule().fill(WeatherV3.danger.opacity(0.18)))
+                        .overlay(Capsule().strokeBorder(WeatherV3.danger.opacity(0.46), lineWidth: 1))
                 }
-                .foregroundStyle(.white.opacity(0.9))
-                .padding(.horizontal, 6).padding(.vertical, 2)
-                .background(Capsule().fill(Color.white.opacity(0.14)))
+
+                ForEach(Array(segs.enumerated()), id: \.element.id) { idx, seg in
+                    if idx > 0 {
+                        Rectangle().fill(Color.white.opacity(0.07)).frame(height: 1)
+                            .padding(.vertical, 13)
+                    }
+                    laneSegment(seg).padding(.top, idx == 0 ? 13 : 0)
+                }
+            }
+            .padding(15)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(palette.bgCard)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(modeAccent(segs.first?.mode).opacity(0.35), lineWidth: 1)
+            )
+        }
+    }
+
+    /// "LANE IMPACT" (truck/default) · "CORRIDOR IMPACT" (rail) ·
+    /// "VOYAGE + BERTH IMPACT" (vessel) — from the tri-modal HTML headers.
+    private func laneHeaderTitle(_ segs: [WeatherSnapshot.LaneImpactSegment]) -> String {
+        switch segs.first?.mode {
+        case .rail:   return "CORRIDOR IMPACT"
+        case .vessel: return "VOYAGE + BERTH IMPACT"
+        default:      return "LANE IMPACT"
+        }
+    }
+
+    /// One full segment block: the route-cell diagram, the footer
+    /// (mode chip · id/route/pickup · headline), the mode-specific driver
+    /// tiles, and the ESang recommendation.
+    @ViewBuilder
+    private func laneSegment(_ seg: WeatherSnapshot.LaneImpactSegment) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // route-cell diagram + footer, inside a rounded "routebox"
+            VStack(spacing: 0) {
+                RouteCellDiagram(segment: seg)
+                routeFooter(seg)
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(LinearGradient(
+                        colors: [Color(red: 0x17 / 255, green: 0x1A / 255, blue: 0x24 / 255),
+                                 Color(red: 0x12 / 255, green: 0x14 / 255, blue: 0x1C / 255)],
+                        startPoint: .top, endPoint: .bottom)))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+
+            // §3 drivers — the 3 mode-specific metric tiles
+            if !seg.drivers.isEmpty {
+                driverTiles(seg).padding(.top, 11)
+            }
+
+            // §3 recommendation — ESang orb line
+            if let rec = seg.recommendation {
+                esangRecommendation(rec).padding(.top, 12)
+            } else if let suggestion = seg.esangSuggestion {
+                esangFlat(suggestion).padding(.top, 12)
+            }
+        }
+    }
+
+    /// The route-box footer: mode chip · id + route/pickup · headline.
+    private func routeFooter(_ seg: WeatherSnapshot.LaneImpactSegment) -> some View {
+        HStack(alignment: .center, spacing: 11) {
+            WeatherIcons.utility(modeGlyph(seg.mode), size: 18,
+                                 tint: modeAccent(seg.mode).opacity(0.95))
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(modeAccent(seg.mode).opacity(0.16)))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(modeAccent(seg.mode).opacity(0.45), lineWidth: 1))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(seg.loadId)
+                    .font(.system(size: 12, weight: .heavy))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                Text(footerSubtitle(seg))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.white.opacity(0.66))
+                    .lineLimit(1)
             }
             Spacer(minLength: Space.s2)
-            // Hi/lo pair — hi bright, lo cooler so a quick glance reads
-            // "warm→cool" without parsing labels.
-            HStack(spacing: 8) {
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(seg.headlineDisplay)
+                    .font(.system(size: 15, weight: .heavy))
+                    .monospacedDigit()
+                    .foregroundStyle(seg.riskTier.color)
+                    .lineLimit(1)
+                Text(riskTierLabel(seg))
+                    .font(.system(size: 9.5)).tracking(0.2)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+        }
+        .padding(.horizontal, 13).padding(.vertical, 11)
+    }
+
+    /// "I-35 · pickup 3:30 PM" / "BNSF consist · Kansas City" — the route
+    /// + pickup line, honest dash-joined and only the parts we have.
+    private func footerSubtitle(_ seg: WeatherSnapshot.LaneImpactSegment) -> String {
+        let route = seg.route.trimmingCharacters(in: .whitespaces)
+        let parts = [route.isEmpty ? nil : route, seg.pickupDisplay].compactMap { $0 }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    /// The footer risk label — "ETA RISK" (truck) · "DWELL ADD" (rail) ·
+    /// "BERTH WINDOW" (vessel). When the headline already carries a window
+    /// (vessel "Crane hold …") the label is the descriptor only.
+    private func riskTierLabel(_ seg: WeatherSnapshot.LaneImpactSegment) -> String {
+        switch seg.mode {
+        case .truck:  return "ETA RISK"
+        case .rail:   return "DWELL ADD"
+        case .vessel: return "BERTH WINDOW"
+        }
+    }
+
+    /// The §3 `drivers` tiles — 3 equal glass cells, each a mode-specific
+    /// worst-case field. The glyph is chosen from the field name so the
+    /// shipped UI stays on the in-house glyph set (no SF Symbols).
+    private func driverTiles(_ seg: WeatherSnapshot.LaneImpactSegment) -> some View {
+        HStack(spacing: 8) {
+            ForEach(seg.drivers) { d in
+                VStack(spacing: 3) {
+                    WeatherIcons.utility(driverGlyph(d.field), size: 17,
+                                         tint: driverTint(d.field))
+                    Text(d.value)
+                        .font(.system(size: 13, weight: .heavy))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Text(d.field.uppercased())
+                        .font(.system(size: 9)).tracking(0.2)
+                        .foregroundStyle(.white.opacity(0.64))
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9).padding(.horizontal, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(Color.white.opacity(0.09)))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.5))
+            }
+        }
+    }
+
+    /// Map a §3 driver field name → an in-house glyph. Falls back to the
+    /// precip glyph for anything unrecognised (never an SF Symbol).
+    private func driverGlyph(_ field: String) -> WeatherIcons.Utility {
+        let f = field.lowercased()
+        if f.contains("wave") || f.contains("swell")  { return .wave }
+        if f.contains("wind") || f.contains("gust") || f.contains("crosswind") { return .wind }
+        if f.contains("vis")                          { return .eye }
+        if f.contains("stream") || f.contains("flow") || f.contains("flood") { return .precip }
+        if f.contains("precip") || f.contains("rain") { return .precip }
+        return .precip
+    }
+
+    private func driverTint(_ field: String) -> Color {
+        let f = field.lowercased()
+        if f.contains("precip") || f.contains("wave") { return .white }
+        return WeatherIcons.hatch
+    }
+
+    /// The §3 recommendation — ESang conic orb + framed text/action/
+    /// protects. `action` is highlighted; the framing text + protected
+    /// outcome read as one sentence. Verbatim from the v3 `.esang`.
+    private func esangRecommendation(_ rec: WeatherSnapshot.Recommendation) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            esangOrb
+            esangText(rec).font(.system(size: 13))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 11)
+        .background(esangBackground)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .strokeBorder(WeatherV3.auroraB.opacity(0.34), lineWidth: 1))
+    }
+
+    /// Compose "ESang — {text}. {action} — protects {protects}." with the
+    /// action in the brand highlight. Each clause is omitted when empty.
+    private func esangText(_ rec: WeatherSnapshot.Recommendation) -> Text {
+        var t = Text("ESang").bold().foregroundColor(.white)
+        let framing = rec.text.trimmingCharacters(in: .whitespaces)
+        if !framing.isEmpty {
+            t = t + Text(" — \(framing). ").foregroundColor(Color(red: 0.93, green: 0.92, blue: 0.96))
+        } else {
+            t = t + Text(" — ").foregroundColor(Color(red: 0.93, green: 0.92, blue: 0.96))
+        }
+        t = t + Text(rec.action).bold().foregroundColor(Color(red: 0.78, green: 0.70, blue: 1.0))
+        let protects = rec.protects.trimmingCharacters(in: .whitespaces)
+        if !protects.isEmpty {
+            t = t + Text(" — protects \(protects).").foregroundColor(Color(red: 0.93, green: 0.92, blue: 0.96))
+        }
+        return t
+    }
+
+    /// Legacy flat ESang line (older payloads with only `esangSuggestion`).
+    private func esangFlat(_ suggestion: String) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            esangOrb
+            (Text("ESang").bold().foregroundStyle(.white)
+             + Text(" — \(suggestion)").foregroundStyle(Color(red: 0.93, green: 0.92, blue: 0.96)))
+                .font(.system(size: 13))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 11)
+        .background(esangBackground)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .strokeBorder(WeatherV3.auroraB.opacity(0.34), lineWidth: 1))
+    }
+
+    /// The ESang conic-gradient orb brand mark (§D.1.5).
+    private var esangOrb: some View {
+        Circle()
+            .fill(AngularGradient(
+                gradient: Gradient(colors: [WeatherV3.auroraA, WeatherV3.auroraB,
+                                            WeatherV3.auroraC, WeatherV3.auroraA]),
+                center: .center, angle: .degrees(200)))
+            .frame(width: 26, height: 26)
+            .shadow(color: WeatherV3.auroraB.opacity(0.6), radius: 8)
+    }
+
+    private var esangBackground: some View {
+        RoundedRectangle(cornerRadius: 15, style: .continuous)
+            .fill(LinearGradient(colors: [WeatherV3.auroraA.opacity(0.15), WeatherV3.auroraB.opacity(0.12)],
+                                 startPoint: .leading, endPoint: .trailing))
+    }
+
+    private func modeGlyph(_ mode: WeatherSnapshot.LaneMode) -> WeatherIcons.Utility {
+        switch mode {
+        case .truck:  return .truck
+        case .rail:   return .rail
+        case .vessel: return .vessel
+        }
+    }
+
+    /// The v3 mode accent (truck = aurora indigo · rail = slate ·
+    /// vessel = cyan) — the accent-only mode tint.
+    private func modeAccent(_ mode: WeatherSnapshot.LaneMode?) -> Color {
+        switch mode {
+        case .rail:   return WeatherV3.rail
+        case .vessel: return WeatherV3.vessel
+        default:      return WeatherV3.truck
+        }
+    }
+
+    // MARK: Expanded — 7-day chips
+
+    /// 7-day chip row — each chip = weekday · v3 glyph · hi→lo RANGE BAR ·
+    /// hi/lo. The first day is the selected chip (magenta-tinted). The bar
+    /// is sized to the day's temperatureMin/Max within the week's overall
+    /// range (§D.1.4). Collapses when the upstream returned no daily data.
+    @ViewBuilder
+    private var dayChips: some View {
+        if !snapshot.daily.isEmpty {
+            let week = Array(snapshot.daily.prefix(7))
+            let weekLow = week.map(\.lowF).min() ?? 0
+            let weekHigh = week.map(\.highF).max() ?? 1
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(Array(week.enumerated()), id: \.element.id) { idx, day in
+                        dayChip(day, isToday: idx == 0, weekLow: weekLow, weekHigh: weekHigh)
+                    }
+                }
+            }
+        }
+    }
+
+    /// One day chip — weekday · v3 glyph · hi→lo range bar · hi/lo. The
+    /// "today" chip carries the magenta-tinted selected style.
+    private func dayChip(_ day: WeatherSnapshot.DailyForecast,
+                         isToday: Bool, weekLow: Int, weekHigh: Int) -> some View {
+        let fill: AnyShapeStyle = isToday
+            ? AnyShapeStyle(LinearGradient(
+                colors: [WeatherV3.auroraB.opacity(0.16), palette.bgCard],
+                startPoint: .top, endPoint: .bottom))
+            : AnyShapeStyle(palette.bgCard)
+        let stroke = isToday ? WeatherV3.auroraB.opacity(0.55) : Color.white.opacity(0.07)
+        return VStack(spacing: 6) {
+            Text(day.weekdayLabel == "Today" ? "Today" : day.weekdayLabel)
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(.white.opacity(0.84))
+            WeatherIcons.symbolView(for: dayCode(day), size: 20)
+                .padding(.vertical, 1)
+            DayRangeBar(lowF: day.lowF, highF: day.highF,
+                        weekLow: weekLow, weekHigh: weekHigh)
+                .padding(.horizontal, 12)
+            HStack(spacing: 4) {
                 Text(day.highDisplay)
-                    .font(.system(size: 14, weight: .heavy, design: .rounded))
+                    .font(.system(size: 11, weight: .heavy))
                     .monospacedDigit()
                     .foregroundStyle(.white)
                 Text(day.lowDisplay)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: 11))
                     .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(.white.opacity(0.5))
             }
         }
-        .padding(.vertical, 2)
+        .frame(width: 62)
+        .padding(.vertical, 11)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(fill))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(stroke, lineWidth: isToday ? 1 : 0.5)
+        )
+    }
+
+    /// A day chip's weatherCode — uses the day's own code if the upstream
+    /// supplied one (Tomorrow.io path), else infers from its SF symbol.
+    private func dayCode(_ day: WeatherSnapshot.DailyForecast) -> Int {
+        WeatherIcons.code(forSymbol: day.symbol)
+    }
+
+    // MARK: Expanded — source line
+
+    /// "Conditions · Tomorrow.io · weatherCode NNNN · updated Nm ago".
+    /// Built from `snapshot.attributionLine` so it names the REAL data
+    /// source (Tomorrow.io only when Tomorrow.io produced the data) and
+    /// omits the weatherCode/updated clauses when their data is absent.
+    private var sourceLine: some View {
+        Text(snapshot.attributionLine)
+            .font(.system(size: 11))
+            .foregroundStyle(.white.opacity(0.42))
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.top, 1)
     }
 
     // MARK: Compact — one-row glance (half-tier widget slots)
@@ -632,17 +906,6 @@ struct WeatherCard: View {
         Color.white.opacity(0.75)
     }
 
-    private var cardStroke: some View {
-        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-            .strokeBorder(
-                LinearGradient(
-                    colors: [Color.white.opacity(0.35), Color.white.opacity(0.06)],
-                    startPoint: .topLeading, endPoint: .bottomTrailing
-                ),
-                lineWidth: 0.75
-            )
-    }
-
     private func glyphBadge(size: CGFloat, glyphSize: CGFloat) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
@@ -655,10 +918,8 @@ struct WeatherCard: View {
                     RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(Color.white.opacity(0.35), lineWidth: 0.5)
                 )
-            Image(systemName: snapshot.symbol)
-                .font(.system(size: glyphSize, weight: .regular))
-                .foregroundStyle(.white)
-                .symbolRenderingMode(.hierarchical)
+            // Bespoke vector glyph (no SF Symbol on any weather surface).
+            WeatherIcons.symbolView(for: snapshot.weatherCode, size: glyphSize)
                 .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
         }
         .frame(width: size, height: size)
@@ -1170,89 +1431,99 @@ private struct SeededRNG {
 
 // MARK: - Previews
 
-#Preview("Night · Clear · Lane") {
-    let dest = WeatherSnapshot(
-        city: "Dallas, TX", tempF: 58, windMph: 7, visibilityMi: 10,
-        condition: "Clear", symbol: "moon.stars.fill",
-        nextAlert: nil, accent: .calm
+/// The Austin example from the v2 HTML, end to end — Tomorrow.io source,
+/// weatherCode 1101, a flood-watch alert, the 8h band with a 4 PM storm
+/// peak, and the LD-260615 lane-impact segment + ESang suggestion.
+private func austinPreviewSnapshot() -> WeatherSnapshot {
+    let hourCodes = [1101, 4000, 4001, 4001, 8000, 8000, 4001, 4201]
+    let hourTemps = [88, 89, 90, 89, 87, 85, 84, 83]
+    let hourPrecip = [18, 20, 30, 39, 50, 44, 40, 61]
+    var snap = WeatherSnapshot(
+        city: "Austin, TX",
+        tempF: 88,
+        windMph: 5,
+        visibilityMi: 10,
+        condition: "Partly cloudy",
+        symbol: "cloud.sun.fill",
+        nextAlert: nil,
+        accent: .watch,
+        daily: [
+            .init(date: Date(),                                    weekdayLabel: "Today", highF: 91, lowF: 74, symbol: "cloud.bolt.rain", condition: "Storms", precipChance: 0.5),
+            .init(date: Date().addingTimeInterval(86400),          weekdayLabel: "Mon",   highF: 77, lowF: 74, symbol: "cloud.bolt.rain", condition: "Storms", precipChance: 0.6),
+            .init(date: Date().addingTimeInterval(86400 * 2),      weekdayLabel: "Tue",   highF: 86, lowF: 74, symbol: "cloud.rain.fill", condition: "Rain",   precipChance: 0.4),
+            .init(date: Date().addingTimeInterval(86400 * 3),      weekdayLabel: "Wed",   highF: 94, lowF: 74, symbol: "cloud.rain.fill", condition: "Rain",   precipChance: 0.3),
+            .init(date: Date().addingTimeInterval(86400 * 4),      weekdayLabel: "Thu",   highF: 97, lowF: 79, symbol: "cloud.bolt.rain", condition: "Storms", precipChance: 0.5),
+            .init(date: Date().addingTimeInterval(86400 * 5),      weekdayLabel: "Fri",   highF: 92, lowF: 78, symbol: "cloud.sun.fill",  condition: "Partly", precipChance: nil),
+        ],
+        feelsLikeF: 99,
+        humidityPct: 79,
+        windGustMph: 9,
+        precipChancePct: 18,
+        hourly: (0..<8).map { i in
+            .init(date: Date().addingTimeInterval(Double(i) * 3600),
+                  tempF: hourTemps[i], symbol: "cloud.sun.fill",
+                  precipChancePct: hourPrecip[i], windMph: 5, weatherCode: hourCodes[i])
+        }
     )
-    let origin = WeatherSnapshot(
-        city: "Laredo, TX", tempF: 64, windMph: 27, visibilityMi: 9,
-        condition: "Windy", symbol: "wind",
-        nextAlert: nil, accent: .watch, windGustMph: 42
-    )
-    return WeatherCard(
-        snapshot: WeatherSnapshot(
-            city: "Dallas, TX",
-            tempF: 58,
-            windMph: 7,
-            visibilityMi: 10,
-            condition: "Clear",
-            symbol: "moon.stars.fill",
-            nextAlert: "tonight · low 48°",
-            accent: .calm,
-            feelsLikeF: 55,
-            humidityPct: 48,
-            hourly: (0..<12).map { i in
-                .init(date: Date().addingTimeInterval(Double(i) * 3600),
-                      tempF: 58 - i, symbol: "moon.stars.fill",
-                      precipChancePct: i > 8 ? 20 : 0, windMph: 7)
-            }
-        ),
-        lane: LaneWeather(
-            origin: .init(role: "PICKUP", city: "Laredo, TX", snapshot: origin),
-            destination: .init(role: "DELIVERY", city: "Dallas, TX", snapshot: dest),
-            isTempControlled: true
-        )
-    )
-    .padding()
-    .background(Theme.dark.bgPage)
+    snap.weatherCode = 1101
+    snap.dataSource = .tomorrowIO
+    snap.uvIndex = 7
+    snap.observedAt = Date().addingTimeInterval(-120)
+    snap.alert = .init(title: "Flood watch", severity: .severe, until: Date().addingTimeInterval(6 * 3600))
+    snap.laneImpact = [
+        .init(loadId: "LD-260615", mode: .truck,
+              riskTier: .severe,
+              headline: "+40 min ETA risk",
+              peakLeg: .init(label: "I-35", time: "4 PM"),
+              drivers: [
+                .init(field: "PRECIP", value: "0.4 in/h"),
+                .init(field: "CROSSWIND", value: "31 mph"),
+                .init(field: "VISIBILITY", value: "2.0 mi")
+              ],
+              recommendation: .init(
+                text: "the cell crosses the I-35 leg head-on at 4 PM",
+                action: "Move pickup to 1:30 PM",
+                protects: "the Dallas appointment"),
+              computedAt: Date().addingTimeInterval(-120),
+              route: "Austin → Dallas · I-35",
+              pickupTime: Date().addingTimeInterval(2 * 3600),
+              etaDelayMin: 40,
+              esangSuggestion: nil)
+    ]
+    return snap
+}
+
+#Preview("v2 Collapsed · dashboard card") {
+    WeatherCard(snapshot: austinPreviewSnapshot())
+        .padding()
+        .background(Color(red: 0.08, green: 0.09, blue: 0.12))
+        .environment(\.palette, Theme.dark)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("v2 Expanded · full view") {
+    ScrollView {
+        WeatherCard(snapshot: austinPreviewSnapshot(), startExpanded: true)
+            .padding()
+    }
+    .background(Color(red: 0.04, green: 0.04, blue: 0.06))
     .environment(\.palette, Theme.dark)
     .preferredColorScheme(.dark)
 }
 
-#Preview("Day · Rain · Alert") {
-    WeatherCard(snapshot: WeatherSnapshot(
-        city: "Meridian, MS",
-        tempF: 68,
-        windMph: 14,
-        visibilityMi: 4,
-        condition: "Heavy rain",
-        symbol: "cloud.heavyrain.fill",
-        nextAlert: "3h · storms ease",
-        accent: .watch,
-        feelsLikeF: 71,
-        humidityPct: 92,
-        windGustMph: 31,
-        precipChancePct: 85,
-        hourly: (0..<12).map { i in
-            .init(date: Date().addingTimeInterval(Double(i) * 3600),
-                  tempF: 68 - i / 2, symbol: "cloud.heavyrain.fill",
-                  precipChancePct: 85 - i * 5, windMph: 14)
-        },
-        alerts: [.init(event: "Flood Watch", severity: .moderate,
-                       headline: nil, endsAt: Date().addingTimeInterval(6 * 3600))]
-    ))
-    .padding()
-    .background(Theme.light.bgPage)
-    .environment(\.palette, Theme.light)
-    .preferredColorScheme(.light)
-}
-
-#Preview("Compact · Day · Clear") {
+#Preview("v2 Compact · Day · Clear") {
     WeatherCard(
-        snapshot: WeatherSnapshot(
-            city: "Phoenix, AZ",
-            tempF: 96,
-            windMph: 6,
-            visibilityMi: 10,
-            condition: "Sunny",
-            symbol: "sun.max.fill",
-            nextAlert: nil,
-            accent: .calm,
-            feelsLikeF: 99,
-            humidityPct: 12
-        ),
+        snapshot: {
+            var s = WeatherSnapshot(
+                city: "Phoenix, AZ", tempF: 96, windMph: 6, visibilityMi: 10,
+                condition: "Sunny", symbol: "sun.max.fill",
+                nextAlert: nil, accent: .calm,
+                feelsLikeF: 99, humidityPct: 12
+            )
+            s.weatherCode = 1000
+            s.dataSource = .tomorrowIO
+            return s
+        }(),
         style: .compact
     )
     .padding()

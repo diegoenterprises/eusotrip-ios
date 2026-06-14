@@ -632,6 +632,15 @@ struct ShipperPostLoad: View {
     @State private var isComparingRate: Bool = false
     @State private var lastRateCompareKey: String = ""
 
+    /// Per-load Worldscale-100 flat ($/MT) for vessel TANKER loads.
+    /// A WS% rate is meaningless without the lane's WS-100 flat to
+    /// convert it against — when this is empty the server returns
+    /// referenceReason='needs_ws100_flat' and the meter shows the
+    /// honest "enter the WS-100 flat" prompt rather than inventing a
+    /// WS-100 feed. Surfaced as an input on the vessel-tanker rate
+    /// subform; nil/empty everywhere else.
+    @State private var worldscaleFlatText: String = ""
+
     /// Cached lat/lng tuple of the last query so we don't re-fire
     /// the routing call on every keystroke.
     @State private var lastRoutedKey: String = ""
@@ -2292,6 +2301,53 @@ struct ShipperPostLoad: View {
 
     // MARK: - ESANG rate vs market meter (rates.compareLaneRate)
 
+    /// The canonical wire-side rate unit for the current mode +
+    /// equipment selection. Mirrors the value `submit()` persists on
+    /// the load (`shippers.create.rateUnit`) so the rate-vs-market
+    /// query and the posted load agree on the unit — never hard-code
+    /// nil here, or the server has to GUESS the unit (which the
+    /// zero-fabrication envelope forbids).
+    private var rateUnitWire: String {
+        switch transportMode {
+        // 2026-06-13 — the truck rate field is a FLAT LINEHAUL TOTAL
+        // (not a per-mile figure), so wire it as 'flat' and let the
+        // server divide by distance exactly ONCE into the canonical
+        // $/mi benchmark. Sending 'usd_per_mile' made the server treat
+        // the total as already-per-mile (no division), then the client
+        // re-divided yourRPM again → the iOS↔web parity divergence.
+        // (Restore a per-mile wire only if a dedicated per-mile field
+        // is ever added.)
+        case .truck:  return "flat"
+        case .rail:   return "usd_per_ton_mile"
+        case .vessel:
+            switch equipmentType {
+            case .vesselTanker:    return "worldscale"
+            case .vesselContainer: return "usd_per_feu"
+            case .vesselBulk:      return "usd_per_metric_ton"
+            default:               return "flat"
+            }
+        case .barge:  return "usd_per_ton_mile"
+        }
+    }
+
+    /// TRUE when the rate field holds a Worldscale percent (vessel
+    /// tanker), not a dollar amount. The value the user types is a WS%
+    /// and CANNOT be benchmarked without a per-load Worldscale-100 flat.
+    private var rateIsWorldscalePct: Bool {
+        transportMode == .vessel && equipmentType == .vesselTanker
+    }
+
+    /// Origin-leg country code ('US' | 'MX' | 'CA') the server uses to
+    /// scope the benchmark cohort + currency. Resolved from the same
+    /// state→country rule the server applies to mint loads.originCountry.
+    private var laneCountryWire: String {
+        LoadAnimationContext.countryCode(
+            forState: (originStateCode?.isEmpty == false)
+                ? originStateCode
+                : Self.stateFromLane(origin)
+        ).uppercased()
+    }
+
     /// Fires `rates.compareLaneRate` when origin state + dest state +
     /// distance + a posted rate are all known. Web parity meter; same
     /// `LaneComparison` envelope the LoadDetailSheet renders next to
@@ -2306,7 +2362,17 @@ struct ShipperPostLoad: View {
             return
         }
         let miles = Double(meters) / 1609.34
-        let key = "\(oState)|\(dState)|\(Int(miles))|\(Int(rate))|\(cargoType.rawValue)"
+        // For a WS% tanker rate the dollar `rate` field is actually a
+        // Worldscale percent — capture it on its own param and pass the
+        // per-load Worldscale-100 flat (if the wizard ever captures one)
+        // as the conversion basis. Absent a flat, the server honestly
+        // returns referenceReason='needs_ws100_flat' (no WS-100 feed
+        // invented). For all other modes worldscalePct stays nil.
+        let unitWire   = rateUnitWire
+        let wsPct      = rateIsWorldscalePct ? rate : nil
+        let wsFlatRef  = rateIsWorldscalePct ? parseDouble(worldscaleFlatText) : nil
+        let countryW   = laneCountryWire
+        let key = "\(oState)|\(dState)|\(Int(miles))|\(Int(rate))|\(cargoType.rawValue)|\(unitWire)|\(equipmentType.rawValue)|\(countryW)|\(wsFlatRef.map { Int($0) } ?? -1)"
         guard key != lastRateCompareKey else { return }
         lastRateCompareKey = key
         isComparingRate = true
@@ -2317,6 +2383,11 @@ struct ShipperPostLoad: View {
                 // so the server can branch units (rail $/car-mile,
                 // vessel $/MT, etc.) and tap Gemini for market intel
                 // when platform data is thin.
+                // 2026-06-13 — STOP hard-coding rateUnit:nil. Pass the
+                // real wire unit + (for WS% tankers) the Worldscale pct
+                // and per-load WS-100 flat + equipmentType + country so
+                // the server can normalize into the canonical envelope
+                // instead of guessing the unit.
                 let r = try await EusoTripAPI.shared.rates.compareLaneRate(
                     originState: oState,
                     destState:   dState,
@@ -2325,8 +2396,12 @@ struct ShipperPostLoad: View {
                     cargoType:   cargoType.rawValue,
                     lookbackDays: 90,
                     transportMode: transportMode.rawValue,
-                    rateUnit:    nil,
-                    commodity:   cargoType.rawValue
+                    rateUnit:    unitWire,
+                    commodity:   cargoType.rawValue,
+                    worldscalePct: wsPct,
+                    worldscaleFlatRef: wsFlatRef,
+                    equipmentType: equipmentType.rawValue,
+                    country: countryW
                 )
                 await MainActor.run {
                     self.rateComparison = r
@@ -4913,6 +4988,57 @@ struct ShipperPostLoad: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+            // Worldscale-100 flat — the per-load conversion basis a WS%
+            // rate needs to be benchmarked. Without it the rate-vs-market
+            // meter honestly reports referenceReason='needs_ws100_flat'
+            // (we don't invent a WS-100 feed). Tanker-only.
+            if rateIsWorldscalePct {
+                worldscaleFlatField
+            }
+        }
+    }
+
+    /// The per-load Worldscale-100 flat ($/MT) input — only shown for
+    /// vessel tanker loads. Optional; when filled, the server can
+    /// convert the WS% rate into the canonical $/MT and benchmark it.
+    private var worldscaleFlatField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("WORLDSCALE-100 FLAT (OPTIONAL)")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                Text("$/MT")
+                    .font(.system(size: 8, weight: .heavy, design: .monospaced)).tracking(0.4)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+            }
+            HStack(alignment: .center, spacing: Space.s3) {
+                Image(systemName: "dollarsign.circle")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 18)
+                TextField("0", text: $worldscaleFlatText)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .tint(LinearGradient.diagonal)
+                    .keyboardType(.decimalPad)
+                    .disabled(isSubmitting)
+                    .onChange(of: worldscaleFlatText) { _, _ in recomputeRateCompareIfReady() }
+                Text("$/MT")
+                    .font(EType.mono(.micro)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(Space.s3)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            Text("The lane's published WS-100 flat. Enter it so ESANG can convert your WS% into $/MT and benchmark it.")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -5046,56 +5172,259 @@ struct ShipperPostLoad: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
     }
 
+    /// Renders the rate-vs-market meter per the CANONICAL render
+    /// contract (identical to web). The server is the SOLE authority:
+    ///
+    ///   • comparable == true → full card: value + $/unit, position
+    ///     pill, FILLED range slider, 'Nth percentile · n=N', and the
+    ///     recommendation. (The rich render we always shipped.)
+    ///   • comparable == false → NEVER a position pill / percentile
+    ///     number / filled slider (zero-fabrication mandate). Branch on
+    ///     referenceReason:
+    ///       - 'insufficient_data' → greyed reference band, label
+    ///         'Reference only · n=N comparable loads'.
+    ///       - 'needs_ws100_flat' → 'Enter the lane Worldscale-100 flat
+    ///         to benchmark this WS% rate' (no band, no verdict).
+    ///       - 'unit_unconvertible'/'unconvertible' → honest
+    ///         'Can't benchmark this rate type yet'.
     @ViewBuilder
     private func rateMeterBody(_ cmp: RatesAPI.LaneComparison) -> some View {
-        let (positionLabel, positionColor) = positionStyling(for: cmp.position)
+        VStack(alignment: .leading, spacing: 10) {
+            if cmp.comparable {
+                comparableMeter(cmp)
+            } else {
+                switch cmp.referenceReason {
+                case "needs_ws100_flat":
+                    needsWorldscaleFlatBody(cmp)
+                case "unit_unconvertible", "unconvertible":
+                    unconvertibleBody(cmp)
+                default:
+                    // insufficient_data (and any unknown reason) → honest
+                    // greyed reference band, no verdict.
+                    referenceOnlyBody(cmp)
+                }
+            }
+            // Honest benchmark provenance receipt (e.g. 'Baltic BDTI ·
+            // reference only · feed not connected'). This is a LABEL
+            // ONLY — the percentile / position / filled slider stay
+            // gated on cmp.comparable above, so a verdictEligible=false
+            // citation can NEVER add a verdict, only name the source.
+            benchmarkCitationLabel(cmp)
+        }
+    }
+
+    /// Renders the server's honest benchmark provenance label under the
+    /// meter when present. Never contributes a verdict signal — the
+    /// position/percentile/slider are gated on `cmp.comparable`, so even
+    /// a `verdictEligible == false` citation only names the source.
+    @ViewBuilder
+    private func benchmarkCitationLabel(_ cmp: RatesAPI.LaneComparison) -> some View {
+        if let citation = cmp.benchmarkCitation,
+           !citation.label.isEmpty {
+            HStack(spacing: 5) {
+                Image(systemName: citation.connected ? "checkmark.seal" : "info.circle")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+                Text(citation.label)
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// FULL verdict card — only reached when the server says the rate
+    /// is comparable (platform_data, n>=3, normalized to the canonical
+    /// unit + currency).
+    @ViewBuilder
+    private func comparableMeter(_ cmp: RatesAPI.LaneComparison) -> some View {
+        let position = cmp.position ?? ""
+        let percentile = cmp.percentile ?? 0
+        let (positionLabel, positionColor) = positionStyling(for: position)
         let (ratingLabel, ratingColor) = ratingStyling(
-            percentile: cmp.percentile,
-            position: cmp.position,
+            percentile: percentile,
+            position: position,
             source: cmp.source,
             sampleSize: cmp.sampleSize
         )
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                Text(dollars(cmp.yourRate))
+                Text(headlineRateText(cmp))
                     .font(.system(size: 24, weight: .bold).monospacedDigit())
                     .foregroundStyle(LinearGradient.diagonal)
-                Text(formatPerUnit(cmp.yourRPM, unit: cmp.unit))
+                Text(perUnitSubtitle(cmp))
                     .font(EType.caption).monospacedDigit()
                     .foregroundStyle(palette.textSecondary)
                 Spacer(minLength: 0)
-                Text(positionLabel)
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Capsule().fill(positionColor))
+                if !positionLabel.isEmpty {
+                    Text(positionLabel)
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(positionColor))
+                }
             }
-            // Range bar: market min -- your rate marker -- market max
-            rateRangeBar(cmp: cmp)
+            // Range bar: market min -- your rate marker -- market max.
+            // Only drawn when the server actually returned a band.
+            if cmp.marketMinRPM != nil, cmp.marketMaxRPM != nil {
+                rateRangeBar(cmp: cmp, filled: true)
+            }
             HStack(spacing: Space.s2) {
                 Text(ratingLabel)
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Capsule().fill(ratingColor))
-                Text("\(cmp.percentile)th percentile · n=\(cmp.sampleSize)")
+                Text("\(percentile)th percentile · n=\(cmp.sampleSize)")
                     .font(EType.caption).monospacedDigit()
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
             }
-            Text(cmp.recommendation)
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if !cmp.recommendation.isEmpty {
+                Text(cmp.recommendation)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
+    /// referenceReason == 'insufficient_data'. Reference band GREYED,
+    /// NO position pill, NO percentile number, NO filled slider. Honest
+    /// 'Reference only · n=N comparable loads' label.
     @ViewBuilder
-    private func rateRangeBar(cmp: RatesAPI.LaneComparison) -> some View {
-        // Map yourRPM into [min, max] range for the marker offset.
-        let lo = cmp.marketMinRPM
-        let hi = cmp.marketMaxRPM
-        let v  = cmp.yourRPM
+    private func referenceOnlyBody(_ cmp: RatesAPI.LaneComparison) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                Text(headlineRateText(cmp))
+                    .font(.system(size: 24, weight: .bold).monospacedDigit())
+                    .foregroundStyle(palette.textPrimary)
+                Text(perUnitSubtitle(cmp))
+                    .font(EType.caption).monospacedDigit()
+                    .foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 0)
+                Text("REFERENCE ONLY")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(palette.bgCardSoft))
+                    .overlay(Capsule().strokeBorder(palette.borderFaint))
+            }
+            // Greyed, UNFILLED reference band (no marker / no verdict)
+            // when the server reported a national reference range.
+            if cmp.marketMinRPM != nil, cmp.marketMaxRPM != nil {
+                rateRangeBar(cmp: cmp, filled: false)
+            }
+            Text("Reference only · n=\(cmp.sampleSize) comparable loads")
+                .font(EType.caption).monospacedDigit()
+                .foregroundStyle(palette.textTertiary)
+            if !cmp.recommendation.isEmpty {
+                Text(cmp.recommendation)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// referenceReason == 'needs_ws100_flat'. A WS% rate can't be
+    /// benchmarked without the lane's Worldscale-100 flat — no band, no
+    /// verdict, just the honest ask. (We DON'T invent a WS-100 feed.)
+    @ViewBuilder
+    private func needsWorldscaleFlatBody(_ cmp: RatesAPI.LaneComparison) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                Text(headlineRateText(cmp))
+                    .font(.system(size: 24, weight: .bold).monospacedDigit())
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+                Text("Enter the lane Worldscale-100 flat to benchmark this WS% rate")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// referenceReason == 'unit_unconvertible' / 'unconvertible' (or
+    /// source == 'unconvertible'). Honest: we can't benchmark this rate
+    /// type yet.
+    @ViewBuilder
+    private func unconvertibleBody(_ cmp: RatesAPI.LaneComparison) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                Text(headlineRateText(cmp))
+                    .font(.system(size: 24, weight: .bold).monospacedDigit())
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 6) {
+                Image(systemName: "questionmark.circle")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+                Text("Can't benchmark this rate type yet")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// The headline value, rendered HONESTLY for the entered unit. For
+    /// a WS% tanker rate this is the Worldscale percent the user typed
+    /// (e.g. "WS 75") — NEVER a fabricated dollar figure. For everything
+    /// else it's the server-echoed dollar rate.
+    private func headlineRateText(_ cmp: RatesAPI.LaneComparison) -> String {
+        if rateIsWorldscalePct {
+            // Show the WS% as entered. yourRate carries the percent in
+            // the WS% branch.
+            let pct = parseDouble(rateText) ?? cmp.yourRate
+            return "WS \(Int(pct.rounded()))"
+        }
+        return dollars(cmp.yourRate, currency: cmp.currency)
+    }
+
+    /// The $/unit subtitle next to the headline. For a WS% rate we ONLY
+    /// show a converted $/MT when the server actually converted it
+    /// (worldscaleConverted == true with a normalized value) — never
+    /// the '$75 · $0.05/MT' trap of treating the percent as dollars.
+    private func perUnitSubtitle(_ cmp: RatesAPI.LaneComparison) -> String {
+        // CANONICAL: the server's normValue is the user's own rate
+        // already normalized into the benchmark's canonical unit +
+        // currency. Read it directly (never re-divide yourRPM) — this is
+        // what makes $/FEU, $/ton-mi, WS→$/MT and the iOS↔web parity
+        // agree. Mirrors web's `num(cmp.normValue) ?? num(cmp.yourRPM)`.
+        let v = cmp.normValue ?? cmp.yourRPM
+        if rateIsWorldscalePct {
+            guard cmp.worldscaleConverted, v > 0 else { return "" }
+            return formatPerUnit(v, unit: cmp.canonicalUnit, currency: cmp.currency)
+        }
+        return formatPerUnit(v, unit: cmp.unit ?? cmp.canonicalUnit, currency: cmp.currency)
+    }
+
+    /// Market range bar. `filled == true` draws the gradient track +
+    /// the positioned "your rate" marker (the comparable verdict). When
+    /// `filled == false` the track is GREYED with NO marker — a plain
+    /// reference band that makes no claim about where the rate sits
+    /// (zero-fabrication: no marker = no implied verdict).
+    @ViewBuilder
+    private func rateRangeBar(cmp: RatesAPI.LaneComparison, filled: Bool) -> some View {
+        // Optional band — the server omits these when it can't
+        // benchmark. Caller only invokes this when both are present.
+        let lo = cmp.marketMinRPM ?? 0
+        let hi = cmp.marketMaxRPM ?? 0
+        let unit = cmp.unit ?? cmp.canonicalUnit
+        // CANONICAL marker position: the user's rate normalized into the
+        // SAME canonical unit the band is in. Re-dividing yourRPM here
+        // placed the marker in the wrong spot for $/FEU, $/ton-mi and
+        // WS→$/MT. normValue is already in-band; fall back to yourRPM
+        // only for an old server.
+        let v  = cmp.normValue ?? cmp.yourRPM
         // Clamp + normalize. If hi == lo (rare), draw the marker
         // centered.
         let pct: Double = {
@@ -5105,28 +5434,38 @@ struct ShipperPostLoad: View {
         }()
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(LinearGradient(colors: [Brand.success, Brand.info, Brand.warning],
-                                         startPoint: .leading, endPoint: .trailing))
-                    .frame(height: 8)
-                Circle()
-                    .fill(.white)
-                    .frame(width: 16, height: 16)
-                    .overlay(Circle().strokeBorder(LinearGradient.diagonal, lineWidth: 2))
-                    .offset(x: max(0, geo.size.width * pct - 8))
+                if filled {
+                    Capsule()
+                        .fill(LinearGradient(colors: [Brand.success, Brand.info, Brand.warning],
+                                             startPoint: .leading, endPoint: .trailing))
+                        .frame(height: 8)
+                    Circle()
+                        .fill(.white)
+                        .frame(width: 16, height: 16)
+                        .overlay(Circle().strokeBorder(LinearGradient.diagonal, lineWidth: 2))
+                        .offset(x: max(0, geo.size.width * pct - 8))
+                } else {
+                    // Greyed reference band — NO marker.
+                    Capsule()
+                        .fill(palette.bgCardSoft)
+                        .frame(height: 8)
+                        .overlay(Capsule().strokeBorder(palette.borderFaint))
+                }
             }
         }
         .frame(height: 18)
         HStack {
-            Text("\(formatPerUnit(lo, unit: cmp.unit)) · min")
+            Text("\(formatPerUnit(lo, unit: unit, currency: cmp.currency)) · min")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                 .foregroundStyle(palette.textTertiary).monospacedDigit()
             Spacer(minLength: 0)
-            Text("\(formatPerUnit(cmp.marketAvgRPM, unit: cmp.unit)) · avg")
-                .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                .foregroundStyle(palette.textTertiary).monospacedDigit()
-            Spacer(minLength: 0)
-            Text("\(formatPerUnit(hi, unit: cmp.unit)) · max")
+            if let avg = cmp.marketAvgRPM {
+                Text("\(formatPerUnit(avg, unit: unit, currency: cmp.currency)) · avg")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary).monospacedDigit()
+                Spacer(minLength: 0)
+            }
+            Text("\(formatPerUnit(hi, unit: unit, currency: cmp.currency)) · max")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.4)
                 .foregroundStyle(palette.textTertiary).monospacedDigit()
         }
@@ -5136,10 +5475,11 @@ struct ShipperPostLoad: View {
     /// when the server doesn't report a unit (older deploys), and
     /// otherwise uses the server's unit label ($/mi, $/car-mile,
     /// $/MT, etc.) so the card adapts to whichever mode the user picked.
-    private func formatPerUnit(_ value: Double, unit: String?) -> String {
+    private func formatPerUnit(_ value: Double, unit: String?, currency: String = "USD") -> String {
         let label = (unit?.isEmpty == false ? unit! : "$/mi")
             .replacingOccurrences(of: "$/", with: "")
-        return String(format: "$%.2f / %@", value, label)
+        let prefix = currencyPrefix(currency)
+        return String(format: "%@%.2f / %@", prefix, value, label)
     }
 
     /// Short source badge — "platform" (real loads), "ai" (Gemini),
@@ -5149,7 +5489,9 @@ struct ShipperPostLoad: View {
         switch source {
         case "platform_data":      return "platform"
         case "gemini":             return "ESANG AI · live"
-        case "national_benchmark": return "national"
+        case "national_benchmark",
+             "national_reference": return "national"
+        case "unconvertible":      return "no benchmark"
         default:                   return source
         }
     }
@@ -5395,10 +5737,10 @@ struct ShipperPostLoad: View {
             reviewRow(label: "Quantity",       value: parseDouble(weightText).map { "\(formatQty($0)) \(weightUnit.rawValue)" } ?? "-")
 
             reviewSection("FREIGHT CHARGE")
-            reviewRow(label: "Posted rate",    value: parseDouble(rateText).map(dollars) ?? "-", isHero: true)
+            reviewRow(label: "Posted rate",    value: parseDouble(rateText).map { dollars($0) } ?? "-", isHero: true)
             if let cmp = rateComparison {
                 Divider().overlay(palette.borderFaint)
-                reviewRow(label: "Vs market",  value: "\(cmp.position.replacingOccurrences(of: "_", with: " ")) · \(cmp.percentile)th pct")
+                reviewRow(label: "Vs market",  value: vsMarketSummary(cmp))
             }
 
             if !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -5494,19 +5836,48 @@ struct ShipperPostLoad: View {
         if let cmp = rateComparison {
             VStack(alignment: .leading, spacing: 0) {
                 reviewSection("ESANG · RATE VS MARKET")
-                reviewRow(label: "Position",   value: cmp.position.replacingOccurrences(of: "_", with: " "))
-                Divider().overlay(palette.borderFaint)
-                reviewRow(label: "Your $/mi",  value: String(format: "$%.2f", cmp.yourRPM))
-                Divider().overlay(palette.borderFaint)
-                reviewRow(label: "Market avg", value: String(format: "$%.2f / mi", cmp.marketAvgRPM))
-                Divider().overlay(palette.borderFaint)
-                reviewRow(label: "Percentile", value: "\(cmp.percentile)th · n=\(cmp.sampleSize)")
+                if cmp.comparable {
+                    // Full verdict — server confirmed comparable.
+                    reviewRow(label: "Position",   value: (cmp.position ?? "").replacingOccurrences(of: "_", with: " "))
+                    Divider().overlay(palette.borderFaint)
+                    reviewRow(label: "Your rate",  value: perUnitSubtitle(cmp).isEmpty
+                                ? formatPerUnit(cmp.normValue ?? cmp.yourRPM, unit: cmp.canonicalUnit, currency: cmp.currency)
+                                : perUnitSubtitle(cmp))
+                    if let avg = cmp.marketAvgRPM {
+                        Divider().overlay(palette.borderFaint)
+                        reviewRow(label: "Market avg", value: formatPerUnit(avg, unit: cmp.unit ?? cmp.canonicalUnit, currency: cmp.currency))
+                    }
+                    if let pct = cmp.percentile {
+                        Divider().overlay(palette.borderFaint)
+                        reviewRow(label: "Percentile", value: "\(pct)th · n=\(cmp.sampleSize)")
+                    }
+                } else {
+                    // Not comparable — honest single row, no fabricated
+                    // position/percentile/market band.
+                    reviewRow(label: "Status", value: vsMarketSummary(cmp))
+                }
             }
             .background(palette.bgCard)
             .overlay(RoundedRectangle(cornerRadius: Radius.lg)
                         .strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
         }
+    }
+
+    /// One-line "vs market" summary honoring the canonical envelope —
+    /// the verdict ONLY when comparable, else the honest reason.
+    private func vsMarketSummary(_ cmp: RatesAPI.LaneComparison) -> String {
+        guard cmp.comparable else {
+            switch cmp.referenceReason {
+            case "needs_ws100_flat":   return "Needs WS-100 flat"
+            case "unit_unconvertible", "unconvertible":
+                return "Not benchmarkable yet"
+            default:                   return "Reference only · n=\(cmp.sampleSize)"
+            }
+        }
+        let pos = (cmp.position ?? "").replacingOccurrences(of: "_", with: " ")
+        if let pct = cmp.percentile { return "\(pos) · \(pct)th pct" }
+        return pos
     }
 
     private func reviewSection(_ title: String) -> some View {
@@ -5824,27 +6195,21 @@ struct ShipperPostLoad: View {
                                   || equipmentType == .stepDeck || equipmentType == .conestoga)
             ? permitType.rawValue
             : nil
-        let rateUnitWire: String = {
-            switch transportMode {
-            case .truck:  return "usd_per_mile"
-            case .rail:   return "usd_per_ton_mile"
-            case .vessel:
-                switch equipmentType {
-                case .vesselTanker:    return "worldscale"
-                case .vesselContainer: return "usd_per_feu"
-                case .vesselBulk:      return "usd_per_metric_ton"
-                default:               return "flat"
-                }
-            case .barge:  return "usd_per_ton_mile"
-            }
-        }()
+        // Shared with the rate-vs-market meter — single source of truth
+        // for the wire unit (see the `rateUnitWire` computed property).
+        let rateUnitWireValue = rateUnitWire
         // When the user posts a vessel tanker load, the value typed in
         // the rate field is a Worldscale percent — capture it on the
         // dedicated `worldscalePct` column for downstream tanker market
         // compares, and zero out the plain dollar rate so the rate-vs-
         // market server query doesn't misread it as a truck $/mile.
-        let worldscaleWire: Double? = (transportMode == .vessel && equipmentType == .vesselTanker)
+        let worldscaleWire: Double? = rateIsWorldscalePct
             ? parseDouble(rateText)
+            : nil
+        // Per-load Worldscale-100 flat captured on the tanker subform —
+        // the conversion basis the server needs to benchmark a WS% rate.
+        let worldscaleFlatWire: Double? = rateIsWorldscalePct
+            ? parseDouble(worldscaleFlatText)
             : nil
         let rateForWire: Double? = worldscaleWire == nil ? rate : nil
         await store.submit(
@@ -5863,7 +6228,8 @@ struct ShipperPostLoad: View {
             multiVehicleCount: multiVehicleEstimate?.vehicleCount,
             permitType: permitRaw,
             worldscalePct: worldscaleWire,
-            rateUnit: rateUnitWire,
+            worldscaleFlat: worldscaleFlatWire,
+            rateUnit: rateUnitWireValue,
             equipmentType: equipmentType.rawValue
         )
         if case .success(let ack) = store.phase {
@@ -6051,12 +6417,27 @@ struct ShipperPostLoad: View {
         return f.string(from: NSNumber(value: value)) ?? "\(value)"
     }
 
-    private func dollars(_ value: Double) -> String {
+    /// Currency-aware symbol so a MX/CA benchmark labels honestly. The
+    /// USD/CAD/MXN dollar glyphs collide ('$'), so disambiguate CAD→'CA$'
+    /// and MXN→'MX$' (matching web); everything else stays '$'.
+    private func currencyPrefix(_ c: String) -> String {
+        switch c.uppercased() {
+        case "CAD": return "CA$"
+        case "MXN": return "MX$"
+        default:    return "$"
+        }
+    }
+
+    /// Currency-aware whole-dollar headline. Defaults to USD for the
+    /// existing call sites; the rate-vs-market card passes cmp.currency
+    /// so a MX/CA lane reads 'MX$1,200' / 'CA$1,200' instead of '$1,200'.
+    private func dollars(_ value: Double, currency: String = "USD") -> String {
+        let prefix = currencyPrefix(currency)
         let f = NumberFormatter()
-        f.numberStyle = .currency
-        f.currencyCode = "USD"
+        f.numberStyle = .decimal
         f.maximumFractionDigits = 0
-        return f.string(from: NSNumber(value: value)) ?? "$0"
+        let body = f.string(from: NSNumber(value: value)) ?? "\(Int(value))"
+        return "\(prefix)\(body)"
     }
 }
 

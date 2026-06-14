@@ -112,6 +112,25 @@ final class WeatherService: NSObject, ObservableObject {
             return nil
         }
 
+        // ── v2: Tomorrow.io backbone (server-side, never a bundle key) ──
+        //
+        // The tRPC `weather.byLatLon` proxy fronts Tomorrow.io
+        // (/v4/weather/realtime + /v4/timelines) server-side — the API
+        // key lives ONLY in the server env (TOMORROW_API_KEY) and never
+        // ships in the iOS bundle. When it returns a populated snapshot
+        // we use it (it carries the real `weatherCode` the v2 glyph set
+        // needs + the Tomorrow.io attribution). When the key is absent,
+        // the call fails, or the server returns no data, we fall through
+        // to the existing WeatherKit → NWS → Open-Meteo chain — NEVER a
+        // fabricated reading. The server is responsible for the same
+        // honesty on its side (em-dash / "unavailable", not invented).
+        if let placemarkPre = try? await reverseGeocode(location),
+           let server = await fetchTomorrowIO(location: location, placemark: placemarkPre) {
+            return server
+        } else if let server = await fetchTomorrowIO(location: location, placemark: nil) {
+            return server
+        }
+
         do {
             let weather = try await weatherService.weather(for: location)
             let placemark = try? await reverseGeocode(location)
@@ -153,6 +172,442 @@ final class WeatherService: NSObject, ObservableObject {
             // resort. Better imperfect data than no card at all.
             return try? await fetchOpenMeteo(location: location, placemark: placemark)
         }
+    }
+
+    // MARK: - Tomorrow.io (server-proxied) — the v2 backbone
+
+    // Wire types for the tRPC `weather.byLatLon` proc (Tomorrow.io
+    // realtime + hourly + daily + the v2 single alert). All fields are
+    // optional so a partial/honest server payload (missing key → "no
+    // data") decodes cleanly and the client falls back rather than
+    // synthesising. Field names mirror the server's normalised shape.
+    private struct ServerWeather: Decodable {
+        // byLatLon emits { source, fetchedAt, weatherCode, current{}, hourly[],
+        // daily[], alerts[] } in the canonical METRIC NormalizedWeather shape
+        // (°C / km/h / km) — the SAME shape the web Weather.tsx reads. We
+        // convert to imperial in the mapping below.
+        let source: String?
+        let fetchedAt: String?
+        let weatherCode: Int?
+        let current: Current?
+        let hourly: [Hour]?
+        let daily: [Day]?
+        let alerts: [Alert]?
+
+        struct Current: Decodable {
+            let tempC: Double?
+            let feelsC: Double?
+            let condition: String?
+            let icon: String?
+            let uv: Double?
+            let windKph: Double?
+            let humidity: Double?
+            let weatherCode: Int?
+            let visibilityKm: Double?
+            let windGustKph: Double?
+            let precipPct: Double?
+        }
+        struct Hour: Decodable {
+            let t: String?
+            let tempC: Double?
+            let precipPct: Double?
+            let condition: String?
+            let weatherCode: Int?
+        }
+        struct Day: Decodable {
+            let d: String?
+            let hi: Double?
+            let lo: Double?
+            let condition: String?
+            let precipPct: Double?
+            let sunrise: String?
+            let sunset: String?
+            let weatherCode: Int?
+        }
+        struct Alert: Decodable {
+            let title: String?
+            let severity: String?
+            let start: String?
+            let end: String?
+            let description: String?
+            let area: String?
+        }
+    }
+
+    private struct ByLatLonInput: Encodable {
+        let lat: Double
+        let lng: Double
+        let units: String
+    }
+
+    /// Fetch the Tomorrow.io-backed snapshot via the tRPC proxy. Returns
+    /// `nil` on ANY failure (server unreachable, key absent → server
+    /// returns no data, decode error) so `fetchCurrent()` falls through
+    /// to the WeatherKit/NWS/Open-Meteo chain. Never fabricates: a nil
+    /// `tempF` from the server (no data) yields `nil` here, not a zero.
+    private func fetchTomorrowIO(
+        location: CLLocation,
+        placemark: CLPlacemark?
+    ) async -> WeatherSnapshot? {
+        let lat = location.coordinate.latitude
+        let lng = location.coordinate.longitude
+
+        let server: ServerWeather
+        do {
+            server = try await EusoTripAPI.shared.query(
+                "weather.byLatLon",
+                input: ByLatLonInput(lat: lat, lng: lng, units: "imperial")
+            )
+        } catch {
+            // Server down, proc not deployed yet, or key-absent →
+            // "no data". Honest fall-through, not a fabricated card.
+            print("[WeatherService] weather.byLatLon unavailable — \(error.localizedDescription)")
+            return nil
+        }
+
+        // Require a real current temperature + condition. Without these
+        // the server had no Tomorrow.io data (key absent / upstream
+        // failure) and we MUST fall back rather than render an empty
+        // shell that looks live.
+        guard let cur = server.current,
+              let tC = cur.tempC,
+              let code = cur.weatherCode else {
+            return nil
+        }
+        // byLatLon is metric (the web reads the same shape) → convert here.
+        func cToF(_ c: Double) -> Double { c * 9.0 / 5.0 + 32.0 }
+        func kphToMph(_ k: Double) -> Double { k * 0.621371 }
+        func kmToMi(_ k: Double) -> Double { k * 0.621371 }
+        let tF = cToF(tC)
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoPlain = ISO8601DateFormatter()
+        isoPlain.formatOptions = [.withInternetDateTime]
+        func parseDate(_ s: String?) -> Date? {
+            guard let s else { return nil }
+            return iso.date(from: s) ?? isoPlain.date(from: s)
+        }
+
+        let condition = cur.condition ?? Self.tomorrowCondition(for: code)
+
+        // City — prefer the reverse-geocoded placemark (matches the rest
+        // of the pipeline), else the server's, else honest fallback.
+        let city: String = {
+            if let p = placemark {
+                let loc = p.locality ?? p.subAdministrativeArea ?? p.administrativeArea ?? "Nearby"
+                if let state = p.administrativeArea, state.count <= 3, state != loc {
+                    return "\(loc), \(state)"
+                }
+                return loc
+            }
+            return "Current location"
+        }()
+
+        let hourly: [WeatherSnapshot.HourlyForecast] = (server.hourly ?? []).prefix(8).compactMap { h in
+            guard let date = parseDate(h.t), let t = h.tempC else { return nil }
+            return WeatherSnapshot.HourlyForecast(
+                date: date,
+                tempF: Int(cToF(t).rounded()),
+                symbol: Self.tomorrowSymbol(for: h.weatherCode ?? 0),
+                precipChancePct: h.precipPct.map { Int($0.rounded()) },
+                windMph: nil,   // byLatLon hourly carries no per-hour wind — honest nil
+                weatherCode: h.weatherCode ?? 0
+            )
+        }
+
+        let weekdayFmt = DateFormatter()
+        weekdayFmt.locale = .current
+        weekdayFmt.dateFormat = "EEE"
+        let cal = Calendar.current
+        let daily: [WeatherSnapshot.DailyForecast] = (server.daily ?? []).prefix(7).compactMap { d in
+            guard let date = parseDate(d.d) ?? Self.dayOnly(d.d),
+                  let hi = d.hi, let lo = d.lo else { return nil }
+            let label = cal.isDateInToday(date) ? "Today" : weekdayFmt.string(from: date)
+            return WeatherSnapshot.DailyForecast(
+                date: date,
+                weekdayLabel: label,
+                highF: Int(cToF(hi).rounded()),
+                lowF: Int(cToF(lo).rounded()),
+                symbol: Self.tomorrowSymbol(for: d.weatherCode ?? 0),
+                condition: Self.tomorrowCondition(for: d.weatherCode ?? 0),
+                precipChance: d.precipPct.map { $0 / 100.0 }
+            )
+        }
+
+        let alert: WeatherSnapshot.ActiveAlert? = (server.alerts ?? []).first.flatMap { a in
+            guard let title = a.title, !title.isEmpty else { return nil }
+            return WeatherSnapshot.ActiveAlert(
+                title: title,
+                severity: WeatherSnapshot.AlertSeverity(capString: a.severity),
+                until: parseDate(a.end)
+            )
+        }
+
+        let windMph = Int(kphToMph(cur.windKph ?? 0).rounded())
+        let visMi = Int((cur.visibilityKm.map(kmToMi) ?? 10).rounded())
+
+        // Accent — real alert severity wins, else freight thresholds +
+        // the code family, mirroring the other paths.
+        let accent: WeatherSnapshot.Accent = {
+            if let sev = alert?.severity, sev >= .severe { return .warn }
+            let severeCodes: Set<Int> = [8000, 4201, 6201, 7101]
+            let watchCodes: Set<Int> = [4000, 4200, 4001, 5000, 5001, 5100, 5101,
+                                        6000, 6001, 6200, 7000, 7102, 2000, 2100]
+            if severeCodes.contains(code) || windMph >= 25 || visMi <= 2 { return .warn }
+            if alert != nil { return .watch }
+            if watchCodes.contains(code) { return .watch }
+            return .calm
+        }()
+
+        let nextAlert: String? = daily.first.map { "today · H \($0.highF)° / L \($0.lowF)°" }
+
+        var snap = WeatherSnapshot(
+            city: city,
+            tempF: Int(tF.rounded()),
+            windMph: windMph,
+            visibilityMi: visMi,
+            condition: condition,
+            symbol: Self.tomorrowSymbol(for: code),
+            nextAlert: nextAlert,
+            accent: accent,
+            daily: daily,
+            feelsLikeF: cur.feelsC.map { Int(cToF($0).rounded()) },
+            humidityPct: cur.humidity.map { Int($0.rounded()) },
+            windGustMph: cur.windGustKph.map { Int(kphToMph($0).rounded()) },
+            precipChancePct: cur.precipPct.map { Int($0.rounded()) },
+            hourly: hourly
+        )
+        snap.weatherCode = code
+        snap.dataSource = .tomorrowIO
+        snap.uvIndex = cur.uv.map { Int($0.rounded()) }
+        snap.alert = alert
+        snap.observedAt = parseDate(server.fetchedAt) ?? Date()
+
+        // Lane impact — best-effort; its own proc, never blocks the card.
+        snap.laneImpact = await fetchLaneImpact()
+        return snap
+    }
+
+    // Wire types for the tRPC `weather.laneImpact` proc — per-load ETA
+    // risk from Tomorrow.io /v4/route (time-aware). Optional throughout
+    // so a partial/honest payload decodes; nil/empty → the panel hides.
+    private struct ServerLaneImpact: Decodable {
+        let available: Bool?
+        let loads: [ServerSegment]?
+        struct ServerSegment: Decodable {
+            let loadId: String?
+            let mode: String?
+            let route: String?
+            let pickupTime: String?
+            let etaDelayMin: Int?
+            let riskTier: String?
+            // §3 structured peakLeg { label, time } | null. Legacy
+            // payloads sent `peakLeg` as a flat string; the custom
+            // decoder below accepts either the object or the string form.
+            let peakLeg: ServerPeakLeg?
+            // §3 headline + drivers[] + recommendation{} + computedAt.
+            let headline: String?
+            let drivers: [ServerDriver]?
+            let recommendation: ServerRecommendation?
+            let computedAt: String?
+            // Legacy flat ESang line (older payloads).
+            let esangSuggestion: String?
+
+            struct ServerPeakLeg: Decodable {
+                let label: String?
+                let time: String?
+
+                /// Accept `peakLeg` as either `{ label, time }` (§3) or a
+                /// bare string ("4 PM storm cell on I-35", legacy) so a
+                /// mixed-vintage server still decodes. A string becomes
+                /// the `label`; the `time` stays nil and the diagram reads
+                /// the riskTier for band placement.
+                init(from decoder: Decoder) throws {
+                    if let single = try? decoder.singleValueContainer(),
+                       let s = try? single.decode(String.self) {
+                        self.label = s
+                        self.time = nil
+                        return
+                    }
+                    let c = try decoder.container(keyedBy: CodingKeys.self)
+                    self.label = try c.decodeIfPresent(String.self, forKey: .label)
+                    self.time  = try c.decodeIfPresent(String.self, forKey: .time)
+                }
+                enum CodingKeys: String, CodingKey { case label, time }
+            }
+            struct ServerDriver: Decodable {
+                let field: String?
+                let value: String?
+            }
+            struct ServerRecommendation: Decodable {
+                let text: String?
+                let action: String?
+                let protects: String?
+            }
+        }
+    }
+
+    /// Fetch the active loads' weather-driven ETA risk. Returns `nil` on
+    /// any failure (proc absent, no active loads, route tier absent) so
+    /// the LANE IMPACT panel simply collapses — never seeded.
+    private struct LaneImpactActiveInput: Encodable { let limit: Int }
+
+    private func fetchLaneImpact() async -> [WeatherSnapshot.LaneImpactSegment]? {
+        let resp: ServerLaneImpact
+        do {
+            // laneImpactActive → the caller's active loads, each a §3 LaneImpact
+            // object: { available, loads:[ { loadId, mode, riskTier, headline,
+            // peakLeg{label,time}, drivers[], recommendation{}, computedAt } ] }.
+            // (The single-load weather.laneImpact proc requires {loadId}; the
+            // home widget wants the active set, not one load.)
+            resp = try await EusoTripAPI.shared.query(
+                "weather.laneImpactActive",
+                input: LaneImpactActiveInput(limit: 8)
+            )
+        } catch {
+            return nil
+        }
+        guard resp.available != false, let segs = resp.loads, !segs.isEmpty else { return nil }
+
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoPlain = ISO8601DateFormatter()
+        isoPlain.formatOptions = [.withInternetDateTime]
+
+        let mapped: [WeatherSnapshot.LaneImpactSegment] = segs.compactMap { s in
+            guard let loadId = s.loadId, !loadId.isEmpty else { return nil }
+            let mode: WeatherSnapshot.LaneMode = {
+                switch (s.mode ?? "").lowercased() {
+                case "rail":   return .rail
+                case "vessel": return .vessel
+                default:       return .truck
+                }
+            }()
+            let risk: WeatherSnapshot.RiskTier = {
+                switch (s.riskTier ?? "").lowercased() {
+                case "severe":         return .severe
+                case "elevated":       return .elevated
+                case "watch":          return .watch
+                default:               return .none   // "none" / "clear" / absent
+                }
+            }()
+            let pickup = s.pickupTime.flatMap { iso.date(from: $0) ?? isoPlain.date(from: $0) }
+            let computed = s.computedAt.flatMap { iso.date(from: $0) ?? isoPlain.date(from: $0) }
+
+            // §3 peakLeg { label, time } — only built when a real label
+            // came back; never synthesised. A legacy string-only payload
+            // yields a label with no time.
+            let peakLeg: WeatherSnapshot.PeakLeg? = {
+                guard let pl = s.peakLeg,
+                      let label = pl.label?.trimmingCharacters(in: .whitespaces),
+                      !label.isEmpty else { return nil }
+                return WeatherSnapshot.PeakLeg(label: label, time: pl.time ?? "")
+            }()
+
+            // §3 drivers[] — the mode metric tiles. Each row needs both a
+            // field key and a value; honest "—" values stay (the server
+            // already passes the em-dash when Tomorrow.io omitted the
+            // field), but a row with no field is dropped.
+            let drivers: [WeatherSnapshot.Driver] = (s.drivers ?? []).compactMap { d in
+                guard let field = d.field?.trimmingCharacters(in: .whitespaces),
+                      !field.isEmpty else { return nil }
+                let value = (d.value?.trimmingCharacters(in: .whitespaces)).flatMap {
+                    $0.isEmpty ? nil : $0
+                } ?? "—"
+                return WeatherSnapshot.Driver(field: field, value: value)
+            }
+
+            // §3 recommendation { text, action, protects } — only when
+            // the server authored a real action; nil collapses the orb.
+            let recommendation: WeatherSnapshot.Recommendation? = {
+                guard let r = s.recommendation,
+                      let action = r.action?.trimmingCharacters(in: .whitespaces),
+                      !action.isEmpty else { return nil }
+                return WeatherSnapshot.Recommendation(
+                    text: r.text ?? "",
+                    action: action,
+                    protects: r.protects ?? ""
+                )
+            }()
+
+            return WeatherSnapshot.LaneImpactSegment(
+                loadId: loadId,
+                mode: mode,
+                riskTier: risk,
+                headline: s.headline ?? "",
+                peakLeg: peakLeg,
+                drivers: drivers,
+                recommendation: recommendation,
+                computedAt: computed,
+                route: s.route ?? "",
+                pickupTime: pickup,
+                etaDelayMin: s.etaDelayMin,
+                esangSuggestion: s.esangSuggestion
+            )
+        }
+        return mapped.isEmpty ? nil : mapped
+    }
+
+    /// Tomorrow.io weatherCode → human phrase (mirrors the wiring map's
+    /// "label" column). Used when the server omits a condition string.
+    private static func tomorrowCondition(for code: Int) -> String {
+        switch code {
+        case 1000: return "Clear"
+        case 1100: return "Mostly clear"
+        case 1101: return "Partly cloudy"
+        case 1102: return "Mostly cloudy"
+        case 1001: return "Cloudy"
+        case 2000: return "Fog"
+        case 2100: return "Light fog"
+        case 4000: return "Drizzle"
+        case 4200: return "Light rain"
+        case 4001: return "Rain"
+        case 4201: return "Heavy rain"
+        case 8000: return "Thunderstorm"
+        case 5000: return "Snow"
+        case 5001: return "Flurries"
+        case 5100: return "Light snow"
+        case 5101: return "Heavy snow"
+        case 6000: return "Freezing drizzle"
+        case 6001: return "Freezing rain"
+        case 6200: return "Light freezing rain"
+        case 6201: return "Heavy freezing rain"
+        case 7000: return "Ice pellets"
+        case 7101: return "Heavy ice pellets"
+        case 7102: return "Light ice pellets"
+        default:   return "Cloudy"
+        }
+    }
+
+    /// Tomorrow.io weatherCode → SF Symbol (kept for the legacy compact
+    /// path + accessibility; the v2 surface draws WeatherIcons off the
+    /// code directly).
+    private static func tomorrowSymbol(for code: Int) -> String {
+        switch code {
+        case 1000:                         return "sun.max.fill"
+        case 1100, 1101:                   return "cloud.sun.fill"
+        case 1102, 1001:                   return "cloud.fill"
+        case 2000, 2100:                   return "cloud.fog.fill"
+        case 4000, 4200:                   return "cloud.drizzle.fill"
+        case 4001:                         return "cloud.rain.fill"
+        case 4201:                         return "cloud.heavyrain.fill"
+        case 8000:                         return "cloud.bolt.rain.fill"
+        case 5000, 5001, 5100, 5101:       return "cloud.snow.fill"
+        case 6000, 6001, 6200, 6201,
+             7000, 7101, 7102:             return "cloud.sleet.fill"
+        default:                           return "cloud.fill"
+        }
+    }
+
+    /// Parse a "yyyy-MM-dd" day string (Tomorrow.io daily timestamps can
+    /// arrive date-only) to local midnight.
+    private static func dayOnly(_ s: String?) -> Date? {
+        guard let s else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.date(from: s)
     }
 
     // MARK: - NWS (api.weather.gov) — US ground-truth fallback
@@ -329,7 +784,7 @@ final class WeatherService: NSObject, ObservableObject {
             return .calm
         }()
 
-        return WeatherSnapshot(
+        var snap = WeatherSnapshot(
             city: cityFromPlacemark,
             tempF: tempF,
             windMph: windMph,
@@ -346,6 +801,15 @@ final class WeatherService: NSObject, ObservableObject {
             hourly: hourly,
             alerts: alerts
         )
+        // v2: name the real provider (NWS, NOT Tomorrow.io) + infer a
+        // weatherCode from the symbol so the custom glyph still lights.
+        snap.dataSource = .nws
+        snap.weatherCode = WeatherIcons.code(forSymbol: symbol)
+        snap.observedAt = Date()
+        if let top = alerts.max(by: { $0.severity.rank < $1.severity.rank }) {
+            snap.alert = .init(title: top.event, severity: top.severity, until: top.endsAt)
+        }
+        return snap
     }
 
     /// Next-12-hours band from NWS `forecastHourly`. Returns `[]` on
@@ -714,7 +1178,7 @@ final class WeatherService: NSObject, ObservableObject {
         // 75th firing: `approximate` is always false now — the Dallas
         // fallback was removed, so we only reach this path for the
         // driver's real resolved coordinate.
-        return WeatherSnapshot(
+        var snap = WeatherSnapshot(
             city: city,
             tempF: tempF,
             windMph: windMph,
@@ -730,6 +1194,13 @@ final class WeatherService: NSObject, ObservableObject {
             precipChancePct: precipChancePct,
             hourly: hourly
         )
+        // v2: name the real provider (Open-Meteo) + infer the custom
+        // glyph code from the symbol. Open-Meteo ships no CAP alerts, so
+        // `alert` stays honestly nil on this path.
+        snap.dataSource = .openMeteo
+        snap.weatherCode = WeatherIcons.code(forSymbol: symbol)
+        snap.observedAt = Date()
+        return snap
     }
 
     /// Fold Open-Meteo's parallel hourly arrays into the next-12-hours
@@ -1042,7 +1513,8 @@ final class WeatherService: NSObject, ObservableObject {
                     tempF: Int(hour.temperature.converted(to: .fahrenheit).value.rounded()),
                     symbol: hour.symbolName,
                     precipChancePct: Int((hour.precipitationChance * 100).rounded()),
-                    windMph: Int(hour.wind.speed.converted(to: .milesPerHour).value.rounded())
+                    windMph: Int(hour.wind.speed.converted(to: .milesPerHour).value.rounded()),
+                    weatherCode: WeatherIcons.code(forSymbol: hour.symbolName)
                 )
             }
         let precipChancePct: Int? = hourly.first?.precipChancePct
@@ -1064,7 +1536,7 @@ final class WeatherService: NSObject, ObservableObject {
             )
         }
 
-        return WeatherSnapshot(
+        var snap = WeatherSnapshot(
             city: city,
             tempF: tempF,
             windMph: windMph,
@@ -1081,6 +1553,15 @@ final class WeatherService: NSObject, ObservableObject {
             hourly: hourly,
             alerts: alerts
         )
+        // v2: name the real provider (Apple Weather) + infer the custom
+        // glyph code from the WeatherKit symbol.
+        snap.dataSource = .weatherKit
+        snap.weatherCode = WeatherIcons.code(forSymbol: symbol)
+        snap.observedAt = Date()
+        if let top = alerts.max(by: { $0.severity.rank < $1.severity.rank }) {
+            snap.alert = .init(title: top.event, severity: top.severity, until: top.endsAt)
+        }
+        return snap
     }
 
     // MARK: - Location (one-shot)

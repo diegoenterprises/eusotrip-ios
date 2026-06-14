@@ -224,6 +224,8 @@
 		B1A11111111111111111AA01 /* WeatherSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA02 /* WeatherSnapshot.swift */; };
 		B1A11111111111111111AA03 /* WeatherService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA04 /* WeatherService.swift */; };
 		B1A11111111111111111AA05 /* WeatherCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA06 /* WeatherCard.swift */; };
+		B1A1F300000000000000AC01 /* WeatherV3Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A1F300000000000000AC02 /* WeatherV3Components.swift */; };
+		B1A11111111111111111AA0A /* WeatherIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA0B /* WeatherIcons.swift */; };
 		B1A11111111111111111AA07 /* DriverTabPanes.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AA08 /* DriverTabPanes.swift */; };
 		B1A11111111111111111AB01 /* ESangParticleBurst.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AB02 /* ESangParticleBurst.swift */; };
 		B1A11111111111111111AC01 /* MeDetailScreens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A11111111111111111AC02 /* MeDetailScreens.swift */; };
@@ -1240,6 +1242,8 @@
 		B1A11111111111111111AA02 /* WeatherSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherSnapshot.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA04 /* WeatherService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherService.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA06 /* WeatherCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherCard.swift; sourceTree = "<group>"; };
+		B1A1F300000000000000AC02 /* WeatherV3Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherV3Components.swift; sourceTree = "<group>"; };
+		B1A11111111111111111AA0B /* WeatherIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherIcons.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA08 /* DriverTabPanes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverTabPanes.swift; sourceTree = "<group>"; };
 		B1A11111111111111111AA09 /* EusoTrip.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = EusoTrip.entitlements; sourceTree = "<group>"; };
 		B1A11111111111111111AB02 /* ESangParticleBurst.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ESangParticleBurst.swift; sourceTree = "<group>"; };
@@ -2897,6 +2901,8 @@
 				AVSB00010CE0FF10000012A1 /* AIVisualScanButton.swift */,
 				MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */,
 				B1A11111111111111111AA06 /* WeatherCard.swift */,
+				B1A1F300000000000000AC02 /* WeatherV3Components.swift */,
+				B1A11111111111111111AA0B /* WeatherIcons.swift */,
 				D2RHIN000000000000ACDS /* RoleHomeIntro.swift */,
 				SPRK20260521000002 /* SparkBriefCard.swift */,
 				EQPR20260521000002 /* EquipmentRecommenderWidget.swift */,
@@ -3804,6 +3810,8 @@
 				B1A41111111111111111AA01 /* EusoWalletPassService.swift in Sources */,
 				A1DMC0001000000000000020 /* DriverLocationResolver.swift in Sources */,
 				B1A11111111111111111AA05 /* WeatherCard.swift in Sources */,
+				B1A1F300000000000000AC01 /* WeatherV3Components.swift in Sources */,
+				B1A11111111111111111AA0A /* WeatherIcons.swift in Sources */,
 				D2RHIN000000000000ABDS /* RoleHomeIntro.swift in Sources */,
 				SPRK20260521000001 /* SparkBriefCard.swift in Sources */,
 				EQPR20260521000001 /* EquipmentRecommenderWidget.swift in Sources */,
