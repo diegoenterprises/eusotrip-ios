@@ -125,6 +125,8 @@ private struct VesselShipperHomeBody: View {
                         actionErrorBanner(actionError)
                     }
 
+                    HomeWeatherWidget()
+
                     if loading {
                         loadingState
                     } else if let err = loadError {

@@ -118,11 +118,11 @@ struct CarrierHome: View {
 
     @ViewBuilder
     private var weatherSection: some View {
-        if let w = weather {
-            WeatherCard(snapshot: w)
-        } else if weatherNeedsLocation {
-            carrierEnableLocationCard
-        }
+        // Always-visible bespoke weather surface — owns its own fetch and
+        // renders an honest state (data / loading / enable-location /
+        // unavailable) so the widget never disappears. Founder 2026-06-14:
+        // weather must show on every role home.
+        HomeWeatherWidget()
     }
 
     private var carrierEnableLocationCard: some View {

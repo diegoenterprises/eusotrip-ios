@@ -238,11 +238,10 @@ struct ShipperHome: View {
     /// time-of-day fix in the card affects every role uniformly.
     @ViewBuilder
     private var weatherSection: some View {
-        if let w = weather {
-            WeatherCard(snapshot: w)
-        } else if weatherNeedsLocation {
-            shipperEnableLocationCard
-        }
+        // Always-visible bespoke weather surface — owns its own fetch and
+        // renders an honest state (data / loading / enable-location /
+        // unavailable) so the widget never disappears on any role.
+        HomeWeatherWidget()
     }
 
     /// "Enable location for live weather" CTA — same shape as the

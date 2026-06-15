@@ -111,6 +111,7 @@ struct AdminHome: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s5) {
                 header
+                HomeWeatherWidget()
                 kpiStrip
                 controlTowerLink
                 tenantsLink

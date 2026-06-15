@@ -37,13 +37,12 @@ struct RoleHomeIntro: View {
         VStack(alignment: .leading, spacing: Space.s4) {
             eSangMorningBriefCard()
 
-            if let s = snapshot {
-                WeatherCard(snapshot: s)
-            } else if availability == .needsLocation {
-                enableLocationCard
-            }
+            // Always-visible bespoke weather surface — owns its own fetch and
+            // honest empty states (data / loading / enable-location /
+            // unavailable). Replaces the previous gated WeatherCard that
+            // vanished whenever the snapshot was nil.
+            HomeWeatherWidget()
         }
-        .task { await fetch() }
     }
 
     private var enableLocationCard: some View {
