@@ -149,6 +149,7 @@ actor HEREAuthService {
         let authHeader = "OAuth " + headerPieces.joined(separator: ",")
 
         var req = URLRequest(url: tokenURL)
+        req.timeoutInterval = 15  // app-wide no-lingering-load bound
         req.httpMethod = "POST"
         req.setValue(authHeader, forHTTPHeaderField: "Authorization")
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")

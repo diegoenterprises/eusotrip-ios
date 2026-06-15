@@ -1280,7 +1280,11 @@ private struct CatalystLoadDetail: View {
             // file, fetch + decode the truck/rail route so the lane map
             // paints the real road geometry instead of a straight line.
             // Honest no-op for un-geocoded lanes and water (vessel/barge) legs.
-            if let detail { await refreshRoutePolyline(detail) } else { routePolyline = [] }
+            // Don't block the screen on the route polyline — the load detail
+            // is already on file, so let `loading` resolve now and paint the
+            // lane geometry in asynchronously (bounded by the HERE client's
+            // request timeout). No long lingering skeleton waiting on a route.
+            if let detail { Task { @MainActor in await refreshRoutePolyline(detail) } } else { routePolyline = [] }
         } catch {
             self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

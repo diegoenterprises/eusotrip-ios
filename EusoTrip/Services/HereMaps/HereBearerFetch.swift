@@ -58,6 +58,7 @@ enum HereBearerFetch {
             func attempt() async throws -> (Data, HTTPURLResponse) {
                 let token = try await HereMapsConfig.requireBearerToken()
                 var req = URLRequest(url: url)
+                req.timeoutInterval = 20  // app-wide no-lingering-load bound
                 req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                 let (data, resp) = try await session.data(for: req)
                 guard let http = resp as? HTTPURLResponse else {

@@ -69,7 +69,9 @@ private struct WalletPassBody: View {
     private func openPass(_ url: String) {
         guard let u = URL(string: url) else { return }
         Task {
-            if let (data, _) = try? await URLSession.shared.data(from: u),
+            var req = URLRequest(url: u)
+            req.timeoutInterval = 15  // app-wide no-lingering-load bound
+            if let (data, _) = try? await URLSession.shared.data(for: req),
                let pkPass = try? PKPass(data: data),
                let vc = PKAddPassesViewController(pass: pkPass) {
                 await MainActor.run {

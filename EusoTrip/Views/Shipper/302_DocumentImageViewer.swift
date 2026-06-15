@@ -45,7 +45,9 @@ private struct ImageViewerBody: View {
     private func fetchImage() async {
         loading = true
         guard let url = URL(string: imageUrl) else { loading = false; return }
-        if let (data, _) = try? await URLSession.shared.data(from: url),
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 12  // app-wide no-lingering-load bound: cap the skeleton
+        if let (data, _) = try? await URLSession.shared.data(for: req),
            let img = UIImage(data: data) {
             image = img
         }

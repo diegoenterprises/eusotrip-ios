@@ -99,6 +99,7 @@ actor HereMatrixClient {
             func attempt() async throws -> (Data, HTTPURLResponse) {
                 let token = try await HereMapsConfig.requireBearerToken()
                 var req = URLRequest(url: url)
+                req.timeoutInterval = 20  // app-wide no-lingering-load bound
                 req.httpMethod = "POST"
                 req.setValue("application/json",         forHTTPHeaderField: "Content-Type")
                 req.setValue("Bearer \(token)",          forHTTPHeaderField: "Authorization")
