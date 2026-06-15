@@ -31,6 +31,9 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct WeatherCard: View {
     let snapshot: WeatherSnapshot
@@ -428,27 +431,8 @@ struct WeatherCard: View {
     }
 
     private func metricTile(_ glyph: WeatherIcons.Utility, value: String, key: String, hazard: Bool) -> some View {
-        VStack(spacing: 3) {
-            WeatherIcons.utility(glyph, size: 17, tint: Color(red: 0.81, green: 0.88, blue: 1.0))
-            Text(value)
-                .font(.system(size: 13, weight: .heavy))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-                .lineLimit(1).minimumScaleFactor(0.7)
-            Text(key)
-                .font(.system(size: 9.5)).tracking(0.3)
-                .foregroundStyle(.white.opacity(0.7))
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 9).padding(.horizontal, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .fill(hazard ? Brand.warning.opacity(0.30) : Color.white.opacity(0.10))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Color.white.opacity(hazard ? 0.40 : 0.18), lineWidth: 0.5)
-        )
+        WeatherMetricTile(glyph: glyph, value: value, key: key,
+                          hazard: hazard, reduceMotion: reduceMotion)
     }
 
     /// The single iridescent hairline (§D.1.5) — the v3 aurora stops
@@ -498,8 +482,11 @@ struct WeatherCard: View {
             }
             .padding(15)
             .background(
+                // Dark-glass ink (not adaptive palette.bgCard) so the panel's
+                // white text stays readable in light mode too, matching the
+                // always-dark hero stage above it.
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(palette.bgCard)
+                    .fill(WeatherV3.cardInk)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -769,12 +756,15 @@ struct WeatherCard: View {
     /// "today" chip carries the magenta-tinted selected style.
     private func dayChip(_ day: WeatherSnapshot.DailyForecast,
                          isToday: Bool, weekLow: Int, weekHigh: Int) -> some View {
+        // Dark-glass ink (not the adaptive palette.bgCard, which went white
+        // in light mode and hid the white chip text). The widget is an
+        // always-dark sky surface, so the chips stay dark in both schemes.
         let fill: AnyShapeStyle = isToday
             ? AnyShapeStyle(LinearGradient(
-                colors: [WeatherV3.auroraB.opacity(0.16), palette.bgCard],
+                colors: [WeatherV3.auroraB.opacity(0.30), WeatherV3.cardInk],
                 startPoint: .top, endPoint: .bottom))
-            : AnyShapeStyle(palette.bgCard)
-        let stroke = isToday ? WeatherV3.auroraB.opacity(0.55) : Color.white.opacity(0.07)
+            : AnyShapeStyle(WeatherV3.cardInk)
+        let stroke = isToday ? WeatherV3.auroraB.opacity(0.55) : Color.white.opacity(0.10)
         return VStack(spacing: 6) {
             Text(day.weekdayLabel == "Today" ? "Today" : day.weekdayLabel)
                 .font(.system(size: 11, weight: .heavy))
@@ -819,7 +809,10 @@ struct WeatherCard: View {
     private var sourceLine: some View {
         Text(snapshot.attributionLine)
             .font(.system(size: 11))
-            .foregroundStyle(.white.opacity(0.42))
+            // Adaptive — this line sits directly on the page (no card), so
+            // white-on-light was invisible in light mode. Palette tertiary
+            // contrasts in both schemes.
+            .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.top, 1)
     }
@@ -923,6 +916,92 @@ struct WeatherCard: View {
                 .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
         }
         .frame(width: size, height: size)
+    }
+}
+
+// MARK: - Animated metric tile (wind / visibility / humidity / precip)
+
+/// A live metric tile: the v2 utility glyph carries a CONTINUOUS,
+/// characteristic motion (wind sways, the eye breathes, humidity bobs, a
+/// precip drop drips) and the whole tile springs on press. Nothing here is
+/// static. Motion pauses under Reduce Motion; the press feedback stays.
+private struct WeatherMetricTile: View {
+    let glyph: WeatherIcons.Utility
+    let value: String
+    let key: String
+    let hazard: Bool
+    var reduceMotion: Bool
+
+    @State private var pressed = false
+
+    private let tint = Color(red: 0.81, green: 0.88, blue: 1.0)
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: reduceMotion)) { tl in
+            let t = reduceMotion ? 0 : tl.date.timeIntervalSinceReferenceDate
+            let m = motion(t)
+            VStack(spacing: 3) {
+                WeatherIcons.utility(glyph, size: 17, tint: tint)
+                    .offset(x: m.x, y: m.y)
+                    .rotationEffect(.degrees(m.rot))
+                    .scaleEffect(m.scale)
+                Text(value)
+                    .font(.system(size: 13, weight: .heavy))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .contentTransition(.numericText())
+                Text(key)
+                    .font(.system(size: 9.5)).tracking(0.3)
+                    .foregroundStyle(.white.opacity(0.7))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9).padding(.horizontal, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(hazard ? Brand.warning.opacity(0.30) : Color.white.opacity(0.10))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(Color.white.opacity(hazard ? 0.40 : 0.18), lineWidth: 0.5)
+            )
+            .scaleEffect(pressed ? 0.93 : 1)
+            .animation(.spring(response: 0.32, dampingFraction: 0.6), value: pressed)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .onTapGesture { tapPulse() }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(key) \(value)")
+    }
+
+    /// Per-metric continuous motion: (xOffset, yOffset, rotationDeg, scale).
+    private func motion(_ t: Double) -> (x: CGFloat, y: CGFloat, rot: Double, scale: CGFloat) {
+        guard !reduceMotion else { return (0, 0, 0, 1) }
+        switch glyph {
+        case .wind:
+            // gust sway: drift right-left with a little lean.
+            return (CGFloat(sin(t * 2.1) * 1.8), 0, sin(t * 2.1) * 5, 1)
+        case .eye:
+            // slow "breathing" pulse, like a blink that never quite closes.
+            return (0, 0, 0, CGFloat(1 + 0.07 * sin(t * 1.5)))
+        case .humid:
+            // droplet bob up/down.
+            return (0, CGFloat(sin(t * 1.7) * 1.4), 0, 1)
+        case .precip:
+            // a falling-drip cadence: ease down, snap back.
+            let p = (sin(t * 2.6) * 0.5 + 0.5)
+            return (0, CGFloat(p * 2.4 - 1.2), 0, CGFloat(1 + 0.05 * p))
+        default:
+            return (0, 0, 0, CGFloat(1 + 0.04 * sin(t * 1.6)))
+        }
+    }
+
+    private func tapPulse() {
+        pressed = true
+        #if canImport(UIKit)
+        if !reduceMotion { UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.6) }
+        #endif
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.13) { pressed = false }
     }
 }
 
