@@ -125,6 +125,13 @@ struct ShipperLoadDetail: View {
     /// listing flow accessible from the chip's tap.
     @State private var listingTrust: ListingTrust? = nil
 
+    /// Real road geometry for the hero map's pickup→delivery corridor,
+    /// decoded from HERE Routing v8. Empty until the route resolves (or
+    /// on any failure / vessel leg), in which case the map falls back to
+    /// the straight pickup→delivery base line — never a fabricated path.
+    /// Loaded by `refreshRoutePolyline()` from `.task`/`refreshAll`.
+    @State private var routePolyline: [HereLatLng] = []
+
     private var lifecycleVertical: TripVertical {
         TripVertical(role: session.user?.role)
     }
@@ -1158,16 +1165,25 @@ struct ShipperLoadDetail: View {
                 // the "Route loading…" forever blank) for the OMV vector
                 // renderer the plan serves. Pickup/delivery pins + a route
                 // connector layered on the vector basemap; dark/light native.
+                //
+                // 2026-06-13: the connector now follows the REAL road network
+                // (HERE Routing v8, decoded into `routePolyline`) instead of a
+                // straight pickup→delivery segment. Falls back to the straight
+                // 2-point line only while the real route is unavailable
+                // (loading, HERE error, or a vessel great-circle leg).
+                let routeLine: [HereLatLng] = routePolyline.count >= 2
+                    ? routePolyline
+                    : [.init(lane.pickup), .init(lane.delivery)]
                 HereLiveMapView(
                     center: .init(
                         (lane.pickup.latitude + lane.delivery.latitude) / 2,
                         (lane.pickup.longitude + lane.delivery.longitude) / 2
                     ),
                     zoom: 6,
-                    route: [.init(lane.pickup), .init(lane.delivery)],
+                    route: routeLine,
                     baseLayers: [
                         .route(
-                            polyline: [.init(lane.pickup), .init(lane.delivery)],
+                            polyline: routeLine,
                             colorHex: "#1473FF"
                         ),
                         .markers([
@@ -1277,6 +1293,38 @@ struct ShipperLoadDetail: View {
             pickup: CLLocationCoordinate2D(latitude: pLat, longitude: pLng),
             delivery: CLLocationCoordinate2D(latitude: dLat, longitude: dLng)
         )
+    }
+
+    /// Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
+    /// its section polyline into `routePolyline` — the real curved road
+    /// geometry, not a straight 2-point segment. Truck-aware via the default
+    /// `.standardUSSemiLoaded` profile. On any failure (missing lane, HERE
+    /// error, <2 decoded points) the polyline stays empty and the hero map
+    /// keeps the straight pickup→delivery base line — never a fabricated
+    /// path. Vessel mode is skipped entirely (an ocean leg is a great
+    /// circle, not a road route), matching LifecycleScaffold.
+    @MainActor
+    private func refreshRoutePolyline() async {
+        guard lifecycleVertical != .vessel, let lane = laneForMap else {
+            routePolyline = []
+            return
+        }
+        let stops = HereStops(
+            origin: lane.pickup,
+            destination: lane.delivery
+        )
+        do {
+            let resp = try await HereRoutingClient.shared.route(
+                stops: stops, profile: .standardUSSemiLoaded)
+            guard let section = resp.routes.first?.sections.first else {
+                routePolyline = []
+                return
+            }
+            let decoded = HereRoutingClient.polyline(for: section)
+            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
+        } catch {
+            routePolyline = []
+        }
     }
 
     private var originLabel: String {
@@ -2217,6 +2265,10 @@ struct ShipperLoadDetail: View {
             loadAppointment = appointment
             escortAssignments = escorts
         }
+        // Detail (and thus laneForMap coords) is now resolved — fetch the
+        // real road geometry for the hero map. Skips vessel legs and folds
+        // any failure to the straight-line fallback inside the loader.
+        await refreshRoutePolyline()
     }
 
     /// Pull the listing-trust verdict for this load. Verdict comes

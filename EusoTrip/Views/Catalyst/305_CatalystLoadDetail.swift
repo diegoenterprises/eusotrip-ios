@@ -43,6 +43,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - Screen wrapper
 
@@ -125,6 +126,12 @@ private struct CatalystLoadDetail: View {
     @State private var assignedDriver: CatalystAPI.FleetDriver? = nil
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
+    /// REAL decoded HERE Routing geometry for the pickup→delivery corridor
+    /// (curved road polyline), loaded by `refreshRoutePolyline(_:)` once the
+    /// load's geocoded endpoints are on file. Empty = no real route yet
+    /// (un-geocoded lane, vessel/barge leg, or HERE error) → the map falls
+    /// back to the straight 2-point pickup→delivery line. Never fabricated.
+    @State private var routePolyline: [HereLatLng] = []
 
     // MARK: Sheet presentation state
     @State private var showStatusPicker: Bool = false
@@ -368,19 +375,21 @@ private struct CatalystLoadDetail: View {
         if let coords = laneCoords(l) {
             let midLat = (coords.pickupLat + coords.deliveryLat) / 2
             let midLng = (coords.pickupLng + coords.deliveryLng) / 2
+            // REAL road geometry when HERE Routing has resolved it (≥2 pts);
+            // straight 2-point pickup→delivery ONLY as the honest fallback
+            // (un-geocoded lane, vessel/barge great-circle leg, or HERE
+            // error). The straight line is never a fabricated "road".
+            let line: [HereLatLng] = routePolyline.count >= 2
+                ? routePolyline
+                : [.init(coords.pickupLat, coords.pickupLng),
+                   .init(coords.deliveryLat, coords.deliveryLng)]
             HereLiveMapView(
                 center: .init(midLat, midLng),
                 zoom: 6,
-                route: [
-                    .init(coords.pickupLat, coords.pickupLng),
-                    .init(coords.deliveryLat, coords.deliveryLng)
-                ],
+                route: line,
                 baseLayers: [
                     .route(
-                        polyline: [
-                            .init(coords.pickupLat, coords.pickupLng),
-                            .init(coords.deliveryLat, coords.deliveryLng)
-                        ],
+                        polyline: line,
                         colorHex: "#1473FF"
                     ),
                     .markers([
@@ -1205,6 +1214,48 @@ private struct CatalystLoadDetail: View {
         return out.string(from: date)
     }
 
+    // MARK: - Route geometry (REAL HERE corridor)
+    //
+    // Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
+    // its section polyline into `routePolyline` — the real curved road
+    // geometry, not the straight 2-point segment the map used to draw. The
+    // surface holds a `LoadDetail` (not the full `Load` that
+    // `TruckProfile.from(load:)` needs), so we build `HereStops` from the
+    // already-resolved `laneCoords(_:)` and route on the default
+    // `.standardUSSemiLoaded` profile — the same baseEquipment
+    // `HereRoutingClient.route(for:)` applies. On any failure (missing
+    // coords, HERE error) the polyline stays empty and the map keeps the
+    // straight pickup→delivery base line — never a fabricated path.
+    //
+    // Water modes are SKIPPED: a vessel/barge leg is a great-circle ocean
+    // path, not a road route — fetching road geometry would be dishonest, so
+    // we leave `routePolyline` empty and the map draws the direct connector.
+    @MainActor
+    private func refreshRoutePolyline(_ l: LoadsAPI.LoadDetail) async {
+        let mode = TransportMode(rawValue: l.transportMode ?? "truck") ?? .truck
+        guard mode != .vessel, mode != .barge,
+              let coords = laneCoords(l) else {
+            routePolyline = []
+            return
+        }
+        let stops = HereStops(
+            origin: CLLocationCoordinate2D(latitude: coords.pickupLat, longitude: coords.pickupLng),
+            destination: CLLocationCoordinate2D(latitude: coords.deliveryLat, longitude: coords.deliveryLng)
+        )
+        do {
+            let resp = try await HereRoutingClient.shared.route(
+                stops: stops, profile: .standardUSSemiLoaded)
+            guard let section = resp.routes.first?.sections.first else {
+                routePolyline = []
+                return
+            }
+            let decoded = HereRoutingClient.polyline(for: section)
+            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
+        } catch {
+            routePolyline = []
+        }
+    }
+
     // MARK: - Network
 
     private func fetch() async {
@@ -1213,6 +1264,7 @@ private struct CatalystLoadDetail: View {
         defer { loading = false }
         guard !loadId.isEmpty, loadId != "0" else {
             // No id — leave load nil so emptyLoadState renders.
+            routePolyline = []
             return
         }
         do {
@@ -1224,6 +1276,11 @@ private struct CatalystLoadDetail: View {
                 let roster = (try? await EusoTripAPI.shared.catalyst.getMyDrivers(limit: 50)) ?? []
                 self.assignedDriver = roster.first { $0.id == String(driverId) }
             }
+            // Once the load (and thus its real pickup/delivery coords) is on
+            // file, fetch + decode the truck/rail route so the lane map
+            // paints the real road geometry instead of a straight line.
+            // Honest no-op for un-geocoded lanes and water (vessel/barge) legs.
+            if let detail { await refreshRoutePolyline(detail) } else { routePolyline = [] }
         } catch {
             self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

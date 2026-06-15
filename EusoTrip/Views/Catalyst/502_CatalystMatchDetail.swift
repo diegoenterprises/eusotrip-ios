@@ -59,6 +59,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - Screen body
 
@@ -87,6 +88,14 @@ struct CatalystMatchDetail: View {
 
     @State private var presentingFullLoadDetail: Bool = false
 
+    /// Decoded HERE Routing v8 section polyline for the match load's
+    /// pickup→delivery corridor — the real curved road geometry painted
+    /// on the route preview. Empty until the fetch lands (or on any
+    /// failure / vessel-barge water leg), at which point `routeMapCard`
+    /// falls back to the straight pickup→delivery base line, never a
+    /// fabricated path. Mirrors the sibling 373/305 pattern.
+    @State private var routePolyline: [HereLatLng] = []
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -99,21 +108,25 @@ struct CatalystMatchDetail: View {
         }
         .task {
             await refreshAll()
+            await refreshRoutePolyline()
             joinLoadRoom()
         }
-        .refreshable { await refreshAll() }
+        .refreshable {
+            await refreshAll()
+            await refreshRoutePolyline()
+        }
         .onDisappear { leaveLoadRoom() }
         // RealtimeService → live updates from the match's Socket.IO
         // room (status changes, candidate fan-out, carrier accept,
         // reassignment) refresh the detail surface in place.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
-            Task { await refreshAll() }
+            Task { await refreshAll(); await refreshRoutePolyline() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
-            Task { await refreshAll() }
+            Task { await refreshAll(); await refreshRoutePolyline() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
-            Task { await refreshAll() }
+            Task { await refreshAll(); await refreshRoutePolyline() }
         }
         // "Open full load detail" CTA → 305 Catalyst Load Detail with
         // the resolved loadId so the catalyst can update status,
@@ -343,21 +356,20 @@ struct CatalystMatchDetail: View {
         if let coords = laneCoords(l) {
             let midLat = (coords.pickupLat + coords.deliveryLat) / 2
             let midLng = (coords.pickupLng + coords.deliveryLng) / 2
+            let straight: [HereLatLng] = [
+                .init(coords.pickupLat, coords.pickupLng),
+                .init(coords.deliveryLat, coords.deliveryLng)
+            ]
+            // Prefer the decoded HERE Routing v8 section polyline (real
+            // road geometry fetched in `refreshRoutePolyline`); fall back
+            // to the straight pickup→delivery line only until it lands.
+            let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : straight
             HereLiveMapView(
                 center: .init(midLat, midLng),
                 zoom: 6,
-                route: [
-                    .init(coords.pickupLat, coords.pickupLng),
-                    .init(coords.deliveryLat, coords.deliveryLng)
-                ],
+                route: line,
                 baseLayers: [
-                    .route(
-                        polyline: [
-                            .init(coords.pickupLat, coords.pickupLng),
-                            .init(coords.deliveryLat, coords.deliveryLng)
-                        ],
-                        colorHex: "#1473FF"
-                    ),
+                    .route(polyline: line, colorHex: "#1473FF"),
                     .markers([
                         .init(at: .init(coords.pickupLat, coords.pickupLng),
                               kind: .pickup, label: coords.originTitle),
@@ -420,6 +432,48 @@ struct CatalystMatchDetail: View {
         let origin = p.cityState.isEmpty ? "Origin" : p.cityState
         let dest = d.cityState.isEmpty ? "Dest" : d.cityState
         return (pLat, pLng, dLat, dLng, origin, dest)
+    }
+
+    // MARK: - HERE route geometry (373/305 pattern)
+
+    /// Resolves the match load's pickup→delivery corridor via HERE
+    /// Routing v8 and decodes its section polyline into the live route
+    /// line painted on the preview map — the real curved road geometry,
+    /// not a straight 2-point segment. Truck-aware via the default
+    /// `.standardUSSemiLoaded` profile (this surface holds a
+    /// `LoadDetail`, the same default `HereRoutingClient` applies). On
+    /// any failure (missing coords, HERE error) the polyline stays empty
+    /// and the map keeps the straight pickup→delivery base line — never
+    /// a fabricated path. Water modes (vessel / barge) are skipped: an
+    /// ocean leg is a great circle, not a road route.
+    @MainActor
+    private func refreshRoutePolyline() async {
+        guard let live = detailStore.state.value ?? nil else {
+            routePolyline = []
+            return
+        }
+        let mode = TransportMode(rawValue: live.transportMode ?? "truck") ?? .truck
+        guard mode != .vessel, mode != .barge,
+              let coords = laneCoords(live) else {
+            routePolyline = []
+            return
+        }
+        let stops = HereStops(
+            origin: CLLocationCoordinate2D(latitude: coords.pickupLat, longitude: coords.pickupLng),
+            destination: CLLocationCoordinate2D(latitude: coords.deliveryLat, longitude: coords.deliveryLng)
+        )
+        do {
+            let resp = try await HereRoutingClient.shared.route(
+                stops: stops, profile: .standardUSSemiLoaded)
+            guard let section = resp.routes.first?.sections.first else {
+                routePolyline = []
+                return
+            }
+            let decoded = HereRoutingClient.polyline(for: section)
+            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
+        } catch {
+            routePolyline = []
+        }
     }
 
     /// Pickup / delivery / bidding-ends. Em-dash on missing columns
