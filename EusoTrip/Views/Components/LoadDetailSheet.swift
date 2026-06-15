@@ -96,6 +96,17 @@ struct LoadDetailSheet: View {
     /// `loadBidding.submit` at the posted rate (one-tap accept).
     @State private var bookState: BookState = .idle
 
+    /// Decoded HERE Routing v8 corridor for the route preview map — the
+    /// REAL curved road geometry (pickup→delivery via the actual highway
+    /// network), not the straight 2-point segment that used to render.
+    /// `[]` until `refreshRoutePolyline()` resolves, on any HERE error, or
+    /// on a water leg (vessel/barge) — in which cases the map honestly
+    /// falls back to the straight pickup→delivery base line. Mirrors the
+    /// LifecycleScaffold `refreshRoutePolyline` pattern. Because this is a
+    /// SHARED component, every surface that presents `LoadDetailSheet` now
+    /// gets road-following polylines.
+    @State private var routePolyline: [HereLatLng] = []
+
     enum BookState: Equatable {
         case idle
         case submitting
@@ -317,6 +328,58 @@ struct LoadDetailSheet: View {
                 comparisonError = true
             }
         }
+        .task(id: load.id) {
+            // Real route geometry for the ROUTE preview map. Resolves the
+            // pickup→delivery corridor via HERE Routing v8 and decodes its
+            // section polyline so the map follows the actual roads instead
+            // of drawing a straight 2-point line. On any failure (or a
+            // water leg) `routePolyline` stays `[]` and the map honestly
+            // falls back to the straight base line — never a fabricated
+            // path. Same pattern as LifecycleScaffold.refreshRoutePolyline.
+            await refreshRoutePolyline()
+        }
+    }
+
+    /// Resolves the pickup→delivery corridor via HERE Routing v8 and decodes
+    /// its section polyline into `routePolyline` — the real curved road
+    /// geometry, not a straight 2-point segment. Truck-aware via the default
+    /// `.standardUSSemiLoaded` profile. Skipped for water legs (vessel /
+    /// barge) — an ocean / river leg is a great circle, not a road route —
+    /// and gated behind the same `routeCoordinatesAreReal` honesty check the
+    /// map uses, so a centroid-miss lane never fires a malformed request. On
+    /// any failure the polyline stays empty and the map keeps the straight
+    /// pickup→delivery base line.
+    @MainActor
+    private func refreshRoutePolyline() async {
+        // Water legs (vessel / barge) are great-circle, not road routes —
+        // skip the HERE truck-routing fetch entirely, like LifecycleScaffold.
+        guard mode != .vessel, mode != .barge else {
+            routePolyline = []
+            return
+        }
+        let pickup   = CLLocationCoordinate2D(latitude: load.originLat,
+                                              longitude: load.originLng)
+        let delivery = CLLocationCoordinate2D(latitude: load.destLat,
+                                              longitude: load.destLng)
+        // Only fetch when both endpoints are honest, distinct coordinates —
+        // a centroid-miss / null-island lane has no real route to draw.
+        guard routeCoordinatesAreReal(pickup: pickup, delivery: delivery) else {
+            routePolyline = []
+            return
+        }
+        let stops = HereStops(origin: pickup, destination: delivery)
+        do {
+            let resp = try await HereRoutingClient.shared.route(
+                stops: stops, profile: .standardUSSemiLoaded)
+            guard let section = resp.routes.first?.sections.first else {
+                routePolyline = []
+                return
+            }
+            let decoded = HereRoutingClient.polyline(for: section)
+            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
+        } catch {
+            routePolyline = []
+        }
     }
 
     /// Map iOS load.equipment string → server `equipmentEnum`. The
@@ -505,6 +568,14 @@ struct LoadDetailSheet: View {
             // and center the camera on a fake midpoint. Gate it out and show
             // a placeholder instead of a confident-but-fake route.
             if routeCoordinatesAreReal(pickup: lane.pickup, delivery: lane.delivery) {
+                // Feed the REAL decoded HERE corridor when it's resolved
+                // (≥2 pts); fall back to the straight pickup→delivery
+                // segment ONLY while the route is still loading / a water
+                // leg / HERE was unavailable. Honest: the straight line is
+                // a fallback, never the default.
+                let line: [HereLatLng] = routePolyline.count >= 2
+                    ? routePolyline
+                    : [.init(lane.pickup), .init(lane.delivery)]
                 ZStack(alignment: .bottomLeading) {
                     // 2026-05-22: migrated off the legacy raster HereMapView onto
                     // the OMV vector renderer + live add-on layer (HereLiveMapView),
@@ -517,10 +588,10 @@ struct LoadDetailSheet: View {
                             (lane.pickup.longitude + lane.delivery.longitude) / 2
                         ),
                         zoom: 6,
-                        route: [.init(lane.pickup), .init(lane.delivery)],
+                        route: line,
                         baseLayers: [
                             .route(
-                                polyline: [.init(lane.pickup), .init(lane.delivery)],
+                                polyline: line,
                                 colorHex: "#1473FF"
                             ),
                             .markers([

@@ -55,6 +55,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 // MARK: - Screen body
 
@@ -112,6 +113,16 @@ struct EscortAssignmentDetail: View {
     /// the fetch lands; `(0,0)` ends are treated as "awaiting coordinates"
     /// (null-island gate) so a brand-new load with no geocode never draws.
     @State private var corridorCoords: EscortCorridorCoords? = nil
+
+    /// Decoded HERE Routing v8 section polyline for the escort corridor's
+    /// origin→destination — the real curved road geometry painted on the
+    /// route-preview map, not a straight 2-point segment. Empty until the
+    /// fetch lands (or on any failure), at which point `routePreviewCard`
+    /// falls back to the straight origin→destination base line, never a
+    /// fabricated path. An escort corridor is always a heavy-haul road
+    /// route (pilot/chase vehicles), so no water-mode skip is needed.
+    /// Mirrors the sibling 373/305/502 pattern.
+    @State private var routePolyline: [HereLatLng] = []
 
     /// Route-wide wind-gust go/no-go envelope for the high-profile load —
     /// decoded from the Wave-4 `escorts.getCorridor.windGate` block (the
@@ -278,6 +289,11 @@ struct EscortAssignmentDetail: View {
             if let coords = corridorCoords, coords.isRoutable {
                 let pickup = HereLatLng(coords.originLat, coords.originLng)
                 let delivery = HereLatLng(coords.destLat, coords.destLng)
+                // Prefer the decoded HERE Routing v8 section polyline (real
+                // road geometry fetched in `refreshRoutePolyline`); fall
+                // back to the straight origin→destination line only until
+                // it lands — never a fabricated path.
+                let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : [pickup, delivery]
                 HereLiveMapView(
                     center: HereLatLng(
                         (coords.originLat + coords.destLat) / 2,
@@ -285,9 +301,9 @@ struct EscortAssignmentDetail: View {
                     ),
                     zoom: 6,
                     interactive: false,
-                    route: [pickup, delivery],
+                    route: line,
                     baseLayers: [
-                        .route(polyline: [pickup, delivery], colorHex: "#1473FF"),
+                        .route(polyline: line, colorHex: "#1473FF"),
                         .markers([
                             HereMarker(at: pickup, kind: .pickup, label: d.origin.isEmpty ? nil : d.origin),
                             HereMarker(at: delivery, kind: .delivery, label: d.destination.isEmpty ? nil : d.destination)
@@ -1000,6 +1016,7 @@ struct EscortAssignmentDetail: View {
             localConfirmed = (v.routeConfirmed == true)
         }
         await loadCorridorCoords()
+        await refreshRoutePolyline()
         await loadWindGate()
     }
 
@@ -1023,6 +1040,39 @@ struct EscortAssignmentDetail: View {
         } catch {
             // Honest seam: no coords → awaiting state, never a fake route.
             corridorCoords = nil
+        }
+    }
+
+    /// Resolves the corridor's origin→destination via HERE Routing v8 and
+    /// decodes its section polyline into the route-preview line — the real
+    /// curved road geometry, not a straight 2-point segment. Truck-aware
+    /// via the default `.standardUSSemiLoaded` profile (an escort corridor
+    /// is a heavy-haul road route). Depends on `corridorCoords` already
+    /// being resolved, so it runs after `loadCorridorCoords()`. On any
+    /// failure (no coords, null-island endpoint, HERE error) the polyline
+    /// stays empty and the preview keeps the straight origin→destination
+    /// base line — never a fabricated path.
+    @MainActor
+    private func refreshRoutePolyline() async {
+        guard let coords = corridorCoords, coords.isRoutable else {
+            routePolyline = []
+            return
+        }
+        let stops = HereStops(
+            origin: CLLocationCoordinate2D(latitude: coords.originLat, longitude: coords.originLng),
+            destination: CLLocationCoordinate2D(latitude: coords.destLat, longitude: coords.destLng)
+        )
+        do {
+            let resp = try await HereRoutingClient.shared.route(
+                stops: stops, profile: .standardUSSemiLoaded)
+            guard let section = resp.routes.first?.sections.first else {
+                routePolyline = []
+                return
+            }
+            let decoded = HereRoutingClient.polyline(for: section)
+            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
+        } catch {
+            routePolyline = []
         }
     }
 

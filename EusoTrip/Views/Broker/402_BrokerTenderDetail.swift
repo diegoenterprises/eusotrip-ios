@@ -78,6 +78,15 @@ struct BrokerTenderDetail: View {
 
     @StateObject private var detailStore = BrokerTenderDetailStore()
 
+    /// Decoded HERE Routing v8 section polyline for the tendered lane —
+    /// the real curved road geometry, not a straight 2-point segment.
+    /// Loaded by `refreshRoutePolyline` once the detail row (and thus the
+    /// real pickup/delivery coords) is on file. Stays empty — never a
+    /// fabricated path — when coords are missing, the load is a vessel
+    /// (ocean legs are great circles, not road routes), or HERE errors;
+    /// the map then falls back to the straight pickup→delivery line.
+    @State private var routePolyline: [HereLatLng] = []
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -429,16 +438,23 @@ struct BrokerTenderDetail: View {
             sectionHeader("LANE", icon: "map")
             ZStack {
                 if let lane = laneForMap(d) {
+                    // Prefer the decoded HERE section polyline (real curved
+                    // road geometry from `refreshRoutePolyline`); fall back
+                    // to the straight pickup→delivery base line only until
+                    // that resolves (or for vessel legs / missing coords).
+                    let line: [HereLatLng] = routePolyline.count >= 2
+                        ? routePolyline
+                        : [.init(lane.pickup), .init(lane.delivery)]
                     HereLiveMapView(
                         center: .init(
                             (lane.pickup.latitude + lane.delivery.latitude) / 2,
                             (lane.pickup.longitude + lane.delivery.longitude) / 2
                         ),
                         zoom: 6,
-                        route: [.init(lane.pickup), .init(lane.delivery)],
+                        route: line,
                         baseLayers: [
                             .route(
-                                polyline: [.init(lane.pickup), .init(lane.delivery)],
+                                polyline: line,
                                 colorHex: "#1473FF"
                             ),
                             .markers([
@@ -933,6 +949,50 @@ struct BrokerTenderDetail: View {
     private func refreshAll() async {
         detailStore.loadId = tenderId
         await detailStore.refresh()
+        // Once the detail row (and thus the real pickup/delivery coords) is
+        // on file, fetch + decode the truck route so the lane map paints the
+        // real road geometry instead of a straight 2-point line. Honest
+        // no-op for vessel legs / un-geocoded endpoints.
+        await refreshRoutePolyline()
+    }
+
+    /// Resolves the tendered pickup→delivery corridor via HERE Routing v8
+    /// and decodes its section polyline into `routePolyline` — the real
+    /// curved road geometry, not a straight 2-point segment. Reads the
+    /// same geocoded coords the lane map uses (`laneForMap`). Truck-aware
+    /// via the default `.standardUSSemiLoaded` profile (this surface holds
+    /// a `LoadDetail`, not the full `Load`). Vessel mode is skipped — an
+    /// ocean leg is a great circle, not a road route — and on any failure
+    /// (missing coords, HERE error) the polyline stays empty and the map
+    /// keeps the straight pickup→delivery fallback. Never a fabricated path.
+    @MainActor
+    private func refreshRoutePolyline() async {
+        guard let detail = detailStore.state.value ?? nil else {
+            routePolyline = []
+            return
+        }
+        // Vessel legs are great-circle, not road routes — skip the fetch.
+        let mode = (detail.transportMode ?? "truck").lowercased()
+        guard mode != "vessel", let lane = laneForMap(detail) else {
+            routePolyline = []
+            return
+        }
+        let stops = HereStops(
+            origin: lane.pickup,
+            destination: lane.delivery
+        )
+        do {
+            let resp = try await HereRoutingClient.shared.route(
+                stops: stops, profile: .standardUSSemiLoaded)
+            guard let section = resp.routes.first?.sections.first else {
+                routePolyline = []
+                return
+            }
+            let decoded = HereRoutingClient.polyline(for: section)
+            routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
+        } catch {
+            routePolyline = []
+        }
     }
 }
 
