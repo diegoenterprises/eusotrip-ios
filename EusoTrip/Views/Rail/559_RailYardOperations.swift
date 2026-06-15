@@ -65,6 +65,61 @@ private struct YardCoord559: Decodable, Hashable {
     let lng: Double
 }
 
+// MARK: - Visibility throttle (weather.realtime at the yard coordinate)
+
+/// Point conditions read at one yard's `rail_yards.coordinates` via
+/// `weather.realtime({lat,lon})` — the same realtime envelope the v3 widget
+/// consumes (mirrors `WeatherForLoad.Realtime`). EVERY field is optional and
+/// stays nil/`available:false` while the Tomorrow.io feed is enterprise-gated,
+/// so the throttle reads HONEST: no data ⇒ no tint, full slot capacity, no
+/// chip — and lights up the moment the key lands. We never fabricate a
+/// visibility mileage or a "degraded" verdict.
+private struct YardWeather559: Decodable {
+    let available: Bool?
+    let weatherCode: Int?
+    let condition: String?
+    let visibilityMi: Double?
+
+    // The realtime envelope names visibility `visibilityMi` (Tomorrow.io v3
+    // shape, matching WeatherForLoad.Realtime); legacy NWS-flavored points key
+    // it `visibility`. Accept both so the throttle lights up whichever the
+    // live proc emits — but only ever from a REAL field, never a default.
+    enum CodingKeys: String, CodingKey {
+        case available, weatherCode, condition, visibilityMi, visibility
+    }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        available    = try c.decodeIfPresent(Bool.self,   forKey: .available)
+        weatherCode  = try c.decodeIfPresent(Int.self,    forKey: .weatherCode)
+        condition    = try c.decodeIfPresent(String.self, forKey: .condition)
+        visibilityMi = try c.decodeIfPresent(Double.self, forKey: .visibilityMi)
+            ?? c.decodeIfPresent(Double.self, forKey: .visibility)
+    }
+
+    /// Rail-yard low-visibility floor. Below ~1 mi, switching/humping crews
+    /// throttle ladder moves and the yard's effective slot throughput drops —
+    /// this is the corridor signal, NOT a fabricated capacity. We only ever
+    /// DISCOUNT a real, enterprise-fed reading; we never invent the number.
+    static let lowVisFloorMi: Double = 1.0
+
+    /// REAL low-visibility state: a present mileage below the floor (and the
+    /// feed not explicitly dark). Absent mileage / `available:false` ⇒ false,
+    /// so the yard renders at full capacity with no tint.
+    var isDegraded: Bool {
+        if available == false { return false }
+        guard let v = visibilityMi else { return false }
+        return v < Self.lowVisFloorMi
+    }
+
+    /// Throughput discount (0…1 of nominal) derived from how far below the
+    /// floor the REAL reading sits — 0.5 mi vis ⇒ ~0.5×, clamped to [0.35, 1].
+    /// Nil (full capacity) whenever there's no degraded reading to discount.
+    var capacityFactor: Double? {
+        guard isDegraded, let v = visibilityMi else { return nil }
+        return min(1.0, max(0.35, v / Self.lowVisFloorMi))
+    }
+}
+
 // MARK: - Lane model
 
 private enum YardPill {
@@ -104,8 +159,17 @@ private struct RailYardOperationsBody: View {
     @State private var yards: [RailYard559] = []
     @State private var loading = true
     @State private var loadError: String? = nil
+    /// Visibility throttle — point conditions per yard (keyed by yard id),
+    /// hydrated best-effort from `weather.realtime` at each geocoded yard's
+    /// coordinate. Empty until the fan-out lands; a yard with no entry (no
+    /// geocode / no data / good vis) renders un-throttled at full capacity.
+    @State private var yardWeather: [Int: YardWeather559] = [:]
 
     private let routeId = "RAIL-260523-7C3A0B12D4"
+
+    /// The throttle reading for a yard, if any — only present when the feed
+    /// returned REAL point conditions for that yard's coordinate.
+    private func weather(for y: RailYard559) -> YardWeather559? { yardWeather[y.id] }
 
     // Lane partitions ---------------------------------------------------------
 
@@ -421,8 +485,27 @@ private struct RailYardOperationsBody: View {
 
     private func yardRow(_ y: RailYard559) -> some View {
         let kind = pill(for: y)
-        let cap = Double(y.capacity ?? 0)
-        let frac = max(0.04, min(1.0, cap / maxCapacity))
+        // Visibility throttle: a REAL low-vis reading at this yard's geocode
+        // tints the row DEGRADED and discounts its effective slot capacity.
+        // No reading (no geocode / no data / good vis) ⇒ wx == nil ⇒ the row
+        // renders exactly as before (full capacity, no tint, no chip).
+        let wx = weather(for: y)
+        let degraded = wx?.isDegraded ?? false
+        // Effective disc/bar tint — amber throttle signal when degraded, else
+        // the lane's own status color (unchanged).
+        let barTint: Color = degraded ? Brand.warning : kind.disc
+
+        let nominalCap = y.capacity ?? 0
+        // Throttled slot count: nominal × the REAL visibility factor (floored).
+        // Only a present, degraded reading discounts; otherwise == nominal.
+        let throttledCap: Int = {
+            guard let f = wx?.capacityFactor else { return nominalCap }
+            return Int((Double(nominalCap) * f).rounded(.down))
+        }()
+        // Bar saturation reflects the THROTTLED throughput so the discount
+        // reads at a glance; still scaled against the board's nominal max.
+        let frac = max(0.04, min(1.0, Double(throttledCap) / maxCapacity))
+
         let metaParts: [String] = [
             [y.city, y.state].compactMap { $0 }.joined(separator: " "),
             railroadName(y.railroadId),
@@ -431,14 +514,18 @@ private struct RailYardOperationsBody: View {
         let meta = metaParts.joined(separator: " · ")
 
         return HStack(alignment: .top, spacing: 0) {
-            // Icon disc
+            // Icon disc — amber wash + bespoke eye glyph overlay when throttled.
             ZStack {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(kind.color.opacity(0.14))
+                    .fill((degraded ? Brand.warning : kind.color).opacity(0.14))
                     .frame(width: 40, height: 40)
-                Image(systemName: "rectangle.split.1x2")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(kind.disc)
+                if degraded {
+                    WeatherIcons.utility(.eye, size: 19, tint: Brand.warning)
+                } else {
+                    Image(systemName: "rectangle.split.1x2")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(kind.disc)
+                }
             }
 
             VStack(alignment: .leading, spacing: 0) {
@@ -447,6 +534,15 @@ private struct RailYardOperationsBody: View {
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
                     Spacer(minLength: 8)
+                    // DEGRADED throttle pill — only when a real low-vis reading
+                    // discounts this yard. Sits left of the lane status pill.
+                    if degraded {
+                        Text("DEGRADED")
+                            .font(.system(size: 10.5, weight: .bold)).tracking(0.4)
+                            .foregroundStyle(Brand.warning)
+                            .padding(.horizontal, 9).padding(.vertical, 3)
+                            .background(Capsule().fill(Brand.warning.opacity(0.16)))
+                    }
                     // Status pill
                     Text(kind.label)
                         .font(.system(size: 10.5, weight: .bold)).tracking(0.4)
@@ -460,22 +556,39 @@ private struct RailYardOperationsBody: View {
                     .padding(.top, 4)
                     .lineLimit(1).minimumScaleFactor(0.7)
 
+                // Visibility chip — bespoke WeatherIcons.eye + the REAL mileage
+                // from the throttle reading. Only rendered when degraded; never
+                // a fabricated value (no chip when the feed is dark / vis good).
+                if degraded, let v = wx?.visibilityMi {
+                    HStack(spacing: 5) {
+                        WeatherIcons.utility(.eye, size: 12, tint: Brand.warning)
+                        Text("\(v.formatted(.number.precision(.fractionLength(0...1)))) mi visibility")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Brand.warning)
+                            .lineLimit(1)
+                    }
+                    .padding(.top, 6)
+                }
+
                 // Capacity bar + slot count row
                 HStack(alignment: .bottom, spacing: 12) {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Color.white.opacity(0.14))
                                 .frame(height: 6)
-                            Capsule().fill(kind.disc)
+                            Capsule().fill(barTint)
                                 .frame(width: max(6, geo.size.width * frac), height: 6)
                         }
                     }
                     .frame(height: 6)
                     VStack(alignment: .trailing, spacing: 1) {
-                        Text(capacityString(y.capacity))
+                        Text(capacityString(degraded ? throttledCap : y.capacity))
                             .font(.system(size: 14, weight: .bold)).monospacedDigit()
-                            .foregroundStyle(palette.textPrimary)
-                        Text(kind == .staging ? "\(y.totalTracks ?? 0) tracks" : "car slots")
+                            .foregroundStyle(degraded ? Brand.warning : palette.textPrimary)
+                        // When throttled, label the discount honestly against
+                        // the nominal (e.g. "of 1,800 · throttled"); otherwise
+                        // the unchanged slot/track unit.
+                        Text(throttleSublabel(kind: kind, y: y, degraded: degraded))
                             .font(.system(size: 9, weight: .regular))
                             .foregroundStyle(palette.textTertiary)
                     }
@@ -485,6 +598,16 @@ private struct RailYardOperationsBody: View {
             }
             .padding(.leading, 12)
         }
+    }
+
+    /// The capacity sublabel — nominal-vs-throttled when low vis discounts the
+    /// yard, else the unchanged slot/track unit. Never invents a number; the
+    /// "of N" is the yard's own real nominal capacity.
+    private func throttleSublabel(kind: YardPill, y: RailYard559, degraded: Bool) -> String {
+        if degraded, let nominal = y.capacity {
+            return "of \(capacityString(nominal)) · throttled"
+        }
+        return kind == .staging ? "\(y.totalTracks ?? 0) tracks" : "car slots"
     }
 
     private func capacityString(_ cap: Int?) -> String {
@@ -621,6 +744,12 @@ private struct RailYardOperationsBody: View {
         let limit: Int
     }
 
+    /// `weather.realtime` input — point conditions at a yard's geocode.
+    private struct RealtimeIn: Encodable {
+        let lat: Double
+        let lon: Double
+    }
+
     private func load() async {
         loading = true; loadError = nil
         do {
@@ -631,6 +760,9 @@ private struct RailYardOperationsBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+        // Fan out the visibility throttle AFTER the board is up so yards paint
+        // immediately; the throttle tints/discounts in as readings arrive.
+        await hydrateYardWeather()
     }
 
     /// "Yard directory" CTA — full list, no route filter (getRailYards).
@@ -642,6 +774,37 @@ private struct RailYardOperationsBody: View {
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
+        await hydrateYardWeather()
+    }
+
+    /// Visibility throttle — read point conditions at each GEOCODED yard's
+    /// `rail_yards.coordinates` via `weather.realtime({lat,lon})`. Best-effort:
+    /// a miss on any yard just leaves it un-throttled (full capacity, no tint).
+    /// Everything is enterprise-gated server-side, so today these resolve to
+    /// `available:false` / nil visibility and NO yard tints — the honest empty
+    /// state — and they light up the moment the Tomorrow.io key lands. We never
+    /// fabricate a visibility reading or a "degraded" verdict.
+    private func hydrateYardWeather() async {
+        let geocoded = yards.compactMap { y -> (Int, YardCoord559)? in
+            guard let c = y.coordinates else { return nil }
+            return (y.id, c)
+        }
+        guard !geocoded.isEmpty else { return }
+        let readings = await withTaskGroup(of: (Int, YardWeather559?).self) { group in
+            for (id, c) in geocoded {
+                group.addTask {
+                    let wx: YardWeather559? = try? await EusoTripAPI.shared.query(
+                        "weather.realtime", input: RealtimeIn(lat: c.lat, lon: c.lng))
+                    return (id, wx)
+                }
+            }
+            var acc: [Int: YardWeather559] = [:]
+            for await (id, wx) in group {
+                if let wx { acc[id] = wx }
+            }
+            return acc
+        }
+        self.yardWeather = readings
     }
 }
 

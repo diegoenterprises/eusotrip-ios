@@ -300,7 +300,15 @@ struct ActiveEnrouteLoaded: View {
                 // pulled from HERE Dynamic Map Content, centered on
                 // the driver's live fix. Chips hide individually when
                 // HERE returns nothing for that layer.
-                EnRouteRoadIntelStrip()
+                //
+                // §3 WEATHER AHEAD chip (Wave 3b parity): pass the same
+                // active load id this screen already hydrates for the
+                // lifecycle/ETA chrome so the bespoke weather chip mounts.
+                // The chip hides itself when the lane is clear / none /
+                // enterprise-gated (available:false today) and lights up
+                // the moment the §3 lane risk is actionable — never a
+                // fabricated band.
+                EnRouteRoadIntelStrip(loadId: activeLoad.map { String($0.id) })
                     .padding(.horizontal, 14)
                 // Tier 1 #12 (2026-05-21) — live reefer status HUD.
                 // Only renders when this load's product is reefer;

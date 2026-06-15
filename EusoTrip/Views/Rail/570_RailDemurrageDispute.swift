@@ -12,10 +12,14 @@
 //    railDemurrageAuto.dashboard           (EXISTS railDemurrageAuto.ts:18)      → KPI summary
 //    railDemurrageAuto.reportByDwellReason (EXISTS railDemurrageAuto.ts:93)      → attribution rows
 //    railDemurrageAuto.createDispute       (EXISTS railDemurrageAuto.ts:78)      → File-dispute CTA
+//    railShipments.getRailDemurrage {shipmentId}  (LIVE; Wave 4 server #85)      → facility geo +
+//      dwell-window anchors (facilityLat / facilityLon / facilityState / placedAt / releasedAt)
+//      that pin the cited historical-weather lookup to the REAL yard + dwell span.
 //    weather.historical {lat,lon,from,to}  (LIVE; Enterprise-gated)             → cited historical
 //      weather evidence auto-attached when a dwell reason is "weather" (max gust / min vis /
-//      peak condition + gov-alert overlap). Enterprise-gated → honest "available with the
-//      enterprise feed" em-dash state until it returns available:true; never a fabricated report.
+//      peak condition + gov-alert overlap), anchored to the getRailDemurrage facility + window.
+//      Enterprise-gated → honest "available with the enterprise feed" em-dash state until it
+//      returns available:true; never a fabricated report and never a fabricated anchor.
 //
 
 import SwiftUI
@@ -23,9 +27,14 @@ import SwiftUI
 struct RailDemurrageDisputeScreen: View {
     let theme: Theme.Palette
     let railId: String
+    /// Numeric shipment row the demurrage is filed against. Optional so the
+    /// existing rail-engineer nav (which only carries the string railId today)
+    /// keeps compiling; when present it lets us pull the getRailDemurrage
+    /// facility geo + dwell-window anchors that pin the cited-weather lookup.
+    var shipmentId: Int? = nil
 
     var body: some View {
-        Shell(theme: theme) { RailDemurrageDisputeBody(railId: railId) } nav: {
+        Shell(theme: theme) { RailDemurrageDisputeBody(railId: railId, shipmentId: shipmentId) } nav: {
             BottomNav(
                 leading: [NavSlot(label: "Home",      systemImage: "house",       isCurrent: false),
                           NavSlot(label: "Shipments", systemImage: "shippingbox", isCurrent: false)],
@@ -51,14 +60,33 @@ private struct DemurrageCharge570: Decodable {
     let contestedUsd: Double?
     let contestedDays: Int?
     let status: String?
-    // Facility geo + dwell window — anchor the cited historical-weather
-    // lookup. All optional: when the charge proc omits them (today, until
-    // the yard geocode + placed/released window land on the wire) the
-    // evidence call is honestly gated rather than fabricated.
+}
+
+// MARK: - Facility geo + dwell-window anchor (railShipments.getRailDemurrage row)
+
+/// One `railShipments.getRailDemurrage` record. Wave 4 server #85 added the
+/// facility geocode + the placed/released dwell window to each row; those are
+/// the anchors that pin the cited historical-weather lookup to the REAL yard
+/// + the REAL dwell span (rather than a fabricated point/window). Every field
+/// is optional: when a row predates the geocode backfill we still gate the
+/// evidence call honestly instead of inventing a coordinate or a window.
+private struct DemurrageAnchor570: Decodable, Identifiable {
+    let id: Int
+    let status: String?
     let facilityLat: Double?
     let facilityLon: Double?
+    let facilityState: String?   // e.g. "TX" — labels the cited window's locale
     let placedAt: String?        // ISO8601 — dwell window start (car placed)
     let releasedAt: String?      // ISO8601 — dwell window end (released/now)
+
+    /// True once both coordinates resolve — the precondition for an anchored
+    /// (non-fabricated) historical lookup.
+    var hasGeo: Bool { facilityLat != nil && facilityLon != nil }
+    /// A row still on the clock — preferred when picking the active dwell.
+    var isOpen: Bool {
+        let s = (status ?? "").lowercased()
+        return releasedAt == nil || s == "accruing" || s == "contestable" || s == "open"
+    }
 }
 
 // MARK: - Historical weather evidence (weather.historical envelope)
@@ -119,10 +147,14 @@ private struct DwellAttribution570: Decodable, Identifiable {
 private struct RailDemurrageDisputeBody: View {
     @Environment(\.palette) private var palette
     let railId: String
+    let shipmentId: Int?
 
     @State private var charge: DemurrageCharge570? = nil
     @State private var dashboard: DemurrageDashboard570? = nil
     @State private var attributions: [DwellAttribution570] = []
+    // The getRailDemurrage row whose facility geo + dwell window anchors the
+    // cited historical-weather lookup. nil until fetched / unavailable.
+    @State private var anchor: DemurrageAnchor570? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var isFiling = false
@@ -160,14 +192,25 @@ private struct RailDemurrageDisputeBody: View {
         attributions.first { isWeatherReason($0.reason) }
     }
 
-    /// "May 21 – May 23" — the dwell window the citation covers, from the
-    /// charge's placed/released ISO stamps. nil when the window is absent.
+    /// "May 21 – May 23" — the dwell window the citation covers, sourced from
+    /// the getRailDemurrage anchor's placed/released ISO stamps (the REAL dwell
+    /// span the historical lookup is pinned to). nil when no anchor window has
+    /// landed, so the citation header stays honest rather than guessing a span.
     private var dwellWindowLabel: String? {
         let iso = ISO8601DateFormatter()
-        guard let from = charge?.placedAt.flatMap(iso.date(from:)) else { return nil }
-        let to = charge?.releasedAt.flatMap(iso.date(from:)) ?? Date()
+        guard let from = anchor?.placedAt.flatMap(iso.date(from:)) else { return nil }
+        let to = anchor?.releasedAt.flatMap(iso.date(from:)) ?? Date()
         let f = DateFormatter(); f.setLocalizedDateFormatFromTemplate("MMM d")
         return "\(f.string(from: from)) – \(f.string(from: to))"
+    }
+
+    /// "Mosier Yard · TX" — the facility locale label for the citation, using
+    /// the anchor's state when present. Omits the state clause honestly when
+    /// the geocode row hasn't supplied one.
+    private var facilityLocaleLabel: String {
+        let name = charge?.facilityName ?? "Facility"
+        if let st = anchor?.facilityState, !st.isEmpty { return "\(name) · \(st)" }
+        return name
     }
 
     private var chargeContextSub: String {
@@ -429,14 +472,23 @@ private struct RailDemurrageDisputeBody: View {
 
     /// The §"weather dwell → cited historical evidence" surface. Renders
     /// when a dwell row attributes time to weather. Honest by construction:
-    /// while `weather.historical` is Enterprise-gated it returns
-    /// `available:false`/nulls, so we show the "available with the
-    /// enterprise feed" em-dash state — never a fabricated max gust / vis /
-    /// peak condition. When the key lands and `available:true` arrives, the
-    /// same view fills with the cited readings + the gov-alert overlap.
+    /// the lookup is anchored to the getRailDemurrage facility geocode + the
+    /// placed/released dwell window, but `weather.historical` is Enterprise-
+    /// gated so it returns `available:false`/nulls today — we show the
+    /// "available with the enterprise feed" em-dash state (when anchored) or
+    /// the "not yet anchored" state (no geocode/window) — never a fabricated
+    /// max gust / vis / peak condition and never a fabricated anchor. When the
+    /// key lands and `available:true` arrives, the same view fills with the
+    /// cited readings + the gov-alert overlap for the real dwell span.
     private var weatherEvidenceSection: some View {
         let ev = weatherEvidence
         let resolved = ev?.isAvailable == true
+        // True once the getRailDemurrage facility geocode + dwell window have
+        // landed — i.e. the lookup is anchored to a real point/span and only
+        // the Enterprise key gates the readings. False means we haven't even
+        // got an anchor yet (no numeric shipment / no geocoded dwell row), a
+        // distinct honest state we must not dress up as "Enterprise-gated".
+        let anchored = anchor?.hasGeo == true
 
         return VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
@@ -462,16 +514,18 @@ private struct RailDemurrageDisputeBody: View {
                         Text("Cited historical weather")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(palette.textPrimary)
-                        Text(dwellWindowLabel.map { "\(charge?.facilityName ?? "Facility") · \($0)" }
-                             ?? (charge?.facilityName ?? "Facility dwell window"))
+                        Text(dwellWindowLabel.map { "\(facilityLocaleLabel) · \($0)" }
+                             ?? "\(facilityLocaleLabel) · dwell window")
                             .font(.system(size: 11, weight: .regular, design: .monospaced))
                             .tracking(0.3)
                             .foregroundStyle(palette.textSecondary)
                             .lineLimit(1)
                     }
                     Spacer()
-                    let pillText  = loadingEvidence ? "FETCHING" : (resolved ? "ATTACHED" : "ENTERPRISE")
-                    let pillColor = loadingEvidence ? palette.textTertiary : (resolved ? Brand.success : Brand.info)
+                    let pillText  = loadingEvidence ? "FETCHING"
+                        : (resolved ? "ATTACHED" : (anchored ? "ENTERPRISE" : "UNANCHORED"))
+                    let pillColor = loadingEvidence ? palette.textTertiary
+                        : (resolved ? Brand.success : (anchored ? Brand.info : palette.textTertiary))
                     Text(pillText)
                         .font(.system(size: 10, weight: .bold)).kerning(0.4)
                         .foregroundStyle(pillColor)
@@ -505,17 +559,33 @@ private struct RailDemurrageDisputeBody: View {
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 } else {
-                    // ── Honest Enterprise-gated empty state ──
+                    // ── Honest empty state. Two distinct, non-fabricated cases:
+                    //    anchored  → the lookup is pinned to the real facility +
+                    //                dwell window; only the Enterprise key gates
+                    //                the readings (em-dash exhibit).
+                    //    !anchored → no facility geocode / dwell window resolved
+                    //                yet, so there's nothing to anchor a lookup
+                    //                to. We say so plainly rather than implying
+                    //                the key alone is the blocker.
                     HStack(alignment: .top, spacing: 10) {
-                        WeatherIcons.utility(.alert, size: 16, tint: Brand.info)
+                        WeatherIcons.utility(.alert, size: 16, tint: anchored ? Brand.info : palette.textTertiary)
                             .padding(.top, 1)
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Historical weather evidence available with the enterprise feed")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(palette.textPrimary)
-                            Text("Once the Tomorrow.io history tier is licensed, the max gust, minimum visibility, peak condition and any overlapping government bulletins for this dwell window auto-attach as a cited exhibit.")
-                                .font(EType.caption)
-                                .foregroundStyle(palette.textSecondary)
+                            if anchored {
+                                Text("Historical weather evidence available with the enterprise feed")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(palette.textPrimary)
+                                Text("This dwell is anchored to \(facilityLocaleLabel)\(dwellWindowLabel.map { " (\($0))" } ?? ""). Once the Tomorrow.io history tier is licensed, the max gust, minimum visibility, peak condition and any overlapping government bulletins for the window auto-attach as a cited exhibit.")
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                            } else {
+                                Text("Historical weather evidence not yet anchored")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(palette.textPrimary)
+                                Text("The facility geocode and placed/released dwell window for this charge haven't resolved yet. Once they land, the cited historical lookup pins to the real yard and span — and lights up with readings when the enterprise feed is licensed.")
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                            }
                         }
                     }
                 }
@@ -621,25 +691,57 @@ private struct RailDemurrageDisputeBody: View {
         }
         loading = false
 
-        // A weather dwell reason → fetch + auto-attach the cited historical
-        // weather report. Best-effort: a miss must never fail the dispute
-        // surface (the section degrades to its honest Enterprise state).
-        if weatherDwellRow != nil { await loadWeatherEvidence() }
+        // A weather dwell reason → resolve the facility geo + dwell-window
+        // anchor, then fetch + auto-attach the cited historical weather report.
+        // Best-effort: a miss must never fail the dispute surface (the section
+        // degrades to its honest Enterprise / em-dash state).
+        if weatherDwellRow != nil {
+            await loadDemurrageAnchor()
+            await loadWeatherEvidence()
+        }
     }
 
-    /// Pull `weather.historical({lat,lon,from,to})` for the facility + the
-    /// dwell window and stash the envelope as cited evidence. The proc is
-    /// Enterprise-gated, so today it returns `available:false`/nulls and the
-    /// section shows the honest "available with the enterprise feed" state.
-    /// Never fabricates: when the facility geo or window is absent we still
-    /// call with what the charge supplies and bind whatever the server
-    /// honestly returns.
+    /// Resolve the getRailDemurrage row that anchors the cited-weather lookup
+    /// (facilityLat / facilityLon / facilityState / placedAt / releasedAt).
+    /// Requires a numeric shipmentId; without one (today's rail-engineer nav
+    /// only carries the string railId) the anchor stays nil and the evidence
+    /// call gates honestly — the same honest empty state it shows while the
+    /// Enterprise key is unlicensed. Prefers the still-open dwell, else the
+    /// latest geocoded row.
+    private func loadDemurrageAnchor() async {
+        guard let shipmentId else { return }
+        struct DemurrageIn: Encodable { let shipmentId: Int }
+        do {
+            let rows: [DemurrageAnchor570] = try await EusoTripAPI.shared.query(
+                "railShipments.getRailDemurrage", input: DemurrageIn(shipmentId: shipmentId))
+            // Pick the dwell this dispute is about: the still-open geocoded row
+            // first, else the latest geocoded row, else whatever exists.
+            self.anchor = rows.first { $0.isOpen && $0.hasGeo }
+                ?? rows.last { $0.hasGeo }
+                ?? rows.first { $0.isOpen }
+                ?? rows.last
+        } catch {
+            // No anchor → the lookup gates honestly below. Never fabricate one.
+            self.anchor = nil
+        }
+    }
+
+    /// Pull `weather.historical({lat,lon,from,to})` for the facility geocode +
+    /// the dwell window carried by the getRailDemurrage anchor, and stash the
+    /// envelope as cited evidence. The proc is Enterprise-gated, so today it
+    /// returns `available:false`/nulls and the section shows the honest
+    /// "available with the enterprise feed" state. Never fabricates: when no
+    /// anchor (or no geocode) has landed we skip the call entirely and leave
+    /// the honest empty section rather than querying a guessed point/window.
     private func loadWeatherEvidence() async {
+        // The Tomorrow.io history product is anchored on lat/lon + a time
+        // window. With no real anchor, there is nothing honest to query.
+        guard let anchor, anchor.hasGeo else {
+            self.weatherEvidence = nil
+            return
+        }
         loadingEvidence = true
         defer { loadingEvidence = false }
-        // The Tomorrow.io history product is anchored on lat/lon + a time
-        // window. Encode null-as-absent so the server can gate honestly when
-        // the facility geocode or placed/released stamps haven't landed.
         struct HistoricalIn: Encodable {
             let lat: Double?
             let lon: Double?
@@ -647,10 +749,10 @@ private struct RailDemurrageDisputeBody: View {
             let to: String?
         }
         let input = HistoricalIn(
-            lat: charge?.facilityLat,
-            lon: charge?.facilityLon,
-            from: charge?.placedAt,
-            to: charge?.releasedAt
+            lat: anchor.facilityLat,
+            lon: anchor.facilityLon,
+            from: anchor.placedAt,
+            to: anchor.releasedAt
         )
         do {
             let ev: HistoricalWeatherEvidence570 = try await EusoTripAPI.shared.query(
