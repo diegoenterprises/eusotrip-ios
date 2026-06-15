@@ -66,6 +66,36 @@ private struct BerthAssignment698: Decodable, Identifiable {
     let tugboatsRequired: Int?
 }
 
+/// Port marine conditions as returned by vesselShipments.getPortConditions /
+/// getPortWeather (Wave-4 server #85). The crane wind-limit triad is the
+/// hero here: `craneWindLimitKt` is a PUBLISHED operating standard the
+/// server measures the live `forecastGustKt` against, with the server's own
+/// `gustExceedsCraneLimit` verdict. ALL marine fields are enterprise-gated —
+/// the whole payload arrives null / `available:false` until the DTN key
+/// lands, so every field is nullable and the band only lights on real data.
+private struct PortConditions698: Decodable {
+    /// Enterprise gate. When false (today) there is no licensed marine feed
+    /// and every metric below is null — we render nothing, never a fabricated
+    /// gust/limit/verdict.
+    let available: Bool?
+    /// Published crane operating wind limit at this terminal, in knots. The
+    /// standard the forecast gust is checked against (carries `craneLimitBasis`).
+    let craneWindLimitKt: Double?
+    /// The basis citation for the crane limit (e.g. the terminal STS spec).
+    let craneLimitBasis: String?
+    /// Forecast peak gust at the berth, in knots (the live measured side).
+    let forecastGustKt: Double?
+    /// Live sustained/peak gust (fallback readout when forecastGustKt absent).
+    let windGust: Double?
+    /// Server verdict: forecast gust exceeds the published crane limit. The
+    /// ONLY trigger for the red band — we never derive the verdict client-side.
+    let gustExceedsCraneLimit: Bool?
+    /// Pilotage suspended on conditions (drives the amber caution tone).
+    let pilotageHold: Bool?
+    /// "Safe" | "Caution" | "Unsafe" berthing assessment from the feed.
+    let berthingSafety: String?
+}
+
 // MARK: - Body
 
 private struct VesselBerthWindowBody: View {
@@ -75,6 +105,9 @@ private struct VesselBerthWindowBody: View {
     @State private var assignments: [BerthAssignment698] = []
     /// Live port identity from getPortDetails — nil until resolved (em-dash labels).
     @State private var port: PortDetail698? = nil
+    /// Live marine conditions (crane wind-limit triad). Nil until resolved;
+    /// enterprise-gated → null / available:false today ⇒ no wind-limit band.
+    @State private var conditions: PortConditions698? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var now = Date()
@@ -267,11 +300,15 @@ private struct VesselBerthWindowBody: View {
             // single coordinate space so bar x maps exactly to wall time.
             ZStack(alignment: .topLeading) {
                 gridlines
+                windLimitBand   // amber/red CRANE WIND-LIMIT band on the NOW line
                 lanes
                 nowLine
             }
             .frame(height: laneHeight * CGFloat(max(displayBerths.count, 1)) + 8)
             .padding(.top, 8)
+
+            // The limit-vs-forecast readout chip — only when a real verdict exists.
+            windLimitChip
 
             footerLine
                 .padding(.top, Space.s3)
@@ -415,6 +452,97 @@ private struct VesselBerthWindowBody: View {
                     .background(Capsule().fill(LinearGradient.diagonal))
                     .offset(x: min(max(x - 31, 0), span + left - 62), y: -22)
             }
+        }
+    }
+
+    /// The crane wind-limit BAND drawn on the NOW line across every berth
+    /// lane — a tinted vertical column from NOW to the right edge (the
+    /// affected forward window), amber for a caution, red when the server
+    /// says the forecast gust is OVER the published crane limit. Hidden
+    /// entirely when `craneWindLimit` is nil (no marine data / not exceeded),
+    /// so the Gantt reads identically today until the DTN key lands.
+    @ViewBuilder
+    private var windLimitBand: some View {
+        if let wl = craneWindLimit {
+            GeometryReader { geo in
+                let left = plotLeftInset
+                let span = geo.size.width - left
+                let x = left + span * nowFrac
+                let w = max(span - span * nowFrac, 0)
+                let h = laneHeight * CGFloat(max(displayBerths.count, 1))
+                let tint: Color = wl.tone == .exceeded ? Brand.danger : Brand.warning
+                ZStack(alignment: .topLeading) {
+                    // tinted forward window (NOW → 24h) — the impacted berth time
+                    Rectangle()
+                        .fill(tint.opacity(wl.tone == .exceeded ? 0.14 : 0.10))
+                        .overlay(
+                            Rectangle()
+                                .strokeBorder(tint.opacity(0.45),
+                                              style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                        )
+                        .frame(width: w, height: h)
+                        .offset(x: x)
+                    // leading edge accent at the NOW line
+                    Rectangle().fill(tint.opacity(0.7))
+                        .frame(width: 1.6, height: h)
+                        .offset(x: x)
+                    // wind-limit chip pinned to the band's top-left
+                    windLimitGlyphTag(wl, tint: tint)
+                        .offset(x: min(x + 4, span + left - 138), y: 2)
+                }
+            }
+        }
+    }
+
+    /// The compact in-band tag: bespoke WeatherIcons.wind glyph + the verb.
+    private func windLimitGlyphTag(_ wl: CraneWindLimit, tint: Color) -> some View {
+        HStack(spacing: 5) {
+            WeatherIcons.utility(.wind, size: 12, tint: tint)
+            Text(wl.verb)
+                .font(.system(size: 8.5, weight: .heavy)).tracking(0.5)
+                .foregroundStyle(tint)
+        }
+        .padding(.horizontal, 7).padding(.vertical, 3)
+        .background(Capsule().fill(palette.bgCard.opacity(0.92)))
+        .overlay(Capsule().strokeBorder(tint.opacity(0.6), lineWidth: 1))
+    }
+
+    /// The full limit-vs-forecast READOUT chip below the plot — the honest
+    /// numeric line: forecast gust vs the published crane limit + its basis.
+    /// Only present when the server has flagged a real breach/caution; never
+    /// a fabricated gust. Bespoke wind glyph, no SF Symbol.
+    @ViewBuilder
+    private var windLimitChip: some View {
+        if let wl = craneWindLimit {
+            let tint: Color = wl.tone == .exceeded ? Brand.danger : Brand.warning
+            HStack(spacing: Space.s3) {
+                WeatherIcons.utility(.wind, size: 16, tint: tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(wl.tone == .exceeded
+                             ? "Crane wind-limit exceeded"
+                             : "Crane wind-limit caution")
+                            .font(.system(size: 11.5, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                        Text(wl.readout)
+                            .font(.system(size: 11, weight: .heavy))
+                            .monospacedDigit()
+                            .foregroundStyle(tint)
+                    }
+                    Text(wl.basis.map { "Holds berthing in the NOW window · \($0)" }
+                         ?? "Holds berthing in the NOW window")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(tint.opacity(0.08)))
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(tint.opacity(0.35)))
+            .padding(.top, Space.s3)
         }
     }
 
@@ -659,6 +787,46 @@ private struct VesselBerthWindowBody: View {
         return f.string(from: now)
     }
 
+    // MARK: - Crane / berth wind-limit band (the marine hero)
+
+    /// The honest crane wind-limit verdict, derived from getPortConditions.
+    /// Non-nil ONLY when a licensed marine feed has returned a real crane
+    /// limit AND the server flags the forecast gust as exceeding it (or the
+    /// pilotage/berthing assessment caps berthing). Today every marine field
+    /// is enterprise-gated → null ⇒ this is nil ⇒ no band paints. Lights the
+    /// instant the DTN key lands and the server says the limit is breached.
+    private enum WindLimitTone { case exceeded, caution }
+    private struct CraneWindLimit {
+        let tone: WindLimitTone
+        let limitKt: Double
+        let forecastKt: Double?    // the live gust side (may be nil if only the verdict came through)
+        let basis: String?
+        var readout: String {      // "38 kt > 25 kt limit" / "limit 25 kt"
+            if let g = forecastKt {
+                return "\(Int(g.rounded())) kt gust · limit \(Int(limitKt.rounded())) kt"
+            }
+            return "limit \(Int(limitKt.rounded())) kt"
+        }
+        var verb: String { tone == .exceeded ? "OVER CRANE LIMIT" : "NEAR CRANE LIMIT" }
+    }
+
+    private var craneWindLimit: CraneWindLimit? {
+        // Honest gate: no marine data, or feed explicitly unavailable ⇒ nothing.
+        guard let c = conditions, c.available != false,
+              let limit = c.craneWindLimitKt, limit > 0 else { return nil }
+        let gust = c.forecastGustKt ?? c.windGust
+        // The server owns the verdict — we never compute gust>limit ourselves.
+        if c.gustExceedsCraneLimit == true {
+            return CraneWindLimit(tone: .exceeded, limitKt: limit, forecastKt: gust, basis: c.craneLimitBasis)
+        }
+        // A pilotage hold / unsafe berthing assessment with a real limit is an
+        // honest amber caution band (still real feed-driven, not fabricated).
+        if c.pilotageHold == true || (c.berthingSafety ?? "").lowercased() == "unsafe" {
+            return CraneWindLimit(tone: .caution, limitKt: limit, forecastKt: gust, basis: c.craneLimitBasis)
+        }
+        return nil
+    }
+
     // MARK: - ESang copy (derived from the first detected conflict)
 
     private var firstConflictLane: BerthLane? {
@@ -682,7 +850,7 @@ private struct VesselBerthWindowBody: View {
     private func load() async {
         loading = true; loadError = nil
         now = Date()
-        guard portId > 0 else { assignments = []; port = nil; loading = false; return }
+        guard portId > 0 else { assignments = []; port = nil; conditions = nil; loading = false; return }
         struct BerthIn: Encodable { let portId: Int }
         do {
             async let rows: [BerthAssignment698] = EusoTripAPI.shared.query(
@@ -697,7 +865,27 @@ private struct VesselBerthWindowBody: View {
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
+        // Marine conditions (crane wind-limit triad) load independently and
+        // NEVER gate the berth Gantt — enterprise-gated → null / available:false
+        // today, and even a hard failure must leave the schedule fully usable.
+        // No real crane limit ⇒ craneWindLimit stays nil ⇒ no band paints.
+        await loadPortConditions()
         loading = false
+    }
+
+    /// Best-effort marine load. Honest by construction: any null / error
+    /// leaves `conditions` nil so the wind-limit band is simply absent.
+    /// getPortConditions keys the port by UN/LOCODE string (the DTN port id);
+    /// we hand it the live UN/LOCODE once getPortDetails resolves it.
+    private func loadPortConditions() async {
+        guard let code = port?.unlocode, !code.isEmpty else { conditions = nil; return }
+        struct PortIn: Encodable { let portId: String }
+        do {
+            conditions = try await EusoTripAPI.shared.query(
+                "vesselShipments.getPortConditions", input: PortIn(portId: code))
+        } catch {
+            conditions = nil   // marine feed unavailable ⇒ hide the band, keep the Gantt
+        }
     }
 }
 

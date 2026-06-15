@@ -161,6 +161,68 @@ private struct VesselsAtPort697: Decodable {
 /// Opaque element used only to count provider rows.
 private struct AnyDecodable697: Decodable { init(from decoder: Decoder) throws {} }
 
+/// `getPortConditions` — channel marine-weather conditions at the terminal
+/// (Wave-4 server #85). Every field is enterprise-gated today (the marine
+/// feed returns `available:false` → the readings are `null`), so EVERY
+/// column decodes optionally: a partial/unavailable payload degrades to the
+/// honest hidden advisory rather than throwing. `pilotageHold` /
+/// `berthingSafety` / `visibility` drive the channel-fog PILOTAGE-HOLD
+/// advisory; the crane-wind + sea-state fields ride along for the basis line.
+///
+/// `craneWindLimitKt` / the pilotage `visibilityMinimumNm` are PUBLISHED
+/// operating standards the server measures against — each carries a `basis`
+/// citation so the advisory never reads as a fabricated EusoTrip verdict.
+private struct PortConditions697: Decodable {
+    let available: Bool?
+    /// Server verdict: channel pilotage is on hold (visibility below the
+    /// pilot-boarding minimum / port-authority hold). nil until the feed lands.
+    let pilotageHold: Bool?
+    /// "safe" | "caution" | "unsafe" | "restricted" — the berth-approach state.
+    let berthingSafety: String?
+    /// Channel visibility (nautical miles). The advisory trips when this is
+    /// below the published pilotage minimum.
+    let visibility: Double?
+    /// Published pilot-boarding visibility minimum (nm) the server compares
+    /// against — the standard, not a guess. Falls back to the doctrine floor.
+    let visibilityMinimumNm: Double?
+    /// Significant wave height (m) + live gust (kt) — supporting sea-state.
+    let waveSignificantHeight: Double?
+    let windGust: Double?
+    /// Published crane wind-limit (kt) + whether the forecast gust exceeds it.
+    let craneWindLimitKt: Double?
+    let forecastGustKt: Double?
+    let gustExceedsCraneLimit: Bool?
+    /// Operating-standard citation ("USCG 33 CFR 161 · pilot-boarding minimum",
+    /// "PEMA crane operating limit") — surfaced verbatim so the advisory is
+    /// honest about WHAT it measures against. nil until the feed is licensed.
+    let basis: String?
+    let pilotageBasis: String?
+    let craneBasis: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case available, pilotageHold, berthingSafety, visibility, visibilityMinimumNm
+        case waveSignificantHeight, windGust, craneWindLimitKt, forecastGustKt
+        case gustExceedsCraneLimit, basis, pilotageBasis, craneBasis
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        available             = try? c.decode(Bool.self, forKey: .available)
+        pilotageHold          = try? c.decode(Bool.self, forKey: .pilotageHold)
+        berthingSafety        = try? c.decode(String.self, forKey: .berthingSafety)
+        visibility            = try? c.decode(Double.self, forKey: .visibility)
+        visibilityMinimumNm   = try? c.decode(Double.self, forKey: .visibilityMinimumNm)
+        waveSignificantHeight = try? c.decode(Double.self, forKey: .waveSignificantHeight)
+        windGust              = try? c.decode(Double.self, forKey: .windGust)
+        craneWindLimitKt      = try? c.decode(Double.self, forKey: .craneWindLimitKt)
+        forecastGustKt        = try? c.decode(Double.self, forKey: .forecastGustKt)
+        gustExceedsCraneLimit = try? c.decode(Bool.self, forKey: .gustExceedsCraneLimit)
+        basis                 = try? c.decode(String.self, forKey: .basis)
+        pilotageBasis         = try? c.decode(String.self, forKey: .pilotageBasis)
+        craneBasis            = try? c.decode(String.self, forKey: .craneBasis)
+    }
+}
+
 // MARK: - Body
 
 private struct VesselPortOperationsBody: View {
@@ -170,6 +232,10 @@ private struct VesselPortOperationsBody: View {
     @State private var assignments: [BerthAssignment697] = []
     @State private var fleetTotal: Int? = nil
     @State private var liveAtPort: Int? = nil
+    /// Channel marine conditions (getPortConditions) — nil until the port
+    /// resolves to a catalog coordinate AND the marine feed answers. The
+    /// pilotage-hold advisory reads off this; enterprise-gated → stays hidden.
+    @State private var conditions: PortConditions697? = nil
 
     @State private var loading = true
     @State private var loadError: String? = nil
@@ -196,6 +262,7 @@ private struct VesselPortOperationsBody: View {
                     } else {
                         heroCard
                         kpiStrip
+                        pilotageHoldAdvisory
                         portCallQueueSection
                         berthGuardCard
                         ctaRow
@@ -510,6 +577,159 @@ private struct VesselPortOperationsBody: View {
         return "\(active) active call\(active == 1 ? "" : "s") · \(vesselsInPort ?? fleetTotal ?? 0) vessels tracked"
     }
 
+    // MARK: - Pilotage-hold advisory (getPortConditions · channel fog)
+    //
+    // A bespoke channel-fog PILOTAGE-HOLD advisory: surfaces when the marine
+    // feed reports a pilotage hold OR channel visibility below the published
+    // pilot-boarding minimum. Rendered with the WeatherIcons .eye / .fog
+    // glyphs (ZERO SF Symbols on the weather element) + the berthingSafety
+    // state. HONEST: hidden entirely when there's no marine data, the feed is
+    // enterprise-gated (available:false), or the channel is clear above the
+    // minimum — never a fabricated hold. The basis line cites the operating
+    // standard the server measured against so this never reads as our verdict.
+
+    @ViewBuilder
+    private var pilotageHoldAdvisory: some View {
+        if let c = conditions, pilotageHoldTripped(c) {
+            let safety = berthingSafetyState(c.berthingSafety)
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(alignment: .top, spacing: Space.s3) {
+                    // Bespoke fog/eye glyph in a tinted chip — never an SF Symbol.
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(safety.tint.opacity(0.16))
+                            .frame(width: 44, height: 44)
+                        // Low visibility → the fog condition glyph; otherwise the
+                        // eye (visibility) utility glyph. Both are WeatherIcons.
+                        if visibilityBelowMinimum(c) {
+                            WeatherIcons.symbolView(for: 2000, size: 26)   // #i-fog
+                        } else {
+                            WeatherIcons.utility(.eye, size: 22, tint: safety.tint)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text("PILOTAGE HOLD")
+                                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                                .foregroundStyle(safety.tint)
+                            // berthingSafety state pill — the server's approach verdict.
+                            Text(safety.badge)
+                                .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                                .foregroundStyle(safety.tint)
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(Capsule().fill(safety.tint.opacity(0.16)))
+                            Spacer(minLength: 0)
+                        }
+                        Text(pilotageHeadline(c))
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(pilotageDetail(c))
+                            .font(EType.mono(.caption))
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                // Operating-standard basis — cited verbatim, never fabricated.
+                if let basis = pilotageBasisLine(c) {
+                    HStack(spacing: 5) {
+                        WeatherIcons.utility(.alert, size: 10, tint: palette.textTertiary)
+                        Text(basis)
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(palette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Space.s4)
+            .background(palette.bgCardSoft)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(safety.tint.opacity(0.55), lineWidth: 1.2)
+            )
+        }
+    }
+
+    /// The published pilotage visibility minimum (nm). Server value wins; the
+    /// fallback is the doctrine floor (USCG pilot-boarding practice ≈ 0.5 nm)
+    /// used only to decide whether to TRIP — never displayed as a feed reading.
+    private func pilotageMinimumNm(_ c: PortConditions697) -> Double {
+        c.visibilityMinimumNm ?? 0.5
+    }
+
+    /// Channel visibility is below the published pilot-boarding minimum.
+    private func visibilityBelowMinimum(_ c: PortConditions697) -> Bool {
+        guard let v = c.visibility else { return false }
+        return v < pilotageMinimumNm(c)
+    }
+
+    /// Trip the advisory ONLY on a real signal: an explicit server pilotage
+    /// hold, or measured visibility below the published minimum. A nil/empty
+    /// (enterprise-gated) payload never trips — honest hidden state.
+    private func pilotageHoldTripped(_ c: PortConditions697) -> Bool {
+        if c.available == false { return false }
+        if c.pilotageHold == true { return true }
+        return visibilityBelowMinimum(c)
+    }
+
+    private func pilotageHeadline(_ c: PortConditions697) -> String {
+        if visibilityBelowMinimum(c) {
+            return "Channel fog · pilotage suspended below minimum visibility"
+        }
+        return "Pilotage hold in effect — inbound transits suspended"
+    }
+
+    /// Mono detail — the measured visibility vs. the minimum, plus sea-state
+    /// when present. Honest em-dash for any field the feed didn't return.
+    private func pilotageDetail(_ c: PortConditions697) -> String {
+        var parts: [String] = []
+        if let v = c.visibility {
+            parts.append(String(format: "vis %.1f nm", v))
+        }
+        let minimum = c.visibilityMinimumNm
+        if let m = minimum {
+            parts.append(String(format: "min %.1f nm", m))
+        }
+        if let w = c.waveSignificantHeight {
+            parts.append(String(format: "swell %.1f m", w))
+        }
+        if let g = c.windGust ?? c.forecastGustKt {
+            parts.append(String(format: "gust %.0f kt", g))
+        }
+        return parts.isEmpty ? "Awaiting channel telemetry" : parts.joined(separator: " · ")
+    }
+
+    /// The operating-standard citation line — pilotage basis preferred, else
+    /// the general basis. nil ⇒ no basis line (never a fabricated citation).
+    private func pilotageBasisLine(_ c: PortConditions697) -> String? {
+        if let b = c.pilotageBasis, !b.isEmpty { return b }
+        if let b = c.basis, !b.isEmpty { return b }
+        return nil
+    }
+
+    private struct BerthingSafety {
+        let badge: String
+        let tint: Color
+    }
+
+    /// Map the server berthingSafety enum onto the §3 risk grammar's tint.
+    /// Unknown / nil ⇒ the warning treatment (a pilotage hold is never benign).
+    private func berthingSafetyState(_ raw: String?) -> BerthingSafety {
+        switch (raw ?? "").lowercased() {
+        case "unsafe", "restricted", "closed":
+            return BerthingSafety(badge: "BERTHING UNSAFE", tint: Brand.danger)
+        case "caution", "marginal":
+            return BerthingSafety(badge: "BERTHING CAUTION", tint: Brand.warning)
+        case "safe", "open", "clear":
+            // The channel is held but the berth approach itself reads safe.
+            return BerthingSafety(badge: "BERTHING SAFE", tint: Brand.warning)
+        default:
+            return BerthingSafety(badge: "BERTHING HOLD", tint: Brand.warning)
+        }
+    }
+
     // MARK: - CTA row (Assign berth · Lineup)
 
     private var ctaRow: some View {
@@ -739,6 +959,7 @@ private struct VesselPortOperationsBody: View {
         struct BerthIn: Encodable { let portId: Int }
         struct FleetIn: Encodable { let limit: Int }
         struct AtPortIn: Encodable { let portId: String }
+        struct ConditionsIn: Encodable { let lat: Double; let lng: Double }
         do {
             // 1) Resolve the operator's home terminal from the live ports table.
             //    Prefer the first row that actually carries a berth count (the
@@ -763,11 +984,27 @@ private struct VesselPortOperationsBody: View {
                 self.fleetTotal = fleetResp.total ?? fleetResp.vessels.count
                 self.assignments = berthResp
                 self.liveAtPort = atPortResp?.count
+
+                // 4) Channel marine conditions (getPortConditions) → the
+                //    pilotage-hold advisory. Keyed off the terminal's catalog
+                //    coordinate (PortDirectory · NGA Pub 150 — the SAME lookup
+                //    661/671 use). NON-FATAL + enterprise-gated: a feed error or
+                //    `available:false` leaves `conditions` nil so the advisory
+                //    stays honestly hidden; it never blocks the console.
+                if let code = resolved?.unlocode,
+                   let p = PortDirectory.find(unlocode: code.uppercased()) {
+                    self.conditions = try? await EusoTripAPI.shared.query(
+                        "vesselShipments.getPortConditions",
+                        input: ConditionsIn(lat: p.lat, lng: p.lng))
+                } else {
+                    self.conditions = nil
+                }
             } else {
                 let fleetResp = try await fleet
                 self.fleetTotal = fleetResp.total ?? fleetResp.vessels.count
                 self.assignments = []
                 self.liveAtPort = nil
+                self.conditions = nil
             }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

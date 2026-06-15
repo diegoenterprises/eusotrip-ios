@@ -89,6 +89,32 @@ private struct FSMAStatus702: Decodable {
     let openExcursions: Int?
 }
 
+/// `reeferTemp.ambient` -> the AMBIENT (deck/port) weather temperature at the
+/// reefer position, used to separate an EQUIPMENT FAULT (cargo drifts while
+/// ambient is benign) from a HEAT PERIL (cargo + ambient both climbing). All
+/// fields nullable so a partial/enterprise-gated payload decodes without
+/// throwing. `available:false` (today's enterprise-gated reality) => the
+/// ambient overlay is HIDDEN, never fabricated. `preCool` is decoded
+/// leniently (a bool flag or {recommended} object) so a shape change is safe.
+private struct ReeferAmbient702: Decodable {
+    let available: Bool?
+    let ambientTempF: Double?
+    let weatherCode: Int?
+    let preCool: PreCool702?
+
+    struct PreCool702: Decodable {
+        let recommended: Bool?
+        init(from decoder: Decoder) throws {
+            if let b = try? decoder.singleValueContainer().decode(Bool.self) {
+                recommended = b; return
+            }
+            let c = try? decoder.container(keyedBy: CodingKeys.self)
+            recommended = try? c?.decodeIfPresent(Bool.self, forKey: .recommended)
+        }
+        private enum CodingKeys: String, CodingKey { case recommended }
+    }
+}
+
 // MARK: - Body
 
 private struct VesselReeferMonitoringBody: View {
@@ -99,6 +125,7 @@ private struct VesselReeferMonitoringBody: View {
     @State private var zones: [String: ReeferZoneReading702] = [:]
     @State private var alerts: [ReeferAlert702] = []
     @State private var fsma: FSMAStatus702? = nil
+    @State private var ambient: ReeferAmbient702? = nil   // deck/port weather temp · null/available:false today
 
     @State private var loading = true
     @State private var loadError: String? = nil
@@ -138,6 +165,34 @@ private struct VesselReeferMonitoringBody: View {
         alerts.first { ($0.acknowledged ?? false) == false }
     }
 
+    // Ambient overlay (deck/port weather) -----------------------------------
+    // HONEST: the overlay only reads when the feed is available AND carries a
+    // real ambient temperature. enterprise-gated (available:false / nil) =>
+    // ambientReady is false => the whole strip is hidden, designed to light
+    // up the instant the key lands. Never a fabricated ambient/peril verdict.
+
+    private var ambientReady: Bool {
+        (ambient?.available ?? false) && ambient?.ambientTempF != nil
+    }
+
+    /// The warmest live cargo-zone temperature in °F (the trace the ambient
+    /// is contrasted against). Derived from the same live zone rows the
+    /// console already trusts; nil until a zone reports a temperature.
+    private var cargoZonePeakF: Double? {
+        zones.values.compactMap { z -> Double? in
+            if let f = z.tempF { return f }
+            if let c = z.tempC { return c * 9 / 5 + 32 }
+            return nil
+        }.max()
+    }
+
+    /// Ambient − cargo spread in °F. Positive = ambient hotter than cargo (the
+    /// classic heat-peril signature). nil until BOTH sides have a real reading.
+    private var ambientSpreadF: Double? {
+        guard let a = ambient?.ambientTempF, let c = cargoZonePeakF else { return nil }
+        return a - c
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -151,6 +206,7 @@ private struct VesselReeferMonitoringBody: View {
                 } else {
                     heroCard
                     kpiStrip
+                    ambientOverlaySection
                     reeferUnitsSection
                     fsmaGuardSection
                     actionRow
@@ -321,6 +377,101 @@ private struct VesselReeferMonitoringBody: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
             .strokeBorder(palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    // MARK: - Ambient overlay (deck/port weather vs cargo-zone trace)
+
+    /// Overlays the AMBIENT deck/port temperature against the warmest live
+    /// cargo zone — the read that separates an EQUIPMENT FAULT (cargo drifts
+    /// while ambient is benign) from a HEAT PERIL (ambient + cargo both
+    /// climbing, e.g. cargo 47° vs ambient 104°). Bespoke: the sky condition
+    /// is the WeatherIcons glyph for the live weatherCode; the wind/precip
+    /// metrics are utility glyphs. HONEST: rendered ONLY when the ambient feed
+    /// is available with a real temperature — enterprise-gated (available:false
+    /// / nil) collapses it entirely. No fabricated ambient/spread/verdict.
+    @ViewBuilder
+    private var ambientOverlaySection: some View {
+        if ambientReady, let a = ambient, let aF = a.ambientTempF {
+            let code = a.weatherCode ?? 0
+            let spread = ambientSpreadF
+            // Heat-peril read is honest: only asserted once we have BOTH the
+            // ambient and a live cargo zone to contrast. Without the cargo
+            // side we still show ambient, but stay silent on the verdict.
+            let peril = (spread ?? 0) >= 40 && cargoZonePeakF != nil
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text("AMBIENT vs CARGO · reeferTemp.ambient")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                HStack(alignment: .top, spacing: Space.s3) {
+                    // Bespoke sky glyph for the live deck/port weatherCode.
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Color.white.opacity(0.06))
+                            .frame(width: 52, height: 52)
+                        WeatherIcons.symbolView(for: code, size: 34)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        // The contrast line — cargo trace vs ambient deck temp.
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            ambientStat(label: "CARGO",
+                                        value: cargoZonePeakF.map { String(format: "%.0f°F", $0) } ?? "—",
+                                        tone: Brand.info)
+                            Text("vs").font(.system(size: 11, weight: .heavy))
+                                .foregroundStyle(palette.textTertiary)
+                            ambientStat(label: "AMBIENT",
+                                        value: String(format: "%.0f°F", aF),
+                                        tone: peril ? Brand.danger : palette.textPrimary)
+                        }
+                        // Spread + the equipment-fault vs heat-peril read.
+                        if let s = spread, cargoZonePeakF != nil {
+                            HStack(spacing: 6) {
+                                WeatherIcons.utility(peril ? .alert : .eye, size: 12,
+                                                     tint: peril ? Brand.danger : palette.textSecondary)
+                                Text(spreadVerdict(spread: s, peril: peril))
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(peril ? Brand.danger : palette.textSecondary)
+                            }
+                        } else {
+                            // Ambient is live but no cargo zone to contrast yet —
+                            // honest about what we can and can't yet assert.
+                            Text("Deck temp live · awaiting a cargo-zone reading to contrast")
+                                .font(.system(size: 11)).foregroundStyle(palette.textTertiary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(Space.s4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(peril ? Brand.danger.opacity(0.06) : palette.bgCardSoft)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(peril ? Brand.danger.opacity(0.4) : palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            }
+        }
+        // available:false / nil => nothing renders. The strip lights the
+        // instant the enterprise key lands and the feed returns a real temp.
+    }
+
+    private func ambientStat(label: String, value: String, tone: Color) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label).font(.system(size: 8.5, weight: .heavy)).tracking(0.5)
+                .foregroundStyle(palette.textTertiary)
+            Text(value).font(.system(size: 22, weight: .bold)).monospacedDigit()
+                .foregroundStyle(tone)
+        }
+    }
+
+    /// The equipment-fault vs heat-peril read. Honest, derived strictly from
+    /// the live spread — never a fabricated verdict.
+    private func spreadVerdict(spread: Double, peril: Bool) -> String {
+        let mag = String(format: "%.0f°F", abs(spread))
+        if peril {
+            return "Heat peril · ambient +\(mag) over cargo — external load, not equipment"
+        }
+        if spread >= 15 {
+            return "Ambient +\(mag) over cargo · within reefer pull-down capacity"
+        }
+        return "Ambient near cargo · a drift here reads as equipment, not heat"
     }
 
     // MARK: - Reefer units · live temperature
@@ -550,6 +701,12 @@ private struct VesselReeferMonitoringBody: View {
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
+        // Ambient (deck/port weather) is a best-effort overlay — its feed is
+        // enterprise-gated and may return available:false or be unreachable.
+        // A failure here NEVER degrades the core console: ambient just stays
+        // hidden until the key lands.
+        self.ambient = try? await EusoTripAPI.shared.query(
+            "reeferTemp.ambient", input: LoadIn(loadId: loadId))
         loading = false
     }
 

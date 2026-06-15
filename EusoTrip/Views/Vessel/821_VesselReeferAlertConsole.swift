@@ -78,6 +78,18 @@ private struct ReeferAlert821: Decodable, Identifiable {
     let createdAt: String?
 }
 
+/// `reeferTemp.ambient` -> the AMBIENT (deck/port) weather at the reefer
+/// position. Here it powers a HEAT-PERIL banner: when the ambient is extreme
+/// versus the FSMA setpoint, the excursion risk is external (a heat peril
+/// closing on the box), not equipment — a different escalation than a
+/// compressor fault. All fields nullable so an enterprise-gated payload
+/// (available:false) decodes without throwing => the banner stays HIDDEN.
+private struct ReeferAmbient821: Decodable {
+    let available: Bool?
+    let ambientTempF: Double?
+    let weatherCode: Int?
+}
+
 // MARK: - Body
 
 private struct VesselReeferAlertConsoleBody821: View {
@@ -85,6 +97,7 @@ private struct VesselReeferAlertConsoleBody821: View {
     let loadId: Int
 
     @State private var alerts: [ReeferAlert821] = []   // live rows only — no seed excursions
+    @State private var ambient: ReeferAmbient821? = nil // deck/port weather · null/available:false today
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -108,6 +121,31 @@ private struct VesselReeferAlertConsoleBody821: View {
     }
     private var firstOpenAlert: ReeferAlert821? { openAlerts.first }
 
+    // Heat-peril read (ambient extreme vs setpoint) -------------------------
+    // HONEST: only reads when the ambient feed is available with a real temp —
+    // enterprise-gated (available:false / nil) hides the banner. The peril
+    // verdict is derived strictly from the live ambient-over-setpoint spread,
+    // never fabricated.
+
+    private var ambientReady: Bool {
+        (ambient?.available ?? false) && ambient?.ambientTempF != nil
+    }
+
+    /// Ambient deck/port temp minus the FSMA setpoint, in °F. Positive = the
+    /// box is fighting external heat. nil until a real ambient lands.
+    private var ambientOverSetpointF: Double? {
+        ambient?.ambientTempF.map { $0 - setpointF }
+    }
+
+    /// Heat peril is flagged when the ambient runs extreme over the setpoint
+    /// (≥ 60°F gap — e.g. a 34°F frozen setpoint under a 104°F deck): the
+    /// excursion driver is external heat, not equipment, so the escalation is
+    /// stow/shade/route — not a compressor swap.
+    private var heatPeril: Bool {
+        guard ambientReady, let over = ambientOverSetpointF else { return false }
+        return over >= 60
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -120,6 +158,7 @@ private struct VesselReeferAlertConsoleBody821: View {
                     errorState(err)
                 } else {
                     heroCard
+                    heatPerilBanner
                     kpiStrip
                     alertQueueSection
                     escalationStrip
@@ -237,6 +276,57 @@ private struct VesselReeferAlertConsoleBody821: View {
             .foregroundStyle(color)
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(Capsule().fill(color.opacity(0.16)))
+    }
+
+    // MARK: Heat-peril banner (reeferTemp.ambient vs setpoint)
+
+    /// Flags a HEAT PERIL when the deck/port ambient runs extreme over the
+    /// FSMA setpoint — the excursion driver is external heat, not a
+    /// compressor fault, so the escalation differs (stow/shade/route, not a
+    /// unit swap). Bespoke: the live sky condition is the WeatherIcons glyph;
+    /// the warning mark is the `.alert` utility glyph. HONEST: rendered ONLY
+    /// when the ambient feed is available with a real temp — gated
+    /// (available:false / nil) collapses it. No fabricated ambient/verdict.
+    @ViewBuilder
+    private var heatPerilBanner: some View {
+        if ambientReady, let a = ambient, let aF = a.ambientTempF {
+            let code = a.weatherCode ?? 0
+            let peril = heatPeril
+            let over = ambientOverSetpointF
+            HStack(alignment: .top, spacing: Space.s3) {
+                // Bespoke sky glyph for the live deck/port weatherCode.
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.06)).frame(width: 48, height: 48)
+                    WeatherIcons.symbolView(for: code, size: 32)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        WeatherIcons.utility(.alert, size: 12,
+                                             tint: peril ? Brand.danger : palette.textSecondary)
+                        Text(peril ? "HEAT PERIL" : "AMBIENT OK")
+                            .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(peril ? Brand.danger : Brand.success)
+                        Text("· deck \(String(format: "%.0f°F", aF)) vs setpoint \(String(format: "%.0f°F", setpointF))")
+                            .font(.system(size: 10, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    Text(peril
+                         ? "Ambient runs +\(over.map { String(format: "%.0f°F", $0) } ?? "—") over setpoint — an excursion here is external heat, not equipment. Escalate stow/shade/route, not a unit swap."
+                         : "Ambient within range of setpoint — an excursion here points to equipment, not heat.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(peril ? Brand.danger : palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+            .background(peril ? Brand.danger.opacity(0.07) : palette.bgCardSoft)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(peril ? Brand.danger.opacity(0.45) : palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        }
+        // available:false / nil => hidden; lights up when the key lands.
     }
 
     // MARK: KPI strip (OPEN · CRITICAL · ACKED 24H)
@@ -442,6 +532,7 @@ private struct VesselReeferAlertConsoleBody821: View {
     private func load() async {
         loading = true; loadError = nil
         struct AlertsIn821: Encodable { let loadId: Int?; let limit: Int }
+        struct AmbientIn821: Encodable { let loadId: Int? }
         do {
             // loadId is optional on the wire — omitted (nil) when no load is threaded.
             let rows: [ReeferAlert821] = try await EusoTripAPI.shared.query(
@@ -451,6 +542,12 @@ private struct VesselReeferAlertConsoleBody821: View {
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
+        // Ambient (deck/port weather) is a best-effort overlay — its feed is
+        // enterprise-gated and may return available:false or be unreachable.
+        // A failure NEVER degrades the alert console: the heat-peril banner
+        // just stays hidden until the key lands. loadId is optional on the wire.
+        self.ambient = try? await EusoTripAPI.shared.query(
+            "reeferTemp.ambient", input: AmbientIn821(loadId: loadId > 0 ? loadId : nil))
         loading = false
     }
 
