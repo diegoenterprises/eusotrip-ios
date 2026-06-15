@@ -143,6 +143,12 @@ public struct HeatCellMatrix: View {
     private let columnLabels: [String]
     private let showLegend: Bool
     private let showSummary: Bool
+    /// Whether the whole-plot drag-scrub gesture is armed. OFF by default so the
+    /// matrix never claims a touch the parent ScrollView wants — tap-select via
+    /// the per-cell `onTapGesture` still works, and vertical scrolling stays
+    /// crisp (no diagonal drift / under-finger lurch). Opt-in for hosts that
+    /// genuinely want a continuous drag-across scrub.
+    private let enableScrub: Bool
 
     @Binding private var selection: String?
     private let onSelect: (HeatCell) -> Void
@@ -173,6 +179,7 @@ public struct HeatCellMatrix: View {
         columnLabels: [String] = [],
         showLegend: Bool = true,
         showSummary: Bool = true,
+        enableScrub: Bool = false,
         selection: Binding<String?> = .constant(nil),
         onSelect: @escaping (HeatCell) -> Void = { _ in }
     ) {
@@ -185,6 +192,7 @@ public struct HeatCellMatrix: View {
         self.columnLabels = columnLabels
         self.showLegend = showLegend
         self.showSummary = showSummary
+        self.enableScrub = enableScrub
         self._selection = selection
         self.onSelect = onSelect
     }
@@ -293,8 +301,12 @@ public struct HeatCellMatrix: View {
         }
         // Whole-plot hit target so the drag scrubs across inter-cell gaps too
         // (the per-cell hit-test inside `cellID(at:)` resolves which cell).
+        // The scrub gesture is masked OFF unless `enableScrub` is set: with
+        // `.none` the touch passes straight through to the parent ScrollView so
+        // vertical scrolling is crisp and axis-locked (no diagonal drift), while
+        // the per-cell `.onTapGesture { commit(cell) }` still selects on tap.
         .contentShape(Rectangle())
-        .gesture(scrubGesture)
+        .gesture(scrubGesture, including: enableScrub ? .all : .none)
     }
 
     private var columnHeaderRow: some View {
@@ -352,16 +364,21 @@ public struct HeatCellMatrix: View {
                 .fill(rampColor(band).opacity(washOpacity))
         )
         .overlay(
+            // Selection reads as a subtle ring highlight (2pt, ramp-colored)
+            // rather than a big scale jump, so a tap-select never lurches the
+            // cell under the finger and scrolling stays visually steady.
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(
                     active ? rampColor(band) : Color.clear,
                     lineWidth: active ? 2 : 0
                 )
         )
-        .scaleEffect(active ? (reduceMotion ? 1.0 : 1.04) : 1.0)
+        // Keep the active scale barely perceptible (no lurch). The ring + soft
+        // glow carry the selection affordance instead.
+        .scaleEffect(active ? (reduceMotion ? 1.0 : 1.012) : 1.0)
         .shadow(
-            color: active ? rampColor(band).opacity(0.45) : .clear,
-            radius: active ? 12 : 0, y: 4
+            color: active ? rampColor(band).opacity(0.35) : .clear,
+            radius: active ? 8 : 0, y: 3
         )
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onTapGesture { commit(cell) }
@@ -403,10 +420,12 @@ public struct HeatCellMatrix: View {
 
     /// Drag-to-scrub: snap to the cell under the finger and HOLD it. Cell frames
     /// are resolved against the named coordinate space so the hit-test stays
-    /// correct as the grid reflows. `minimumDistance: 0` so a plain tap inside
-    /// the plot scrubs too (the per-cell `onTapGesture` still commits on lift).
+    /// correct as the grid reflows. Only armed when `enableScrub` is set (see the
+    /// gesture mask in `gridBody`). `minimumDistance: 12` so a small pan still
+    /// goes to the parent ScrollView and only a deliberate drag scrubs; plain
+    /// tap selection is handled by the per-cell `onTapGesture`.
     private var scrubGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.space))
+        DragGesture(minimumDistance: 12, coordinateSpace: .named(Self.space))
             .onChanged { value in
                 if let hit = cellID(at: value.location) {
                     if scrubbingID != hit { scrubbingID = hit; selectionTick &+= 1 }

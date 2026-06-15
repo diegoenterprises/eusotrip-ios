@@ -461,6 +461,15 @@ extension Notification.Name {
     /// tree, and activates the deepest activatable element at that point
     /// (with a visible pulse). Role-agnostic.
     static let esangTapAtPoint = Notification.Name("esangTapAtPoint")
+    /// HONEST UNHANDLED COMMAND. Posted by the dispatcher when a parsed
+    /// `.navigatePath` could NOT be resolved to a real, in-role screen —
+    /// the surface fell back to HOME so the app still responds, but the
+    /// command didn't land where asked. `object` carries the raw path
+    /// (String) the model emitted. The autopilot engine observes this to
+    /// surface an honest HUD line + speak "I heard '<x>' but couldn't open
+    /// it here." instead of leaving the operator staring at an unchanged
+    /// (or merely home-bounced) screen with no feedback. Role-agnostic.
+    static let esangUnhandledCommand = Notification.Name("esangUnhandledCommand")
 }
 
 @MainActor
@@ -516,6 +525,50 @@ enum eSangRoleDispatcher {
         }
     }
 
+    /// True when `action` carries NAVIGATION intent (drive the surface to
+    /// some screen) for a non-Driver role — i.e. the kinds of command the
+    /// operator means when they say "take me to X". Used by the autopilot
+    /// engine to tell, after parsing a reply, whether the turn was supposed
+    /// to MOVE the screen at all (vs. a pure back / refresh / execute / tap
+    /// that legitimately changes nothing about which screen is shown).
+    static func isNavigational(_ action: eSangAction) -> Bool {
+        switch action {
+        case .navigatePath, .navigate, .selectLoad: return true
+        default:                                    return false
+        }
+    }
+
+    /// True when a NAVIGATIONAL `action` resolves to a REAL, in-role,
+    /// RBAC-renderable screen for `role` — i.e. the dispatch will actually
+    /// land somewhere the operator asked for, not silently fall back to the
+    /// role home. The engine uses this to surface an honest "I heard '<x>'
+    /// but couldn't open it here." line when EVERY navigational action in a
+    /// turn fails to resolve. Mirrors the resolution `dispatch` performs.
+    static func resolvesToRealScreen(_ action: eSangAction, role: EusoRole) -> Bool {
+        guard role != .driver, navSwap(for: role) != nil else { return false }
+        switch action {
+        case .navigatePath(let path):
+            guard let id = screenId(for: path, role: role) else { return false }
+            return RoleAccess.canRender(role: role, screenId: id)
+        case .navigate(let route):
+            // Only the universal `/home` collapses cleanly onto a non-Driver
+            // home; everything else is a Driver-typed route that doesn't
+            // resolve to a real non-Driver screen.
+            if case .home = route { return true }
+            return false
+        case .selectLoad(let id):
+            // Shipper has a dedicated load-open path; others resolve the
+            // load-detail screen against the registry.
+            if role == .shipper || role == .railShipper || role == .vesselShipper {
+                return true
+            }
+            guard let detail = screenId(for: "/load/\(id)", role: role) else { return false }
+            return RoleAccess.canRender(role: role, screenId: detail)
+        default:
+            return false
+        }
+    }
+
     /// Dispatch a parsed action for a NON-DRIVER role. Returns `true`
     /// when the action was handled here (the caller should NOT also run
     /// the Driver path). Driver always returns `false` so its existing
@@ -534,17 +587,19 @@ enum eSangRoleDispatcher {
 
         switch action {
         case .navigatePath(let path):
-            guard let id = screenId(for: path, role: role) else {
-                // Unknown path for this role — silently no-op rather than
-                // bouncing the user somewhere wrong. The reply text still
-                // rendered, so the user isn't confused.
-                return true
-            }
             guard let swap = navSwap(for: role) else { return true }
-            // RBAC: deny cross-role IDs. If the resolved id isn't in the
-            // role's registry, fall back to the role's home so the
-            // command still lands somewhere coherent (and in-role).
-            let target = RoleAccess.canRender(role: role, screenId: id) ? id : swap.home
+            // Resolve the server SPA path against this role's registry.
+            // `screenId` returns nil when the path names no in-role surface.
+            let resolved = screenId(for: path, role: role)
+            // RBAC: a resolved id must be renderable for the role. If the
+            // path resolved to nothing, or to a cross-role id the role
+            // can't see, we DON'T silently swallow the command (the old
+            // bug — the screen never changed and the user got no feedback).
+            // Instead we fall back to the role HOME so the app still
+            // RESPONDS, and signal an unhandled-command so the engine can
+            // speak/log an honest "couldn't open it here" line.
+            let canRender = resolved.map { RoleAccess.canRender(role: role, screenId: $0) } ?? false
+            let target = canRender ? resolved! : swap.home
             dismissSheet()
             // Defer the swap a beat so the sheet dismissal animation and
             // the screen swap don't fight (matches the Driver path's
@@ -554,6 +609,15 @@ enum eSangRoleDispatcher {
                     name: swap.name, object: nil,
                     userInfo: ["screenId": target]
                 )
+                // Honest fallback: we landed on HOME because the command
+                // didn't resolve to a real in-role screen. Tell the engine
+                // so it can surface "I heard '<x>' but couldn't open it
+                // here." rather than implying the navigation succeeded.
+                if !canRender {
+                    NotificationCenter.default.post(
+                        name: .esangUnhandledCommand, object: path
+                    )
+                }
             }
             return true
 
@@ -675,7 +739,11 @@ enum eSangRoleDispatcher {
         if let first = segs.first, rolePrefixes.contains(first) {
             segs.removeFirst()
         }
-        // After stripping, an empty list means "the role home".
+        // After stripping, an empty list means "the role home". `surface`
+        // is the FIRST surface segment; `sub` is the SECOND (when present),
+        // so multi-segment web routes like `/loads/create` resolve to the
+        // ACTION screen (Post-a-Load) and not the list. Every sub-map gets
+        // the full `segs` so it can special-case these routes by purpose.
         let surface = segs.first ?? "home"
         let homeIds: [EusoRole: String] = [
             .shipper: "200", .railShipper: "200", .vesselShipper: "200",
@@ -686,7 +754,9 @@ enum eSangRoleDispatcher {
             .dispatch: "Disp400", .compliance: "900",
             .railEngineer: "Rail550", .vesselOperator: "Vesl650"
         ]
-        if surface == "home" || surface == "dashboard" {
+        // Universal home aliases the server emits across every role.
+        if surface == "home" || surface == "dashboard"
+            || surface == "index" || surface == "overview" {
             return homeIds[role]
         }
 
@@ -694,32 +764,44 @@ enum eSangRoleDispatcher {
         case .shipper, .railShipper, .vesselShipper:
             return shipperScreen(for: surface, segs: segs)
         case .catalyst, .railCatalyst:
-            return carrierScreen(for: surface)
+            return carrierScreen(for: surface, segs: segs)
         case .broker, .railBroker, .vesselBroker, .customsBroker:
-            return brokerScreen(for: surface)
+            return brokerScreen(for: surface, segs: segs)
         case .escort:
-            return ["assignments": "601", "corridor": "602",
-                    "me": "600"][surface] ?? homeIds[role]
+            // Unknown surface → nil, so `dispatch` falls back to HOME AND
+            // signals an honest unhandled-command (rather than masking the
+            // miss by silently resolving to home here).
+            return escortScreen(for: surface, segs: segs)
         case .terminal, .portMaster:
-            return ["movements": "701", "yard": "702",
-                    "me": "700"][surface] ?? homeIds[role]
+            return terminalScreen(for: surface, segs: segs)
         case .admin, .superAdmin:
-            return ["tickets": "801", "tenants": "802",
-                    "me": "800"][surface] ?? homeIds[role]
+            return adminScreen(for: surface, segs: segs)
         case .dispatch:
-            return dispatchScreen(for: surface)
+            return dispatchScreen(for: surface, segs: segs)
         case .compliance:
-            return ["drivers": "901", "audits": "902", "violations": "902",
-                    "me": "900"][surface] ?? homeIds[role]
+            return complianceScreen(for: surface, segs: segs)
         case .railEngineer:
-            return railScreen(for: surface)
+            return railScreen(for: surface, segs: segs)
         case .vesselOperator:
-            return ["shipments": "Vesl651", "bookings": "Vesl651",
-                    "compliance": "Vesl652", "me": "Vesl650"][surface] ?? homeIds[role]
+            return vesselScreen(for: surface, segs: segs)
         case .driver, .safety, .factoring,
              .railDispatch, .railConductor, .shipCaptain:
             return nil
         }
+    }
+
+    /// True when the path's SECOND segment names a load CREATE/POST action
+    /// (`/loads/create`, `/loads/new`, `/loads/post`, `/load/create`, …) —
+    /// the multi-segment web route that the old single-`surface` mapper
+    /// mis-resolved to the loads LIST. Used by the role sub-maps that own a
+    /// dedicated Post-a-Load surface.
+    private static func isCreateLoadRoute(_ segs: [String]) -> Bool {
+        guard segs.count >= 2 else { return false }
+        let head = segs[0]
+        let sub = segs[1]
+        let loadHeads: Set<String> = ["loads", "load", "my-loads"]
+        let createSubs: Set<String> = ["create", "new", "post", "post-a-load", "compose"]
+        return loadHeads.contains(head) && createSubs.contains(sub)
     }
 
     // Per-role surface → screen-id sub-maps. Bottom-nav roots come from
@@ -728,13 +810,18 @@ enum eSangRoleDispatcher {
     // ShipperWebToNativeMap + the role NavRoute deep-link keys).
 
     private static func shipperScreen(for s: String, segs: [String]) -> String? {
+        // Multi-segment CREATE route first — `/loads/create`, `/loads/new`,
+        // `/load/post` must hit Post-a-Load (204), NOT the loads list (201).
+        if isCreateLoadRoute(segs) { return "204" }
         // `/load/:id` and `/loads/:id` are handled by selectLoad; here we
         // resolve named surfaces. Reuse ShipperWebToNativeMap's coverage.
         switch s {
-        case "loads", "my-loads":           return "201"
-        case "create-load", "post-load",
-             "post", "create", "new-load":  return "204"
-        case "me", "account", "profile":    return "320"
+        case "loads", "my-loads", "shipments": return "201"
+        case "create-load", "post-load", "post-a-load",
+             "post", "create", "new-load",
+             "new":                         return "204"
+        case "me", "account", "profile",
+             "settings":                    return "320"
         case "allocations", "allocation":   return "229"
         case "agreements", "agreement":     return "223"
         case "partner-directory", "partners", "partner",
@@ -744,8 +831,10 @@ enum eSangRoleDispatcher {
              "docs":                        return "226"
         case "settlements", "settlement":   return "206"
         case "bol", "bols":                 return "228"
-        case "rfp", "rfps", "marketplace",
-             "bidding":                     return "215"
+        case "rfp", "rfps", "bidding",
+             "bids":                        return "215"
+        case "messages", "messaging",
+             "inbox", "chat", "esang":      return "310"
         case "control-tower":               return "212"
         case "compliance":                  return "216"
         case "sustainability":              return "214"
@@ -754,51 +843,137 @@ enum eSangRoleDispatcher {
         case "live-tracking", "tracking",
              "track":                       return "222"
         case "rate-board", "rates":         return "220"
-        case "wallet", "eusowallet":        return "290"
+        case "wallet", "eusowallet",
+             "payments":                    return "290"
         case "market-intelligence", "market-pricing",
-             "market", "pricing":           return "330"
+             "market", "pricing", "rate-intelligence",
+             "marketplace":                 return "330"
         default:                            return nil
         }
     }
 
-    private static func carrierScreen(for s: String) -> String? {
+    private static func carrierScreen(for s: String, segs: [String]) -> String? {
         switch s {
         case "loads", "load-board", "loadboard",
-             "marketplace", "board":        return "301"
+             "marketplace", "board", "find-loads",
+             "search-loads":                return "301"
         case "drivers", "fleet":            return "304"
-        case "me", "account", "profile":    return "350"
+        case "vehicles", "trucks":          return "320"
+        case "me", "account", "profile",
+             "settings":                    return "350"
         case "matches", "spectramatch":     return "501"
-        case "bids", "bidding":             return "309"
+        case "bids", "bidding", "my-bids":  return "309"
+        case "settlements", "settlement",
+             "earnings":                    return "313"
+        case "compliance":                  return "316"
+        case "dispatch", "dispatch-board",
+             "board-dispatch":              return "303"
+        // NOTE: no carrier-chrome `/wallet` — the catalyst Wallet (319) is
+        // shadowed by carrier Drivers List (319) in CarrierSurface's pool,
+        // so a `/wallet` here falls back to home + signals unhandled rather
+        // than silently opening the Drivers List.
         default:                            return nil
         }
     }
 
-    private static func brokerScreen(for s: String) -> String? {
+    private static func brokerScreen(for s: String, segs: [String]) -> String? {
         switch s {
-        case "loads", "tenders", "tender":  return "401"
-        case "carriers", "carrier":         return "402b"
-        case "me", "account", "profile":    return "404"
+        case "tenders", "tender":           return "401"
+        case "loads", "load-board", "loadboard",
+             "marketplace", "board",
+             "my-loads":                    return "401b"
+        case "carriers", "carrier",
+             "carrier-vetting", "vetting":  return "402b"
+        case "me", "account", "profile",
+             "settings":                    return "404B"
         default:                            return nil
         }
     }
 
-    private static func dispatchScreen(for s: String) -> String? {
+    private static func dispatchScreen(for s: String, segs: [String]) -> String? {
         switch s {
-        case "drivers", "fleet":            return "Dpch701"
+        case "drivers", "fleet", "roster":  return "Dpch701"
         case "loads", "board", "load-board",
-             "planner", "dispatch-board":   return "Dpch702"
-        case "me", "account", "profile":    return "Dpch713"
+             "planner", "dispatch-board",
+             "assignment", "assignments",
+             "marketplace":                 return "Dpch702"
+        case "me", "account", "profile",
+             "settings":                    return "Dpch713"
         case "exceptions", "triage":        return "Dpch703"
+        case "kanban":                      return "Disp401"
+        case "messages", "messaging",
+             "comms", "chat", "inbox":      return "Dpch721"
+        case "reports", "analytics":        return "Dpch712"
         default:                            return nil
         }
     }
 
-    private static func railScreen(for s: String) -> String? {
+    private static func railScreen(for s: String, segs: [String]) -> String? {
         switch s {
         case "shipments", "marketplace",
-             "consists", "consist":         return "Rail551"
+             "consists", "consist", "loads": return "Rail551"
         case "compliance":                  return "Rail552"
-        case "me", "account", "profile":    return "Rail550"
+        case "tracking", "live-tracking",
+             "track":                       return "Rail560"
+        case "me", "account", "profile",
+             "settings":                    return "Rail550"
+        default:                            return nil
+        }
+    }
+
+    private static func vesselScreen(for s: String, segs: [String]) -> String? {
+        switch s {
+        case "shipments", "bookings", "booking",
+             "loads", "marketplace":        return "Vesl651"
+        case "compliance":                  return "Vesl652"
+        case "tracking", "live-tracking",
+             "track", "position":           return "Vesl660"
+        case "me", "account", "profile",
+             "settings":                    return "Vesl656"
+        default:                            return nil
+        }
+    }
+
+    private static func escortScreen(for s: String, segs: [String]) -> String? {
+        switch s {
+        case "assignments", "assignment",
+             "loads", "jobs":               return "601"
+        case "corridor", "map", "route":    return "602"
+        case "me", "account", "profile",
+             "settings":                    return "600"
+        default:                            return nil
+        }
+    }
+
+    private static func terminalScreen(for s: String, segs: [String]) -> String? {
+        switch s {
+        case "movements", "gate", "queue",
+             "gate-queue":                  return "701"
+        case "yard", "yard-map", "map":     return "702"
+        case "me", "account", "profile",
+             "settings":                    return "700"
+        default:                            return nil
+        }
+    }
+
+    private static func adminScreen(for s: String, segs: [String]) -> String? {
+        switch s {
+        case "tickets", "control-tower":    return "801"
+        case "tenants", "tenant":           return "802"
+        case "me", "account", "profile",
+             "settings":                    return "800"
+        default:                            return nil
+        }
+    }
+
+    private static func complianceScreen(for s: String, segs: [String]) -> String? {
+        switch s {
+        case "drivers", "expiring",
+             "expiring-docs", "docs":       return "901"
+        case "audits", "violations",
+             "audit":                       return "902"
+        case "me", "account", "profile",
+             "settings":                    return "900"
         default:                            return nil
         }
     }

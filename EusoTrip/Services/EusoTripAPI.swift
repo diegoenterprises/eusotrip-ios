@@ -6190,8 +6190,44 @@ struct HotZoneEntry: Decodable, Identifiable, Equatable {
     let aiRateTrend: String?
     let aiRateAnomaly: Bool?
     let fmcsa: HotZoneFMCSA?
+    // ── Optional real pulse time-series. The rateFeed envelope does NOT
+    // ── ship this today (the 225 Hot Zones tile synthesizes a per-zone
+    // ── series from the live scalars below — honest parity with Market
+    // ── Intelligence). This field is future-proofing: if the server later
+    // ── adds `pulseSeries` (a list of ratio/rate samples), the tile prefers
+    // ── it over the synthesized walk. Decoded leniently per-element so a
+    // ── server may ship numbers OR numeric strings; the key being absent
+    // ── leaves it nil (no decode failure). Element type is `HotZonePulseSample`
+    // ── (Double-or-String) so synthesized Decodable stays intact.
+    let pulseSeries: [HotZonePulseSample]?
+
+    /// Plain `[Double]` view of `pulseSeries` (nil when the server didn't
+    /// ship one). Callers use this; the tile falls back to synthesis.
+    var pulseSeriesValues: [Double]? {
+        guard let s = pulseSeries, !s.isEmpty else { return nil }
+        return s.map(\.value)
+    }
 
     static func == (lhs: HotZoneEntry, rhs: HotZoneEntry) -> Bool { lhs.zoneId == rhs.zoneId }
+}
+
+/// One sample in an optional server-supplied pulse series. Decodes from a
+/// JSON number OR a numeric string (lenient), so the envelope can ship
+/// `[1.8, 1.9, …]` or `["1.8","1.9", …]` without breaking the feed. A
+/// non-numeric / null element resolves to 0 rather than failing the decode.
+struct HotZonePulseSample: Decodable, Equatable {
+    let value: Double
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let d = try? c.decode(Double.self) {
+            value = d
+        } else if let s = try? c.decode(String.self), let d = Double(s) {
+            value = d
+        } else {
+            value = 0
+        }
+    }
 }
 
 /// FMCSA enrichment block attached to each zone — 9.8M-record carrier

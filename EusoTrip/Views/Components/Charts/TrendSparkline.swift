@@ -94,6 +94,15 @@ public struct TrendSparkline: View {
     private let showBaseline: Bool
     private let smooth: Bool
 
+    /// Minimum drag distance before the scrub gesture engages. 0 (default,
+    /// backward-compatible with every existing caller) makes the chart scrub
+    /// on first touch — correct for a hero spark that owns its own row. When
+    /// the sparkline lives inside a VERTICALLY-scrolling list (e.g. the 225
+    /// Hot Zones tile grid) a 0-distance gesture steals the scroll; pass ~10
+    /// so a small/vertical pan passes through to the parent ScrollView and
+    /// only a deliberate horizontal drag scrubs (the HeatCellMatrix lesson).
+    private let scrubMinimumDistance: CGFloat
+
     // — Interaction —
     /// Two-way selection of a sample index. When bound, a vertical marker +
     /// dot tracks the value under the user's finger as they scrub.
@@ -116,6 +125,10 @@ public struct TrendSparkline: View {
     /// no-op. This local state drives the cursor self-contained; a real host
     /// binding still wins when present (for tiles that echo into a big numeral).
     @State private var localSelected: Int? = nil
+    /// Latches once a scrub drag is confirmed horizontal, so a list-embedded
+    /// chart (scrubMinimumDistance > 0) keeps tracking through vertical jitter
+    /// without re-arbitrating against the parent ScrollView every frame.
+    @State private var horizontalLatched: Bool = false
 
     // MARK: Designated init
 
@@ -137,6 +150,7 @@ public struct TrendSparkline: View {
         showLastDot: Bool = true,
         showBaseline: Bool = false,
         smooth: Bool = true,
+        scrubMinimumDistance: CGFloat = 0,
         selectedIndex: Binding<Int?> = .constant(nil),
         onScrub: @escaping (TrendSparkPoint?) -> Void = { _ in }
     ) {
@@ -147,6 +161,7 @@ public struct TrendSparkline: View {
         self.showLastDot = showLastDot
         self.showBaseline = showBaseline
         self.smooth = smooth
+        self.scrubMinimumDistance = scrubMinimumDistance
         self._selectedIndex = selectedIndex
         self.onScrub = onScrub
     }
@@ -409,9 +424,20 @@ public struct TrendSparkline: View {
     // MARK: Interaction
 
     private func scrubGesture(in size: CGSize) -> some Gesture {
-        DragGesture(minimumDistance: 0)
+        DragGesture(minimumDistance: scrubMinimumDistance)
             .onChanged { g in
                 guard !points.isEmpty else { return }
+                // Scroll-safe: when a non-zero minimum distance is set (the
+                // chart lives in a vertically-scrolling list), ignore a drag
+                // whose intent is predominantly VERTICAL so the parent
+                // ScrollView keeps the gesture. Once horizontal intent is
+                // latched we keep scrubbing even through vertical jitter.
+                if scrubMinimumDistance > 0 && !horizontalLatched {
+                    let dx = abs(g.translation.width)
+                    let dy = abs(g.translation.height)
+                    if dy > dx { return }                 // vertical pan → let it scroll
+                    horizontalLatched = true
+                }
                 let idx = nearestIndex(toX: g.location.x, in: size)
                 if localSelected != idx { localSelected = idx }   // drives the cursor self-contained
                 if selectedIndex != idx { selectedIndex = idx }   // mirror to host binding when present
@@ -420,6 +446,7 @@ public struct TrendSparkline: View {
             .onEnded { _ in
                 // 2026-06-03 — HOLD the cursor on the touched sample (no
                 // snap-back). The readout stays until the user scrubs again.
+                horizontalLatched = false
             }
     }
 
