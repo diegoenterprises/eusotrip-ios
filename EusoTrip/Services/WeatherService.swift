@@ -107,7 +107,27 @@ final class WeatherService: NSObject, ObservableObject {
     /// the driver isn't actually at violated §3 "no-mock" and the 2027
     /// motivation "no fake data" pledge. The dashboard's new
     /// `weatherAvailability` state carries the reason up to the view.
+    /// In-memory last-good snapshot, seeded on every successful fetch. A
+    /// returning view (navigation back, app foreground) renders the weather
+    /// INSTANTLY from this instead of flashing a loading skeleton while the
+    /// live fetch runs. Not a fabrication — it's the most recent REAL
+    /// reading, and it's only ever replaced by a newer real one.
+    static private(set) var lastSnapshot: WeatherSnapshot?
+
+    /// The cached last-good snapshot, if any. Consumers show it immediately
+    /// and refresh in the background.
+    static var cachedSnapshot: WeatherSnapshot? { lastSnapshot }
+
+    /// Public entry point — fetches a fresh snapshot and updates the
+    /// last-good cache. Returns nil on failure; the caller keeps showing
+    /// the cache / an honest empty state rather than a blank/stuck card.
     func fetchCurrent() async -> WeatherSnapshot? {
+        let snap = await fetchCurrentUncached()
+        if let snap { Self.lastSnapshot = snap }
+        return snap
+    }
+
+    private func fetchCurrentUncached() async -> WeatherSnapshot? {
         guard let location = await requestLocationIfNeeded() else {
             return nil
         }

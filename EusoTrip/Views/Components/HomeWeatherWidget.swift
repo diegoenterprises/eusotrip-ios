@@ -31,6 +31,7 @@ struct HomeWeatherWidget: View {
     var lane: LaneWeather? = nil
 
     @Environment(\.palette) private var palette
+    @Environment(\.scenePhase) private var scenePhase
 
     private enum Phase {
         case loading
@@ -39,11 +40,47 @@ struct HomeWeatherWidget: View {
         case unavailable
     }
     @State private var phase: Phase = .loading
+    /// True once the first fetch resolves — gates the skeleton so a
+    /// periodic/foreground refresh updates the card IN PLACE instead of
+    /// flashing back to the loading state under the user.
+    @State private var hasLoadedOnce = false
+
+    /// Live auto-refresh cadence. Current conditions don't change
+    /// second-to-second and the upstream sources (Tomorrow.io / WeatherKit
+    /// / NWS) are rate-limited, so a 10-minute live tick — plus an instant
+    /// refresh whenever the app returns to the foreground — is the right
+    /// "real-time" behavior for a home weather surface.
+    private let refreshInterval: UInt64 = 600 * 1_000_000_000
+
+    /// Hard ceiling on the FIRST load (no cache). If the upstream chain
+    /// (location + Tomorrow.io + WeatherKit/NWS/Open-Meteo fallbacks)
+    /// stalls, the widget resolves to an honest state instead of sitting on
+    /// the skeleton — no multi-minute lingering loads.
+    private let firstLoadCeiling: UInt64 = 9 * 1_000_000_000
+
+    init(lane: LaneWeather? = nil) {
+        self.lane = lane
+        // Seed from the last-good cache so the widget is NEVER blank on a
+        // return visit — it shows the most recent REAL reading instantly
+        // and refreshes in the background.
+        let cached = WeatherService.cachedSnapshot
+        _phase = State(initialValue: cached.map { Phase.data($0) } ?? .loading)
+        _hasLoadedOnce = State(initialValue: cached != nil)
+    }
 
     var body: some View {
         content
             .animation(.easeInOut(duration: 0.25), value: phaseKey)
-            .task { await load() }
+            // Initial fetch + periodic live refresh; SwiftUI cancels the
+            // loop when the widget leaves the screen.
+            .task { await autoRefreshLoop() }
+            // Refresh the instant the app returns to the foreground so a
+            // returning user never sees a stale reading.
+            .onChange(of: scenePhase) { _, newPhase in
+                if newPhase == .active {
+                    Task { await refresh() }
+                }
+            }
     }
 
     // A small stable key so the cross-fade animates between states
@@ -66,24 +103,63 @@ struct HomeWeatherWidget: View {
         case .needsLocation:
             HomeWeatherEnableLocationCard(onTap: handleEnableTap)
         case .unavailable:
-            HomeWeatherUnavailableCard(onRetry: { Task { await load(force: true) } })
+            HomeWeatherUnavailableCard(onRetry: { Task { await refresh(force: true) } })
         }
     }
 
-    private func load(force: Bool = false) async {
-        if force { phase = .loading }
-        let snap = await WeatherService.shared.fetchCurrent()
+    /// Initial load, then a live refresh every `refreshInterval`. Runs
+    /// inside `.task`, so SwiftUI cancels it when the widget disappears.
+    private func autoRefreshLoop() async {
+        await refresh()
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: refreshInterval)
+            if Task.isCancelled { break }
+            await refresh()
+        }
+    }
+
+    private func refresh(force: Bool = false) async {
+        // Show the skeleton only on the FIRST load (or an explicit retry).
+        // A live/foreground refresh updates the card in place so it never
+        // flashes back to a skeleton under the user.
+        if force || !hasLoadedOnce { phase = .loading }
+        // Bound the FIRST load so a stalled upstream chain can't leave the
+        // skeleton spinning for minutes; once we have data the live refresh
+        // runs unbounded in the background (it never shows a skeleton).
+        let snap = hasLoadedOnce
+            ? await WeatherService.shared.fetchCurrent()
+            : await fetchBounded(ceiling: firstLoadCeiling)
         if let snap {
             phase = .data(snap)
+            hasLoadedOnce = true
             return
         }
-        // Honest reason-aware empty state — distinguish "we never asked
-        // for location" from "granted but momentarily unavailable".
+        // Honest reason-aware empty state — distinguish "we never asked for
+        // location" from "granted but momentarily unavailable".
         switch WeatherService.shared.authorizationStatus {
         case .notDetermined, .denied, .restricted:
             phase = .needsLocation
         default:
-            phase = .unavailable
+            // A transient miss AFTER we already had data keeps the last-good
+            // card on screen; only show "unavailable" if we never had data.
+            if !hasLoadedOnce { phase = .unavailable }
+        }
+    }
+
+    /// `fetchCurrent()` raced against a hard time ceiling. Whichever
+    /// finishes first wins; the loser is cancelled. Guarantees the first
+    /// load resolves promptly instead of lingering on the skeleton if the
+    /// upstream chain stalls.
+    private func fetchBounded(ceiling: UInt64) async -> WeatherSnapshot? {
+        await withTaskGroup(of: WeatherSnapshot?.self) { group in
+            group.addTask { await WeatherService.shared.fetchCurrent() }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: ceiling)
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
         }
     }
 
@@ -95,7 +171,7 @@ struct HomeWeatherWidget: View {
                 // Give CoreLocation a beat to deliver the first fix after
                 // the user grants, then re-fetch into the data state.
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
-                await load(force: true)
+                await refresh(force: true)
             }
         } else if let url = URL(string: UIApplication.openSettingsURLString) {
             UIApplication.shared.open(url)

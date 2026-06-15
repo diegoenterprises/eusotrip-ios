@@ -213,6 +213,17 @@ final class EusoTripAPI: ObservableObject {
         config.httpCookieStorage = HTTPCookieStorage.shared
         config.httpCookieAcceptPolicy = .always
         config.httpShouldSetCookies = true
+        // App-wide "no long-lingering loading" rule (founder mandate): bound
+        // EVERY request on the shared session so a stalled call can't leave a
+        // skeleton spinning. Default request timeout is 60s and resource is 7
+        // DAYS — far too long. 22s of inactivity → the request fails, the
+        // store catches it and flips isLoading off into an honest empty/error
+        // state. Resource cap (120s) bounds even a slow-but-progressing
+        // transfer. This single change bounds every API-driven skeleton in
+        // the app without touching the call sites.
+        config.timeoutIntervalForRequest = 22
+        config.timeoutIntervalForResource = 120
+        config.waitsForConnectivity = false
         // Disable URLCache app-wide. tRPC responses are stateful by
         // nature (signed-in user / load detail / wallet) and must
         // never be served from cache. Earlier crashes / "Failed

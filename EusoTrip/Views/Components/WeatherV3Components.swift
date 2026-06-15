@@ -27,6 +27,9 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - v3 iridescent palette (verbatim from the v3 HTML :root tokens)
 
@@ -55,6 +58,17 @@ enum WeatherV3 {
     static let nodeOrigin = Color(red: 0xCD / 255, green: 0xBC / 255, blue: 0xFF / 255)
     /// route-dest node — `--brandC`
     static let nodeDest = auroraC
+
+    /// Dark-glass card ink for the expanded view's ON-PAGE sections (day
+    /// chips + lane-impact panel). The weather widget is a "dark sky"
+    /// surface by design — the hero stage is always dark in both color
+    /// schemes — so its sibling cards stay dark too (matching iOS Weather)
+    /// instead of using the adaptive `palette.bgCard`, which went white in
+    /// light mode and left the hardcoded-white chip text invisible. Fixed,
+    /// non-adaptive: readable white text in BOTH light and dark mode.
+    static let cardInk = Color(red: 0x18 / 255, green: 0x19 / 255, blue: 0x2C / 255)
+    /// Slightly lighter ink for a nested chip/tile on top of `cardInk`.
+    static let cardInkRaised = Color(red: 0x20 / 255, green: 0x22 / 255, blue: 0x38 / 255)
 
     /// mode accents (tri-modal HTML `--truck/--rail/--vessel`)
     static let truck  = auroraA
@@ -302,6 +316,11 @@ struct HourlyRibbon: View {
     /// The peak/risk hour index in `hours` (snapshot.peakHourIndex).
     let peakIndex: Int?
 
+    /// The hour the user is actively scrubbing to (drag your finger across
+    /// the chart — the indicator + readout follow). Nil when not touching.
+    @State private var scrubIndex: Int? = nil
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private var series: [WeatherSnapshot.HourlyForecast] { Array(hours.prefix(8)) }
 
     var body: some View {
@@ -324,7 +343,9 @@ struct HourlyRibbon: View {
             let temps = series.map(\.tempF)
             let tMin = CGFloat(temps.min() ?? 0)
             let tMax = CGFloat(temps.max() ?? 1)
+            let tps = tempPoints(width: w, height: h, tMin: tMin, tMax: tMax)
 
+            ZStack {
             Canvas { ctx, size in
                 // ── precip area (filled, #82B7FF fade) ──
                 // height of the area at each x is driven by precip prob.
@@ -399,7 +420,96 @@ struct HourlyRibbon: View {
                 label(tps.count - 1, .white)
                 if let peak = peakIndex { label(peak, Color(red: 1.0, green: 0.84, blue: 0.82)) }
             }
+            // ── scrub overlay: a vertical guide + node + a live readout
+            //    that follow the finger across the chart (drag left↔right
+            //    to inspect every hour). ──
+            if let si = scrubIndex, tps.indices.contains(si) {
+                scrubOverlay(index: si, point: tps[si], width: w, height: h)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { v in
+                        let idx = nearestIndex(toX: v.location.x, points: tps)
+                        if idx != scrubIndex {
+                            scrubIndex = idx
+                            scrubHaptic()
+                        }
+                    }
+                    .onEnded { _ in
+                        withAnimation(.easeOut(duration: 0.22)) { scrubIndex = nil }
+                    }
+            )
         }
+    }
+
+    /// The live scrub indicator drawn over the chart at the selected hour:
+    /// a brand-gradient vertical guide, a ringed node on the temp line, and
+    /// a floating readout capsule (time · temp · precip) that stays inside
+    /// the chart bounds.
+    @ViewBuilder
+    private func scrubOverlay(index: Int, point: CGPoint, width: CGFloat, height: CGFloat) -> some View {
+        let hour = series[index]
+        ZStack(alignment: .topLeading) {
+            // vertical guide
+            Rectangle()
+                .fill(LinearGradient(
+                    colors: [WeatherV3.auroraB.opacity(0), WeatherV3.auroraB.opacity(0.6), WeatherV3.auroraB.opacity(0)],
+                    startPoint: .top, endPoint: .bottom))
+                .frame(width: 2)
+                .position(x: point.x, y: height / 2)
+            // node on the temp line
+            Circle()
+                .fill(.white)
+                .frame(width: 10, height: 10)
+                .overlay(Circle().stroke(WeatherV3.auroraB, lineWidth: 2.5))
+                .shadow(color: WeatherV3.auroraB.opacity(0.6), radius: 5)
+                .position(point)
+            // floating readout capsule — clamped within the chart width
+            HStack(spacing: 5) {
+                Text(index == 0 ? "Now" : hour.hourLabel)
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(.white.opacity(0.7))
+                Text("\(hour.tempF)°")
+                    .font(.system(size: 12, weight: .heavy)).monospacedDigit()
+                    .foregroundStyle(.white)
+                if let p = hour.precipDisplay {
+                    WeatherIcons.utility(.precip, size: 9, tint: WeatherV3.drop)
+                    Text(p)
+                        .font(.system(size: 10, weight: .heavy)).monospacedDigit()
+                        .foregroundStyle(WeatherV3.drop)
+                }
+            }
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(Capsule().fill(WeatherV3.cardInkRaised))
+            .overlay(Capsule().strokeBorder(WeatherV3.auroraB.opacity(0.5), lineWidth: 1))
+            .fixedSize()
+            .position(x: min(max(46, point.x), width - 46), y: max(14, point.y - 30))
+        }
+    }
+
+    /// Index of the hour whose node is horizontally nearest the touch x.
+    private func nearestIndex(toX x: CGFloat, points: [CGPoint]) -> Int {
+        guard !points.isEmpty else { return 0 }
+        var best = 0
+        var bestD = CGFloat.greatestFiniteMagnitude
+        for (i, p) in points.enumerated() {
+            let d = abs(p.x - x)
+            if d < bestD { bestD = d; best = i }
+        }
+        return best
+    }
+
+    /// A light tick as the scrub crosses into a new hour (skipped under
+    /// Reduce Motion to respect the accessibility preference).
+    private func scrubHaptic() {
+        guard !reduceMotion else { return }
+        #if canImport(UIKit)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred(intensity: 0.5)
+        #endif
     }
 
     /// Evenly-spaced x positions across the chart (one per hour).
@@ -432,13 +542,18 @@ struct HourlyRibbon: View {
         HStack(spacing: 0) {
             ForEach(Array(series.enumerated()), id: \.element.id) { idx, hour in
                 let isPeak = idx == peakIndex
+                let isScrubbed = idx == scrubIndex
                 VStack(spacing: 4) {
                     Text(idx == 0 ? "Now" : hour.hourLabel)
-                        .font(.system(size: 10))
-                        .foregroundStyle(isPeak
-                            ? Color(red: 1.0, green: 0.84, blue: 0.82)
-                            : .white.opacity(0.62))
+                        .font(.system(size: 10, weight: isScrubbed ? .heavy : .regular))
+                        .foregroundStyle(isScrubbed
+                            ? AnyShapeStyle(.white)
+                            : (isPeak
+                                ? AnyShapeStyle(Color(red: 1.0, green: 0.84, blue: 0.82))
+                                : AnyShapeStyle(.white.opacity(0.62))))
                     WeatherIcons.symbolView(for: hour, size: 15)
+                        .scaleEffect(isScrubbed ? 1.22 : 1)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isScrubbed)
                     if let p = hour.precipDisplay {
                         Text(p)
                             .font(.system(size: 9.5, weight: .heavy))
