@@ -34,7 +34,25 @@ private struct ClaimComposerBody: View {
     @State private var classification: DocumentRouterAPI.ClassifyResponse? = nil
     @State private var classifyError: String? = nil
 
-    private let claimTypes = ["damage", "shortage", "loss", "delay", "contamination", "reefer_excursion", "other"]
+    // Historical-weather evidence (Wave-4 server #85). When the claim is a
+    // weather-peril type, the composer auto-attaches a CITED weather.historical
+    // report via freightClaims.attachHistoricalWeatherEvidence so the carrier-
+    // insurance file carries the contemporaneous readings (gust / visibility /
+    // peak condition) that prove the peril. HONEST: the evidence is
+    // Enterprise-gated → available:false today → we render the ENTERPRISE
+    // state ("evidence available with the enterprise feed"), NEVER a fabricated
+    // report. The toggle is user-opt; default-on for the weather-peril types.
+    @State private var attachWeather = false
+    @State private var weatherLoading = false
+    @State private var weatherEvidence: HistoricalWeatherEvidence? = nil
+    @State private var weatherError: String? = nil
+
+    private let claimTypes = ["damage", "shortage", "loss", "delay", "contamination", "reefer_excursion", "weather", "other"]
+
+    /// The claim types whose root cause is a weather peril — these default the
+    /// historical-weather evidence toggle ON and surface the attach section.
+    private static let weatherPerilTypes: Set<String> = ["weather", "delay", "reefer_excursion", "contamination"]
+    private var isWeatherPeril: Bool { Self.weatherPerilTypes.contains(claimType) }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -45,12 +63,26 @@ private struct ClaimComposerBody: View {
                 typeCard
                 amountCard
                 descriptionCard
+                if isWeatherPeril { historicalWeatherCard }
                 evidenceCard
                 ctaRow
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
+        // Weather-peril types default the historical-weather attach ON. Picking
+        // a non-peril type tears down the evidence + toggle so a damage/loss
+        // claim never carries a stale weather record.
+        .onChange(of: claimType) { _, _ in
+            if isWeatherPeril {
+                if !attachWeather { attachWeather = true }
+            } else {
+                attachWeather = false
+                weatherEvidence = nil
+                weatherError = nil
+            }
+        }
+        .onAppear { if isWeatherPeril { attachWeather = true } }
     }
 
     private var header: some View {
@@ -101,6 +133,177 @@ private struct ClaimComposerBody: View {
                 .background(palette.bgCard.opacity(0.6))
                 .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+    }
+
+    // MARK: - Historical weather evidence (freightClaims.attachHistoricalWeatherEvidence)
+
+    /// Auto-attaches a CITED weather.historical report to a weather-peril claim.
+    /// Bespoke: the sky condition renders via WeatherIcons (the live weatherCode
+    /// glyph), the gust/visibility/alert metrics via utility glyphs — ZERO SF
+    /// Symbols on the weather row. HONEST: the report is Enterprise-gated, so
+    /// today the server returns available:false → we render the ENTERPRISE
+    /// state ("evidence available with the enterprise feed") that reads now and
+    /// lights the instant the key lands. We NEVER fabricate a report/peril/snapshot.
+    private var historicalWeatherCard: some View {
+        LifecycleCard {
+            HStack(spacing: 6) {
+                WeatherIcons.utility(.alert, size: 11, tint: Brand.info)
+                Text("HISTORICAL WEATHER · EVIDENCE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                // Opt-in toggle. Default-on for weather-peril types; the shipper
+                // can drop it for a claim that isn't actually weather-caused.
+                Button { attachWeather.toggle() } label: {
+                    Text(attachWeather ? "ATTACHED" : "ATTACH")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(attachWeather ? .white : palette.textPrimary)
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(attachWeather ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.tintNeutral))
+                        .clipShape(Capsule())
+                }.buttonStyle(.plain)
+            }
+            Text("Pulls the contemporaneous National Weather Service reading at the load's position + window — gusts, visibility, and the peak condition that prove the peril — and files it as a cited weather.historical record on the claim.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if attachWeather { weatherEvidencePanel }
+        }
+    }
+
+    @ViewBuilder
+    private var weatherEvidencePanel: some View {
+        if weatherLoading {
+            HStack(spacing: 6) {
+                ProgressView().scaleEffect(0.7).tint(palette.textPrimary)
+                Text("Pulling historical weather…").font(EType.caption).foregroundStyle(palette.textTertiary)
+            }
+        } else if let err = weatherError {
+            Text("Couldn't pull the historical weather, \(err). Your claim will still file; you can re-attach the report from the claim file.")
+                .font(EType.caption).foregroundStyle(Brand.warning)
+                .fixedSize(horizontal: false, vertical: true)
+        } else if let ev = weatherEvidence {
+            if ev.available == true, let snap = ev.snapshot {
+                // LIVE (enterprise key present) — a real cited report. Bespoke
+                // sky glyph + utility metric glyphs.
+                attachedWeatherReport(snap)
+            } else {
+                // Enterprise-gated today — HONEST ENTERPRISE state. Never a
+                // fabricated report; the panel reads now + lights on the key.
+                weatherEnterpriseState(note: ev.note)
+            }
+        } else {
+            // Toggle on but the fetch hasn't run yet — kick it.
+            weatherEnterpriseState(note: nil)
+                .task(id: weatherFetchKey) { await fetchHistoricalWeather() }
+        }
+    }
+
+    /// HONEST gated state — bespoke (WeatherIcons), reads now, lights on the key.
+    private func weatherEnterpriseState(note: String?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.06)).frame(width: 40, height: 40)
+                    WeatherIcons.symbolView(for: 1001, size: 26)   // neutral cloud — no guessed condition
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Evidence available with the enterprise feed")
+                        .font(.system(size: 12, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(note?.isEmpty == false ? note! : "The cited weather.historical report lights here the instant the enterprise weather key lands — and attaches automatically when you file.")
+                        .font(EType.caption).foregroundStyle(palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 6) {
+                WeatherIcons.utility(.eye, size: 10, tint: palette.textTertiary)
+                Text("ENTERPRISE")
+                    .font(.system(size: 8.5, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+        .padding(10)
+        .background(palette.bgCard.opacity(0.6))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    /// LIVE cited report (enterprise key present). Bespoke glyphs throughout.
+    private func attachedWeatherReport(_ snap: HistoricalWeatherEvidence.Snapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.06)).frame(width: 44, height: 44)
+                    WeatherIcons.symbolView(for: snap.weatherCode ?? 0, size: 30)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(snap.peakCondition?.isEmpty == false ? snap.peakCondition! : "Cited weather record")
+                        .font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                    Text("weather.historical · attaches on file")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(Brand.success)
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 14) {
+                if let g = snap.maxGustMph {
+                    weatherMetric(.wind, value: String(format: "%.0f mph", g), label: "MAX GUST")
+                }
+                if let v = snap.minVisibilityMi {
+                    weatherMetric(.eye, value: String(format: "%.1f mi", v), label: "MIN VIS")
+                }
+            }
+        }
+        .padding(10)
+        .background(Brand.success.opacity(0.06))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Brand.success.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private func weatherMetric(_ kind: WeatherIcons.Utility, value: String, label: String) -> some View {
+        HStack(spacing: 5) {
+            WeatherIcons.utility(kind, size: 13, tint: palette.textSecondary)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(value).font(.system(size: 12, weight: .heavy)).monospacedDigit()
+                    .foregroundStyle(palette.textPrimary)
+                Text(label).font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+    }
+
+    /// Re-fetches whenever the toggle flips on or the claim type changes — so a
+    /// type swap re-keys the window without a fabricated stale carry-over.
+    private var weatherFetchKey: String { "\(claimType)-\(attachWeather)" }
+
+    @MainActor
+    private func fetchHistoricalWeather() async {
+        guard attachWeather, !weatherLoading else { return }
+        weatherLoading = true; weatherError = nil
+        defer { weatherLoading = false }
+        // Position + window are resolved server-side from the loadId; we send
+        // only what we hold. Optionals stay nil rather than fabricating a
+        // lat/lon/window the composer doesn't actually know.
+        struct In: Encodable {
+            let loadId: String
+            let lat: Double?
+            let lon: Double?
+            let from: String?
+            let to: String?
+        }
+        do {
+            weatherEvidence = try await EusoTripAPI.shared.query(
+                "freightClaims.attachHistoricalWeatherEvidence",
+                input: In(loadId: loadId, lat: nil, lon: nil, from: nil, to: nil)
+            )
+        } catch {
+            // A missing/unregistered proc or gated error must not block the
+            // claim — fall to the honest ENTERPRISE state, never a fake report.
+            weatherEvidence = HistoricalWeatherEvidence(available: false, note: nil, snapshot: nil)
         }
     }
 
@@ -248,16 +451,92 @@ private struct ClaimComposerBody: View {
         sending = true; actionError = nil
         struct In: Encodable {
             let loadId: String; let claimType: String; let amount: Double; let description: String; let evidenceBase64: String?
+            // Records the shipper's intent to attach the cited weather.historical
+            // report on the new claim. The server attaches the real record when
+            // the enterprise weather key is present; gated → it's a no-op flag,
+            // never a fabricated evidence row.
+            let attachHistoricalWeather: Bool
         }
         struct Out: Decodable { let success: Bool; let claimId: String? }
         let evidenceB64 = photo?.jpegData(compressionQuality: 0.85)?.base64EncodedString()
         do {
-            let _ : Out = try await EusoTripAPI.shared.mutation("freightClaims.fileClaim", input: In(loadId: loadId, claimType: claimType, amount: amount ?? 0, description: description, evidenceBase64: evidenceB64))
+            let out: Out = try await EusoTripAPI.shared.mutation("freightClaims.fileClaim", input: In(loadId: loadId, claimType: claimType, amount: amount ?? 0, description: description, evidenceBase64: evidenceB64, attachHistoricalWeather: attachWeather && isWeatherPeril))
+            // If the shipper opted into the weather report and the claim landed
+            // with an id, attach the cited historical record to THIS claim. Gated
+            // → available:false comes back and nothing is fabricated.
+            if attachWeather && isWeatherPeril, let cid = out.claimId {
+                await attachWeatherToFiledClaim(claimId: cid)
+            }
             sent = true
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         sending = false
+    }
+
+    /// Best-effort post-file attach to the now-created claim id. Never throws
+    /// into the file flow — a gated/missing proc leaves the claim filed and the
+    /// evidence simply lights when the enterprise key lands.
+    @MainActor
+    private func attachWeatherToFiledClaim(claimId: String) async {
+        struct In: Encodable {
+            let claimId: String
+            let lat: Double?; let lon: Double?; let from: String?; let to: String?
+        }
+        let ev: HistoricalWeatherEvidence? = try? await EusoTripAPI.shared.query(
+            "freightClaims.attachHistoricalWeatherEvidence",
+            input: In(claimId: claimId, lat: nil, lon: nil, from: nil, to: nil)
+        )
+        if let ev { weatherEvidence = ev }
+    }
+}
+
+// MARK: - Historical weather evidence (decode shape · lenient)
+//
+// `freightClaims.attachHistoricalWeatherEvidence({claimId|loadId, lat, lon,
+// from, to})` → a cited weather.historical evidence record. Enterprise-gated:
+// today the server returns `available:false` (+ an optional note) and no
+// snapshot, so EVERY field is optional and decode never throws on the gated
+// shape. `snapshot` carries the cited readings the claim cites once the
+// enterprise weather key lands. HONEST: available:false / nil snapshot ⇒ the
+// composer renders the ENTERPRISE state, never a fabricated report.
+private struct HistoricalWeatherEvidence: Decodable {
+    let available: Bool?
+    let note: String?
+    let snapshot: Snapshot?
+
+    struct Snapshot: Decodable {
+        let weatherCode: Int?
+        let peakCondition: String?
+        let maxGustMph: Double?
+        let minVisibilityMi: Double?
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case available, note, message, snapshot, weather, evidence
+    }
+
+    init(available: Bool?, note: String?, snapshot: Snapshot?) {
+        self.available = available; self.note = note; self.snapshot = snapshot
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        available = try? c.decodeIfPresent(Bool.self, forKey: .available)
+        // The honest note may arrive under `note` or `message`.
+        if let n = try? c.decodeIfPresent(String.self, forKey: .note) {
+            note = n
+        } else {
+            note = try? c.decodeIfPresent(String.self, forKey: .message)
+        }
+        // The cited readings may nest under `snapshot`, `weather`, or `evidence`.
+        if let s = try? c.decodeIfPresent(Snapshot.self, forKey: .snapshot) {
+            snapshot = s
+        } else if let w = try? c.decodeIfPresent(Snapshot.self, forKey: .weather) {
+            snapshot = w
+        } else {
+            snapshot = try? c.decodeIfPresent(Snapshot.self, forKey: .evidence)
+        }
     }
 }
 

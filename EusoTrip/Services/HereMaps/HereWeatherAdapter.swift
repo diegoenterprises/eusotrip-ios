@@ -36,6 +36,11 @@ extension WeatherSnapshot {
         city: String
     ) -> WeatherSnapshot? {
         guard let obs = place.observations?.current else { return nil }
+        // A partial HERE payload can carry an observation block with a NULL
+        // temperature; without a real reading we return nil rather than
+        // fabricating tempF=0 — a fake 0° would poison downstream freeze/ambient
+        // peril flags (REEFER · FREEZE RISK 0°) on temp-controlled loads.
+        guard obs.temperatureFahrenheit != nil || obs.temperature != nil else { return nil }
 
         // Temperature — HERE ships both scales; prefer the explicit
         // Fahrenheit field when available (en-US locale), else

@@ -251,6 +251,7 @@ struct ShipperDetentionExposure: View {
     private func activeRow(_ d: DetentionAPI.ActiveDetention) -> some View {
         let accruing = d.billableMinutes > 0
         let freeTime = humanMinutes(d.freeTimeMinutes)
+        let wx = store.snapshot(for: d.id)
         return VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .top) {
                 // Live clock
@@ -272,7 +273,13 @@ struct ShipperDetentionExposure: View {
                     }
                 }
                 Spacer()
-                statusPill(accruing ? .accruing : .watch)
+                VStack(alignment: .trailing, spacing: 4) {
+                    statusPill(accruing ? .accruing : .watch)
+                    // Auto WX HOLD tag — only when the server says the dwell
+                    // overlapped a documented severe weather alert. Never
+                    // inferred client-side.
+                    if wx?.isHold == true { wxHoldChip }
+                }
             }
 
             HStack {
@@ -286,6 +293,9 @@ struct ShipperDetentionExposure: View {
                                               : AnyShapeStyle(palette.textTertiary))
                     .monospacedDigit()
             }
+
+            // Cited historical-weather evidence for a WX HOLD dwell.
+            if wx?.isHold == true { weatherEvidence(wx) }
 
             Button {
                 disputing = d
@@ -324,6 +334,107 @@ struct ShipperDetentionExposure: View {
             .padding(.horizontal, Space.s2)
             .padding(.vertical, 3)
             .background(Capsule().fill(bg))
+    }
+
+    // MARK: WX HOLD chip + weather evidence (Wave 4-server #85)
+
+    /// Bespoke "WX HOLD" chip — the alert glyph via `WeatherIcons` (NEVER an
+    /// SF Symbol on a weather element) + the danger accent. Shown only when
+    /// the row's `wxHold==true` (a documented severe-alert overlap).
+    private var wxHoldChip: some View {
+        HStack(spacing: 4) {
+            WeatherIcons.utility(.alert, size: 11, tint: Brand.danger)
+            Text("WX HOLD")
+                .font(EType.micro)
+                .tracking(1.1)
+                .foregroundStyle(Brand.danger)
+        }
+        .padding(.horizontal, Space.s2)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Brand.danger.opacity(0.16)))
+    }
+
+    /// The cited historical-weather exhibit under a WX HOLD clock — the
+    /// dispute evidence (max gust / min vis / peak condition) with a bespoke
+    /// condition glyph. Honest: the historical record is Enterprise-gated, so
+    /// when it isn't `available` (or carries no readings) we render the
+    /// "available with the enterprise feed" em-dash state — never a
+    /// fabricated reading.
+    @ViewBuilder
+    private func weatherEvidence(_ wx: DetentionWxSnapshot?) -> some View {
+        let resolved = wx?.isAvailable == true && wx?.hasCitedReadings == true
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: Space.s2) {
+                WeatherIcons.symbolView(for: wx?.peakWeatherCode ?? 0, size: 20)
+                Text("Cited weather evidence")
+                    .font(EType.micro)
+                    .tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                if let sev = wx?.alertSeverity {
+                    let s = WeatherSnapshot.AlertSeverity(capString: sev)
+                    Text(s.label)
+                        .font(EType.micro)
+                        .tracking(0.6)
+                        .foregroundStyle(s.color)
+                        .padding(.horizontal, Space.s2)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(s.color.opacity(0.16)))
+                }
+            }
+
+            if resolved {
+                HStack(spacing: Space.s4) {
+                    evidenceMetric(.wind, "MAX GUST",
+                                   wx?.maxGustMph.map { "\(Int($0.rounded())) mph" } ?? "—")
+                    evidenceMetric(.eye, "MIN VIS",
+                                   wx?.minVisibilityMi.map {
+                                       "\($0.formatted(.number.precision(.fractionLength(0...1)))) mi"
+                                   } ?? "—")
+                    evidenceMetric(.precip, "PEAK", wx?.peakCondition ?? "—")
+                }
+                if let head = wx?.alertHeadline, !head.isEmpty {
+                    Text(head)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                }
+            } else {
+                HStack(alignment: .top, spacing: 6) {
+                    WeatherIcons.utility(.alert, size: 13, tint: palette.textTertiary)
+                    Text("Historical weather evidence available with the enterprise feed. Max gust, minimum visibility and peak condition for this dwell window auto-attach as a cited dispute exhibit once the Tomorrow.io history tier is licensed.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+        }
+        .padding(Space.s3)
+        .background(Brand.danger.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                .stroke(Brand.danger.opacity(resolved ? 0.35 : 0.18), lineWidth: 1)
+        )
+    }
+
+    /// One cited reading tile (bespoke utility glyph + label + value or "—").
+    private func evidenceMetric(_ glyph: WeatherIcons.Utility, _ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                WeatherIcons.utility(glyph, size: 12, tint: palette.textTertiary)
+                Text(label)
+                    .font(EType.micro)
+                    .tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Text(value)
+                .font(EType.bodyStrong)
+                .monospacedDigit()
+                .foregroundStyle(value == "—" ? palette.textTertiary : palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: CTA row — Dispute charge / Export
@@ -485,9 +596,18 @@ final class ShipperDetentionExposureStore: ObservableObject, DynamicStore {
     @Published private(set) var facilities: [DetentionAPI.FacilityExposure] = []
     @Published private(set) var active: [DetentionAPI.ActiveDetention] = []
 
+    /// Per-row weather snapshot keyed by detention `id` (Wave 4-server #85).
+    /// A row's `wxHold==true` auto-tags it "WX HOLD"; the cited readings
+    /// (max gust / min vis / peak condition) surface as dispute evidence.
+    /// Empty until the weather-aware re-query lands; honest by absence.
+    @Published private(set) var weather: [Int: DetentionWxSnapshot] = [:]
+
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var lastError: Error?
     @Published private(set) var disputingId: Int?
+
+    /// The weather snapshot for a clock, when the row carries one.
+    func snapshot(for detentionId: Int) -> DetentionWxSnapshot? { weather[detentionId] }
 
     /// Right-rail string "$8,420 · 3 ACTIVE".
     var exposureRail: String {
@@ -513,6 +633,9 @@ final class ShipperDetentionExposureStore: ObservableObject, DynamicStore {
         dashboard = d
         facilities = f?.facilities ?? []
         active = a?.detentions ?? []
+        // Overlay the per-row weather snapshot + wxHold (Wave 4-server #85).
+        // Best-effort: a miss leaves the clocks untagged rather than failing.
+        weather = (try? await EusoTripAPI.shared.detention.getActiveWeather(limit: 10)) ?? [:]
         if d == nil && (f?.facilities.isEmpty ?? true) && (a?.detentions.isEmpty ?? true) {
             lastError = NSError(
                 domain: "ShipperDetentionExposureStore",
@@ -546,13 +669,110 @@ final class ShipperDetentionExposureStore: ObservableObject, DynamicStore {
             lines.append("facility,\(csv(f.facilityName)),avg \(f.avgWaitMinutes)m,\(Int(f.totalCharges))")
         }
         for a in active {
-            lines.append("active,\(csv(a.facilityName)),\(a.elapsedMinutes)m elapsed,\(Int(a.currentCharge))")
+            // Annotate the dwell with its documented WX HOLD when the server
+            // flagged a severe-weather overlap — honest evidence in the ledger,
+            // never a fabricated tag.
+            let wxNote = weather[a.id]?.isHold == true ? " · WX HOLD" : ""
+            lines.append("active,\(csv(a.facilityName)),\(a.elapsedMinutes)m elapsed\(wxNote),\(Int(a.currentCharge))")
         }
         return lines.joined(separator: "\n")
     }
 
     private func csv(_ s: String) -> String {
         s.contains(",") ? "\"\(s)\"" : s
+    }
+}
+
+// MARK: - Per-row weather snapshot + WX HOLD (Wave 4-server #85)
+//
+// Each `detentionAccessorials` row now carries a weather snapshot taken
+// at the dwell's facility + window: `wxHold` (true when the dwell
+// overlaps a documented SEVERE weather alert) and the cited readings the
+// dispute leans on (maxGustMph / minVisibilityMi / peakCondition +
+// peakWeatherCode for the bespoke glyph). The historical-evidence record
+// behind it is Enterprise-gated → `available:false`/nulls today, so every
+// field is optional and the UI renders the honest "available with the
+// enterprise feed" / em-dash state. The shared `DetentionAPI.ActiveDetention`
+// (EusoTripAPI.swift) doesn't decode these yet, so we re-query the same
+// proc into a weather-aware local row and merge by `id` — no fabricated
+// hold, no fabricated reading.
+
+struct DetentionWxSnapshot: Decodable, Equatable {
+    /// Enterprise-gated historical-evidence availability. false/nil today.
+    let available: Bool?
+    /// Dwell overlapped a documented SEVERE weather alert → auto "WX HOLD".
+    /// Server-computed; we NEVER infer a hold client-side.
+    let wxHold: Bool?
+    /// Cited peak gust over the dwell window, mph.
+    let maxGustMph: Double?
+    /// Cited worst (minimum) visibility over the window, miles.
+    let minVisibilityMi: Double?
+    /// The most-hazardous Tomorrow.io weatherCode + its phrase.
+    let peakWeatherCode: Int?
+    let peakCondition: String?
+    /// The overlapping severe-alert headline/severity (the thing that
+    /// raised the hold), when one is cited.
+    let alertHeadline: String?
+    let alertSeverity: String?
+    let source: String?
+
+    var isHold: Bool { wxHold == true }
+    var isAvailable: Bool { available == true }
+    /// True when the row carries at least one cited reading to exhibit.
+    var hasCitedReadings: Bool {
+        maxGustMph != nil || minVisibilityMi != nil
+            || (peakCondition?.isEmpty == false)
+    }
+}
+
+extension DetentionAPI {
+
+    /// A `getActiveDetentions` row decoded WITH the Wave 4 weather fields.
+    /// Mirrors the shared `ActiveDetention` identity (`id`) so the snapshot
+    /// merges back onto the rows the screen already renders.
+    struct ActiveDetentionWx: Decodable, Identifiable {
+        let id: Int
+        let weatherSnapshot: DetentionWxSnapshot?
+        // Some server builds inline the flags on the row rather than nesting
+        // them under `weatherSnapshot`; accept both so a shape change doesn't
+        // silently drop the hold.
+        let wxHold: Bool?
+        let maxGustMph: Double?
+        let minVisibilityMi: Double?
+        let peakWeatherCode: Int?
+        let peakCondition: String?
+
+        /// The resolved snapshot — prefers the nested record, else folds the
+        /// inline flags into one. nil when the row carries neither (honest).
+        var snapshot: DetentionWxSnapshot? {
+            if let s = weatherSnapshot { return s }
+            guard wxHold != nil || maxGustMph != nil || minVisibilityMi != nil
+                    || peakWeatherCode != nil || peakCondition != nil else { return nil }
+            return DetentionWxSnapshot(
+                available: nil, wxHold: wxHold, maxGustMph: maxGustMph,
+                minVisibilityMi: minVisibilityMi, peakWeatherCode: peakWeatherCode,
+                peakCondition: peakCondition, alertHeadline: nil,
+                alertSeverity: nil, source: nil
+            )
+        }
+    }
+
+    struct ActiveDetentionsWxResponse: Decodable {
+        let detentions: [ActiveDetentionWx]
+    }
+
+    /// Re-query `getActiveDetentions` decoding the per-row weather snapshot.
+    /// Best-effort — a miss must never break the (already-loaded) clocks.
+    func getActiveWeather(limit: Int = 25) async throws -> [Int: DetentionWxSnapshot] {
+        struct Input: Encodable { let limit: Int; let offset: Int }
+        let resp: ActiveDetentionsWxResponse = try await api.query(
+            "detentionAccessorials.getActiveDetentions",
+            input: Input(limit: limit, offset: 0)
+        )
+        return Dictionary(
+            resp.detentions.compactMap { row in row.snapshot.map { (row.id, $0) } },
+            uniquingKeysWith: { a, _ in a }
+        )
     }
 }
 
