@@ -939,15 +939,11 @@ struct DriverHome: View {
                         // unavailable, we silently omit the card rather
                         // than flash an error — matches the §13 "neutral
                         // empty state on the client, no fake data" rule.
-                        if let w = vm.weather {
-                            // Route-aware: when a load is active the card
-                            // also renders the lane strip (pickup →
-                            // delivery live conditions + freight flags)
-                            // from HERE Destination Weather.
-                            WeatherCard(snapshot: w, lane: vm.laneWeather)
-                        } else if vm.weatherAvailability == .needsLocation {
-                            enableLocationCard
-                        }
+                        // Always-visible bespoke weather surface — owns its
+                        // own fetch + honest empty states so it never
+                        // disappears. Lane-aware: passes the active load's
+                        // HERE lane weather through to the card's lane strip.
+                        HomeWeatherWidget(lane: vm.laneWeather)
                         // Pre-trip DVIR status — 49 CFR 396.11. Only
                         // surfaces when the driver actually has an
                         // upcoming / active load assigned, since a

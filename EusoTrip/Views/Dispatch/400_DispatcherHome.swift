@@ -111,6 +111,8 @@ private struct DispatcherHomeBody: View {
                 greeting
                 IridescentHairline()
 
+                HomeWeatherWidget()
+
                 if loading {
                     LifecycleCard {
                         Text("Loading dispatch desk…")

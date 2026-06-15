@@ -471,6 +471,7 @@
 		D2CMPNAV0000000000ABDS /* ComplianceNavController.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2CMPNAV0000000000ACDS /* ComplianceNavController.swift */; };
 		D2D0000000000000000ABFE /* PostLoadDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0000000000000000ACFE /* PostLoadDraft.swift */; };
 		D2D0CELEB000000000ABFE /* PostLoadCelebration.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0CELEB000000000ACFE /* PostLoadCelebration.swift */; };
+		D2D0HMWX000000000ABFE /* HomeWeatherWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0HMWX000000000ACFE /* HomeWeatherWidget.swift */; };
 		D2D0100000000000000ABFE /* 250_PostLoadStep1Lane.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0100000000000000ACFE /* 250_PostLoadStep1Lane.swift */; };
 		D2D0200000000000000ABFE /* 251_PostLoadStep2Equipment.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0200000000000000ACFE /* 251_PostLoadStep2Equipment.swift */; };
 		D2D0300000000000000ABFE /* 252_PostLoadStep3Pricing.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D0300000000000000ACFE /* 252_PostLoadStep3Pricing.swift */; };
@@ -1454,6 +1455,7 @@
 		D2CMPNAV0000000000ACDS /* ComplianceNavController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ComplianceNavController.swift; path = EusoTrip/Views/Compliance/ComplianceNavController.swift; sourceTree = SOURCE_ROOT; };
 		D2D0000000000000000ACFE /* PostLoadDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PostLoadDraft.swift; path = EusoTrip/Views/Shipper/PostLoadDraft.swift; sourceTree = SOURCE_ROOT; };
 		D2D0CELEB000000000ACFE /* PostLoadCelebration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PostLoadCelebration.swift; path = EusoTrip/Views/Shipper/PostLoadCelebration.swift; sourceTree = SOURCE_ROOT; };
+		D2D0HMWX000000000ACFE /* HomeWeatherWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = HomeWeatherWidget.swift; path = EusoTrip/Views/Components/HomeWeatherWidget.swift; sourceTree = SOURCE_ROOT; };
 		D2D0100000000000000ACFE /* 250_PostLoadStep1Lane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 250_PostLoadStep1Lane.swift; path = EusoTrip/Views/Shipper/250_PostLoadStep1Lane.swift; sourceTree = SOURCE_ROOT; };
 		D2D0200000000000000ACFE /* 251_PostLoadStep2Equipment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 251_PostLoadStep2Equipment.swift; path = EusoTrip/Views/Shipper/251_PostLoadStep2Equipment.swift; sourceTree = SOURCE_ROOT; };
 		D2D0300000000000000ACFE /* 252_PostLoadStep3Pricing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 252_PostLoadStep3Pricing.swift; path = EusoTrip/Views/Shipper/252_PostLoadStep3Pricing.swift; sourceTree = SOURCE_ROOT; };
@@ -2279,6 +2281,7 @@
 				D2280000000000000000ACFF /* LifecycleScaffold.swift */,
 				D2D0000000000000000ACFE /* PostLoadDraft.swift */,
 				D2D0CELEB000000000ACFE /* PostLoadCelebration.swift */,
+				D2D0HMWX000000000ACFE /* HomeWeatherWidget.swift */,
 				D2D0100000000000000ACFE /* 250_PostLoadStep1Lane.swift */,
 				D2D0200000000000000ACFE /* 251_PostLoadStep2Equipment.swift */,
 				D2D0300000000000000ACFE /* 252_PostLoadStep3Pricing.swift */,
@@ -3918,6 +3921,7 @@
 				D2280000000000000000ABFF /* LifecycleScaffold.swift in Sources */,
 				D2D0000000000000000ABFE /* PostLoadDraft.swift in Sources */,
 				D2D0CELEB000000000ABFE /* PostLoadCelebration.swift in Sources */,
+				D2D0HMWX000000000ABFE /* HomeWeatherWidget.swift in Sources */,
 				D2D0100000000000000ABFE /* 250_PostLoadStep1Lane.swift in Sources */,
 				D2D0200000000000000ABFE /* 251_PostLoadStep2Equipment.swift in Sources */,
 				D2D0300000000000000ABFE /* 252_PostLoadStep3Pricing.swift in Sources */,

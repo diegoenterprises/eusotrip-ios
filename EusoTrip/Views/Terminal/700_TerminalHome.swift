@@ -160,6 +160,7 @@ struct TerminalHome: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                HomeWeatherWidget()
                 kpiStrip
                 facilityLocatorCard
                 attentionStrip

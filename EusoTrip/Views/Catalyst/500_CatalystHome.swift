@@ -200,11 +200,10 @@ struct CatalystHome: View {
     /// "Enable location" CTA when authorization is missing.
     @ViewBuilder
     private var weatherSection: some View {
-        if let w = weather {
-            WeatherCard(snapshot: w)
-        } else if weatherNeedsLocation {
-            catalystEnableLocationCard
-        }
+        // Always-visible bespoke weather surface — owns its own fetch and
+        // renders an honest state (data / loading / enable-location /
+        // unavailable) so the widget never disappears on any role.
+        HomeWeatherWidget()
     }
 
     private var catalystEnableLocationCard: some View {

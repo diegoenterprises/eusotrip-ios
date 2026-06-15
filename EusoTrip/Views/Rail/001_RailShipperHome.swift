@@ -118,6 +118,7 @@ private struct RailShipperHome: View {
                     .padding(.horizontal, Space.s5)
                     .padding(.top, Space.s4)
                 VStack(alignment: .leading, spacing: Space.s5) {
+                    HomeWeatherWidget()
                     attentionCard
                     ctaRow
                     statStrip
