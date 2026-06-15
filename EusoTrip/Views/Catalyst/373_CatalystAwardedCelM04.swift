@@ -1262,7 +1262,9 @@ private struct CatalystAwardedCelM04Body: View {
             // on file, fetch + decode the truck route so the lane map
             // paints the real road geometry instead of a straight line.
             // Honest no-op when the load lacks geocoded endpoints.
-            await refreshRoutePolyline()
+            // Detached so the screen's `loading` resolves immediately instead
+            // of waiting on the route fetch — no long lingering skeleton.
+            Task { @MainActor in await refreshRoutePolyline() }
         } catch {
             self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

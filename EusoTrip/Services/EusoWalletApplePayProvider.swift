@@ -242,6 +242,7 @@ private extension EusoWalletApplePayProvider {
 
         let tokenURL = URL(string: "https://api.stripe.com/v1/tokens")!
         var tokenReq = URLRequest(url: tokenURL)
+        tokenReq.timeoutInterval = 15  // app-wide no-lingering-load bound
         tokenReq.httpMethod = "POST"
         tokenReq.setValue("Bearer \(publishableKey)", forHTTPHeaderField: "Authorization")
         tokenReq.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -262,6 +263,7 @@ private extension EusoWalletApplePayProvider {
         // Step b — wrap the Token in a PaymentMethod.
         let pmURL = URL(string: "https://api.stripe.com/v1/payment_methods")!
         var pmReq = URLRequest(url: pmURL)
+        pmReq.timeoutInterval = 15  // app-wide no-lingering-load bound
         pmReq.httpMethod = "POST"
         pmReq.setValue("Bearer \(publishableKey)", forHTTPHeaderField: "Authorization")
         pmReq.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")

@@ -164,7 +164,9 @@ final class EusoWalletPassService {
         //    to a CORS-unfriendly path.
         let data: Data
         do {
-            let (bytes, resp) = try await URLSession.shared.data(from: url)
+            var req = URLRequest(url: url)
+            req.timeoutInterval = 15  // app-wide no-lingering-load bound
+            let (bytes, resp) = try await URLSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode) else {
                 return .failure(message: "Wallet pass server returned an error.")

@@ -716,6 +716,17 @@ public final class ReceiverVoiceController: NSObject, ObservableObject {
         #endif
         audioEngine.inputNode.removeTap(onBus: 0)
         state = .processing
+        // App-wide no-lingering-load bound (founder mandate): if the speech
+        // recognizer never delivers a final result, `.processing` would spin
+        // forever. Arm a 6s watchdog that surfaces an honest, retryable error
+        // instead of a permanent "processing" spinner. A real result that
+        // arrives first moves `state` off `.processing`, so this no-ops.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak self] in
+            guard let self else { return }
+            if case .processing = self.state {
+                self.state = .error("Couldn't process the audio. Tap to try again.")
+            }
+        }
     }
 
     #if canImport(Speech)
