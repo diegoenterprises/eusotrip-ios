@@ -143,7 +143,7 @@ struct ShipperHotZones: View {
     @State private var pendingDetailCity: HotZoneCityRef? = nil
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
+        ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
                 topBar
                     .padding(.top, Space.s5)
@@ -158,6 +158,11 @@ struct ShipperHotZones: View {
 
                 Color.clear.frame(height: 96)
             }
+            // Hard-lock the scroll content to the viewport width so the page
+            // can NEVER pan/rubber-band horizontally — any intrinsically-wide
+            // child is clipped to the container instead of stretching the
+            // whole screen sideways.
+            .containerRelativeFrame(.horizontal, alignment: .leading)
         }
         .task { await store.load() }
         .refreshable { await store.load() }
@@ -179,18 +184,26 @@ struct ShipperHotZones: View {
     // MARK: TopBar
 
     private var topBar: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
             Text("✦ SHIPPER · HOT ZONES")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
-            Spacer()
+                .layoutPriority(1)
+            Spacer(minLength: Space.s2)
+            // Truncate the live counter — without a line limit it took its
+            // full intrinsic width and stretched the whole page wider than
+            // the viewport, which let the vertical scroll rubber-band
+            // sideways (the "gyrates left-to-right" bug).
             Text(counterEyebrow)
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .truncationMode(.tail)
                 .accessibilityLabel(counterAccessibility)
         }
         .padding(.horizontal, Space.s3)
