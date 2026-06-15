@@ -9,9 +9,52 @@ import UniformTypeIdentifiers
 
 struct InsuranceDetailScreen: View {
     let theme: Theme.Palette
+    /// Optional load context. When this certificate is reached FROM a load
+    /// (a lifecycle drill-in), the loadId lets us tag the load's PERIL
+    /// EXPOSURE (named-storm corridor / freeze) via `insurance.getLoadPerilExposure`
+    /// and bind a weather event to a claim. nil at the account-level COI
+    /// entry (ContentView) → the peril ribbon stays hidden, never fabricated.
+    var loadId: String? = nil
     var body: some View {
-        Shell(theme: theme) { InsuranceBody() } nav: { shipperLifecycleNav() }
+        Shell(theme: theme) { InsuranceBody(loadId: loadId) } nav: { shipperLifecycleNav() }
     }
+}
+
+// MARK: - Load peril exposure (insurance.getLoadPerilExposure envelope)
+
+/// `insurance.getLoadPerilExposure({loadId})` 1:1. The proc tags a load's
+/// weather PERIL EXPOSURE — a named-storm corridor or a freeze window that
+/// the cargo's lane crosses — so the shipper can see coverage-relevant
+/// weather risk before it becomes a claim. Enterprise-gated (Tomorrow.io
+/// severe-alert + named-event tier): until the key lands it returns
+/// `available:false` / `peril:"none"`, so every field is optional and the
+/// ribbon stays hidden rather than inventing a storm. When the key lands
+/// and a real corridor/freeze overlaps the lane, the same view lights with
+/// the cited title + severity + window.
+private struct LoadPerilExposure: Decodable {
+    let available: Bool?
+    /// "none" | "named_storm" | "freeze" — the peril class. "none" (or a
+    /// nil/unknown value) keeps the ribbon hidden. NEVER a fabricated storm.
+    let peril: String?
+    /// Human title for the cited peril — "Tropical Storm Imelda corridor",
+    /// "Hard freeze · I-35 lane". Surfaced verbatim; nil → hidden.
+    let title: String?
+    /// CAP-style severity string ("moderate"/"severe"/"extreme") → tints the
+    /// ribbon via the shared `WeatherSnapshot.AlertSeverity` mapping.
+    let severity: String?
+    /// The exposure window phrase ("Jun 14 06:00 – Jun 16 18:00 CDT").
+    let window: String?
+
+    /// True only when the enterprise feed answered AND a real peril overlaps
+    /// the lane — the single gate the ribbon renders on.
+    var isExposed: Bool {
+        guard available == true else { return false }
+        let p = (peril ?? "none").lowercased()
+        return p == "named_storm" || p == "freeze"
+    }
+
+    /// "none" | "named_storm" | "freeze" normalized; defaults to none.
+    var kind: String { (peril ?? "none").lowercased() }
 }
 
 private struct InsuranceCert: Decodable, Hashable {
@@ -52,9 +95,20 @@ private struct COIScanResult: Hashable {
 
 private struct InsuranceBody: View {
     @Environment(\.palette) private var palette
+    /// Load context for the peril-exposure tag + claim binding. nil at the
+    /// account-level COI entry → the peril ribbon never renders.
+    var loadId: String? = nil
     @State private var cert: InsuranceCert? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+    /// Load peril exposure (named-storm corridor / freeze). nil until the
+    /// per-load lookup resolves; the envelope is itself honest (available:false
+    /// / peril:none until the enterprise feed is licensed). Fetched only when
+    /// a loadId is in scope.
+    @State private var peril: LoadPerilExposure? = nil
+    /// Set once a coverage-event bind lands ("Bound to claim CLM-… ").
+    @State private var perilBindNote: String? = nil
+    @State private var binding: Bool = false
     /// COI scan state — user picks a PDF / photo, the bytes are
     /// base64'd and run through the document-intelligence vision spine
     /// (`documentRouter.classifyAndRoute`). The router first classifies
@@ -70,6 +124,7 @@ private struct InsuranceBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                if let p = peril, p.isExposed { perilExposureRibbon(p) }
                 scanCOIRibbon
                 if loading {
                     LifecycleCard {
@@ -113,6 +168,7 @@ private struct InsuranceBody: View {
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
+        .task(id: loadId) { await loadPeril() }
         .fullScreenCover(item: $presentedPDF) { p in
             EusoPDFViewer(title: p.title, subtitle: p.subtitle, source: .url(p.url))
         }
@@ -182,6 +238,144 @@ private struct InsuranceBody: View {
         }
         .buttonStyle(.plain)
         .disabled(scanInflight)
+    }
+
+    // MARK: - Peril exposure ribbon (bespoke · WeatherIcons, zero SF Symbols)
+
+    /// Tags the load's weather PERIL EXPOSURE — a named-storm corridor or a
+    /// freeze window the cargo's lane crosses — drawn ONLY when the enterprise
+    /// feed has answered with a real peril (`available && peril != none`). The
+    /// glyph is bespoke: a storm glyph for a named storm, a sleet glyph for a
+    /// freeze (WeatherIcons, never an SF Symbol). When the peril binds to a
+    /// coverage event/claim, the bind affordance surfaces below. HONEST: the
+    /// caller only ever reaches this with a real `LoadPerilExposure.isExposed`
+    /// envelope — no fabricated storm, no fabricated window.
+    private func perilExposureRibbon(_ p: LoadPerilExposure) -> some View {
+        let sev = WeatherSnapshot.AlertSeverity(capString: p.severity)
+        // Named storm → the storm glyph (code 8000); freeze → the sleet/ice
+        // glyph (code 6001). Both route through the bespoke WeatherIcons set.
+        let glyphCode = p.kind == "freeze" ? 6001 : 8000
+        let perilLabel = p.kind == "freeze" ? "FREEZE EXPOSURE" : "NAMED-STORM CORRIDOR"
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(sev.color.opacity(0.14))
+                        .frame(width: 40, height: 40)
+                    WeatherIcons.symbolView(for: glyphCode, size: 24)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        WeatherIcons.utility(.alert, size: 11, tint: sev.color)
+                        Text(perilLabel)
+                            .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                            .foregroundStyle(sev.color)
+                    }
+                    Text(dashIfEmpty(p.title))
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let w = p.window, !w.isEmpty {
+                        Text(w)
+                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .tracking(0.3)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                Text(sev.label)
+                    .font(.system(size: 10, weight: .bold)).kerning(0.4)
+                    .foregroundStyle(sev.color)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Capsule().fill(sev.color.opacity(0.14)))
+            }
+
+            Text("This load's lane crosses an active \(p.kind == "freeze" ? "freeze window" : "named-storm corridor"). If cargo is impacted, bind the event to a freight claim so the carrier-insurance file carries the cited coverage trigger.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Coverage-event bind affordance. After a successful bind the
+            // confirmation replaces the button (honest, server-acknowledged).
+            if let note = perilBindNote {
+                HStack(spacing: 6) {
+                    WeatherIcons.utility(.alert, size: 12, tint: Brand.success)
+                    Text(note)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Brand.success)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Button { Task { await bindPerilToClaim(p) } } label: {
+                    HStack(spacing: 6) {
+                        if binding { ProgressView().tint(.white).controlSize(.small) }
+                        Text(binding ? "Binding…" : "Bind to coverage event")
+                            .font(.system(size: 12, weight: .heavy)).tracking(0.3)
+                            .foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(binding || loadId == nil)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(sev.color.opacity(0.45))
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Pull `insurance.getLoadPerilExposure({loadId})` — the load's weather
+    /// peril tag. Enterprise-gated: today it returns `available:false` /
+    /// `peril:"none"`, so the ribbon stays hidden (the honest state that lights
+    /// the instant the key lands and a real corridor/freeze overlaps the lane).
+    /// Skipped entirely with no load in scope — never queries a guessed load.
+    private func loadPeril() async {
+        guard let loadId, !loadId.isEmpty else { peril = nil; return }
+        struct PerilIn: Encodable { let loadId: String }
+        do {
+            let p: LoadPerilExposure = try await EusoTripAPI.shared.query(
+                "insurance.getLoadPerilExposure", input: PerilIn(loadId: loadId))
+            peril = p
+        } catch {
+            // Keep the ribbon hidden; never invent a peril.
+            peril = nil
+        }
+    }
+
+    /// Bind the cited peril to a coverage event/claim via
+    /// `insurance.bindWeatherEventToClaim`. The server links the weather
+    /// trigger to the load's claim so the carrier-insurance file carries the
+    /// contemporaneous coverage cause. On success the ribbon shows the
+    /// server-returned reference; on failure the button stays so it can retry.
+    private func bindPerilToClaim(_ p: LoadPerilExposure) async {
+        guard let loadId, !loadId.isEmpty else { return }
+        binding = true
+        defer { binding = false }
+        struct BindIn: Encodable { let loadId: String; let peril: String }
+        struct BindOut: Decodable { let success: Bool?; let claimId: String?; let eventId: String? }
+        do {
+            let out: BindOut = try await EusoTripAPI.shared.mutation(
+                "insurance.bindWeatherEventToClaim",
+                input: BindIn(loadId: loadId, peril: p.kind))
+            if out.success == true {
+                if let c = out.claimId, !c.isEmpty {
+                    perilBindNote = "Bound to claim \(c)"
+                } else {
+                    perilBindNote = "Coverage event bound to this load"
+                }
+            } else {
+                scanError = "Couldn't bind the coverage event. No claim was changed."
+            }
+        } catch {
+            scanError = "Bind failed: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
+        }
     }
 
     private func scanResultCard(_ s: COIScanResult) -> some View {

@@ -428,6 +428,7 @@ struct ShipperCargoInsurance: View {
                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary).lineLimit(1)
                 Text("\(grouped(Double(inp.cargoValue))) declared · \(q.policyType)")
                     .font(EType.caption.monospaced()).foregroundStyle(palette.textSecondary).lineLimit(1)
+                perilCoverageLine
                 HStack {
                     Text("deductible \(grouped(q.deductible)) · coverage \(grouped(q.coverage))")
                         .font(EType.micro.monospaced()).foregroundStyle(palette.textTertiary)
@@ -462,6 +463,40 @@ struct ShipperCargoInsurance: View {
             .fill(Brand.success.opacity(0.10)))
         .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
             .strokeBorder(Brand.success.opacity(0.18), lineWidth: 1))
+    }
+
+    // MARK: Peril-coverage line (bespoke · WeatherIcons, zero SF Symbols)
+
+    /// An honest, enterprise-gated PERIL-COVERAGE awareness line on the active
+    /// quote — the wallet roll-up has no loadId in scope, so it cannot tag a
+    /// real `insurance.getLoadPerilExposure` named-storm corridor / freeze
+    /// here. Rather than fabricate one, it states plainly that per-load peril
+    /// exposure (named-storm corridor / freeze) lights once the load is insured
+    /// and the enterprise feed is licensed — the load-context tag lives on the
+    /// insured load's detail (325). Bespoke glyphs only (WeatherIcons storm +
+    /// alert), never an SF Symbol, never a fabricated storm.
+    private var perilCoverageLine: some View {
+        HStack(alignment: .top, spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Brand.info.opacity(0.12))
+                    .frame(width: 26, height: 26)
+                WeatherIcons.symbolView(for: 8000, size: 17)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    WeatherIcons.utility(.alert, size: 10, tint: Brand.info)
+                    Text("PERIL EXPOSURE")
+                        .font(EType.micro).tracking(0.8)
+                        .foregroundStyle(Brand.info)
+                }
+                Text("Named-storm corridor & freeze peril tags attach to the insured load with the enterprise feed.")
+                    .font(EType.micro).foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 2)
     }
 
     // MARK: CTA row + certificate line

@@ -118,10 +118,31 @@ final class ShipperFreightClaimsStore: ObservableObject {
     }
     @Published var searchTerm: String = ""
 
+    /// Weather-peril classification per claim id (freightClaims.classifyClaimPeril).
+    /// Lazily filled as rows render; the gated shape still lands a verdict from
+    /// the deterministic type heuristic. Never a fabricated cited snapshot.
+    @Published fileprivate var perils: [String: ClaimPerilClassification] = [:]
+
     private let api: EusoTripAPI
 
     init(api: EusoTripAPI = .shared) {
         self.api = api
+    }
+
+    /// Classify one claim's weather peril. Cached; a gated/missing proc falls to
+    /// the deterministic type-shaped verdict so the badge is honest, never blank.
+    func classifyPeril(_ claim: ShipperFreightClaimsAPI.ClaimRow) async {
+        if perils[claim.id] != nil { return }
+        struct In: Encodable { let claimId: String }
+        do {
+            let c: ClaimPerilClassification = try await api.query(
+                "freightClaims.classifyClaimPeril", input: In(claimId: claim.id))
+            perils[claim.id] = c
+        } catch {
+            // Proc gated/unregistered → synthesize a TYPE-only verdict (no cited
+            // snapshot, available:false) so the row still badges honestly.
+            perils[claim.id] = ClaimPerilClassification.fromType(claim.type)
+        }
     }
 
     func refresh() async {
@@ -189,6 +210,100 @@ private func typeIcon(_ raw: String) -> String {
 
 private func prettifyType(_ raw: String) -> String {
     raw.replacingOccurrences(of: "_", with: " ").capitalized
+}
+
+// MARK: - Weather-peril classification (freightClaims.classifyClaimPeril)
+//
+// `freightClaims.classifyClaimPeril({claimId})` → a weather-peril
+// classification record + (when the enterprise key is present) the cited
+// weather snapshot the claim should reference. Enterprise-gated today: the
+// classifier still flags whether a claim's TYPE/cause is weather-shaped (a
+// free, deterministic read), but the cited `snapshot`/`peril` envelope comes
+// back `available:false` — so we badge the claim as weather-peril from the
+// type/peril fields and render the ENTERPRISE state for the cited report.
+// EVERY field is optional so the gated shape decodes without throwing. We
+// NEVER fabricate a peril verdict or a snapshot.
+struct ClaimPerilClassification: Decodable, Hashable {
+    let isWeatherPeril: Bool?
+    let peril: String?          // none | named_storm | freeze | wind | flood …
+    let title: String?
+    let available: Bool?        // enterprise feed present → cited snapshot real
+    let note: String?
+    let snapshot: PerilSnapshot?
+
+    struct PerilSnapshot: Decodable, Hashable {
+        let weatherCode: Int?
+        let peakCondition: String?
+        let maxGustMph: Double?
+        let minVisibilityMi: Double?
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case isWeatherPeril, weatherPeril, peril, title, available, note, message, snapshot, weather
+    }
+
+    /// Type/cause-shaped heuristic used when the classifier proc is gated or
+    /// unregistered — purely deterministic off the claim TYPE, never invented.
+    static func typeShaped(_ claimType: String) -> Bool {
+        ["weather", "delay", "reefer_excursion", "contamination", "freeze", "storm"]
+            .contains(claimType.lowercased())
+    }
+
+    private init(isWeatherPeril: Bool?, peril: String?, title: String?,
+                 available: Bool?, note: String?, snapshot: PerilSnapshot?) {
+        self.isWeatherPeril = isWeatherPeril; self.peril = peril; self.title = title
+        self.available = available; self.note = note; self.snapshot = snapshot
+    }
+
+    /// Deterministic, TYPE-only fallback verdict (no cited snapshot, gated) used
+    /// when the classifier proc isn't reachable — honest, never fabricated.
+    static func fromType(_ claimType: String) -> ClaimPerilClassification {
+        ClaimPerilClassification(isWeatherPeril: typeShaped(claimType), peril: nil,
+                                 title: nil, available: false, note: nil, snapshot: nil)
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let b = try? c.decodeIfPresent(Bool.self, forKey: .isWeatherPeril) {
+            isWeatherPeril = b
+        } else {
+            isWeatherPeril = try? c.decodeIfPresent(Bool.self, forKey: .weatherPeril)
+        }
+        peril = try? c.decodeIfPresent(String.self, forKey: .peril)
+        title = try? c.decodeIfPresent(String.self, forKey: .title)
+        available = try? c.decodeIfPresent(Bool.self, forKey: .available)
+        if let n = try? c.decodeIfPresent(String.self, forKey: .note) {
+            note = n
+        } else {
+            note = try? c.decodeIfPresent(String.self, forKey: .message)
+        }
+        if let s = try? c.decodeIfPresent(PerilSnapshot.self, forKey: .snapshot) {
+            snapshot = s
+        } else {
+            snapshot = try? c.decodeIfPresent(PerilSnapshot.self, forKey: .weather)
+        }
+    }
+
+    /// Whether to badge the row as weather-peril. A real classifier verdict
+    /// wins; otherwise we fall to the deterministic type heuristic.
+    func badged(forType claimType: String) -> Bool {
+        if let v = isWeatherPeril { return v }
+        if let p = peril, p.lowercased() != "none", !p.isEmpty { return true }
+        return Self.typeShaped(claimType)
+    }
+
+    /// A short peril label for the badge (e.g. "Named storm"), honest about
+    /// the cause without asserting a cited reading we don't have.
+    var perilLabel: String {
+        if let t = title, !t.isEmpty { return t }
+        switch (peril ?? "").lowercased() {
+        case "named_storm": return "Named storm"
+        case "freeze":      return "Freeze"
+        case "wind":        return "High wind"
+        case "flood":       return "Flood"
+        default:            return "Weather peril"
+        }
+    }
 }
 
 // MARK: - Screen root
@@ -871,6 +986,7 @@ struct ShipperFreightClaims: View {
                         Text(sev.label.uppercased())
                             .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                             .foregroundStyle(sev.color)
+                        weatherPerilBadge(row)
                         Spacer(minLength: 4)
                         if !row.filedDate.isEmpty {
                             Text(row.filedDate)
@@ -899,6 +1015,32 @@ struct ShipperFreightClaims: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         }
         .buttonStyle(ClaimRowStyle())
+        // Classify the weather peril when the row renders — the verdict badges
+        // inline. Gated/missing proc → deterministic type-shaped verdict.
+        .task(id: row.id) { await store.classifyPeril(row) }
+    }
+
+    /// Bespoke weather-peril badge — a WeatherIcons alert glyph + the peril
+    /// label, shown only when the classifier (or the deterministic type
+    /// heuristic) flags the claim as weather-caused. ZERO SF Symbols.
+    @ViewBuilder
+    private func weatherPerilBadge(_ row: ShipperFreightClaimsAPI.ClaimRow) -> some View {
+        let cls = store.perils[row.id]
+        // Pre-classification we still show the type-shaped hint so the badge
+        // doesn't pop in late; the real verdict supersedes it.
+        let badged = cls?.badged(forType: row.type) ?? ClaimPerilClassification.typeShaped(row.type)
+        if badged {
+            HStack(spacing: 3) {
+                WeatherIcons.utility(.alert, size: 9, tint: Brand.info)
+                Text((cls?.perilLabel ?? "Weather peril").uppercased())
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(Brand.info)
+            }
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Capsule().fill(Brand.info.opacity(0.12)))
+            .overlay(Capsule().strokeBorder(Brand.info.opacity(0.35), lineWidth: 0.75))
+            .accessibilityLabel("Weather peril claim. \(cls?.perilLabel ?? "Weather peril").")
+        }
     }
 
     private func statusPill(label: String, color: Color) -> some View {
@@ -1082,6 +1224,9 @@ private struct ClaimDetailSheet: View {
     @State private var presentingEvidence: Bool = false
     @State private var presentingDispute: Bool = false
     @State private var actionToast: String? = nil
+    // Weather-peril classification + the cited weather.historical evidence the
+    // claim references. Enterprise-gated → available:false → ENTERPRISE state.
+    @State private var peril: ClaimPerilClassification? = nil
 
     var body: some View {
         ScrollView {
@@ -1094,11 +1239,13 @@ private struct ClaimDetailSheet: View {
                 if !claim.description.isEmpty {
                     descriptionCard
                 }
+                weatherEvidenceCard
                 actionsCard
                 Color.clear.frame(height: 48)
             }
             .padding(Space.s4)
         }
+        .task(id: claim.id) { await classifyPeril() }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(palette.bgPage.ignoresSafeArea())
         .sheet(isPresented: $presentingEvidence) {
@@ -1210,6 +1357,108 @@ private struct ClaimDetailSheet: View {
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: Weather-peril evidence (classifyClaimPeril + the cited report)
+    //
+    // Surfaces the attached weather.historical evidence the claim references.
+    // Bespoke: the sky condition via WeatherIcons, the gust/visibility metrics
+    // via utility glyphs. HONEST: rendered only when the claim is weather-shaped;
+    // the cited report is Enterprise-gated → available:false today → the
+    // ENTERPRISE state ("evidence available with the enterprise feed"). We NEVER
+    // fabricate a cited report, a peril verdict, or a snapshot.
+    @ViewBuilder
+    private var weatherEvidenceCard: some View {
+        let badged = peril?.badged(forType: claim.type) ?? ClaimPerilClassification.typeShaped(claim.type)
+        if badged {
+            sectionCard(title: "WEATHER PERIL · EVIDENCE") {
+                if let p = peril, p.available == true, let snap = p.snapshot {
+                    // LIVE cited report (enterprise key present).
+                    citedWeatherReport(p: p, snap: snap)
+                } else {
+                    // Enterprise-gated today — honest ENTERPRISE state.
+                    weatherEnterpriseState(note: peril?.note)
+                }
+            }
+        }
+    }
+
+    private func citedWeatherReport(p: ClaimPerilClassification, snap: ClaimPerilClassification.PerilSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.06)).frame(width: 44, height: 44)
+                    WeatherIcons.symbolView(for: snap.weatherCode ?? 0, size: 30)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(snap.peakCondition?.isEmpty == false ? snap.peakCondition! : p.perilLabel)
+                        .font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                    Text("weather.historical · cited on this claim")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(Brand.success)
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 16) {
+                if let g = snap.maxGustMph {
+                    weatherMetric(.wind, value: String(format: "%.0f mph", g), label: "MAX GUST")
+                }
+                if let v = snap.minVisibilityMi {
+                    weatherMetric(.eye, value: String(format: "%.1f mi", v), label: "MIN VIS")
+                }
+            }
+        }
+    }
+
+    private func weatherEnterpriseState(note: String?) -> some View {
+        HStack(spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(0.06)).frame(width: 40, height: 40)
+                WeatherIcons.symbolView(for: 1001, size: 26)   // neutral cloud — no guessed condition
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    WeatherIcons.utility(.alert, size: 10, tint: Brand.info)
+                    Text((peril?.perilLabel ?? "Weather peril").uppercased())
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(Brand.info)
+                }
+                Text("Evidence available with the enterprise feed")
+                    .font(.system(size: 12, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(note?.isEmpty == false ? note! : "The cited weather.historical report lights here the instant the enterprise weather key lands.")
+                    .font(EType.caption).foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func weatherMetric(_ kind: WeatherIcons.Utility, value: String, label: String) -> some View {
+        HStack(spacing: 5) {
+            WeatherIcons.utility(kind, size: 13, tint: palette.textSecondary)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(value).font(.system(size: 13, weight: .heavy)).monospacedDigit()
+                    .foregroundStyle(palette.textPrimary)
+                Text(label).font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+    }
+
+    private func classifyPeril() async {
+        if peril != nil { return }
+        struct In: Encodable { let claimId: String }
+        do {
+            peril = try await EusoTripAPI.shared.query(
+                "freightClaims.classifyClaimPeril", input: In(claimId: claim.id))
+        } catch {
+            // Gated/missing proc → deterministic TYPE-only verdict (no cited
+            // snapshot). Honest, never fabricated.
+            peril = ClaimPerilClassification.fromType(claim.type)
         }
     }
 

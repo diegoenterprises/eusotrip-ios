@@ -29,12 +29,69 @@ private struct ReeferBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
 
+    /// Ambient (truck-position) weather temp · null / available:false today
+    /// (enterprise-gated). Drives the AMBIENT-vs-CARGO overlay that separates
+    /// an EQUIPMENT FAULT from a HEAT PERIL. Never fabricated.
+    @State private var ambient: ReeferAmbient279? = nil
+
     private struct ReeferReading: Decodable, Hashable {
         let zone: String?
         let temp: Double
         let timestamp: String
     }
     private struct ReadingsInput: Encodable { let loadId: Int }
+    private struct AmbientInput: Encodable { let loadId: Int }
+
+    /// `reeferTemp.ambient` -> the AMBIENT (outside-air) temperature at the
+    /// reefer's live position, used to prove an EQUIPMENT FAULT (cargo drifts
+    /// while ambient is benign) vs a HEAT PERIL (cargo + ambient both high,
+    /// e.g. "cargo 47°F vs ambient 104°F"). All fields nullable so a partial /
+    /// enterprise-gated payload decodes without throwing. `available:false`
+    /// (today's reality) => the ambient line is HIDDEN, never fabricated.
+    /// `preCool` decodes leniently (a bool flag or {recommended} object) so a
+    /// shape change is safe.
+    private struct ReeferAmbient279: Decodable {
+        let available: Bool?
+        let ambientTempF: Double?
+        let weatherCode: Int?
+        let preCool: PreCool279?
+
+        struct PreCool279: Decodable {
+            let recommended: Bool?
+            init(from decoder: Decoder) throws {
+                if let b = try? decoder.singleValueContainer().decode(Bool.self) {
+                    recommended = b; return
+                }
+                let c = try? decoder.container(keyedBy: CodingKeys.self)
+                recommended = try? c?.decodeIfPresent(Bool.self, forKey: .recommended)
+            }
+            private enum CodingKeys: String, CodingKey { case recommended }
+        }
+    }
+
+    // Ambient overlay readiness ------------------------------------------
+    // HONEST: the ambient line only reads when the feed is available AND
+    // carries a real ambient temperature. enterprise-gated (available:false /
+    // nil) => no ambient line, designed to light up the instant the key
+    // lands. Never a fabricated ambient / spread / peril verdict.
+
+    private var ambientReady: Bool {
+        (ambient?.available ?? false) && ambient?.ambientTempF != nil
+    }
+
+    /// The warmest live cargo-zone temperature in °F — the trace the ambient
+    /// is contrasted against, taken from the SAME live `reeferTemp.getReadings`
+    /// rows the chart plots. nil until a zone reports.
+    private var cargoZonePeakF: Double? {
+        readings.map(\.temp).max()
+    }
+
+    /// Ambient − cargo spread in °F. Positive = ambient hotter than cargo (the
+    /// classic heat-peril signature). nil until BOTH sides have a real reading.
+    private var ambientSpreadF: Double? {
+        guard let a = ambient?.ambientTempF, let c = cargoZonePeakF else { return nil }
+        return a - c
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
@@ -54,6 +111,10 @@ private struct ReeferBody: View {
                     title: "REEFER TEMP LOG · LIVE"
                 )
             }
+            // AMBIENT (outside-air) overlay vs the cargo-zone trace — the read
+            // that separates an EQUIPMENT FAULT from a HEAT PERIL. HONEST: only
+            // mounts when the enterprise-gated feed returns a real ambient temp.
+            ambientOverlaySection
             tempCard
             ctaRow
         }
@@ -130,6 +191,105 @@ private struct ReeferBody: View {
         }
     }
 
+    // MARK: - Ambient overlay (outside-air weather vs cargo-zone trace)
+
+    /// Overlays the AMBIENT (outside-air) temperature at the reefer's live
+    /// position against the warmest live cargo zone — the read that separates
+    /// an EQUIPMENT FAULT (cargo drifts while ambient is benign) from a HEAT
+    /// PERIL (ambient + cargo both climbing, e.g. "cargo 47°F vs ambient
+    /// 104°F"). Bespoke: the sky condition is the WeatherIcons glyph for the
+    /// live weatherCode; the verdict marker is a utility glyph — ZERO SF
+    /// Symbols. HONEST: rendered ONLY when the ambient feed is available with a
+    /// real temperature; enterprise-gated (available:false / nil) collapses it
+    /// entirely — no ambient line, no fabricated spread / verdict.
+    @ViewBuilder
+    private var ambientOverlaySection: some View {
+        if ambientReady, let a = ambient, let aF = a.ambientTempF {
+            let code = a.weatherCode ?? 0
+            let spread = ambientSpreadF
+            // Heat-peril read is honest: only asserted once we have BOTH the
+            // ambient and a live cargo zone to contrast. Without the cargo
+            // side we still show ambient but stay silent on the verdict.
+            let peril = (spread ?? 0) >= 40 && cargoZonePeakF != nil
+            LifecycleCard(accentDanger: peril) {
+                // Bespoke section header — WeatherIcons glyph, never an SF Symbol on a weather element.
+                HStack(spacing: 6) {
+                    WeatherIcons.utility(.alert, size: 9, tint: Brand.warning)
+                    Text("AMBIENT vs CARGO · REEFERTEMP.AMBIENT")
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                HStack(alignment: .top, spacing: Space.s3) {
+                    // Bespoke sky glyph for the live outside-air weatherCode.
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(palette.bgCardSoft)
+                            .frame(width: 52, height: 52)
+                        WeatherIcons.symbolView(for: code, size: 34)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        // The contrast line — cargo trace vs outside-air temp.
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            ambientStat(label: "CARGO",
+                                        value: cargoZonePeakF.map { String(format: "%.0f°F", $0) } ?? "—",
+                                        tone: Brand.info)
+                            Text("vs").font(.system(size: 11, weight: .heavy))
+                                .foregroundStyle(palette.textTertiary)
+                            ambientStat(label: "AMBIENT",
+                                        value: String(format: "%.0f°F", aF),
+                                        tone: peril ? Brand.danger : palette.textPrimary)
+                        }
+                        // Spread + the equipment-fault vs heat-peril read.
+                        if let s = spread, cargoZonePeakF != nil {
+                            HStack(spacing: 6) {
+                                WeatherIcons.utility(peril ? .alert : .eye, size: 12,
+                                                     tint: peril ? Brand.danger : palette.textSecondary)
+                                Text(spreadVerdict(spread: s, peril: peril))
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(peril ? Brand.danger : palette.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        } else {
+                            // Ambient is live but no cargo zone to contrast yet —
+                            // honest about what we can and can't yet assert.
+                            Text("Outside-air temp live · awaiting a cargo-zone reading to contrast")
+                                .font(.system(size: 11)).foregroundStyle(palette.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        // available:false / nil => nothing renders. The line lights the instant
+        // the enterprise key lands and the feed returns a real ambient temp.
+    }
+
+    private func ambientStat(label: String, value: String, tone: Color) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label).font(.system(size: 8.5, weight: .heavy)).tracking(0.5)
+                .foregroundStyle(palette.textTertiary)
+            Text(value).font(.system(size: 22, weight: .bold)).monospacedDigit()
+                .foregroundStyle(tone)
+        }
+    }
+
+    /// The equipment-fault vs heat-peril read. Honest, derived strictly from
+    /// the live spread — never a fabricated verdict.
+    private func spreadVerdict(spread: Double, peril: Bool) -> String {
+        let mag = String(format: "%.0f°F", abs(spread))
+        if peril {
+            return "Heat peril · ambient +\(mag) over cargo — external load, not equipment"
+        }
+        if spread >= 15 {
+            return "Ambient +\(mag) over cargo · within reefer pull-down capacity"
+        }
+        if spread <= -5 {
+            return "Cargo warmer than ambient · a drift here reads as equipment, not heat"
+        }
+        return "Ambient near cargo · a drift here reads as equipment, not heat"
+    }
+
     private var ctaRow: some View {
         HStack(spacing: 10) {
             Button {
@@ -166,6 +326,12 @@ private struct ReeferBody: View {
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
+        // Ambient (outside-air weather) is a best-effort overlay — its feed is
+        // enterprise-gated and may return available:false or be unreachable. A
+        // failure here NEVER degrades the core reefer log: the ambient line
+        // just stays hidden until the key lands.
+        ambient = try? await EusoTripAPI.shared.query(
+            "reeferTemp.ambient", input: AmbientInput(loadId: intId))
         loading = false
     }
 }
