@@ -283,6 +283,9 @@ final class PostLoadDraft: ObservableObject {
     /// the user starts a new draft.
     func reset() {
         origin = ""; destination = ""; pickupDate = nil; deliveryDate = nil
+        // Clear the geocoded coordinates too — otherwise "Post another" inherits
+        // the previous load's lat/lng under a blank origin/destination field.
+        originLat = nil; originLng = nil; destLat = nil; destLng = nil
         stops = []; cargoType = .general; equipmentType = ""
         vertical = nil; trailer = nil
         attachedDocuments = []

@@ -50,6 +50,79 @@ enum EusoTripAPIError: Error, LocalizedError {
         case .queuedForOfflineReplay:   return "You're offline — this will sync when you reconnect."
         }
     }
+
+    /// Humanize a tRPC error message before it ever reaches the UI.
+    ///
+    /// The server's tRPC errorFormatter (`_core/trpc.ts`) only rewrites
+    /// SQL-shaped errors; a Zod `BAD_REQUEST` passes through with its
+    /// `message` set to the JSON-stringified issues array, e.g.
+    /// `[{"origin":"number","code":"too_small","minimum":1,"path":
+    /// ["multiVehicleCount"],"message":"Too small: expected number to be >=1"}]`.
+    /// Surfacing that verbatim is what produced the founder's
+    /// "Couldn't post that load [ { \"origin\": \"number\", ... } ]".
+    ///
+    /// This collapses a JSON-array / JSON-object message into a clean,
+    /// human, per-field sentence. Non-JSON messages (the server's own
+    /// human strings) pass through untouched.
+    static func humanize(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first, first == "[" || first == "{",
+              let data = trimmed.data(using: .utf8) else { return raw }
+
+        let generic = "Some load details didn't validate. Review your lane, equipment, rate, and weight, then try again."
+
+        // Parse the Zod issues array (or a single object) and map each
+        // issue path → a friendly field label so the failing field is
+        // named honestly instead of dumped as raw JSON.
+        let issues: [[String: Any]]
+        if let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            issues = arr
+        } else if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            issues = [obj]
+        } else {
+            // Parsed as JSON but not an issues shape we recognize — never
+            // show the raw braces; fall back to the generic guidance.
+            return generic
+        }
+        guard !issues.isEmpty else { return generic }
+
+        let fields: [String] = issues.compactMap { issue in
+            guard let path = issue["path"] as? [Any], let key = path.last else { return nil }
+            return Self.fieldLabel(for: String(describing: key))
+        }
+        let unique = Array(Set(fields)).sorted()
+        switch unique.count {
+        case 0:
+            return generic
+        case 1:
+            return "Couldn't post — please check the \(unique[0]) and try again."
+        default:
+            let list = ListFormatter.localizedString(byJoining: unique)
+            return "Couldn't post — please check the \(list) and try again."
+        }
+    }
+
+    /// Maps a server schema field name to a shipper-facing label.
+    private static func fieldLabel(for key: String) -> String {
+        switch key {
+        case "origin":              return "pickup location"
+        case "destination":         return "delivery location"
+        case "originLat", "originLng", "destLat", "destLng": return "lane coordinates"
+        case "originPort", "destPort": return "port code"
+        case "rate", "bookNowRate", "minimumBid", "targetRate": return "rate"
+        case "worldscalePct", "worldscaleFlat": return "Worldscale rate"
+        case "weight":              return "weight"
+        case "multiVehicleCount":   return "vehicle / fleet count"
+        case "cargoType":           return "cargo type"
+        case "equipmentType", "trailer", "vertical": return "equipment"
+        case "permitType":          return "permit type"
+        case "rateUnit":            return "rate unit"
+        case "pickupDate":          return "pickup date"
+        case "minInsuranceCoverage": return "insurance requirement"
+        case "biddingDurationHours": return "bidding window"
+        default:                    return "load details"
+        }
+    }
 }
 
 // MARK: - tRPC envelopes
@@ -1364,7 +1437,9 @@ final class EusoTripAPI: ObservableObject {
             if httpStatus == 401 || httpStatus == 403 || code == "UNAUTHORIZED" || code == "FORBIDDEN" {
                 throw EusoTripAPIError.unauthenticated
             }
-            throw EusoTripAPIError.trpcError(inner.message ?? "Request failed")
+            throw EusoTripAPIError.trpcError(
+                EusoTripAPIError.humanize(inner.message ?? "Request failed")
+            )
         }
 
         if http.statusCode == 401 || http.statusCode == 403 {
@@ -15305,6 +15380,22 @@ struct ShipperAPI {
             }
             return AnyEncodable(JSONRawEncodable(data: data))
         }()
+        // Server schema (`shippers.create`, shippers.ts:106) gates the
+        // multi-vehicle count at `z.number().int().min(1).max(999)`. The
+        // iOS estimators legitimately return 0 ("pick a vessel class"
+        // state, MultiModalCore.swift:685) and can exceed 999 for a very
+        // large barrel/gallon quantity; both values fail Zod and surface
+        // the raw issues array. This is the single shared wire point for
+        // every post-load caller (204, the 250-259 wizard store path, and
+        // 221 recurring loads all funnel through here), so clamp once: a
+        // sub-1 count is omitted entirely (the server defaults it to 1),
+        // and an over-999 count is pinned to the schema ceiling. The
+        // estimate the screen DISPLAYS is untouched — this only governs
+        // the wire value so an honest estimate never becomes a 400.
+        let wireMultiVehicleCount: Int? = multiVehicleCount.flatMap { raw in
+            guard raw >= 1 else { return nil }
+            return min(raw, 999)
+        }
         return try await api.mutation(
             "shippers.create",
             input: PostLoadInput(
@@ -15321,7 +15412,7 @@ struct ShipperAPI {
                 destLng: destLng,
                 transportMode: transportMode,
                 vesselClass: vesselClass,
-                multiVehicleCount: multiVehicleCount,
+                multiVehicleCount: wireMultiVehicleCount,
                 permitType: permitType,
                 originPort: originPort,
                 destPort: destPort,
