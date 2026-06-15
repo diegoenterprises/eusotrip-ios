@@ -652,6 +652,23 @@ struct ShipperPostLoad: View {
         return pickupDate.addingTimeInterval(TimeInterval(secs))
     }
 
+    /// Stable lower bound for the pickup `DatePicker` — the start of the
+    /// current calendar day. Using `startOfDay` (rather than the moving
+    /// `Date()` instant) keeps the bound constant across renders so the
+    /// bound and the selected `pickupDate` can never momentarily disagree.
+    ///
+    /// Crash fix (2026-06-13, founder report "resume draft → freeze then
+    /// crash"): a restored draft whose saved `pickupDate` was earlier than
+    /// `Date()` (e.g. a draft saved on a previous day, or a date the user
+    /// set then time passed) bound a value OUTSIDE the picker's `in:` range
+    /// on the very first (Lane) step shown after Resume. SwiftUI's compact
+    /// `DatePicker` traps when its selection falls outside its range. The
+    /// hydrate pass now clamps the restored date into this range, and the
+    /// picker reads the same stable bound — so the two always agree.
+    private var pickupLowerBound: Date {
+        Calendar.current.startOfDay(for: Date())
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             topBar
@@ -1268,7 +1285,11 @@ struct ShipperPostLoad: View {
            let parsed = ISO8601DateFormatter().date(from: raw)
                         ?? DateFormatter.iso_yMd.date(from: raw)
                         ?? DateFormatter.iso_mDy.date(from: raw) {
-            pickupDate = parsed
+            // Clamp into the pickup picker's range — a scanned/template
+            // ready-date in the past would otherwise bind out-of-range and
+            // trap the compact DatePicker (same crash class as the draft
+            // resume path).
+            pickupDate = max(parsed, pickupLowerBound)
             hasPickupDate = true
         }
 
@@ -1651,7 +1672,16 @@ struct ShipperPostLoad: View {
         equipmentType = EquipmentChoice(rawValue: snap.equipmentTypeRaw) ?? .dryVan
         hasPickupDate = snap.hasPickupDate
         if snap.pickupDateUnix > 0 {
-            pickupDate = Date(timeIntervalSince1970: snap.pickupDateUnix)
+            // Clamp the restored date into the pickup picker's range. A
+            // draft saved on a previous day (or with a pickup date the user
+            // set then let lapse) decodes to a `pickupDate` earlier than the
+            // `DatePicker`'s lower bound; binding an out-of-range selection
+            // into the compact picker on the first (Lane) step shown after
+            // Resume froze then crashed the app (founder report 2026-06-13).
+            // `max(restored, pickupLowerBound)` keeps a still-valid future
+            // date intact and snaps a lapsed one forward to today.
+            let restored = Date(timeIntervalSince1970: snap.pickupDateUnix)
+            pickupDate = max(restored, pickupLowerBound)
         }
         weightText = snap.weightText
         rateText = snap.rateText
@@ -2645,7 +2675,13 @@ struct ShipperPostLoad: View {
                     .labelsHidden()
             }
             if hasPickupDate {
-                DatePicker("Pickup", selection: $pickupDate, in: Date()..., displayedComponents: [.date])
+                // `in: pickupLowerBound...` (start-of-today) — NOT `Date()...`.
+                // A moving `Date()` lower bound can momentarily exclude an
+                // equal selection, and a restored past `pickupDate` falling
+                // outside the range traps the compact picker. The hydrate
+                // pass clamps `pickupDate` into this same bound so selection
+                // and range are always consistent.
+                DatePicker("Pickup", selection: $pickupDate, in: pickupLowerBound..., displayedComponents: [.date])
                     .datePickerStyle(.compact)
                     .labelsHidden()
                     .tint(LinearGradient.diagonal)
@@ -4359,6 +4395,13 @@ struct ShipperPostLoad: View {
     /// accepts any cargo (dry van, container, power-only, etc.).
     private func autoSnapCargoForEquipment(_ eq: EquipmentChoice) {
         guard let proposed = eq.defaultCargoType(currentCargo: cargoType) else { return }
+        // Idempotency guard — never re-assign the same value. This snap and
+        // `autoSnapEquipmentForCargo` are mutually triggered via the Step-2
+        // `weightField` `.onChange(of:)` pair; assigning an equal value would
+        // still open a `withAnimation` transaction and could re-enter the
+        // companion handler. Only mutate on a real change so the ping-pong
+        // always terminates.
+        guard cargoType != proposed else { return }
         withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
             cargoType = proposed
         }
@@ -4372,6 +4415,10 @@ struct ShipperPostLoad: View {
     /// but vessel-tanker animation kept painting).
     private func autoSnapEquipmentForCargo(_ ct: ShipperAPI.CargoType) {
         guard let proposed = ct.defaultEquipment(currentEquipment: equipmentType, mode: transportMode) else { return }
+        // Idempotency guard — see `autoSnapCargoForEquipment`. Only mutate on
+        // a real change so the cargo↔equipment auto-snap pair can never
+        // oscillate or re-enter.
+        guard equipmentType != proposed else { return }
         withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
             equipmentType = proposed
         }

@@ -40,6 +40,34 @@
 
 import SwiftUI
 
+/// Strip machine tokens (bracketed enum keys, key=value pairs) that
+/// occasionally bleed into server equipment/cargo display strings,
+/// e.g. "Tanker · Hazmat [tanker_hazmat] · vertical=truck" → "Tanker · Hazmat".
+/// Display-layer only — never apply to values used as lexicon keys or sent
+/// to the server. Mirrors cleanLabel in 205_ShipperLoadDetail.swift.
+/// Returns "—" for nil/empty; never returns empty for a non-empty input.
+fileprivate func cleanEquipLabel(_ s: String?) -> String {
+    guard let s = s, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "—" }
+    var out = s
+    // remove "[anything]" bracket tokens (with any leading whitespace)
+    out = out.replacingOccurrences(
+        of: #"\s*\[[^\]]*\]"#, with: "", options: .regularExpression)
+    // remove "key=value" tokens (vertical=truck, rate-unit=per_mile, …),
+    // dropping any leading separator/bullet too
+    out = out.replacingOccurrences(
+        of: #"\s*[·•]?\s*[A-Za-z_-]+=\S+"#, with: "", options: .regularExpression)
+    // collapse doubled separators left behind by the removals
+    out = out.replacingOccurrences(
+        of: #"\s*·\s*·\s*"#, with: " · ", options: .regularExpression)
+    let trimmed = out.trimmingCharacters(in: CharacterSet(charactersIn: " ·•\n\r\t"))
+    // Guard: never return empty for a non-empty input.
+    if trimmed.isEmpty {
+        let fallback = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallback.isEmpty ? "—" : fallback
+    }
+    return trimmed
+}
+
 // MARK: - Live load context (CORRECTED server shape)
 //
 // Mirrors the proven binding in DL091 / DL126 / DL133:
@@ -535,7 +563,7 @@ struct DriverPaperwork: View {
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1).minimumScaleFactor(0.8)
                 Spacer(minLength: 4)
-                Text(activeLoad?.equipmentType ?? "—")
+                Text(cleanEquipLabel(activeLoad?.equipmentType))
                     .font(.system(size: 11))
                     .foregroundStyle(Brand.success)
                     .lineLimit(1).minimumScaleFactor(0.8)

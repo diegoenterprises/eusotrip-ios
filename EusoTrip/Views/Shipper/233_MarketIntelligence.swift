@@ -405,12 +405,21 @@ private struct MarketIntelligenceBody: View {
     private func macroCard(_ m: MacroSignal) -> some View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: "MACRO BLENDED $/MI", icon: "chart.line.uptrend.xyaxis")
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(m.blendedSignal.map { String(format: "$%.2f", $0) } ?? "-")
-                    .font(.system(size: 28, weight: .heavy, design: .rounded))
-                    .foregroundStyle(LinearGradient.diagonal)
-                    .monospacedDigit()
-                Text("/ mi blended")
+            // Honest: when the reconciled signal hasn't blended a value
+            // yet (n<3 providers / unconvertible units), surface a
+            // graceful "Awaiting blend" instead of a stiff em-dash.
+            if let signal = m.blendedSignal {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(String(format: "$%.2f", signal))
+                        .font(.system(size: 28, weight: .heavy, design: .rounded))
+                        .foregroundStyle(LinearGradient.diagonal)
+                        .monospacedDigit()
+                    Text("/ mi blended")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            } else {
+                Text("Awaiting blended signal · needs 3+ providers")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -425,9 +434,17 @@ private struct MarketIntelligenceBody: View {
                             .font(EType.micro).tracking(0.6)
                             .foregroundStyle(palette.textTertiary)
                         Spacer(minLength: 0)
-                        Text(p.rateRpm.map { String(format: "$%.2f / mi", $0) } ?? "-")
-                            .font(.system(size: 12, weight: .heavy)).monospacedDigit()
-                            .foregroundStyle(palette.textPrimary)
+                        if let rpm = p.rateRpm {
+                            Text(String(format: "$%.2f / mi", rpm))
+                                .font(.system(size: 12, weight: .heavy)).monospacedDigit()
+                                .foregroundStyle(palette.textPrimary)
+                        } else {
+                            // Provider observed but no rate this cycle —
+                            // honest status, not a stiff dash.
+                            Text(p.status?.capitalized ?? "No quote")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(palette.textTertiary)
+                        }
                     }
                     .padding(.vertical, 2)
                 }
@@ -436,13 +453,23 @@ private struct MarketIntelligenceBody: View {
     }
 
     private func dieselCard(_ rows: [DieselRow]) -> some View {
-        LifecycleCard {
+        // Only show PADD regions the EIA has actually reported a price
+        // for — a region with no observation is omitted rather than
+        // rendered as a stiff "-".
+        let priced = rows.filter { $0.priceUsdPerGallon != nil }
+        return LifecycleCard {
             LifecycleSection(label: "DIESEL REGIONALS · EIA", icon: "fuelpump.fill")
-            ForEach(rows) { r in
-                LifecycleRow(
-                    label: r.region,
-                    value: r.priceUsdPerGallon.map { String(format: "$%.3f / gal", $0) } ?? "-"
-                )
+            if priced.isEmpty {
+                Text("EIA weekly diesel report not yet posted for this cycle.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            } else {
+                ForEach(priced) { r in
+                    LifecycleRow(
+                        label: r.region,
+                        value: String(format: "$%.3f / gal", r.priceUsdPerGallon ?? 0)
+                    )
+                }
             }
         }
     }

@@ -20024,6 +20024,24 @@ struct ShipperComplianceAPI {
         try await api.queryNoInput("compliance.getShipperDocuments")
     }
 
+    /// Fleet-scope compliance rollup. Mirrors the server projection at
+    /// `compliance.getFleetCompliance` (compliance.ts:2317) — a
+    /// `protectedProcedure.query` with no input, scoped to the caller's
+    /// `companyId`. Counts active vehicles, splitting them by inspection /
+    /// out-of-service status, and derives an overall fleet score.
+    struct FleetCompliance: Decodable, Hashable {
+        let totalVehicles: Int
+        let compliant: Int
+        let expiringSoon: Int
+        let outOfCompliance: Int
+        let overallScore: Int
+    }
+
+    /// Fetch the company's fleet-scope compliance rollup.
+    func getFleetCompliance() async throws -> FleetCompliance {
+        try await api.queryNoInput("compliance.getFleetCompliance")
+    }
+
     /// Upload a compliance document. `userType` defaults to "shipper"
     /// per the platform vocabulary; pass another role only if the
     /// caller is on a multi-capability account.

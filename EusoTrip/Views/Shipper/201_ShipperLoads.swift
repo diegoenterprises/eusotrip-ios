@@ -350,8 +350,14 @@ struct ShipperLoads: View {
     }
 
     private var companyLine: String {
-        // §11 canon — Eusorone / MATRIX-50 batch identifier in the sub-line.
-        "Eusorone Technologies · MATRIX-50-2026-04-26"
+        // Honest account context — the signed-in shipper's company/account
+        // name when present, else the platform brand. No fabricated batch
+        // tag (the old "MATRIX-50-2026-04-26" seed-cohort id never shipped
+        // as if it were a real, user-facing reference).
+        let account = session.user?.name?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let who = (account?.isEmpty == false) ? account! : "Eusorone Technologies"
+        return "\(who) · load portfolio"
     }
 
     // MARK: - Search row + SORT button
