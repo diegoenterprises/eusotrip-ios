@@ -122,6 +122,45 @@ private struct CrewCerts583: Decodable {
 
 private struct RailIdIn583: Encodable { let railId: String }
 
+// MARK: - Corridor weather shapes (weather.getRouteConditions by railId)
+//
+// The interchange dwell is the est. crossing time the server hands back; bad
+// corridor weather at the crossing pushes that dwell out (gusts forcing a
+// speed restriction into the yard, floods/washouts holding the cut, low
+// visibility slowing the hand-off). We surface that as an HONEST dwell DELTA
+// on top of the base estimate — base + Δweather = total — never silently
+// overwriting the server figure, and never a fabricated delta when the
+// enterprise feed is dark (available:false / nil today → no delta, no note).
+
+private struct RouteConditions583: Decodable {
+    let available: Bool?
+    let overallRisk: String?            // "low"|"moderate"|"high"|"extreme"|"unknown"
+    let segments: [RouteSegment583]?
+    let advisories: [RouteAdvisory583]?
+}
+
+private struct RouteSegment583: Decodable {
+    let risk: String?
+    let condition: String?
+    let weatherCode: Int?
+    let windGust: Double?               // mph
+    let visibility: Double?             // mi
+    let precipitationIntensity: Double? // in/hr
+    let floods: [RouteFlood583]?
+    let overallRisk: String?
+}
+
+private struct RouteFlood583: Decodable {
+    let severity: String?
+    let headline: String?
+}
+
+private struct RouteAdvisory583: Decodable {
+    let eventType: String?
+    let severity: String?
+    let headline: String?
+}
+
 // MARK: - Body
 
 private struct RailCrossBorderInterchangeBody: View {
@@ -132,6 +171,7 @@ private struct RailCrossBorderInterchangeBody: View {
     @State private var crossingTime: CrossingTime583? = nil
     @State private var complianceChecks: [ComplianceCheck583] = []
     @State private var crewCerts: CrewCerts583? = nil
+    @State private var route: RouteConditions583? = nil
     @State private var isRunningCheck = false
 
     // MARK: Derived
@@ -144,8 +184,68 @@ private struct RailCrossBorderInterchangeBody: View {
     private var tradeAgreementLabel: String {
         (interchangePoint?.tradeAgreement ?? "USMCA") + " OK"
     }
+    /// The server's base est. crossing dwell (hours) — never mutated.
+    private var baseDwellHours: Double? { crossingTime?.estimatedHours }
+
+    /// The honest weather dwell DELTA (added hours) at the crossing, derived
+    /// from the REAL corridor envelope. nil when the feed is dark or clear.
+    /// Magnitude is a transparent, bounded mapping of the weather DRIVER —
+    /// never a fabricated number when the server carries no signal:
+    ///   flood/washout hold .......... +2.0h (hardest)
+    ///   gust ≥58 mph (restriction) ... +1.5h
+    ///   gust ≥40 mph ................. +1.0h
+    ///   visibility ≤1 mi ............. +0.75h
+    ///   HIGH/SEVERE/EXTREME risk ..... +1.0h
+    ///   active severe advisory ....... +0.5h
+    /// At most one driver (the worst) is applied so the delta never double-counts.
+    private var weatherDelta: (hours: Double, glyph: WeatherIcons.Utility, weatherCode: Int?, color: Color, reason: String)? {
+        guard let r = route, r.available != false else { return nil }
+        let segs = r.segments ?? []
+        let advs = r.advisories ?? []
+
+        for seg in segs {
+            if let flood = (seg.floods ?? []).first {
+                return (2.0, .alert, seg.weatherCode, Brand.danger,
+                        flood.headline ?? "flooding holding the cut at the crossing")
+            }
+        }
+        if let g = segs.compactMap({ s in s.windGust.map { ($0, s) } }).max(by: { $0.0 < $1.0 }) {
+            if g.0 >= 58 {
+                return (1.5, .wind, g.1.weatherCode, Brand.danger,
+                        "\(Int(g.0.rounded())) mph gusts — speed restriction into the yard")
+            }
+            if g.0 >= 40 {
+                return (1.0, .wind, g.1.weatherCode, Brand.warning,
+                        "\(Int(g.0.rounded())) mph gusts slowing the hand-off")
+            }
+        }
+        if let v = segs.compactMap({ s in s.visibility.map { ($0, s) } }).min(by: { $0.0 < $1.0 }), v.0 <= 1.0 {
+            return (0.75, .eye, v.1.weatherCode, Brand.warning,
+                    "\(v.0.formatted(.number.precision(.fractionLength(0...1)))) mi visibility slowing the crossing")
+        }
+        let risk = (r.overallRisk ?? "").lowercased()
+        if ["high", "severe", "extreme", "elevated"].contains(risk) {
+            return (1.0, .alert, nil, Brand.danger,
+                    "corridor risk \(risk.uppercased()) at the crossing")
+        }
+        if let adv = advs.first(where: { ["severe", "extreme", "high"].contains(($0.severity ?? "").lowercased()) }) {
+            return (0.5, .alert, nil, Brand.warning,
+                    adv.headline ?? adv.eventType ?? "active weather advisory on the corridor")
+        }
+        return nil
+    }
+
+    /// Total est. dwell = base + weather delta. Falls back to base when there's
+    /// no delta and to nil when the server gave no base estimate.
+    private var totalDwellHours: Double? {
+        guard let base = baseDwellHours else { return nil }
+        return base + (weatherDelta?.hours ?? 0)
+    }
+
+    /// The hero figure: the WEATHER-ADJUSTED total when a delta applies, else
+    /// the plain base estimate. Honest "-" when the server gave no estimate.
     private var dwellLabel: String {
-        guard let h = crossingTime?.estimatedHours else { return "-" }
+        guard let h = totalDwellHours else { return "-" }
         return String(format: "%.1fh", h)
     }
     private var portLabel: String {
@@ -171,6 +271,7 @@ private struct RailCrossBorderInterchangeBody: View {
                 headline
                 IridescentHairline()
                 heroCard
+                if let delta = weatherDelta { weatherDwellChip(delta) }
                 kpiStrip
                 complianceSection
                 crewCertsStrip
@@ -275,6 +376,56 @@ private struct RailCrossBorderInterchangeBody: View {
             .padding(Space.s4)
         }
         .frame(height: 116)
+    }
+
+    // MARK: Weather dwell-delta chip (bespoke — WeatherIcons, never an SF Symbol)
+    //
+    // Sits directly under the dwell hero so the adjusted figure reads
+    // honestly: the hero shows base + Δweather as the TOTAL, this chip shows
+    // the breakdown and the weather DRIVER (verbatim from the server). Honest
+    // hidden when the corridor is clear / the enterprise feed is dark.
+
+    private func weatherDwellChip(_ delta: (hours: Double, glyph: WeatherIcons.Utility, weatherCode: Int?, color: Color, reason: String)) -> some View {
+        let baseStr = baseDwellHours.map { String(format: "%.1fh", $0) } ?? "-"
+        let deltaStr = String(format: "+%.1fh", delta.hours)
+        return HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(delta.color.opacity(0.14))
+                    .frame(width: 40, height: 40)
+                if let code = delta.weatherCode, code != 0 {
+                    WeatherIcons.symbolView(for: code, size: 24)
+                } else {
+                    WeatherIcons.utility(delta.glyph, size: 20, tint: delta.color)
+                }
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text("Weather dwell")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundColor(palette.textPrimary)
+                    Text(deltaStr)
+                        .font(.system(size: 11, weight: .heavy).monospacedDigit())
+                        .foregroundColor(delta.color)
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Capsule().fill(delta.color.opacity(0.14)))
+                }
+                Text("\(baseStr) base \(deltaStr) weather · \(delta.reason)")
+                    .font(.system(size: 11))
+                    .foregroundColor(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md)
+                .fill(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md)
+                        .stroke(delta.color.opacity(0.35), lineWidth: 1)
+                )
+        )
     }
 
     // MARK: KPI strip
@@ -459,11 +610,19 @@ private struct RailCrossBorderInterchangeBody: View {
             "railShipments.getCrossBorderCrewCerts",
             input: RailIdIn583(railId: railId)
         )
+        // Corridor weather at the crossing — by railId (the screen's anchor).
+        // Enterprise-gated, so available:false / nil today → no dwell delta,
+        // no note. Soft-fail: a weather error never breaks the interchange.
+        async let routeTask: RouteConditions583 = EusoTripAPI.shared.query(
+            "weather.getRouteConditions",
+            input: RailIdIn583(railId: railId)
+        )
 
         interchangePoint = try? await pointTask
         crossingTime     = try? await timeTask
         complianceChecks = (try? await checksTask) ?? []
         crewCerts        = try? await certsTask
+        route            = try? await routeTask
     }
 
     private func runCheck() async {

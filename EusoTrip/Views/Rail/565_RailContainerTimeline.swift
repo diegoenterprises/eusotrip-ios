@@ -127,6 +127,42 @@ private struct IntermodalTracking565: Decodable {
     let nextRampEtaHours: Double?
     let nextRampEtaDateStr: String?
     let rampDwellHours: Double?
+
+    // ── A5 floods/streamflow-at-crossings (intermodal.getIntermodalTracking) ──
+    // nextRampEta / rampDwell carry the FLOOD-ADJUSTED values when a real
+    // streamflow event sits at the next ramp; else the scheduled values
+    // untouched. floodImpact is the honest envelope — every grading field is a
+    // real Tomorrow.io value or honest null and is enterprise-gated
+    // (available:false today). We render NO delta unless available == true.
+    let nextRampEta: String?      // ISO, flood-adjusted (server top-level)
+    let rampDwell: Double?        // hours, flood-adjusted (server top-level)
+    let floodImpact: FloodImpact565?
+}
+
+/// The honest crossing-flood envelope. `available`/`streamflowRisk` gate the
+/// entire marker; the flag rows carry the real per-crossing severity/headline.
+private struct FloodImpact565: Decodable {
+    let available: Bool?
+    let enterprise: Bool?
+    let reason: String?
+    let streamflowRisk: Bool?
+    let nextRampTransferId: Int?
+    let scheduledRampEta: String?     // ISO, pre-flood baseline
+    let nextRampEta: String?          // ISO, flood-adjusted
+    let scheduledRampDwellHours: Double?
+    let rampDwell: Double?            // hours, flood-adjusted
+    let dwellDeltaHours: Double?      // total honest added dwell (hours)
+    let flags: [FloodFlag565]?
+}
+
+private struct FloodFlag565: Decodable {
+    let facilityName: String?
+    let facilityType: String?
+    let floodSeverity: String?        // minor | moderate | severe | extreme
+    let floodHeadline: String?
+    let precipAccumulationIn: Double? // corroborating corridor precip (in)
+    let streamflowRising: Bool?
+    let dwellDeltaHours: Double?
 }
 
 // MARK: - Body
@@ -170,6 +206,71 @@ private struct RailContainerTimelineBody: View {
         return String(name.prefix(3)).uppercased() + " ETA"
     }
 
+    // MARK: Flood / streamflow at the next crossing
+
+    /// HONEST gate: the marker only renders when the server says it has a real,
+    /// enterprise-tier floods event at the next ramp. Enterprise-gated → false
+    /// today; the timeline reads clean now and lights up when the key lands.
+    private var floodActive: Bool {
+        guard let f = intermodal?.floodImpact else { return false }
+        return (f.available == true) && (f.streamflowRisk == true)
+    }
+
+    /// The earliest at-risk crossing flag (the next ramp the box is heading to).
+    private var floodFlag: FloodFlag565? {
+        intermodal?.floodImpact?.flags?.first { $0.streamflowRising == true }
+    }
+
+    /// Honest dwell delta pushed onto the next ramp — only when active. Prefers
+    /// the envelope total; falls back to the per-flag delta. Never fabricated.
+    private var floodDwellDelta: Double? {
+        guard floodActive else { return nil }
+        if let d = intermodal?.floodImpact?.dwellDeltaHours, d > 0 { return d }
+        if let d = floodFlag?.dwellDeltaHours, d > 0 { return d }
+        return nil
+    }
+
+    /// The crossing's facility label for the marker title.
+    private var floodCrossingName: String {
+        floodFlag?.facilityName ?? intermodal?.nextRampName ?? "Next ramp"
+    }
+
+    /// Severity word (real Tomorrow.io grade) → tint + label. No grade present
+    /// but an active event → honest "streamflow" with the info tint.
+    private var floodSeverity: String? { floodFlag?.floodSeverity?.lowercased() }
+    private var floodTint: Color {
+        switch floodSeverity {
+        case "extreme", "severe": return Brand.danger
+        case "moderate":          return Brand.warning
+        case "minor":             return Brand.info
+        default:                  return Brand.info
+        }
+    }
+    private var floodSeverityWord: String {
+        (floodFlag?.floodSeverity?.uppercased()).map { "\($0) FLOOD" } ?? "STREAMFLOW"
+    }
+
+    /// Flood-adjusted next-ramp ETA, formatted to the same date idiom as the
+    /// hero. Server top-level `nextRampEta` already carries the pushed value.
+    private var floodAdjustedEta: String? {
+        guard floodActive else { return nil }
+        let iso = intermodal?.floodImpact?.nextRampEta ?? intermodal?.nextRampEta
+        return iso.flatMap { Self.shortDateTime($0) }
+    }
+
+    private static func shortDateTime(_ iso: String) -> String? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = f.date(from: iso) ?? {
+            let g = ISO8601DateFormatter(); g.formatOptions = [.withInternetDateTime]
+            return g.date(from: iso)
+        }()
+        guard let d = date else { return nil }
+        let out = DateFormatter()
+        out.dateFormat = "MMM d · HH:mm"
+        return out.string(from: d)
+    }
+
     private var liveSpeedLabel: String {
         if let spd = tracking?.currentSpeedMph {
             let dir = tracking?.currentHeading ?? ""
@@ -210,6 +311,7 @@ private struct RailContainerTimelineBody: View {
                 } else {
                     heroCard
                     kpiStrip
+                    if floodActive { floodCrossingMarker }
                     milestoneList
                     ctaPair
                 }
@@ -427,6 +529,115 @@ private struct RailContainerTimelineBody: View {
                 .font(.system(size: 11, weight: .bold)).kerning(0.6)
                 .foregroundStyle(palette.textTertiary)
         }
+    }
+
+    // MARK: - Flood / streamflow crossing marker
+    //
+    // Bespoke to the container-timeline idiom: a streamflow interruption at the
+    // NEXT ramp/crossing that pushes the box's ramp ETA + dwell out. Rendered
+    // ONLY when floodImpact.available && streamflowRisk (enterprise-gated →
+    // hidden today; lights up when the key lands). Every glyph is a WeatherIcons
+    // utility (.wave / .precip / .alert) — zero SF Symbols. The dwell/ETA delta
+    // is shown only when the server carries a real, positive delta; never
+    // fabricated. The marker sits between the live KPIs and the milestone log,
+    // reading as a wedge inserted just ahead of the next-ramp arrival.
+
+    private var floodCrossingMarker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // ── header row: streamflow chip + at-risk crossing ──
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    WeatherIcons.utility(.wave, size: 14, tint: floodTint)
+                    Text(floodSeverityWord)
+                        .font(.system(size: 10, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(floodTint)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(Capsule().fill(floodTint.opacity(0.14)))
+
+                Text(floodCrossingName)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                WeatherIcons.utility(.alert, size: 16, tint: floodTint)
+            }
+
+            // ── headline (real Tomorrow.io event title; honest fallback) ──
+            Text(floodFlag?.floodHeadline ?? "Rising streamflow at the next ramp/crossing")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // ── ramp ETA / dwell delta — only when a REAL positive delta ──
+            if floodDwellDelta != nil || floodAdjustedEta != nil {
+                HStack(spacing: 0) {
+                    if let delta = floodDwellDelta {
+                        floodDeltaCell(
+                            glyph: .precip,
+                            label: "RAMP DWELL",
+                            value: String(format: "+%.1fh", delta),
+                            sub: "vs scheduled")
+                    }
+                    if floodDwellDelta != nil, floodAdjustedEta != nil {
+                        Rectangle().fill(palette.borderFaint)
+                            .frame(width: 1, height: 30)
+                            .padding(.horizontal, 4)
+                    }
+                    if let eta = floodAdjustedEta {
+                        floodDeltaCell(
+                            glyph: .wave,
+                            label: "ADJUSTED ETA",
+                            value: eta,
+                            sub: "flood-pushed")
+                    }
+                    Spacer(minLength: 0)
+                }
+            } else {
+                // available + risk but no graded delta yet → honest, no number.
+                Text("Dwell/ETA impact pending — no graded delta from the feed.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+            }
+
+            // ── corroborating corridor precip (real field; honest when null) ──
+            if let inch = floodFlag?.precipAccumulationIn, inch > 0 {
+                HStack(spacing: 6) {
+                    WeatherIcons.utility(.precip, size: 13, tint: palette.textTertiary)
+                    Text(String(format: "%.2f in corridor precip", inch))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(floodTint.opacity(0.45), lineWidth: 1.2)
+        )
+    }
+
+    private func floodDeltaCell(glyph: WeatherIcons.Utility, label: String, value: String, sub: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 5) {
+                WeatherIcons.utility(glyph, size: 12, tint: floodTint)
+                Text(label)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.7)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Text(value)
+                .font(.system(size: 17, weight: .heavy)).monospacedDigit()
+                .foregroundStyle(palette.textPrimary)
+            Text(sub)
+                .font(.system(size: 10, weight: .regular))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .frame(minWidth: 96, alignment: .leading)
     }
 
     // MARK: - CTA pair

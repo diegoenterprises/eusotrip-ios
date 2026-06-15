@@ -30,6 +30,11 @@ private struct TrainConsist: Decodable, Identifiable {
     let hazmatCars: Int?
     let status: String?
     let note: String?
+    /// Per-consist crosswind envelope (Wave 4-server #85). The server ships
+    /// the RAW gust + corridor risk — NOT a verdict; the screen decides the
+    /// display threshold. Enterprise-gated, so `available == false` /
+    /// `maxWindGust == nil` today until the key lands.
+    let crosswind: Crosswind?
 
     enum CodingKeys: String, CodingKey {
         case id, consistNumber, totalCars, status
@@ -37,6 +42,17 @@ private struct TrainConsist: Decodable, Identifiable {
         case locomotiveUnits, totalWeight, totalLengthFeet, trainType
         case departureTime, arrivalTime, engineerId, conductorId, railroadId, ptcActive
         case createdAt, updatedAt
+        case crosswind
+    }
+
+    /// `railShipments.getTrainConsists` → per-consist `crosswind`. Raw gust +
+    /// corridor risk; never a verdict. `available`/`maxWindGust` are
+    /// enterprise-gated (false/null until the key lands).
+    struct Crosswind: Decodable, Hashable {
+        let available: Bool?
+        let maxWindGust: Double?   // mph — raw peak gust on the corridor
+        let enterprise: Bool?
+        let overallRisk: String?   // "low" | "moderate" | "high" | "extreme" | "unknown"
     }
 
     init(from decoder: Decoder) throws {
@@ -54,6 +70,7 @@ private struct TrainConsist: Decodable, Identifiable {
         self.assignedCars = nil
         self.hazmatCars = nil
         self.note = nil
+        self.crosswind = try c.decodeIfPresent(Crosswind.self, forKey: .crosswind)
     }
 }
 
@@ -121,6 +138,12 @@ private struct RailConsistBoardBody: View {
             Text("\(c.originYard ?? "-") → \(c.destinationYard ?? "-") · \(assigned)/\(total) cars\(c.note.map { " · \($0)" } ?? "")")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
             ConsistCarStrip555(total: total, assigned: assigned, hazmat: hazmat, trackTint: palette.textTertiary)
+            // Crosswind speed-restriction banner — only on a ROLLING consist
+            // with a REAL available gust. Honestly hidden otherwise (enterprise
+            // gate today). The screen decides the verdict from the raw gust.
+            if rolling, let cw = c.crosswind {
+                CrosswindRestrictionBanner555(crosswind: cw)
+            }
         }
         .padding(Space.s3)
         .background(palette.bgCard)
@@ -145,6 +168,126 @@ private struct RailConsistBoardBody: View {
     private func buildConsist() async {
         building = true
         building = false
+    }
+}
+
+// MARK: - Crosswind speed-restriction banner
+//
+// A bespoke per-consist banner that surfaces the rail crosswind hazard on a
+// ROLLING consist. The server (railShipments.getTrainConsists, Wave 4) ships
+// the RAW peak gust (`maxWindGust`, mph) + the corridor `overallRisk` — it is
+// deliberately NOT a verdict. This screen owns the operating threshold the way
+// a rail dispatcher would call it off the wind speed:
+//
+//   • ≥ 60 mph  → "STOP"               (high-wind stop order, danger)
+//   • ≥ 40 mph  → "SPEED RESTRICTION"  (reduce-speed order, danger/warn by risk)
+//   • <  40 mph → "CROSSWIND ADVISORY" (informational, no operating action)
+//
+// Honest empty state: the banner renders NOTHING when the feed isn't available
+// (`available != true`) or there's no real gust (`maxWindGust == nil`) — which
+// is the enterprise-gated reality today. It lights up the instant the key lands
+// and the server starts returning a real gust. We never fabricate a gust value.
+//
+// Idiom: a bespoke full-width restriction strip (not the HERE capsule chip) —
+// the consist card is a dense list row, so the banner reads as a leading
+// rule + WeatherIcons.utility(.wind) glyph + a hard restriction verdict +
+// the real "max gust" readout, tinted to the threshold/risk color. ZERO SF
+// Symbols: the wind glyph is the v2 WeatherIcons utility port.
+private struct CrosswindRestrictionBanner555: View {
+    @Environment(\.palette) private var palette
+    let crosswind: TrainConsist.Crosswind
+
+    /// Display threshold the screen applies to the raw gust → operating verdict.
+    private enum Restriction { case stop, reduce, advisory }
+
+    var body: some View {
+        // Honest gate: only when the feed says available AND a real gust exists.
+        if crosswind.available == true, let gust = crosswind.maxWindGust {
+            banner(gust: gust)
+        }
+    }
+
+    private func restriction(gust: Double) -> Restriction {
+        if gust >= 60 { return .stop }
+        if gust >= 40 { return .reduce }
+        return .advisory
+    }
+
+    /// Verdict color: the operating threshold sets the floor, and a worse
+    /// corridor `overallRisk` can only escalate it (never soften it). Both are
+    /// real signals — the gust threshold the screen owns + the server's risk.
+    private func color(for r: Restriction, risk: String?) -> Color {
+        let thresholdColor: Color = {
+            switch r {
+            case .stop:     return Brand.danger
+            case .reduce:   return Brand.warning
+            case .advisory: return Brand.info
+            }
+        }()
+        let riskColor: Color? = {
+            switch (risk ?? "").lowercased() {
+            case "extreme", "severe", "high": return Brand.danger
+            case "moderate":                  return Brand.warning
+            case "low", "none", "clear":      return Brand.success
+            default:                          return nil   // "unknown"/absent → no escalation
+            }
+        }()
+        // Escalate-only: danger > warning > info/success.
+        func rank(_ c: Color) -> Int {
+            if c == Brand.danger { return 3 }
+            if c == Brand.warning { return 2 }
+            if c == Brand.info { return 1 }
+            return 0
+        }
+        guard let rc = riskColor else { return thresholdColor }
+        return rank(rc) > rank(thresholdColor) ? rc : thresholdColor
+    }
+
+    private func label(for r: Restriction) -> String {
+        switch r {
+        case .stop:     return "STOP · HIGH WIND"
+        case .reduce:   return "SPEED RESTRICTION"
+        case .advisory: return "CROSSWIND ADVISORY"
+        }
+    }
+
+    private func banner(gust: Double) -> some View {
+        let r = restriction(gust: gust)
+        let tint = color(for: r, risk: crosswind.overallRisk)
+        // Real readout only — the integer of the raw gust, never invented.
+        let gustText = "Max gust \(Int(gust.rounded())) mph"
+        let riskText: String? = {
+            let raw = (crosswind.overallRisk ?? "").lowercased()
+            guard !raw.isEmpty, raw != "unknown" else { return nil }
+            return "corridor \(raw.uppercased())"
+        }()
+        return HStack(spacing: 8) {
+            // Leading rule reads as a track-side restriction marker.
+            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                .fill(tint)
+                .frame(width: 3)
+            WeatherIcons.utility(.wind, size: 15, tint: tint)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label(for: r))
+                    .font(.system(size: 10.5, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(tint)
+                Text(riskText.map { "\(gustText) · \($0)" } ?? gustText)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 7)
+        .padding(.horizontal, 8)
+        .background(tint.opacity(0.10))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                .strokeBorder(tint.opacity(0.45), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label(for: r)). \(gustText).\(riskText.map { " " + $0 + "." } ?? "")")
     }
 }
 

@@ -594,7 +594,14 @@ struct ActiveEnroute: View {
                 // waypoint from the active load. Chips silently hide
                 // when HERE returns nothing, so the card stays clean
                 // between events.
-                EnRouteRoadIntelStrip()
+                //
+                // §3 WEATHER AHEAD chip (Wave 3b parity): pass the same
+                // active load id this screen already hydrates for the HUD
+                // leg/ETA so the bespoke weather chip mounts. The chip
+                // hides itself when the lane is clear / none / enterprise-
+                // gated (available:false today) and lights up the moment
+                // the §3 lane risk is actionable — never a fabricated band.
+                EnRouteRoadIntelStrip(loadId: activeLoad.map { String($0.id) })
             }
         }
         .padding(Space.s3)

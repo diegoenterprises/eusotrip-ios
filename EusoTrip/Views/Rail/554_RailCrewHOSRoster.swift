@@ -63,11 +63,58 @@ private struct RailCrewMember: Decodable, Identifiable {
     }
 }
 
+// MARK: - Corridor weather shapes (weather.getRouteConditions / getImpactedLoads)
+//
+// The crew roster is the CARRIER vantage — it carries no railId and no
+// canonical corridor, so the §228 HOS burn note is anchored exactly like
+// 578: the first REAL `weather.getImpactedLoads` row gives a "City, ST" →
+// "City, ST" corridor, and `weather.getRouteConditions({origin,destination})`
+// is asked whether that corridor is adverse. Every weather field is
+// enterprise-gated (available:false / nil today), so the note stays HONESTLY
+// HIDDEN until the feed lights up — never a fabricated gust/restriction.
+
+private struct HOSImpactedLoad: Decodable {
+    let loadId: Int
+    let origin: String?
+    let destination: String?
+    let alertSeverity: String?
+}
+
+private struct HOSRouteConditions: Decodable {
+    let available: Bool?
+    let overallRisk: String?            // "low"|"moderate"|"high"|"extreme"|"unknown"
+    let segments: [HOSRouteSegment]?
+    let advisories: [HOSRouteAdvisory]?
+}
+
+private struct HOSRouteSegment: Decodable {
+    let risk: String?
+    let condition: String?
+    let weatherCode: Int?
+    let windGust: Double?               // mph
+    let visibility: Double?             // mi
+    let precipitationIntensity: Double? // in/hr
+    let floods: [HOSRouteFlood]?
+    let overallRisk: String?
+}
+
+private struct HOSRouteFlood: Decodable {
+    let severity: String?
+    let headline: String?
+}
+
+private struct HOSRouteAdvisory: Decodable {
+    let eventType: String?
+    let severity: String?
+    let headline: String?
+}
+
 // MARK: - Body
 
 private struct RailCrewHOSRosterBody: View {
     @Environment(\.palette) private var palette
     @State private var crew: [RailCrewMember] = []
+    @State private var route: HOSRouteConditions? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -87,6 +134,64 @@ private struct RailCrewHOSRosterBody: View {
         teamQuotaFraction > 0.85 ? Brand.danger : (teamQuotaFraction > 0.70 ? Brand.warning : Brand.success)
     }
 
+    // MARK: Weather-driven §228 HOS burn note
+    //
+    // §228 hours-of-service runs FASTER when the corridor is adverse: gusts
+    // that force a speed restriction, floods/washouts that hold the train,
+    // low visibility that slows the crew — all burn duty hours against the
+    // same 12h ceiling without covering the miles. We surface that as an
+    // HONEST advisory bound to the REAL corridor envelope: a gust reading, a
+    // flood headline, or an elevated risk/advisory. We never assert an hour
+    // figure the feed doesn't carry — the note describes the burn DRIVER
+    // (verbatim from the server), not an invented "−2.0h remaining".
+
+    /// The single worst corridor signal driving HOS burn, or nil when the
+    /// corridor is clear / the enterprise feed is dark (honest hidden state).
+    /// Severity ranks: flood > severe/extreme/high gust-risk > advisory.
+    private var hosBurnNote: (glyph: WeatherIcons.Utility, weatherCode: Int?, color: Color, headline: String, detail: String)? {
+        guard let r = route, r.available != false else { return nil }
+        let segs = r.segments ?? []
+        let advs = r.advisories ?? []
+
+        // 1) Floods/washouts on a segment — the hardest HOS hold.
+        for seg in segs {
+            if let flood = (seg.floods ?? []).first {
+                return (.alert, seg.weatherCode, Brand.danger,
+                        "Weather hold burning duty",
+                        flood.headline ?? "Flooding on the corridor is holding the train — §228 duty accrues without miles.")
+            }
+        }
+        // 2) High gust → speed restriction. Only when the server gives a real
+        //    gust reading; the value is quoted verbatim, never rounded into a
+        //    fabricated restriction.
+        if let seg = segs.compactMap({ s in s.windGust.map { ($0, s) } }).max(by: { $0.0 < $1.0 }),
+           seg.0 >= 40 {
+            return (.wind, seg.1.weatherCode, seg.0 >= 58 ? Brand.danger : Brand.warning,
+                    "Crosswind slowing the crew",
+                    "\(Int(seg.0.rounded())) mph gusts on the corridor — a speed restriction stretches the run against the §228 ceiling.")
+        }
+        // 3) Low visibility slows the crew.
+        if let seg = segs.compactMap({ s in s.visibility.map { ($0, s) } }).min(by: { $0.0 < $1.0 }),
+           seg.0 <= 1.0 {
+            return (.eye, seg.1.weatherCode, Brand.warning,
+                    "Low visibility slowing the run",
+                    "\(seg.0.formatted(.number.precision(.fractionLength(0...1)))) mi visibility — restricted-speed operation burns duty without covering miles.")
+        }
+        // 4) Elevated corridor risk or an active advisory (no metric yet).
+        let risk = (r.overallRisk ?? "").lowercased()
+        if ["high", "severe", "extreme", "elevated"].contains(risk) {
+            return (.alert, nil, Brand.danger,
+                    "Adverse corridor weather",
+                    "Corridor risk is \(risk.uppercased()) — expect the run to stretch against the §228 duty ceiling.")
+        }
+        if let adv = advs.first(where: { ["severe", "extreme", "high"].contains(($0.severity ?? "").lowercased()) }) {
+            return (.alert, nil, Brand.warning,
+                    "Weather advisory on the corridor",
+                    adv.headline ?? adv.eventType ?? "An active advisory may slow the crew against the §228 ceiling.")
+        }
+        return nil
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -99,6 +204,7 @@ private struct RailCrewHOSRosterBody: View {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     teamHeroCard
+                    if let note = hosBurnNote { hosBurnChip(note) }
                     summaryTiles
                     crewHeader
                     crewList
@@ -185,6 +291,53 @@ private struct RailCrewHOSRosterBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
         }
+    }
+
+    // MARK: Weather HOS-burn chip (bespoke — WeatherIcons, never an SF Symbol)
+    //
+    // Sits directly under the team §228 ring: when the corridor is adverse,
+    // the team's remaining-hours headroom is being eaten by weather, so the
+    // note belongs next to the quota. Honest hidden when clear / feed dark.
+
+    private func hosBurnChip(_ note: (glyph: WeatherIcons.Utility, weatherCode: Int?, color: Color, headline: String, detail: String)) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(note.color.opacity(0.14))
+                    .frame(width: 40, height: 40)
+                // Prefer the real Tomorrow.io condition glyph when the segment
+                // carries a weatherCode; else the driver utility glyph (wind /
+                // eye / alert). Both are bespoke WeatherIcons, no SF Symbols.
+                if let code = note.weatherCode, code != 0 {
+                    WeatherIcons.symbolView(for: code, size: 24)
+                } else {
+                    WeatherIcons.utility(note.glyph, size: 20, tint: note.color)
+                }
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(note.headline)
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("§228")
+                        .font(.system(size: 8.5, weight: .heavy)).kerning(0.4)
+                        .foregroundStyle(note.color)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Capsule().fill(note.color.opacity(0.14)))
+                }
+                Text(note.detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .strokeBorder(note.color.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     // MARK: Summary tiles
@@ -284,6 +437,25 @@ private struct RailCrewHOSRosterBody: View {
 
     // MARK: Data
 
+    /// Input for `weather.getRouteConditions` — origin/destination as
+    /// {city,state}. Never invented: parsed from a REAL impacted load's
+    /// "City, ST" endpoints. No load → no call → no HOS burn note.
+    private struct RouteConditionsInput: Encodable {
+        struct Place: Encodable { let city: String; let state: String }
+        let origin: Place
+        let destination: Place
+    }
+
+    /// Parse a server "City, ST" endpoint into {city,state}; nil when
+    /// "Unknown"/empty/malformed so we never query garbage.
+    private func parsePlace(_ s: String?) -> RouteConditionsInput.Place? {
+        guard let raw = s?.trimmingCharacters(in: .whitespaces), !raw.isEmpty,
+              raw.lowercased() != "unknown" else { return nil }
+        let parts = raw.split(separator: ",", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+        guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        return .init(city: parts[0], state: parts[1])
+    }
+
     private func load() async {
         loading = true; loadError = nil
         do {
@@ -293,6 +465,26 @@ private struct RailCrewHOSRosterBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+
+        // Corridor weather for the §228 HOS burn note — carrier vantage, so
+        // anchored to the first REAL impacted load's origin→destination (same
+        // honest path as 578). Soft-fail: a weather error must never break the
+        // roster, and an unparseable / absent corridor simply hides the note.
+        await loadCorridor()
+    }
+
+    private func loadCorridor() async {
+        guard let impacted: [HOSImpactedLoad] = try? await EusoTripAPI.shared
+                .queryNoInput("weather.getImpactedLoads"),
+              let first = impacted.first,
+              let o = parsePlace(first.origin),
+              let d = parsePlace(first.destination) else {
+            self.route = nil
+            return
+        }
+        self.route = try? await EusoTripAPI.shared.query(
+            "weather.getRouteConditions",
+            input: RouteConditionsInput(origin: o, destination: d))
     }
 }
 
