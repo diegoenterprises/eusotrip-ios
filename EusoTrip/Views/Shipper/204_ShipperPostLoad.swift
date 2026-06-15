@@ -195,6 +195,14 @@ struct ShipperPostLoad: View {
 
     @State private var lastSuccess: ShipperAPI.PostLoadAck? = nil
 
+    // F-ANIMATION (2026-06-14) — founder ask: a bespoke professional
+    // "Load posted" celebration, then a return to a fresh Step-1. On a
+    // successful post we raise this full-bleed overlay (the house
+    // celebration, zero SF Symbols) instead of leaving the user parked on
+    // Review with a static check banner. Dismissing it (auto or tap)
+    // resets the form and snaps the wizard back to the Lane step.
+    @State private var showPostedCelebration: Bool = false
+
     // MARK: - Autosave + cross-device continuity
     //
     // Founder ask 2026-05-07: "truly autosaves in case phone dies or
@@ -692,6 +700,20 @@ struct ShipperPostLoad: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .screenTileRoot()
+        // F-ANIMATION (2026-06-14) — bespoke "Load posted" celebration on
+        // top of the wizard. Push-nav surface keeps its chrome; the overlay
+        // is a brand-native full-bleed cover that auto-returns to a fresh
+        // Step-1 when it finishes.
+        .overlay {
+            if showPostedCelebration, let ack = lastSuccess {
+                PostLoadPostedCelebration(
+                    loadNumber: ack.loadNumber,
+                    onContinue: finishCelebrationAndReset
+                )
+                .transition(.opacity)
+                .zIndex(50)
+            }
+        }
         // Re-fire HERE Routing whenever the lane endpoints' lat/lng
         // change. Address-field selection populates these and bumps
         // a rebuild; we reactively trigger the route computation so
@@ -6029,9 +6051,14 @@ struct ShipperPostLoad: View {
     private func successBanner(_ ack: ShipperAPI.PostLoadAck) -> some View {
         let kind = eusoTicketKindForCurrentSelection.kind
         return HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
+            // Bespoke brand-disc check (zero SF Symbols).
+            ZStack {
+                Circle().fill(LinearGradient.diagonal)
+                PostLoadBannerCheck()
+                    .stroke(.white, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                    .padding(4)
+            }
+            .frame(width: 16, height: 16)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Load posted · \(kind) generated")
                     .font(EType.bodyStrong)
@@ -6047,9 +6074,11 @@ struct ShipperPostLoad: View {
             }
             Spacer(minLength: 0)
             Button { withAnimation { lastSuccess = nil } } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(palette.textTertiary)
+                PostLoadBannerClose()
+                    .stroke(palette.textTertiary, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+                    .frame(width: 13, height: 13)
+                    .padding(2)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
@@ -6068,23 +6097,31 @@ struct ShipperPostLoad: View {
 
     private func errorBanner(_ message: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(Brand.danger)
+            // Bespoke warning triangle with a "!" notch (zero SF Symbols).
+            ZStack {
+                PostLoadWarningTriangle()
+                    .fill(Brand.danger)
+                PostLoadBangMark()
+                    .stroke(.white, style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
+                    .padding(.bottom, 1)
+            }
+            .frame(width: 15, height: 14)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Couldn't post that load")
+                Text("Couldn't post this load")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text(message)
+                Text(Self.humanizePostError(message))
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(3)
             }
             Spacer(minLength: 0)
             Button { store.reset() } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(palette.textTertiary)
+                PostLoadBannerClose()
+                    .stroke(palette.textTertiary, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+                    .frame(width: 13, height: 13)
+                    .padding(2)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
@@ -6093,6 +6130,97 @@ struct ShipperPostLoad: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Error humanizer
+    //
+    // The server can hand back a tRPC BAD_REQUEST whose `message` is a
+    // raw, JSON-stringified Zod issues array — e.g.
+    //   [{"origin":"number","code":"too_small","minimum":1,
+    //     "path":["multiVehicleCount"],"message":"Too small: …"}]
+    // The errorFormatter (_core/trpc.ts) only rewrites SQL-shaped
+    // errors, so a validation failure reaches us verbatim. We must
+    // NEVER show that array (or any JSON / [{…}] blob) to the shipper.
+    //
+    // This maps a raw validation payload to a clean, human sentence,
+    // naming the offending field whenever the issue path is parseable,
+    // and falls back to a friendly retry line for everything else.
+    static func humanizePostError(_ raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return "Something went wrong posting this load. Please try again."
+        }
+
+        // Only intercept machine-shaped payloads — a JSON array/object
+        // or anything that mentions a Zod issue code. A normal,
+        // already-human server sentence is passed through untouched.
+        let looksLikeJSON = trimmed.hasPrefix("[") || trimmed.hasPrefix("{")
+        let mentionsZodCode = trimmed.contains("\"code\"")
+            || trimmed.contains("invalid_type")
+            || trimmed.contains("too_small")
+            || trimmed.contains("too_big")
+            || trimmed.contains("\"path\"")
+        guard looksLikeJSON || mentionsZodCode else { return trimmed }
+
+        // Try to name the specific field from the first issue's `path`.
+        if let field = firstZodFieldPath(in: trimmed) {
+            if let label = postFieldLabel(field) {
+                return "Couldn't post this load — please check the \(label) and try again."
+            }
+            return "Couldn't post this load — please check the highlighted fields and try again."
+        }
+
+        // Couldn't resolve a field — generic, friendly, no JSON.
+        return "Couldn't post this load — please review your details and try again."
+    }
+
+    /// Pulls the first `"path":["fieldName", …]` leaf field name out of
+    /// a stringified Zod issues array, without a JSON decode (the blob
+    /// shape isn't fixed across Zod/tRPC versions). Returns nil when no
+    /// path token is present.
+    private static func firstZodFieldPath(in raw: String) -> String? {
+        guard let pathRange = raw.range(of: "\"path\"") else { return nil }
+        let after = raw[pathRange.upperBound...]
+        guard let bracket = after.firstIndex(of: "[") else { return nil }
+        let tail = after[after.index(after: bracket)...]
+        guard let close = tail.firstIndex(of: "]") else { return nil }
+        let inside = tail[tail.startIndex..<close]
+        // Take the LAST quoted segment in the path (the leaf field).
+        let segments = inside
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: " \"")) }
+            .filter { !$0.isEmpty }
+        return segments.last
+    }
+
+    /// Maps a server field name to a shipper-friendly label. Returns nil
+    /// for fields with no clean consumer-facing analog, so the caller
+    /// falls back to the generic "highlighted fields" phrasing.
+    private static func postFieldLabel(_ field: String) -> String? {
+        switch field {
+        case "origin", "originPort", "originLat", "originLng":
+            return "pickup location"
+        case "destination", "destPort", "destLat", "destLng":
+            return "delivery location"
+        case "rate", "worldscalePct", "worldscaleFlat":
+            return "rate"
+        case "weight":
+            return "weight"
+        case "rateUnit":
+            return "rate unit"
+        case "cargoType", "equipmentType", "trailer", "vesselClass":
+            return "equipment & cargo details"
+        case "permitType":
+            return "permit selection"
+        case "multiVehicleCount":
+            return "load quantity"
+        case "pickupDate":
+            return "pickup date"
+        case "transportMode", "vertical":
+            return "transport mode"
+        default:
+            return nil
+        }
     }
 
     // MARK: - Continue / Submit CTA
@@ -6105,9 +6233,10 @@ struct ShipperPostLoad: View {
                         .progressViewStyle(.circular)
                         .tint(.white)
                 } else if step == .review {
-                    Image(systemName: "paperplane.fill")
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(.white)
+                    // Bespoke send glyph (zero SF Symbols).
+                    PostLoadSendGlyph()
+                        .fill(.white)
+                        .frame(width: 15, height: 15)
                 }
                 Text(ctaText)
                     .font(EType.bodyStrong)
@@ -6272,7 +6401,20 @@ struct ShipperPostLoad: View {
             destLat: destLat,
             destLng: destLng,
             transportMode: transportMode,
-            multiVehicleCount: multiVehicleEstimate?.vehicleCount,
+            // F-ANIMATION root-cause fix (2026-06-14): the server schema is
+            // `multiVehicleCount: z.number().int().min(1).max(999).optional()`
+            // (shippers.ts:106). The vessel estimator returns vehicleCount == 0
+            // when no vessel class is picked yet (MultiModalCore.estimateCrude →
+            // the "needs vessel class" branch) and can exceed 999 for a very
+            // large barrel quantity. Sending 0 / >999 tripped Zod's .min(1) /
+            // .max(999) and the raw issues array leaked to the user as
+            // "Couldn't post that load [ { ... } ]". Elide the field entirely
+            // when it isn't a valid 1...999 fleet count — the server treats its
+            // absence as "single conveyance / not estimated", which is correct
+            // for a vessel-tanker post that hasn't resolved a vessel class.
+            multiVehicleCount: multiVehicleEstimate
+                .map(\.vehicleCount)
+                .flatMap { (1...999).contains($0) ? $0 : nil },
             permitType: permitRaw,
             worldscalePct: worldscaleWire,
             worldscaleFlat: worldscaleFlatWire,
@@ -6281,7 +6423,26 @@ struct ShipperPostLoad: View {
         )
         if case .success(let ack) = store.phase {
             self.lastSuccess = ack
-            resetForm()
+            // Raise the bespoke "Load posted" celebration. The overlay owns
+            // the reset-to-fresh-Step-1 (on auto-dismiss or a "Post another"
+            // tap) so the form isn't wiped out from under the animation.
+            withAnimation(.easeOut(duration: 0.25)) {
+                showPostedCelebration = true
+            }
+        }
+    }
+
+    /// Tear the celebration down and return the wizard to a FRESH Step-1:
+    /// clear every @State load field (resetForm), flip the store back to
+    /// idle, drop the inline success banner, and snap the step index to
+    /// `.lane`. Invoked on the overlay's auto-dismiss or its CTA tap.
+    private func finishCelebrationAndReset() {
+        resetForm()
+        store.reset()
+        lastSuccess = nil
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.9)) {
+            showPostedCelebration = false
+            step = .lane
         }
     }
 
