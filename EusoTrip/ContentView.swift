@@ -3832,6 +3832,31 @@ final class EusoAutopilotEngine: ObservableObject {
                         }
                     }
                 }
+                // HONEST NO-OP FEEDBACK. The model gave us actions, but if
+                // the turn carried NAVIGATION intent and NONE of those
+                // navigational actions resolved to a real, in-role screen,
+                // the surface only bounced to home — the operator asked to
+                // go somewhere and effectively nothing happened. Never leave
+                // them staring at an unchanged screen with no feedback:
+                // surface an honest HUD line and (if TTS is available) say
+                // it. Driver resolves through its own typed tab handler, so
+                // we only run this for the non-Driver dispatcher path where
+                // the path-resolution gap lives.
+                if dispatchRole != .driver {
+                    let navActions = actions.filter { eSangRoleDispatcher.isNavigational($0) }
+                    let anyResolved = navActions.contains {
+                        eSangRoleDispatcher.resolvesToRealScreen($0, role: dispatchRole)
+                    }
+                    if !navActions.isEmpty && !anyResolved {
+                        let heard = self.lastHeard.isEmpty ? transcript : self.lastHeard
+                        let trimmed = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+                        let line = trimmed.isEmpty
+                            ? "I couldn't open that here."
+                            : "I heard \u{201C}\(trimmed)\u{201D} but couldn't open it here."
+                        self.statusLine = line
+                        Task { await ESangTTSPlayer.shared.speak(line, serverAudioBase64: nil) }
+                    }
+                }
                 // Re-arm the mic for the next command after the actions
                 // settle, so autopilot stays hands-free across a sequence.
                 let reArm = Double(max(actions.count, 1)) * 0.20 + 0.35

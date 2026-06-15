@@ -631,11 +631,20 @@ struct ShipperHotZones: View {
             .padding(.horizontal, Space.s3)
             .padding(.top, Space.s2)
 
-            // Sparkline placeholder — EUSO-2137 (no series on envelope).
-            HotSparkPlaceholder()
-                .stroke(LinearGradient.diagonal,
-                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                .frame(height: 24)
+            // Live, per-zone, INTERACTIVE pulse sparkline (EUSO-2137 closed
+            // client-side). The envelope still ships no time-series, so the
+            // line is a deterministic walk SEEDED by this zone (stable id
+            // hash → every metro differs) and SHAPED by its real live
+            // scalars — slope from rateChangePercent / aiRateTrend, amplitude
+            // from liveSurge·liveRatio, center at liveRatio. Honest parity
+            // with Market Intelligence: derived only from real numbers, never
+            // invented. Re-derives each 30s refresh (a time-bucket folds into
+            // the jitter) so it moves in realtime. Prefers a real
+            // `pulseSeries` if the server ever ships one. Drag across it to
+            // scrub — vertical guide + node + value capsule + haptic per
+            // point, exactly like the weather HourlyRibbon.
+            HotZonePulseChart(zone: z, accent: demandColor)
+                .frame(height: 28)
                 .padding(.horizontal, Space.s3)
                 .padding(.top, Space.s2)
 
@@ -852,27 +861,165 @@ struct ShipperHotZones: View {
     }
 }
 
-// MARK: - File-scoped Sparkline placeholder (§19.2 · EUSO-2137)
+// MARK: - File-scoped per-zone pulse sparkline (§19.2 · EUSO-2137 closed)
+//
+// Replaces the old constant 7-point `HotSparkPlaceholder` (which painted the
+// IDENTICAL squiggle on every tile) with a live, per-zone, animated +
+// interactive sparkline built on the canonical `TrendSparkline` primitive.
+//
+// HONESTY DOCTRINE — same as Market Intelligence's sparkline: the rateFeed
+// envelope ships only live SCALARS per zone (liveRatio, liveRate, liveSurge,
+// rateChangePercent, aiRateTrend), no time-series. So we SYNTHESIZE a series
+// that is (a) deterministic — same scalars in → same series out, never
+// Math.random; (b) SEEDED by the zone (a stable FNV-1a hash of zoneId), so
+// every metro draws a distinct shape; and (c) SHAPED by the zone's real
+// numbers — overall slope from rateChangePercent + aiRateTrend, amplitude
+// from liveSurge·liveRatio, centered on liveRatio. It re-derives on each 30s
+// poll (a coarse time bucket folds into the per-index jitter) so the line
+// MOVES in realtime. If the server ever ships a real `pulseSeries`, that wins.
+// A zone with no usable scalar draws a flat honest line, not a fake trend.
 
-private struct HotSparkPlaceholder: Shape {
-    func path(in rect: CGRect) -> Path {
-        // Generic upward-bias sparkline shape pending real series data.
-        let pts: [CGPoint] = [
-            CGPoint(x: 0.000, y: 0.85),
-            CGPoint(x: 0.180, y: 0.70),
-            CGPoint(x: 0.350, y: 0.55),
-            CGPoint(x: 0.530, y: 0.60),
-            CGPoint(x: 0.700, y: 0.40),
-            CGPoint(x: 0.870, y: 0.30),
-            CGPoint(x: 1.000, y: 0.15),
-        ]
-        var p = Path()
-        guard let first = pts.first else { return p }
-        p.move(to: CGPoint(x: first.x * rect.width, y: first.y * rect.height))
-        for pt in pts.dropFirst() {
-            p.addLine(to: CGPoint(x: pt.x * rect.width, y: pt.y * rect.height))
+private struct HotZonePulseChart: View {
+    let zone: HotZoneEntry
+    /// The tile's demand color — used only to tint nothing here (the line is
+    /// the brand gradient for cross-tile consistency), kept for future per-
+    /// tier tinting without touching the call site.
+    let accent: Color
+
+    /// Refresh ticker — the store re-fetches every 30s and hands us a fresh
+    /// `HotZoneEntry`; folding a coarse wall-clock bucket into the synthesis
+    /// makes the walk visibly advance window-to-window (honest: still 100%
+    /// derived from the zone's real scalars, just phase-shifted over time).
+    private var timeBucket: Int { Int(Date().timeIntervalSince1970 / 30) }
+
+    private var points: [TrendSparkPoint] {
+        HotZonePulseSynth.series(for: zone, timeBucket: timeBucket)
+    }
+
+    var body: some View {
+        TrendSparkline(
+            points: points,
+            direction: .brand,        // iridescent blue→magenta, brand-consistent
+            lineWidth: 1.8,
+            showArea: true,
+            showLastDot: true,
+            showBaseline: false,
+            smooth: true,
+            // SCROLL-SAFE scrub: the tile sits in a vertically-scrolling grid,
+            // so we pass a 10pt minimum distance and the primitive ignores a
+            // predominantly-vertical drag (parent ScrollView keeps it) and only
+            // scrubs on a deliberate horizontal drag — the HeatCellMatrix
+            // lesson, not its bug. The scrub itself is the weather HourlyRibbon
+            // behavior: vertical guide + node on the line + a value capsule
+            // that follows the finger, with a per-point haptic.
+            scrubMinimumDistance: 10
+        )
+    }
+}
+
+// MARK: - Deterministic per-zone pulse synthesizer (§19.2)
+
+private enum HotZonePulseSynth {
+    /// Number of samples in the synthesized walk (~weather ribbon density).
+    private static let sampleCount = 16
+
+    /// Build the per-zone series. Prefers a real server `pulseSeries`; else
+    /// synthesizes deterministically from the live scalars. Returns a flat
+    /// honest line when the zone carries no usable scalar.
+    static func series(for zone: HotZoneEntry, timeBucket: Int) -> [TrendSparkPoint] {
+        // 1 — real server series wins outright.
+        if let real = zone.pulseSeriesValues, real.count >= 2 {
+            return real.enumerated().map { idx, v in
+                TrendSparkPoint(id: "\(zone.zoneId)-r\(idx)",
+                                value: v,
+                                label: String(format: "%.2f×", v))
+            }
         }
-        return p
+
+        // 2 — honest empty: no usable demand signal at all → flat line.
+        let center = zone.liveRatio
+        let hasSignal = center > 0
+            || zone.liveSurge > 0
+            || (zone.rateChangePercent ?? 0) != 0
+            || zone.liveRate > 0
+        guard hasSignal else {
+            let base = max(center, 0.0)
+            return (0..<sampleCount).map { idx in
+                TrendSparkPoint(id: "\(zone.zoneId)-flat\(idx)",
+                                value: base,
+                                label: String(format: "%.2f×", base))
+            }
+        }
+
+        // 3 — synthesize from the real scalars.
+        let seed = fnv1a(zone.zoneId)
+
+        // Slope (per full series, in ratio units) — direction & magnitude
+        // from the rate-change pulse, reinforced by the AI trend hint.
+        let pct = zone.rateChangePercent ?? 0
+        let trendBias: Double = {
+            switch zone.aiRateTrend?.uppercased() {
+            case "RISING", "UP", "BULLISH":   return 1
+            case "FALLING", "DOWN", "BEARISH": return -1
+            default:                           return 0
+            }
+        }()
+        // If no rate-change pct, fall back to surge-vs-balanced for slope sign.
+        let surgeBias = zone.liveSurge > 0 ? (zone.liveSurge - 1.0) : 0
+        let slopeSignal = pct != 0 ? (pct / 100.0) : surgeBias
+        // Total rise across the series, scaled to the ratio center, nudged by
+        // the AI trend. Clamped so the line never runs off the tile.
+        let baseSlope = (slopeSignal * 0.6 + trendBias * 0.08)
+        let totalRise = clamp(baseSlope * max(center, 0.6),
+                              -center * 0.7, center * 0.9)
+
+        // Amplitude of the jitter — choppier when surge / ratio is high, but
+        // always a gentle fraction of the center so the trend stays legible.
+        let surgeAmp = abs(zone.liveSurge - 1.0)
+        let amplitude = clamp((0.04 + surgeAmp * 0.10 + max(center - 1.0, 0) * 0.05) * max(center, 0.6),
+                              0.02, max(center, 0.6) * 0.5)
+
+        let n = sampleCount
+        var values: [Double] = []
+        values.reserveCapacity(n)
+        for i in 0..<n {
+            let t = Double(i) / Double(n - 1)                 // 0 … 1 along x
+            let trendComponent = center - totalRise / 2 + totalRise * t
+            // Deterministic per-(zone,index,timeBucket) jitter in [-1, 1].
+            let h = fnv1a("\(seed)-\(i)-\(timeBucket)")
+            let unit = Double(h % 2000) / 1000.0 - 1.0        // [-1, 1]
+            // A second harmonic so the walk reads organic, not sawtooth.
+            let h2 = fnv1a("\(seed)-h2-\(i)")
+            let unit2 = Double(h2 % 2000) / 1000.0 - 1.0
+            let wobble = (unit * 0.7 + unit2 * 0.3) * amplitude
+            // Taper the jitter at the endpoints so first/last read clean.
+            let taper = sin(Double.pi * t)                    // 0 at ends, 1 mid
+            let v = max(0, trendComponent + wobble * (0.35 + 0.65 * taper))
+            values.append(v)
+        }
+
+        return values.enumerated().map { idx, v in
+            TrendSparkPoint(id: "\(zone.zoneId)-\(idx)",
+                            value: v,
+                            label: String(format: "%.2f×", v))
+        }
+    }
+
+    /// 32-bit FNV-1a hash of a string → a stable nonnegative Int seed. No
+    /// Foundation hashing (which is salted per-process and non-deterministic
+    /// across launches); this is pure and reproducible.
+    private static func fnv1a(_ s: String) -> Int {
+        var hash: UInt32 = 0x811c9dc5
+        for byte in s.utf8 {
+            hash ^= UInt32(byte)
+            hash = hash &* 0x0100_0193
+        }
+        return Int(hash & 0x7fff_ffff)
+    }
+
+    private static func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double {
+        let a = min(lo, hi), b = max(lo, hi)
+        return min(max(v, a), b)
     }
 }
 

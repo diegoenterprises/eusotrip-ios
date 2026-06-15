@@ -158,6 +158,105 @@ private struct DieselRow: Decodable, Hashable, Identifiable {
     var id: String { region }
 }
 
+// MARK: - Ticker search wire types (mirror marketPricing.searchCommodity / getQuote)
+
+/// Lenient Double box. Yahoo Finance and CommodityPriceAPI occasionally
+/// stringify numeric fields (and the seed feed already does so for a
+/// fraction of symbols — see decodeFlexibleDouble above). Wrapping the
+/// search/quote envelopes in this box means a single stringified field
+/// never aborts the whole decode and blanks the search results. Every
+/// numeric field on the search/quote contracts is therefore optional +
+/// lenient: a partial envelope renders honest "N/A"/"—" rather than
+/// crashing the screen.
+private struct FlexDouble: Decodable {
+    let value: Double?
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let d = try? c.decode(Double.self) { value = d; return }
+        if let i = try? c.decode(Int.self) { value = Double(i); return }
+        if let s = try? c.decode(String.self) { value = Double(s); return }
+        // null / missing / non-numeric — honest absence, never a fabricated 0.
+        value = nil
+    }
+}
+
+private struct SearchInput: Encodable {
+    let query: String
+}
+
+private struct SearchResultRow: Decodable, Identifiable, Hashable {
+    let symbol: String
+    let name: String
+    let category: String
+    let unit: String?
+    let source: String?          // "local" | "api"
+    private let priceBox: FlexDouble?
+    private let changePercentBox: FlexDouble?
+
+    var price: Double? { priceBox?.value }
+    var changePercent: Double? { changePercentBox?.value }
+    var id: String { symbol }
+    var isLive: Bool { (source ?? "").lowercased() == "api" }
+
+    enum CodingKeys: String, CodingKey {
+        case symbol, name, category, unit, source
+        case priceBox = "price"
+        case changePercentBox = "changePercent"
+    }
+    // Identity is the symbol — the displayed numbers update freely.
+    static func == (l: SearchResultRow, r: SearchResultRow) -> Bool { l.symbol == r.symbol }
+    func hash(into h: inout Hasher) { h.combine(symbol) }
+}
+
+private struct SearchResp: Decodable {
+    let results: [SearchResultRow]
+    let totalLocal: Int?
+    let totalApi: Int?
+}
+
+private struct QuoteInput: Encodable {
+    let symbol: String
+}
+
+/// marketPricing.getQuote. `price` is `Double?` — the server returns null
+/// when no source (seed / CommodityPriceAPI / Yahoo) resolves the symbol;
+/// the detail card renders "N/A" in that case and NEVER fabricates a price.
+/// All OHLC/volume fields are optional + lenient for the same reason.
+private struct QuoteResp: Decodable {
+    let symbol: String
+    let name: String?
+    let category: String?
+    let unit: String?
+    let volume: String?
+    let bestSource: String?
+    private let priceBox: FlexDouble?
+    private let changeBox: FlexDouble?
+    private let changePercentBox: FlexDouble?
+    private let highBox: FlexDouble?
+    private let lowBox: FlexDouble?
+    private let openBox: FlexDouble?
+    private let previousCloseBox: FlexDouble?
+
+    var price: Double? { priceBox?.value }
+    var change: Double? { changeBox?.value }
+    var changePercent: Double? { changePercentBox?.value }
+    var high: Double? { highBox?.value }
+    var low: Double? { lowBox?.value }
+    var open: Double? { openBox?.value }
+    var previousClose: Double? { previousCloseBox?.value }
+
+    enum CodingKeys: String, CodingKey {
+        case symbol, name, category, unit, volume, bestSource
+        case priceBox = "price"
+        case changeBox = "change"
+        case changePercentBox = "changePercent"
+        case highBox = "high"
+        case lowBox = "low"
+        case openBox = "open"
+        case previousCloseBox = "previousClose"
+    }
+}
+
 // MARK: - Body
 
 private struct MarketIntelligenceBody: View {
@@ -177,6 +276,18 @@ private struct MarketIntelligenceBody: View {
     @State private var macro: MacroSignal? = nil
     @State private var diesel: [DieselRow] = []
 
+    // marketPricing.searchCommodity / getQuote (Yahoo-Finance ticker search,
+    // parity with the web /market-pricing search box).
+    @State private var searchText: String = ""
+    @State private var searchResults: [SearchResultRow] = []
+    @State private var searchLoading: Bool = false
+    @State private var searchError: String? = nil
+    @State private var selectedSymbol: String? = nil
+    @State private var quote: QuoteResp? = nil
+    @State private var quoteLoading: Bool = false
+    @State private var quoteError: String? = nil
+    @State private var debounceTask: Task<Void, Never>? = nil
+
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -184,6 +295,17 @@ private struct MarketIntelligenceBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+
+                // Yahoo-Finance ticker search (web parity). Sits above the
+                // commodity grid so any stock / ETF / commodity is reachable
+                // from a single field. Local seed + Yahoo + CommodityPriceAPI
+                // are merged server-side; key-free.
+                searchField
+                if !searchText.isEmpty && searchText.count >= 2 {
+                    searchResultsSection
+                }
+                if let q = quote { quoteCard(q) }
+
                 if loading && commodities.isEmpty && macro == nil && diesel.isEmpty {
                     LifecycleCard {
                         HStack(spacing: 8) {
@@ -260,6 +382,297 @@ private struct MarketIntelligenceBody: View {
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
+    }
+
+    // MARK: Ticker search field
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(palette.textTertiary)
+            TextField(
+                "",
+                text: $searchText,
+                prompt: Text("Search any ticker, stock or commodity…")
+                    .foregroundColor(palette.textTertiary)
+            )
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(palette.textPrimary)
+            // Don't force-uppercase: the field accepts both tickers ("AAPL")
+            // and plain names ("soybeans"); the server matches case-
+            // insensitively, so we preserve exactly what the user types.
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled(true)
+            .submitLabel(.search)
+            .onSubmit {
+                let q = searchText.trimmingCharacters(in: .whitespaces)
+                if q.count >= 2 { Task { await searchTickers(q) } }
+            }
+            .onChange(of: searchText) { _, newValue in
+                // Debounce 300ms (mirror HereAddressField.swift:169-175):
+                // cancel the prior task, sleep, bail if cancelled, then fire.
+                debounceTask?.cancel()
+                let q = newValue.trimmingCharacters(in: .whitespaces)
+                if q.count < 2 {
+                    searchResults = []
+                    searchError = nil
+                    searchLoading = false
+                    return
+                }
+                searchLoading = true
+                debounceTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    if Task.isCancelled { return }
+                    await searchTickers(q)
+                }
+            }
+            if searchLoading {
+                ProgressView().tint(LinearGradient.diagonal).scaleEffect(0.7)
+            } else if !searchText.isEmpty {
+                Button {
+                    debounceTask?.cancel()
+                    searchText = ""
+                    searchResults = []
+                    searchError = nil
+                    selectedSymbol = nil
+                    quote = nil
+                    quoteError = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear ticker search")
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint)
+        )
+    }
+
+    // MARK: Search results
+
+    @ViewBuilder
+    private var searchResultsSection: some View {
+        if let err = searchError {
+            LifecycleCard(accentWarning: true) {
+                HStack(spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(Brand.warning)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Couldn't reach market data")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Text(err)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    Button {
+                        Task { await searchTickers(searchText.trimmingCharacters(in: .whitespaces)) }
+                    } label: {
+                        Text("Retry")
+                            .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(Capsule().fill(LinearGradient.diagonal))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        } else if !searchResults.isEmpty {
+            VStack(spacing: 8) {
+                ForEach(searchResults) { row in
+                    searchResultRow(row)
+                }
+            }
+        } else if !searchLoading {
+            // Honest empty state — debounce settled, no matches. Never a
+            // fabricated row.
+            LifecycleCard {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                    Text("No matches for “\(searchText)”")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func searchResultRow(_ row: SearchResultRow) -> some View {
+        let selected = (selectedSymbol == row.symbol)
+        Button {
+            selectedSymbol = row.symbol
+            Task { await loadQuote(row.symbol) }
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(row.name)
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    HStack(spacing: 6) {
+                        Text(row.symbol)
+                            .font(EType.mono(.micro)).tracking(0.4)
+                            .foregroundStyle(palette.textTertiary)
+                        Text(row.category.uppercased())
+                            .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                            .foregroundStyle(LinearGradient.diagonal)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(Capsule().fill(palette.bgCardSoft))
+                        if row.isLive {
+                            Text("LIVE")
+                                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Capsule().fill(Brand.success))
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                VStack(alignment: .trailing, spacing: 3) {
+                    // Honest: server can omit a price on a stringify miss.
+                    Text(row.price.map(formatPrice) ?? "N/A")
+                        .font(.system(size: 15, weight: .heavy, design: .rounded)).monospacedDigit()
+                        .foregroundStyle(palette.textPrimary)
+                    if let pct = row.changePercent {
+                        let positive = pct >= 0
+                        HStack(spacing: 3) {
+                            Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
+                                .font(.system(size: 8, weight: .heavy))
+                            Text(formatChange(pct))
+                                .font(.system(size: 11, weight: .heavy)).monospacedDigit()
+                        }
+                        .foregroundStyle(positive ? Brand.success : Brand.danger)
+                    } else {
+                        Text("—")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                }
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 11)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(selected ? palette.bgCardSoft : palette.bgCard)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(selected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Quote detail card
+
+    @ViewBuilder
+    private func quoteCard(_ q: QuoteResp) -> some View {
+        let pct = q.changePercent
+        let positive = (pct ?? 0) >= 0
+        let trendColor: Color = positive ? Brand.success : Brand.danger
+        LifecycleCard(accentGradient: true) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(q.name ?? q.symbol)
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    HStack(spacing: 6) {
+                        Text(q.symbol)
+                            .font(EType.mono(.micro)).tracking(0.4)
+                            .foregroundStyle(palette.textTertiary)
+                        if let cat = q.category, !cat.isEmpty {
+                            Text(cat.uppercased())
+                                .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                                .foregroundStyle(LinearGradient.diagonal)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                if quoteLoading {
+                    ProgressView().tint(LinearGradient.diagonal).scaleEffect(0.7)
+                }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                // Honest: price is Double? — server returns null when no
+                // source resolves the symbol. Render "N/A", never a fake 0.
+                Text(q.price.map(formatPrice) ?? "N/A")
+                    .font(.system(size: 30, weight: .heavy, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(q.price == nil ? AnyShapeStyle(palette.textTertiary) : AnyShapeStyle(palette.textPrimary))
+                if let unit = q.unit, !unit.isEmpty {
+                    Text(unit)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Spacer(minLength: 0)
+                if let pct {
+                    HStack(spacing: 4) {
+                        Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
+                            .font(.system(size: 11, weight: .heavy))
+                        Text(formatChange(pct))
+                            .font(.system(size: 14, weight: .heavy)).monospacedDigit()
+                    }
+                    .foregroundStyle(trendColor)
+                }
+            }
+            if let err = quoteError {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Divider().overlay(palette.borderFaint).padding(.vertical, 2)
+            // Compact OHLC / volume grid — honest "—" for any field the
+            // server didn't resolve.
+            let cols = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
+            LazyVGrid(columns: cols, spacing: 10) {
+                quoteStat("OPEN", q.open.map(formatPrice))
+                quoteStat("HIGH", q.high.map(formatPrice))
+                quoteStat("LOW", q.low.map(formatPrice))
+                quoteStat("PREV", q.previousClose.map(formatPrice))
+                quoteStat("CHG", q.change.map { String(format: $0 >= 0 ? "+%.2f" : "%.2f", $0) })
+                quoteStat("VOL", (q.volume == "N/A" ? nil : q.volume))
+            }
+            if let src = q.bestSource, !src.isEmpty {
+                Text("Source · \(src)")
+                    .font(EType.micro).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func quoteStat(_ label: String, _ value: String?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            Text(value ?? "—")
+                .font(.system(size: 13, weight: .heavy)).monospacedDigit()
+                .foregroundStyle(value == nil ? palette.textTertiary : palette.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: Market breadth
@@ -570,6 +983,62 @@ private struct MarketIntelligenceBody: View {
             )
             await MainActor.run { diesel = r.rows ?? [] }
         } catch { /* silent */ }
+    }
+
+    // MARK: Ticker search loaders
+
+    /// marketPricing.searchCommodity — merges local seed + Yahoo Finance +
+    /// CommodityPriceAPI server-side (key-free). Honest empty/error states;
+    /// never fabricates a result.
+    private func searchTickers(_ q: String) async {
+        await MainActor.run { searchLoading = true; searchError = nil }
+        do {
+            let r: SearchResp = try await EusoTripAPI.shared.query(
+                "marketPricing.searchCommodity",
+                input: SearchInput(query: q)
+            )
+            await MainActor.run {
+                // Guard against a stale debounce landing after the user
+                // cleared / changed the field.
+                guard searchText.trimmingCharacters(in: .whitespaces) == q else { return }
+                searchResults = r.results
+                searchError = nil
+                searchLoading = false
+            }
+        } catch {
+            await MainActor.run {
+                guard searchText.trimmingCharacters(in: .whitespaces) == q else { return }
+                searchResults = []
+                searchError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                searchLoading = false
+            }
+        }
+    }
+
+    /// marketPricing.getQuote — cross-referenced single-symbol quote. `price`
+    /// may be null; the card renders "N/A". Inline honest error on failure.
+    private func loadQuote(_ symbol: String) async {
+        await MainActor.run { quoteLoading = true; quoteError = nil }
+        do {
+            let q: QuoteResp = try await EusoTripAPI.shared.query(
+                "marketPricing.getQuote",
+                input: QuoteInput(symbol: symbol)
+            )
+            await MainActor.run {
+                // Ignore a late quote for a row the user moved off of.
+                guard selectedSymbol == symbol else { return }
+                quote = q
+                quoteError = nil
+                quoteLoading = false
+            }
+        } catch {
+            await MainActor.run {
+                guard selectedSymbol == symbol else { return }
+                quote = nil
+                quoteError = "Couldn't load \(symbol) quote · pull to refresh or retry."
+                quoteLoading = false
+            }
+        }
     }
 }
 
