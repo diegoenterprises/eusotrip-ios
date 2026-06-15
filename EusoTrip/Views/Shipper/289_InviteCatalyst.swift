@@ -19,6 +19,7 @@ private struct InviteCatalystBody: View {
     @State private var note: String = ""
     @State private var sending = false
     @State private var sent = false
+    @State private var sentToEmail: String = ""
     @State private var actionError: String? = nil
 
     var body: some View {
@@ -50,6 +51,11 @@ private struct InviteCatalystBody: View {
         LifecycleCard {
             LifecycleSection(label: "INVITE DETAILS", icon: "person.crop.circle.badge.plus")
             field(label: "Email", binding: $email, placeholder: "carrier@example.com")
+                .onChange(of: email) { _, _ in
+                    // Once the user starts a fresh invite, retire the prior
+                    // success banner so a stale "sent" never misleads them.
+                    if sent { sent = false }
+                }
             field(label: "USDOT (optional)", binding: $dotNumber, placeholder: "e.g. 1234567")
             field(label: "Note (optional)", binding: $note, placeholder: "Add a personal note")
         }
@@ -69,9 +75,16 @@ private struct InviteCatalystBody: View {
 
     private var successCard: some View {
         LifecycleCard(accentGradient: true) {
-            HStack(spacing: 6) {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(LinearGradient.diagonal)
-                Text("Invite sent. The carrier will receive an email shortly.").font(EType.body).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 16, weight: .bold)).foregroundStyle(LinearGradient.diagonal)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Invite sent").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Text(sentToEmail.isEmpty
+                         ? "The carrier will receive an email shortly."
+                         : "We emailed your referral link to \(sentToEmail). The carrier will receive it shortly.")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
@@ -107,6 +120,7 @@ private struct InviteCatalystBody: View {
                 "referrals.inviteCarrier",
                 input: In(email: email, dotNumber: dotNumber.isEmpty ? nil : dotNumber, note: note.isEmpty ? nil : note)
             )
+            sentToEmail = email
             sent = true
             email = ""; dotNumber = ""; note = ""
         } catch {

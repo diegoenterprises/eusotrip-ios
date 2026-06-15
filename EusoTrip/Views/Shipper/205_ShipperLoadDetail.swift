@@ -1349,13 +1349,19 @@ struct ShipperLoadDetail: View {
     }
 
     private func pillCapsule(_ text: String) -> some View {
+        // The pill background is always white (it sits over the dark map
+        // tile), so the ink must always be a fixed dark color — NOT
+        // palette.textPrimary, which is near-white in dark mode and
+        // rendered the pill white-on-white / unreadable (the founder's
+        // "cannot read writing" feedback on the ETA + miles pills).
         Text(text)
             .font(.system(size: 11, weight: .bold)).tracking(0.4).monospacedDigit()
-            .foregroundStyle(palette.textPrimary)
+            .foregroundStyle(Color(hex: 0x0D1117))
             .padding(.horizontal, 12).padding(.vertical, 5)
             .background(.white)
-            .overlay(Capsule().strokeBorder(palette.borderFaint))
+            .overlay(Capsule().strokeBorder(Color.black.opacity(0.12)))
             .clipShape(Capsule())
+            .shadow(color: Color.black.opacity(0.28), radius: 5, y: 1)
     }
 
     // MARK: - Lifecycle card (delegates to ShipperLoadCycleView)

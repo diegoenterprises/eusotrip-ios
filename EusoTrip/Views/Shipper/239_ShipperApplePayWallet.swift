@@ -90,7 +90,13 @@ struct ShipperApplePayWallet: View {
         case error(String)
     }
 
-    private var activePassId: String { activePass?.id ?? "" }
+    /// Numeric DB load id of the active pass — the stable key the list
+    /// rows match against to highlight the active credential. (The
+    /// string `id` carries a "pass_" prefix that never matched a list
+    /// row's reference, so the active-row highlight relied on this.)
+    private var activePassLoadId: Int? {
+        activePass.flatMap { Int($0.apiLoadId) }
+    }
 
     /// Eyebrow counter — recomputes from live state instead of a
     /// hardcoded "3 PASSES · 1 ACTIVE" string. When there are no
@@ -290,11 +296,13 @@ struct ShipperApplePayWallet: View {
 
         passes = snap.passes.map { row in
             WalletPass(
-                id: row.id,
+                // Sanitized human reference for the row's mono id line —
+                // never the raw "MATRIX-50 ROW 1" seed cohort tag.
+                id: Self.passReference(row),
                 loadId: row.loadId,
-                tilePrefix: row.tilePrefix,
+                tilePrefix: Self.cleanWalletLabel(row.tilePrefix),
                 lane: row.lane,
-                spec: row.spec,
+                spec: Self.cleanWalletLabel(row.spec),
                 installedNote: row.installedNote,
                 status: WalletPassStatus.fromServer(row.status)
             )
@@ -302,6 +310,51 @@ struct ShipperApplePayWallet: View {
         activePass = snap.active.map(Self.heroFromRow)
         paymentMethods = mts.map(Self.methodFromRow)
         snapshotPhase = (snap.active == nil && snap.passes.isEmpty) ? .empty : .loaded
+    }
+
+    /// Strip dev/seed batch tags + bracket/key=value tokens out of any
+    /// server-supplied display string before it reaches the UI. Mirrors
+    /// 205_ShipperLoadDetail.cleanLabel(_:) — copied here (file-scoped)
+    /// so the wallet eyebrow + LOAD ID never surface a seed cohort tag
+    /// like "MATRIX-50 ROW 1" as if it were a real pass reference.
+    /// Display-layer only; never feed the result back to the server.
+    private static func cleanWalletLabel(_ s: String) -> String {
+        var out = s
+        // Drop "[enum_key]" bracket tokens (with any leading whitespace).
+        out = out.replacingOccurrences(
+            of: #"\s*\[[^\]]*\]"#, with: "", options: .regularExpression)
+        // Drop "key=value" tokens (vertical=truck, …) + a leading bullet.
+        out = out.replacingOccurrences(
+            of: #"\s*[·•]?\s*[A-Za-z_-]+=\S+"#, with: "", options: .regularExpression)
+        // Drop demo batch-cohort tags ("MATRIX-50 ROW 1", "MATRIX-50-2026-…")
+        // — these are seed identifiers, never real pass references.
+        out = out.replacingOccurrences(
+            of: #"(?i)\bMATRIX-?\d*(\s+ROW\s+\d+|[\w-]*)"#, with: "", options: .regularExpression)
+        // Collapse any doubled separators the removals left behind.
+        out = out.replacingOccurrences(
+            of: #"\s*·\s*·\s*"#, with: " · ", options: .regularExpression)
+        return out.trimmingCharacters(in: CharacterSet(charactersIn: " ·•\u{2014}-"))
+    }
+
+    /// The human load reference shown on the pass (eyebrow + LOAD ID
+    /// field). Prefers the server `loadNumber` ("LD-…"); falls back to a
+    /// sanitized `id` ONLY when it reads like a real load token; finally
+    /// derives "LD-<numericId>" so the card never shows a seed cohort tag
+    /// nor an empty placeholder.
+    private static func passReference(_ row: WalletAPI.ShipperPassRow) -> String {
+        if let ln = row.loadNumber {
+            let cleaned = cleanWalletLabel(ln)
+            if !cleaned.isEmpty { return cleaned }
+        }
+        let cleanedId = cleanWalletLabel(row.id)
+        // Accept the id only if it survived sanitizing as a real load
+        // reference (contains a digit and isn't a leftover cohort word).
+        if !cleanedId.isEmpty,
+           cleanedId.rangeOfCharacter(from: .decimalDigits) != nil,
+           cleanedId.range(of: #"(?i)^(MATRIX|ROW|DEMO|SEED|TEST)\b"#, options: .regularExpression) == nil {
+            return cleanedId
+        }
+        return "LD-\(row.loadId)"
     }
 
     /// Translate a server `ShipperPassRow` into the hero card's
@@ -343,27 +396,28 @@ struct ShipperApplePayWallet: View {
 
         let escrowLine: String = row.rate.map { "Escrow funded · $\($0)" } ?? "Escrow pending"
 
+        // Single sanitized human reference — drives both the LOAD ID
+        // field on the card and the section eyebrow, so a seed cohort
+        // tag ("MATRIX-50 ROW 1") can never appear in either place.
+        let reference = passReference(row)
+
         return ActiveWalletPass(
-            id: "pass_\(row.id)",
+            id: "pass_\(row.loadId)",
             issuerLine: "EUSORONE TECHNOLOGIES",
             title: "Pickup Credential",
-            loadId: row.id,
+            loadId: reference,
             apiLoadId: String(row.loadId),
             lane: row.lane,
             eta: etaText,
             equipment: equipmentLine.isEmpty ? "Equipment pending" : equipmentLine,
             carrierLine: carrierLine,
             escrowLine: escrowLine,
-            carrierTier: String(row.id.suffix(2)).first.map(String.init) ?? "A",
+            carrierTier: reference.last.map(String.init) ?? "A",
             ctaLabel: "Add to Wallet",
-            // Section eyebrow for the active pass. When the server
-            // returns a human load reference, surface it ("ACTIVE
-            // PASS · LD-…"); otherwise fall back to the plain label
-            // rather than inventing a cohort tag.
-            matrixRowLabel: {
-                let ref = row.id.trimmingCharacters(in: .whitespaces)
-                return ref.isEmpty ? "ACTIVE PASS" : "ACTIVE PASS · \(ref)"
-            }()
+            // Section eyebrow for the active pass — always the clean
+            // load reference ("ACTIVE PASS · LD-…"), never the raw
+            // server seed id.
+            matrixRowLabel: "ACTIVE PASS · \(reference)"
         )
     }
 
@@ -513,17 +567,21 @@ struct ShipperApplePayWallet: View {
                     HStack {
                         Spacer()
                         // Real QR code via the shared EusoQR primitive.
-                        // Encodes a role-aware deeplink to the load
-                        // credential, plus the 5-digit fallback code
-                        // visible underneath when `inlineShortCode`
-                        // is populated. Founder mandate 2026-05-06 —
-                        // every QR surface needs to actually work.
+                        // When Wallet signing is offline the service hands
+                        // back the server-signed credential token; we
+                        // render THAT (the exact payload the gate scanner
+                        // verifies) so the in-app QR is the genuine pass.
+                        // Before any mint we fall back to the deterministic
+                        // load-credential deeplink, which also scans
+                        // cleanly. Founder mandate 2026-05-06 — every QR
+                        // surface needs to actually work.
                         VStack(alignment: .trailing, spacing: 6) {
                             EusoQRView(
-                                kind: .loadCredential(
-                                    loadId: activePass.apiLoadId,
-                                    mode: .credential
-                                ),
+                                kind: inlineQrPayload.map { .raw(text: $0) }
+                                    ?? .loadCredential(
+                                        loadId: activePass.apiLoadId,
+                                        mode: .credential
+                                    ),
                                 role: .shipper,
                                 size: 92,
                                 cornerRadius: 8
@@ -532,6 +590,7 @@ struct ShipperApplePayWallet: View {
                                 Text(code)
                                     .font(EType.mono(.micro)).tracking(2.0)
                                     .foregroundStyle(palette.textPrimary)
+                                    .accessibilityLabel("Gate fallback code \(code.map(String.init).joined(separator: " "))")
                             }
                         }
                         .padding(.top, 12)
@@ -586,7 +645,7 @@ struct ShipperApplePayWallet: View {
             ForEach(passes.indices, id: \.self) { idx in
                 PassRow(
                     pass:        passes[idx],
-                    isActive:    passes[idx].id == activePassId,
+                    isActive:    passes[idx].loadId == activePassLoadId,
                     onRowTap:    { tapPassRow(passes[idx]) }
                 )
                 if idx < passes.count - 1 {
@@ -747,7 +806,7 @@ struct ShipperApplePayWallet: View {
                 "source": "239_ShipperApplePayWallet",
                 "passId": pass.id,
                 "loadId": String(pass.loadId),
-                "isActivePass": pass.id == activePassId,
+                "isActivePass": pass.loadId == activePassLoadId,
                 "shipperCompanyId": 1
             ]
         )
@@ -768,22 +827,29 @@ struct ShipperApplePayWallet: View {
     /// failures, per the no-dead-buttons doctrine).
     @MainActor
     private func applyPassResult(_ result: EusoWalletPassResult) {
+        // How long the banner lingers. The signing-offline instruction
+        // ("present the QR or code … at the gate") needs to be readable,
+        // so it stays up longer; success/error auto-clear faster. In the
+        // offline case the QR + short code also remain on the hero card
+        // permanently, so the credential stays usable after the banner.
+        var dwell: UInt64 = 4_000_000_000
         switch result {
         case .presented:
             passBannerKind = .success
             passBannerText = "Pass added to Apple Wallet"
         case .signingUnavailable(let qrPayload, let shortCode):
             passBannerKind = .info
-            passBannerText = "Show this in-app pass — present the QR or code \(shortCode) at the gate."
+            passBannerText = "Apple Wallet signing is offline — present this in-app pass: scan the QR or enter code \(shortCode) at the gate."
             inlineQrPayload = qrPayload
             inlineShortCode = shortCode
+            dwell = 8_000_000_000
         case .failure(let message):
             passBannerKind = .error
             passBannerText = message
         }
-        // Auto-clear after 4s so the banner doesn't linger.
+        // Auto-clear so the banner doesn't linger indefinitely.
         Task {
-            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            try? await Task.sleep(nanoseconds: dwell)
             await MainActor.run { passBannerText = nil }
         }
     }
@@ -896,9 +962,10 @@ private struct ActiveWalletPass {
     let escrowLine:  String
     let carrierTier: String
     let ctaLabel:    String
-    /// Optional eyebrow ("ACTIVE PASS · LD-…"). nil when there's no
-    /// load reference to append, in which case the section falls back
-    /// to the plain "ACTIVE PASS" label.
+    /// Section eyebrow ("ACTIVE PASS · LD-…"). `heroFromRow` always
+    /// populates a sanitized reference (never a raw seed cohort tag);
+    /// the optional type just lets the call site fall back to the plain
+    /// "ACTIVE PASS" label defensively.
     let matrixRowLabel: String?
 }
 

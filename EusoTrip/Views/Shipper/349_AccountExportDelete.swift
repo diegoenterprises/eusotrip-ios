@@ -103,6 +103,8 @@ private struct ExportDeleteBody: View {
     private func exportReadyCard(_ url: String) -> some View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: "EXPORT READY", icon: "checkmark.circle")
+            Text("Your archive is ready. Save it to Files, then import it on a new account to migrate your loads, settlements, contacts and documents.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             Button { Task { await downloadExportZip(urlString: url) } } label: {
                 HStack(spacing: 6) {
                     if downloadingZip {

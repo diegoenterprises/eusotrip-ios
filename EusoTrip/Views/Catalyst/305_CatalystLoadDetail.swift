@@ -635,7 +635,7 @@ private struct CatalystLoadDetail: View {
                     pillTag(text: "UN\(un) · PG II", tint: Brand.hazmat)
                 }
                 if let eq = l.equipmentType, !eq.isEmpty {
-                    pillTag(text: eq.uppercased(), tint: palette.textPrimary, neutral: true)
+                    pillTag(text: cleanLabel(eq).uppercased(), tint: palette.textPrimary, neutral: true)
                 }
                 // 2026-05-17 — Catalyst counter-party badge. Surfaces
                 // the shipper's mode pick + multi-vehicle count BEFORE
@@ -680,6 +680,25 @@ private struct CatalystLoadDetail: View {
                 )
         )
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    /// Strip machine tokens (bracketed enum keys, "key=value" pairs) that
+    /// occasionally bleed into server equipment/cargo display strings,
+    /// e.g. "Tanker · Hazmat [tanker_hazmat] · vertical=truck" → "Tanker · Hazmat".
+    /// Display-layer only — never apply to values used as lexicon keys or
+    /// sent to the server. Never returns empty for a non-empty input.
+    /// Mirrors 205_ShipperLoadDetail.cleanLabel(_:).
+    private func cleanLabel(_ s: String) -> String {
+        var out = s
+        out = out.replacingOccurrences(
+            of: #"\s*\[[^\]]*\]"#, with: "", options: .regularExpression)
+        out = out.replacingOccurrences(
+            of: #"\s*[·•]?\s*[A-Za-z_-]+=\S+"#, with: "", options: .regularExpression)
+        out = out.replacingOccurrences(
+            of: #"\s*·\s*·\s*"#, with: " · ", options: .regularExpression)
+        let trimmed = out.trimmingCharacters(in: CharacterSet(charactersIn: " ·•"))
+        if trimmed.isEmpty { return s.trimmingCharacters(in: .whitespaces) }
+        return trimmed
     }
 
     private func pillTag(text: String, tint: Color, neutral: Bool = false) -> some View {

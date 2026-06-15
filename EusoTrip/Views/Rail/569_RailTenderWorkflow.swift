@@ -14,6 +14,34 @@
 
 import SwiftUI
 
+/// Strip machine tokens (bracketed enum keys, key=value pairs) that
+/// occasionally bleed into server equipment/cargo display strings, e.g.
+/// the entire 204-machine block "Mode:… Equipment:… [rawValue]·key=value".
+/// Display-layer only — never apply to values used as lexicon keys or sent
+/// to the server. Mirrors cleanLabel in 205_ShipperLoadDetail.swift.
+/// Returns "—" for nil/empty; never returns empty for a non-empty input.
+fileprivate func cleanEquipLabel(_ s: String?) -> String {
+    guard let s = s, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "—" }
+    var out = s
+    // remove "[anything]" bracket tokens (with any leading whitespace)
+    out = out.replacingOccurrences(
+        of: #"\s*\[[^\]]*\]"#, with: "", options: .regularExpression)
+    // remove "key=value" tokens (vertical=truck, rate-unit=per_mile, …),
+    // dropping any leading separator/bullet too
+    out = out.replacingOccurrences(
+        of: #"\s*[·•]?\s*[A-Za-z_-]+=\S+"#, with: "", options: .regularExpression)
+    // collapse doubled separators left behind by the removals
+    out = out.replacingOccurrences(
+        of: #"\s*·\s*·\s*"#, with: " · ", options: .regularExpression)
+    let trimmed = out.trimmingCharacters(in: CharacterSet(charactersIn: " ·•\n\r\t"))
+    // Guard: never return empty for a non-empty input.
+    if trimmed.isEmpty {
+        let fallback = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        return fallback.isEmpty ? "—" : fallback
+    }
+    return trimmed
+}
+
 struct RailTenderWorkflowScreen: View {
     let theme: Theme.Palette
 
@@ -218,7 +246,7 @@ private struct RailTenderWorkflowBody: View {
                     Text("all-in tender · \(rateMileLabel)")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(palette.textSecondary)
-                    Text(activeTender?.note ?? activeTender?.equipmentType ?? "-")
+                    Text(cleanEquipLabel(activeTender?.note ?? activeTender?.equipmentType))
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 }

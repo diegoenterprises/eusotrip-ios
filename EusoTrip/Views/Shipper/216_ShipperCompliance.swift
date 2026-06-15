@@ -27,15 +27,35 @@
 //  trims to that value. Document vault + credit + insurance cards
 //  preserved verbatim as supplemental.
 //
-//  Backend gaps surfaced (logged in audit log, no fake data):
-//    EUSO-2118 — `compliance.getFleetCompliance` / per-catalyst
-//                compliance status not yet shipped. CATALYST
-//                COMPLIANCE section paints a single placeholder card
-//                ("Fleet-scope catalyst compliance pending") instead
-//                of synthesising rows. 2×2 grid tiles paint "-" for
-//                Insurance/FMCSA/Hazmat/Claims values.
-//    EUSO-2119 — TopBar "{N} CATALYSTS · {V} VIOLATIONS" counter
-//                paints "-" until fleet-scope endpoint lands.
+//  Live + backend gaps (2026-06-14 — `compliance.getFleetCompliance` IS
+//  shipped, compliance.ts:2317):
+//    LIVE     — the FLEET COMPLIANCE SCORE hero + the CARRIER SAFETY 2×2
+//                tile now bind to `compliance.getFleetCompliance`
+//                ({totalVehicles, compliant, expiringSoon, outOfCompliance,
+//                overallScore}, company-scoped). overallScore is the
+//                canonical fleet score for the ring; CARRIER SAFETY shows
+//                "{compliant}/{total}" + "{expiring} expiring". Fail-soft:
+//                nil → honest "—" / "Awaiting fleet data" while loading or
+//                when the fleet is empty (totalVehicles == 0).
+//    EUSO-2118 — the per-catalyst compliance ledger still isn't shipped,
+//                so the CATALYST COMPLIANCE section paints a single honest
+//                placeholder card instead of synthesising rows.
+//    EUSO-2120 — INSURANCE / HAZMAT / CLAIMS YTD have NO backing source on
+//                getFleetCompliance; they await their own per-domain
+//                rollup endpoints (insurance / hazmat-permit / claims) and
+//                paint a graceful em-dash — never a fabricated number.
+//    EUSO-2119 — TopBar fleet catalyst/violation counters not on the API
+//                surface yet, so the corner shows an honest "COMPANY
+//                SCOPE" tag rather than fake "— CATALYSTS · — VIOLATIONS".
+//
+//  Load-failure surface (2026-06-13, TestFlight feedback): the server
+//  proc is a `shipperProcedure` that NEVER throws on empty data (returns
+//  a valid score-0 Summary), so any failure here is a real session
+//  (UNAUTHORIZED→re-login) or role (FORBIDDEN→wrong profile) issue. The
+//  bespoke `failureBanner` splits those back out by failure kind and
+//  gives the correct remedy + CTA — no more one-size "Sign in again"
+//  shown to a wrong-role user. The "last sync" stamp is wired to the real
+//  load time (`store.lastSync`); the clause is omitted until first load.
 //
 //  Doctrine refs: §2 ME-tab nav (handled by ContentView); §3
 //  numbers-first copy ("98.2 / 100"); §4.3 single iridescent
@@ -133,9 +153,24 @@ private struct RequiredDoc: Hashable, Identifiable {
 
 @MainActor
 final class ShipperComplianceStore: ObservableObject {
+    /// Why the summary couldn't be shown — drives a bespoke, role-correct
+    /// failure surface instead of a one-size "Sign in again" string. The
+    /// server proc (`compliance.getShipperCompliance`, a `shipperProcedure`)
+    /// NEVER throws on empty data — it always returns a valid Summary (score
+    /// 0 worst case). So the only failures that reach here are an expired /
+    /// missing session (UNAUTHORIZED) or a role mismatch (FORBIDDEN). The
+    /// iOS client folds both into `.unauthenticated`, so we split them back
+    /// out by message text and present the right remedy.
+    enum FailureKind {
+        case auth        // session expired / missing → re-sign-in fixes it
+        case access      // authenticated but not a shipper → re-login won't help
+        case offline     // device offline / network unreachable
+        case service     // server-side error (500 / decode)
+    }
+
     enum LoadState {
         case loading
-        case error(String)
+        case failed(kind: FailureKind, detail: String)
         case loaded(
             summary: ShipperComplianceAPI.Summary,
             documents: [ShipperComplianceAPI.Document]
@@ -143,6 +178,14 @@ final class ShipperComplianceStore: ObservableObject {
     }
 
     @Published private(set) var state: LoadState = .loading
+    /// Wall-clock time the last successful summary landed — drives the
+    /// honest "last sync" stamp in the title block (no more raw em-dash).
+    @Published private(set) var lastSync: Date? = nil
+    /// Fleet-scope compliance rollup from `compliance.getFleetCompliance`
+    /// (compliance.ts:2317). Fail-soft: nil until the first successful
+    /// fetch (or on any error), so the score hero + CARRIER SAFETY tile
+    /// fall back to the honest empty state rather than a fabricated value.
+    @Published private(set) var fleet: ShipperComplianceAPI.FleetCompliance? = nil
 
     private let api: EusoTripAPI
 
@@ -157,16 +200,28 @@ final class ShipperComplianceStore: ObservableObject {
         // screen, and surface the actual error class to the user
         // rather than a catch-all "Couldn't reach compliance service."
         // toast that masked auth / decode / 500 distinctions.
-        async let summaryTask:   ShipperComplianceAPI.Summary?   = fetchSummarySafe()
-        async let documentsTask: [ShipperComplianceAPI.Document] = fetchDocumentsSafe()
+        async let summaryTask:   ShipperComplianceAPI.Summary?           = fetchSummarySafe()
+        async let documentsTask: [ShipperComplianceAPI.Document]         = fetchDocumentsSafe()
+        async let fleetTask:     ShipperComplianceAPI.FleetCompliance?   = fetchFleetSafe()
         let summary   = await summaryTask
         let documents = await documentsTask
+        // Fleet rollup is supplemental: a fleet-side failure must never
+        // blank the screen, so it lands independently and stays nil on error.
+        fleet = await fleetTask
 
         if let summary = summary {
+            lastSync = Date()
             state = .loaded(summary: summary, documents: documents)
         } else {
-            state = .error(lastSummaryError ?? "Couldn't reach compliance service.")
+            state = .failed(kind: lastFailureKind, detail: lastSummaryError ?? "Couldn't reach the compliance service.")
         }
+    }
+
+    /// Independent fleet-rollup fetch — never re-throws. Returns nil on
+    /// any failure so the score hero + CARRIER SAFETY tile fall back to
+    /// the honest empty state rather than a fabricated number.
+    private func fetchFleetSafe() async -> ShipperComplianceAPI.FleetCompliance? {
+        try? await api.shipperCompliance.getFleetCompliance()
     }
 
     /// Independent summary fetch — never re-throws. Stores a
@@ -176,20 +231,36 @@ final class ShipperComplianceStore: ObservableObject {
             let s = try await api.shipperCompliance.getShipperCompliance()
             lastSummaryError = nil
             return s
-        } catch let api as EusoTripAPIError {
-            switch api {
+        } catch let apiErr as EusoTripAPIError {
+            switch apiErr {
             case .unauthenticated:
-                lastSummaryError = "Sign in again to view compliance status."
+                lastFailureKind = .auth
+                lastSummaryError = "Your session ended. Sign in again to view compliance."
             case .trpcError(let msg):
-                lastSummaryError = "Compliance service: \(msg)"
+                // The role gate throws FORBIDDEN "Access denied. Required
+                // role(s): SHIPPER" — re-login won't fix that, so route it
+                // to the access surface with the correct remedy copy.
+                if msg.lowercased().contains("access denied") || msg.lowercased().contains("required role") {
+                    lastFailureKind = .access
+                } else {
+                    lastFailureKind = .service
+                }
+                lastSummaryError = msg
             case .httpStatus(let code, _):
-                lastSummaryError = "Compliance service returned \(code). Try again."
+                lastFailureKind = (code == 401) ? .auth : (code == 403 ? .access : .service)
+                lastSummaryError = "Compliance service returned \(code)."
             default:
-                lastSummaryError = api.errorDescription ?? "Couldn't reach compliance service."
+                lastFailureKind = .service
+                lastSummaryError = apiErr.errorDescription ?? "Couldn't reach the compliance service."
             }
             return nil
+        } catch let urlErr as URLError where urlErr.code == .notConnectedToInternet || urlErr.code == .networkConnectionLost {
+            lastFailureKind = .offline
+            lastSummaryError = "You're offline. Reconnect to refresh compliance."
+            return nil
         } catch {
-            lastSummaryError = "Compliance fetch failed: \(error.localizedDescription)"
+            lastFailureKind = .service
+            lastSummaryError = error.localizedDescription
             return nil
         }
     }
@@ -201,6 +272,7 @@ final class ShipperComplianceStore: ObservableObject {
     }
 
     private var lastSummaryError: String? = nil
+    private var lastFailureKind: FailureKind = .service
 }
 
 // MARK: - Screen root
@@ -256,12 +328,15 @@ struct ShipperCompliance: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
             Spacer()
-            // EUSO-2119 — fleet-scope catalyst count + violations not on API surface yet.
-            Text("- CATALYSTS · - VIOLATIONS")
+            // Fleet-scope catalyst count + violations aren't on the API
+            // surface yet (EUSO-2119). Rather than paint fabricated em-dash
+            // counters as if they were data, show an honest scope tag.
+            Text("COMPANY SCOPE")
                 .font(EType.micro)
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
-                .accessibilityLabel("Fleet violation count, data pending")
+                .lineLimit(1)
+                .accessibilityLabel("Compliance scope: your company")
         }
         .padding(.horizontal, Space.s5)
     }
@@ -274,12 +349,32 @@ struct ShipperCompliance: View {
                 .font(.system(size: 28, weight: .bold))
                 .tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("Eusorone Technologies · last sync - · Carrier safety")
+            Text(titleSubtitle)
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Space.s5)
+    }
+
+    /// "Eusorone Technologies · synced 2m ago · Carrier safety". The sync
+    /// clause is omitted entirely until the first successful load — no
+    /// "last sync —" em-dash masquerading as a timestamp.
+    private var titleSubtitle: String {
+        var parts = ["Eusorone Technologies"]
+        if let synced = store.lastSync {
+            parts.append("synced \(relativeSync(synced))")
+        }
+        parts.append("Carrier safety")
+        return parts.joined(separator: " · ")
+    }
+
+    private func relativeSync(_ date: Date) -> String {
+        let fmt = RelativeDateTimeFormatter()
+        fmt.unitsStyle = .short
+        return fmt.localizedString(for: date, relativeTo: Date())
     }
 
     // MARK: Content state machine
@@ -296,9 +391,10 @@ struct ShipperCompliance: View {
                 }
             }
             .padding(.horizontal, Space.s5)
-        case .error(let msg):
-            errorBanner(msg)
+        case .failed(let kind, let detail):
+            failureBanner(kind: kind, detail: detail)
                 .padding(.horizontal, Space.s5)
+                .padding(.top, Space.s3)
         case .loaded(let summary, let documents):
             VStack(alignment: .leading, spacing: 0) {
                 scoreHeroCard(summary)
@@ -329,25 +425,37 @@ struct ShipperCompliance: View {
     // MARK: Score hero card (gradient rim · 148pt · big numeral + ring gauge)
 
     private func scoreHeroCard(_ s: ShipperComplianceAPI.Summary) -> some View {
-        let scoreString = "\(s.score)"
+        // FLEET COMPLIANCE SCORE — `compliance.getFleetCompliance.overallScore`
+        // is the canonical fleet score for this hero (compliance.ts:2333). Bind
+        // to it when the fleet rollup is live; fall back to the shipper-self
+        // summary score only until the fleet rollup lands (nil = loading/error).
+        let heroScore = store.fleet?.overallScore ?? s.score
+        let scoreString = "\(heroScore)"
         let scopeBlurb: String = {
             if s.businessVerified { return "Carrier safety · business verified" }
             return "Carrier safety · scope: shipper company"
         }()
-        let letter = letterFromScore(s.score)
+        let letter = letterFromScore(heroScore)
+        // 2026-06-13 — rebuilt with natural VStack spacing. The prior layout
+        // forced a hard `.frame(height: 148)` and stacked the score + scope
+        // blurb with absolute `.padding(.top, 56)`, which pushed the scope
+        // line out the bottom of the card so it overlapped the 2×2 grid
+        // below (founder TestFlight feedback). Content-sized now: the card
+        // grows to fit and the grid sits cleanly beneath it.
         return ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: 20, style: .continuous)
                 .fill(LinearGradient.diagonal)
             RoundedRectangle(cornerRadius: 18.5, style: .continuous)
                 .fill(palette.bgCard)
                 .padding(1.5)
-            HStack(alignment: .top, spacing: 0) {
-                VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .center, spacing: Space.s4) {
+                VStack(alignment: .leading, spacing: Space.s2) {
                     Text("FLEET COMPLIANCE SCORE")
                         .font(EType.micro)
                         .tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
-                        .padding(.top, 28)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(scoreString)
                             .font(.system(size: 48, weight: .bold).monospacedDigit())
@@ -356,25 +464,22 @@ struct ShipperCompliance: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(palette.textPrimary)
                     }
-                    .padding(.top, 16)
                     Text(scopeBlurb)
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
-                        .padding(.top, 56)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                         .minimumScaleFactor(0.85)
                 }
-                .padding(.leading, 20)
-                Spacer(minLength: 0)
-                ringGauge(percent: CGFloat(min(100, max(0, s.score))) / 100, letter: letter)
+                Spacer(minLength: Space.s2)
+                ringGauge(percent: CGFloat(min(100, max(0, heroScore))) / 100, letter: letter)
                     .frame(width: 80, height: 80)
-                    .padding(.top, 32)
-                    .padding(.trailing, 20)
             }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 22)
         }
-        .frame(height: 148)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Compliance score \(s.score) out of 100, \(scopeBlurb), grade \(letter)")
+        .accessibilityLabel("Compliance score \(heroScore) out of 100, \(scopeBlurb), grade \(letter)")
     }
 
     private func letterFromScore(_ score: Int) -> String {
@@ -418,13 +523,38 @@ struct ShipperCompliance: View {
             ],
             spacing: Space.s3
         ) {
-            // EUSO-2118 — fleet-scope tile values pending. Label + glyph
-            // canon from §17.2 / §11.4; values paint "-".
-            tile(kind: .insurance, label: "INSURANCE",   big: "-", sub: "fleet rollup pending", tone: .success)
-            tile(kind: .fmcsa,     label: "CARRIER SAFETY", big: "-", sub: "fleet rollup pending", tone: .success)
-            tile(kind: .hazmat,    label: "HAZMAT",      big: "-", sub: "active hazmat lanes",   tone: .hazmat)
-            tile(kind: .claims,    label: "CLAIMS YTD",   big: "-", sub: "open · closed",          tone: .info)
+            // CARRIER SAFETY is LIVE off `compliance.getFleetCompliance`
+            // (compliance.ts:2317) — compliant/total vehicles + an expiring
+            // count, scoped to the company's fleet. It shows a real value
+            // whenever the rollup has landed with a non-empty fleet; the
+            // honest "—" / "Awaiting fleet data" empty state remains only
+            // while the rollup is still loading (fleet == nil) or the fleet
+            // is genuinely empty (totalVehicles == 0).
+            //
+            // INSURANCE / HAZMAT / CLAIMS YTD are GENUINELY empty: this
+            // endpoint carries no insurance, hazmat-permit, or claims rollup,
+            // so they await their own per-domain endpoints and paint the
+            // graceful em-dash — never a fabricated number. §17.2 / §11.4.
+            tile(kind: .insurance, label: "INSURANCE",      big: "—",                sub: "Awaiting insurance rollup", tone: .success)
+            tile(kind: .fmcsa,     label: "CARRIER SAFETY", big: carrierSafetyBig,   sub: carrierSafetySub,            tone: .success)
+            tile(kind: .hazmat,    label: "HAZMAT",         big: "—",                sub: "Awaiting hazmat rollup",    tone: .hazmat)
+            tile(kind: .claims,    label: "CLAIMS YTD",     big: "—",                sub: "Awaiting claims rollup",    tone: .info)
         }
+    }
+
+    /// CARRIER SAFETY hero value — "compliant/total" vehicles once the
+    /// fleet rollup is live with a non-empty fleet; honest "—" while the
+    /// rollup is still loading (nil) or the fleet is empty (total == 0).
+    private var carrierSafetyBig: String {
+        guard let f = store.fleet, f.totalVehicles > 0 else { return "—" }
+        return "\(f.compliant)/\(f.totalVehicles)"
+    }
+
+    /// CARRIER SAFETY sub-caption — live "{n} expiring" once the fleet
+    /// rollup lands; honest empty copy while loading / empty fleet.
+    private var carrierSafetySub: String {
+        guard let f = store.fleet, f.totalVehicles > 0 else { return "Awaiting fleet data" }
+        return "\(f.expiringSoon) expiring"
     }
 
     private enum TileKind { case insurance, fmcsa, hazmat, claims }
@@ -432,35 +562,37 @@ struct ShipperCompliance: View {
 
     @ViewBuilder
     private func tile(kind: TileKind, label: String, big: String, sub: String, tone: TileTone) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            tileGlyph(kind, tone: tone)
-                .frame(width: 28, height: 28)
-                .padding(.top, 14)
-                .padding(.leading, 14)
-            VStack(alignment: .leading, spacing: 0) {
+        // 2026-06-13 — rebuilt to kill the icon/label/value overlap from the
+        // founder's TestFlight shot. The prior tile pinned the glyph, label
+        // (top 18), value (top 56) and sub (top 4) with absolute paddings
+        // inside a hard 80pt frame, so the elements stacked on top of one
+        // another. Now: a clean glyph-+-label header row, then the value,
+        // then the sub — natural VStack spacing, content-sized minHeight.
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(alignment: .center, spacing: Space.s2) {
+                tileGlyph(kind, tone: tone)
+                    .frame(width: 22, height: 22)
                 Text(label)
                     .font(EType.micro)
                     .tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
-                    .padding(.top, 18)
-                Text(big)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .padding(.top, 56)
-                Text(sub)
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-                    .padding(.top, 4)
+                Spacer(minLength: 0)
             }
-            .padding(.leading, 8)
-            .padding(.trailing, 12)
-            Spacer(minLength: 0)
+            Text(big)
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(big == "—" ? palette.textTertiary : palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(sub)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
-        .frame(height: 80)
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .fill(palette.bgCard)
@@ -507,9 +639,10 @@ struct ShipperCompliance: View {
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
 
-            // EUSO-2118 — fleet-scope catalyst compliance ledger
-            // not yet shipped. Render an honest placeholder card
-            // instead of synthesising rows.
+            // EUSO-2118 — the per-catalyst compliance ledger (individual
+            // carrier rows + grades) isn't shipped; getFleetCompliance is an
+            // aggregate vehicle rollup, not a per-catalyst list. Render an
+            // honest placeholder card instead of synthesising rows.
             VStack(spacing: Space.s2) {
                 HStack(spacing: Space.s3) {
                     Image(systemName: "person.2.crop.square.stack")
@@ -653,10 +786,10 @@ struct ShipperCompliance: View {
                     .background(Capsule().fill((s.creditApproved ? Brand.success : Brand.warning).opacity(0.18)))
             }
             HStack(spacing: Space.s3) {
-                kpiCol(label: "RATING",     value: s.creditRating.isEmpty ? "-" : s.creditRating)
+                kpiCol(label: "RATING",     value: s.creditRating.isEmpty ? "—" : s.creditRating)
                 kpiCol(label: "LIMIT",      value: formatMoney(s.creditLimit))
                 kpiCol(label: "AVAILABLE",  value: formatMoney(s.availableCredit), accent: Brand.success)
-                kpiCol(label: "TERMS",      value: s.paymentTerms.isEmpty ? "-" : s.paymentTerms)
+                kpiCol(label: "TERMS",      value: s.paymentTerms.isEmpty ? "—" : s.paymentTerms)
             }
         }
         .padding(Space.s3)
@@ -703,7 +836,7 @@ struct ShipperCompliance: View {
             }
             HStack(spacing: Space.s3) {
                 kpiCol(label: "GENERAL LIABILITY", value: formatMoney(lib.coverage))
-                kpiCol(label: "EXPIRES", value: lib.expires.isEmpty ? "-" : lib.expires)
+                kpiCol(label: "EXPIRES", value: lib.expires.isEmpty ? "—" : lib.expires)
             }
         }
         .padding(Space.s3)
@@ -901,55 +1034,75 @@ struct ShipperCompliance: View {
         }
     }
 
-    // MARK: Error banner
+    // MARK: Failure banner (bespoke · kind-aware · role-correct remedy)
 
-    private func errorBanner(_ msg: String) -> some View {
-        VStack(spacing: Space.s2) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 28, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-            Text(friendlyComplianceTitle(msg))
+    /// Replaces the prior one-size "Couldn't load / Sign in again" surface
+    /// that shipped a raw SF Symbol and told a wrong-role user to re-login
+    /// (which never fixed it). Bespoke `WarningTriangleGlyph` matches the
+    /// rest of the screen; copy + CTA are correct for the actual failure.
+    private func failureBanner(kind: ShipperComplianceStore.FailureKind, detail: String) -> some View {
+        let (title, body, cta) = failureCopy(kind)
+        return VStack(spacing: Space.s3) {
+            WarningTriangleGlyph()
+                .stroke(LinearGradient.diagonal, style: StrokeStyle(lineWidth: 2.2, lineCap: .round, lineJoin: .round))
+                .frame(width: 34, height: 34)
+            Text(title)
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(msg)
+                .multilineTextAlignment(.center)
+            Text(body)
                 .font(EType.caption)
-                .foregroundStyle(palette.textTertiary)
+                .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, Space.s3)
             Button {
                 Task { await store.refresh() }
             } label: {
-                Text("Retry")
+                Text(cta)
                     .font(EType.bodyStrong)
                     .foregroundStyle(.white)
-                    .padding(.horizontal, Space.s4)
+                    .padding(.horizontal, Space.s5)
                     .padding(.vertical, Space.s2)
                     .background(Capsule().fill(LinearGradient.diagonal))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(cta)
         }
         .frame(maxWidth: .infinity)
-        .padding(Space.s4)
+        .padding(.vertical, Space.s5)
+        .padding(.horizontal, Space.s4)
         .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .accessibilityElement(children: .combine)
     }
 
-    private func friendlyComplianceTitle(_ raw: String) -> String {
-        let lower = raw.lowercased()
-        if lower.contains("auth") || lower.contains("unauthorized") || lower.contains("401") {
-            return "Sign in again to view compliance"
+    /// (title, body, retry-CTA) tuned to the failure kind. No raw enum keys
+    /// or server detail strings are surfaced — the detail is kept internal
+    /// for logs; users get production-ready, role-correct copy.
+    private func failureCopy(_ kind: ShipperComplianceStore.FailureKind) -> (String, String, String) {
+        switch kind {
+        case .auth:
+            return ("Your session ended",
+                    "Sign in again to view your compliance status.",
+                    "Sign in")
+        case .access:
+            return ("Compliance is shipper-only",
+                    "This view is available on your shipper account. Switch to your shipper profile to see compliance.",
+                    "Try again")
+        case .offline:
+            return ("You're offline",
+                    "Reconnect to load your latest compliance status.",
+                    "Retry")
+        case .service:
+            return ("Compliance is taking a moment",
+                    "We couldn't reach the compliance service just now. Give it another try.",
+                    "Retry")
         }
-        if lower.contains("404") || lower.contains("not found") {
-            return "No compliance records yet"
-        }
-        if lower.contains("offline") || lower.contains("network") {
-            return "Compliance service is offline"
-        }
-        return "Couldn't load compliance"
     }
 
     private func formatMoney(_ value: Double) -> String {
@@ -957,7 +1110,7 @@ struct ShipperCompliance: View {
         if n >= 1_000_000 { return String(format: "$%.1fM", Double(n) / 1_000_000) }
         if n >= 10_000    { return String(format: "$%.0fk", Double(n) / 1_000) }
         if n >= 1_000     { return String(format: "$%.1fk", Double(n) / 1_000) }
-        if n == 0          { return "-" }
+        if n == 0          { return "—" }   // graceful empty, not a dev hyphen
         return "$\(n)"
     }
 }

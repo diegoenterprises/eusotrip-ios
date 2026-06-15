@@ -311,20 +311,34 @@ struct ShipperHotZones: View {
     // MARK: KPI summary strip (3-cell · AVG PULSE / HOT METROS / COLD METROS)
 
     private func kpiSummaryStrip(_ f: HotZonesFeedResult) -> some View {
-        let avgPulse: String = {
-            let changes = f.zones.compactMap { $0.rateChangePercent }
-            guard !changes.isEmpty else { return "-" }
+        // AVG PULSE leads with the average rate-change when the feed
+        // carries it; otherwise it falls back to the average live demand
+        // multiplier (always present) so the cell is never a dead "-".
+        let changes = f.zones.compactMap { $0.rateChangePercent }
+        let havePulse = !changes.isEmpty
+        let avgPulse: String
+        let avgPulseTrail: String
+        if havePulse {
             let avg = changes.reduce(0, +) / Double(changes.count)
-            return String(format: "%+.1f%%", avg)
-        }()
+            avgPulse = String(format: "%+.1f%%", avg)
+            avgPulseTrail = "rate vs 30d"
+        } else if !f.zones.isEmpty {
+            let avgRatio = f.zones.map { $0.liveRatio }.reduce(0, +) / Double(f.zones.count)
+            avgPulse = String(format: "%.1f×", avgRatio)
+            avgPulseTrail = "load-to-truck"
+        } else {
+            // Genuinely no zones — honest neutral, not a stiff dash.
+            avgPulse = "Calm"
+            avgPulseTrail = "no demand spike"
+        }
         let hot = f.zones.count
         let cold = f.coldZones?.count ?? 0
 
         return HStack(spacing: 0) {
             kpiCell(label: "AVG PULSE",
                     value: avgPulse,
-                    valueStyle: .gradient,
-                    trail: "vs 30d",
+                    valueStyle: f.zones.isEmpty ? .neutral : .gradient,
+                    trail: avgPulseTrail,
                     trailColor: palette.textSecondary)
             kpiDivider
             kpiCell(label: "HOT METROS",
@@ -336,7 +350,7 @@ struct ShipperHotZones: View {
             kpiCell(label: "COLD METROS",
                     value: "\(cold)",
                     valueStyle: cold > 0 ? .success : .neutral,
-                    trail: cold > 0 ? "post here" : "-",
+                    trail: cold > 0 ? "post here" : "balanced",
                     trailColor: cold > 0 ? Brand.success : palette.textSecondary)
         }
         .padding(.horizontal, Space.s4)
@@ -542,9 +556,20 @@ struct ShipperHotZones: View {
             default:         return Brand.info
             }
         }()
-        let pulse = z.rateChangePercent.map { String(format: "%+.1f%%", $0) } ?? "-"
+        // FOUNDER FIX 2026-06-13 ("these don't move… connect to data…
+        // em dash. Hell no"): the tile headline was the OPTIONAL
+        // `rateChangePercent`, which the rateFeed envelope leaves nil on
+        // most zones — so it painted a dead, static "-". The real demand
+        // signal is the load-to-truck ratio (`liveRatio`), which is a
+        // non-optional Double on every zone and is exactly the demand
+        // multiplier the web /hot-zones surface leads with. Promote it to
+        // the headline as "N.N×" so the metric is always live backend
+        // data, never a placeholder. The rate-change becomes an honest
+        // secondary pulse badge that only appears when the backend ships
+        // it (no em-dash filler).
+        let pulse = z.rateChangePercent.map { String(format: "%+.1f%%", $0) }
         let pulseColor: Color = {
-            guard let p = z.rateChangePercent else { return palette.textPrimary }
+            guard let p = z.rateChangePercent else { return palette.textSecondary }
             return p >= 0 ? Brand.danger : Brand.success
         }()
         return Button {
@@ -559,16 +584,19 @@ struct ShipperHotZones: View {
 
     private func hotTileBody(_ z: HotZoneEntry,
                              demandColor: Color,
-                             pulse: String,
+                             pulse: String?,
                              pulseColor: Color) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // Headline = live load-to-truck demand multiplier. Always present
+        // on the feed (non-optional), so it is never a stiff placeholder.
+        let multiplier = String(format: "%.1f×", z.liveRatio)
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 6) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(z.zoneName)
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text(z.topEquipment.first?.replacingOccurrences(of: "_", with: " ").capitalized ?? "-")
+                    Text(z.topEquipment.first?.replacingOccurrences(of: "_", with: " ").capitalized ?? "All equipment")
                         .font(EType.micro).tracking(0.5)
                         .foregroundStyle(palette.textTertiary)
                         .lineLimit(1)
@@ -583,11 +611,22 @@ struct ShipperHotZones: View {
             .padding(.horizontal, Space.s3)
             .padding(.top, Space.s3)
 
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(pulse)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(multiplier)
                     .font(.system(size: 22, weight: .bold).monospacedDigit())
-                    .foregroundStyle(pulseColor)
-                Spacer()
+                    .foregroundStyle(demandColor)
+                Text("demand")
+                    .font(.system(size: 9, weight: .heavy))
+                    .tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                // Rate-change pulse — secondary, and only when the feed
+                // actually carries it. No em-dash when it's absent.
+                if let pulse {
+                    Text(pulse)
+                        .font(.system(size: 11, weight: .heavy).monospacedDigit())
+                        .foregroundStyle(pulseColor)
+                }
             }
             .padding(.horizontal, Space.s3)
             .padding(.top, Space.s2)
@@ -607,7 +646,10 @@ struct ShipperHotZones: View {
                 Text("·")
                     .font(.system(size: 9, weight: .heavy))
                     .foregroundStyle(palette.textTertiary)
-                Text("L:T \(String(format: "%.1f", z.liveRatio))")
+                // Live $/mi from the feed — non-optional, so real data
+                // every render (pairs with the demand multiplier above
+                // rather than repeating the L:T ratio).
+                Text(String(format: "$%.2f/mi", z.liveRate))
                     .font(.system(size: 9, weight: .heavy, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -624,7 +666,9 @@ struct ShipperHotZones: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            "\(z.zoneName), \(z.demandLevel), pulse \(pulse), \(z.liveLoads) loads, ratio \(String(format: "%.1f", z.liveRatio))"
+            "\(z.zoneName), \(z.demandLevel), demand \(String(format: "%.1f", z.liveRatio)) times"
+            + (pulse.map { ", rate \($0)" } ?? "")
+            + ", \(z.liveLoads) loads"
         )
     }
 
@@ -639,7 +683,9 @@ struct ShipperHotZones: View {
     }
 
     private func coldTile(_ c: ColdZoneEntry) -> some View {
-        let pulse = c.liveSurge.map { String(format: "%+.1f", ($0 - 1.0) * 100.0) + "%" } ?? "-"
+        // Surge delta vs balanced (1.0×) when the feed carries it; nil
+        // (badge hidden) rather than a dead "-" when it doesn't.
+        let pulse = c.liveSurge.map { String(format: "%+.1f", ($0 - 1.0) * 100.0) + "%" }
         return Button {
             let metro = c.name ?? c.state ?? ""
             let label = c.state.map { "\(metro), \($0)" } ?? metro
@@ -650,7 +696,7 @@ struct ShipperHotZones: View {
         .buttonStyle(.plain)
     }
 
-    private func coldTileBody(_ c: ColdZoneEntry, pulse: String) -> some View {
+    private func coldTileBody(_ c: ColdZoneEntry, pulse: String?) -> some View {
         HStack(spacing: Space.s3) {
             ZStack {
                 Circle().fill(Brand.info.opacity(0.18)).frame(width: 36, height: 36)
@@ -686,9 +732,11 @@ struct ShipperHotZones: View {
                 }
             }
             Spacer(minLength: 0)
-            Text(pulse)
-                .font(.system(size: 14, weight: .bold).monospacedDigit())
-                .foregroundStyle(Brand.success)
+            if let pulse {
+                Text(pulse)
+                    .font(.system(size: 14, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Brand.success)
+            }
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -1744,8 +1744,19 @@ struct LoadDetailSheet: View {
                 if let api = error as? EusoTripAPIError {
                     switch api {
                     case .unauthenticated:
+                        // Route the driver to re-auth through the SAME
+                        // app-observed channel every "Sign out" affordance
+                        // uses — `eusoLogoutRequested` is picked up at the
+                        // app root (EusoTripApp.swift) and calls
+                        // `session.signOut()`, which lands them on Sign In.
+                        // The prior `eusoSessionRefreshRequested` post had
+                        // NO observer anywhere, so an expired-session Book
+                        // Now showed this banner and then dead-ended (tester
+                        // "I need this load and I can't book"). Now the
+                        // banner is backed by a real path back to a booking-
+                        // capable session.
                         NotificationCenter.default.post(
-                            name: Notification.Name("eusoSessionRefreshRequested"),
+                            name: Notification.Name("eusoLogoutRequested"),
                             object: nil
                         )
                         return "Your session expired or this account isn't allowed to bid on this lane. Sign in again or switch to a carrier / dispatcher account."
