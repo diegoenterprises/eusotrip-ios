@@ -82,6 +82,18 @@ private final class RotationVM_661: ObservableObject {
     @Published var calls: [PortCall_661] = []
     /// Real advisory line only (no feed today ⇒ the ESang card stays hidden).
     @Published var esangLine: String? = nil
+    /// Channel marine conditions at the NEXT call's port (getPortConditions).
+    /// nil until the next call resolves to a catalog coordinate AND the marine
+    /// feed answers — enterprise-gated today ⇒ stays nil, advisory hidden.
+    @Published var portConditions: PortConditions661? = nil
+
+    /// The catalog coordinate of the NEXT call's port — the channel the
+    /// inbound transit is approaching, so the pilotage-hold advisory reads off
+    /// the port we're about to enter. nil ⇒ no conditions fetch (honest).
+    var nextCallCoord: HereLatLng? {
+        if let next = calls.first(where: { $0.state == .next })?.coord { return next }
+        return calls.first(where: { $0.state == .scheduled })?.coord
+    }
 
     // MARK: derived map state — port pins + call sequence (real catalog coords)
 
@@ -122,7 +134,7 @@ private final class RotationVM_661: ObservableObject {
 
     // MARK: load — resolve the REAL vessel, then vesselShipments.getVesselPortCalls
     func load(threadedImo: String?) async {
-        loading = true; loadError = nil
+        loading = true; loadError = nil; portConditions = nil
         do {
             // 1. Rotation identity: threaded IMO wins; otherwise the operator's real
             //    lead vessel from getVesselFleet. No vessel ⇒ honest empty state.
@@ -218,6 +230,21 @@ private final class RotationVM_661: ObservableObject {
                 nextEta = "-"
             }
             hasCalls = true
+
+            // Channel marine conditions at the NEXT call's port (getPortConditions)
+            // → the channel-fog PILOTAGE-HOLD advisory in the ESang · ROTATION
+            // slot. NON-FATAL + enterprise-gated: keyed off the next call's
+            // catalog coordinate (PortDirectory · NGA Pub 150 — the SAME lookup
+            // the schedule + map use); a feed error or `available:false` leaves
+            // `portConditions` nil so the advisory stays honestly hidden, and it
+            // never breaks the rotation board.
+            if let next = nextCallCoord {
+                portConditions = try? await EusoTripAPI.shared.query(
+                    "vesselShipments.getPortConditions",
+                    input: PortConditionsInput661(lat: next.lat, lng: next.lng))
+            } else {
+                portConditions = nil
+            }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
             hasCalls = false
@@ -248,6 +275,69 @@ private final class RotationVM_661: ObservableObject {
 private struct PortCallsInput661: Encodable {
     let imoNumber: String
     let days: Int
+}
+
+/// `getPortConditions` — channel marine conditions at the NEXT call's port
+/// (Wave-4 server #85). Drives the channel-fog PILOTAGE-HOLD advisory that
+/// fills 661's ESang · ROTATION slot. Every field decodes optionally: the
+/// marine feed is enterprise-gated today (`available:false` → null readings),
+/// so a partial/unavailable payload degrades to the honest hidden state, never
+/// a thrown decode. `craneWindLimitKt` / the pilotage `visibilityMinimumNm`
+/// are PUBLISHED operating standards the server measures against — each carries
+/// a `basis` citation so the advisory never reads as a fabricated verdict.
+private struct PortConditions661: Decodable {
+    let available: Bool?
+    let pilotageHold: Bool?
+    let berthingSafety: String?
+    let visibility: Double?
+    let visibilityMinimumNm: Double?
+    let waveSignificantHeight: Double?
+    let windGust: Double?
+    let forecastGustKt: Double?
+    let basis: String?
+    let pilotageBasis: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case available, pilotageHold, berthingSafety, visibility, visibilityMinimumNm
+        case waveSignificantHeight, windGust, forecastGustKt, basis, pilotageBasis
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        available             = try? c.decode(Bool.self, forKey: .available)
+        pilotageHold          = try? c.decode(Bool.self, forKey: .pilotageHold)
+        berthingSafety        = try? c.decode(String.self, forKey: .berthingSafety)
+        visibility            = try? c.decode(Double.self, forKey: .visibility)
+        visibilityMinimumNm   = try? c.decode(Double.self, forKey: .visibilityMinimumNm)
+        waveSignificantHeight = try? c.decode(Double.self, forKey: .waveSignificantHeight)
+        windGust              = try? c.decode(Double.self, forKey: .windGust)
+        forecastGustKt        = try? c.decode(Double.self, forKey: .forecastGustKt)
+        basis                 = try? c.decode(String.self, forKey: .basis)
+        pilotageBasis         = try? c.decode(String.self, forKey: .pilotageBasis)
+    }
+
+    /// The published pilotage visibility minimum (nm) — server value wins; the
+    /// fallback is the doctrine floor (≈0.5 nm) used only to decide the trip.
+    var pilotageMinimumNm: Double { visibilityMinimumNm ?? 0.5 }
+
+    /// Channel visibility is below the published pilot-boarding minimum.
+    var visibilityBelowMinimum: Bool {
+        guard let v = visibility else { return false }
+        return v < pilotageMinimumNm
+    }
+
+    /// Trip ONLY on a real signal — an explicit pilotage hold or measured
+    /// visibility below the minimum. nil/empty (enterprise-gated) never trips.
+    var pilotageHoldTripped: Bool {
+        if available == false { return false }
+        if pilotageHold == true { return true }
+        return visibilityBelowMinimum
+    }
+}
+
+private struct PortConditionsInput661: Encodable {
+    let lat: Double
+    let lng: Double
 }
 
 // MARK: - Wrapper (Shell + real Vessel Operator nav · SHIPMENTS inked)
@@ -300,7 +390,14 @@ private struct VesselPortCallsBody: View {
                     rotationHero
                     rotationMap
                     scheduleList
-                    if vm.esangLine != nil { esangCard }
+                    // ESANG · ROTATION slot — the channel-fog PILOTAGE-HOLD
+                    // advisory fills it when getPortConditions trips on the next
+                    // call's channel; otherwise a real ESang line; else hidden.
+                    if let c = vm.portConditions, c.pilotageHoldTripped {
+                        pilotageHoldCard(c)
+                    } else if vm.esangLine != nil {
+                        esangCard
+                    }
                     ctaRow
                 }
                 Color.clear.frame(height: 8)
@@ -500,6 +597,95 @@ private struct VesselPortCallsBody: View {
         case .departed:  return palette.textTertiary
         case .alongside: return Brand.success
         case .scheduled: return Brand.warning
+        }
+    }
+
+    // MARK: ESANG · ROTATION — channel-fog PILOTAGE-HOLD advisory
+    //
+    // Fills the ESang · ROTATION slot when getPortConditions reports a pilotage
+    // hold OR channel visibility below the published pilot-boarding minimum at
+    // the NEXT call's port. Bespoke: the WeatherIcons .eye / .fog glyph (ZERO
+    // SF Symbols on the weather element) + the ESang orb + the berthingSafety
+    // state pill. HONEST: only rendered when the advisory actually trips on real
+    // marine data — the empty / clear / enterprise-gated case leaves it hidden.
+    // The basis line cites the operating standard so it never reads as a
+    // fabricated EusoTrip verdict.
+    private func pilotageHoldCard(_ c: PortConditions661) -> some View {
+        let safety = berthingSafety661(c.berthingSafety)
+        return HStack(alignment: .top, spacing: 0) {
+            // The ESang orb identifies the advisory voice; the fog/eye glyph
+            // overlays the channel-visibility signal.
+            ZStack {
+                orbMini
+                if c.visibilityBelowMinimum {
+                    WeatherIcons.symbolView(for: 2000, size: 18)   // #i-fog
+                        .offset(x: 9, y: 9)
+                }
+            }
+            .padding(.trailing, 12)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("ESANG · PILOTAGE HOLD")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(safety.tint)
+                    Text(safety.badge)
+                        .font(.system(size: 8.5, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(safety.tint)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(safety.tint.opacity(0.16)))
+                }
+                Text(c.visibilityBelowMinimum
+                     ? "\(vm.nextPort) channel · fog below pilot-boarding minimum"
+                     : "\(vm.nextPort) channel · pilotage hold in effect")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(pilotageDetail661(c))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let basis = c.pilotageBasis ?? c.basis, !basis.isEmpty {
+                    HStack(spacing: 5) {
+                        WeatherIcons.utility(.alert, size: 10, tint: palette.textTertiary)
+                        Text(basis)
+                            .font(.system(size: 9.5))
+                            .foregroundStyle(palette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCardSoft))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(safety.tint.opacity(0.55), lineWidth: 1.2))
+    }
+
+    /// Mono detail — measured visibility vs. the published minimum + sea-state.
+    /// Honest em-dash collapse: only fields the feed returned are shown.
+    private func pilotageDetail661(_ c: PortConditions661) -> String {
+        var parts: [String] = []
+        if let v = c.visibility { parts.append(String(format: "vis %.1f nm", v)) }
+        if let m = c.visibilityMinimumNm { parts.append(String(format: "min %.1f nm", m)) }
+        if let w = c.waveSignificantHeight { parts.append(String(format: "swell %.1f m", w)) }
+        if let g = c.windGust ?? c.forecastGustKt { parts.append(String(format: "gust %.0f kt", g)) }
+        return parts.isEmpty ? "Awaiting channel telemetry" : parts.joined(separator: " · ")
+    }
+
+    private struct BerthingSafety661 { let badge: String; let tint: Color }
+
+    /// Map the server berthingSafety enum onto the schedule's tint grammar.
+    /// Unknown / nil ⇒ the warning treatment (a pilotage hold is never benign).
+    private func berthingSafety661(_ raw: String?) -> BerthingSafety661 {
+        switch (raw ?? "").lowercased() {
+        case "unsafe", "restricted", "closed":
+            return BerthingSafety661(badge: "BERTHING UNSAFE", tint: Brand.danger)
+        case "caution", "marginal":
+            return BerthingSafety661(badge: "BERTHING CAUTION", tint: Brand.warning)
+        case "safe", "open", "clear":
+            return BerthingSafety661(badge: "BERTHING SAFE", tint: Brand.warning)
+        default:
+            return BerthingSafety661(badge: "BERTHING HOLD", tint: Brand.warning)
         }
     }
 

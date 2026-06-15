@@ -87,6 +87,31 @@ private struct FSMAStatus820: Decodable {
     let cargoClass: String?
 }
 
+/// `reeferTemp.ambient` -> the AMBIENT (deck/port) weather at the reefer
+/// position, used here to surface a FORECAST-KEYED pre-cool recommendation:
+/// when the deck/port forecast is hot, pull the box deeper below setpoint
+/// BEFORE stuffing so the cold reserve survives the heat soak. All fields
+/// nullable so an enterprise-gated payload (available:false) decodes without
+/// throwing => the recommendation banner stays HIDDEN, never fabricated.
+private struct ReeferAmbient820: Decodable {
+    let available: Bool?
+    let ambientTempF: Double?
+    let weatherCode: Int?
+    let preCool: PreCool820?
+
+    struct PreCool820: Decodable {
+        let recommended: Bool?
+        init(from decoder: Decoder) throws {
+            if let b = try? decoder.singleValueContainer().decode(Bool.self) {
+                recommended = b; return
+            }
+            let c = try? decoder.container(keyedBy: CodingKeys.self)
+            recommended = try? c?.decodeIfPresent(Bool.self, forKey: .recommended)
+        }
+        private enum CodingKeys: String, CodingKey { case recommended }
+    }
+}
+
 // MARK: - Body
 
 private struct VesselReeferPreCoolBody820: View {
@@ -95,6 +120,7 @@ private struct VesselReeferPreCoolBody820: View {
 
     @State private var zones: [String: ReeferZoneReading820] = [:]
     @State private var fsma: FSMAStatus820? = nil
+    @State private var ambient: ReeferAmbient820? = nil   // forecast-keyed pre-cool · null/available:false today
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -119,6 +145,27 @@ private struct VesselReeferPreCoolBody820: View {
     private var liveLead: PreCoolHold820? { holdRows.first { $0.band != .verified && $0.tempC != nil } }
     private var canVerify: Bool { loadId > 0 && !zones.isEmpty && liveLead != nil }
 
+    // Forecast-keyed pre-cool recommendation -------------------------------
+    // HONEST: the banner only reads when the ambient feed is available with a
+    // real deck/port temperature — enterprise-gated (available:false / nil)
+    // hides it entirely. The "pull deeper" advice is keyed to the live
+    // forecast (ambient temp + the server's preCool flag), never invented.
+
+    private var ambientReady: Bool {
+        (ambient?.available ?? false) && ambient?.ambientTempF != nil
+    }
+
+    /// True when the live forecast warrants a deeper pre-cool — either the
+    /// server flagged it (`preCool.recommended`) or the deck/port forecast is
+    /// hot enough (≥ 90°F) that the box needs extra cold reserve before the
+    /// heat soak. Strictly derived from live ambient fields.
+    private var preCoolRecommended: Bool {
+        guard ambientReady else { return false }
+        if ambient?.preCool?.recommended == true { return true }
+        if let a = ambient?.ambientTempF, a >= 90 { return true }
+        return false
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -131,6 +178,7 @@ private struct VesselReeferPreCoolBody820: View {
                     errorState(err)
                 } else {
                     heroCard
+                    forecastPreCoolBanner
                     kpiStrip
                     gateSection
                     gateStrip
@@ -230,6 +278,52 @@ private struct VesselReeferPreCoolBody820: View {
         Text(text).font(.system(size: 10, weight: .heavy)).tracking(0.6).foregroundStyle(color)
             .padding(.horizontal, 10).padding(.vertical, 5)
             .background(Capsule().fill(color.opacity(0.16)))
+    }
+
+    // MARK: Forecast-keyed pre-cool recommendation (reeferTemp.ambient)
+
+    /// The forecast-keyed pre-cool advice: when the deck/port forecast is hot,
+    /// pull the box deeper below setpoint before stuffing so the cold reserve
+    /// survives the heat soak. Bespoke: the live sky condition is the
+    /// WeatherIcons glyph for the forecast weatherCode. HONEST: rendered ONLY
+    /// when the ambient feed is available with a real temperature — gated
+    /// (available:false / nil) collapses it. No fabricated forecast/advice.
+    @ViewBuilder
+    private var forecastPreCoolBanner: some View {
+        if ambientReady, let a = ambient, let aF = a.ambientTempF {
+            let code = a.weatherCode ?? 0
+            let warn = preCoolRecommended
+            HStack(alignment: .top, spacing: Space.s3) {
+                // Bespoke sky glyph for the live forecast weatherCode.
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.06)).frame(width: 48, height: 48)
+                    WeatherIcons.symbolView(for: code, size: 32)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(warn ? "PRE-COOL DEEPER" : "PRE-COOL NOMINAL")
+                            .font(.system(size: 10, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(warn ? Brand.warning : Brand.success)
+                        Text("· forecast \(String(format: "%.0f°F", aF)) at berth")
+                            .font(.system(size: 10, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    Text(warn
+                         ? "Hot deck/port forecast — pull each box below setpoint before stuffing so the cold reserve survives the heat soak."
+                         : "Deck/port forecast within band — standard setpoint pull-down is sufficient before stuffing.")
+                        .font(.system(size: 12)).foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+            .background(warn ? Brand.warning.opacity(0.07) : palette.bgCardSoft)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(warn ? Brand.warning.opacity(0.4) : palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        }
+        // available:false / nil => hidden; lights up when the key lands.
     }
 
     // MARK: KPI strip (VERIFIED · PENDING · FSMA)
@@ -397,6 +491,12 @@ private struct VesselReeferPreCoolBody820: View {
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
+        // Ambient (deck/port forecast) is a best-effort overlay — its feed is
+        // enterprise-gated and may return available:false or be unreachable.
+        // A failure NEVER degrades the gate: the recommendation just stays
+        // hidden until the key lands. loadId is optional on the wire.
+        self.ambient = try? await EusoTripAPI.shared.query(
+            "reeferTemp.ambient", input: LoadIn820(loadId: loadId > 0 ? loadId : nil))
         loading = false
     }
 

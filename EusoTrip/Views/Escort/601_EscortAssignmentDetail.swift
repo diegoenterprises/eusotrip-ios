@@ -113,6 +113,20 @@ struct EscortAssignmentDetail: View {
     /// (null-island gate) so a brand-new load with no geocode never draws.
     @State private var corridorCoords: EscortCorridorCoords? = nil
 
+    /// Route-wide wind-gust go/no-go envelope for the high-profile load —
+    /// decoded from the Wave-4 `escorts.getCorridor.windGate` block (the
+    /// route-wide status + the worst forecast gust measured against the
+    /// PUBLISHED escort caution/nogo wind thresholds). Each threshold
+    /// carries the server's operating-standard `basis`. Nil until the
+    /// corridor fetch lands; the gust feed is enterprise-gated
+    /// (`available:false`) today, so a present-but-ungated envelope reads
+    /// as the honest "awaiting wind feed" state and lights the moment the
+    /// key lands. We decode a screen-local projection of `escorts.getCorridor`
+    /// (mirrors the `EscortCorridorCoords` pattern) so the shared
+    /// `EscortAPI.EscortCorridor` model stays untouched — 601 only needs
+    /// the gate envelope, not the full corridor topology.
+    @State private var windGate: EscortWindGateEnvelope? = nil
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -231,6 +245,7 @@ struct EscortAssignmentDetail: View {
     @ViewBuilder
     private func detailCards(for detail: EscortAPI.AssignmentDetail) -> some View {
         metricsRow(detail)
+        windGateChip(detail)
         routePreviewCard(detail)
         scheduleCard(detail)
         corridorCard(detail)
@@ -407,6 +422,158 @@ struct EscortAssignmentDetail: View {
                 .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Wind-gust go/no-go chip (pre-roll gate)
+
+    /// Pre-roll wind-gust go/no-go for the high-profile load. Binds the
+    /// route-wide `windGate` envelope off `escorts.getCorridor`: the worst
+    /// forecast gust along the corridor measured against the PUBLISHED
+    /// escort caution/nogo wind thresholds (high-profile loads sail-area
+    /// out at wind, so this is the operator's first roll/hold call).
+    ///
+    /// Bespoke glyph: `WeatherIcons.utility(.wind)` (ZERO SF Symbols on the
+    /// weather element). Color reads the gate verdict — go (success) /
+    /// caution (warning) / nogo (danger).
+    ///
+    /// Honest states:
+    ///   • envelope nil (proc predates Wave 4 / corridor not fetched) → the
+    ///     whole chip is HIDDEN (no fabricated verdict).
+    ///   • envelope present but the gust feed is enterprise-gated
+    ///     (`available == false`, gust null) → a neutral "wind feed pending"
+    ///     chip that reads now and lights to a real verdict the moment the
+    ///     enterprise key lands. Never a fabricated gust/verdict.
+    @ViewBuilder
+    private func windGateChip(_ d: EscortAPI.AssignmentDetail) -> some View {
+        if let gate = windGate {
+            if gate.available, let verdict = gate.verdict {
+                resolvedWindChip(gate, verdict)
+            } else {
+                pendingWindChip(gate)
+            }
+        }
+        // gate == nil ⇒ render nothing (honest absence — no wind data).
+    }
+
+    /// The lit chip — a real go/caution/nogo verdict from a real worst-gust
+    /// reading against the published thresholds.
+    private func resolvedWindChip(
+        _ gate: EscortWindGateEnvelope,
+        _ verdict: EscortWindStatus
+    ) -> some View {
+        let tint = verdict.color
+        return HStack(spacing: 10) {
+            WeatherIcons.utility(.wind, size: 18, tint: tint)
+                .frame(width: 30, height: 30)
+                .background(tint.opacity(0.12))
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("WIND GATE")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                        .foregroundStyle(palette.textTertiary)
+                    Text(verdict.label)
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(tint)
+                        .clipShape(Capsule())
+                }
+                Text(windGateDetail(gate, verdict))
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let basis = gate.basis, !basis.isEmpty {
+                    Text(basis)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(tint.opacity(0.45), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// The honest pending chip — the gate envelope shipped, but the gust
+    /// forecast is enterprise-gated (`available:false`), so we cannot
+    /// resolve a verdict yet. Surfaces the published thresholds it WILL be
+    /// measured against so the operator knows the gate is armed and what it
+    /// keys off — it never fabricates a gust or a go/no-go.
+    private func pendingWindChip(_ gate: EscortWindGateEnvelope) -> some View {
+        HStack(spacing: 10) {
+            WeatherIcons.utility(.wind, size: 18, tint: palette.textTertiary)
+                .frame(width: 30, height: 30)
+                .background(palette.tintNeutral.opacity(0.5))
+                .clipShape(Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text("WIND GATE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.9)
+                    .foregroundStyle(palette.textTertiary)
+                Text("Wind-gust feed pending")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text(windThresholdsLine(gate)
+                     ?? "Lights a roll / hold call once the gust forecast is provisioned.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let basis = gate.basis, !basis.isEmpty {
+                    Text(basis)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.tintNeutral.opacity(0.4))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Detail line for the lit chip — the real worst gust + the threshold
+    /// it tripped (or cleared). Built only from present fields; absent
+    /// numbers fold out (never a fabricated gust).
+    private func windGateDetail(
+        _ gate: EscortWindGateEnvelope,
+        _ verdict: EscortWindStatus
+    ) -> String {
+        let gustPart: String? = gate.gustMph.map { "Gust \(Int($0.rounded())) mph" }
+        let thresholdPart: String?
+        switch verdict {
+        case .nogo:
+            thresholdPart = gate.nogoMph.map { "≥ no-go \(Int($0.rounded())) mph" }
+        case .caution:
+            thresholdPart = gate.cautionMph.map { "≥ caution \(Int($0.rounded())) mph" }
+        case .go:
+            thresholdPart = gate.cautionMph.map { "< caution \(Int($0.rounded())) mph" }
+        }
+        let parts = [gustPart, thresholdPart].compactMap { $0 }
+        if parts.isEmpty { return verdict.sentence }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The published-threshold line for the pending chip ("Caution N · No-go
+    /// M mph"). Nil when neither threshold is on the wire yet.
+    private func windThresholdsLine(_ gate: EscortWindGateEnvelope) -> String? {
+        var parts: [String] = []
+        if let c = gate.cautionMph { parts.append("Caution \(Int(c.rounded()))") }
+        if let n = gate.nogoMph { parts.append("No-go \(Int(n.rounded())) mph") }
+        guard !parts.isEmpty else { return nil }
+        return "Arms against " + parts.joined(separator: " · ")
     }
 
     /// Lane / origin / destination + routed miles when present.
@@ -833,6 +1000,7 @@ struct EscortAssignmentDetail: View {
             localConfirmed = (v.routeConfirmed == true)
         }
         await loadCorridorCoords()
+        await loadWindGate()
     }
 
     /// Decode the corridor endpoint coordinates off the SAME proc the
@@ -856,6 +1024,128 @@ struct EscortAssignmentDetail: View {
             // Honest seam: no coords → awaiting state, never a fake route.
             corridorCoords = nil
         }
+    }
+
+    /// Decode the route-wide `windGate` envelope off the SAME corridor proc
+    /// (`escorts.getCorridor`) the 602 map reads, via a screen-local
+    /// `windGate`-only Decodable. Keeps the shared `EscortAPI.EscortCorridor`
+    /// model untouched while still consuming the Wave-4 `windGate` block
+    /// (route-wide status + gust vs the published caution/nogo thresholds,
+    /// each carrying its operating-standard `basis`). On any failure (proc
+    /// predates Wave 4, transport error, or no envelope) the gate stays nil
+    /// and the chip is hidden — it never fabricates a gust or a verdict.
+    private func loadWindGate() async {
+        guard !assignmentId.isEmpty else { return }
+        do {
+            let env: EscortWindGateProjection = try await EusoTripAPI.shared.query(
+                "escorts.getCorridor",
+                input: EscortCorridorCoordsInput(id: assignmentId)
+            )
+            windGate = env.windGate
+        } catch {
+            windGate = nil
+        }
+    }
+}
+
+// MARK: - Wind-gate projection (pre-roll go/no-go chip)
+
+/// Go/caution/nogo verdict for the route-wide wind gate. Server enum
+/// `go|caution|nogo`; anything unmapped folds to `nil` (hidden — never a
+/// fabricated verdict).
+private enum EscortWindStatus: String, Decodable {
+    case go, caution, nogo
+
+    /// Doctrinal verdict color — go (success) / caution (warning) /
+    /// nogo (danger).
+    var color: Color {
+        switch self {
+        case .go:      return Brand.success
+        case .caution: return Brand.warning
+        case .nogo:    return Brand.danger
+        }
+    }
+
+    /// Pill label.
+    var label: String {
+        switch self {
+        case .go:      return "GO"
+        case .caution: return "CAUTION"
+        case .nogo:    return "NO-GO"
+        }
+    }
+
+    /// Plain-language fallback when no numeric gust/threshold is on the
+    /// wire (still a REAL server verdict, just no figures to show).
+    var sentence: String {
+        switch self {
+        case .go:      return "Corridor winds within escort limits."
+        case .caution: return "Gusting toward the escort caution band."
+        case .nogo:    return "Gusts exceed the escort no-go limit — hold."
+        }
+    }
+}
+
+/// Route-wide wind-gate envelope decoded from `escorts.getCorridor.windGate`.
+/// The high-profile load's sail area makes wind the first roll/hold call, so
+/// 601 pre-rolls this gate before the operator scrolls. The gust forecast is
+/// enterprise-gated (`available:false`) today — when so, `verdict`/`gustMph`
+/// arrive nil and the chip renders its honest pending state. The
+/// `cautionMph`/`nogoMph` thresholds are PUBLISHED operating standards
+/// (carried with a `basis`), so they can light the pending chip even before
+/// the gust feed is provisioned. All fields optional so a partial / older
+/// envelope still decodes.
+private struct EscortWindGateEnvelope: Decodable {
+    /// Whether the gust forecast feed is provisioned. Mirrors the server's
+    /// enterprise gate; `false`/absent ⇒ pending chip (no verdict).
+    let available: Bool
+    /// Route-wide verdict. Nil while enterprise-gated.
+    let verdict: EscortWindStatus?
+    /// Worst forecast gust along the corridor, mph. Nil while gated.
+    let gustMph: Double?
+    /// Published caution threshold (mph) the gate arms against.
+    let cautionMph: Double?
+    /// Published no-go threshold (mph) the gate arms against.
+    let nogoMph: Double?
+    /// Operating-standard basis label for the thresholds (e.g. the
+    /// published escort wind standard the server measures against).
+    let basis: String?
+
+    enum CodingKeys: String, CodingKey {
+        case available, status, verdict
+        case gust, gustMph, forecastGustKt
+        case cautionMph, nogoMph, basis
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // `available` may be absent on older envelopes — default false so a
+        // partial envelope reads as pending (honest), never as a verdict.
+        self.available = ((try? c.decodeIfPresent(Bool.self, forKey: .available)) ?? nil) ?? false
+        // Verdict can arrive under `verdict` or `status`.
+        let rawStatus = (try? c.decodeIfPresent(EscortWindStatus.self, forKey: .verdict)) ?? nil
+            ?? ((try? c.decodeIfPresent(EscortWindStatus.self, forKey: .status)) ?? nil)
+        self.verdict = rawStatus
+        // Gust can arrive as mph (`gust`/`gustMph`) — prefer an explicit mph
+        // field; never convert a knot field into a fake mph reading.
+        self.gustMph = ((try? c.decodeIfPresent(Double.self, forKey: .gustMph)) ?? nil)
+            ?? ((try? c.decodeIfPresent(Double.self, forKey: .gust)) ?? nil)
+        self.cautionMph = (try? c.decodeIfPresent(Double.self, forKey: .cautionMph)) ?? nil
+        self.nogoMph = (try? c.decodeIfPresent(Double.self, forKey: .nogoMph)) ?? nil
+        self.basis = (try? c.decodeIfPresent(String.self, forKey: .basis)) ?? nil
+    }
+}
+
+/// Top-level projection that decodes ONLY the `windGate` block off the
+/// `escorts.getCorridor` envelope, ignoring the full corridor topology.
+private struct EscortWindGateProjection: Decodable {
+    let windGate: EscortWindGateEnvelope?
+
+    enum CodingKeys: String, CodingKey { case windGate }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.windGate = (try? c.decodeIfPresent(EscortWindGateEnvelope.self, forKey: .windGate)) ?? nil
     }
 }
 

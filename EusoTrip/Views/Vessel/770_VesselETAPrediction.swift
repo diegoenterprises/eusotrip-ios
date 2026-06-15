@@ -27,10 +27,17 @@
 //      a null estimatedArrival reads "—/TBD/rough est." — never a fabricated arrival.
 //    "View timeline" -> containerTimeline.timeline (EXISTS :19) · "Refresh ETA" re-runs load().
 //
-//  STUB · named-gap: the P10/P90 band + per-driver deltaHours are derived client-side from the
-//  real `confidence`/`delayRisk` + the live AIS-fix counter today (no write performed). Surfaced
-//  proposal: etaPrediction also returns {p10, p90, drivers:[{factor, deltaHours, direction}]} so the
-//  cone + driver bars become server-authoritative (still read-only — no new mutation).
+//  SERVER-AUTHORITATIVE SEA-STATE DRIVER (Wave-4 server #85): vesselShipments.predictVesselEta
+//  is now bound as a SECOND, sea-state ETA driver alongside the AIS-based confidence cone. It
+//  returns {scheduledEta, etaDeltaMin|null, marineAvailable, drivers:[{kind:wave|gust|swell|wind,
+//  label, value, unit, impactMin}]}. The honest `etaDeltaMin` (signed minutes the marine model
+//  shifts the schedule) renders as a real "−42m earlier / +1h 10m later / on schedule" delta, and
+//  the real drivers render bespoke through WeatherIcons.wave / .wind — NO SF Symbols. When the
+//  enterprise marine feed is dark (marineAvailable=false today), the section reads "Scheduled —
+//  sea-state model not yet live" with NO fabricated delta/wave/gust; it lights the moment the key
+//  lands. The P10/P90 band + per-driver deltaHours on the AIS cone above remain a client estimate
+//  off the real `confidence`/`delayRisk` + AIS-fix counter (labelled as such) — only predictVesselEta
+//  is server-authoritative here. Both are read-only (no mutation).
 //
 //  In-module adaptations vs the canonical port (pitfalls fixed): OrbESang -> OrbeSang (the real
 //  symbol); CTAButton's action moved to the NAMED `action:` param (was a trailing closure); all
@@ -82,6 +89,50 @@ private struct ETAPrediction770: Decodable {
 }
 private struct ShipmentIdQuery770: Encodable { let shipmentId: Int }
 
+// MARK: - Data shape (mirror vesselShipments.predictVesselEta — Wave-4 server #85)
+
+/// The server-authoritative sea-state ETA driver. `etaDeltaMin` is the signed
+/// minute shift the marine model applies to `scheduledEta`; nil + marineAvailable=false
+/// is the honest enterprise-dark state (no fabricated delta). `drivers` carries the
+/// sig-wave / gust contributors that move the ETA, each bound to a bespoke glyph.
+private struct VesselEtaPrediction770: Decodable {
+    let scheduledEta: String?
+    let etaDeltaMin: Int?
+    let marineAvailable: Bool
+    let drivers: [SeaStateDriver770]?
+
+    // Tolerant decode: a partial / null-heavy payload reads honestly rather than
+    // throwing, so the section degrades to the scheduled state on a thin response.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        scheduledEta = try? c.decodeIfPresent(String.self, forKey: .scheduledEta)
+        etaDeltaMin = try? c.decodeIfPresent(Int.self, forKey: .etaDeltaMin)
+        marineAvailable = (try? c.decodeIfPresent(Bool.self, forKey: .marineAvailable)) ?? false
+        drivers = try? c.decodeIfPresent([SeaStateDriver770].self, forKey: .drivers)
+    }
+    enum CodingKeys: String, CodingKey { case scheduledEta, etaDeltaMin, marineAvailable, drivers }
+}
+
+/// One predictVesselEta driver — `kind` selects the bespoke WeatherIcons glyph
+/// (wave / swell → .wave · gust / wind → .wind). `impactMin` is the signed minute
+/// contribution to the ETA delta.
+private struct SeaStateDriver770: Decodable, Identifiable {
+    var id: String { "\(kind)-\(label)" }
+    let kind: String          // wave | swell | gust | wind
+    let label: String?
+    let value: Double?
+    let unit: String?
+    let impactMin: Int?
+
+    /// .wave for sea-state height drivers, .wind for gust/wind drivers — never SF.
+    var glyph: WeatherIcons.Utility {
+        switch kind.lowercased() {
+        case "gust", "wind": return .wind
+        default:             return .wave   // wave / swell / sig-wave
+        }
+    }
+}
+
 /// One forecast driver row (derived from the real prediction + liveStatus signals).
 private struct ForecastDriver770: Identifiable {
     let id = UUID()
@@ -99,6 +150,9 @@ private struct VesselETAPredictionBody770: View {
     let lane: String
     @Environment(\.palette) private var palette
     @State private var data: ETAPrediction770? = nil
+    // Server-authoritative sea-state ETA driver (vesselShipments.predictVesselEta).
+    // Loads in parallel with the AIS prediction; nil → section stays hidden until it resolves.
+    @State private var seaEta: VesselEtaPrediction770? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -121,7 +175,10 @@ private struct VesselETAPredictionBody770: View {
                     ActiveCard { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else if let d = data {
                     coneHero(d)
-                    driverChart(d)
+                    if let s = seaEta { seaStateETA(s) }
+                    // Fabricated forecast-driver decomposition removed — the real,
+                    // server-authoritative ETA drivers render in seaStateETA
+                    // (vesselShipments.predictVesselEta) above. No invented values.
                     esang(d)
                     HStack(spacing: 8) {
                         CTAButton(title: "View timeline", action: {})
@@ -202,6 +259,117 @@ private struct VesselETAPredictionBody770: View {
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 20).fill(palette.bgCard))
         .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(palette.borderFaint, lineWidth: 1))
+    }
+
+    // MARK: Sea-state ETA driver (server-authoritative · predictVesselEta)
+
+    /// The marine model's signed shift to the schedule + the sig-wave / gust drivers
+    /// that produced it. Honest: when `marineAvailable` is false (enterprise feed dark
+    /// today) it reads "Scheduled — sea-state model not yet live" with NO delta and NO
+    /// fabricated wave/gust; the live numbers + drivers light the moment the key lands.
+    private func seaStateETA(_ s: VesselEtaPrediction770) -> some View {
+        let live = s.marineAvailable
+        let delta = s.etaDeltaMin
+        // Only ever surface drivers while the marine feed is live — never while dark.
+        let drivers = live ? (s.drivers ?? []) : []
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("SEA-STATE ETA DRIVER · predictVesselEta")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                pill(live ? "MARINE LIVE" : "ENTERPRISE", live ? Brand.success : slate)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                // Bespoke marine glyph — .wave — never an SF Symbol.
+                WeatherIcons.utility(.wave, size: 22, tint: violet)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(deltaHeadline(live: live, delta: delta))
+                        .font(.system(size: 22, weight: .heavy)).monospacedDigit()
+                        .foregroundStyle(deltaColor(live: live, delta: delta))
+                    Text(live
+                         ? "vs scheduled \(arrivalTime(s.scheduledEta)) · marine model"
+                         : "Sea-state model not yet live · scheduled ETA holds")
+                        .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+            if live && !drivers.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(drivers) { seaDriverRow($0) }
+                }
+            } else if !live {
+                // Honest empty: the two driver slots that WILL bind, dimmed with em-dashes.
+                HStack(spacing: 8) {
+                    seaDriverPlaceholder(.wave, key: "SIG WAVE")
+                    seaDriverPlaceholder(.wind, key: "GUST")
+                }
+            }
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 20).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(palette.borderFaint, lineWidth: 1))
+    }
+
+    /// One live sea-state driver — bespoke glyph (.wave/.wind), real value + signed impact.
+    private func seaDriverRow(_ dr: SeaStateDriver770) -> some View {
+        HStack(spacing: 12) {
+            WeatherIcons.utility(dr.glyph, size: 17, tint: Color(red: 0.81, green: 0.88, blue: 1.0))
+                .frame(width: 34, height: 34)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(0.10)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(dr.label ?? dr.kind.capitalized)
+                    .font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
+                if let v = dr.value {
+                    Text("\(String(format: "%.1f", v)) \(dr.unit ?? "")".trimmingCharacters(in: .whitespaces))
+                        .font(.system(size: 10)).monospaced().foregroundStyle(palette.textTertiary)
+                }
+            }
+            Spacer()
+            if let m = dr.impactMin {
+                Text(signedMinutes(m))
+                    .font(.system(size: 12, weight: .bold)).monospacedDigit()
+                    .foregroundStyle(m <= 0 ? Brand.success : Brand.warning)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 12).fill(palette.textPrimary.opacity(0.03)))
+    }
+
+    /// Honest dim placeholder for a driver slot that lights when the marine feed resolves.
+    private func seaDriverPlaceholder(_ glyph: WeatherIcons.Utility, key: String) -> some View {
+        HStack(spacing: 8) {
+            WeatherIcons.utility(glyph, size: 15, tint: palette.textTertiary.opacity(0.6))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(key).font(.system(size: 9.5, weight: .heavy)).tracking(0.3)
+                    .foregroundStyle(palette.textTertiary)
+                Text("—").font(.system(size: 13, weight: .heavy)).monospacedDigit()
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 12).fill(palette.textPrimary.opacity(0.03)))
+    }
+
+    // Sea-state delta formatting — never invents a number when the feed is dark.
+    private func deltaHeadline(live: Bool, delta: Int?) -> String {
+        guard live, let m = delta else { return "Scheduled" }
+        if m == 0 { return "On schedule" }
+        let sign = m < 0 ? "−" : "+"          // earlier (−) / later (+)
+        let a = abs(m)
+        let body = a >= 60 ? "\(a / 60)h \(a % 60 == 0 ? "" : "\(a % 60)m")".trimmingCharacters(in: .whitespaces) : "\(a)m"
+        return "\(sign)\(body) \(m < 0 ? "earlier" : "later")"
+    }
+    private func deltaColor(live: Bool, delta: Int?) -> Color {
+        guard live, let m = delta else { return palette.textPrimary }
+        if m == 0 { return Brand.success }
+        return m < 0 ? Brand.success : Brand.warning
+    }
+    private func signedMinutes(_ m: Int) -> String {
+        if m == 0 { return "0m" }
+        return m < 0 ? "−\(abs(m))m" : "+\(m)m"
     }
 
     private func driverChart(_ d: ETAPrediction770) -> some View {
@@ -291,18 +459,10 @@ private struct VesselETAPredictionBody770: View {
         return (-2...2).map { off in f.string(from: Calendar.current.date(byAdding: .day, value: off, to: mid) ?? mid) }
     }
     private func forecastDrivers(_ d: ETAPrediction770) -> [ForecastDriver770] {
-        // Deterministic decomposition of the schedule delta into named maritime drivers.
-        // Magnitudes scale with confidence (tighter band when high). Bound to real signals:
-        // AIS speed + route weather (getRouteWeather) + berth queue (getBerthSchedule) + last event.
-        let scale = d.confidence == "high" ? 1.0 : (d.confidence == "medium" ? 1.4 : 1.8)
-        return [
-            ForecastDriver770(sys: "speedometer", title: "AIS speed 18.2 kn", detail: "+0.6 kn vs plan",
-                              deltaHours: Int((-7 * scale).rounded()), color: Brand.success),
-            ForecastDriver770(sys: "cloud.rain", title: "Weather window NE Pacific", detail: "getRouteWeather · 2.4m swell",
-                              deltaHours: Int((4 * scale).rounded()), color: Brand.info),
-            ForecastDriver770(sys: "ferry", title: "Berth queue · USLGB Pier 400", detail: "3 vessels ahead · getBerthSchedule",
-                              deltaHours: Int((6 * scale).rounded()), color: Brand.warning)
-        ]
+        // containerTimeline.etaPrediction returns no driver breakdown, so we never
+        // fabricate one. The real, server-authoritative ETA drivers come from
+        // vesselShipments.predictVesselEta (rendered in seaStateETA). Honest empty.
+        return []
     }
     private func confidencePct(_ c: String) -> Int { c == "high" ? 92 : (c == "medium" ? 74 : 48) }
     private func riskColor(_ r: String) -> Color {
@@ -357,6 +517,14 @@ private struct VesselETAPredictionBody770: View {
             self.data = try await EusoTripAPI.shared.query("containerTimeline.etaPrediction", input: ShipmentIdQuery770(shipmentId: shipmentId))
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        // Server-authoritative sea-state ETA driver (predictVesselEta). Independent of the
+        // AIS prediction above: a failure here leaves the cone intact and simply hides the
+        // sea-state section (never blocks the screen, never fabricates a delta).
+        do {
+            self.seaEta = try await EusoTripAPI.shared.query("vesselShipments.predictVesselEta", input: ShipmentIdQuery770(shipmentId: shipmentId))
+        } catch {
+            self.seaEta = nil
         }
         loading = false
     }

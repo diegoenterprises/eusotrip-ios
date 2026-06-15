@@ -127,6 +127,21 @@ private struct MarineForecast671: Decodable {
     let current: MarineForecastCurrent671?
 }
 
+/// Per-port berthing conditions from getPortWeather → DTNMarineWeatherService
+/// `PortConditions` (vesselShipments.ts :2119 / DTNMarineWeatherService.ts :101).
+/// `berthingSafety` is the published Safe/Caution/Restricted/Closed assessment
+/// the server measures against; `windGust` is the gust AT THE BERTH (kt). All
+/// optional so a partial/null enterprise-gated payload decodes without throwing.
+/// Server returns `null` until the DTN marine key is configured — honored as a
+/// hidden chip, never fabricated.
+private struct PortConditions671: Decodable {
+    let portName: String?
+    let windGust: Double?
+    let windSpeed: Double?
+    let berthingSafety: String?
+    let restrictions: [String]?
+}
+
 // MARK: - Body
 
 private struct VesselMarineWeatherRoutingBody: View {
@@ -143,6 +158,11 @@ private struct VesselMarineWeatherRoutingBody: View {
 
     @State private var route: RouteWeatherResponse671? = nil
     @State private var marine: MarineForecast671? = nil
+    // Per-port berthing conditions (getPortWeather, keyed by the port UN/LOCODE).
+    // nil until the enterprise marine key lands (server returns null today) — the
+    // berthing-safety chip stays hidden, never fabricated.
+    @State private var originBerth: PortConditions671? = nil
+    @State private var destinationBerth: PortConditions671? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
     /// True when the procedures resolve but the DTN marine-weather feed is not
@@ -158,6 +178,7 @@ private struct VesselMarineWeatherRoutingBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 mapHero
                 marineConditions
+                berthingSafetySection
                 voyageLegs
                 esangAdvisory
                 cta
@@ -349,6 +370,141 @@ private struct VesselMarineWeatherRoutingBody: View {
             RoundedRectangle(cornerRadius: 13, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
         )
+    }
+
+    // MARK: - Berthing safety (getPortWeather · per-port)
+
+    /// Per-port BERTHING-SAFETY chips. getRouteWeather/getMarineWeather are
+    /// route-centric (open-water sea-state); the Safe/Caution/Restricted/Closed
+    /// berthing assessment + gust AT THE BERTH live on getPortWeather keyed by
+    /// the port UN/LOCODE — so this screen calls it for the resolved origin AND
+    /// destination ports. Honest: the whole section is HIDDEN until at least one
+    /// port returns berthing data (enterprise marine key lands → server null →
+    /// nil today), never a fabricated verdict.
+    @ViewBuilder
+    private var berthingSafetySection: some View {
+        let chips = berthingChips
+        if !chips.isEmpty {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text("BERTHING SAFETY · getPortWeather(portId)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(Color(hex: 0x6E7681))
+                VStack(spacing: Space.s2) {
+                    ForEach(chips, id: \.code) { chip in
+                        berthingChip(chip)
+                    }
+                }
+            }
+        }
+    }
+
+    /// One resolved berthing row: which port (origin/dest) + its conditions.
+    private struct BerthChip671 {
+        let code: String
+        let role: String
+        let portLabel: String
+        let conditions: PortConditions671
+    }
+
+    /// Only ports that returned a real berthing verdict survive — that keeps the
+    /// section hidden when the feed is gated (null) and lights it the moment a
+    /// port reports.
+    private var berthingChips: [BerthChip671] {
+        var out: [BerthChip671] = []
+        if let c = originBerth, berthingHasValue(c) {
+            out.append(BerthChip671(code: originCode, role: "LOADING",
+                                    portLabel: c.portName ?? originLabel, conditions: c))
+        }
+        if let c = destinationBerth, berthingHasValue(c) {
+            out.append(BerthChip671(code: destCode, role: "DISCHARGE",
+                                    portLabel: c.portName ?? destinationLabel, conditions: c))
+        }
+        return out
+    }
+
+    /// A berthing payload counts only when it carries the verdict OR a gust —
+    /// so an all-empty enterprise-gated row never frames the chip.
+    private func berthingHasValue(_ c: PortConditions671) -> Bool {
+        (c.berthingSafety?.isEmpty == false) || c.windGust != nil || c.windSpeed != nil
+    }
+
+    /// Maps the published berthing verdict → palette accent + StatusPill kind.
+    /// Unknown/empty stays neutral (no fabricated severity).
+    private func berthingTone(_ verdict: String?) -> (Color, StatusPill.Kind) {
+        switch (verdict ?? "").lowercased() {
+        case "safe":       return (Brand.success, .success)
+        case "caution":    return (Brand.warning, .warning)
+        case "restricted": return (Brand.danger,  .danger)
+        case "closed":     return (Brand.danger,  .danger)
+        default:           return (Brand.neutral, .neutral)
+        }
+    }
+
+    /// Bespoke berthing chip — the WeatherIcons .pin port glyph leads, the
+    /// published Safe/Caution/Restricted/Closed verdict renders as a StatusPill,
+    /// and the gust at berth (.alert glyph) sits beneath. ZERO SF Symbols.
+    private func berthingChip(_ chip: BerthChip671) -> some View {
+        let (accent, pillKind) = berthingTone(chip.conditions.berthingSafety)
+        let verdict = (chip.conditions.berthingSafety?.isEmpty == false)
+            ? chip.conditions.berthingSafety! : nil
+        let gust = (chip.conditions.windGust ?? chip.conditions.windSpeed)
+            .map { String(format: "%.0f kt", $0) }
+        return HStack(alignment: .top, spacing: Space.s3) {
+            // Bespoke port pin in an accent-tinted chip (never an SF Symbol).
+            ZStack {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(accent.opacity(0.16))
+                    .frame(width: 38, height: 38)
+                WeatherIcons.utility(.pin, size: 18, tint: accent)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(chip.role)
+                        .font(.system(size: 8.5, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(palette.textSecondary)
+                    Text(chip.code)
+                        .font(.system(size: 8.5, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(Color(hex: 0x6E8198))
+                }
+                Text(chip.portLabel)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.8)
+                // Gust at berth — bespoke .alert glyph + monospaced value. Only
+                // rendered when the port reports a gust (honest, no "—" fill).
+                if let gust {
+                    HStack(spacing: 4) {
+                        WeatherIcons.utility(.alert, size: 11, tint: accent)
+                        Text("Gust at berth \(gust)")
+                            .font(.system(size: 11))
+                            .monospacedDigit()
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+                // Server restrictions, if the port lists any (e.g. "Pilotage hold").
+                if let r = chip.conditions.restrictions, !r.isEmpty {
+                    Text(r.joined(separator: " · "))
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 8)
+            // The published Safe/Caution/Restricted/Closed verdict.
+            if let verdict {
+                StatusPill(text: verdict, kind: pillKind)
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(Color(hex: 0x1C2128))
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(accent.opacity(0.30), lineWidth: 1))
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(chip.role) port \(chip.portLabel). Berthing \(chip.conditions.berthingSafety ?? "unknown").")
     }
 
     /// No-endpoints / no-IMO placeholder so the hero never frames on null island.
@@ -632,6 +788,7 @@ private struct VesselMarineWeatherRoutingBody: View {
 
     private func load() async {
         loading = true; loadError = nil; feedUnavailable = false; endpointsUnavailable = false
+        originBerth = nil; destinationBerth = nil
         struct DetailIn: Encodable { let id: Int }
         do {
             // 1. Resolve the booking's REAL origin/destination ports first.
@@ -659,9 +816,16 @@ private struct VesselMarineWeatherRoutingBody: View {
                 "vesselShipments.getRouteWeather", input: RouteIn(waypoints: waypoints))
             async let m: MarineForecast671? = EusoTripAPI.shared.query(
                 "vesselShipments.getMarineWeather", input: MarineIn(lat: mid.lat, lng: mid.lng))
-            let (routeRes, marineRes) = try await (r, m)
+            // Per-port berthing safety (getPortWeather) — keyed by the resolved
+            // port UN/LOCODE. Concurrent with the route/marine fetch; each stays
+            // nil until the enterprise marine key lands (server returns null today).
+            async let ob: PortConditions671? = portWeather(for: originPort?.unlocode)
+            async let db: PortConditions671? = portWeather(for: destinationPort?.unlocode)
+            let (routeRes, marineRes, originRes, destRes) = try await (r, m, ob, db)
             self.route = routeRes
             self.marine = marineRes
+            self.originBerth = originRes
+            self.destinationBerth = destRes
             // Both DTN procs return `null` when the feed isn't configured —
             // surface that as a real "feed unavailable" state, no fabrication.
             if routeRes == nil && marineRes == nil {
@@ -671,6 +835,17 @@ private struct VesselMarineWeatherRoutingBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+
+    /// getPortWeather for one port, keyed by its UN/LOCODE (the canonical port
+    /// id the DTN /ports/{id}/conditions endpoint expects). nil when the booking
+    /// port has no code OR the enterprise feed isn't configured (server null) —
+    /// the berthing chip simply stays hidden, never fabricated.
+    private func portWeather(for unlocode: String?) async -> PortConditions671? {
+        guard let code = unlocode, !code.isEmpty else { return nil }
+        struct PortIn: Encodable { let portId: String }
+        return try? await EusoTripAPI.shared.query(
+            "vesselShipments.getPortWeather", input: PortIn(portId: code))
     }
 
     private func applyDetail(_ d: VesselDetail671?) {

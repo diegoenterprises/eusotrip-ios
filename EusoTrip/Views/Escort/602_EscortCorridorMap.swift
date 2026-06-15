@@ -80,6 +80,19 @@ struct EscortCorridorMap: View {
     /// only located company fence rows draw rings. No row ⇒ no ring.
     @State private var groundFences: [TrackingGeofencesAPI.ResolvedFence] = []
 
+    /// Per-leg wind go/no-go + the route-wide wet/ice band, decoded from the
+    /// Wave-4 `escorts.getCorridor` weather block. The shared
+    /// `EscortAPI.EscortCorridor`/`CorridorLeg` models don't carry these
+    /// fields, so — mirroring 601's `windGate` projection — we decode a
+    /// screen-local weather-only projection of the SAME proc, keyed by leg
+    /// id. Empty until the corridor fetch lands; the gust/wet-ice feeds are
+    /// enterprise-gated (`available:false`) today, so an ungated leg renders
+    /// NO badge (honest hidden) and the wet/ice band reads its pending state
+    /// — never a fabricated gust, status, or band. Lights the moment the
+    /// enterprise key lands.
+    @State private var legWind: [String: EscortLegWind] = [:]
+    @State private var wetIceBand: EscortWetIceBand? = nil
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -213,6 +226,7 @@ struct EscortCorridorMap: View {
     private func corridorCards(for v: EscortAPI.EscortCorridor) -> some View {
         corridorMapCard(v)
         legsCard(v)
+        wetIceCard(v)
         milestonesCard(v)
         geofencesCard(v)
         escortVehiclesCard(v)
@@ -454,6 +468,11 @@ struct EscortCorridorMap: View {
                     .font(.system(size: 12, weight: .heavy)).tracking(0.4)
                     .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: 0)
+                // Per-leg wind go/no-go badge — bound to leg.wind { gust,
+                // status }. Hidden when this leg has no wind data / the gust
+                // feed isn't gated yet (honest absence — never a fabricated
+                // badge).
+                legWindBadge(for: leg)
                 if !leg.status.isEmpty {
                     statusPill(leg.status)
                 }
@@ -504,6 +523,120 @@ struct EscortCorridorMap: View {
                 .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+    }
+
+    // MARK: - Per-leg wind go/no-go badge
+
+    /// Compact wind go/no-go badge for one corridor leg, bound to that leg's
+    /// `wind { gust, status }`. Bespoke glyph: `WeatherIcons.utility(.wind)`
+    /// (ZERO SF Symbols on the weather element); color reads the leg's
+    /// go/caution/nogo verdict. The gust value is appended only when present.
+    ///
+    /// Honest: renders NOTHING when the leg has no resolved wind status —
+    /// either the corridor weather block hasn't shipped, or this leg's gust
+    /// forecast is still enterprise-gated. No row ⇒ no badge.
+    @ViewBuilder
+    private func legWindBadge(for leg: EscortAPI.CorridorLeg) -> some View {
+        if let w = legWind[leg.id], let verdict = w.verdict {
+            let tint = verdict.color
+            HStack(spacing: 3) {
+                WeatherIcons.utility(.wind, size: 11, tint: tint)
+                    .frame(width: 11, height: 11)
+                if let gust = w.gustMph {
+                    Text("\(Int(gust.rounded()))")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.2)
+                        .foregroundStyle(tint)
+                        .monospacedDigit()
+                }
+                Text(verdict.shortLabel)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(tint)
+            }
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .overlay(Capsule().strokeBorder(tint.opacity(0.45), lineWidth: 1))
+            .clipShape(Capsule())
+        }
+    }
+
+    // MARK: - Wet / ice corridor band
+
+    /// Route-wide wet / ice band for the corridor — the Wave-4 forecast-proxy
+    /// surface/precip band (enterprise flag). Bespoke glyph:
+    /// `WeatherIcons.utility(.precip)`. Bound to the real `wetIce` block off
+    /// `escorts.getCorridor`.
+    ///
+    /// Honest: the band is HIDDEN entirely when no block is on the wire. When
+    /// the block ships but the feed is enterprise-gated (`available:false`)
+    /// it reads a neutral "pending" band that lights to the real wet/ice
+    /// state the moment the key lands — never a fabricated condition.
+    @ViewBuilder
+    private func wetIceCard(_ v: EscortAPI.EscortCorridor) -> some View {
+        if let band = wetIceBand {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                // Bespoke eyebrow — the .precip glyph keeps the weather
+                // element SF-Symbol-free per doctrine (no thermometer.* etc).
+                HStack(spacing: 6) {
+                    WeatherIcons.utility(.precip, size: 10, tint: WeatherV3.drop)
+                        .frame(width: 10, height: 10)
+                    Text("WET / ICE BAND")
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                if band.available, let label = band.conditionLabel {
+                    let tint = band.tint
+                    HStack(spacing: 10) {
+                        WeatherIcons.utility(.precip, size: 16, tint: tint)
+                            .frame(width: 28, height: 28)
+                            .background(tint.opacity(0.12))
+                            .clipShape(Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(label)
+                                .font(EType.bodyStrong)
+                                .foregroundStyle(palette.textPrimary)
+                            if let sub = band.detailLine {
+                                Text(sub)
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        WeatherIcons.utility(.precip, size: 16, tint: palette.textTertiary)
+                            .frame(width: 28, height: 28)
+                            .background(palette.tintNeutral.opacity(0.5))
+                            .clipShape(Circle())
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Surface band pending")
+                                .font(EType.bodyStrong)
+                                .foregroundStyle(palette.textPrimary)
+                            Text("Lights the corridor wet / ice forecast once the surface feed is provisioned.")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
+                if let basis = band.basis, !basis.isEmpty {
+                    Text(basis)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        // wetIceBand == nil ⇒ render nothing (honest absence).
     }
 
     private func coverageBar(_ ratio: Double) -> some View {
@@ -895,6 +1028,155 @@ struct EscortCorridorMap: View {
         // Pilot-ground fences hang off the corridor's real endpoint
         // coords, so they resolve AFTER the envelope lands.
         await resolveGroundFences()
+        await loadCorridorWeather()
+    }
+
+    /// Decode the per-leg wind + route-wide wet/ice weather block off the
+    /// SAME `escorts.getCorridor` envelope, via a screen-local weather-only
+    /// Decodable. Keeps the shared `EscortAPI.EscortCorridor`/`CorridorLeg`
+    /// models untouched while consuming the Wave-4 block: each leg's `wind
+    /// { gust, status }` (keyed by leg id) + the corridor `wetIce` band. On
+    /// any failure (proc predates Wave 4 / transport error) the maps clear
+    /// and every weather element renders its honest absent / pending state —
+    /// never a fabricated gust, status, or band.
+    private func loadCorridorWeather() async {
+        guard !assignmentId.isEmpty else { return }
+        do {
+            let env: EscortCorridorWeatherProjection = try await EusoTripAPI.shared.query(
+                "escorts.getCorridor",
+                input: EscortCorridorWeatherInput(id: assignmentId)
+            )
+            var byLeg: [String: EscortLegWind] = [:]
+            for leg in env.legs ?? [] {
+                if let w = leg.wind { byLeg[leg.id] = w }
+            }
+            legWind = byLeg
+            wetIceBand = env.wetIce
+        } catch {
+            legWind = [:]
+            wetIceBand = nil
+        }
+    }
+}
+
+// MARK: - Corridor weather projection (per-leg wind + wet/ice band)
+
+/// Input echo for the weather-only decode of `escorts.getCorridor`.
+private struct EscortCorridorWeatherInput: Encodable { let id: String }
+
+/// Go/caution/nogo verdict for one corridor leg's wind. Server enum
+/// `go|caution|nogo`; unmapped folds to `nil` (no badge — never fabricated).
+private enum EscortLegWindStatus: String, Decodable {
+    case go, caution, nogo
+
+    var color: Color {
+        switch self {
+        case .go:      return Brand.success
+        case .caution: return Brand.warning
+        case .nogo:    return Brand.danger
+        }
+    }
+
+    /// Compact badge label.
+    var shortLabel: String {
+        switch self {
+        case .go:      return "GO"
+        case .caution: return "CTN"
+        case .nogo:    return "NO-GO"
+        }
+    }
+}
+
+/// Per-leg wind block off `escorts.getCorridor.legs[].wind`. Gust + verdict
+/// are nil while the gust feed is enterprise-gated; the thresholds
+/// (`cautionMph`/`nogoMph`) are published operating standards. All optional
+/// so a partial / older leg still decodes — a leg with no verdict draws no
+/// badge.
+private struct EscortLegWind: Decodable {
+    let verdict: EscortLegWindStatus?
+    let gustMph: Double?
+    let cautionMph: Double?
+    let nogoMph: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case status, verdict, gust, gustMph, cautionMph, nogoMph
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.verdict = ((try? c.decodeIfPresent(EscortLegWindStatus.self, forKey: .status)) ?? nil)
+            ?? ((try? c.decodeIfPresent(EscortLegWindStatus.self, forKey: .verdict)) ?? nil)
+        self.gustMph = ((try? c.decodeIfPresent(Double.self, forKey: .gust)) ?? nil)
+            ?? ((try? c.decodeIfPresent(Double.self, forKey: .gustMph)) ?? nil)
+        self.cautionMph = (try? c.decodeIfPresent(Double.self, forKey: .cautionMph)) ?? nil
+        self.nogoMph = (try? c.decodeIfPresent(Double.self, forKey: .nogoMph)) ?? nil
+    }
+}
+
+/// Leg projection — just `id` + the optional `wind` block, ignoring the rest
+/// of the leg (already decoded by the shared model).
+private struct EscortLegWeatherProjection: Decodable {
+    let id: String
+    let wind: EscortLegWind?
+}
+
+/// Route-wide wet / ice band off `escorts.getCorridor.wetIce`. Forecast-proxy
+/// surface/precip band behind an enterprise flag. `available:false`/absent
+/// fields ⇒ pending band (no fabricated condition).
+private struct EscortWetIceBand: Decodable {
+    let available: Bool
+    /// Server-projected condition label (e.g. "Wet · light rain", "Ice risk").
+    let conditionLabel: String?
+    /// Tomorrow.io weatherCode driving the band tint, when present.
+    let weatherCode: Int?
+    /// Optional sub-line (e.g. surface temp / precip detail).
+    let detailLine: String?
+    /// Operating-standard / source basis for the band.
+    let basis: String?
+
+    enum CodingKeys: String, CodingKey {
+        case available, conditionLabel, label, weatherCode, detailLine, detail, basis
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.available = ((try? c.decodeIfPresent(Bool.self, forKey: .available)) ?? nil) ?? false
+        self.conditionLabel = ((try? c.decodeIfPresent(String.self, forKey: .conditionLabel)) ?? nil)
+            ?? ((try? c.decodeIfPresent(String.self, forKey: .label)) ?? nil)
+        self.weatherCode = (try? c.decodeIfPresent(Int.self, forKey: .weatherCode)) ?? nil
+        self.detailLine = ((try? c.decodeIfPresent(String.self, forKey: .detailLine)) ?? nil)
+            ?? ((try? c.decodeIfPresent(String.self, forKey: .detail)) ?? nil)
+        self.basis = (try? c.decodeIfPresent(String.self, forKey: .basis)) ?? nil
+    }
+
+    /// Band tint — driven off the wet/ice weatherCode when present (icy
+    /// codes read danger, wet codes read the drop blue), else a neutral
+    /// drop. Never invents a severity the feed didn't report.
+    var tint: Color {
+        guard let code = weatherCode else { return WeatherV3.drop }
+        switch code {
+        case 6000, 6001, 6200, 6201, 7000, 7101, 7102, 5000, 5001, 5100, 5101:
+            return Brand.danger          // freezing / ice / snow → ice risk
+        case 4000, 4200, 4001, 4201, 8000:
+            return WeatherV3.drop        // rain family → wet
+        default:
+            return WeatherV3.drop
+        }
+    }
+}
+
+/// Top-level weather projection — decodes ONLY `legs[].wind` (keyed by id)
+/// + the `wetIce` band off the `escorts.getCorridor` envelope.
+private struct EscortCorridorWeatherProjection: Decodable {
+    let legs: [EscortLegWeatherProjection]?
+    let wetIce: EscortWetIceBand?
+
+    enum CodingKeys: String, CodingKey { case legs, wetIce }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.legs = (try? c.decodeIfPresent([EscortLegWeatherProjection].self, forKey: .legs)) ?? nil
+        self.wetIce = (try? c.decodeIfPresent(EscortWetIceBand.self, forKey: .wetIce)) ?? nil
     }
 }
 
