@@ -131,7 +131,7 @@ struct MeNewsView: View {
                     Image(systemName: "sunrise.fill")
                         .foregroundStyle(LinearGradient.diagonal)
                         .font(.system(size: 14, weight: .semibold))
-                    Text("Morning brief · \(roleDisplay)")
+                    Text("\(timeOfDayBriefLabel) · \(roleDisplay)")
                         .font(EType.micro).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -159,6 +159,19 @@ struct MeNewsView: View {
         case .complianceOfficer: return "Compliance"
         case .safetyManager:     return "Safety"
         case .admin:             return "Admin"
+        }
+    }
+
+    /// Time-of-day-aware label for the brief eyebrow. The brief content
+    /// itself (server `news.getMorningBrief` summary) is untouched — only
+    /// the human label tracks the local clock so an afternoon read never
+    /// still says "Morning brief" (founder evidence 2026-06-13). Uses the
+    /// device's local hour via Calendar so it follows the driver's zone.
+    private var timeOfDayBriefLabel: String {
+        switch Calendar.current.component(.hour, from: Date()) {
+        case 0..<12:  return "Morning brief"
+        case 12..<17: return "Afternoon brief"
+        default:      return "Evening brief"
         }
     }
 

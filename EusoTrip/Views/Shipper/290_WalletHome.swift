@@ -68,19 +68,33 @@ private struct WalletHomeBody: View {
     @State private var loadError: String? = nil
     @State private var showCashOut: Bool = false
 
+    private var isDark: Bool { palette.bgPage == Theme.dark.bgPage }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
+            VStack(alignment: .leading, spacing: Space.s5) {
                 header
-                if let b = balance { balanceHero(b); breakdownCard(b) }
-                else if loading { LifecycleCard { Text("Loading wallet…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
-                else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
+                if let b = balance {
+                    balanceHero(b)
+                    breakdownCard(b)
+                } else if loading {
+                    balanceHeroSkeleton
+                } else if let err = loadError {
+                    LifecycleCard(accentDanger: true) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(Brand.danger)
+                            Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                }
                 quickActions
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
         .task { await load() }
+        .refreshable { await load() }
         .sheet(isPresented: $showCashOut) {
             ShipperCashOutSheet(
                 available: balance?.available ?? 0,
@@ -90,95 +104,263 @@ private struct WalletHomeBody: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "wallet.pass.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · EUSOWALLET").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+        HStack(alignment: .top, spacing: Space.s3) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "wallet.pass.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                    Text("SHIPPER · EUSOWALLET").font(.system(size: 9, weight: .heavy)).tracking(1.2).foregroundStyle(LinearGradient.diagonal)
+                }
+                Text("EusoWallet").font(.system(size: 26, weight: .heavy)).foregroundStyle(palette.textPrimary)
             }
-            Text("EusoWallet").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Spacer(minLength: 0)
+            // Iridescent brand mark — the only ornament in the header,
+            // echoing the house gradient so the screen signs itself.
+            ZStack {
+                Circle().fill(LinearGradient.diagonal).frame(width: 36, height: 36)
+                Image(systemName: "wallet.pass.fill").font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
+            }
+            .shadow(color: Brand.magenta.opacity(isDark ? 0.45 : 0.22), radius: 10, x: 0, y: 4)
         }
     }
 
+    // MARK: Balance hero — volumetric brand-gradient card with depth
+    //
+    // Elevated from a flat one-color gradient fill to a layered surface:
+    // a diagonal brand base, a radial top-left glow, a soft sheen sweep,
+    // a top-rim highlight hairline, and an iridescent drop shadow so the
+    // card reads as a premium "money card" floating off the page. No data
+    // changed — `usd(available)` and the two real stat chips below are the
+    // exact same bindings, with the honest "$0"/em-dash behaviour intact.
     private func balanceHero(_ b: WalletBalance) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("AVAILABLE BALANCE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(.white.opacity(0.85))
-            Text(usd(b.available) == "-" ? "$0" : usd(b.available)).font(.system(size: 32, weight: .heavy)).foregroundStyle(.white).monospacedDigit()
+        let shape = RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("AVAILABLE BALANCE")
+                    .font(.system(size: 10, weight: .heavy)).tracking(1.4)
+                    .foregroundStyle(.white.opacity(0.82))
+                Spacer(minLength: 0)
+                if let cur = b.currency, !cur.isEmpty {
+                    Text(cur.uppercased())
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(.white.opacity(0.16)).clipShape(Capsule())
+                        .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 0.75))
+                }
+            }
+            Text(usd(b.available) == "-" ? "$0" : usd(b.available))
+                .font(.system(size: 44, weight: .heavy))
+                .foregroundStyle(.white)
+                .monospacedDigit()
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+                .shadow(color: .black.opacity(0.18), radius: 8, x: 0, y: 3)
             HStack(spacing: 8) {
-                Text("MTD VOLUME \(usd(b.monthVolume))").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 3).background(.white.opacity(0.18)).clipShape(Capsule())
+                heroStat(label: "MTD VOLUME", value: usd(b.monthVolume), icon: "chart.line.uptrend.xyaxis")
+                heroStat(label: "IN ESCROW", value: usd(b.escrow), icon: "lock.shield.fill")
+            }
+        }
+        .padding(Space.s5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            ZStack {
+                LinearGradient.diagonal
+                // Radial bloom in the top-left so the gradient has a light
+                // source instead of a flat two-stop wash.
+                RadialGradient(
+                    colors: [.white.opacity(0.28), .clear],
+                    center: .topLeading, startRadius: 0, endRadius: 320
+                )
+                // Soft diagonal sheen sweep across the lower-right.
+                LinearGradient(
+                    colors: [.clear, .white.opacity(0.10), .clear],
+                    startPoint: .top, endPoint: .bottomTrailing
+                )
+            }
+        }
+        .overlay(alignment: .top) {
+            // Top-rim highlight — the catch-light that gives the card glass.
+            shape.strokeBorder(
+                LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.04)],
+                               startPoint: .top, endPoint: .bottom),
+                lineWidth: 1
+            )
+        }
+        .clipShape(shape)
+        .shadow(color: Brand.blue.opacity(isDark ? 0.40 : 0.18), radius: 18, x: 0, y: 10)
+        .shadow(color: Brand.magenta.opacity(isDark ? 0.28 : 0.12), radius: 22, x: 0, y: 14)
+    }
+
+    private func heroStat(label: String, value: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 8, weight: .heavy)).foregroundStyle(.white.opacity(0.8))
+                Text(label).font(.system(size: 8, weight: .heavy)).tracking(0.9).foregroundStyle(.white.opacity(0.8))
+            }
+            Text(value == "-" ? "—" : value)
+                .font(.system(size: 14, weight: .heavy)).monospacedDigit()
+                .foregroundStyle(.white)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10).padding(.vertical, 9)
+        .background(.white.opacity(0.14))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(.white.opacity(0.18), lineWidth: 0.75))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private var balanceHeroSkeleton: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+        return VStack(alignment: .leading, spacing: 14) {
+            Text("AVAILABLE BALANCE").font(.system(size: 10, weight: .heavy)).tracking(1.4).foregroundStyle(.white.opacity(0.7))
+            Text("Loading…").font(.system(size: 32, weight: .heavy)).foregroundStyle(.white.opacity(0.6))
+        }
+        .padding(Space.s5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LinearGradient.diagonal.opacity(0.85))
+        .clipShape(shape)
+    }
+
+    // MARK: Breakdown — grouped, hairline-divided, tabular-numeric card
+    //
+    // Same six real rows as before, now organised into a "Balance
+    // composition" group (pending / reserved / escrow / total) and a
+    // "Lifetime activity" group (received / spent), separated by an
+    // iridescent hairline. Sits on the signature eusoCard surface (the
+    // brand gradient outline + glow) instead of a flat gray box, with
+    // monospaced figures right-aligned for a ledger read. Em-dash honesty
+    // preserved via `usd`.
+    private func breakdownCard(_ b: WalletBalance) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader(label: "BALANCE COMPOSITION", icon: "chart.pie.fill")
+            VStack(spacing: 10) {
+                ledgerRow(label: "Pending",  value: usd(b.pending),  emphasised: false)
+                ledgerRow(label: "Reserved", value: usd(b.reserved), emphasised: false)
+                ledgerRow(label: "Escrow",   value: usd(b.escrow),   emphasised: false)
+                ledgerRow(label: "Total",    value: usd(b.total),    emphasised: true)
+            }
+
+            iridescentDivider
+
+            sectionHeader(label: "LIFETIME ACTIVITY", icon: "clock.arrow.circlepath")
+            VStack(spacing: 10) {
+                // Surfaced only when real money has moved — `usd` renders an
+                // honest em-dash at zero/nil, so a brand-new wallet shows "—".
+                ledgerRow(label: "Received", value: usd(b.totalReceived), tint: Brand.success)
+                ledgerRow(label: "Spent",    value: usd(b.totalSpent),    tint: Brand.warning)
             }
         }
         .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient.diagonal)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .eusoCard(radius: Radius.lg, intensity: .feature)
     }
 
-    private func breakdownCard(_ b: WalletBalance) -> some View {
-        LifecycleCard {
-            LifecycleSection(label: "BREAKDOWN", icon: "list.bullet")
-            LifecycleRow(label: "Pending",   value: usd(b.pending))
-            LifecycleRow(label: "Reserved",  value: usd(b.reserved))
-            LifecycleRow(label: "Escrow",    value: usd(b.escrow))
-            LifecycleRow(label: "Total",     value: usd(b.total))
-            // Lifetime activity — surfaced only when real money has
-            // moved. `usd` renders an honest em-dash at zero/nil, so a
-            // brand-new wallet shows "-" rather than a fabricated value.
-            LifecycleRow(label: "Received",  value: usd(b.totalReceived))
-            LifecycleRow(label: "Spent",     value: usd(b.totalSpent))
+    private func sectionHeader(label: String, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+            Text(label).font(.system(size: 9, weight: .heavy)).tracking(1.2).foregroundStyle(LinearGradient.diagonal)
         }
     }
 
+    private func ledgerRow(label: String, value: String, emphasised: Bool = false, tint: Color? = nil) -> some View {
+        let shown = (value == "-") ? "—" : value
+        let valueColor: Color = (value == "-") ? palette.textTertiary : (tint ?? palette.textPrimary)
+        return HStack {
+            Text(label)
+                .font(emphasised ? EType.bodyStrong : EType.caption)
+                .foregroundStyle(emphasised ? palette.textPrimary : palette.textSecondary)
+            Spacer(minLength: Space.s2)
+            Text(shown)
+                .font(.system(size: emphasised ? 17 : 14, weight: emphasised ? .heavy : .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(valueColor)
+        }
+    }
+
+    private var iridescentDivider: some View {
+        Rectangle()
+            .fill(palette.iridescentHairline)
+            .frame(height: 1)
+            .opacity(0.6)
+    }
+
     private var quickActions: some View {
-        VStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.s3) {
             cashOutAction
-            link(icon: "arrow.right.circle", title: "EusoWallet detail", screenId: "291")
-            link(icon: "creditcard", title: "Settlements", screenId: "292")
-            link(icon: "creditcard.and.123", title: "Payment methods", screenId: "295")
-            link(icon: "doc.text", title: "Statements", screenId: "297")
-            link(icon: "leaf", title: "Sustainability", screenId: "298")
-            link(icon: "chart.bar", title: "Reports", screenId: "299")
+            sectionHeader(label: "MANAGE", icon: "square.grid.2x2.fill")
+                .padding(.leading, 2).padding(.top, 4)
+            VStack(spacing: 8) {
+                link(icon: "arrow.right.circle.fill", title: "EusoWallet detail", subtitle: "Activity, holds, and pass", screenId: "291")
+                link(icon: "creditcard.fill", title: "Settlements", subtitle: "Load payouts and invoices", screenId: "292")
+                link(icon: "creditcard.and.123", title: "Payment methods", subtitle: "Linked banks and cards", screenId: "295")
+                link(icon: "doc.text.fill", title: "Statements", subtitle: "Monthly account statements", screenId: "297")
+                link(icon: "leaf.fill", title: "Sustainability", subtitle: "Carbon spend and offsets", screenId: "298")
+                link(icon: "chart.bar.fill", title: "Reports", subtitle: "Spend and volume analytics", screenId: "299")
+            }
         }
     }
 
     // Primary money action — opens the inline withdraw flow
-    // (`wallet.requestPayout`). Gradient-accented card so the cash-out
-    // entry reads as the hero action in the quick-actions stack.
+    // (`wallet.requestPayout`). Full brand-gradient hero CTA so the
+    // cash-out reads as the headline action under the balance, not just
+    // another list row.
     private var cashOutAction: some View {
         Button {
             showCashOut = true
         } label: {
-            LifecycleCard(accentGradient: true) {
-                HStack {
-                    Image(systemName: "arrow.down.to.line.circle.fill").foregroundStyle(LinearGradient.diagonal)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Cash out").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                        Text("Withdraw to a linked bank or card").font(EType.micro).foregroundStyle(palette.textTertiary)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle().fill(.white.opacity(0.18))
+                    Image(systemName: "arrow.down.to.line.circle.fill")
+                        .font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cash out").font(.system(size: 17, weight: .heavy)).foregroundStyle(.white)
+                    Text("Withdraw to a linked bank or card").font(EType.micro).foregroundStyle(.white.opacity(0.85))
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(.white.opacity(0.9))
             }
+            .padding(.horizontal, Space.s4).padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(LinearGradient.diagonal)
+            .overlay(alignment: .top) {
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            .shadow(color: Brand.blue.opacity(isDark ? 0.35 : 0.16), radius: 14, x: 0, y: 8)
+            .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 
-    private func link(icon: String, title: String, screenId: String) -> some View {
+    private func link(icon: String, title: String, subtitle: String, screenId: String) -> some View {
         Button {
             NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": screenId])
         } label: {
-            LifecycleCard {
-                HStack {
-                    Image(systemName: icon).foregroundStyle(LinearGradient.diagonal)
-                    Text(title).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").foregroundStyle(palette.textTertiary)
+            HStack(spacing: 12) {
+                // Tinted gradient-outlined glyph tile — replaces the bare
+                // SF Symbol so each row gets a real touch target and the
+                // iridescent system language carries into the list.
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient(colors: [Brand.blue.opacity(0.16), Brand.magenta.opacity(0.16)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(LinearGradient.diagonal)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
+                .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Text(subtitle).font(EType.micro).foregroundStyle(palette.textTertiary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textTertiary)
             }
+            .padding(.horizontal, Space.s3).padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.md, intensity: .whisper)
+            .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 
@@ -342,46 +524,77 @@ private struct ShipperCashOutSheet: View {
         .task { await loadMethods() }
     }
 
+    private var isDark: Bool { palette.bgPage == Theme.dark.bgPage }
+
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.down.to.line.circle.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · CASH OUT").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+        HStack(alignment: .top, spacing: Space.s3) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.to.line.circle.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                    Text("SHIPPER · CASH OUT").font(.system(size: 9, weight: .heavy)).tracking(1.2).foregroundStyle(LinearGradient.diagonal)
+                }
+                Text("Withdraw").font(.system(size: 24, weight: .heavy)).foregroundStyle(palette.textPrimary)
             }
-            Text("Withdraw").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Spacer(minLength: 0)
+            ZStack {
+                Circle().fill(LinearGradient.diagonal).frame(width: 34, height: 34)
+                Image(systemName: "arrow.down.to.line").font(.system(size: 14, weight: .heavy)).foregroundStyle(.white)
+            }
+            .shadow(color: Brand.magenta.opacity(isDark ? 0.45 : 0.22), radius: 9, x: 0, y: 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var availableRow: some View {
-        LifecycleCard {
-            HStack {
-                Text("AVAILABLE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-                Spacer()
-                Text(usd(available) == "-" ? "$0" : usd(available)).font(EType.bodyStrong).monospacedDigit().foregroundStyle(palette.textPrimary)
+        HStack {
+            HStack(spacing: 6) {
+                Image(systemName: "wallet.pass.fill").font(.system(size: 10, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                Text("AVAILABLE").font(.system(size: 9, weight: .heavy)).tracking(1.2).foregroundStyle(palette.textTertiary)
             }
+            Spacer()
+            Text(usd(available) == "-" ? "$0" : usd(available))
+                .font(.system(size: 20, weight: .heavy, design: .rounded)).monospacedDigit()
+                .foregroundStyle(palette.textPrimary)
         }
+        .padding(.horizontal, Space.s4).padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .feature)
     }
 
     private var noMethodState: some View {
-        LifecycleCard {
-            VStack(alignment: .leading, spacing: Space.s2) {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(LinearGradient(colors: [Brand.blue.opacity(0.16), Brand.magenta.opacity(0.16)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                Image(systemName: "creditcard.trianglebadge.exclamationmark").font(.system(size: 18, weight: .semibold)).foregroundStyle(LinearGradient.diagonal)
+            }
+            .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 4) {
                 Text("Add a payout method first").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                 Text("Link a bank account or debit card on Payment methods to cash out your balance.").font(EType.caption).foregroundStyle(palette.textSecondary)
-                Button {
-                    dismiss()
-                    NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "295"])
-                } label: {
-                    Text("Go to Payment methods")
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(LinearGradient.diagonal)
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                }.buttonStyle(.plain)
             }
+            Button {
+                dismiss()
+                NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "295"])
+            } label: {
+                Text("Go to Payment methods")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(LinearGradient.diagonal)
+                    .overlay(alignment: .top) {
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }.buttonStyle(.plain).padding(.top, 2)
         }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .standard)
     }
 
     private var methodPicker: some View {
@@ -399,44 +612,53 @@ private struct ShipperCashOutSheet: View {
             selectedMethodId = m.id
             if !m.isInstant { instant = false }
         } label: {
-            LifecycleCard(accentGradient: selected) {
-                HStack(spacing: 10) {
-                    Image(systemName: m.kind == "bank" ? "building.columns.fill" : "creditcard.fill").foregroundStyle(LinearGradient.diagonal)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(m.institution).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                        Text("••\(m.mask)\(m.isInstant ? " · instant" : "")").font(EType.micro).foregroundStyle(palette.textSecondary)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(selected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient(colors: [Brand.blue.opacity(0.16), Brand.magenta.opacity(0.16)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    Image(systemName: m.kind == "bank" ? "building.columns.fill" : "creditcard.fill").font(.system(size: 15, weight: .semibold)).foregroundStyle(LinearGradient.diagonal)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(m.institution).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Text("••\(m.mask)\(m.isInstant ? " · instant" : "")").font(EType.micro).foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(selected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
             }
+            .padding(.horizontal, Space.s3).padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.md, intensity: selected ? .feature : .whisper)
+            .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 
     private var amountField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("AMOUNT").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
-            LifecycleCard {
-                HStack(spacing: 8) {
-                    Text("$").font(.system(size: 20, weight: .heavy)).foregroundStyle(palette.textSecondary)
-                    TextField("0.00", text: $amountText)
-                        .keyboardType(.decimalPad)
-                        .font(.system(size: 20, weight: .heavy))
-                        .monospacedDigit()
-                        .foregroundStyle(palette.textPrimary)
-                    Spacer()
-                    Button {
-                        amountText = maxAmountText
-                    } label: {
-                        Text("MAX").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(LinearGradient.diagonal)
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .overlay(Capsule().strokeBorder(palette.borderFaint, lineWidth: 1))
-                    }.buttonStyle(.plain)
-                }
+            Text("AMOUNT").font(.system(size: 9, weight: .heavy)).tracking(1.2).foregroundStyle(palette.textTertiary)
+            HStack(spacing: 8) {
+                Text("$").font(.system(size: 24, weight: .heavy, design: .rounded)).foregroundStyle(palette.textSecondary)
+                TextField("0.00", text: $amountText)
+                    .keyboardType(.decimalPad)
+                    .font(.system(size: 24, weight: .heavy, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(palette.textPrimary)
+                Spacer()
+                Button {
+                    amountText = maxAmountText
+                } label: {
+                    Text("MAX").font(.system(size: 10, weight: .heavy)).tracking(0.8).foregroundStyle(LinearGradient.diagonal)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .overlay(Capsule().strokeBorder(palette.iridescentHairline, lineWidth: 1))
+                }.buttonStyle(.plain)
             }
+            .padding(.horizontal, Space.s4).padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.lg, intensity: .feature)
         }
     }
 
@@ -457,14 +679,20 @@ private struct ShipperCashOutSheet: View {
             guard !disabled else { return }
             instant = isInstant
         } label: {
-            LifecycleCard(accentGradient: selected && !disabled) {
+            HStack(spacing: 8) {
+                Image(systemName: isInstant ? "bolt.fill" : "clock.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle((selected && !disabled) ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title).font(EType.bodyStrong).foregroundStyle(disabled ? palette.textTertiary : palette.textPrimary)
                     Text(subtitle).font(EType.micro).foregroundStyle(palette.textTertiary).lineLimit(2)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, Space.s3).padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.md, intensity: (selected && !disabled) ? .feature : .whisper)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -491,9 +719,14 @@ private struct ShipperCashOutSheet: View {
                 Text(submitTitle).font(EType.bodyStrong).foregroundStyle(.white)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, 14)
             .background(LinearGradient.diagonal)
+            .overlay(alignment: .top) {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            }
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .shadow(color: Brand.blue.opacity((isDark && canSubmit) ? 0.35 : 0), radius: 14, x: 0, y: 8)
             .opacity(canSubmit ? 1 : 0.5)
         }
         .buttonStyle(.plain)
@@ -507,36 +740,60 @@ private struct ShipperCashOutSheet: View {
     }
 
     private func successCard(_ ack: WalletExtrasAPI.RequestPayoutAck) -> some View {
-        LifecycleCard(accentGradient: true) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "checkmark.seal.fill").font(.system(size: 18, weight: .semibold)).foregroundStyle(LinearGradient.diagonal)
-                    Text("Cash-out requested").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                    Spacer()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(LinearGradient.diagonal).frame(width: 40, height: 40)
+                    Image(systemName: "checkmark.seal.fill").font(.system(size: 18, weight: .bold)).foregroundStyle(.white)
                 }
+                .shadow(color: Brand.magenta.opacity(isDark ? 0.45 : 0.2), radius: 9, x: 0, y: 4)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Cash-out requested").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Text("On its way to your linked method").font(EType.micro).foregroundStyle(palette.textTertiary)
+                }
+                Spacer(minLength: 0)
+            }
+            iridescentDivider
+            VStack(spacing: 10) {
                 ackRow(label: "Amount", value: moneyAck(ack.amount))
                 if ack.fee > 0 { ackRow(label: "Instant fee", value: moneyAck(ack.fee)) }
-                ackRow(label: "Net to you", value: moneyAck(ack.netAmount))
+                ackRow(label: "Net to you", value: moneyAck(ack.netAmount), emphasised: true)
                 ackRow(label: "Status", value: ack.status.capitalized)
                 if let eta = formatEta(ack.estimatedArrival) { ackRow(label: "Estimated arrival", value: eta) }
-                Button {
-                    onCompleted()
-                    dismiss()
-                } label: {
-                    Text("Done").font(EType.bodyStrong).foregroundStyle(.white)
-                        .frame(maxWidth: .infinity).padding(.vertical, 12)
-                        .background(LinearGradient.diagonal)
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                }.buttonStyle(.plain).padding(.top, 2)
             }
+            Button {
+                onCompleted()
+                dismiss()
+            } label: {
+                Text("Done").font(EType.bodyStrong).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).padding(.vertical, 13)
+                    .background(LinearGradient.diagonal)
+                    .overlay(alignment: .top) {
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }.buttonStyle(.plain).padding(.top, 2)
         }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .feature)
     }
 
-    private func ackRow(label: String, value: String) -> some View {
+    private var iridescentDivider: some View {
+        Rectangle().fill(palette.iridescentHairline).frame(height: 1).opacity(0.6)
+    }
+
+    private func ackRow(label: String, value: String, emphasised: Bool = false) -> some View {
         HStack {
-            Text(label).font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text(label)
+                .font(emphasised ? EType.bodyStrong : EType.caption)
+                .foregroundStyle(emphasised ? palette.textPrimary : palette.textSecondary)
             Spacer()
-            Text(value).font(EType.bodyStrong).monospacedDigit().foregroundStyle(palette.textPrimary)
+            Text(value)
+                .font(.system(size: emphasised ? 16 : 14, weight: emphasised ? .heavy : .semibold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(palette.textPrimary)
         }
     }
 

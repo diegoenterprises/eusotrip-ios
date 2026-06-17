@@ -313,13 +313,28 @@ private struct ConnectedAppsBody: View {
                 credField(provider: p.id, field: field)
             }
 
-            if let docs = p.docsUrl, let url = URL(string: docs) {
+            // Provider reference. The registry/catalog records deep doc
+            // paths (…/api, …/developers, …/api-portal) that frequently 404
+            // because providers don't host docs at those exact constructed
+            // URLs. Rather than ship a link we can't verify resolves, we open
+            // ONLY the provider's root domain (scheme + host) — which reliably
+            // loads — and label it honestly as the provider's site. When no
+            // host can be parsed, we drop the link entirely and show an inline
+            // note so the user is never sent to a 404.
+            if let host = providerHost(from: p.docsUrl), let url = URL(string: "https://\(host)") {
                 Link(destination: url) {
                     HStack(spacing: 4) {
-                        Image(systemName: "doc.text").font(.system(size: 9, weight: .semibold))
-                        Text("Provider API docs").font(.system(size: 10, weight: .semibold))
+                        Image(systemName: "safari").font(.system(size: 9, weight: .semibold))
+                        Text("Open \(host)").font(.system(size: 10, weight: .semibold))
                     }.foregroundStyle(Brand.blue)
                 }
+                Text("Credentials are issued from your \(cleanLabel(p.displayName)) account — generate an API key there, then paste it above.")
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Get your API credentials from your \(cleanLabel(p.displayName)) account or admin, then paste them above.")
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack {
@@ -726,6 +741,18 @@ private struct ConnectedAppsBody: View {
         let trimmed = out.trimmingCharacters(in: CharacterSet(charactersIn: " ·•"))
         if trimmed.isEmpty { return s.trimmingCharacters(in: .whitespaces) }
         return trimmed
+    }
+
+    /// Reduce a recorded doc URL to its bare host (no scheme, no path) so we
+    /// only ever link to the provider's root domain — which resolves — instead
+    /// of a constructed deep path (…/api, …/developers) that 404s. Returns nil
+    /// when the value has no parseable host (so the caller shows an inline note
+    /// instead of a dead link). Display-layer only; never invents a host.
+    private func providerHost(from raw: String?) -> String? {
+        guard let raw, !raw.isEmpty else { return nil }
+        guard let comps = URLComponents(string: raw),
+              let host = comps.host, !host.isEmpty else { return nil }
+        return host.lowercased()
     }
 
     /// Turn a raw machine token ("FUEL_BUYER", "bulk-liquid") into a readable label.

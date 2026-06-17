@@ -696,7 +696,7 @@ struct ShipperApplePayWallet: View {
                     Text("Manage Apple Pay integration")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
-                    Text("Per-card · per-pass settings · 211 Settings")
+                    Text("Per-card · per-pass settings · Payment Methods")
                         .font(.system(size: 11))
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1)
@@ -720,7 +720,7 @@ struct ShipperApplePayWallet: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Manage Apple Pay integration. Per-card and per-pass settings live in 211 Settings.")
+        .accessibilityLabel("Manage Apple Pay integration. Per-card and per-pass settings live in Payment Methods.")
     }
 
     private var footer: some View {
@@ -923,16 +923,17 @@ struct ShipperApplePayWallet: View {
         }
     }
 
-    /// Tapping the footer routes natively to 211 Settings via the
-    /// shipper nav-swap notification. No more web-Safari hop — the
-    /// per-card / per-pass controls live in the native settings
-    /// surface that's already on screen 211.
+    /// Tapping the footer routes to the in-app Payment Methods screen
+    /// (295) where Apple Pay cards/passes are actually managed — NOT the
+    /// generic Settings screen (211), which dropped the user into an
+    /// "abyss" with no focused Apple Pay surface (founder report). 295 is
+    /// the real destination for per-card / per-pass management.
     private func tapManageApplePay() {
         NotificationCenter.default.post(
             name: .eusoShipperNavSwap,
             object: nil,
             userInfo: [
-                "screenId": "211",
+                "screenId": "295",
                 "source": "239_ShipperApplePayWallet",
                 "deeplinkSection": "wallet",
             ]

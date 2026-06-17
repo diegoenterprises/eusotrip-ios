@@ -825,9 +825,26 @@ struct DriverMeSurface: View {
     @EnvironmentObject var session: EusoTripSession
     @State private var screenStack: [String] = ["067hub"]
 
+    /// Captured from `.eusoDriverMeNavSwap` userInfo when a leaf needs a
+    /// real entity id (e.g. 107 My Bids → 109 Bid Detail carries the
+    /// load). When non-nil and the current screen is 109 we construct
+    /// `MeBidDetailScreen(theme:loadId:)` with the live id instead of the
+    /// registry's `loadId: 0` sentinel — mirrors `ShipperSurface.activeLoadId`.
+    /// Without this the bid-detail chain always rendered empty.
+    @State private var activeLoadId: Int? = nil
+
     private var currentScreenId: String { screenStack.last ?? "067hub" }
 
     private var current: ProductionScreen {
+        // 109 Bid Detail mounts with the load captured from the row tap
+        // so the counter chain is the real one, not the `loadId: 0` seed.
+        if currentScreenId == "109", let loadId = activeLoadId {
+            return ProductionScreen(id: "109",
+                                    title: "Me · Bid Detail",
+                                    role: .driver) { p in
+                AnyView(MeBidDetailScreen(theme: p, loadId: loadId))
+            }
+        }
         return ScreenRegistry.forRole(.driver).first { $0.id == currentScreenId }
             ?? ScreenRegistry.forRole(.driver).first { $0.id == "067hub" }
             ?? ProductionScreen(id: "067hub",
@@ -913,6 +930,16 @@ struct DriverMeSurface: View {
                     screenStack = ["067hub"]
                     return
                 }
+                // Capture the load id a detail leaf needs (109 Bid
+                // Detail). Nil it on any other swap so a stale load
+                // never leaks into a later bare open of the same screen.
+                if id == "109",
+                   let raw = note.userInfo?["loadId"] as? String,
+                   let lid = Int(raw) {
+                    activeLoadId = lid
+                } else if id != "109" {
+                    activeLoadId = nil
+                }
                 withAnimation(.easeInOut(duration: 0.22)) {
                     if id == "067hub" {
                         screenStack = ["067hub"]
@@ -925,7 +952,11 @@ struct DriverMeSurface: View {
                 for: .eusoDriverMeNavBack)) { _ in
                 withAnimation(.easeInOut(duration: 0.22)) {
                     if screenStack.count > 1 {
-                        screenStack.removeLast()
+                        let popped = screenStack.removeLast()
+                        // Drop the captured load when leaving Bid Detail
+                        // so a re-open without a fresh id can't show a
+                        // stale chain.
+                        if popped == "109" { activeLoadId = nil }
                     }
                 }
             }
