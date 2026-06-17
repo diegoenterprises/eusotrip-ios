@@ -173,7 +173,9 @@ enum MeHubCatalog {
         MeSection(title: "VISIBILITY", icon: "eye", cells: [
             MeCell(icon: "rectangle.3.group",    label: "Control Tower",       action: .screen("212")),
             MeCell(icon: "location.viewfinder",  label: "Live tracking",       action: .screen("222")),
-            MeCell(icon: "flame",                label: "Hot zones",           action: .screen("225")),
+            // Hot Zones + Market Intelligence are now ONE consolidated,
+            // tabbed screen (MarketHubScreen) — a single menu entry opens
+            // it; the Hot Zones tab is one tap away inside.
             MeCell(icon: "chart.line.uptrend.xyaxis", label: "Market intelligence", action: .screen("330")),
             MeCell(icon: "ferry",                label: "Port intelligence",   action: .screen("425")),
             MeCell(icon: "binoculars",           label: "Competitive intel",   action: .screen("429")),
