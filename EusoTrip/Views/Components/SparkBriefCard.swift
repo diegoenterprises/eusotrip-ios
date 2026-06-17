@@ -229,10 +229,19 @@ final class SparkBriefStore: ObservableObject {
         do {
             let resp: SparkGetBriefResponse = try await EusoTripAPI.shared
                 .spark.getLatest(role: role)
+            // The card's `.task` is cancelled the instant the home view is
+            // torn down (e.g. navigating to the profile page). If this fetch
+            // resolves DURING that transition, writing @Published state into
+            // a view that's mid-teardown can trip SwiftUI's update graph.
+            // Bail on cancellation so we never mutate published state after
+            // the view has gone. (Founder/CTO 2026-06-15: intermittent crash
+            // on profile→home that cleared after a fresh sign-in.)
+            guard !Task.isCancelled else { return }
             self.brief = resp.brief
             self.sampledAt = resp.sampledAt ?? resp.brief?.sampledAt
             self.lastError = nil
         } catch {
+            guard !Task.isCancelled else { return }
             self.lastError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         }
     }
@@ -245,6 +254,8 @@ final class SparkBriefStore: ObservableObject {
         do {
             let resp: SparkRunBriefResponse = try await EusoTripAPI.shared
                 .spark.run(role: role)
+            // Don't publish into a view that's mid-teardown (see refresh()).
+            guard !Task.isCancelled else { return }
             if let b = resp.brief {
                 self.brief = b
                 self.sampledAt = b.sampledAt
@@ -258,6 +269,7 @@ final class SparkBriefStore: ObservableObject {
                 await refresh()
             }
         } catch {
+            guard !Task.isCancelled else { return }
             self.lastError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
         }
     }
