@@ -121,6 +121,34 @@ class BaseDynamicStore<Value>: ObservableObject, DynamicStore {
     @Published var isLoading: Bool = false
     @Published var lastError: Error? = nil
 
+    private var foregroundObserver: NSObjectProtocol?
+
+    init() {
+        // FOREGROUND SELF-HEAL — the data-side complement to the session
+        // revalidation (EusoTripSession.revalidate). EusoTripApp broadcasts
+        // `.esangRefreshSurface` on the background→active transition; every
+        // already-loaded store re-fetches so the screen never shows data
+        // that went stale while we were backgrounded. Guarded on
+        // `!isInitialLoading` so we never kick a first fetch on a store whose
+        // screen hasn't appeared yet — only stores that already loaded (or
+        // errored) refresh. This is the broad fix for "I have to log out to
+        // get fresh data": the whole app now self-heals on foreground.
+        foregroundObserver = NotificationCenter.default.addObserver(
+            forName: .esangRefreshSurface, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.isInitialLoading else { return }
+                await self.refresh()
+            }
+        }
+    }
+
+    deinit {
+        if let foregroundObserver {
+            NotificationCenter.default.removeObserver(foregroundObserver)
+        }
+    }
+
     /// Subclasses override this with their tRPC call. The default
     /// implementation traps — subclasses MUST override.
     func fetch() async throws -> Value {
