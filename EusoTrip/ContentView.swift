@@ -3752,6 +3752,33 @@ final class EusoAutopilotEngine: ObservableObject {
             return
         }
         lastHeard = text
+
+        // ── FAST LOCAL INTENT ────────────────────────────────────────────
+        // Act on the common spoken NAVIGATION commands INSTANTLY + reliably
+        // on-device — independent of the ESANG server round-trip. The server
+        // turn depends on a (possibly stale/slow) deploy returning a
+        // perfectly-formatted <<<ACTION:…>>> token; when it doesn't, autopilot
+        // "heard but did nothing." This short-circuits the obvious commands
+        // ("go to my loads", "post a load", "market intelligence", "go home",
+        // "back", …) through the SAME dispatcher, so they always act. Anything
+        // not an obvious navigation falls through to the full ESANG turn.
+        if let local = eSangAutopilot.localNavIntent(for: text) {
+            statusLine = "On it"
+            if role == .driver {
+                onDriverAction?(local)
+            } else {
+                eSangRoleDispatcher.dispatch(local, role: role, dismissSheet: {})
+            }
+            Task { await ESangTTSPlayer.shared.speak("On it.", serverAudioBase64: nil) }
+            awaitingReply = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                guard self.isActive else { return }
+                self.startListening()
+            }
+            return
+        }
+        // ─────────────────────────────────────────────────────────────────
+
         statusLine = "Thinking…"
         // Guard the idle-watcher from re-arming the mic while the ESANG
         // round-trip is in flight; cleared after the dispatch settles.

@@ -212,6 +212,57 @@ enum eSangAutopilot {
         return (tidy(cleaned), actions)
     }
 
+    /// FAST ON-DEVICE INTENT — resolve the common spoken NAVIGATION
+    /// commands locally so autopilot acts INSTANTLY and RELIABLY, with no
+    /// dependence on the ESANG server round-trip emitting a perfectly
+    /// formatted control token (a stale/slow/coach server reply was leaving
+    /// autopilot "capturing voice but doing nothing"). Returns a
+    /// navigate/back action for an obvious command; nil routes the turn
+    /// through the full ESANG round-trip (complex / non-navigation asks).
+    /// Paths here mirror the ones `eSangRoleDispatcher.screenId` resolves.
+    static func localNavIntent(for raw: String) -> eSangAction? {
+        let t = raw.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return nil }
+        func has(_ keys: String...) -> Bool { keys.contains { t.contains($0) } }
+
+        if t == "back" || has("go back", "back up", "previous screen", "take me back") { return .back }
+        // Create/post a load — checked BEFORE the bare "loads" rule so
+        // "post a load" never collapses to the loads list.
+        if has("post a load", "post load", "new load", "create a load", "create load",
+               "post a new load", "post my load", "add a load", "post freight") {
+            return .navigatePath("/loads/create")
+        }
+        if has("market intelligence", "market intel", "marketplace", "market pricing",
+               "rate intelligence", "rate intel", "commodit", "stock", "ticker") {
+            return .navigatePath("/market-intelligence")
+        }
+        if t == "loads" || has("my loads", "go to loads", "show loads", "open loads",
+                               "view loads", "see my loads", "load board", "my shipments", "shipments") {
+            return .navigatePath("/loads")
+        }
+        if t == "home" || has("go home", "home screen", "dashboard", "main screen", "take me home") {
+            return .navigatePath("/home")
+        }
+        if has("wallet", "my money", "my earnings", "settlements", "my payments", "payouts") {
+            return .navigatePath("/wallet")
+        }
+        if t == "profile" || t == "me" || has("my profile", "profile page", "go to profile",
+               "account settings", "my settings", "my account", "open settings") {
+            return .navigatePath("/me")
+        }
+        if has("browse carriers", "find carriers", "find a carrier", "carriers", "partner directory") {
+            return .navigatePath("/carriers")
+        }
+        if has("messages", "my messages", "open chat", "my chats", "inbox") {
+            return .navigatePath("/messages")
+        }
+        if has("compliance", "my documents", "my docs", "document center") {
+            return .navigatePath("/compliance")
+        }
+        if has("post a load") { return .navigatePath("/loads/create") }
+        return nil
+    }
+
     /// Cosmetic fixups on the visible reply: collapse the double spaces
     /// left behind by a stripped token, trim leading/trailing whitespace,
     /// and remove stray trailing punctuation that now has nothing to cling
