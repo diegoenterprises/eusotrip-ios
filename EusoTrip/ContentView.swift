@@ -705,7 +705,7 @@ enum ScreenRegistry {
         list.append(.init(id: "222", title: "Shipper · Live Tracking",   role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperLiveTracking() }) })
         list.append(.init(id: "223", title: "Shipper · Agreements",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me)    { ShipperAgreements() }) })
         list.append(.init(id: "224", title: "Shipper · Partner Directory", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperPartnerDirectory() }) })
-        list.append(.init(id: "225", title: "Shipper · Hot Zones",       role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperHotZones() }) })
+        list.append(.init(id: "225", title: "Shipper · Hot Zones",       role: .shipper) { p in AnyView(MarketHubScreen(theme: p, initialTab: .hotZones)) })
         list.append(.init(id: "226", title: "Shipper · Document Center", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperDocumentCenter() }) })
         list.append(.init(id: "227", title: "Shipper · Settlement Detail", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperSettlementDetail() }) })
         list.append(.init(id: "228", title: "Shipper · BOLs",            role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperBOLs() }) })
@@ -715,7 +715,7 @@ enum ScreenRegistry {
         // the /shipper/watch deep-link rendered this screen instead. The
         // 231-240 series owns "233" (Watch); Market Intelligence re-id'd
         // to the free slot "330". Me-hub VISIBILITY cell updated to match.
-        list.append(.init(id: "330", title: "Shipper · Market Intelligence", role: .shipper) { p in AnyView(MarketIntelligenceScreen(theme: p)) })
+        list.append(.init(id: "330", title: "Shipper · Market Intelligence", role: .shipper) { p in AnyView(MarketHubScreen(theme: p, initialTab: .market)) })
         list.append(.init(id: "223A", title: "Shipper · Agreement Wizard",   role: .shipper) { p in AnyView(AgreementWizardScreen(theme: p)) })
         list.append(.init(id: "230", title: "Shipper · Bid Thread",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperBidThread(loadId: 0) }) })
         // 228b / 229b / 230b — sibling files at the same slot numbers.
