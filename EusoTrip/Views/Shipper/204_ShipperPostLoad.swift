@@ -749,7 +749,7 @@ struct ShipperPostLoad: View {
         // overwhelmed Swift's type-checker. The persist helper
         // writes to UserDefaults (local crash recovery) AND
         // NSUbiquitousKeyValueStore (iCloud KVS — cross-device).
-        .onChange(of: autosaveDigest) { _, _ in persistDraft() }
+        .onChange(of: autosaveDigest) { _, _ in scheduleDraftPersist() }
         // ERG lookup fires off a separate UN-only debouncer so
         // typing in unrelated fields doesn't trigger a re-lookup.
         .onChange(of: unNumber) { _, _ in lookupERGIfReady() }
@@ -1616,6 +1616,20 @@ struct ShipperPostLoad: View {
     private var draftStorageKey: String {
         let uid = session.user?.id ?? "anon"
         return "shipper.postLoadDraft.\(uid)"
+    }
+
+    /// Debounced autosave. The autosave digest changes on every keystroke;
+    /// persisting on each one encoded JSON to UserDefaults AND fired
+    /// `NSUbiquitousKeyValueStore.synchronize()` on the MAIN THREAD per
+    /// character — per-keystroke iCloud I/O that can hang the post-load
+    /// screen ("posting a load froze and crashed" — April, build 712).
+    /// Coalesce to a single write ~0.7s after typing settles.
+    @State private var draftPersistWork: DispatchWorkItem? = nil
+    private func scheduleDraftPersist() {
+        draftPersistWork?.cancel()
+        let work = DispatchWorkItem { persistDraft() }
+        draftPersistWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7, execute: work)
     }
 
     private func persistDraft() {
