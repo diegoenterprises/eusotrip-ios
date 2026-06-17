@@ -253,17 +253,30 @@ struct ShipperHotZones: View {
     private var content: some View {
         switch store.phase {
         case .idle, .loading:
-            VStack(spacing: Space.s2) {
-                ForEach(0..<5, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        .fill(palette.tintNeutral.opacity(0.3))
-                        .frame(height: 92)
-                }
-            }
-            .padding(.horizontal, Space.s3)
+            // Bespoke animated skeleton that mirrors the loaded layout (KPI
+            // strip → heatmap header → 2-col tile grid) with a labeled
+            // shimmer, so the first paint reads as "loading market pulse",
+            // never as a blank screen. No-lingering-load rule: the store's
+            // `.task` fires this load the instant the screen appears, and the
+            // skeleton is replaced the moment the feed resolves.
+            HotZonesLoadingSkeleton()
+                .padding(.horizontal, Space.s3)
         case .error(let m):
             errorCard(m)
                 .padding(.horizontal, Space.s3)
+        case .loaded(let f) where f.zones.isEmpty && (f.coldZones?.isEmpty ?? true):
+            // Genuinely-empty live result — every metro is balanced, so there
+            // is no demand spike OR discount to surface. Show an honest card
+            // (with the formula pointer kept) rather than a near-blank page of
+            // a lone KPI strip. No fabricated zones.
+            VStack(alignment: .leading, spacing: 0) {
+                emptyDemandCard
+                    .padding(.horizontal, Space.s3)
+                    .padding(.top, Space.s4)
+                formulaExplainer
+                    .padding(.horizontal, Space.s3)
+                    .padding(.top, Space.s4)
+            }
         case .loaded(let f):
             VStack(alignment: .leading, spacing: 0) {
                 kpiSummaryStrip(f)
@@ -879,6 +892,57 @@ struct ShipperHotZones: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
+
+    // MARK: Honest empty state (live feed resolved with no hot OR cold zones)
+
+    /// Shown when the feed loads cleanly but every metro is balanced — no
+    /// demand spike and no capacity discount. Honest copy, never invented
+    /// numbers, with a Refresh affordance so the founder isn't staring at a
+    /// blank page wondering if it hung.
+    private var emptyDemandCard: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(Brand.info.opacity(0.16)).frame(width: 40, height: 40)
+                    Image(systemName: "scope")
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(Brand.info)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("No live demand data right now")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Every metro is balanced — no demand spike or capacity discount on the live feed.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            Button(action: { Task { await store.load() } }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .heavy))
+                    Text("Refresh")
+                        .font(.system(size: 12, weight: .heavy))
+                }
+                .foregroundStyle(Brand.info)
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(Capsule().fill(Brand.info.opacity(0.12)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Refresh market pulse")
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
 }
 
 // MARK: - File-scoped per-zone pulse sparkline (§19.2 · EUSO-2137 closed)
@@ -1040,6 +1104,100 @@ private enum HotZonePulseSynth {
     private static func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double {
         let a = min(lo, hi), b = max(lo, hi)
         return min(max(v, a), b)
+    }
+}
+
+// MARK: - File-scoped loading skeleton (bespoke shimmer · no blank-on-load)
+//
+// Mirrors the loaded layout so the first paint communicates "reading the
+// market pulse" rather than rendering a stack of faint gray boxes that read
+// as a blank screen (founder: "it waits to load. And this blank screen").
+// A single labeled eyebrow + an animated diagonal shimmer sweep over a
+// KPI-strip stand-in, a heatmap header stand-in, and a 2-col tile-grid
+// stand-in. Respects Reduce Motion (no sweep, static bars).
+
+private struct HotZonesLoadingSkeleton: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shimmer = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            // Labeled header so the state is never a silent blank.
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(palette.textTertiary)
+                Text("READING MARKET PULSE…")
+                    .font(EType.micro)
+                    .tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.top, Space.s1)
+
+            // KPI strip stand-in (3 cells).
+            HStack(spacing: Space.s2) {
+                ForEach(0..<3, id: \.self) { _ in bar(height: 44) }
+            }
+
+            // Heatmap header stand-in.
+            bar(width: 160, height: 14)
+
+            // 2-col tile grid stand-in (mirrors hotGrid).
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: Space.s2),
+                    GridItem(.flexible(), spacing: Space.s2),
+                ],
+                spacing: Space.s2
+            ) {
+                ForEach(0..<4, id: \.self) { _ in tile() }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(shimmerSweep)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.15).repeatForever(autoreverses: false)) {
+                shimmer = true
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Loading market pulse")
+    }
+
+    private func bar(width: CGFloat? = nil, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .fill(palette.bgCardSoft)
+            .frame(width: width, height: height)
+            .frame(maxWidth: width == nil ? .infinity : nil, alignment: .leading)
+    }
+
+    private func tile() -> some View {
+        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .fill(palette.bgCardSoft)
+            .frame(height: 96)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+    }
+
+    @ViewBuilder private var shimmerSweep: some View {
+        if reduceMotion {
+            Color.clear
+        } else {
+            GeometryReader { geo in
+                LinearGradient(
+                    colors: [.clear, palette.textPrimary.opacity(0.06), .clear],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+                .frame(width: geo.size.width * 0.5)
+                .offset(x: shimmer ? geo.size.width : -geo.size.width * 0.6)
+            }
+            .allowsHitTesting(false)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        }
     }
 }
 

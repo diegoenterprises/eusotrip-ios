@@ -240,12 +240,25 @@ struct MeMyBidsView: View {
         let style = BidStatusStyle.from(b.status)
         let isPending = b.status.lowercased() == "pending"
         return Button {
-            MeAction.fire("driver.bid.detail", userInfo: ["bidId": b.id, "loadId": b.loadId])
-            // Drill into the load detail surface so the driver can
-            // see the bid lifecycle, counter chain, and accept.
+            // Drill into the BID DETAIL surface (109) so the driver
+            // sees the counter chain + Accept/Counter/Withdraw CTA.
+            //
+            // Founder bug 2026-06-13 ("clicking on my bids sends you on
+            // a perpetual loop of these pages when pressing back"): this
+            // row previously fired BOTH `MeAction.fire("driver.bid.detail")`
+            // — which `handleDriverMeAction` resolved to `nav.currentTab =
+            // .wallet`, yanking the user off the Me tab to My Loads — AND
+            // a nav-swap to "108" (Eusoboards), the wrong screen. The two
+            // competing navigations bounced the driver between My Loads /
+            // Eusoboards / My Bids with no real bid detail ever mounting,
+            // and each retry re-appended "108" onto the (now off-screen)
+            // Me stack. Resolution: drop the tab-switching MeAction, push
+            // the correct detail screen (109) on the Me stack, and carry
+            // the real `loadId` so `DriverMeSurface` mounts the live chain
+            // instead of the registry's `loadId: 0` sentinel.
             NotificationCenter.default.post(
                 name: .eusoDriverMeNavSwap, object: nil,
-                userInfo: ["screenId": "108", "loadId": String(b.loadId), "bidId": String(b.id)]
+                userInfo: ["screenId": "109", "loadId": String(b.loadId), "bidId": String(b.id)]
             )
         } label: {
             HStack(alignment: .top, spacing: 10) {
