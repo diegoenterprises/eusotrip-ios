@@ -130,11 +130,27 @@ struct EusoTripApp: App {
                     .transition(.opacity)
                 }
             }
-            .onChange(of: scenePhase) { _, newPhase in
+            .onChange(of: scenePhase) { oldPhase, newPhase in
                 // Show the brand veil before iOS snapshots us.
                 let resigning = (newPhase != .active)
                 withAnimation(.easeInOut(duration: 0.10)) {
                     isResigning = resigning
+                }
+                // FOREGROUND SELF-HEAL — the fix for "I have to log out and
+                // back in to fix things." Returning from the background
+                // re-validates the live session (a token that went stale
+                // while we were away recovers gracefully → re-login, instead
+                // of leaving every screen 401ing) AND broadcasts a refresh so
+                // live surfaces repaint. The session validation otherwise ran
+                // ONLY on cold launch, so mid-session staleness stranded the
+                // whole app until a manual logout. Gated to a true
+                // background→active transition so it never double-fires with
+                // the cold-launch boot().
+                if newPhase == .active && oldPhase == .background {
+                    Task {
+                        await session.revalidate()
+                        NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
+                    }
                 }
             }
             .task {

@@ -40,6 +40,82 @@ struct MarketIntelligenceScreen: View {
     }
 }
 
+// MARK: - Consolidated Market Hub (Hot Zones + Market Intelligence tabs)
+
+/// Founder 2026-06-17: consolidate Hot Zones and Market Intelligence into one
+/// screen separated by labeled tabs. Both bodies render `embedded` (their own
+/// headers suppressed) under a single shared scaffold + a segmented tab bar.
+/// Registered for BOTH the 225 (Hot Zones) and 330 (Market Intelligence)
+/// slots + voice routes — each entry just opens its corresponding tab.
+enum MarketHubTab: String, CaseIterable, Hashable {
+    case hotZones = "Hot Zones"
+    case market   = "Market Intelligence"
+}
+
+struct MarketHubScreen: View {
+    let theme: Theme.Palette
+    @State private var tab: MarketHubTab
+
+    init(theme: Theme.Palette, initialTab: MarketHubTab = .hotZones) {
+        self.theme = theme
+        _tab = State(initialValue: initialTab)
+    }
+
+    var body: some View {
+        Shell(theme: theme) {
+            VStack(spacing: 0) {
+                MarketHubTabBar(selected: $tab)
+                Group {
+                    if tab == .hotZones {
+                        ShipperHotZones(embedded: true)
+                    } else {
+                        MarketIntelligenceBody(embedded: true)
+                    }
+                }
+            }
+        } nav: { shipperLifecycleNav() }
+    }
+}
+
+/// Bespoke segmented tab bar — pill selection on the brand gradient.
+private struct MarketHubTabBar: View {
+    @Binding var selected: MarketHubTab
+    @Environment(\.palette) private var palette
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(MarketHubTab.allCases, id: \.self) { t in
+                let isOn = (t == selected)
+                Button {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { selected = t }
+                } label: {
+                    Text(t.rawValue)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(isOn ? Color.white : palette.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 9)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(isOn
+                                      ? AnyShapeStyle(LinearGradient.primary)
+                                      : AnyShapeStyle(palette.bgCardSoft))
+                        )
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .strokeBorder(palette.borderFaint, lineWidth: isOn ? 0 : 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(t.rawValue) tab")
+                .accessibilityAddTraits(isOn ? [.isSelected, .isButton] : .isButton)
+            }
+        }
+        .padding(.horizontal, Space.s3)
+        .padding(.top, Space.s3)
+        .padding(.bottom, Space.s2)
+    }
+}
+
 // MARK: - Wire types (mirror frontend/server/routers/marketPricing.ts)
 
 /// Numeric fields on the commodity feed are stringified by some
@@ -259,7 +335,12 @@ private struct QuoteResp: Decodable {
 
 // MARK: - Body
 
-private struct MarketIntelligenceBody: View {
+struct MarketIntelligenceBody: View {
+    /// When hosted inside the consolidated Market Hub, the hub owns the
+    /// header + tab bar, so this suppresses its own header to avoid a
+    /// redundant double title.
+    var embedded: Bool = false
+
     @Environment(\.palette) private var palette
 
     // marketPricing.getCommodities (canonical web feed)
@@ -294,7 +375,7 @@ private struct MarketIntelligenceBody: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
-                header
+                if !embedded { header }
 
                 // Yahoo-Finance ticker search (web parity). Sits above the
                 // commodity grid so any stock / ETF / commodity is reachable

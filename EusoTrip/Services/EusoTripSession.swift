@@ -318,6 +318,43 @@ final class EusoTripSession: ObservableObject {
         WatchAuthBridge.shared.clear()
     }
 
+    // MARK: Foreground self-heal — the fix for "I have to log out to fix it"
+    //
+    // `boot()` (the /auth.me + 2-strike auto-recovery) runs ONLY on cold
+    // launch, so a session/token that goes stale WHILE the app is
+    // backgrounded was never re-checked on return — every screen would
+    // 401 and the user had to sign out by hand to mint a fresh session.
+    // EusoTripApp calls this on the background→active transition. Unlike
+    // `boot()` it does NOT re-rehydrate keychain cookies (the live in-memory
+    // session is fresher); it just confirms the session is still valid and
+    // applies the SAME graceful recovery: a truly dead session signs out
+    // (→ SignIn → re-login) instead of leaving the whole app stuck.
+    func revalidate() async {
+        guard case .signedIn = phase, api.authToken != nil else { return }
+        do {
+            let me = try await api.auth.me()
+            self.user = me
+            saveCachedUser(me)
+            keychain.delete(key: kUnauthStrikes)
+            if let snapshot = api.authCookieSnapshotJSON() {
+                keychain.save(key: kAuthCookies, value: snapshot)
+            }
+        } catch EusoTripAPIError.unauthenticated {
+            // Same 2-strike absorption as boot() — one 401 is tolerated
+            // (warm-up / transient middleware), two in a row = dead session.
+            let prior = Int(keychain.load(key: kUnauthStrikes) ?? "0") ?? 0
+            let strikes = prior + 1
+            if strikes >= 2 {
+                await signOut()
+            } else {
+                keychain.save(key: kUnauthStrikes, value: String(strikes))
+            }
+        } catch {
+            // Transient (offline / 5xx) — keep the session; next foreground
+            // or an authenticated call will re-confirm.
+        }
+    }
+
     // MARK: Cached profile helpers
 
     private func saveCachedUser(_ user: AuthUser) {

@@ -131,6 +131,11 @@ struct HotZoneCityRef: Identifiable, Hashable {
 }
 
 struct ShipperHotZones: View {
+    /// When hosted inside the consolidated Market Hub (Hot Zones / Market
+    /// Intelligence tabs), the hub owns the header + tab bar, so the screen
+    /// suppresses its own topBar/title to avoid a redundant double header.
+    var embedded: Bool = false
+
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
     @StateObject private var store = ShipperHotZonesStore()
@@ -145,16 +150,18 @@ struct ShipperHotZones: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                topBar
-                    .padding(.top, Space.s5)
-                titleBlock
-                    .padding(.top, Space.s2)
-                IridescentHairline()
-                    .padding(.horizontal, Space.s3)
-                    .padding(.top, Space.s5)
+                if !embedded {
+                    topBar
+                        .padding(.top, Space.s5)
+                    titleBlock
+                        .padding(.top, Space.s2)
+                    IridescentHairline()
+                        .padding(.horizontal, Space.s3)
+                        .padding(.top, Space.s5)
+                }
 
                 content
-                    .padding(.top, Space.s3)
+                    .padding(.top, embedded ? Space.s1 : Space.s3)
 
                 Color.clear.frame(height: 96)
             }
