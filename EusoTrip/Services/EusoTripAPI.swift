@@ -424,12 +424,24 @@ final class EusoTripAPI: ObservableObject {
     lazy var news: NewsAPI = NewsAPI(api: self)
     lazy var messaging: MessagingAPI = MessagingAPI(api: self)
     lazy var hotZones: HotZonesAPI = HotZonesAPI(api: self)
+    /// `truckPostingRouter` (`frontend/server/routers/truckPosting.ts`) — the
+    /// carrier truck-posting board: post a truck, pause/resume, capacity stats,
+    /// inbound offers (broker → posted truck), one-tap accept (dual-gated:
+    /// identity-at-booking + Montgomery carrier-vetting) / decline, and the
+    /// company fleet availability list. Backs Carrier 321 (TruckPosting board).
+    lazy var truckPosting: TruckPostingAPI = TruckPostingAPI(api: self)
     /// HERE server-side add-ons (ad-zones, ISA, ADAS, road alerts,
     /// geofencing, location analytics, discover, EV chargers, …) consumed
     /// the SAME way the web client does — through the `hereMaps.*` tRPC
     /// router. iOS does NOT re-implement these against HERE directly; the
     /// OAuth Bearer + rate-limiting live server-side. 2026-05-21.
     lazy var hereMaps: HereMapsAPI = HereMapsAPI(api: self)
+    /// Reroute Optimizer surface — resolves the persisted `routes` row for a
+    /// load (`navigation.getRoute`), compares ranked alternates
+    /// (`routing.compareAlternatives`), and applies a chosen reroute
+    /// (`routing.applyReroute`). Backs the driver Reroute Optimizer screen
+    /// pushed from 013 En Route. 2026-06-18.
+    lazy var routing: RoutingAPI = RoutingAPI(api: self)
     lazy var eld: ELDAPI = ELDAPI(api: self)
     lazy var capabilities: CapabilitiesAPI = CapabilitiesAPI(api: self)
     lazy var media: MediaAPI = MediaAPI(api: self)
@@ -969,6 +981,19 @@ final class EusoTripAPI: ObservableObject {
     /// `submitForApproval`, `approve`, `renew`, `terminate`).
     /// Added 2026-04-27 in the shipper round-3 firing.
     lazy var contracts: ContractsAPI = ContractsAPI(api: self)
+
+    /// `invoicesRouter` — the REAL shipper AR ledger (GLOVE FIT B-2).
+    /// Backs the Shipper Invoice / AR Management bricks (437/438).
+    /// Distinct from the legacy `accounting.createInvoice` (which wrote a
+    /// `payments` row with a fabricated number) and from
+    /// `factoring_invoices` (a carrier selling a receivable) — this is the
+    /// shipper-facing receivable the platform issues for delivered
+    /// freight. Verified at `frontend/server/routers/invoices.ts` (procs
+    /// `createInvoice`, `getInvoice`, `listInvoices`, `sendInvoice`,
+    /// `recordPayment`, `voidInvoice`), mounted as `invoices` in
+    /// `routers.ts:2004`. Gap-free sequential number, terms-driven due
+    /// date, draft/sent/partial/paid/overdue/void lifecycle.
+    lazy var invoices: InvoicesAPI = InvoicesAPI(api: self)
 
     /// `freightClaimsRouter` — shipper-as-claimant view of damage /
     /// loss / shortage / delay claims. Backs the Shipper Freight
@@ -5779,6 +5804,139 @@ struct HereMapsAPI {
         return try await api.query("hereMaps.locationAnalytics", input: In(breadcrumbs: breadcrumbs))
     }
     struct Breadcrumb: Encodable { let lat: Double; let lng: Double; let capturedAt: String; let speedKph: Double? }
+}
+
+// MARK: - RoutingAPI  (Reroute Optimizer)
+//
+// Mirrors the live server procs in:
+//   • frontend/server/routers/navigation.ts → `navigation.getRoute`
+//   • frontend/server/routers/routing.ts    → `routing.compareAlternatives`,
+//                                              `routing.applyReroute`
+//
+// Bridge: the driver only carries a loadId. `getRoute(loadId:)` resolves the
+// persisted `routes` row (its PK is the `routeId` the routing procs need) and
+// also hands back the encoded HERE polyline for the map preview. When no route
+// row exists for the load, `getRoute` returns nil → the optimizer renders an
+// honest "no persisted route" empty state instead of fabricating alternates.
+//
+// `compareAlternatives` returns the current route (alternativeId 0) PLUS a set
+// of ranked candidates with ETA/fuel/toll/risk DELTAS relative to the current
+// route — the server's own composite rankScore (lower is better). The server
+// notes these candidates are heuristic placeholders until HERE/OSRM multi-route
+// support lands; the UI labels them honestly as "estimated" deltas.
+//
+// `applyReroute` logs the decision to `reroute_decisions` and — only when the
+// caller opts in via `commitToRoute` — flips the live route's duration to the
+// chosen alternative. alternativeId 0 = "stay on current route" (still logged).
+struct RoutingAPI {
+    unowned let api: EusoTripAPI
+
+    // ── navigation.getRoute → resolve the persisted route row for a load ──
+    struct RouteRow: Decodable, Hashable {
+        let id: Int
+        let loadId: Int?
+        let distanceMiles: Double?
+        let durationMinutes: Int?
+        let durationInTraffic: Int?
+        let polyline: String?
+        let vehicleProfile: String?
+        let estimatedFuelCost: Double?
+        let tollCost: Double?
+        let status: String?
+    }
+    /// Returns the most-recent persisted `routes` row for the load, or nil
+    /// when none exists yet (honest absence — the optimizer needs a saved
+    /// route to compare against). `routeId` overrides `loadId` when known.
+    func getRoute(loadId: Int? = nil, routeId: Int? = nil) async throws -> RouteRow? {
+        struct In: Encodable { let loadId: Int?; let routeId: Int? }
+        return try await api.query("navigation.getRoute", input: In(loadId: loadId, routeId: routeId))
+    }
+
+    // ── routing.compareAlternatives → baseline + ranked alternates ──
+    struct RouteBaseline: Decodable, Hashable {
+        let alternativeId: Int
+        let label: String
+        let miles: Double
+        let durationMinutes: Int
+        let fuelGal: Double
+        let fuelCost: Double
+        let tollCost: Double
+        let riskScore: Double
+        let surface: String
+    }
+    struct RouteAlternative: Decodable, Hashable, Identifiable {
+        let alternativeId: Int
+        let label: String
+        let miles: Double
+        let durationMinutes: Int
+        let etaDeltaSec: Int
+        let fuelGal: Double
+        let fuelDeltaGal: Double
+        let fuelCost: Double
+        let fuelCostDelta: Double
+        let tollCost: Double
+        let tollCostDelta: Double
+        let riskScore: Double
+        let surface: String
+        let reason: String
+        let rankScore: Double
+        var id: Int { alternativeId }
+    }
+    struct CompareResult: Decodable, Hashable {
+        let routeId: Int
+        let baseline: RouteBaseline?
+        let alternatives: [RouteAlternative]
+        let rankedBy: String
+    }
+    /// Ranked alternates (ETA/fuel/risk composite) for an active route.
+    /// `baseline == nil && alternatives.isEmpty` ⇒ route not found server-side.
+    func compareAlternatives(routeId: Int, maxAlternates: Int = 3) async throws -> CompareResult {
+        struct In: Encodable { let routeId: Int; let maxAlternates: Int }
+        return try await api.query(
+            "routing.compareAlternatives",
+            input: In(routeId: routeId, maxAlternates: max(1, min(5, maxAlternates)))
+        )
+    }
+
+    // ── routing.applyReroute → log the decision (+ optional commit) ──
+    struct ApplyResult: Decodable, Hashable {
+        let success: Bool
+        let routeId: Int
+        let alternativeId: Int
+        let loggedAt: String
+        let committed: Bool
+    }
+    /// Apply a reroute decision. `alternativeId == 0` records "stayed on
+    /// current route". `commitToRoute` flips the live route duration to the
+    /// chosen alternative when the alt's `etaDeltaSec` is supplied.
+    func applyReroute(
+        routeId: Int,
+        alternativeId: Int,
+        reason: String,
+        etaDeltaSec: Int? = nil,
+        fuelDeltaGal: Double? = nil,
+        commitToRoute: Bool = false
+    ) async throws -> ApplyResult {
+        struct In: Encodable {
+            let routeId: Int
+            let alternativeId: Int
+            let reason: String
+            let etaDeltaSec: Int?
+            let fuelDeltaGal: Double?
+            let commitToRoute: Bool
+        }
+        return try await api.mutation(
+            "routing.applyReroute",
+            input: In(
+                routeId: routeId,
+                alternativeId: alternativeId,
+                reason: String(reason.prefix(500)),
+                etaDeltaSec: etaDeltaSec,
+                fuelDeltaGal: fuelDeltaGal,
+                commitToRoute: commitToRoute
+            )
+        )
+    }
 }
 
 // MARK: - messagesRouter
@@ -20514,6 +20672,362 @@ struct ContractsAPI {
     }
 }
 
+// MARK: - InvoicesAPI
+//
+// The REAL shipper AR ledger — mirrors verbatim
+// `frontend/server/routers/invoices.ts` (mounted as `invoices` in
+// `routers.ts:2004`). Procs: `createInvoice`, `getInvoice`,
+// `listInvoices`, `sendInvoice`, `recordPayment`, `voidInvoice`.
+//
+// Money discipline: every money column in `invoices` /
+// `invoice_line_items` is a MySQL `decimal`, which the driver serializes
+// as a JSON *string* ("1234.56"), while the server's computed `balance`
+// comes back as a JSON *number*. The `flexDouble*` helpers below decode
+// either shape so the row never fails to parse and the UI never has to
+// invent a value — a blank field surfaces as an em-dash, never a zero.
+struct InvoicesAPI {
+    unowned let api: EusoTripAPI
+
+    // MARK: Flexible money decode (string-or-number tolerant)
+
+    /// Decode a money/number value that may arrive as a JSON string
+    /// ("1234.56", drizzle decimal) or a JSON number (server-computed
+    /// `balance`). Returns nil when absent or unparseable — the UI then
+    /// renders an honest em-dash rather than a fabricated 0.
+    static func flexDoubleOpt(
+        _ c: KeyedDecodingContainer<DynamicKey>, _ key: DynamicKey
+    ) -> Double? {
+        if let d = try? c.decode(Double.self, forKey: key) { return d }
+        if let i = try? c.decode(Int.self, forKey: key) { return Double(i) }
+        if let s = try? c.decode(String.self, forKey: key), let d = Double(s) { return d }
+        return nil
+    }
+
+    /// CodingKey that admits any string — lets the row decoders read the
+    /// spread `...inv` shape without enumerating every column up front.
+    struct DynamicKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { return nil }
+        init(_ s: String) { self.stringValue = s }
+    }
+
+    // MARK: Models
+
+    /// One invoice ledger row (from `listInvoices.invoices[]` and the
+    /// header of `getInvoice`). `balance` is server-computed
+    /// (total − amountPaid). Money fields tolerate string-or-number.
+    struct InvoiceRow: Decodable, Identifiable, Hashable {
+        let id: Int
+        let invoiceNumber: String
+        let shipperCompanyId: Int?
+        let customerName: String?
+        let loadId: Int?
+        let settlementId: Int?
+        let status: String
+        let subtotal: Double?
+        let tax: Double?
+        let total: Double?
+        let amountPaid: Double?
+        let balance: Double?
+        let currency: String?
+        let terms: String?
+        let documentUrl: String?
+        let notes: String?
+        let issuedAt: String?
+        let dueAt: String?
+        let paidAt: String?
+        let createdAt: String?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: DynamicKey.self)
+            func k(_ s: String) -> DynamicKey { DynamicKey(s) }
+            id              = (try? c.decode(Int.self, forKey: k("id"))) ?? 0
+            invoiceNumber   = (try? c.decode(String.self, forKey: k("invoiceNumber"))) ?? "-"
+            shipperCompanyId = try? c.decode(Int.self, forKey: k("shipperCompanyId"))
+            customerName    = try? c.decode(String.self, forKey: k("customerName"))
+            loadId          = try? c.decode(Int.self, forKey: k("loadId"))
+            settlementId    = try? c.decode(Int.self, forKey: k("settlementId"))
+            status          = (try? c.decode(String.self, forKey: k("status"))) ?? "draft"
+            subtotal        = InvoicesAPI.flexDoubleOpt(c, k("subtotal"))
+            tax             = InvoicesAPI.flexDoubleOpt(c, k("tax"))
+            total           = InvoicesAPI.flexDoubleOpt(c, k("total"))
+            amountPaid      = InvoicesAPI.flexDoubleOpt(c, k("amountPaid"))
+            balance         = InvoicesAPI.flexDoubleOpt(c, k("balance"))
+            currency        = try? c.decode(String.self, forKey: k("currency"))
+            terms           = try? c.decode(String.self, forKey: k("terms"))
+            documentUrl     = try? c.decode(String.self, forKey: k("documentUrl"))
+            notes           = try? c.decode(String.self, forKey: k("notes"))
+            issuedAt        = try? c.decode(String.self, forKey: k("issuedAt"))
+            dueAt           = try? c.decode(String.self, forKey: k("dueAt"))
+            paidAt          = try? c.decode(String.self, forKey: k("paidAt"))
+            createdAt       = try? c.decode(String.self, forKey: k("createdAt"))
+        }
+    }
+
+    /// Paged ledger envelope from `listInvoices`.
+    struct InvoiceList: Decodable {
+        let invoices: [InvoiceRow]
+        let total: Int
+    }
+
+    /// One invoice line item (from `getInvoice.lineItems[]`). qty/rate/
+    /// amount are drizzle decimals (string on the wire).
+    struct InvoiceLine: Decodable, Identifiable, Hashable {
+        let id: Int
+        let description: String
+        let qty: Double?
+        let rate: Double?
+        let amount: Double?
+        let taxable: Bool
+        let sortOrder: Int?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: DynamicKey.self)
+            func k(_ s: String) -> DynamicKey { DynamicKey(s) }
+            id          = (try? c.decode(Int.self, forKey: k("id"))) ?? 0
+            description = (try? c.decode(String.self, forKey: k("description"))) ?? "-"
+            qty         = InvoicesAPI.flexDoubleOpt(c, k("qty"))
+            rate        = InvoicesAPI.flexDoubleOpt(c, k("rate"))
+            amount      = InvoicesAPI.flexDoubleOpt(c, k("amount"))
+            // taxable is a MySQL boolean → 0/1 number or true/false.
+            if let b = try? c.decode(Bool.self, forKey: k("taxable")) { taxable = b }
+            else if let n = try? c.decode(Int.self, forKey: k("taxable")) { taxable = n != 0 }
+            else { taxable = false }
+            sortOrder   = try? c.decode(Int.self, forKey: k("sortOrder"))
+        }
+    }
+
+    /// One dunning (collections escalation) event from
+    /// `getInvoice.dunningEvents[]`.
+    struct DunningEvent: Decodable, Identifiable, Hashable {
+        let id: Int
+        let level: Int?
+        let channel: String?
+        let daysOverdue: Int?
+        let sentAt: String?
+    }
+
+    /// Full invoice detail from `getInvoice` (header row + lines +
+    /// dunning history + resolved customer name).
+    struct InvoiceDetail: Decodable {
+        let header: InvoiceRow
+        let lineItems: [InvoiceLine]
+        let dunningEvents: [DunningEvent]
+
+        init(from decoder: Decoder) throws {
+            // The server spreads `...inv` at the top level and appends
+            // lineItems / dunningEvents / customerName / balance. Decode
+            // the header off the SAME top-level container, then peel the
+            // two arrays.
+            header = try InvoiceRow(from: decoder)
+            let c = try decoder.container(keyedBy: DynamicKey.self)
+            lineItems = (try? c.decode([InvoiceLine].self, forKey: DynamicKey("lineItems"))) ?? []
+            dunningEvents = (try? c.decode([DunningEvent].self, forKey: DynamicKey("dunningEvents"))) ?? []
+        }
+    }
+
+    /// Line item the create flow sends to `createInvoice`.
+    struct NewLineItem: Encodable, Hashable, Identifiable {
+        var id = UUID()
+        var description: String
+        var qty: Double
+        var rate: Double
+        var taxable: Bool
+        enum CodingKeys: String, CodingKey { case description, qty, rate, taxable }
+    }
+
+    /// Result of `createInvoice` (id + minted number + status + send
+    /// outcome). Money fields are plain numbers here (server-computed).
+    struct CreateResult: Decodable {
+        let id: Int
+        let invoiceNumber: String
+        let status: String
+        let total: Double?
+        let sent: Bool?
+        let documentUrl: String?
+        let storageDegraded: Bool?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: DynamicKey.self)
+            func k(_ s: String) -> DynamicKey { DynamicKey(s) }
+            id            = (try? c.decode(Int.self, forKey: k("id"))) ?? 0
+            invoiceNumber = (try? c.decode(String.self, forKey: k("invoiceNumber"))) ?? "-"
+            status        = (try? c.decode(String.self, forKey: k("status"))) ?? "draft"
+            total         = InvoicesAPI.flexDoubleOpt(c, k("total"))
+            sent          = try? c.decode(Bool.self, forKey: k("sent"))
+            documentUrl   = try? c.decode(String.self, forKey: k("documentUrl"))
+            storageDegraded = try? c.decode(Bool.self, forKey: k("storageDegraded"))
+        }
+    }
+
+    /// Result of `sendInvoice`.
+    struct SendResult: Decodable {
+        let id: Int
+        let invoiceNumber: String
+        let status: String
+        let sent: Bool
+        let documentUrl: String?
+        let storageDegraded: Bool
+    }
+
+    /// Result of `recordPayment`.
+    struct PaymentResult: Decodable {
+        let id: Int
+        let invoiceNumber: String
+        let amountPaid: Double?
+        let balance: Double?
+        let status: String
+        let method: String?
+        let reference: String?
+        let paidAt: String?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: DynamicKey.self)
+            func k(_ s: String) -> DynamicKey { DynamicKey(s) }
+            id            = (try? c.decode(Int.self, forKey: k("id"))) ?? 0
+            invoiceNumber = (try? c.decode(String.self, forKey: k("invoiceNumber"))) ?? "-"
+            amountPaid    = InvoicesAPI.flexDoubleOpt(c, k("amountPaid"))
+            balance       = InvoicesAPI.flexDoubleOpt(c, k("balance"))
+            status        = (try? c.decode(String.self, forKey: k("status"))) ?? "partial"
+            method        = try? c.decode(String.self, forKey: k("method"))
+            reference     = try? c.decode(String.self, forKey: k("reference"))
+            paidAt        = try? c.decode(String.self, forKey: k("paidAt"))
+        }
+    }
+
+    // MARK: Reads
+
+    /// `invoices.listInvoices` — the real ledger, optionally filtered by
+    /// status (draft/sent/partial/paid/overdue/void). `mineAsIssuer`
+    /// scopes to invoices the signed-in user issued.
+    func listInvoices(
+        status: String? = nil,
+        mineAsIssuer: Bool = false,
+        shipperCompanyId: Int? = nil,
+        limit: Int = 50,
+        offset: Int = 0
+    ) async throws -> InvoiceList {
+        struct Input: Encodable {
+            let status: String?
+            let mineAsIssuer: Bool
+            let shipperCompanyId: Int?
+            let limit: Int
+            let offset: Int
+        }
+        return try await api.query(
+            "invoices.listInvoices",
+            input: Input(
+                status: status,
+                mineAsIssuer: mineAsIssuer,
+                shipperCompanyId: shipperCompanyId,
+                limit: limit,
+                offset: offset
+            )
+        )
+    }
+
+    /// `invoices.getInvoice` — full detail (header + lines + dunning).
+    /// Returns nil when the id doesn't resolve (server returns null).
+    func getInvoice(id: Int) async throws -> InvoiceDetail? {
+        struct Input: Encodable { let id: Int }
+        let detail: InvoiceDetail? = try await api.query(
+            "invoices.getInvoice",
+            input: Input(id: id)
+        )
+        return detail
+    }
+
+    // MARK: Mutations
+
+    /// `invoices.createInvoice` — mint a draft (or auto-send) invoice from
+    /// a load, a settlement, or explicit line items. Real sequential
+    /// number + terms-driven due date are computed server-side.
+    func createInvoice(
+        loadId: Int? = nil,
+        settlementId: Int? = nil,
+        shipperCompanyId: Int? = nil,
+        terms: String = "net30",
+        currency: String = "USD",
+        taxRate: Double = 0,
+        lineItems: [NewLineItem]? = nil,
+        notes: String? = nil,
+        autoSend: Bool = false
+    ) async throws -> CreateResult {
+        struct Input: Encodable {
+            let loadId: Int?
+            let settlementId: Int?
+            let shipperCompanyId: Int?
+            let terms: String
+            let currency: String
+            let taxRate: Double
+            let lineItems: [NewLineItem]?
+            let notes: String?
+            let autoSend: Bool
+        }
+        return try await api.mutation(
+            "invoices.createInvoice",
+            input: Input(
+                loadId: loadId,
+                settlementId: settlementId,
+                shipperCompanyId: shipperCompanyId,
+                terms: terms,
+                currency: currency,
+                taxRate: taxRate,
+                lineItems: lineItems,
+                notes: notes,
+                autoSend: autoSend
+            )
+        )
+    }
+
+    /// `invoices.sendInvoice` — generate the PDF (honest-degrades when
+    /// storage is unset) and advance draft → sent.
+    func sendInvoice(id: Int) async throws -> SendResult {
+        struct Input: Encodable { let id: Int }
+        return try await api.mutation(
+            "invoices.sendInvoice",
+            input: Input(id: id)
+        )
+    }
+
+    /// `invoices.recordPayment` — record a partial or full payment;
+    /// drives the partial/paid lifecycle off real amounts.
+    func recordPayment(
+        id: Int,
+        amount: Double,
+        method: String = "ach",
+        reference: String? = nil,
+        paidAt: String? = nil
+    ) async throws -> PaymentResult {
+        struct Input: Encodable {
+            let id: Int
+            let amount: Double
+            let method: String
+            let reference: String?
+            let paidAt: String?
+        }
+        return try await api.mutation(
+            "invoices.recordPayment",
+            input: Input(
+                id: id, amount: amount, method: method,
+                reference: reference, paidAt: paidAt
+            )
+        )
+    }
+
+    /// `invoices.voidInvoice` — terminal void (keeps the row for audit).
+    func voidInvoice(id: Int, reason: String? = nil) async throws {
+        struct Input: Encodable { let id: Int; let reason: String? }
+        struct Ack: Decodable { let id: Int; let status: String }
+        let _: Ack = try await api.mutation(
+            "invoices.voidInvoice",
+            input: Input(id: id, reason: reason)
+        )
+    }
+}
+
 // MARK: - ShipperFreightClaimsAPI
 //
 // Shipper-as-claimant view of damage / loss / shortage / delay claims.
@@ -23774,5 +24288,332 @@ extension HotZonesAPI {
     func getHeatmapData(metric: String = "demand") async throws -> HotZonesHeatmapEnvelope {
         struct Input: Encodable { let metric: String }
         return try await api.query("hotZones.getHeatmapData", input: Input(metric: metric))
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// MARK: - TruckPosting · carrier truck-posting board (additive, isolated)
+// ════════════════════════════════════════════════════════════════════════
+//
+// Wraps the live `truckPostingRouter`
+// (frontend/server/routers/truckPosting.ts, mounted in routers.ts as
+// `truckPosting`). Backs Carrier 321 (TruckPosting board). Every method
+// maps 1:1 to a real proc — no invented endpoints, no fabricated rows.
+//
+//   getCapacityStats   ({ state? })                  -> market capacity grid
+//   getMyFleetAvailability ({ status? })             -> [company vehicle rows]
+//   postTruck          ({ vehicleId, currentLocation, availableDate, ... })
+//   pauseTruck         ({ postingId })   -> toggles active<->paused
+//   listInboundOffers  ({ postingId?, status, runMatcher?, limit? })
+//   acceptOffer        ({ offerId, vehicleId?, driverId? })   <- DUAL-GATED
+//   declineOffer       ({ offerId })
+//
+// DUAL VERIFICATION GATES (server-enforced on acceptOffer):
+//   GATE 1 - identity-at-booking (assertIdentityVerified): an unverified
+//            carrier cannot bind freight.
+//   GATE 2 - Montgomery v. Caribe carrier-vetting (runCarrierVettingGate):
+//            insurance / authority / safety floors.
+// Both throw a tRPC FORBIDDEN with a human reason. The client's `perform()`
+// promotes FORBIDDEN -> `.unauthenticated` ("Authentication required."),
+// which would MISLEAD on a vetting block - so `acceptOffer` below translates
+// that into `TruckPostingGateError` carrying the honest gate message the
+// board surfaces. Every other proc bubbles the server's own human message
+// through `EusoTripAPIError`.
+
+/// Surfaced when the server BLOCKS a one-tap accept at one of the two
+/// verification gates (identity-at-booking or carrier-vetting). Carries the
+/// honest, human reason so the board can show WHY the accept was refused
+/// instead of a generic auth error.
+enum TruckPostingGateError: Error, LocalizedError {
+    case blocked(message: String)
+    var errorDescription: String? {
+        switch self {
+        case .blocked(let m): return m
+        }
+    }
+}
+
+/// `truckPosting.getCapacityStats` envelope - live market capacity. All
+/// counts are real DB aggregates; `market` is present only when the server
+/// could compute the ratio (absent on the no-db honest-empty path, where the
+/// view em-dashes the verdict).
+struct TruckCapacityStats: Decodable, Equatable {
+    let availableTrucks: Int
+    let postedLoads: Int
+    let ratio: Double
+    let market: String?          // "tight" / "balanced" / "loose" (nil on no-db)
+    let hazmatTrucks: Int
+    let hazmatLoads: Int
+    let hazmatRatio: Double?
+}
+
+/// `truckPosting.getMyFleetAvailability` row - one company vehicle with its
+/// live operational status + next-service dates. Server emits "" for absent
+/// strings and 0 for absent capacity; the view em-dashes each.
+struct TruckFleetVehicle: Decodable, Identifiable, Hashable {
+    let id: Int
+    let vehicleType: String?
+    let make: String?
+    let model: String?
+    let year: Int?
+    let vin: String?
+    let licensePlate: String?
+    let capacity: Double?
+    let status: String?          // available / in_use / maintenance / out_of_service
+    let currentDriverId: Int?
+    /// The vehicle's last-known GPS fix, or null. POSTing a truck requires a
+    /// live fix (the proc's `currentLocation` is mandatory), so the board
+    /// gates POST on `location != nil` — honest when a truck has no fix yet.
+    let location: Geo?
+    let lastGPSUpdate: String?
+    let nextMaintenance: String?
+    let nextInspection: String?
+
+    /// `{ lat, lng } | null` — the server emits the row's `currentLocation`
+    /// here verbatim (sibling fields only; never fabricated).
+    struct Geo: Decodable, Hashable {
+        let lat: Double?
+        let lng: Double?
+    }
+}
+
+/// One inbound offer ON a posted truck - the broker/load pairing the carrier
+/// can accept or decline. Field-for-field with `listInboundOffers`'s enriched
+/// shape. `broker` / `load` are null when the server couldn't resolve them
+/// (honest - never fabricated). All money is a parsed Double or nil.
+struct CarrierTruckInboundOffer: Decodable, Identifiable, Hashable {
+    var id: Int { offerId }
+    let offerId: Int
+    let postingId: Int
+    let status: String           // pending / accepted / declined / expired / booked
+    let offeredRate: Double?
+    let createdAt: String?
+    let respondedAt: String?
+    let broker: Broker?
+    let load: OfferLoad?
+
+    struct Broker: Decodable, Hashable {
+        let id: Int
+        let name: String?
+    }
+    struct OfferLoad: Decodable, Hashable {
+        let id: Int
+        let loadNumber: String?
+        let status: String?
+        let cargoType: String?
+        let commodityName: String?
+        let hazmatClass: String?
+        let rate: Double?
+        let origin: Place
+        let destination: Place
+        let pickupDate: String?
+        struct Place: Decodable, Hashable {
+            let city: String?
+            let state: String?
+        }
+    }
+}
+
+/// `truckPosting.listInboundOffers` envelope.
+struct TruckInboundOffersEnvelope: Decodable, Equatable {
+    let offers: [CarrierTruckInboundOffer]
+    let total: Int
+}
+
+/// `truckPosting.postTruck` result - the minted posting + how many compatible
+/// open loads the matcher surfaced as pending offers immediately.
+struct TruckPostResult: Decodable, Equatable {
+    let success: Bool
+    let postingId: Int
+    let vehicleId: Int
+    let status: String
+    let equipmentType: String?
+    let offersSurfaced: Int?
+    let postedAt: String?
+}
+
+/// `truckPosting.pauseTruck` result - the toggled status (active<->paused)
+/// and any offers re-surfaced on re-activation.
+struct TruckPauseResult: Decodable, Equatable {
+    let success: Bool
+    let postingId: Int
+    let status: String           // "active" or "paused"
+    let offersSurfaced: Int?
+}
+
+/// `truckPosting.acceptOffer` success result - the booked load + confirmation.
+struct TruckAcceptResult: Decodable, Equatable {
+    let success: Bool
+    let offerId: Int
+    let offerStatus: String      // "booked"
+    let postingId: Int
+    let postingStatus: String    // "matched"
+    let loadId: Int
+    let bookingId: String?
+    let confirmationNumber: String?
+    let bookedAt: String?
+}
+
+/// `truckPosting.declineOffer` result.
+struct TruckDeclineResult: Decodable, Equatable {
+    let success: Bool
+    let offerId: Int
+    let status: String           // "declined"
+}
+
+/// Geo + place for a `postTruck` call. `lat`/`lng` are required by the proc;
+/// `city`/`state` enrich the posting's origin labels.
+struct TruckPostLocation: Encodable {
+    let lat: Double
+    let lng: Double
+    let city: String?
+    let state: String?
+}
+
+struct TruckPostingAPI {
+    unowned let api: EusoTripAPI
+
+    // -- Reads --------------------------------------------------------------
+
+    /// `truckPosting.getCapacityStats` - live market capacity (available
+    /// trucks vs posted loads, hazmat split, tight/balanced/loose verdict).
+    /// Honest-empty (all-zero, nil market) on no-db; the view em-dashes.
+    func getCapacityStats(state: String? = nil) async throws -> TruckCapacityStats {
+        struct Input: Encodable { let state: String? }
+        return try await api.query("truckPosting.getCapacityStats",
+                                   input: Input(state: state))
+    }
+
+    /// `truckPosting.getMyFleetAvailability` - the carrier company's vehicles
+    /// with live operational status. `status` filters the lane (default all).
+    func getMyFleetAvailability(status: String = "all") async throws -> [TruckFleetVehicle] {
+        struct Input: Encodable { let status: String }
+        return try await api.query("truckPosting.getMyFleetAvailability",
+                                   input: Input(status: status))
+    }
+
+    /// `truckPosting.listInboundOffers` - inbound offers on the carrier's
+    /// posted truck(s). `runMatcher` (default true) refreshes pending offers
+    /// from newly-posted compatible loads before returning. Honest-empty when
+    /// there are no offers - never fabricated.
+    func listInboundOffers(
+        postingId: Int? = nil,
+        status: String = "pending",
+        runMatcher: Bool = true,
+        limit: Int = 50
+    ) async throws -> TruckInboundOffersEnvelope {
+        struct Input: Encodable {
+            let postingId: Int?
+            let status: String
+            let runMatcher: Bool
+            let limit: Int
+        }
+        return try await api.query(
+            "truckPosting.listInboundOffers",
+            input: Input(postingId: postingId, status: status,
+                         runMatcher: runMatcher, limit: limit))
+    }
+
+    // -- Mutations ----------------------------------------------------------
+
+    /// `truckPosting.postTruck` - post a vehicle as available; mints a real
+    /// posting row and runs the matcher to surface compatible open loads as
+    /// pending offers. Returns the posting id + offers surfaced.
+    func postTruck(
+        vehicleId: Int,
+        currentLocation: TruckPostLocation,
+        availableDate: String,
+        driverId: Int? = nil,
+        equipmentType: String? = nil,
+        preferredDestinations: [String]? = nil,
+        destPreference: String? = nil,
+        ratePerMile: Double? = nil,
+        maxDistance: Double? = nil,
+        expiresAt: String? = nil,
+        hazmatEndorsed: Bool = false,
+        hazmatClasses: [String]? = nil,
+        notes: String? = nil
+    ) async throws -> TruckPostResult {
+        struct Input: Encodable {
+            let vehicleId: Int
+            let driverId: Int?
+            let equipmentType: String?
+            let currentLocation: TruckPostLocation
+            let availableDate: String
+            let preferredDestinations: [String]?
+            let destPreference: String?
+            let ratePerMile: Double?
+            let maxDistance: Double?
+            let expiresAt: String?
+            let hazmatEndorsed: Bool
+            let hazmatClasses: [String]?
+            let notes: String?
+        }
+        return try await api.mutation(
+            "truckPosting.postTruck",
+            input: Input(
+                vehicleId: vehicleId, driverId: driverId,
+                equipmentType: equipmentType, currentLocation: currentLocation,
+                availableDate: availableDate,
+                preferredDestinations: preferredDestinations,
+                destPreference: destPreference, ratePerMile: ratePerMile,
+                maxDistance: maxDistance, expiresAt: expiresAt,
+                hazmatEndorsed: hazmatEndorsed, hazmatClasses: hazmatClasses,
+                notes: notes))
+    }
+
+    /// `truckPosting.pauseTruck` - toggle an active posting to paused (and
+    /// back). Returns the resulting status so the UI can flip the hero.
+    func pauseTruck(postingId: Int) async throws -> TruckPauseResult {
+        struct Input: Encodable { let postingId: Int }
+        return try await api.mutation("truckPosting.pauseTruck",
+                                      input: Input(postingId: postingId))
+    }
+
+    /// `truckPosting.acceptOffer` - ONE-TAP accept. The server runs BOTH
+    /// verification gates (identity-at-booking + Montgomery carrier-vetting)
+    /// before booking. A gate BLOCK arrives as a FORBIDDEN, which the client
+    /// promotes to `.unauthenticated`; we translate that here into
+    /// `TruckPostingGateError` so the board can surface the honest gate reason
+    /// instead of a generic "Authentication required." Other failures bubble
+    /// their server message verbatim.
+    func acceptOffer(
+        offerId: Int,
+        vehicleId: Int? = nil,
+        driverId: Int? = nil
+    ) async throws -> TruckAcceptResult {
+        struct Input: Encodable {
+            let offerId: Int
+            let vehicleId: Int?
+            let driverId: Int?
+        }
+        do {
+            return try await api.mutation(
+                "truckPosting.acceptOffer",
+                input: Input(offerId: offerId, vehicleId: vehicleId, driverId: driverId))
+        } catch let e as EusoTripAPIError {
+            switch e {
+            case .unauthenticated:
+                // Could be a true auth lapse OR a gate FORBIDDEN - both land
+                // here. Surface honestly as a verification block; the human
+                // re-auths or fixes vetting, then retries.
+                throw TruckPostingGateError.blocked(
+                    message: "This load couldn't be accepted: a verification gate blocked it. Confirm your identity is verified and your carrier authority / insurance meet the load's requirements, then try again.")
+            case .trpcError(let m):
+                // Server gates that surface as a non-promoted tRPC error keep
+                // their verbatim human reason.
+                throw TruckPostingGateError.blocked(message: m)
+            default:
+                throw e
+            }
+        }
+    }
+
+    /// `truckPosting.declineOffer` - decline an inbound offer; the truck stays
+    /// posted and other pending offers are untouched.
+    func declineOffer(offerId: Int) async throws -> TruckDeclineResult {
+        struct Input: Encodable { let offerId: Int }
+        return try await api.mutation("truckPosting.declineOffer",
+                                      input: Input(offerId: offerId))
     }
 }

@@ -90,6 +90,14 @@ enum CarrierNavRoute {
         "network":  "304",      // Carrier · Drivers (person.2 hub; 500-trio)
         "match":    "501",      // Catalyst · Matches (SpectraMatch board)
         "find":     "341",      // Catalyst · Find Loads (341's own slot)
+        // 2026-06-18 — Carrier · Truck Posting board (321_CarrierTruckPosting).
+        // Registered under id "321C" (NOT "321"; that id is the catalyst
+        // "Driver Profile" .catalyst screen, and CarrierSurface resolves
+        // .carrier→.catalyst by FIRST id, so a carrier "321" would shadow
+        // it — documented dup/destroy hazard). Reached from a Fleet/Home
+        // "Post your truck / capacity" CTA that emits one of these labels.
+        "post truck": "321C",   // Carrier · Truck Posting (capacity board)
+        "capacity":   "321C",   // alias — same board
     ]
 
     /// `BottomNav` emits the orb tap as `"esang"`.

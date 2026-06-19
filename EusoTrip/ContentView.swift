@@ -930,6 +930,7 @@ enum ScreenRegistry {
         list.append(.init(id: "290", title: "Shipper · Wallet Home",             role: .shipper) { p in AnyView(WalletHomeScreen(theme: p)) })
         list.append(.init(id: "291", title: "Shipper · EusoWallet Detail",       role: .shipper) { p in AnyView(EusoWalletDetailScreen(theme: p)) })
         list.append(.init(id: "292", title: "Shipper · Settlements List",        role: .shipper) { p in AnyView(SettlementsListScreen(theme: p)) })
+        list.append(.init(id: "437", title: "Shipper · Invoices & AR",           role: .shipper) { p in AnyView(ShipperInvoicesScreen(theme: p)) })
         list.append(.init(id: "293", title: "Shipper · Settlement Detail",       role: .shipper) { p in AnyView(SettlementDetailScreen(theme: p, settlementId: "0")) })
         list.append(.init(id: "294", title: "Shipper · Dispute Settlement",      role: .shipper) { p in AnyView(DisputeSettlementScreen(theme: p, settlementId: "0")) })
         list.append(.init(id: "295", title: "Shipper · Payment Methods",         role: .shipper) { p in AnyView(PaymentMethodsScreen(theme: p)) })
@@ -1133,6 +1134,7 @@ enum ScreenRegistry {
         list.append(.init(id: "318", title: "Carrier · ELD",               role: .carrier) { p in AnyView(CarrierELDScreen(theme: p)) })
         list.append(.init(id: "319", title: "Carrier · Drivers List",      role: .carrier) { p in AnyView(CarrierDriversListScreen(theme: p)) })
         list.append(.init(id: "320", title: "Carrier · Vehicles List",     role: .carrier) { p in AnyView(CarrierVehiclesListScreen(theme: p)) })
+        list.append(.init(id: "321C", title: "Carrier · Truck Posting",    role: .carrier) { p in AnyView(CarrierTruckPostingScreen(theme: p)) })
         list.append(.init(id: "350", title: "Carrier · Me",                role: .carrier) { p in AnyView(CarrierMeScreen(theme: p)) })
         // 2026-06-02 — WAVE 1: the 5 missing role Me hubs (kill Me→Home
         // dead-routes). Each mirrors 350_CarrierMe chrome, indexes its

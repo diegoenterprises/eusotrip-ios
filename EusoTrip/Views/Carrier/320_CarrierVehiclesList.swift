@@ -91,6 +91,7 @@ private struct VehiclesBody: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Space.s4) {
                     header
+                    postCapacityCTA
                     if let m = lastFlip {
                         LifecycleCard(accentGradient: true) {
                             Text(m).font(EType.caption).foregroundStyle(palette.textPrimary)
@@ -147,6 +148,45 @@ private struct VehiclesBody: View {
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// Entry point to the Carrier · Truck Posting board (registry "321C").
+    /// Posts the canonical carrier nav-swap notification (same direct-post
+    /// pattern as 306/309/313). The CarrierSurface listener swaps the
+    /// active screen to 321_CarrierTruckPosting and pushes it onto the
+    /// carrier screenStack. Routed via "321C" — NOT "321" (that id is the
+    /// catalyst Driver-Profile screen; carrier "321" would shadow it).
+    private var postCapacityCTA: some View {
+        Button {
+            NotificationCenter.default.post(
+                name: .eusoCarrierNavSwap,
+                object: nil,
+                userInfo: ["screenId": "321C"]
+            )
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "dot.radiowaves.up.forward")
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(.white)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Post your truck / capacity")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(.white)
+                    Text("Advertise available capacity to the load board")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(LinearGradient.diagonal)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     private var scrubber: some View {
