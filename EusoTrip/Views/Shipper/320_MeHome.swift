@@ -155,6 +155,7 @@ enum MeHubCatalog {
         MeSection(title: "MONEY IN", icon: "arrow.down.circle", cells: [
             MeCell(icon: "wallet.pass.fill",     label: "EusoWallet",       action: .screen("290")),
             MeCell(icon: "creditcard",           label: "Settlements",      action: .screen("206")),
+            MeCell(icon: "doc.plaintext.fill",   label: "Invoices & AR",    action: .screen("437")),
             MeCell(icon: "doc.text",             label: "Statements",       action: .screen("297")),
         ]),
         MeSection(title: "MONEY OUT", icon: "arrow.up.circle", cells: [

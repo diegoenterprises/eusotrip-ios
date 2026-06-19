@@ -65,6 +65,9 @@ struct ActiveEnroute: View {
     @Environment(\.palette) var palette
     @Environment(\.lifecycleAdvance) private var advance
     @Environment(\.driverNavBack) private var navBack
+    /// Canonical sheet→push detail closure (auto BespokeBackBar). Used to
+    /// push the Reroute Optimizer in-stack — NEVER a slide-up modal.
+    @Environment(\.rolePushDetail) private var pushDetail
     @EnvironmentObject var session: EusoTripSession
 
     enum Register { case night, morning }
@@ -835,6 +838,14 @@ struct ActiveEnroute: View {
                 tile(label: "FUEL BURN", value: fuelBurnText)
             }
 
+            // Reroute affordance — pushes the Reroute Optimizer in-stack
+            // (canonical sheet→push, NOT a slide-up). Compares the active
+            // route against ranked alternates (routing.compareAlternatives)
+            // and applies a chosen route (routing.applyReroute). Always
+            // tappable; the optimizer self-hydrates the active load and
+            // shows an honest "no saved route" state when none is persisted.
+            rerouteAffordance
+
             // CTAs
             HStack(spacing: Space.s2) {
                 Button {
@@ -886,6 +897,45 @@ struct ActiveEnroute: View {
                 )
                 .shadow(color: .black.opacity(0.28), radius: 22, y: 10)
         )
+    }
+
+    /// "Reroute" affordance on the en-route sheet — slim, full-width row
+    /// that pushes the Reroute Optimizer via the canonical sheet→push
+    /// detail layer (auto BespokeBackBar; never a slide-up modal). Passes
+    /// the active load id + mode so the optimizer resolves the right route.
+    private var rerouteAffordance: some View {
+        Button {
+            let lid = activeLoad?.id
+            let mode = activeLoad?.transportMode
+            pushDetail?("Reroute Optimizer") {
+                AnyView(RerouteOptimizerSheet(loadId: lid, transportMode: mode))
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.triangle.branch")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("Reroute · compare alternates")
+                    .font(EType.body).fontWeight(.semibold)
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(.vertical, Space.s3)
+            .padding(.horizontal, Space.s3)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(palette.tintNeutral.opacity(0.35))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.borderFaint, lineWidth: 0.5)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Open reroute optimizer")
     }
 
     private var facilityPin: some View {
