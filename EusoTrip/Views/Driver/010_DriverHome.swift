@@ -191,6 +191,7 @@ enum HomeWidgetCatalog {
         .init(id: "haul",               name: "The Haul weekly",    summary: "XP ring + missions + rank",            icon: "rosette",                 category: .performance,    roles: ["DRIVER"], defaultSize: (12, 6),  iosRenderable: true),
         .init(id: "compliance",         name: "Compliance countdown", summary: "CDL / medical / hazmat / TWIC expiry", icon: "checkmark.shield.fill", category: .compliance,    roles: ["DRIVER"], defaultSize: (12, 4),  iosRenderable: true, availableSizes: [.full, .half]),
         .init(id: "hotZones",           name: "Hot zones",          summary: "Live load-to-truck ratios + surges",   icon: "flame.fill",              category: .analytics,      roles: ["DRIVER"], defaultSize: (12, 8),  iosRenderable: true),
+        .init(id: "near_me_intel",      name: "Near me · Load intel", summary: "ESANG near-me lane scoring: L/T ratio, surge & est. earnings", icon: "location.magnifyingglass", category: .analytics, roles: ["DRIVER"], defaultSize: (12, 8),  iosRenderable: true),
         .init(id: "performance_score",  name: "Performance score",  summary: "Safety · on-time rate · fleet rank",   icon: "chart.line.uptrend.xyaxis", category: .performance,  roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
         .init(id: "mileage_tracker",    name: "Mileage tracker",    summary: "Monthly miles + current load distance", icon: "road.lanes",                 category: .analytics,    roles: ["DRIVER"], defaultSize: (10, 6),  iosRenderable: true, availableSizes: [.half, .full]),
         // ── New driver widgets (2026-05-30 #50 catalog expansion) ──
@@ -854,6 +855,7 @@ struct DriverHome: View {
     private let driverHomeCanonicalOrder: [String] = [
         "current_route", "next_delivery", "hos_tracker", "earnings_summary", "weather_alerts",
         "messages", "notifications", "haul", "compliance", "news", "recent", "hotZones",
+        "near_me_intel",
         "performance_score", "vehicle_health", "mileage_tracker", "fuel_economy",
         "wallet_activity", "fuel_stations", "rest_areas",
     ]
@@ -879,6 +881,7 @@ struct DriverHome: View {
         case "news":            AnyView(NewsCarouselWidget())
         case "recent":          AnyView(recentSection)
         case "hotZones":        AnyView(HotZonesWidget())
+        case "near_me_intel":   AnyView(NearMeLoadIntelWidget())
         case "performance_score": AnyView(PerformanceScoreWidget())
         case "vehicle_health":  AnyView(VehicleHealthWidget())
         case "mileage_tracker": AnyView(MileageTrackerWidget(currentLoadMiles: vm.activeLoad?.distanceValue))
@@ -3398,6 +3401,497 @@ struct FuelStationsWidget: View {
                     if p0 != p1 { return p0 < p1 }
                     return ($0.distance ?? Int.max) < ($1.distance ?? Int.max)
                 }
+            loading = false
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loading = false
+        }
+    }
+}
+
+// MARK: - NearMeLoadIntelWidget (catalog widget id: "near_me_intel")
+//
+// The driver-facing surface for the ML load intelligence + near-me
+// hot-zone market intel the platform already computes server-side but
+// never showed the driver. Anchored on the driver's live CoreLocation
+// fix, it calls `hotZones.getDriverOpportunities(lat,lng,radius)` — the
+// same engine that powers the web driver map's "best loads near you"
+// layer — and surfaces, for each near-me hot zone:
+//
+//   • ML lane scoring   — the H3 AI proximity rank (server sorts by it)
+//   • L/T ratio + surge — the REAL load-to-truck pressure & multiplier
+//                         for the driver's AREA (task B), not national
+//   • est. earnings     — the ML projection (avgRate × distance × 0.85)
+//   • avg $/mi          — the zone's live rate
+//
+// Honesty envelope (rate-vs-market doctrine): every metric the server
+// omits renders as an em-dash — NEVER a fabricated rate/ratio/score.
+// Bounded load: the shared EusoTripAPI session carries the 22 s request
+// ceiling, and every isLoading flag resolves. Location-denied + empty +
+// error are all real, distinct states. Flip-card doctrine: the lead
+// opportunity FLIPS in place to reveal the ML "why this zone is hot"
+// reasons + earnings breakdown rather than pushing a detail screen.
+
+struct NearMeLoadIntelWidget: View {
+    @Environment(\.palette) private var palette
+
+    @State private var opportunities: [DriverOpportunity] = []
+    @State private var roleContext: DriverOpportunityRoleContext? = nil
+    @State private var searchRadius: Int? = nil
+    @State private var loading = true
+    @State private var loadError: String? = nil
+    @State private var locationDenied = false
+    @State private var lastLoadedAt: Date? = nil
+    /// Flip state for the lead opportunity card (flip-card doctrine).
+    @State private var leadFlipped = false
+
+    /// The server's secondary-metric label for the DRIVER role
+    /// ("Est. Earnings"), falling back to a neutral default.
+    private var earningsLabel: String {
+        roleContext?.secondaryMetric?.uppercased() ?? "EST. EARNINGS"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            header
+            if loading && opportunities.isEmpty {
+                loadingState
+            } else if locationDenied {
+                locationDeniedState
+            } else if let err = loadError, opportunities.isEmpty {
+                errorState(err)
+            } else if opportunities.isEmpty {
+                emptyState
+            } else {
+                content
+            }
+            footerMeta
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        // Bespoke EusoCard surface — iridescent blue→magenta outline +
+        // ambient glow, matching the sibling driver-home tiles.
+        .eusoCard(radius: Radius.lg)
+        .task { await load() }
+        .onAppear {
+            // Re-fetch on every reappear (not just first mount) so a
+            // driver who moved sees fresh near-me intel — same cadence
+            // the HotZonesWidget uses for "always fresh when looked at".
+            if lastLoadedAt != nil { Task { await load() } }
+        }
+    }
+
+    // MARK: Header
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "location.magnifyingglass")
+                .font(.system(size: 11, weight: .heavy))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("NEAR ME · LOAD INTEL")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                .foregroundStyle(LinearGradient.diagonal)
+            Spacer(minLength: 0)
+            // Radius badge — the REAL search radius the server scanned.
+            if let r = searchRadius {
+                Text("\(r) mi")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            // ESANG attribution — this is the ML lane-scoring surface.
+            HStack(spacing: 3) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 8, weight: .heavy))
+                Text("ESANG")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+            }
+            .foregroundStyle(palette.textTertiary)
+        }
+    }
+
+    // MARK: Content
+
+    @ViewBuilder
+    private var content: some View {
+        // Lead opportunity — the top AI-proximity-ranked zone, rendered
+        // as a flip card (front = the headline lane signal, back = the
+        // ML reasons + earnings breakdown).
+        if let lead = opportunities.first {
+            leadCard(lead)
+        }
+        // The next near-me zones as a horizontal rail of compact chips.
+        if opportunities.count > 1 {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Space.s2) {
+                    ForEach(Array(opportunities.dropFirst().prefix(5).enumerated()), id: \.element.zoneId) { pair in
+                        oppChip(pair.element, rank: pair.offset + 2)
+                    }
+                }
+                .padding(.horizontal, 2)
+                .padding(.vertical, 2)
+            }
+            .scrollClipDisabled()
+        }
+    }
+
+    // MARK: Lead flip card
+
+    private func leadCard(_ opp: DriverOpportunity) -> some View {
+        let demand = HotZoneDemand(demandTier(opp.loadToTruckRatio))
+        return ZStack {
+            if leadFlipped {
+                leadBack(opp)
+                    .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
+            } else {
+                leadFront(opp, demand: demand)
+            }
+        }
+        .rotation3DEffect(.degrees(leadFlipped ? 180 : 0), axis: (x: 0, y: 1, z: 0))
+        .animation(.easeInOut(duration: 0.45), value: leadFlipped)
+        .contentShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .onTapGesture {
+            withAnimation(.easeInOut(duration: 0.45)) { leadFlipped.toggle() }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(opp.zoneName), \(opp.distance) miles. Tap to flip for the load intelligence breakdown.")
+    }
+
+    private func leadFront(_ opp: DriverOpportunity, demand: HotZoneDemand) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 6) {
+                // #1 rank dot — the server already sorted by AI proximity.
+                ZStack {
+                    Circle().fill(LinearGradient.diagonal).frame(width: 20, height: 20)
+                    Image(systemName: "scope")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(.white)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(opp.zoneName)
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("\(opp.distance) mi away")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Spacer(minLength: 0)
+                Text(demand.label)
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(demand.color)
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .background(Capsule().fill(demand.color.opacity(0.16)))
+            }
+            // Headline signal row — REAL near-me L/T ratio + surge + est.
+            // earnings. Em-dash on any absent metric.
+            HStack(spacing: Space.s3) {
+                signalChip(
+                    label: "L/T RATIO",
+                    value: String(format: "%.1fx", opp.loadToTruckRatio),
+                    tint: Brand.warning
+                )
+                signalChip(
+                    label: "SURGE",
+                    value: String(format: "%.2fx", opp.surgeMultiplier),
+                    tint: demand.color
+                )
+                signalChip(
+                    label: earningsLabel,
+                    value: opp.estimatedEarnings.map { "$\(Int($0).formatted())" } ?? "—",
+                    tint: Brand.success
+                )
+            }
+            HStack(spacing: 4) {
+                Image(systemName: "dollarsign.circle")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+                Text(String(format: "$%.2f /mi avg", opp.avgRate))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 0)
+                HStack(spacing: 3) {
+                    Text("Why it's hot")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 9, weight: .heavy))
+                }
+                .foregroundStyle(palette.textTertiary)
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(LinearGradient(colors: [demand.color.opacity(0.16), palette.bgCard],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1)
+        )
+    }
+
+    private func leadBack(_ opp: DriverOpportunity) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("WHY \(opp.zoneName.uppercased()) IS HOT")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "arrow.uturn.backward")
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            // ML "why this zone is hot" reasons — straight from the server.
+            if let reasons = opp.reasons, !reasons.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(reasons.prefix(3), id: \.self) { reason in
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "sparkle")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(LinearGradient.diagonal)
+                                .padding(.top, 2)
+                            Text(reason)
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(palette.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            } else {
+                // Honest empty — no fabricated rationale.
+                Text("No lane drivers published for this zone yet.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Divider().overlay(palette.borderFaint)
+            // Earnings breakdown — the ML projection spelled out.
+            HStack(spacing: Space.s3) {
+                backStat(label: earningsLabel,
+                         value: opp.estimatedEarnings.map { "$\(Int($0).formatted())" } ?? "—",
+                         tint: AnyShapeStyle(Brand.success))
+                backStat(label: "AVG RATE",
+                         value: String(format: "$%.2f", opp.avgRate),
+                         tint: AnyShapeStyle(LinearGradient.diagonal))
+                if !opp.topEquipment.isEmpty {
+                    backStat(label: "EQUIP",
+                             value: prettyEquip(opp.topEquipment.first ?? "—"),
+                             tint: AnyShapeStyle(palette.textPrimary))
+                }
+            }
+            Text("Tap to flip back")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.55), lineWidth: 1)
+        )
+    }
+
+    private func backStat(label: String, value: String, tint: AnyShapeStyle) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                .foregroundStyle(palette.textTertiary)
+            Text(value)
+                .font(.system(size: 14, weight: .heavy))
+                .monospacedDigit()
+                .foregroundStyle(tint)
+                .lineLimit(1).minimumScaleFactor(0.6)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: Signal chip (front headline metrics)
+
+    private func signalChip(label: String, value: String, tint: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                .foregroundStyle(tint.opacity(0.85))
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(value)
+                .font(.system(size: 16, weight: .heavy))
+                .monospacedDigit()
+                .foregroundStyle(tint)
+                .lineLimit(1).minimumScaleFactor(0.6)
+        }
+        .padding(.horizontal, Space.s2)
+        .padding(.vertical, Space.s2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(tint.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(tint.opacity(0.40), lineWidth: 1))
+    }
+
+    // MARK: Compact opportunity chip (rail)
+
+    private func oppChip(_ opp: DriverOpportunity, rank: Int) -> some View {
+        let demand = HotZoneDemand(demandTier(opp.loadToTruckRatio))
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 5) {
+                ZStack {
+                    Circle().fill(demand.color.opacity(0.18)).frame(width: 16, height: 16)
+                    Text("\(rank)")
+                        .font(.system(size: 9, weight: .heavy))
+                        .foregroundStyle(demand.color)
+                }
+                Text(opp.zoneName)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            Text("\(opp.distance) mi")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(palette.textTertiary)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(String(format: "%.1fx", opp.loadToTruckRatio))
+                    .font(.system(size: 14, weight: .heavy))
+                    .monospacedDigit()
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("L/T")
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Text(opp.estimatedEarnings.map { "~$\(Int($0).formatted())" } ?? "—")
+                .font(.system(size: 11, weight: .heavy))
+                .monospacedDigit()
+                .foregroundStyle(Brand.success)
+        }
+        .padding(Space.s2)
+        .frame(width: 124, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(demand.color.opacity(0.45), lineWidth: 1))
+    }
+
+    // MARK: States
+
+    private var loadingState: some View {
+        HStack(spacing: Space.s2) {
+            ProgressView().tint(palette.textSecondary)
+            Text("Scanning loads near you…")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, Space.s2)
+    }
+
+    private var locationDeniedState: some View {
+        HStack(spacing: Space.s2) {
+            Image(systemName: "location.slash.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(palette.textTertiary)
+            Text("Enable location to see load intelligence near you.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, Space.s2)
+    }
+
+    private var emptyState: some View {
+        HStack(spacing: Space.s2) {
+            Image(systemName: "mappin.slash")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(palette.textTertiary)
+            Text(searchRadius.map { "No hot zones within \($0) mi right now." } ?? "No hot zones near you right now.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, Space.s2)
+    }
+
+    private func errorState(_ message: String) -> some View {
+        #if DEBUG
+        let _ = message
+        #endif
+        return HStack(spacing: Space.s2) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(palette.textTertiary)
+                .symbolEffect(.pulse, options: .repeating)
+            Text("Updating load intelligence…")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer(minLength: 0)
+            Button { Task { await load() } } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Retry load intelligence")
+        }
+        .padding(.vertical, Space.s2)
+    }
+
+    private var footerMeta: some View {
+        HStack(spacing: Space.s2) {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("ESANG · EusoTrip Intelligence")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(palette.textTertiary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            if let at = lastLoadedAt {
+                Text("Updated " + HotZonesTime.shortAgo(from: at))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            if loading && !opportunities.isEmpty {
+                ProgressView().controlSize(.mini).tint(palette.textSecondary)
+            }
+        }
+    }
+
+    // MARK: Helpers
+
+    /// Mirrors the server's demand-tier thresholds in `getActiveZones`
+    /// (`loadToTruckRatio > 2.8 → CRITICAL`, `> 2.0 → HIGH`, else
+    /// `ELEVATED`) so the near-me tile reads the same tier semantics as
+    /// the national Hot Zones surface. No fabrication — purely a styling
+    /// classification off the REAL ratio.
+    private func demandTier(_ ratio: Double) -> String {
+        if ratio > 2.8 { return "CRITICAL" }
+        if ratio > 2.0 { return "HIGH" }
+        return "ELEVATED"
+    }
+
+    private func prettyEquip(_ code: String) -> String {
+        code.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    // MARK: Load
+
+    private func load() async {
+        loading = true; loadError = nil; locationDenied = false
+        guard let coord = await DriverLocationResolver.shared.currentCoordinate() else {
+            locationDenied = true; loading = false; return
+        }
+        do {
+            let result = try await EusoTripAPI.shared.hotZones.getDriverOpportunities(
+                lat: coord.latitude, lng: coord.longitude
+            )
+            // Server already ranks by AI proximity; keep that order.
+            self.opportunities = result.opportunities
+            self.roleContext = result.roleContext
+            self.searchRadius = result.searchRadius
+            self.lastLoadedAt = Date()
             loading = false
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription

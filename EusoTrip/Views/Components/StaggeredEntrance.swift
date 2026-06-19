@@ -141,10 +141,18 @@ public struct StaggeredEntranceModifier: ViewModifier {
         // no per-element animation at all — the first-load gate.
         let settled = shown || alreadyPlayed
 
+        // FOUNDER MANDATE (2026-06-18, build 737): "its still sliding in …
+        // the whole damn app. i want NORMAL, NO sliding." The home-entrance
+        // cascade used to enter each piece from 0.92 SCALE + a 5pt BLUR via
+        // a SPRING — a zoom-and-focus that the founder read as motion. This
+        // is now a clean OPACITY-ONLY fade: no scaleEffect, no blur, no
+        // spring (springs settle with overshoot that also reads as motion).
+        // A small per-element opacity stagger remains (the founder OK'd a
+        // tiny opacity stagger); there is NO translation and NO scale.
+        // `scaleStart` / `blurStart` / `opacityStart` / spring tokens are now
+        // inert but kept on the enum for source compatibility.
         return content
-            .opacity(settled ? 1 : (reduceMotion ? 0 : StaggeredEntrance.opacityStart))
-            .scaleEffect(settled ? 1 : (reduceMotion ? 1 : StaggeredEntrance.scaleStart))
-            .blur(radius: settled ? 0 : (reduceMotion ? 0 : StaggeredEntrance.blurStart))
+            .opacity(settled ? 1 : 0)
             .onAppear {
                 // Guard 1 — already settled (gate hit): jump to shown so
                 // any subsequent layout pass keeps the settled state, no
@@ -157,15 +165,17 @@ public struct StaggeredEntranceModifier: ViewModifier {
                 // reuse): no-op so the cascade never re-triggers on scroll.
                 guard !shown else { return }
 
+                // Single motion model for both Reduce-Motion and normal: a
+                // quick opacity fade. Reduce-Motion fades a hair faster; the
+                // normal path keeps the per-element stagger delay so the
+                // home still "assembles" without any slide/scale/blur.
                 if reduceMotion {
-                    // Reduce-Motion: clean 200 ms fade, no scale/blur/spring.
                     withAnimation(.easeOut(duration: StaggeredEntrance.reducedFade)) {
                         shown = true
                     }
                 } else {
                     DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                        withAnimation(.spring(response: StaggeredEntrance.response,
-                                              dampingFraction: StaggeredEntrance.damping)) {
+                        withAnimation(.easeOut(duration: StaggeredEntrance.reducedFade)) {
                             shown = true
                         }
                     }

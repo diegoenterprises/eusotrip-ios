@@ -471,6 +471,14 @@ final class EusoTripAPI: ObservableObject {
     /// `frontend/server/routers/carrierVetting.ts`
     /// (carrierVetting.evaluate / recordDecision / getPolicy).
     lazy var carrierVetting: CarrierVettingAPI = CarrierVettingAPI(api: self)
+    /// Rate Confirmations — GLOVE FIT B-1 (`server/routers/rateConfirmations.ts`).
+    /// The real rate_confirmations subsystem: fetch an RC + its line items
+    /// (`get`), in-app E-SIGN / UETA signatures (`signBroker` / `signCarrier`)
+    /// that advance the status FSM (draft→sent→signed_*→fully_signed), and the
+    /// HONEST DocuSign outbound seam (`sendDocusign` returns pending outside a
+    /// provisioned prod tenant — never a fabricated "sent"). Backs Shipper 307
+    /// (Rate-con sign).
+    lazy var rateConfirmations: RateConfirmationsAPI = RateConfirmationsAPI(api: self)
 
     // --- Driver-facing surfaces added to back the gamification / wallet /
     // fleet / availability screens. Each router mirrors a file under
@@ -6346,6 +6354,30 @@ struct HotZonesAPI {
         }
         return try await api.query("hotZones.getRateFeed", input: Input(equipment: equipment))
     }
+
+    /// GET /api/trpc/hotZones.getDriverOpportunities — the driver-facing,
+    /// position-anchored slice of the hot-zone intelligence. The server
+    /// (`hotZones.ts:getDriverOpportunities`) takes the driver's live
+    /// lat/lng + a search radius, finds every hot zone inside that radius,
+    /// ranks them by the H3 AI proximity score (geoIntelligence service),
+    /// and projects each into a driver opportunity carrying the REAL
+    /// load-to-truck ratio, surge multiplier, avg $/mi, ML estimated
+    /// earnings (avgRate × distance × 0.85), distance, and the "why this
+    /// zone is hot" reasons. This is the same engine that powers the
+    /// web driver map's "best loads near you" layer.
+    ///
+    /// `radiusMiles` defaults to the server's 150-mi default when omitted.
+    func getDriverOpportunities(lat: Double, lng: Double, radiusMiles: Int? = nil) async throws -> DriverOpportunitiesResult {
+        struct Input: Encodable {
+            let lat: Double
+            let lng: Double
+            let radiusMiles: Int?
+        }
+        return try await api.query(
+            "hotZones.getDriverOpportunities",
+            input: Input(lat: lat, lng: lng, radiusMiles: radiusMiles)
+        )
+    }
 }
 
 // MARK: - HotZones DTOs
@@ -6360,11 +6392,60 @@ struct HotZonesFeedResult: Decodable {
     let timestamp: String?
     let refreshInterval: Int?
     let feedSource: String?
+
+    enum CodingKeys: String, CodingKey {
+        case zones, coldZones, marketPulse, timestamp, refreshInterval, feedSource
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // TOLERANT envelope — a missing/null `zones` key decodes to an empty
+        // feed (→ honest "no demand spike" card) instead of throwing the whole
+        // screen into "Couldn't reach market feed." Every field is wrapped so a
+        // single malformed sub-object can never fail the whole decode. `zones`
+        // is the one that was non-optional before this fix.
+        self.zones        = ((try? c.decodeIfPresent([HotZoneEntry].self, forKey: .zones)) ?? nil) ?? []
+        self.coldZones    = (try? c.decodeIfPresent([ColdZoneEntry].self, forKey: .coldZones)) ?? nil
+        self.marketPulse  = (try? c.decodeIfPresent(HotZonesMarketPulse.self, forKey: .marketPulse)) ?? nil
+        self.timestamp    = (try? c.decodeIfPresent(String.self, forKey: .timestamp)) ?? nil
+        // refreshInterval may ship as a number or a numeric string; absent → nil.
+        if let i = try? c.decodeIfPresent(Int.self, forKey: .refreshInterval) {
+            self.refreshInterval = i
+        } else if let d = try? c.decodeIfPresent(Double.self, forKey: .refreshInterval) {
+            self.refreshInterval = Int(d)
+        } else if let s = try? c.decodeIfPresent(String.self, forKey: .refreshInterval), let i = Int(s) {
+            self.refreshInterval = i
+        } else {
+            self.refreshInterval = nil
+        }
+        self.feedSource   = (try? c.decodeIfPresent(String.self, forKey: .feedSource)) ?? nil
+    }
 }
 
 struct HotZoneCenter: Decodable, Hashable {
     let lat: Double
     let lng: Double
+
+    init(lat: Double, lng: Double) { self.lat = lat; self.lng = lng }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        // Coordinates ship as JSON numbers but harden against a stale row that
+        // serialized them as numeric strings — a bad coord must not fail the feed.
+        self.lat = Self.coord(c, .lat)
+        self.lng = Self.coord(c, .lng)
+    }
+
+    private static func coord(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Double {
+        // `try?` flattens `decodeIfPresent`'s `Double?` to a single optional,
+        // so one `if let` fully unwraps a present, well-typed value.
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return d }
+        if let i = try? c.decodeIfPresent(Int.self, forKey: key) { return Double(i) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key), let d = Double(s) { return d }
+        return 0
+    }
+
+    enum CodingKeys: String, CodingKey { case lat, lng }
 }
 
 struct HotZoneEntry: Decodable, Identifiable, Equatable {
@@ -6431,6 +6512,97 @@ struct HotZoneEntry: Decodable, Identifiable, Equatable {
     }
 
     static func == (lhs: HotZoneEntry, rhs: HotZoneEntry) -> Bool { lhs.zoneId == rhs.zoneId }
+
+    // ── TOLERANT DECODE ────────────────────────────────────────────────────
+    // ROOT-CAUSE HARDENING (build 738): the previous synthesized Decodable made
+    // EVERY field above non-optional fail the WHOLE feed if the server ever
+    // omitted a key, sent null, or shipped a number as a string — exactly the
+    // class of bug that produced "Couldn't reach market feed." This explicit
+    // `init(from:)` makes the entry bulletproof: every required scalar has a
+    // safe default, numbers decode string-or-number, missing/unknown keys never
+    // throw. A single bad zone can never blank the national feed.
+    enum CodingKeys: String, CodingKey {
+        case zoneId, zoneName, state, center, radius, demandLevel, demandTrend
+        case nextWeekForecast, liveRate, liveLoads, liveTrucks, liveRatio, liveSurge
+        case rateChange, rateChangePercent, topEquipment, reasons, peakHours
+        case hazmatClasses, oversizedFrequency, weatherRiskLevel, weatherAlerts
+        case complianceRiskScore, safetyScore, carriersWithViolations
+        case recentHazmatIncidents, activeWildfires, femaDisasterActive
+        case seismicRiskLevel, epaFacilitiesCount, fuelPrice, platformLoads
+        case aiRateTrend, aiRateAnomaly, fmcsa, rail, vessel, pulseSeries
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Required identity/labels — safe-default to "" so a partial row still
+        // decodes (the screen filters by these but never crashes on empty).
+        self.zoneId    = (try? c.decodeIfPresent(String.self, forKey: .zoneId)) ?? nil ?? ""
+        self.zoneName  = (try? c.decodeIfPresent(String.self, forKey: .zoneName)) ?? nil ?? ""
+        self.state     = (try? c.decodeIfPresent(String.self, forKey: .state)) ?? nil ?? ""
+        self.center    = ((try? c.decodeIfPresent(HotZoneCenter.self, forKey: .center)) ?? nil)
+                          ?? HotZoneCenter(lat: 0, lng: 0)
+        self.radius    = Self.leniencyDoubleAny(c, .radius) ?? 0
+        self.demandLevel = (try? c.decodeIfPresent(String.self, forKey: .demandLevel)) ?? nil ?? "ELEVATED"
+
+        // Required live scalars — number-or-string, default 0.
+        self.liveRate  = Self.leniencyDoubleAny(c, .liveRate) ?? 0
+        self.liveLoads = Self.leniencyIntAny(c, .liveLoads) ?? 0
+        self.liveTrucks = Self.leniencyIntAny(c, .liveTrucks) ?? 0
+        self.liveRatio = Self.leniencyDoubleAny(c, .liveRatio) ?? 0
+        self.liveSurge = Self.leniencyDoubleAny(c, .liveSurge) ?? 0
+        self.topEquipment = ((try? c.decodeIfPresent([String].self, forKey: .topEquipment)) ?? nil) ?? []
+
+        // Optionals — every one is decodeIfPresent-or-nil so a null/odd type is
+        // dropped silently, never thrown.
+        self.demandTrend       = (try? c.decodeIfPresent(String.self, forKey: .demandTrend)) ?? nil
+        self.nextWeekForecast  = (try? c.decodeIfPresent(String.self, forKey: .nextWeekForecast)) ?? nil
+        self.rateChange        = Self.leniencyDoubleAny(c, .rateChange)
+        self.rateChangePercent = Self.leniencyDoubleAny(c, .rateChangePercent)
+        self.reasons           = (try? c.decodeIfPresent([String].self, forKey: .reasons)) ?? nil
+        self.peakHours         = (try? c.decodeIfPresent(String.self, forKey: .peakHours)) ?? nil
+        self.hazmatClasses     = (try? c.decodeIfPresent([String].self, forKey: .hazmatClasses)) ?? nil
+        self.oversizedFrequency = (try? c.decodeIfPresent(String.self, forKey: .oversizedFrequency)) ?? nil
+        self.weatherRiskLevel  = (try? c.decodeIfPresent(String.self, forKey: .weatherRiskLevel)) ?? nil
+        self.weatherAlerts     = (try? c.decodeIfPresent([HotZoneWeatherAlert].self, forKey: .weatherAlerts)) ?? nil
+        self.complianceRiskScore = Self.leniencyIntAny(c, .complianceRiskScore)
+        self.safetyScore       = Self.leniencyDoubleAny(c, .safetyScore)
+        self.carriersWithViolations = Self.leniencyIntAny(c, .carriersWithViolations)
+        self.recentHazmatIncidents  = Self.leniencyIntAny(c, .recentHazmatIncidents)
+        self.activeWildfires   = Self.leniencyIntAny(c, .activeWildfires)
+        self.femaDisasterActive = (try? c.decodeIfPresent(Bool.self, forKey: .femaDisasterActive)) ?? nil
+        self.seismicRiskLevel  = (try? c.decodeIfPresent(String.self, forKey: .seismicRiskLevel)) ?? nil
+        self.epaFacilitiesCount = Self.leniencyIntAny(c, .epaFacilitiesCount)
+        self.fuelPrice         = Self.leniencyDoubleAny(c, .fuelPrice)
+        self.platformLoads     = Self.leniencyIntAny(c, .platformLoads)
+        self.aiRateTrend       = (try? c.decodeIfPresent(String.self, forKey: .aiRateTrend)) ?? nil
+        self.aiRateAnomaly     = (try? c.decodeIfPresent(Bool.self, forKey: .aiRateAnomaly)) ?? nil
+        self.fmcsa             = (try? c.decodeIfPresent(HotZoneFMCSA.self, forKey: .fmcsa)) ?? nil
+        self.rail              = (try? c.decodeIfPresent(HotZoneRail.self, forKey: .rail)) ?? nil
+        self.vessel            = (try? c.decodeIfPresent(HotZoneVessel.self, forKey: .vessel)) ?? nil
+        self.pulseSeries       = (try? c.decodeIfPresent([HotZonePulseSample].self, forKey: .pulseSeries)) ?? nil
+    }
+
+    /// Lenient Double — JSON number, Int, or numeric string; absent/null → nil.
+    /// `try?` flattens `decodeIfPresent`'s `Double?` to one optional level, so a
+    /// single `if let` unwraps a present, correctly-typed value.
+    static func leniencyDoubleAny(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Double? {
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return d }
+        if let i = try? c.decodeIfPresent(Int.self, forKey: key) { return Double(i) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key), let d = Double(s) { return d }
+        return nil
+    }
+
+    /// Lenient Int — number, integral-valued number, or numeric string.
+    static func leniencyIntAny(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Int? {
+        if let i = try? c.decodeIfPresent(Int.self, forKey: key) { return i }
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return Int(d) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key) {
+            if let i = Int(s) { return i }
+            if let d = Double(s) { return Int(d) }
+        }
+        return nil
+    }
 }
 
 /// One sample in an optional server-supplied pulse series. Decodes from a
@@ -6501,6 +6673,62 @@ struct HotZonePort: Decodable, Hashable {
     let teu: Int?
     let hasRail: Bool?
     let portType: String?
+}
+
+// MARK: - Driver Opportunities (getDriverOpportunities)
+//
+// The position-anchored, driver-facing projection of the hot-zone
+// intelligence — the leaner-than-`getRateFeed` shape the server
+// (`hotZones.ts:getDriverOpportunities`) returns when given the
+// driver's live coordinate. Each opportunity is a near-me hot zone
+// already ranked by the H3 AI proximity model, carrying the real
+// load-to-truck ratio, surge multiplier, avg $/mi, distance, ML
+// estimated earnings, and the reasons the zone is hot. Decoded
+// leniently so the server can add fields without breaking the app.
+
+/// Envelope for `hotZones.getDriverOpportunities`. `roleContext` carries
+/// the server's per-role primary/secondary metric labels (DRIVER →
+/// "Loads Near Me" / "Est. Earnings") so the tile reads the same
+/// vocabulary the web driver map uses.
+struct DriverOpportunitiesResult: Decodable {
+    let opportunities: [DriverOpportunity]
+    let roleContext: DriverOpportunityRoleContext?
+    let searchRadius: Int?
+    let timestamp: String?
+}
+
+/// One near-me hot zone, AI-proximity-ranked. Every numeric field is the
+/// REAL server value — no synthesis. Optionals stay nil (→ em-dash in the
+/// UI) when the server omits a key rather than fabricating a number.
+struct DriverOpportunity: Decodable, Identifiable, Equatable {
+    var id: String { zoneId }
+    let zoneId: String
+    let zoneName: String
+    let distance: Int                 // miles from the driver's fix
+    let avgRate: Double               // $/mi
+    let loadToTruckRatio: Double
+    let surgeMultiplier: Double
+    let topEquipment: [String]
+    let reasons: [String]?            // "why this zone is hot"
+    let estimatedEarnings: Double?    // ML: avgRate × distance × 0.85
+    let hazmatClasses: [String]?
+    let oversizedFrequency: String?
+    /// H3 AI proximity score (0–1) + named proximity band ("immediate" /
+    /// "near" / "regional" …). nil when the geoIntelligence service was
+    /// unavailable server-side — the tile then ranks by the server's
+    /// fallback (load-to-truck) order without inventing a score.
+    let aiProximityScore: Double?
+    let aiProximityZone: String?
+
+    static func == (lhs: DriverOpportunity, rhs: DriverOpportunity) -> Bool { lhs.zoneId == rhs.zoneId }
+}
+
+/// Per-role labels the server attaches so the tile speaks the same
+/// vocabulary as the web driver map ("Loads Near Me" / "Est. Earnings").
+struct DriverOpportunityRoleContext: Decodable, Equatable {
+    let primaryMetric: String?
+    let secondaryMetric: String?
+    let description: String?
 }
 
 /// NWS/active weather alert attached to a hot zone. Server sends up to
@@ -23620,6 +23848,160 @@ struct CarrierVettingAPI {
     func getPolicy() async throws -> CarrierVettingPolicy {
         let env: CarrierVettingPolicyEnvelope = try await api.queryNoInput("carrierVetting.getPolicy")
         return env.policy
+    }
+}
+
+// MARK: - rateConfirmationsRouter (GLOVE FIT B-1 · Shipper 307 Rate-con sign)
+//
+// Mirrors `frontend/server/routers/rateConfirmations.ts`. The real
+// rate_confirmations subsystem (replaces the prior `documents.signRateCon`
+// stub):
+//   • get          fetch an RC + its line items (party-gated)
+//   • listForLoad  newest-first RCs for a load
+//   • signBroker   record the broker/shipper-side in-app signature (FSM)
+//   • signCarrier  record the carrier-side in-app signature (FSM)
+//   • sendDocusign HONEST DocuSign outbound seam — pending outside prod
+//   • void         void an RC (unless fully signed)
+//
+// In-app signatures are binding under E-SIGN / UETA: the server stamps the
+// signer id + timestamp on the row, which IS the legally-meaningful record.
+// The signature image the pad draws is captured locally; the server FSM
+// advance is what makes the rate-con legally signed. The DocuSign path NEVER
+// fabricates a "sent" envelope outside a provisioned production tenant.
+struct RateConfirmationsAPI {
+    unowned let api: EusoTripAPI
+
+    /// One rate-con line item. qty/rate/amount are drizzle decimals (string on
+    /// the wire) — decoded flexibly the same way `InvoicesAPI.InvoiceLine` does.
+    struct LineItem: Decodable, Identifiable, Hashable {
+        let id: Int
+        let description: String
+        let qty: Double?
+        let rate: Double?
+        let amount: Double?
+        let sortOrder: Int?
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: InvoicesAPI.DynamicKey.self)
+            func k(_ s: String) -> InvoicesAPI.DynamicKey { .init(s) }
+            id          = (try? c.decode(Int.self, forKey: k("id"))) ?? 0
+            description = (try? c.decode(String.self, forKey: k("description"))) ?? "-"
+            qty         = InvoicesAPI.flexDoubleOpt(c, k("qty"))
+            rate        = InvoicesAPI.flexDoubleOpt(c, k("rate"))
+            amount      = InvoicesAPI.flexDoubleOpt(c, k("amount"))
+            sortOrder   = try? c.decode(Int.self, forKey: k("sortOrder"))
+        }
+    }
+
+    /// Full RC detail from `get` / `signBroker` / `signCarrier` (the row spread
+    /// at top level + an appended `lineItems[]` array). `rateAmount` is a
+    /// drizzle decimal (string on the wire). Signature timestamps + signer ids
+    /// surface so the UI can render the post-sign state honestly.
+    struct Detail: Decodable, Identifiable {
+        let id: Int
+        let loadId: Int
+        /// draft | sent | signed_broker | signed_carrier | fully_signed | void
+        let status: String
+        let rateAmount: Double?
+        let currency: String
+        let terms: String?
+        let pdfUrl: String?
+        /// not_sent | pending_docusign_prod | sent | completed
+        let docusignStatus: String
+        let docusignEnvelopeId: String?
+        let brokerSignedBy: Int?
+        let carrierSignedBy: Int?
+        let brokerSignedAt: String?
+        let carrierSignedAt: String?
+        let voidedReason: String?
+        let voidedAt: String?
+        let createdAt: String?
+        let lineItems: [LineItem]
+
+        var isFullySigned: Bool { status == "fully_signed" }
+        var isVoid: Bool { status == "void" }
+        var brokerHasSigned: Bool { brokerSignedAt?.isEmpty == false || brokerSignedBy != nil }
+        var carrierHasSigned: Bool { carrierSignedAt?.isEmpty == false || carrierSignedBy != nil }
+        /// True only when DocuSign has genuinely been dispatched to a provider
+        /// (prod). `pending_docusign_prod` is the HONEST not-yet state.
+        var docusignDispatched: Bool { docusignStatus == "sent" || docusignStatus == "completed" }
+        var docusignPending: Bool { docusignStatus == "pending_docusign_prod" }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: InvoicesAPI.DynamicKey.self)
+            func k(_ s: String) -> InvoicesAPI.DynamicKey { .init(s) }
+            id                 = (try? c.decode(Int.self, forKey: k("id"))) ?? 0
+            loadId             = (try? c.decode(Int.self, forKey: k("loadId"))) ?? 0
+            status             = (try? c.decode(String.self, forKey: k("status"))) ?? "draft"
+            rateAmount         = InvoicesAPI.flexDoubleOpt(c, k("rateAmount"))
+            currency           = (try? c.decode(String.self, forKey: k("currency"))) ?? "USD"
+            terms              = try? c.decode(String.self, forKey: k("terms"))
+            pdfUrl             = try? c.decode(String.self, forKey: k("pdfUrl"))
+            docusignStatus     = (try? c.decode(String.self, forKey: k("docusignStatus"))) ?? "not_sent"
+            docusignEnvelopeId = try? c.decode(String.self, forKey: k("docusignEnvelopeId"))
+            brokerSignedBy     = try? c.decode(Int.self, forKey: k("brokerSignedBy"))
+            carrierSignedBy    = try? c.decode(Int.self, forKey: k("carrierSignedBy"))
+            brokerSignedAt     = try? c.decode(String.self, forKey: k("brokerSignedAt"))
+            carrierSignedAt    = try? c.decode(String.self, forKey: k("carrierSignedAt"))
+            voidedReason       = try? c.decode(String.self, forKey: k("voidedReason"))
+            voidedAt           = try? c.decode(String.self, forKey: k("voidedAt"))
+            createdAt          = try? c.decode(String.self, forKey: k("createdAt"))
+            lineItems          = (try? c.decode([LineItem].self, forKey: k("lineItems"))) ?? []
+        }
+    }
+
+    /// The DocuSign seam result from `sendDocusign`. `pending == true` +
+    /// `docusignStatus == "pending_docusign_prod"` is the honest not-prod state.
+    struct DocusignSeam: Decodable {
+        let pending: Bool
+        let sent: Bool
+        let docusignStatus: String
+        let envelopeId: String?
+        let reason: String?
+    }
+
+    /// `rateConfirmations.get` — fetch one RC + its line items (party-gated).
+    func get(id: Int) async throws -> Detail {
+        struct Input: Encodable { let id: Int }
+        return try await api.query("rateConfirmations.get", input: Input(id: id))
+    }
+
+    /// `rateConfirmations.listForLoad` — newest-first RCs for a load. The
+    /// caller picks the active RC (the most recent non-void one) to sign.
+    func listForLoad(loadId: Int) async throws -> [Detail] {
+        struct Input: Encodable { let loadId: Int }
+        return try await api.query("rateConfirmations.listForLoad", input: Input(loadId: loadId))
+    }
+
+    /// `rateConfirmations.signBroker` — record the broker/shipper-side in-app
+    /// signature and advance the status FSM. Returns the updated RC.
+    @discardableResult
+    func signBroker(id: Int) async throws -> Detail {
+        struct Input: Encodable { let id: Int }
+        return try await api.mutation("rateConfirmations.signBroker", input: Input(id: id))
+    }
+
+    /// `rateConfirmations.signCarrier` — record the carrier-side in-app
+    /// signature and advance the status FSM. Returns the updated RC.
+    @discardableResult
+    func signCarrier(id: Int) async throws -> Detail {
+        struct Input: Encodable { let id: Int }
+        return try await api.mutation("rateConfirmations.signCarrier", input: Input(id: id))
+    }
+
+    /// `rateConfirmations.sendDocusign` — request the DocuSign OUTBOUND
+    /// envelope. HONEST: returns `pending` outside a provisioned prod tenant.
+    @discardableResult
+    func sendDocusign(id: Int) async throws -> DocusignSeam {
+        struct Input: Encodable { let id: Int }
+        return try await api.mutation("rateConfirmations.sendDocusign", input: Input(id: id))
+    }
+
+    /// `rateConfirmations.void` — void an RC (unless fully signed). Broker side.
+    @discardableResult
+    func void(id: Int, reason: String? = nil) async throws -> Detail {
+        struct Input: Encodable { let id: Int; let reason: String? }
+        return try await api.mutation("rateConfirmations.void", input: Input(id: id, reason: reason))
     }
 }
 

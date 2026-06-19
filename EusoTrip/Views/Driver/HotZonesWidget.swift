@@ -1596,7 +1596,7 @@ private struct FlowChips: View {
 
 // MARK: - Time helpers
 
-private enum HotZonesTime {
+enum HotZonesTime {
     static func shortAgo(from date: Date) -> String {
         let seconds = Int(-date.timeIntervalSinceNow)
         if seconds < 60 { return "just now" }

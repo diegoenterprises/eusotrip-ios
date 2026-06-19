@@ -441,7 +441,15 @@ struct MarketIntelligenceBody: View {
                     if let m = macro { macroCard(m) }
                     if !diesel.isEmpty { dieselCard(diesel) }
                 }
-                Color.clear.frame(height: 96)
+                // Floating-nav clearance. This body runs inside MarketHubScreen
+                // as an INNER ScrollView (under the segmented tab bar), so the
+                // Shell's own bottom inset sits below this scroller — not inside
+                // it. Match the Shell's canonical floating-nav clearance
+                // (Device.navHeight + safeBottom + Space.s4 = 120pt) so the last
+                // tile row (e.g. Ultra-Low Sulfur Diesel) fully clears the nav
+                // plate AND the lifted ESANG orb. A bare 96 left the last row
+                // behind the orb (founder 2026-06-18).
+                Color.clear.frame(height: Device.navHeight + Device.safeBottom + Space.s4)
             }
             .padding(.horizontal, 14)
             .padding(.top, 56)
