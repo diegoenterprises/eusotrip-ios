@@ -496,26 +496,41 @@ struct ShipperSurface: View {
     private func uploadShipperAvatar(item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self),
               !data.isEmpty else { return }
-        // Compress to JPEG ≤ 200KB so the data-URL payload stays
-        // reasonable for a tRPC string field. UIKit's
-        // `UIImage(data:).jpegData(compressionQuality:)` produces a
-        // smaller blob than the original PNG/HEIC the picker hands us.
+        // Compress so the base64 data-URL stays well under the 64KB
+        // `users.profilePicture` TEXT column (max 65535 bytes). A detailed
+        // 512px@0.8 JPEG could base64-inflate past 64KB, and the server
+        // UPDATE then throws "Data too long for column" — surfaced to the
+        // user as "your photo didn't upload". Resize to ~320px, then
+        // iteratively drop quality (and dimension as a backstop) until the
+        // JPEG is < 37KB binary (~49KB base64), with a hard floor so it
+        // ALWAYS terminates and ALWAYS fits.
         let bytes: Data = {
             #if canImport(UIKit)
-            if let img = UIImage(data: data) {
-                let target: CGFloat = 512
-                let scale = min(target / img.size.width, target / img.size.height, 1)
-                let size = CGSize(width: img.size.width * scale, height: img.size.height * scale)
+            guard let img = UIImage(data: data) else { return data }
+            let maxBinary = 37_000   // -> base64 < ~49KB, safely under the 64KB column
+            func encode(at dimension: CGFloat, quality: CGFloat) -> Data? {
+                let scale = min(dimension / max(img.size.width, 1), dimension / max(img.size.height, 1), 1)
+                let size = CGSize(width: max(img.size.width * scale, 1), height: max(img.size.height * scale, 1))
                 let renderer = UIGraphicsImageRenderer(size: size)
-                let resized = renderer.image { _ in
-                    img.draw(in: CGRect(origin: .zero, size: size))
-                }
-                if let jpeg = resized.jpegData(compressionQuality: 0.8) {
-                    return jpeg
-                }
+                let resized = renderer.image { _ in img.draw(in: CGRect(origin: .zero, size: size)) }
+                return resized.jpegData(compressionQuality: quality)
             }
-            #endif
+            var dimension: CGFloat = 320
+            for _ in 0..<4 {                 // dimension backstop: 320 -> ~88
+                var quality: CGFloat = 0.7
+                while quality >= 0.2 {       // quality floor 0.2
+                    if let jpeg = encode(at: dimension, quality: quality), jpeg.count < maxBinary {
+                        return jpeg
+                    }
+                    quality -= 0.15
+                }
+                dimension *= 0.65
+            }
+            // Hard floor — a 96px @0.3 JPEG is a few KB, guaranteed to fit.
+            return encode(at: 96, quality: 0.3) ?? encode(at: 64, quality: 0.3) ?? data
+            #else
             return data
+            #endif
         }()
         let dataURL = "data:image/jpeg;base64,\(bytes.base64EncodedString())"
 
