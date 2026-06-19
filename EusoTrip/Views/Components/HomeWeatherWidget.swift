@@ -112,7 +112,12 @@ struct HomeWeatherWidget: View {
     private func autoRefreshLoop() async {
         await refresh()
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: refreshInterval)
+            // Back off briefly after a FAILED fetch so a transient weather
+            // outage self-heals in ~45s instead of forcing the full 600s wait
+            // (or an app restart) — founder feedback #20.
+            let failed: Bool = { if case .unavailable = phase { return true } else { return false } }()
+            let wait: UInt64 = failed ? 45 * 1_000_000_000 : refreshInterval
+            try? await Task.sleep(nanoseconds: wait)
             if Task.isCancelled { break }
             await refresh()
         }

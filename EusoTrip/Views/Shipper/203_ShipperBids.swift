@@ -231,12 +231,10 @@ struct ShipperBids: View {
 
     private var backRow: some View {
         Button(action: {
-            if let id = selectedLoad?.id {
-                NotificationCenter.default.post(
-                    name: .eusoShipperLoadOpen, object: nil,
-                    userInfo: ["loadId": id]
-                )
-            }
+            // Founder feedback #15: this BACK row was posting
+            // .eusoShipperLoadOpen, which RE-PUSHED the load detail and grew an
+            // infinite [205,203,205,203,…] stack. A back control must POP.
+            NotificationCenter.default.post(name: .eusoShipperNavBack, object: nil)
         }) {
             HStack(spacing: 8) {
                 Image(systemName: "chevron.left")

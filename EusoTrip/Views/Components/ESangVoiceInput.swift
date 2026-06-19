@@ -136,10 +136,12 @@ final class eSangVoiceInputController: ObservableObject {
         }
 
         do {
-            try openMic()
+            try await openMic()
             status = .recording
         } catch {
-            status = .error(message: "Couldn't open the microphone.")
+            // Surface the underlying reason (recognizer-unavailable, route-not-ready,
+            // etc.) so the user sees why the mic didn't open instead of a generic no-op.
+            status = .error(message: error.localizedDescription)
             cleanup()
         }
     }
@@ -151,9 +153,11 @@ final class eSangVoiceInputController: ObservableObject {
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
         request?.endAudio()
-        // Give Speech a beat to emit the final best result, then wrap up.
+        // Give Speech a beat to emit the final best result, then wrap up. 800ms (was
+        // 250ms) so the recognizer's final transcript lands before we tear down — a
+        // short window dropped the tail of longer utterances.
         Task {
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            try? await Task.sleep(nanoseconds: 800_000_000)
             await MainActor.run { self.finish() }
         }
     }
@@ -171,16 +175,39 @@ final class eSangVoiceInputController: ObservableObject {
 
     // MARK: Audio pipeline
 
-    private func openMic() throws {
+    private func openMic() async throws {
         // Start a fresh request each cycle — `SFSpeechAudioBufferRecognitionRequest`
         // is single-use per recognition session.
         request?.endAudio()
         task?.cancel()
 
+        // Recognizer must exist before we light up the engine. `SFSpeechRecognizer`
+        // returns nil for unsupported locales; surface a distinct error rather than
+        // silently opening a mic whose audio nothing will ever consume.
+        guard let recognizer else {
+            throw NSError(domain: "ESangVoiceInput", code: -1,
+                          userInfo: [NSLocalizedDescriptionKey:
+                                        "Voice recognition isn't available on this device."])
+        }
+
+        // Adopt the Pulse Watch AudioSessionPreflight pattern. `.playAndRecord` (not
+        // `.record`) enables two-way audio + the future push-to-talk; `.measurement`
+        // keeps the low-latency capture path; duck + Bluetooth let a paired headset mic
+        // drive the session.
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.record, mode: .measurement,
-                                options: .duckOthers)
+        let options: AVAudioSession.CategoryOptions
+        if #available(iOS 18.2, *) {
+            options = [.duckOthers, .allowBluetoothHFP]
+        } else {
+            options = [.duckOthers, .allowBluetooth]
+        }
+        try session.setCategory(.playAndRecord, mode: .measurement, options: options)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
+
+        // Let the audio HW route settle before we read its format. Without this beat an
+        // unready route reports a 0-channel format, the tap's buffer callback never
+        // fires, and the recognizer starves silently (the dead-mic bug).
+        try await Task.sleep(nanoseconds: 50_000_000)
 
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
@@ -189,8 +216,15 @@ final class eSangVoiceInputController: ObservableObject {
         }
         self.request = req
 
+        // `outputFormat(forBus:)` is non-optional — guard on the channel count, not the
+        // value. A 0-channel format means the route isn't ready; installing a tap with
+        // it yields a permanently silent mic.
         let inputNode = audioEngine.inputNode
         let format = inputNode.outputFormat(forBus: 0)
+        guard format.channelCount > 0 else {
+            throw NSError(domain: "AVAudioEngine", code: -50,
+                          userInfo: [NSLocalizedDescriptionKey: "Audio input not ready"])
+        }
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             self?.request?.append(buffer)
         }
@@ -198,7 +232,7 @@ final class eSangVoiceInputController: ObservableObject {
         audioEngine.prepare()
         try audioEngine.start()
 
-        task = recognizer?.recognitionTask(with: req) { [weak self] result, error in
+        task = recognizer.recognitionTask(with: req) { [weak self] result, error in
             Task { @MainActor in
                 guard let self else { return }
                 if let result {

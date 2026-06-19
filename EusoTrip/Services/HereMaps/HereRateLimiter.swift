@@ -112,8 +112,14 @@ actor HereRateLimiter {
         /// gracefully, never freeze.
         static let enterpriseTier: Limits = {
             var l = Limits()
-            l.maxConcurrent = 8
-            l.minIntervalNanos = 60_000_000
+            // HERE_ENTERPRISE_AUDIT (2026-06-14) action #2 — "biggest perf win":
+            // the basic→enterprise migration removed the RPM ceiling that paced
+            // the map; open the limiter to the contracted enterprise RPS. Was
+            // 8 concurrent / 60 ms (still conservative); raised to 15 / 40 ms
+            // (≈1,500 grants/min). The 429 backoff + cooldown stay armed — every
+            // tier has *some* ceiling and a regression must degrade, never freeze.
+            l.maxConcurrent = 15
+            l.minIntervalNanos = 40_000_000
             return l
         }()
     }

@@ -12,6 +12,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 
 struct DispatchLoadAssignmentScreen: View {
     let theme: Theme.Palette
@@ -39,6 +40,9 @@ private struct UnassignedLoad: Decodable, Identifiable, Hashable {
     // 2026-05-17 — Multi-modal payload from the server.
     let transportMode: String?
     let multiVehicleCount: Int?
+    // Real pickup coords (server getUnassignedLoads) for the Matrix ETA strip.
+    let pickupLat: Double?
+    let pickupLng: Double?
 }
 
 private struct DriverPick: Decodable, Identifiable, Hashable {
@@ -95,6 +99,7 @@ private struct LoadAssignBody: View {
                         Text(err).font(EType.caption).foregroundStyle(Brand.danger)
                     }
                 } else {
+                    matrixStrip
                     loadsCarousel
                     driversList
                 }
@@ -122,6 +127,20 @@ private struct LoadAssignBody: View {
             Text("Drag an unassigned load onto an available driver to fire LOAD_ASSIGNED. Or tap a load card for the picker.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Dispatch Matrix ETA strip — unassigned loads ranked by truck-aware
+    /// drive time from the dispatcher's position (HERE Matrix Routing). Honest:
+    /// only loads carrying REAL pickup coords participate; hides when none do.
+    @ViewBuilder private var matrixStrip: some View {
+        let candidates: [DispatchMatrixCandidate] = loads.compactMap { l in
+            guard let lat = l.pickupLat, let lng = l.pickupLng, !(lat == 0 && lng == 0) else { return nil }
+            return DispatchMatrixCandidate(id: l.id, loadNumber: l.loadNumber,
+                                           coord: CLLocationCoordinate2D(latitude: lat, longitude: lng))
+        }
+        if !candidates.isEmpty {
+            DispatchMatrixCandidatesStrip(candidates: candidates)
         }
     }
 
@@ -385,3 +404,124 @@ private struct LoadAssignBody: View {
 
 #Preview("702 · Load assign · Night") { DispatchLoadAssignmentScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("702 · Load assign · Afternoon") { DispatchLoadAssignmentScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+
+// MARK: - Dispatch Matrix ETA strip (HERE Matrix Routing add-on)
+
+struct DispatchMatrixCandidate: Identifiable, Hashable {
+    let id: String
+    let loadNumber: String
+    let coord: CLLocationCoordinate2D
+    static func == (l: DispatchMatrixCandidate, r: DispatchMatrixCandidate) -> Bool { l.id == r.id }
+    func hash(into h: inout Hasher) { h.combine(id) }
+}
+
+@MainActor
+final class DispatchMatrixStore: ObservableObject {
+    struct Ranked: Identifiable, Hashable {
+        let id: String; let loadNumber: String; let etaSeconds: Int; let meters: Int
+    }
+    @Published private(set) var ranked: [Ranked] = []
+    @Published private(set) var isLoading = false
+
+    func refresh(candidates: [DispatchMatrixCandidate]) async {
+        guard !isLoading, !candidates.isEmpty else { ranked = []; return }
+        isLoading = true
+        defer { isLoading = false }
+        guard let origin = await DriverLocationResolver.shared.currentCoordinate() else { ranked = []; return }
+        let response: HereMatrixResponse
+        do {
+            response = try await HereMatrixClient.shared.matrix(
+                origins: [origin],
+                destinations: candidates.map(\.coord),
+                profile: .standardUSSemiEmpty
+            )
+        } catch { ranked = []; return }
+        let times = response.matrix.travelTimes ?? []
+        let dists = response.matrix.distances ?? []
+        guard times.count == candidates.count else { ranked = []; return }
+        var rows: [Ranked] = []
+        for (idx, c) in candidates.enumerated() {
+            rows.append(Ranked(id: c.id, loadNumber: c.loadNumber,
+                               etaSeconds: times[idx], meters: idx < dists.count ? dists[idx] : 0))
+        }
+        ranked = rows.sorted { $0.etaSeconds < $1.etaSeconds }
+    }
+}
+
+/// Unassigned loads ranked by truck-aware drive time from the dispatcher's
+/// position (HERE Matrix Routing v8). Honest — hides cleanly when location is
+/// denied, no candidates carry coords, or the Matrix call fails.
+struct DispatchMatrixCandidatesStrip: View {
+    let candidates: [DispatchMatrixCandidate]
+    @Environment(\.palette) private var palette
+    @StateObject private var store = DispatchMatrixStore()
+
+    var body: some View {
+        Group {
+            if store.ranked.isEmpty {
+                EmptyView()
+            } else {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    header
+                    VStack(spacing: 6) {
+                        ForEach(Array(store.ranked.prefix(4).enumerated()), id: \.element.id) { idx, r in
+                            candidateRow(rank: idx + 1, r: r)
+                        }
+                    }
+                }
+            }
+        }
+        .task(id: candidates.map(\.id)) { await store.refresh(candidates: candidates) }
+    }
+
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "circle.grid.cross.fill")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("CLOSEST TO COVER · MATRIX")
+                .font(EType.micro).tracking(1.0)
+                .foregroundStyle(palette.textTertiary)
+            Spacer(minLength: 0)
+            Text("EUSOTRIP · \(store.ranked.count)")
+                .font(EType.micro).tracking(0.4)
+                .foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    private func candidateRow(rank: Int, r: DispatchMatrixStore.Ranked) -> some View {
+        HStack(spacing: 8) {
+            Text("#\(rank)")
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+                .frame(width: 22, alignment: .leading)
+            Text(r.loadNumber)
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Text(milesLabel(r.meters))
+                .font(EType.micro).tracking(0.4)
+                .foregroundStyle(palette.textSecondary)
+            Text(etaLabel(r.etaSeconds))
+                .font(EType.bodyStrong)
+                .foregroundStyle(rank == 1 ? AnyShapeStyle(LinearGradient.diagonal)
+                                            : AnyShapeStyle(palette.textPrimary))
+        }
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, 8)
+        .background(palette.bgCardSoft)
+        .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+    }
+
+    private func milesLabel(_ meters: Int) -> String {
+        let mi = Double(meters) / 1609.344
+        return mi < 10 ? String(format: "%.1f mi", mi) : String(format: "%.0f mi", mi)
+    }
+    private func etaLabel(_ seconds: Int) -> String {
+        let mins = seconds / 60
+        if mins < 60 { return "\(mins)m" }
+        return mins % 60 == 0 ? "\(mins / 60)h" : "\(mins / 60)h \(mins % 60)m"
+    }
+}

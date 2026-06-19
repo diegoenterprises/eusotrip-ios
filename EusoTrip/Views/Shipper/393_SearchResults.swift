@@ -119,7 +119,10 @@ private struct ResultsBody: View {
             let e: SearchEnvelope = try await EusoTripAPI.shared.query("search.global", input: In(q: query))
             env = e
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            // Founder feedback #14: the shared humanize() prefixes a
+            // post-load-specific "Couldn't post…" message — wrong on Search.
+            // Use a screen-local search-failure string instead.
+            loadError = "We couldn't run that search. Check your connection and try again."
         }
         loading = false
     }

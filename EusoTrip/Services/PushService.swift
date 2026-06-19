@@ -5,20 +5,18 @@
 //  Tiny wrapper around `UNUserNotificationCenter` that:
 //    • requests authorization the first time the user signs in,
 //    • calls `registerForRemoteNotifications()` to get an APNs token,
-//    • hands the hex-encoded token up to the backend by flipping the
-//      `push` channel on in `notifications.updatePreferences` (the
-//      backend wires the current user's device token at the same moment
-//      via the existing push-service layer — see `server/routers/push.ts`).
+//    • upserts the hex-encoded token into the backend `push_tokens`
+//      table via the `notifications.registerDevice` mutation, then
+//      flags the `push` preference rows active in
+//      `notifications.updatePreferences` so the fan-out is permitted.
 //
-//  Why this exists at all: the tRPC catalog does not yet expose a
-//  dedicated `notifications.registerDevice` mutation, but the server's
-//  push service does read from the per-user `pushTokens` table when
-//  broadcasting, and it upserts that row whenever a client hits the
-//  push-settings surface while authenticated. Until a first-class device
-//  registration endpoint ships, calling `notifications.updatePreferences`
-//  with `{channel:"push", category:"loads", enabled:true}` on the same
-//  session is enough to flag the row active — the token itself is
-//  captured server-side from the `x-push-token` header when present.
+//  The `notifications.registerDevice` mutation is the authoritative
+//  device-registration endpoint: it upserts `{token, platform, deviceName}`
+//  into the per-user `push_tokens` row the server's push service reads
+//  when broadcasting. We still set `x-push-token` on the shared client
+//  (header path) AND flip the preference booleans, but the explicit
+//  registerDevice call is what actually populates `push_tokens` so a
+//  push has a destination — flipping preferences alone never did.
 //
 //  Everything is no-op on the simulator (APNs isn't issued there); the
 //  service just stays in `.unauthorized` and the rest of the app keeps
@@ -88,13 +86,34 @@ final class PushService: NSObject, ObservableObject,
         // held only on PushService and never reached the wire.
         EusoTripAPI.shared.pushDeviceToken = hex
 
-        // Flag the push row active on the backend. The server reads
-        // the `x-push-token` header out-of-band; tRPC body just toggles
-        // the preference boolean. Best-effort — failure leaves the
-        // local phase `.authorized` so the UI still shows it worked.
+        // Upsert the APNs device token into the backend `push_tokens`
+        // table via the first-class `notifications.registerDevice`
+        // mutation, then flag the push preference rows active. Without
+        // the registerDevice call the table stays empty and the push
+        // fan-out has no token to deliver to — flipping the preference
+        // boolean alone is not enough. Best-effort: a registration
+        // failure must never crash or block, so the call is
+        // fire-and-forget with `try?` and the local phase stays
+        // `.authorized` regardless of the result.
+        let deviceName = UIDevice.current.model
         Task { [weak self] in
             guard let self else { return }
             let api = EusoTripAPI.shared
+
+            // Register the device token in `push_tokens`. Fire-and-forget.
+            struct RegisterDeviceInput: Encodable {
+                let token: String
+                let platform: String
+                let deviceName: String?
+            }
+            struct RegisterDeviceAck: Decodable { let success: Bool? }
+            let _: RegisterDeviceAck? = try? await api.mutation(
+                "notifications.registerDevice",
+                input: RegisterDeviceInput(
+                    token: hex, platform: "ios", deviceName: deviceName
+                )
+            )
+
             _ = try? await api.notifications.updatePreferences(
                 channel: "push", category: "loads",  enabled: true
             )
@@ -105,7 +124,7 @@ final class PushService: NSObject, ObservableObject,
                 channel: "push", category: "system", enabled: true
             )
             #if DEBUG
-            print("[PushService] flagged push preferences active · token=\(self.deviceToken?.prefix(8) ?? "<nil>")…")
+            print("[PushService] registered device + flagged push preferences active · token=\(self.deviceToken?.prefix(8) ?? "<nil>")…")
             #endif
         }
     }

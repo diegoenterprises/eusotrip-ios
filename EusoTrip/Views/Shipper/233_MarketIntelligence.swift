@@ -343,6 +343,36 @@ struct MarketIntelligenceBody: View {
 
     @Environment(\.palette) private var palette
 
+    /// The user's pinned commodity/stock symbols + customize state. When
+    /// `customized` the grid renders only `selectedSymbols`; otherwise it
+    /// shows the full server feed (preserves the pre-customize behavior).
+    /// Mutated by `MarketCustomizeView` (pushed in-stack via the canonical
+    /// `\.rolePushDetail` layer — NOT a slide-up modal).
+    @EnvironmentObject private var watchlist: MarketWatchlistStore
+
+    /// Canonical in-stack push closure (slides in from the trailing edge,
+    /// topped with a `BespokeBackBar`). Injected by the shipper surface's
+    /// `RoleDetailLayer`; `NavigationLink`/`NavigationStack` are banned
+    /// platform-wide, so this is the push-nav mechanism for the Customize
+    /// editor.
+    @Environment(\.rolePushDetail) private var pushDetail
+
+    /// Which commodity/stock tiles are showing their flip-back face. Keyed
+    /// by `row.symbol`, owned here per the FlipTile contract (the primitive
+    /// carries no flip state of its own).
+    @State private var flippedSymbols: Set<String> = []
+
+    /// Shared, explicit tile height for BOTH FlipTile faces (founder
+    /// 2026-06-18). The flip-BACK (commodityCardBack) is naturally much
+    /// taller than the FRONT (header + diagonal rule + 30pt price + 40pt
+    /// sparkline + 2-col stat grid + CTA pill), so a FlipTile sized to the
+    /// max of its two faces left the FRONT card floating in dead space and
+    /// the 2-col grid spacing read uneven. Locking BOTH faces (and the
+    /// FlipTile itself) to one taller height makes every tile the same
+    /// breathing shape front and back — no size jump on flip, even grid
+    /// rhythm. Tuned to the back's natural content height.
+    private let tileHeight: CGFloat = 232
+
     // marketPricing.getCommodities (canonical web feed)
     @State private var commodities: [CommodityRow] = []
     @State private var categories: [String] = []
@@ -400,6 +430,7 @@ struct MarketIntelligenceBody: View {
                     if !commodities.isEmpty {
                         breadthBar
                         if !categories.isEmpty { categoryChips }
+                        gridToolbar
                         commodityGrid
                     } else if !loading {
                         // Honest empty state when the canonical feed
@@ -820,13 +851,160 @@ struct MarketIntelligenceBody: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: Customize toolbar
+
+    /// Opens the Customize editor in-stack (trailing-edge slide + back bar)
+    /// via the canonical push layer. `NavigationLink`/`NavigationStack` are
+    /// banned platform-wide, so this is the push-nav mechanism. No-op if
+    /// the surface didn't inject the closure (e.g. SwiftUI preview).
+    ///
+    /// The editor reads the SAME `MarketWatchlistStore` via
+    /// `@EnvironmentObject` (NOT a constructor-passed `@ObservedObject` —
+    /// a store captured once inside the type-erased `AnyView` the surface
+    /// holds in `@State` did not reliably re-publish into the editor's own
+    /// rows, so toggles "didn't complete"; the environment object resolves
+    /// fresh on every body pass through the AnyView). `onDone` posts the
+    /// shipper NavBack so the bespoke "Done" button dismisses the editor
+    /// back to the grid exactly like the back chevron.
+    private func openCustomize() {
+        let all = commodities
+        pushDetail?("Customize tiles") {
+            AnyView(
+                MarketCustomizeView(
+                    allCommodities: all,
+                    onDone: {
+                        NotificationCenter.default.post(
+                            name: .eusoShipperNavBack, object: nil)
+                    }
+                )
+            )
+        }
+    }
+
+    /// Inline toolbar above the grid — always rendered (so the Customize
+    /// affordance is reachable even when the consolidated Market Hub
+    /// suppresses this body's own header). Shows the count + a bespoke
+    /// Customize pill.
+    private var gridToolbar: some View {
+        HStack(spacing: 8) {
+            Text(watchlist.customized ? "YOUR TILES" : "ALL COMMODITIES")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                .foregroundStyle(palette.textTertiary)
+            if watchlist.customized {
+                Text("\(visibleCommodities.count)")
+                    .font(.system(size: 9, weight: .heavy)).monospacedDigit()
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+            }
+            Spacer(minLength: 0)
+            Button { openCustomize() } label: {
+                HStack(spacing: 5) {
+                    SlidersGlyph()
+                        .stroke(Color.white, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                        .frame(width: 12, height: 12)
+                    Text(watchlist.customized ? "Edit" : "Customize")
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.3)
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 11).padding(.vertical, 6)
+                .background(Capsule().fill(LinearGradient.diagonal))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(watchlist.customized
+                                ? "Edit your tiles"
+                                : "Customize tiles")
+        }
+    }
+
     // MARK: Commodity grid
 
+    /// The rows the grid actually renders. When the user has customized,
+    /// filter the loaded feed down to their pinned symbols (preserving the
+    /// feed's order); otherwise show the full feed. Never fabricates a row —
+    /// a pinned symbol not present in the current category/feed simply
+    /// doesn't appear (the editor lists every loaded + searchable symbol so
+    /// the user can re-add it).
+    private var visibleCommodities: [CommodityRow] {
+        guard watchlist.customized else { return commodities }
+        let pinned = Set(watchlist.selectedSymbols)
+        return commodities.filter { pinned.contains($0.symbol) }
+    }
+
+    @ViewBuilder
     private var commodityGrid: some View {
-        let cols = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
-        return LazyVGrid(columns: cols, spacing: 10) {
-            ForEach(commodities) { row in
-                commodityCard(row)
+        let visible = visibleCommodities
+        if watchlist.customized && visible.isEmpty {
+            customizedEmptyCard
+        } else {
+            // Founder 2026-06-18: the taller 232pt flip tiles were touching
+            // their neighbours — column borders kissed and the next row
+            // overlapped — at the old 10pt rhythm. Widen BOTH the inter-column
+            // spacing and the inter-row spacing to 14pt so every tile has a
+            // clean, even gap on all sides (height + flip unchanged).
+            let cols = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
+            LazyVGrid(columns: cols, spacing: 14) {
+                ForEach(visible) { row in
+                    let isFlipped = flippedSymbols.contains(row.symbol)
+                    FlipTile(isFlipped: isFlipped) {
+                        commodityCard(row)
+                    } back: {
+                        commodityCardBack(row)
+                    }
+                    // Lock the whole tile to the shared taller height so the
+                    // 3D flip has no size jump and the grid rhythm is even.
+                    .frame(height: tileHeight)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) {
+                            if isFlipped { flippedSymbols.remove(row.symbol) }
+                            else { flippedSymbols.insert(row.symbol) }
+                        }
+                    }
+                    .sensoryFeedback(.selection, trigger: isFlipped)
+                }
+            }
+        }
+    }
+
+    /// Honest empty-state when the user customized but none of their pinned
+    /// symbols are in the current feed/category. Never auto-fabricates tiles.
+    private var customizedEmptyCard: some View {
+        LifecycleCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("No tiles selected — tap Customize to choose commodities or stocks")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Your pinned symbols may also live under a different category filter above.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Button { openCustomize() } label: {
+                        HStack(spacing: 6) {
+                            SlidersGlyph()
+                                .stroke(Color.white, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                                .frame(width: 13, height: 13)
+                            Text("Customize")
+                                .font(.system(size: 12, weight: .heavy))
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(Capsule().fill(LinearGradient.diagonal))
+                    }
+                    .buttonStyle(.plain)
+                    Button { watchlist.resetToDefault() } label: {
+                        Text("Show all")
+                            .font(.system(size: 12, weight: .heavy))
+                            .foregroundStyle(palette.textPrimary)
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(Capsule().fill(palette.bgCardSoft))
+                            .overlay(Capsule().strokeBorder(palette.borderFaint))
+                    }
+                    .buttonStyle(.plain)
+                    Spacer(minLength: 0)
+                }
             }
         }
     }
@@ -852,12 +1030,26 @@ struct MarketIntelligenceBody: View {
                     }
                 }
                 Spacer(minLength: 0)
-                MiniSparkline(values: row.sparkline ?? [], color: trendColor)
-                    .frame(width: 56, height: 22)
+                // Trend chip mirrors the flip-back's hero chip — a small
+                // colored badge in the header now that the sparkline moved
+                // full-bleed below.
+                Text(positive ? "▲" : "▼")
+                    .font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 3)
+                    .background(Capsule().fill(trendColor))
             }
+            // Full-bleed sparkline (matches the flip-back's live pulse) so
+            // the now-taller front face reads as a deliberate hero card, not
+            // a short card padded with dead space.
+            MiniSparkline(values: row.sparkline ?? [], color: trendColor)
+                .frame(maxWidth: .infinity)
+                .frame(height: 42)
+            Spacer(minLength: 0)
             Text(formatPrice(row.price))
-                .font(.system(size: 19, weight: .heavy, design: .rounded)).monospacedDigit()
+                .font(.system(size: 22, weight: .heavy, design: .rounded)).monospacedDigit()
                 .foregroundStyle(palette.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
             HStack(spacing: 4) {
                 Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
                     .font(.system(size: 9, weight: .heavy))
@@ -872,9 +1064,19 @@ struct MarketIntelligenceBody: View {
                         .foregroundStyle(palette.textTertiary)
                 }
             }
+            // Tap-to-flip hint — earns the extra height + tells the user the
+            // card is interactive (drawn ellipsis, no SF Symbol).
+            HStack(spacing: 4) {
+                FlipHintGlyph()
+                    .stroke(palette.textTertiary, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                    .frame(width: 14, height: 4)
+                Text("Tap for detail")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+            }
         }
         .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .fill(palette.bgCard)
@@ -883,6 +1085,140 @@ struct MarketIntelligenceBody: View {
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .strokeBorder(palette.borderFaint)
         )
+    }
+
+    // MARK: Commodity flip-back (the bespoke drill-down)
+
+    /// The flip-back face of a commodity/stock tile — the "catch my eyes"
+    /// drill-down replacement for the boring stat-list detail screens. Same
+    /// outer frame as the front (Radius.md, palette.bgCard fill) with a
+    /// trend-tinted border. Built ENTIRELY from already-decoded
+    /// `CommodityRow` fields (no new network call — the grid already carries
+    /// OHLC + sparkline). Zero SF Symbols: the chevron + CTA arrow are drawn
+    /// shapes. Every value is real or an em-dash; absent rows drop out.
+    @ViewBuilder
+    private func commodityCardBack(_ row: CommodityRow) -> some View {
+        let positive = row.changePercent >= 0
+        let trendColor: Color = positive ? Brand.success : Brand.danger
+        let pinned = watchlist.selectedSymbols.contains(row.symbol)
+        VStack(alignment: .leading, spacing: 9) {
+            // 1 — HEADER ROW: name + drawn back chevron, diagonal underline.
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .top, spacing: 6) {
+                    Text(row.name)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Spacer(minLength: 0)
+                    // Drawn chevron-back glyph — a flip affordance, NOT an
+                    // SF Symbol. The tap is owned by the FlipTile container.
+                    ChevronBackGlyph()
+                        .stroke(trendColor, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                        .frame(width: 8, height: 12)
+                        .accessibilityLabel("Flip back")
+                }
+                LinearGradient.diagonal
+                    .frame(height: 2)
+                    .clipShape(Capsule())
+            }
+
+            // 2 — HERO METRIC: the price, large, with a colored change% chip.
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(formatPrice(row.price))
+                    .font(.system(size: 30, weight: .heavy, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                HStack(spacing: 3) {
+                    ChangeArrowGlyph(up: positive)
+                        .stroke(Color.white, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                        .frame(width: 7, height: 7)
+                    Text(formatChange(row.changePercent))
+                        .font(.system(size: 11, weight: .heavy)).monospacedDigit()
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(Capsule().fill(positive ? Brand.success : Brand.danger))
+                Spacer(minLength: 0)
+            }
+
+            // 3 — LIVE PULSE: full-width sparkline. Honest — an empty series
+            // draws a flat baseline (MiniSparkline handles it), never faked.
+            MiniSparkline(values: row.sparkline ?? [], color: trendColor)
+                .frame(maxWidth: .infinity)
+                .frame(height: 40)
+
+            // 4 — STAT GRID: the remaining REAL OHLC/volume fields. Absent
+            // optional → em-dash; unit only when present.
+            let cols = [GridItem(.flexible(), alignment: .leading),
+                        GridItem(.flexible(), alignment: .leading)]
+            LazyVGrid(columns: cols, spacing: 8) {
+                backStat("OPEN", row.open.map(formatPrice))
+                backStat("HIGH", row.high.map(formatPrice))
+                backStat("LOW", row.low.map(formatPrice))
+                backStat("PREV", row.previousClose.map(formatPrice))
+                backStat("VOLUME", (row.volume == "N/A" ? nil : row.volume))
+                if let unit = row.unit, !unit.isEmpty {
+                    backStat("UNIT", unit)
+                }
+            }
+
+            // 5 — CTA PILL: pin/unpin to the watchlist (the real action). No
+            // Platts/Argus/Baltic/DAT benchmark — unlicensed + absent from
+            // the feed, so never surfaced here.
+            Button {
+                if pinned { watchlist.remove(row.symbol) }
+                else { watchlist.add(row.symbol) }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(pinned ? "Remove from watchlist" : "Add to watchlist")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(.white)
+                    CtaArrowGlyph()
+                        .stroke(Color.white, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                        .frame(width: 12, height: 9)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+                .background(
+                    Capsule().fill(pinned
+                                   ? AnyShapeStyle(palette.bgCardSoft)
+                                   : AnyShapeStyle(LinearGradient.diagonal))
+                )
+                .overlay(
+                    Capsule().strokeBorder(pinned ? palette.borderFaint : Color.clear)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(10)
+        // Identical outer frame to the FRONT face — fills the FlipTile's
+        // locked `tileHeight` so the flip has no size jump and the grid
+        // spacing stays even.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(palette.bgCard)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(trendColor.opacity(0.55), lineWidth: 1)
+        )
+    }
+
+    /// One micro-label-over-value stat for the flip-back grid. Absent value
+    /// renders an em-dash in textTertiary — never a fabricated number.
+    @ViewBuilder
+    private func backStat(_ label: String, _ value: String?) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(EType.micro).tracking(0.5)
+                .foregroundStyle(palette.textTertiary)
+            Text(value ?? "—")
+                .font(EType.bodyStrong).monospacedDigit()
+                .foregroundStyle(value == nil ? palette.textTertiary : palette.textPrimary)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func formatPrice(_ v: Double) -> String {
@@ -1123,6 +1459,461 @@ struct MarketIntelligenceBody: View {
     }
 }
 
+// MARK: - Bespoke drawn glyphs (zero SF Symbols on the flip-backs / editor)
+
+/// A chevron pointing left — the flip-back affordance. Drawn, never an SF
+/// Symbol. Sized by the caller's frame; stroked by the caller.
+private struct ChevronBackGlyph: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.maxX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.minX, y: r.midY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+        return p
+    }
+}
+
+/// A small up/down trend arrow (diagonal stem + two barbs) for the change
+/// chip. `up == true` points up-right; otherwise down-right.
+private struct ChangeArrowGlyph: Shape {
+    let up: Bool
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        if up {
+            p.move(to: CGPoint(x: r.minX, y: r.maxY))
+            p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+            p.move(to: CGPoint(x: r.maxX - r.width * 0.62, y: r.minY))
+            p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+            p.addLine(to: CGPoint(x: r.maxX, y: r.minY + r.height * 0.62))
+        } else {
+            p.move(to: CGPoint(x: r.minX, y: r.minY))
+            p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+            p.move(to: CGPoint(x: r.maxX - r.width * 0.62, y: r.maxY))
+            p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+            p.addLine(to: CGPoint(x: r.maxX, y: r.maxY - r.height * 0.62))
+        }
+        return p
+    }
+}
+
+/// A right-pointing arrow (shaft + head) for the CTA pill — drawn, not an
+/// SF Symbol.
+private struct CtaArrowGlyph: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.midY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
+        p.move(to: CGPoint(x: r.maxX - r.width * 0.4, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
+        p.addLine(to: CGPoint(x: r.maxX - r.width * 0.4, y: r.maxY))
+        return p
+    }
+}
+
+/// Three horizontal sliders (the "customize" affordance) — drawn, not the
+/// `slider.horizontal.3` SF Symbol.
+private struct SlidersGlyph: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let rows: [(CGFloat, CGFloat)] = [(0.18, 0.66), (0.50, 0.34), (0.82, 0.58)]
+        for (yFrac, knobFrac) in rows {
+            let y = r.minY + r.height * yFrac
+            p.move(to: CGPoint(x: r.minX, y: y))
+            p.addLine(to: CGPoint(x: r.maxX, y: y))
+            let kx = r.minX + r.width * knobFrac
+            p.addEllipse(in: CGRect(x: kx - 1.4, y: y - 1.4, width: 2.8, height: 2.8))
+        }
+        return p
+    }
+}
+
+/// Three dots in a row (the "more / tap for detail" hint) for the front
+/// face — drawn, never the `ellipsis` SF Symbol.
+private struct FlipHintGlyph: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let d = min(r.height, r.width / 5)
+        let y = r.midY
+        for frac in [CGFloat(0.0), 0.5, 1.0] {
+            let cx = r.minX + (r.width - d) * frac + d / 2
+            p.addEllipse(in: CGRect(x: cx - d / 2, y: y - d / 2, width: d, height: d))
+        }
+        return p
+    }
+}
+
+/// A drawn check mark for the editor's "selected" affordance — never the
+/// `checkmark` SF Symbol.
+private struct CheckGlyph: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.minY + r.height * 0.55))
+        p.addLine(to: CGPoint(x: r.minX + r.width * 0.38, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+        return p
+    }
+}
+
+// MARK: - Market Customize editor (pushed in-stack)
+//
+// Lists every loaded commodity/stock row with an add/remove toggle bound to
+// watchlist membership, a "Show all (default)" reset, and the live ticker
+// search so the user can add ANY resolvable symbol. Reorder is out of
+// scope. Bespoke styling — palette + Capsule pills + LinearGradient.diagonal
+// selection + a DRAWN check glyph. Zero SF Symbols. The view is pushed (NOT
+// presented as a slide-up modal) via `\.rolePushDetail` so the
+// `BespokeBackBar` provides the back affordance.
+private struct MarketCustomizeView: View {
+    let allCommodities: [CommodityRow]
+    /// Posts the shipper NavBack so the bespoke "Done" button dismisses the
+    /// editor back to the grid (parity with the back chevron).
+    let onDone: () -> Void
+
+    /// The SAME store the grid reads. Resolved via `@EnvironmentObject` (NOT
+    /// a constructor-passed `@ObservedObject`): the editor is pushed as a
+    /// type-erased `AnyView` held in the surface's `@State`, and an
+    /// `@ObservedObject` captured inside that one-time AnyView snapshot did
+    /// NOT reliably re-publish into the editor's own rows — so toggles
+    /// mutated the store but the check glyph / count / PINNED label never
+    /// repainted ("nothing completes the action"). The environment object
+    /// resolves fresh on every body pass through the AnyView, so a pin now
+    /// reflects instantly in BOTH the editor and the grid behind it.
+    @EnvironmentObject private var watchlist: MarketWatchlistStore
+    @Environment(\.palette) private var palette
+
+    // Live ticker search (reuses the same marketPricing.searchCommodity
+    // proc as the main screen, so the user can pin ANY resolvable symbol —
+    // not just the ones currently in the feed).
+    @State private var searchText: String = ""
+    @State private var searchResults: [SearchResultRow] = []
+    @State private var searchLoading: Bool = false
+    @State private var searchError: String? = nil
+    @State private var debounceTask: Task<Void, Never>? = nil
+
+    /// How many tiles the grid will actually render after this edit — the
+    /// honest count for the "Done · Showing N tiles" confirm. When the user
+    /// hasn't customized, the grid shows the FULL feed; once customized it
+    /// shows the intersection of their pins with the loaded feed (a pinned
+    /// symbol not in the current feed simply doesn't render a tile yet).
+    private var visibleTileCount: Int {
+        guard watchlist.customized else { return allCommodities.count }
+        let pinned = Set(watchlist.selectedSymbols)
+        return allCommodities.filter { pinned.contains($0.symbol) }.count
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                intro
+                searchField
+                if searchText.trimmingCharacters(in: .whitespaces).count >= 2 {
+                    searchResultsSection
+                }
+                resetRow
+                feedList
+                doneButton
+                Color.clear.frame(height: 96)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+        }
+    }
+
+    // MARK: Done / Save (the explicit COMPLETING affordance)
+
+    /// The bespoke confirm. Every toggle already persists through the store
+    /// (UserDefaults-authoritative), so this button doesn't "save" new data —
+    /// it CONFIRMS the selection and dismisses back to the grid, and the
+    /// label surfaces the honest live tile count so the founder's "no
+    /// confirming or saving" is answered with an explicit, visible action.
+    private var doneButton: some View {
+        let count = visibleTileCount
+        let label = watchlist.customized
+            ? "Done · Showing \(count) tile\(count == 1 ? "" : "s")"
+            : "Done · Showing all \(count) tiles"
+        return Button { onDone() } label: {
+            HStack(spacing: 8) {
+                CheckGlyph()
+                    .stroke(Color.white, style: StrokeStyle(lineWidth: 2.0, lineCap: .round, lineJoin: .round))
+                    .frame(width: 14, height: 11)
+                Text(label)
+                    .font(.system(size: 15, weight: .heavy))
+                    .foregroundStyle(.white)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(Capsule().fill(LinearGradient.diagonal))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    // MARK: Intro
+
+    private var intro: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("CUSTOMIZE TILES")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                // Live selected-count chip — updates the instant a row
+                // toggles so the action visibly "completes" in the editor
+                // (founder: "definitely not reflecting").
+                Text(watchlist.customized
+                     ? "\(watchlist.selectedSymbols.count) PINNED"
+                     : "ALL")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().fill(LinearGradient.diagonal))
+            }
+            Text("Choose your grid")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
+            Text(watchlist.customized
+                 ? "Showing only your \(watchlist.selectedSymbols.count) pinned symbol\(watchlist.selectedSymbols.count == 1 ? "" : "s"). Tap to add or remove; search to pin any ticker."
+                 : "Showing the full live feed. Tap any symbol to pin it — pinned symbols become your grid. Search to add any stock or commodity.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: Reset row
+
+    @ViewBuilder
+    private var resetRow: some View {
+        let isDefault = !watchlist.customized
+        Button { watchlist.resetToDefault() } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(isDefault ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCardSoft))
+                        .frame(width: 22, height: 22)
+                    if isDefault {
+                        CheckGlyph()
+                            .stroke(Color.white, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                            .frame(width: 10, height: 8)
+                    }
+                }
+                .overlay(Circle().strokeBorder(isDefault ? Color.clear : palette.borderFaint).frame(width: 22, height: 22))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Show all (default)")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Render the full live feed; clear all pins.")
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 11)
+            .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(isDefault ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Feed list
+
+    @ViewBuilder
+    private var feedList: some View {
+        if allCommodities.isEmpty {
+            LifecycleCard {
+                Text("The live feed hasn't loaded any symbols yet. Use search above to pin a ticker, or pull to refresh on the main screen.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("FROM THE LIVE FEED")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                ForEach(allCommodities) { row in
+                    feedRow(
+                        symbol: row.symbol,
+                        name: row.name,
+                        category: row.category,
+                        selected: watchlist.selectedSymbols.contains(row.symbol)
+                    )
+                }
+            }
+        }
+    }
+
+    /// A single selectable symbol row — drawn check on a gradient disc when
+    /// pinned. Toggling calls `watchlist.add` / `watchlist.remove`.
+    @ViewBuilder
+    private func feedRow(symbol: String, name: String, category: String, selected: Bool) -> some View {
+        Button {
+            if selected { watchlist.remove(symbol) }
+            else { watchlist.add(symbol) }
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle()
+                        .fill(selected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCardSoft))
+                        .frame(width: 22, height: 22)
+                    if selected {
+                        CheckGlyph()
+                            .stroke(Color.white, style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                            .frame(width: 10, height: 8)
+                    }
+                }
+                .overlay(Circle().strokeBorder(selected ? Color.clear : palette.borderFaint).frame(width: 22, height: 22))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(name)
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    HStack(spacing: 6) {
+                        Text(symbol)
+                            .font(EType.mono(.micro)).tracking(0.4)
+                            .foregroundStyle(palette.textTertiary)
+                        if !category.isEmpty {
+                            Text(category.uppercased())
+                                .font(.system(size: 8, weight: .heavy)).tracking(0.4)
+                                .foregroundStyle(LinearGradient.diagonal)
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                Text(selected ? "PINNED" : "ADD")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(selected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 11)
+            .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(selected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Search (reuses marketPricing.searchCommodity)
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            // Drawn magnifier — no SF Symbol on this bespoke surface.
+            MagnifierGlyph()
+                .stroke(palette.textTertiary, style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+                .frame(width: 15, height: 15)
+            TextField(
+                "",
+                text: $searchText,
+                prompt: Text("Search any ticker, stock or commodity…")
+                    .foregroundColor(palette.textTertiary)
+            )
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(palette.textPrimary)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled(true)
+            .submitLabel(.search)
+            .onSubmit {
+                let q = searchText.trimmingCharacters(in: .whitespaces)
+                if q.count >= 2 { Task { await runSearch(q) } }
+            }
+            .onChange(of: searchText) { _, newValue in
+                debounceTask?.cancel()
+                let q = newValue.trimmingCharacters(in: .whitespaces)
+                if q.count < 2 {
+                    searchResults = []; searchError = nil; searchLoading = false
+                    return
+                }
+                searchLoading = true
+                debounceTask = Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    if Task.isCancelled { return }
+                    await runSearch(q)
+                }
+            }
+            if searchLoading {
+                ProgressView().tint(LinearGradient.diagonal).scaleEffect(0.7)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+    }
+
+    @ViewBuilder
+    private var searchResultsSection: some View {
+        if let err = searchError {
+            LifecycleCard(accentWarning: true) {
+                Text(err)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else if !searchResults.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("SEARCH RESULTS")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                ForEach(searchResults) { row in
+                    feedRow(
+                        symbol: row.symbol,
+                        name: row.name,
+                        category: row.category,
+                        selected: watchlist.selectedSymbols.contains(row.symbol)
+                    )
+                }
+            }
+        } else if !searchLoading {
+            LifecycleCard {
+                Text("No matches for “\(searchText)”")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+        }
+    }
+
+    private func runSearch(_ q: String) async {
+        await MainActor.run { searchLoading = true; searchError = nil }
+        do {
+            let r: SearchResp = try await EusoTripAPI.shared.query(
+                "marketPricing.searchCommodity",
+                input: SearchInput(query: q)
+            )
+            await MainActor.run {
+                guard searchText.trimmingCharacters(in: .whitespaces) == q else { return }
+                searchResults = r.results
+                searchError = nil
+                searchLoading = false
+            }
+        } catch {
+            await MainActor.run {
+                guard searchText.trimmingCharacters(in: .whitespaces) == q else { return }
+                searchResults = []
+                searchError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                searchLoading = false
+            }
+        }
+    }
+}
+
+/// A drawn magnifying glass (circle + handle) — the editor's search glyph,
+/// never the `magnifyingglass` SF Symbol.
+private struct MagnifierGlyph: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let d = min(r.width, r.height) * 0.68
+        let lens = CGRect(x: r.minX, y: r.minY, width: d, height: d)
+        p.addEllipse(in: lens)
+        p.move(to: CGPoint(x: lens.maxX - d * 0.16, y: lens.maxY - d * 0.16))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+        return p
+    }
+}
+
 // MARK: - Mini sparkline
 
 private struct MiniSparkline: View {
@@ -1158,10 +1949,12 @@ private struct MiniSparkline: View {
 #Preview("233 · Market Intelligence · Night") {
     MarketIntelligenceScreen(theme: Theme.dark)
         .environmentObject(EusoTripSession())
+        .environmentObject(MarketWatchlistStore())
         .preferredColorScheme(.dark)
 }
 #Preview("233 · Market Intelligence · Afternoon") {
     MarketIntelligenceScreen(theme: Theme.light)
         .environmentObject(EusoTripSession())
+        .environmentObject(MarketWatchlistStore())
         .preferredColorScheme(.light)
 }

@@ -61,6 +61,10 @@ final class RealtimeService: ObservableObject {
         cfg.httpCookieStorage = HTTPCookieStorage.shared
         cfg.httpCookieAcceptPolicy = .always
         cfg.httpShouldSetCookies = true
+        // Multipath TCP (handover mode): keep the live-tracking socket alive
+        // across a Wi-Fi↔LTE handoff in yards; degrades gracefully to
+        // single-path if the server/LB doesn't negotiate MPTCP.
+        cfg.multipathServiceType = .handover
         cfg.timeoutIntervalForRequest = 30
         return URLSession(configuration: cfg)
     }()

@@ -838,6 +838,10 @@ struct DriverHome: View {
     /// `MeNotificationsView` body so the inbox surface stays in sync
     /// with what the Me sub-route renders.
     @State private var showNotificationsSheet: Bool = false
+    /// D-1 fallback presenter for the inbound truck-posting surface (113)
+    /// when no push-nav detail layer is mounted (preview / isolated host).
+    /// Production routes via `\.rolePushDetail` (in-stack push).
+    @State private var showTruckPostingSheet: Bool = false
 
     // ── Home-widget customization (2026-05-23 founder ask) ──────
     // Migrated to shared HomeWidgetGrid + HomeWidgetCatalog
@@ -916,11 +920,13 @@ struct DriverHome: View {
             // metric row + recent section also needs to scroll — the
             // previous flat VStack clipped everything below the fold.
             ScrollView {
-                // TileStack wraps Home's hero sections so each one fades
-                // and lifts into place in source order (weather → active
-                // card → metric row → recent section) — matches the web
-                // platform's tile load-in on /driver/home.
-                TileStack(alignment: .leading, spacing: Space.s5) {
+                // StaggeredEntranceStack wraps Home's hero sections so each
+                // one springs into place in source order (weather → active
+                // card → metric row → recent section) with the iPhone-unlock
+                // cascade — scale 0.92 + blur 5pt + 50 ms stagger — ONCE on
+                // cold launch. Re-visits in the same session render settled
+                // (first-load gate). Reduce-Motion → clean fade.
+                StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
                     switch vm.phase {
                     case .idle, .loading:
                         loadingState
@@ -1035,6 +1041,26 @@ struct DriverHome: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("eusoOpenNotificationsRequested"))) { _ in
             showNotificationsSheet = true
+        }
+        // D-1 fallback: when the push-nav detail layer isn't mounted
+        // (isolated host / preview) the post-truck CTA posts this name so
+        // the surface still routes. Production always uses the in-stack
+        // push and never fires this.
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("eusoOpenTruckPostingRequested"))) { _ in
+            showTruckPostingSheet = true
+        }
+        .fullScreenCover(isPresented: $showTruckPostingSheet) {
+            NavigationStack {
+                DriverTruckPosted()
+                    .environment(\.palette, palette)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { showTruckPostingSheet = false }
+                        }
+                    }
+                    .navigationTitle("Post your truck")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
         }
         // Load Details sheet for the active/assigned load. Reuses the
         // canonical LoadDetailSheet the Eusoboards surface renders so
@@ -1399,6 +1425,12 @@ struct DriverHome: View {
     ///   > scroll left to right capability.
     private var noActiveLoadCard: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
+            // D-1 HERO — "Post your truck → offers come to YOU". The
+            // founder's #1 loved feature, surfaced FIRST when the driver
+            // is between loads. Push-nav (no slide-up) to the bespoke
+            // 113_DriverTruckPosted surface.
+            postTruckHeroCTA
+
             HStack {
                 Text("AVAILABLE NEAR YOU")
                     .font(EType.micro).tracking(0.6)
@@ -1496,6 +1528,71 @@ struct DriverHome: View {
             }
             .buttonStyle(.plain)
             .accessibilityHint("Opens the Eusoboards load board")
+        }
+    }
+
+    // MARK: D-1 Post-truck hero CTA (founder's #1 loved feature)
+
+    /// Eye-catching brand-gradient hero that sells the inbound truck-posting
+    /// value prop and pushes the bespoke 113 surface. Drawn radar glyph
+    /// (no SF Symbol on the gradient slab), the headline, and a confident
+    /// "Post your truck" affordance. Tapping anywhere on the card navigates.
+    private var postTruckHeroCTA: some View {
+        Button {
+            openTruckPosting()
+        } label: {
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                    .fill(LinearGradient.diagonal)
+                // Ambient "offers travelling toward you" arcs — drawn, faint.
+                PostTruckHeroArcs()
+                    .stroke(Color.white.opacity(0.16), lineWidth: 1.4)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+
+                HStack(spacing: Space.s4) {
+                    PostTruckRadarGlyph()
+                        .stroke(Color.white, lineWidth: 2)
+                        .frame(width: 40, height: 40)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("POST YOUR TRUCK")
+                            .font(EType.micro).tracking(1.2)
+                            .foregroundStyle(Color.white.opacity(0.9))
+                        Text("Offers come to YOU")
+                            .font(.system(size: 20, weight: .heavy))
+                            .foregroundStyle(.white)
+                        Text("One tap to book · brokers see you live")
+                            .font(EType.caption)
+                            .foregroundStyle(Color.white.opacity(0.9))
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(.white)
+                }
+                .padding(Space.s4)
+            }
+            .frame(maxWidth: .infinity, minHeight: 96)
+            .shadow(color: Brand.magenta.opacity(0.26), radius: 16, x: 0, y: 8)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Post your truck. Offers come to you. One tap to book.")
+        .accessibilityHint("Opens the inbound truck-posting surface")
+    }
+
+    /// Push-nav entry to the bespoke 113 truck-posting surface. In-stack
+    /// push when the Driver surface layer is mounted; otherwise a
+    /// notification fallback so it still routes from an isolated host.
+    private func openTruckPosting() {
+        if let push = pushDetail {
+            push("Post your truck") {
+                AnyView(DriverTruckPosted().environment(\.palette, palette))
+            }
+        } else {
+            NotificationCenter.default.post(
+                name: Notification.Name("eusoOpenTruckPostingRequested"),
+                object: nil
+            )
         }
     }
 
@@ -3775,4 +3872,34 @@ struct SuggestedLoadCard: View {
         .preferredColorScheme(.light)
         .padding(24)
         .background(Theme.light.bgPage)
+}
+
+// MARK: - D-1 post-truck hero glyphs (drawn Paths — no SF Symbol on the slab)
+
+/// Concentric arcs sweeping toward the radar — "offers travelling to you".
+private struct PostTruckHeroArcs: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let center = CGPoint(x: r.maxX - 30, y: r.midY)
+        for i in 1...4 {
+            let radius = CGFloat(i) * 22
+            p.addArc(center: center, radius: radius,
+                     startAngle: .degrees(120), endAngle: .degrees(240),
+                     clockwise: false)
+        }
+        return p
+    }
+}
+
+/// A radar/visibility glyph — concentric rings + a sweep tick. Signals
+/// "you are visible / brokers can see you".
+private struct PostTruckRadarGlyph: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.addEllipse(in: r.insetBy(dx: 1, dy: 1))
+        p.addEllipse(in: r.insetBy(dx: r.width * 0.28, dy: r.height * 0.28))
+        p.move(to: CGPoint(x: r.midX, y: r.midY))
+        p.addLine(to: CGPoint(x: r.maxX - 2, y: r.minY + 2))
+        return p
+    }
 }

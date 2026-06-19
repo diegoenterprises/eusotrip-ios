@@ -2540,7 +2540,8 @@ struct MeHaulView: View {
 
 // MARK: - Haul · Leaderboard tab
 
-private struct HaulLeaderboardTab: View {
+// Internal (was private) so TheHaulShell can host it.
+struct HaulLeaderboardTab: View {
     @Environment(\.palette) var palette
 
     // Canonical wiring: `gamification.getLeaderboard` (MCP-verified at
@@ -2568,70 +2569,41 @@ private struct HaulLeaderboardTab: View {
             )
             .task { await leaderboardStore.refresh() }
         case .loaded(let rows):
-            VStack(spacing: Space.s2) {
-                // Column header strip — anchors the row layout so the
-                // RANK / DRIVER / XP columns line up vertically and
-                // the leaderboard reads as a real ranking table, not
-                // a stack of disconnected pills.
-                HStack(spacing: Space.s3) {
-                    Text("RANK")
-                        .font(EType.micro).tracking(0.8)
+            // Recomposed onto the bespoke 068 HaulStandingRow primitive —
+            // medal discs for the top 3, the self-row washed in the brand
+            // diagonal, stacked in one eusoCard with faint dividers. Honest:
+            // this capped top-20 store has no true denominator, so NO
+            // rank-hero percentile/total is fabricated here (brick 064 owns
+            // the full rank hero via LeaderboardSnapshotStore's real
+            // myRank / totalParticipants).
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    Text("STANDINGS")
+                        .font(EType.micro).tracking(1.3)
                         .foregroundStyle(palette.textTertiary)
-                        .frame(width: 36, alignment: .leading)
-                    Text("DRIVER")
-                        .font(EType.micro).tracking(0.8)
-                        .foregroundStyle(palette.textTertiary)
-                    Spacer()
-                    Text("XP")
-                        .font(EType.micro).tracking(0.8)
-                        .foregroundStyle(palette.textTertiary)
-                }
-                .padding(.horizontal, Space.s4)
-                .padding(.top, Space.s2)
-
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 6) {
-                        ForEach(rows) { row in
-                            HStack(alignment: .center, spacing: Space.s3) {
-                                Text("\(row.rank)")
-                                    .font(EType.bodyStrong.monospacedDigit())
-                                    .foregroundStyle(row.isCurrentDriver
-                                                     ? AnyShapeStyle(LinearGradient.diagonal)
-                                                     : AnyShapeStyle(palette.textPrimary))
-                                    .frame(width: 36, alignment: .leading)
-                                Text(row.displayName)
-                                    .font(EType.bodyStrong)
-                                    .foregroundStyle(palette.textPrimary)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                Spacer(minLength: 6)
-                                Text(Int(row.score).formatted())
-                                    .font(EType.bodyStrong.monospacedDigit())
-                                    .foregroundStyle(row.isCurrentDriver
-                                                     ? AnyShapeStyle(LinearGradient.diagonal)
-                                                     : AnyShapeStyle(palette.textSecondary))
+                        .padding(.horizontal, Space.s2)
+                    VStack(spacing: 0) {
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
+                            HaulStandingRow(m: .init(
+                                id: row.rank,
+                                rank: row.rank,
+                                name: row.displayName,
+                                lane: "",
+                                points: row.score.formatted(),
+                                isMe: row.isCurrentDriver
+                            ))
+                            if idx < rows.count - 1 {
+                                Rectangle().fill(palette.borderFaint)
+                                    .frame(height: 1).padding(.horizontal, 12)
                             }
-                            .padding(.vertical, Space.s3)
-                            .padding(.horizontal, Space.s4)
-                            .background(
-                                RoundedRectangle(cornerRadius: Radius.md)
-                                    .fill(row.isCurrentDriver
-                                          ? AnyShapeStyle(LinearGradient.diagonal.opacity(0.12))
-                                          : AnyShapeStyle(palette.bgCard))
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Radius.md)
-                                    .strokeBorder(
-                                        row.isCurrentDriver
-                                            ? AnyShapeStyle(LinearGradient.diagonal.opacity(0.4))
-                                            : AnyShapeStyle(palette.borderFaint),
-                                        lineWidth: row.isCurrentDriver ? 1 : 0.5
-                                    )
-                            )
                         }
                     }
-                    .padding(.bottom, Space.s4)
+                    .padding(.vertical, Space.s1)
+                    .eusoCard(radius: Radius.lg, intensity: .standard)
                 }
+                .padding(.horizontal, Space.s2)
+                .padding(.top, Space.s2)
+                .padding(.bottom, Space.s4)
             }
         }
     }
@@ -2977,16 +2949,51 @@ struct HaulLobbyTab: View {
 // we surface the `available` bucket so they can start one without
 // being sent back to the deep 061 screen.
 
-private struct HaulMissionsTab: View {
+// Internal (was private) so TheHaulShell can host it.
+struct HaulMissionsTab: View {
     @Environment(\.palette) var palette
+    /// Fired on a SUCCESSFUL mission CLAIM only (never start/cancel) so the
+    /// host (TheHaulShell) can present the full-bleed "Recognition Earned"
+    /// reveal. Defaults to a no-op, so the legacy MeHaulView modal host that
+    /// also embeds this tab stays unchanged.
+    var onClaimReveal: (HaulClaimReveal) -> Void = { _ in }
 
     @State private var response: GamificationAPI.MissionsResponse?
     @State private var isLoading: Bool = false
     @State private var lastError: String?
     @State private var mutatingId: Int?
+    /// Transient feedback for a mutation the server refused with
+    /// success:false (HOS block, "already in progress", 10-active cap,
+    /// "can't cancel while a load is in progress") or a thrown error —
+    /// shown as an honest banner instead of silently reverting the CTA.
+    @State private var actionNote: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
+            if let note = actionNote {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(palette.textSecondary)
+                    Text(note)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                    Button { actionNote = nil } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(Space.s2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(palette.tintNeutral.opacity(0.4))
+                )
+            }
             if isLoading && response == nil {
                 ProgressView()
                     .frame(maxWidth: .infinity)
@@ -3051,51 +3058,31 @@ private struct HaulMissionsTab: View {
         let isClaimable = status == "completed"
         let isClaimed = status == "claimed"
         let isAvailable = status == "not_started"
+        let isInProgress = status == "in_progress"
+        // Recomposed onto the bespoke 067 HaulMissionRow primitive (icon
+        // chip + gradient HaulProgressBar + Miles reward). The functional
+        // Start/Claim/Cancel CTAs are preserved below the row.
+        let xp = m.xpReward ?? 0
+        let tint: Color = isClaimable ? Brand.success
+            : isInProgress ? Brand.info
+            : isClaimed ? palette.textTertiary
+            : Brand.escort
+        let rowLabel: String = isClaimable ? "READY"
+            : isClaimed ? "DONE"
+            : isAvailable ? "NEW"
+            : shortProgress(current: current, target: target)
+        let subline: String = {
+            if let d = m.description, !d.isEmpty { return d }
+            return progressText(current: current, target: target, type: m.targetType, unit: m.targetUnit)
+        }()
+        let row = HaulMissionRowModel(
+            id: m.id, title: m.name, sub: subline,
+            reward: xp > 0 ? "+\(xp) Miles" : "",
+            progress: pct, progressLabel: rowLabel,
+            tint: tint, ready: isClaimable || isClaimed
+        )
         return VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(alignment: .top, spacing: Space.s2) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(m.name)
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(palette.textPrimary)
-                    if let desc = m.description, !desc.isEmpty {
-                        Text(desc)
-                            .font(EType.caption)
-                            .foregroundStyle(palette.textSecondary)
-                            .lineLimit(2)
-                    }
-                }
-                Spacer()
-                if let xp = m.xpReward, xp > 0 {
-                    Text("+\(xp) XP")
-                        .font(EType.micro)
-                        .tracking(0.5)
-                        .foregroundStyle(LinearGradient.diagonal)
-                        .monospacedDigit()
-                }
-            }
-
-            if !isAvailable {
-                VStack(spacing: 4) {
-                    HStack {
-                        Text(progressText(current: current, target: target, type: m.targetType, unit: m.targetUnit))
-                            .font(EType.caption)
-                            .foregroundStyle(palette.textTertiary)
-                        Spacer()
-                        Text("\(Int((pct * 100).rounded()))%")
-                            .font(EType.caption)
-                            .foregroundStyle(palette.textTertiary)
-                            .monospacedDigit()
-                    }
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(palette.tintNeutral.opacity(0.5))
-                            Capsule().fill(LinearGradient.diagonal)
-                                .frame(width: max(4, geo.size.width * pct))
-                        }
-                    }
-                    .frame(height: 6)
-                }
-            }
+            HaulMissionRow(m: row)
 
             if isClaimable {
                 Button {
@@ -3146,17 +3133,48 @@ private struct HaulMissionsTab: View {
                 }
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
+            } else if isInProgress {
+                HStack(spacing: Space.s2) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bolt.fill")
+                        Text("In progress")
+                    }
+                    .font(EType.caption)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    Spacer(minLength: 0)
+                    // Cancel a started mission. The "unless a load is in
+                    // progress" rule is enforced server-side; iOS surfaces
+                    // the refusal honestly via the action banner.
+                    Button {
+                        Task { await cancel(m) }
+                    } label: {
+                        HStack(spacing: 4) {
+                            if mutatingId == m.id {
+                                ProgressView().tint(palette.textTertiary).scaleEffect(0.7)
+                            } else {
+                                Image(systemName: "xmark")
+                            }
+                            Text(mutatingId == m.id ? "Cancelling…" : "Cancel")
+                        }
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, Space.s2)
+                        .padding(.vertical, 6)
+                        .overlay(Capsule().strokeBorder(palette.textTertiary.opacity(0.5), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(mutatingId == m.id)
+                }
             }
         }
-        .padding(Space.s3)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(palette.bgCard)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderFaint, lineWidth: 1)
-                )
-        )
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, Space.s1)
+        .eusoCard(radius: Radius.lg, intensity: .standard)
+    }
+
+    private func shortProgress(current: Double, target: Double) -> String {
+        let f: (Double) -> String = { $0 == $0.rounded() ? String(format: "%.0f", $0) : String(format: "%.1f", $0) }
+        return "\(f(current)) / \(f(target))"
     }
 
     private func progressText(
@@ -3181,27 +3199,67 @@ private struct HaulMissionsTab: View {
     }
 
     private func start(_ m: GamificationAPI.Mission) async {
-        mutatingId = m.id
-        defer { mutatingId = nil }
-        do {
-            _ = try await EusoTripAPI.shared.gamification.startMission(missionId: m.id)
-            await refresh()
-        } catch {
-            lastError = (error as? LocalizedError)?.errorDescription
-                ?? "Couldn't start mission"
+        await runMutation(m) {
+            try await EusoTripAPI.shared.gamification.startMission(missionId: m.id)
         }
     }
 
     private func claim(_ m: GamificationAPI.Mission) async {
-        mutatingId = m.id
-        defer { mutatingId = nil }
-        do {
-            _ = try await EusoTripAPI.shared.gamification.claimMissionReward(missionId: m.id)
-            await refresh()
-        } catch {
-            lastError = (error as? LocalizedError)?.errorDescription
-                ?? "Couldn't claim mission"
+        await runMutation(m, onSuccess: { mission in
+            // Honest reveal payload — the mission name + the exact Miles the
+            // server credits (Mission.xpReward, already in hand). No fabricated
+            // balance / badge / rolled cosmetic crate (none come back on claim).
+            onClaimReveal(HaulClaimReveal(
+                id: mission.id,
+                missionName: mission.name,
+                miles: mission.xpReward
+            ))
+        }) {
+            try await EusoTripAPI.shared.gamification.claimMissionReward(missionId: m.id)
         }
+    }
+
+    private func cancel(_ m: GamificationAPI.Mission) async {
+        await runMutation(m) {
+            try await EusoTripAPI.shared.gamification.cancelMission(missionId: m.id)
+        }
+    }
+
+    /// Shared mutation runner. Owns the spinner window (`mutatingId`)
+    /// INDEPENDENTLY of the follow-up refresh — it resets `mutatingId` the
+    /// instant the mutation returns, so a slow or cancelled `refresh()` can
+    /// never freeze the CTA on "Starting…/Claiming…/Cancelling…". That
+    /// coupling (the old `defer { mutatingId = nil }` running *after*
+    /// `await refresh()`) was the founder's stuck-button bug. It also
+    /// surfaces the server's `success:false` reason (HOS block, already in
+    /// progress, 10-active cap, "can't cancel while a load is in progress")
+    /// as an honest banner instead of silently reverting to "Start mission".
+    private func runMutation(
+        _ m: GamificationAPI.Mission,
+        onSuccess: ((GamificationAPI.Mission) -> Void)? = nil,
+        _ action: @escaping () async throws -> GamificationAPI.MissionActionResult
+    ) async {
+        mutatingId = m.id
+        actionNote = nil
+        let result: GamificationAPI.MissionActionResult
+        do {
+            result = try await action()
+        } catch {
+            mutatingId = nil
+            actionNote = (error as? LocalizedError)?.errorDescription
+                ?? "Couldn't reach the missions service. Try again."
+            return
+        }
+        mutatingId = nil
+        if !result.success {
+            actionNote = result.message ?? "That action isn't available right now."
+            return
+        }
+        // Success hook (e.g. the claim Recognition reveal) fires AFTER
+        // mutatingId is cleared and independently of refresh(), so the CTA
+        // can never freeze and the reveal never blocks on the network.
+        onSuccess?(m)
+        await refresh()
     }
 }
 
@@ -3213,7 +3271,8 @@ private struct HaulMissionsTab: View {
 // current user's role. The redeem CTA hits `gamification.
 // redeemReward` on tap. No fake points. No fake catalog items.
 
-private struct HaulRewardsTab: View {
+// Internal (was private) so TheHaulShell can host it.
+struct HaulRewardsTab: View {
     @Environment(\.palette) var palette
 
     @State private var availablePoints: Int = 0
@@ -3259,36 +3318,49 @@ private struct HaulRewardsTab: View {
     }
 
     private var pointsHeader: some View {
-        HStack(spacing: Space.s3) {
+        HStack(alignment: .top, spacing: Space.s3) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("POINTS")
+                // Vocabulary: "Miles" is the branded spendable balance
+                // (the Trillion-Dollar doctrine) — never "points"/"XP".
+                Text("MILES BALANCE")
                     .font(EType.micro)
                     .tracking(1.3)
                     .foregroundStyle(palette.textTertiary)
-                Text("\(availablePoints)")
+                Text(availablePoints.formatted())
                     .font(EType.numeric)
-                    .foregroundStyle(LinearGradient.diagonal)
+                    .foregroundStyle(LinearGradient.primary)
                     .monospacedDigit()
+                Text(redeemableSubline)
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textSecondary)
             }
-            Spacer()
+            Spacer(minLength: 0)
             Button { showShop = true } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "bag")
-                        .font(.system(size: 14, weight: .semibold))
+                    Image(systemName: "bag.fill")
+                        .font(.system(size: 12, weight: .semibold))
                     Text("Shop")
                         .font(EType.caption)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .bold))
                 }
-                .foregroundStyle(LinearGradient.diagonal)
+                .foregroundStyle(.white)
+                .padding(.horizontal, Space.s3)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(LinearGradient.diagonal))
             }
             .buttonStyle(.plain)
         }
-        .padding(Space.s3)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .fill(palette.bgCard)
-        )
+        .padding(Space.s4)
+        .eusoCard(radius: Radius.lg, intensity: .feature)
+    }
+
+    /// Honest redeemable count — never a fabricated number; derived from
+    /// the live catalog vs the live balance.
+    private var redeemableSubline: String {
+        if rewards.isEmpty { return "Catalog opens as you earn" }
+        let n = rewards.filter { availablePoints >= $0.pointsCost && $0.inStock != false }.count
+        return n > 0 ? "\(n) reward\(n == 1 ? "" : "s") in reach" : "Keep earning to unlock rewards"
     }
 
     private func rewardRow(_ r: RewardItem) -> some View {
@@ -3353,14 +3425,7 @@ private struct HaulRewardsTab: View {
             .disabled(!affordable || busy || (r.inStock == false))
         }
         .padding(Space.s3)
-        .background(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .fill(palette.bgCard)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderFaint, lineWidth: 1)
-                )
-        )
+        .eusoCard(radius: Radius.md, intensity: .standard)
     }
 
     private func refresh() async {

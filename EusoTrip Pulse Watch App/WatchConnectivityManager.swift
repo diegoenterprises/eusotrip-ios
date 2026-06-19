@@ -31,6 +31,20 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
     @Published private(set) var isReachable: Bool = false
     @Published var isActivated: Bool = false
 
+    /// Push-to-Talk chain-group availability, MIRRORED from the iPhone.
+    ///
+    /// The PushToTalk framework is iOS-only (`API_UNAVAILABLE(watchos)`),
+    /// so the wrist can never own a `PTChannelManager` itself — the phone
+    /// holds the channel and the watch keys it up over WCSession. The
+    /// phone publishes its `PTChannelManager.isAvailable` here via a
+    /// `ptt.availability` op. Until the restricted `pushtotalk` entitlement
+    /// is granted on the phone, this stays `false` and the orb silently
+    /// falls back to ESANG-only — no broken walkie-talkie button on the
+    /// wrist. `chainGroupId` is the load's chain-group the phone is joined
+    /// to (nil when not on an active haul channel).
+    @Published private(set) var pttAvailable: Bool = false
+    @Published private(set) var pttChainGroupId: String?
+
     /// Timestamp of the most recent raw `isReachable == true` observation.
     private var lastReachableAt: Date?
     private let reachableStickyWindow: TimeInterval = 15
@@ -304,6 +318,62 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         } else {
             // Background / wrist-down: queue for next activation so the
             // envelope still lands on the phone.
+            session.transferUserInfo(payload)
+        }
+    }
+
+    // MARK: - Push-to-Talk (chain-group walkie-talkie)
+
+    /// Key the chain-group radio up or down FROM THE WRIST. The phone owns
+    /// the `PTChannelManager`; this hands it the begin/end intent so the
+    /// driver can hold the orb and broadcast to everyone on the haul
+    /// without pulling the phone. Low-latency `sendMessage` when reachable
+    /// (a walkie-talkie that buffers is useless), with a `transferUserInfo`
+    /// fallback only so a key-UP is never lost mid-transmission. We do NOT
+    /// queue a stale begin — if the link is down at press time the orb has
+    /// already fallen back to ESANG, so begins only fire on the live path.
+    ///
+    /// - Parameter begin: true = start transmitting, false = stop.
+    func sendPttTransmit(begin: Bool) {
+        guard let session, session.activationState == .activated else { return }
+        let payload: [String: Any] = [
+            "op": "ptt.transmit",
+            "begin": begin,
+            "ts": Date().timeIntervalSince1970
+        ]
+        if session.isReachable {
+            session.sendMessage(payload, replyHandler: nil, errorHandler: { _ in
+                // A dropped key-UP would leave the channel stuck open on
+                // the phone, so the STOP is worth a durable retry; a
+                // dropped begin is simply a no-op (ESANG already covered).
+                if !begin { session.transferUserInfo(payload) }
+            })
+        } else if !begin {
+            session.transferUserInfo(payload)
+        }
+    }
+
+    /// If the Watch ever registers its OWN ephemeral PTT push token (e.g.
+    /// a future watchOS PushToTalk surface, or an independent APNs
+    /// registration), forward it to the phone so the phone upserts it into
+    /// the backend `push_tokens_ptt` table for the given chain-group via
+    /// `notifications.registerPttToken`. Today watchOS has no PushToTalk
+    /// framework, so this is the seam that keeps the wrist a first-class
+    /// member the moment that changes — durable delivery because token
+    /// registration must survive a wrist-down link flap.
+    func sendEphemeralPushToken(_ token: Data, chainGroupId: String) {
+        guard let session, session.activationState == .activated else { return }
+        let payload: [String: Any] = [
+            "op": "ptt.ephemeralToken",
+            "token": token.base64EncodedString(),
+            "chainGroupId": chainGroupId,
+            "ts": Date().timeIntervalSince1970
+        ]
+        if session.isReachable {
+            session.sendMessage(payload, replyHandler: nil, errorHandler: { _ in
+                session.transferUserInfo(payload)
+            })
+        } else {
             session.transferUserInfo(payload)
         }
     }
@@ -608,6 +678,24 @@ extension WatchConnectivityManager: WCSessionDelegate {
         }
     }
 
+    /// Delivery path for everything the iPhone queued via
+    /// `transferUserInfo` while the wrist was unreachable (app not in
+    /// foreground, BLE hop, wrist-down, companion bridge cold). Every
+    /// outgoing helper on this manager — and the phone-side mirror —
+    /// falls back to `transferUserInfo` whenever `isReachable` is false
+    /// or a live `sendMessage` errors, so this is the ONLY callback that
+    /// drains the auth / HOS / load / settings / realtime backlog once
+    /// the companion link comes back. Without it, every queued payload
+    /// was silently dropped: the wrist would sit on stale auth/load
+    /// state until the next live message happened to land. Routes the
+    /// dict through the SAME op-keyed `applyContext` dispatch as
+    /// `didReceiveApplicationContext` / `didReceiveMessage`.
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+        Task { @MainActor [weak self] in
+            self?.applyContext(userInfo)
+        }
+    }
+
     /// Notification name posted whenever the iPhone forwards a
     /// realtime event (bid award, settlement paid, document
     /// uploaded, etc.). Watch surfaces observe this to refresh.
@@ -790,6 +878,19 @@ extension WatchConnectivityManager: WCSessionDelegate {
                     let envelope = try? JSONDecoder().decode(ConvoyEnvelope.self, from: envData)
                 else { return }
                 ConvoyCoordinator.shared.ingest(envelope)
+            }
+        case "ptt.availability":
+            // The iPhone mirrors its PushToTalk state down so the wrist
+            // orb knows whether the chain-group walkie-talkie is live.
+            // `available` reflects the phone's PTChannelManager.isAvailable
+            // (false until the restricted entitlement is granted), and
+            // `chainGroupId` is the load chain-group the phone has joined.
+            // When unavailable the orb's long-press stays on the ESANG
+            // path — no broken button ever reaches the driver.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.pttAvailable = (ctx["available"] as? Bool) ?? false
+                self.pttChainGroupId = ctx["chainGroupId"] as? String
             }
         default:
             break

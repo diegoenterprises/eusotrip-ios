@@ -54,21 +54,37 @@ struct HereStops {
 struct HereRoutingOptions {
     /// ISO-8601 (e.g. "2026-04-18T09:00:00-04:00"). Nil = depart now.
     var departureTime: String? = nil
-    /// Fields to include. `polyline,summary,actions` is the proven
-    /// minimal set for a driver-nav use case.
+    /// Fields to include. The richer set is RE-ENABLED on enterprise per
+    /// HERE_ENTERPRISE_AUDIT (2026-06-14) action #3.
     ///
-    /// 2026-05-17 — TestFlight 262 captured HERE's verbatim rejection:
-    /// "Invalid return type at 'spans'" and "Invalid value for
-    /// parameter 'return' at 'polyline,summary,actions,spans,tolls'".
-    /// Even though `spans` is documented as a v8 return value, this
-    /// deployment / plan tier rejects it. `tolls` is in the same
-    /// rejection list — dropped together. Earlier `notices` add was
-    /// also bad. Reverted to the original three documented in the
-    /// historical code comment.
+    /// History: 2026-05-17 the BASIC deployment rejected the extras
+    /// (TestFlight 262: "Invalid return type at 'spans'"), so they were
+    /// dropped to `polyline,summary,actions`. Enterprise accepts them, and
+    /// the symbiotic weather loop REQUIRES them:
+    ///   • `spans`   — per-segment on-road geometry, so weather can be
+    ///                 sampled along the route at the ETA-matched points
+    ///                 (Pillar 3, the route-weather timeline).
+    ///   • `notices` — the forced-pass-through signal ("no avoidance route —
+    ///                 the path crosses the hazard"), the honesty primitive
+    ///                 that distinguishes "rerouted" from "routed through the
+    ///                 storm anyway" (Pillar 1).
+    ///   • `tolls`   — toll-aware lane cost.
     ///
-    /// If/when richer detail is needed (turn-by-turn span attributes,
-    /// toll fares), validate each additional return value with a curl
-    /// against our HERE plan first.
+    /// Safe to ship: the raw-bracket `percentEncodedQuery` path that crashed
+    /// (EXC_BREAKPOINT, TestFlight 259) was already reverted to the
+    /// `queryItems` path, so a stray field rejection now surfaces as a soft
+    /// `HereMapsError.http` (caller serves last-good route state) — never a
+    /// crash. If the enterprise deployment ever rejects one, trim just that
+    /// field; the `if returnFields.contains("spans")` plumbing below already
+    /// emits the `spans=` columns.
+    ///
+    /// REVERTED 2026-06-17: `notices` is NOT a valid HERE v8 `return` value
+    /// (notices auto-appear in the response when present) — including it makes
+    /// HERE reject the whole `return` param → "no route" (confirmed in prod on
+    /// the server, fixed in PR #94). Back to the known-good three. `spans`
+    /// (route-weather sampling) + `tolls` get re-added here when the weather
+    /// sampler needs them — each CURL-VALIDATED against the enterprise key
+    /// first, per the audit's own rule (the step I skipped).
     var returnFields: [String] = ["polyline", "summary", "actions"]
     /// Span columns — kept for future re-enablement; not currently
     /// used because `spans` was dropped from returnFields.
@@ -80,6 +96,112 @@ struct HereRoutingOptions {
     /// Whether to avoid features. HERE accepts a comma-separated list of:
     /// tollRoad, controlledAccessHighway, ferry, tunnel, dirtRoad, difficultTurns.
     var avoidFeatures: [String] = []
+    /// Weather/flood hazards to route around (HERE Routing v8 `avoid[areas]`,
+    /// truck only). Each transforms into a bbox / polygon / corridor spec.
+    /// Empty = no hazard reroute. See `HereAvoidArea`.
+    var avoidAreas: [HereAvoidArea] = []
+}
+
+// MARK: - Avoid areas (weather-hazard reroute)
+
+/// A geographic hazard the TRUCK route should steer around — a NWS CAP
+/// polygon, a simplified WeatherKit severe cell, a USGS flood reach. Becomes a
+/// HERE Routing v8 `avoid[areas]` spec (bbox / polygon / corridor). This is the
+/// "one missing primitive" the symbiotic loop needs: without it a weather cell
+/// can't become a routed detour, only a synthetic +15%-miles estimate.
+///
+/// TRUCK ONLY — rail/vessel have no HERE router, so a hazard there is
+/// advise/hold, never an auto-reroute.
+enum HereAvoidArea {
+    /// Coarse rectangle (a low-res cell). HERE: `bbox:{west},{south},{east},{north}`.
+    case bbox(west: Double, south: Double, east: Double, north: Double)
+    /// A hazard outline (NWS CAP / simplified WeatherKit cell). HERE:
+    /// `polygon:{lat},{lng};…` — auto-simplified + capped to HERE's vertex limit.
+    case polygon([CLLocationCoordinate2D])
+    /// A linear hazard (USGS flood reach). HERE: `corridor:{flexiblePolyline};r={m}`.
+    case corridor(path: [CLLocationCoordinate2D], radiusMeters: Int)
+
+    /// HERE caps polygon vertices; stay well under and simplify down to it.
+    static let maxVertices = 20
+
+    /// The HERE v8 `avoid[areas]` spec, or nil if degenerate.
+    func spec() -> String? {
+        switch self {
+        case let .bbox(w, s, e, n):
+            guard e > w, n > s else { return nil }
+            return String(format: "bbox:%.6f,%.6f,%.6f,%.6f", w, s, e, n)
+        case let .polygon(pts):
+            let simplified = Self.cap(Self.simplify(pts), to: Self.maxVertices)
+            guard simplified.count >= 3 else {
+                return Self.boundingBox(of: pts)?.spec()   // degenerate → fall back to bbox
+            }
+            let body = simplified.map { String(format: "%.6f,%.6f", $0.latitude, $0.longitude) }.joined(separator: ";")
+            return "polygon:\(body)"
+        case let .corridor(path, radius):
+            guard path.count >= 2, radius > 0 else { return nil }
+            let encoded = HereFlexiblePolyline.encode(Self.cap(Self.simplify(path), to: Self.maxVertices))
+            guard !encoded.isEmpty else { return nil }
+            return "corridor:\(encoded);r=\(radius)"
+        }
+    }
+
+    /// Bounding box of a coordinate set — the coarse avoid fallback.
+    static func boundingBox(of pts: [CLLocationCoordinate2D]) -> HereAvoidArea? {
+        guard let first = pts.first else { return nil }
+        var minLat = first.latitude, maxLat = first.latitude
+        var minLng = first.longitude, maxLng = first.longitude
+        for c in pts {
+            minLat = min(minLat, c.latitude); maxLat = max(maxLat, c.latitude)
+            minLng = min(minLng, c.longitude); maxLng = max(maxLng, c.longitude)
+        }
+        guard maxLat > minLat, maxLng > minLng else { return nil }
+        return .bbox(west: minLng, south: minLat, east: maxLng, north: maxLat)
+    }
+
+    // MARK: simplification
+
+    /// Ramer–Douglas–Peucker simplification (epsilon in degrees) — the
+    /// symbiotic design reduces hazard cells before handing them to HERE.
+    static func simplify(_ pts: [CLLocationCoordinate2D], epsilon: Double = 0.01) -> [CLLocationCoordinate2D] {
+        guard pts.count > 2 else { return pts }
+        var maxDist = 0.0
+        var idx = 0
+        let start = pts.first!
+        let end = pts.last!
+        for i in 1..<(pts.count - 1) {
+            let d = perpDistance(pts[i], start, end)
+            if d > maxDist { maxDist = d; idx = i }
+        }
+        if maxDist > epsilon {
+            let left = simplify(Array(pts[0...idx]), epsilon: epsilon)
+            let right = simplify(Array(pts[idx...]), epsilon: epsilon)
+            return Array(left.dropLast()) + right
+        }
+        return [start, end]
+    }
+
+    private static func perpDistance(_ p: CLLocationCoordinate2D,
+                                     _ a: CLLocationCoordinate2D,
+                                     _ b: CLLocationCoordinate2D) -> Double {
+        let dx = b.longitude - a.longitude
+        let dy = b.latitude - a.latitude
+        let mag = (dx * dx + dy * dy).squareRoot()
+        guard mag > 0 else {
+            return ((p.longitude - a.longitude) * (p.longitude - a.longitude)
+                    + (p.latitude - a.latitude) * (p.latitude - a.latitude)).squareRoot()
+        }
+        let u = ((p.longitude - a.longitude) * dx + (p.latitude - a.latitude) * dy) / (mag * mag)
+        let cx = a.longitude + u * dx
+        let cy = a.latitude + u * dy
+        return ((p.longitude - cx) * (p.longitude - cx) + (p.latitude - cy) * (p.latitude - cy)).squareRoot()
+    }
+
+    /// Cap vertex count by uniform decimation (endpoints preserved).
+    static func cap(_ pts: [CLLocationCoordinate2D], to maxCount: Int) -> [CLLocationCoordinate2D] {
+        guard pts.count > maxCount, maxCount >= 2 else { return pts }
+        let step = Double(pts.count - 1) / Double(maxCount - 1)
+        return (0..<maxCount).map { pts[Int((Double($0) * step).rounded())] }
+    }
 }
 
 // MARK: - Client
@@ -131,6 +253,15 @@ actor HereRoutingClient {
         if !options.avoidFeatures.isEmpty {
             items.append(URLQueryItem(name: "avoid[features]",
                                       value: options.avoidFeatures.joined(separator: ",")))
+        }
+        // Weather-hazard reroute: each hazard → a bbox/polygon/corridor spec,
+        // pipe-separated. The reroute loop drops these in so HERE actually
+        // routes the truck AROUND the cell instead of estimating a synthetic
+        // +15% miles — the one missing primitive in the symbiotic loop.
+        let areaSpecs = options.avoidAreas.compactMap { $0.spec() }
+        if !areaSpecs.isEmpty {
+            items.append(URLQueryItem(name: "avoid[areas]",
+                                      value: areaSpecs.joined(separator: "|")))
         }
 
         items += profile.asRoutingQueryItems()

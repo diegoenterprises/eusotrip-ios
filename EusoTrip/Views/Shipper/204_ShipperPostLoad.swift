@@ -1670,12 +1670,22 @@ struct ShipperPostLoad: View {
             savedAt: Date().timeIntervalSince1970,
             transportModeRaw: transportMode.rawValue
         )
-        if let data = try? JSONEncoder().encode(snap) {
-            UserDefaults.standard.set(data, forKey: draftStorageKey)
+        // The snapshot was built on the main actor above because it reads
+        // SwiftUI @State. Everything below — JSON encode, UserDefaults, and
+        // (critically) the iCloud KVS .synchronize() — must NOT run on the
+        // main thread; per-keystroke KVS sync on main froze the post-load
+        // screen ("posting a load froze and crashed" — April, build 712).
+        // PostLoadDraftSnapshot is a value-type Codable struct (all String /
+        // Int / Double / Bool / optionals), so it is implicitly Sendable and
+        // safe to capture across the queue boundary.
+        let key = draftStorageKey
+        DispatchQueue.global(qos: .utility).async {
+            guard let data = try? JSONEncoder().encode(snap) else { return }
+            UserDefaults.standard.set(data, forKey: key)
             // iCloud KVS — synchronous in-memory write; .synchronize()
             // schedules upload. Cross-device propagation handled by
             // Apple's iCloud daemon.
-            NSUbiquitousKeyValueStore.default.set(data, forKey: draftStorageKey)
+            NSUbiquitousKeyValueStore.default.set(data, forKey: key)
             NSUbiquitousKeyValueStore.default.synchronize()
         }
     }
@@ -3850,7 +3860,7 @@ struct ShipperPostLoad: View {
         switch (equipmentType, cargoType.isHazmatFlavored) {
         case (.vesselTanker, true):  return "VESSEL TANKER · HAZMAT REQUIREMENTS"
         case (.vesselTanker, false): return "VESSEL TANKER REQUIREMENTS"
-        case (.tankerHazmat, _):     return "TANKER · HAZMAT (MC-306) REQUIREMENTS"
+        case (.tankerHazmat, _):     return "TANKER · HAZMAT (DOT-407) REQUIREMENTS"
         case (.tankerPetro, _):      return "TANKER · PETROLEUM (MC-306) REQUIREMENTS"
         case (.tankerLiquid, true):  return "TANKER · LIQUID BULK (MC-307) · HAZMAT"
         case (.tankerLiquid, false): return "TANKER · LIQUID BULK (MC-307) REQUIREMENTS"

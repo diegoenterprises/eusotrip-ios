@@ -69,6 +69,50 @@ enum HereFlexiblePolyline {
         return out
     }
 
+    // MARK: - Encode (2D)
+
+    /// Encode `coords` into a HERE flexible polyline (2D, default precision 5).
+    /// Exact mirror of `decode`. Used to build `corridor:{flexiblePolyline}`
+    /// avoid-area specs for weather-hazard reroutes.
+    static func encode(_ coords: [CLLocationCoordinate2D], precision: Int = 5) -> String {
+        guard !coords.isEmpty else { return "" }
+        var out: [UInt8] = []
+        encodeUnsigned(1, into: &out)                       // version = 1
+        encodeUnsigned(UInt64(precision & 0x0F), into: &out) // header: prec | thirdDim=0 | thirdDimPrec=0
+        let factor = pow(10.0, Double(precision))
+        var lastLat: Int64 = 0
+        var lastLng: Int64 = 0
+        for c in coords {
+            let lat = Int64((c.latitude * factor).rounded())
+            let lng = Int64((c.longitude * factor).rounded())
+            encodeSigned(lat - lastLat, into: &out)
+            encodeSigned(lng - lastLng, into: &out)
+            lastLat = lat
+            lastLng = lng
+        }
+        return String(decoding: out, as: UTF8.self)
+    }
+
+    private static let encodingAlphabet: [UInt8] =
+        Array("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_").map { $0.asciiValue! }
+
+    private static func encodeUnsigned(_ value: UInt64, into out: inout [UInt8]) {
+        var v = value
+        while v > 0x1F {
+            out.append(encodingAlphabet[Int((v & 0x1F) | 0x20)])
+            v >>= 5
+        }
+        out.append(encodingAlphabet[Int(v)])
+    }
+
+    private static func encodeSigned(_ value: Int64, into out: inout [UInt8]) {
+        // zigzag — inverse of decodeSigned: positive n → n<<1; negative n → ((-n-1)<<1)|1.
+        let u: UInt64 = value < 0
+            ? (UInt64(-(value + 1)) << 1) | 1
+            : UInt64(value) << 1
+        encodeUnsigned(u, into: &out)
+    }
+
     // MARK: - Varint decode
 
     private static func decodeUnsigned(_ bytes: [UInt8], _ i: inout Int) -> UInt64? {

@@ -116,12 +116,12 @@ struct RoleDetailLayer: ViewModifier {
                     .injectBespokeBackBar(title: detail.title, onBack: onBack)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(palette.bgPage.ignoresSafeArea())
-                    .transition(.move(edge: .trailing))
+                    .transition(.opacity)
                     .zIndex(1)
             }
         }
         .environment(\.rolePushDetail) { title, builder in
-            withAnimation(.easeInOut(duration: 0.28)) {
+            withAnimation(.easeInOut(duration: 0.22)) {
                 pushedDetail = RoleDetailPush(title: title, content: builder())
             }
         }

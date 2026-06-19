@@ -1,8 +1,23 @@
 //
 //  290_WalletHome.swift
 //  EusoTrip — Shipper · Wallet home (Arc G).
-//  Backed by `wallet.getBalance` (existing) + `eusoWallet.getSnapshot`
-//  + `wallet.getEscrowHolds`. Em-dash sentinels everywhere.
+//
+//  REDESIGNED to the Design Authority level (founder mandate #13): the
+//  money surface is now a bespoke, alive, trustworthy wallet — a
+//  volumetric hero "money card" with a gradient numeral + animated sheen,
+//  the AVAILABLE / RESERVED / PENDING split as a drawn segmented allocation
+//  bar, itemized escrow holds as bespoke vault tiles, lifetime activity as
+//  a credit/debit ledger, and a hero cash-out CTA. Every glyph is a drawn
+//  `WalletGlyph` Path — ZERO SF Symbols on this surface.
+//
+//  Real data, three real procs:
+//    • `eusoWallet.getSnapshot`  → hero total + available/reserved/pending
+//                                  (cents) + currency. (Same ledger the web
+//                                  wallet binds to.)
+//    • `wallet.getEscrowHolds`   → itemized holds (loadRef / route / amount).
+//    • `wallet.getBalance`       → lifetime received / spent + MTD volume.
+//  All bounded by the shared 22s session timeout; honest em-dash at nil/0;
+//  last-good values stay on screen during a refresh.
 //
 
 import SwiftUI
@@ -12,6 +27,49 @@ struct WalletHomeScreen: View {
     var body: some View {
         Shell(theme: theme) { WalletHomeBody() } nav: { shipperLifecycleNav() }
     }
+}
+
+// MARK: - eusoWallet.getSnapshot (cents-native, the canonical ledger)
+
+private struct EusoWalletSnap: Decodable, Hashable {
+    let walletId: Int?
+    let availableCents: Int?
+    let pendingCents: Int?
+    let reservedCents: Int?
+    let currency: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case walletId, availableCents, pendingCents, reservedCents, currency
+    }
+    init(from decoder: Decoder) throws {
+        // Defensive: every cents field may arrive as a number OR a numeric
+        // String; a shape drift must never throw and blank the wallet.
+        let c = try? decoder.container(keyedBy: CodingKeys.self)
+        func cents(_ k: CodingKeys) -> Int? {
+            guard let c = c else { return nil }
+            if let i = try? c.decodeIfPresent(Int.self, forKey: k) { return i }
+            if let d = try? c.decodeIfPresent(Double.self, forKey: k) { return Int(d.rounded()) }
+            if let s = try? c.decodeIfPresent(String.self, forKey: k), let d = Double(s) { return Int(d.rounded()) }
+            return nil
+        }
+        walletId       = (try? c?.decodeIfPresent(Int.self, forKey: .walletId)) ?? nil
+        availableCents = cents(.availableCents)
+        pendingCents   = cents(.pendingCents)
+        reservedCents  = cents(.reservedCents)
+        currency       = (try? c?.decodeIfPresent(String.self, forKey: .currency)) ?? nil
+    }
+}
+
+// MARK: - wallet.getEscrowHolds (bare array of itemized holds)
+
+private struct EscrowHoldRow: Decodable, Identifiable, Hashable {
+    let id: String
+    let loadRef: String?
+    let route: String?
+    let driverName: String?
+    let amount: Double?
+    let status: String?
+    let createdAt: String?
 }
 
 private struct WalletBalance: Decodable, Hashable {
@@ -63,32 +121,64 @@ private struct WalletBalance: Decodable, Hashable {
 
 private struct WalletHomeBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    // Canonical ledger snapshot (cents) — drives the hero + composition.
+    @State private var snap: EusoWalletSnap? = nil
+    // Lifetime activity + MTD volume (the `wallet.getBalance` extras).
     @State private var balance: WalletBalance? = nil
+    // Itemized escrow holds.
+    @State private var holds: [EscrowHoldRow] = []
+
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
     @State private var showCashOut: Bool = false
+    @State private var holdsExpanded: Bool = false
 
     private var isDark: Bool { palette.bgPage == Theme.dark.bgPage }
+
+    /// Available dollars for the cash-out sheet — prefer the canonical
+    /// snapshot (cents), fall back to the legacy balance.
+    private var availableDollars: Double {
+        if let c = snap?.availableCents { return Double(c) / 100.0 }
+        return balance?.available ?? 0
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s5) {
                 header
-                if let b = balance {
-                    balanceHero(b)
-                    breakdownCard(b)
+
+                // ── HERO ──
+                if let s = snap {
+                    WalletBalanceHero(
+                        availableCents: s.availableCents,
+                        pendingCents: s.pendingCents,
+                        reservedCents: s.reservedCents,
+                        currency: s.currency ?? "USD"
+                    )
                 } else if loading {
-                    balanceHeroSkeleton
+                    heroSkeleton
                 } else if let err = loadError {
-                    LifecycleCard(accentDanger: true) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(Brand.danger)
-                            Text(err).font(EType.caption).foregroundStyle(Brand.danger)
-                            Spacer(minLength: 0)
-                        }
-                    }
+                    errorCard(err)
                 }
-                quickActions
+
+                // ── HERO CASH-OUT CTA ──
+                cashOutAction
+
+                // ── ESCROW HOLDS (itemized) ──
+                if !holds.isEmpty {
+                    holdsCard
+                }
+
+                // ── LIFETIME ACTIVITY (credit / debit ledger) ──
+                if let b = balance {
+                    activityCard(b)
+                }
+
+                // ── MANAGE ──
+                manageSection
+
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 56)
@@ -97,156 +187,112 @@ private struct WalletHomeBody: View {
         .refreshable { await load() }
         .sheet(isPresented: $showCashOut) {
             ShipperCashOutSheet(
-                available: balance?.available ?? 0,
+                available: availableDollars,
                 onCompleted: { Task { await load() } }
             )
         }
     }
 
+    // MARK: Header
+
     private var header: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Image(systemName: "wallet.pass.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                    Text("SHIPPER · EUSOWALLET").font(.system(size: 9, weight: .heavy)).tracking(1.2).foregroundStyle(LinearGradient.diagonal)
-                }
+                WalletEyebrow(glyph: .wallet, text: "SHIPPER · EUSOWALLET")
                 Text("EusoWallet").font(.system(size: 26, weight: .heavy)).foregroundStyle(palette.textPrimary)
             }
             Spacer(minLength: 0)
-            // Iridescent brand mark — the only ornament in the header,
-            // echoing the house gradient so the screen signs itself.
+            // Iridescent brand mark — drawn wallet glyph (no SF Symbol).
             ZStack {
-                Circle().fill(LinearGradient.diagonal).frame(width: 36, height: 36)
-                Image(systemName: "wallet.pass.fill").font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
+                Circle().fill(LinearGradient.diagonal).frame(width: 38, height: 38)
+                WalletGlyph(kind: .wallet, size: 18, tint: AnyShapeStyle(Color.white), lineWidth: 1.6)
             }
             .shadow(color: Brand.magenta.opacity(isDark ? 0.45 : 0.22), radius: 10, x: 0, y: 4)
         }
     }
 
-    // MARK: Balance hero — volumetric brand-gradient card with depth
-    //
-    // Elevated from a flat one-color gradient fill to a layered surface:
-    // a diagonal brand base, a radial top-left glow, a soft sheen sweep,
-    // a top-rim highlight hairline, and an iridescent drop shadow so the
-    // card reads as a premium "money card" floating off the page. No data
-    // changed — `usd(available)` and the two real stat chips below are the
-    // exact same bindings, with the honest "$0"/em-dash behaviour intact.
-    private func balanceHero(_ b: WalletBalance) -> some View {
-        let shape = RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("AVAILABLE BALANCE")
-                    .font(.system(size: 10, weight: .heavy)).tracking(1.4)
-                    .foregroundStyle(.white.opacity(0.82))
+    // MARK: Loading / error
+
+    private var heroSkeleton: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            WalletShimmer(height: 14, radius: 6).frame(width: 130)
+            WalletShimmer(height: 44, radius: 12)
+            WalletShimmer(height: 9, radius: 5)
+            HStack(spacing: 10) {
+                WalletShimmer(height: 28, radius: 8)
+                WalletShimmer(height: 28, radius: 8)
+                WalletShimmer(height: 28, radius: 8)
+            }
+        }
+        .padding(Space.s5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.xl, intensity: .feature)
+    }
+
+    private func errorCard(_ err: String) -> some View {
+        LifecycleCard(accentDanger: true) {
+            HStack(spacing: 8) {
+                WalletGlyph(kind: .pulse, size: 14, tint: AnyShapeStyle(Brand.danger), lineWidth: 1.5)
+                Text(err).font(EType.caption).foregroundStyle(Brand.danger)
                 Spacer(minLength: 0)
-                if let cur = b.currency, !cur.isEmpty {
-                    Text(cur.uppercased())
-                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(.white.opacity(0.16)).clipShape(Capsule())
-                        .overlay(Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 0.75))
+            }
+        }
+    }
+
+    // MARK: Escrow holds — itemized bespoke vault tiles
+
+    private var holdsCard: some View {
+        let shown = holdsExpanded ? holds : Array(holds.prefix(3))
+        let heldTotal = holds.compactMap { $0.amount }.reduce(0, +)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                WalletEyebrow(glyph: .lock, text: "ESCROW HOLDS")
+                Spacer(minLength: 0)
+                Text(WalletMoney.usdDollarsPrecise(heldTotal > 0 ? heldTotal : nil))
+                    .font(.system(size: 13, weight: .heavy, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(Brand.warning)
+            }
+            VStack(spacing: 8) {
+                ForEach(shown) { h in
+                    WalletHoldTile(loadRef: h.loadRef, route: h.route, status: h.status, amountDollars: h.amount)
                 }
             }
-            Text(usd(b.available) == "-" ? "$0" : usd(b.available))
-                .font(.system(size: 44, weight: .heavy))
-                .foregroundStyle(.white)
-                .monospacedDigit()
-                .minimumScaleFactor(0.6)
-                .lineLimit(1)
-                .shadow(color: .black.opacity(0.18), radius: 8, x: 0, y: 3)
-            HStack(spacing: 8) {
-                heroStat(label: "MTD VOLUME", value: usd(b.monthVolume), icon: "chart.line.uptrend.xyaxis")
-                heroStat(label: "IN ESCROW", value: usd(b.escrow), icon: "lock.shield.fill")
+            if holds.count > 3 {
+                Button {
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.4, dampingFraction: 0.85)) {
+                        holdsExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(holdsExpanded ? "Show fewer" : "Show all \(holds.count) holds")
+                            .font(.system(size: 12, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                        WalletGlyph(kind: .chevron, size: 10, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+                            .rotationEffect(.degrees(holdsExpanded ? 90 : 0))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain)
             }
         }
-        .padding(Space.s5)
+        .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            ZStack {
-                LinearGradient.diagonal
-                // Radial bloom in the top-left so the gradient has a light
-                // source instead of a flat two-stop wash.
-                RadialGradient(
-                    colors: [.white.opacity(0.28), .clear],
-                    center: .topLeading, startRadius: 0, endRadius: 320
-                )
-                // Soft diagonal sheen sweep across the lower-right.
-                LinearGradient(
-                    colors: [.clear, .white.opacity(0.10), .clear],
-                    startPoint: .top, endPoint: .bottomTrailing
-                )
-            }
-        }
-        .overlay(alignment: .top) {
-            // Top-rim highlight — the catch-light that gives the card glass.
-            shape.strokeBorder(
-                LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.04)],
-                               startPoint: .top, endPoint: .bottom),
-                lineWidth: 1
-            )
-        }
-        .clipShape(shape)
-        .shadow(color: Brand.blue.opacity(isDark ? 0.40 : 0.18), radius: 18, x: 0, y: 10)
-        .shadow(color: Brand.magenta.opacity(isDark ? 0.28 : 0.12), radius: 22, x: 0, y: 14)
+        .eusoCard(radius: Radius.lg, intensity: .standard)
     }
 
-    private func heroStat(label: String, value: String, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 8, weight: .heavy)).foregroundStyle(.white.opacity(0.8))
-                Text(label).font(.system(size: 8, weight: .heavy)).tracking(0.9).foregroundStyle(.white.opacity(0.8))
-            }
-            Text(value == "-" ? "—" : value)
-                .font(.system(size: 14, weight: .heavy)).monospacedDigit()
-                .foregroundStyle(.white)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10).padding(.vertical, 9)
-        .background(.white.opacity(0.14))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(.white.opacity(0.18), lineWidth: 0.75))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-    }
+    // MARK: Lifetime activity — credit/debit ledger
 
-    private var balanceHeroSkeleton: some View {
-        let shape = RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-        return VStack(alignment: .leading, spacing: 14) {
-            Text("AVAILABLE BALANCE").font(.system(size: 10, weight: .heavy)).tracking(1.4).foregroundStyle(.white.opacity(0.7))
-            Text("Loading…").font(.system(size: 32, weight: .heavy)).foregroundStyle(.white.opacity(0.6))
-        }
-        .padding(Space.s5)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient.diagonal.opacity(0.85))
-        .clipShape(shape)
-    }
-
-    // MARK: Breakdown — grouped, hairline-divided, tabular-numeric card
-    //
-    // Same six real rows as before, now organised into a "Balance
-    // composition" group (pending / reserved / escrow / total) and a
-    // "Lifetime activity" group (received / spent), separated by an
-    // iridescent hairline. Sits on the signature eusoCard surface (the
-    // brand gradient outline + glow) instead of a flat gray box, with
-    // monospaced figures right-aligned for a ledger read. Em-dash honesty
-    // preserved via `usd`.
-    private func breakdownCard(_ b: WalletBalance) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionHeader(label: "BALANCE COMPOSITION", icon: "chart.pie.fill")
-            VStack(spacing: 10) {
-                ledgerRow(label: "Pending",  value: usd(b.pending),  emphasised: false)
-                ledgerRow(label: "Reserved", value: usd(b.reserved), emphasised: false)
-                ledgerRow(label: "Escrow",   value: usd(b.escrow),   emphasised: false)
-                ledgerRow(label: "Total",    value: usd(b.total),    emphasised: true)
-            }
-
-            iridescentDivider
-
-            sectionHeader(label: "LIFETIME ACTIVITY", icon: "clock.arrow.circlepath")
-            VStack(spacing: 10) {
-                // Surfaced only when real money has moved — `usd` renders an
-                // honest em-dash at zero/nil, so a brand-new wallet shows "—".
-                ledgerRow(label: "Received", value: usd(b.totalReceived), tint: Brand.success)
-                ledgerRow(label: "Spent",    value: usd(b.totalSpent),    tint: Brand.warning)
+    private func activityCard(_ b: WalletBalance) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            WalletEyebrow(glyph: .pulse, text: "LIFETIME ACTIVITY")
+            // received (credit) + spent (debit) drawn as ledger rows, plus
+            // MTD volume as a third reference row. Honest em-dash at nil/0.
+            VStack(spacing: 0) {
+                WalletLedgerRow(title: "Received", memo: "All settled payouts", timestamp: nil,
+                                amountDollars: b.totalReceived ?? 0, type: "earnings")
+                WalletLedgerRow(title: "Spent", memo: "Fees, refunds, debits", timestamp: nil,
+                                amountDollars: -(b.totalSpent ?? 0), type: "fee")
+                volumeRow(b.monthVolume)
             }
         }
         .padding(Space.s4)
@@ -254,55 +300,49 @@ private struct WalletHomeBody: View {
         .eusoCard(radius: Radius.lg, intensity: .feature)
     }
 
-    private func sectionHeader(label: String, icon: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-            Text(label).font(.system(size: 9, weight: .heavy)).tracking(1.2).foregroundStyle(LinearGradient.diagonal)
-        }
-    }
-
-    private func ledgerRow(label: String, value: String, emphasised: Bool = false, tint: Color? = nil) -> some View {
-        let shown = (value == "-") ? "—" : value
-        let valueColor: Color = (value == "-") ? palette.textTertiary : (tint ?? palette.textPrimary)
-        return HStack {
-            Text(label)
-                .font(emphasised ? EType.bodyStrong : EType.caption)
-                .foregroundStyle(emphasised ? palette.textPrimary : palette.textSecondary)
+    /// MTD volume reference row — neutral (not a credit/debit), drawn pie
+    /// glyph, no spark.
+    private func volumeRow(_ v: Double?) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(LinearGradient(colors: [Brand.blue.opacity(0.14), Brand.magenta.opacity(0.14)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                WalletGlyph(kind: .pie, size: 16, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+            }
+            .frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Month-to-date volume").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Text("Gross moved this month").font(EType.micro).foregroundStyle(palette.textTertiary)
+            }
             Spacer(minLength: Space.s2)
-            Text(shown)
-                .font(.system(size: emphasised ? 17 : 14, weight: emphasised ? .heavy : .semibold, design: .rounded))
-                .monospacedDigit()
-                .foregroundStyle(valueColor)
+            Text(usd(v) == "-" ? "—" : usd(v))
+                .font(.system(size: 15, weight: .heavy, design: .rounded)).monospacedDigit()
+                .foregroundStyle(palette.textPrimary)
         }
+        .padding(.vertical, 10)
     }
 
-    private var iridescentDivider: some View {
-        Rectangle()
-            .fill(palette.iridescentHairline)
-            .frame(height: 1)
-            .opacity(0.6)
-    }
+    // MARK: Manage section
 
-    private var quickActions: some View {
+    private var manageSection: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            cashOutAction
-            sectionHeader(label: "MANAGE", icon: "square.grid.2x2.fill")
-                .padding(.leading, 2).padding(.top, 4)
+            WalletEyebrow(glyph: .pie, text: "MANAGE").padding(.leading, 2)
             VStack(spacing: 8) {
-                link(icon: "arrow.right.circle.fill", title: "EusoWallet detail", subtitle: "Activity, holds, and pass", screenId: "291")
-                link(icon: "creditcard.fill", title: "Settlements", subtitle: "Load payouts and invoices", screenId: "292")
-                link(icon: "creditcard.and.123", title: "Payment methods", subtitle: "Linked banks and cards", screenId: "295")
-                link(icon: "doc.text.fill", title: "Statements", subtitle: "Monthly account statements", screenId: "297")
-                link(icon: "leaf.fill", title: "Sustainability", subtitle: "Carbon spend and offsets", screenId: "298")
-                link(icon: "chart.bar.fill", title: "Reports", subtitle: "Spend and volume analytics", screenId: "299")
+                link(glyph: .pulse, title: "EusoWallet detail", subtitle: "Activity, holds, and pass", screenId: "291")
+                link(glyph: .bank, title: "Settlements", subtitle: "Load payouts and invoices", screenId: "292")
+                link(glyph: .bank, title: "Payment methods", subtitle: "Linked banks and cards", screenId: "295")
+                link(glyph: .pulse, title: "Statements", subtitle: "Monthly account statements", screenId: "297")
+                link(glyph: .spark, title: "Sustainability", subtitle: "Carbon spend and offsets", screenId: "298")
+                link(glyph: .pie, title: "Reports", subtitle: "Spend and volume analytics", screenId: "299")
             }
         }
     }
 
     // Primary money action — opens the inline withdraw flow
-    // (`wallet.requestPayout`). Full brand-gradient hero CTA so the
-    // cash-out reads as the headline action under the balance, not just
-    // another list row.
+    // (`wallet.requestPayout`). Full brand-gradient hero CTA with a drawn
+    // arrow-down glyph so the cash-out reads as the headline action.
     private var cashOutAction: some View {
         Button {
             showCashOut = true
@@ -310,8 +350,7 @@ private struct WalletHomeBody: View {
             HStack(spacing: 14) {
                 ZStack {
                     Circle().fill(.white.opacity(0.18))
-                    Image(systemName: "arrow.down.to.line.circle.fill")
-                        .font(.system(size: 20, weight: .bold)).foregroundStyle(.white)
+                    WalletGlyph(kind: .arrowDown, size: 22, tint: AnyShapeStyle(Color.white), lineWidth: 2)
                 }
                 .frame(width: 44, height: 44)
                 VStack(alignment: .leading, spacing: 2) {
@@ -319,7 +358,7 @@ private struct WalletHomeBody: View {
                     Text("Withdraw to a linked bank or card").font(EType.micro).foregroundStyle(.white.opacity(0.85))
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(.white.opacity(0.9))
+                WalletGlyph(kind: .chevron, size: 14, tint: AnyShapeStyle(Color.white.opacity(0.9)), lineWidth: 2)
             }
             .padding(.horizontal, Space.s4).padding(.vertical, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -334,20 +373,17 @@ private struct WalletHomeBody: View {
         }.buttonStyle(.plain)
     }
 
-    private func link(icon: String, title: String, subtitle: String, screenId: String) -> some View {
+    private func link(glyph: WalletGlyph.Kind, title: String, subtitle: String, screenId: String) -> some View {
         Button {
             NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": screenId])
         } label: {
             HStack(spacing: 12) {
-                // Tinted gradient-outlined glyph tile — replaces the bare
-                // SF Symbol so each row gets a real touch target and the
-                // iridescent system language carries into the list.
                 ZStack {
                     RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .fill(LinearGradient(colors: [Brand.blue.opacity(0.16), Brand.magenta.opacity(0.16)], startPoint: .topLeading, endPoint: .bottomTrailing))
                     RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(palette.iridescentHairline, lineWidth: 1)
-                    Image(systemName: icon).font(.system(size: 15, weight: .semibold)).foregroundStyle(LinearGradient.diagonal)
+                    WalletGlyph(kind: glyph, size: 16, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
                 }
                 .frame(width: 38, height: 38)
                 VStack(alignment: .leading, spacing: 1) {
@@ -355,7 +391,7 @@ private struct WalletHomeBody: View {
                     Text(subtitle).font(EType.micro).foregroundStyle(palette.textTertiary)
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textTertiary)
+                WalletGlyph(kind: .chevron, size: 13, tint: AnyShapeStyle(palette.textTertiary), lineWidth: 1.5)
             }
             .padding(.horizontal, Space.s3).padding(.vertical, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -364,11 +400,22 @@ private struct WalletHomeBody: View {
         }.buttonStyle(.plain)
     }
 
+    // MARK: Load — three real procs, bounded, last-good preserved
+    //
+    // The canonical snapshot is the gate (its failure surfaces the error
+    // card); the holds + legacy balance are best-effort enrichments that
+    // never blank the screen if they drift. On a refresh the prior values
+    // stay on screen until the new ones land (no flash to empty).
     private func load() async {
         loading = true; loadError = nil
         do {
-            let b: WalletBalance = try await EusoTripAPI.shared.queryNoInput("wallet.getBalance")
-            balance = b
+            async let snapTask: EusoWalletSnap = EusoTripAPI.shared.queryNoInput("eusoWallet.getSnapshot")
+            async let holdsTask: [EscrowHoldRow] = EusoTripAPI.shared.queryNoInput("wallet.getEscrowHolds")
+            async let balTask: WalletBalance = EusoTripAPI.shared.queryNoInput("wallet.getBalance")
+
+            snap = try await snapTask
+            holds = (try? await holdsTask) ?? holds
+            balance = (try? await balTask) ?? balance
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -529,16 +576,13 @@ private struct ShipperCashOutSheet: View {
     private var header: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.down.to.line.circle.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                    Text("SHIPPER · CASH OUT").font(.system(size: 9, weight: .heavy)).tracking(1.2).foregroundStyle(LinearGradient.diagonal)
-                }
+                WalletEyebrow(glyph: .arrowDown, text: "SHIPPER · CASH OUT")
                 Text("Withdraw").font(.system(size: 24, weight: .heavy)).foregroundStyle(palette.textPrimary)
             }
             Spacer(minLength: 0)
             ZStack {
                 Circle().fill(LinearGradient.diagonal).frame(width: 34, height: 34)
-                Image(systemName: "arrow.down.to.line").font(.system(size: 14, weight: .heavy)).foregroundStyle(.white)
+                WalletGlyph(kind: .arrowDown, size: 16, tint: AnyShapeStyle(Color.white), lineWidth: 1.7)
             }
             .shadow(color: Brand.magenta.opacity(isDark ? 0.45 : 0.22), radius: 9, x: 0, y: 4)
         }
@@ -548,7 +592,7 @@ private struct ShipperCashOutSheet: View {
     private var availableRow: some View {
         HStack {
             HStack(spacing: 6) {
-                Image(systemName: "wallet.pass.fill").font(.system(size: 10, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
+                WalletGlyph(kind: .wallet, size: 12, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.4)
                 Text("AVAILABLE").font(.system(size: 9, weight: .heavy)).tracking(1.2).foregroundStyle(palette.textTertiary)
             }
             Spacer()
@@ -568,7 +612,7 @@ private struct ShipperCashOutSheet: View {
                     .fill(LinearGradient(colors: [Brand.blue.opacity(0.16), Brand.magenta.opacity(0.16)], startPoint: .topLeading, endPoint: .bottomTrailing))
                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .strokeBorder(palette.iridescentHairline, lineWidth: 1)
-                Image(systemName: "creditcard.trianglebadge.exclamationmark").font(.system(size: 18, weight: .semibold)).foregroundStyle(LinearGradient.diagonal)
+                WalletGlyph(kind: .bank, size: 18, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.6)
             }
             .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 4) {
@@ -618,7 +662,7 @@ private struct ShipperCashOutSheet: View {
                         .fill(LinearGradient(colors: [Brand.blue.opacity(0.16), Brand.magenta.opacity(0.16)], startPoint: .topLeading, endPoint: .bottomTrailing))
                     RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(palette.iridescentHairline, lineWidth: 1)
-                    Image(systemName: m.kind == "bank" ? "building.columns.fill" : "creditcard.fill").font(.system(size: 15, weight: .semibold)).foregroundStyle(LinearGradient.diagonal)
+                    WalletGlyph(kind: m.kind == "bank" ? .bank : .coins, size: 15, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
                 }
                 .frame(width: 38, height: 38)
                 VStack(alignment: .leading, spacing: 1) {
@@ -626,9 +670,23 @@ private struct ShipperCashOutSheet: View {
                     Text("••\(m.mask)\(m.isInstant ? " · instant" : "")").font(EType.micro).foregroundStyle(palette.textSecondary)
                 }
                 Spacer(minLength: 0)
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(selected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+                // Drawn selection indicator — filled gradient disc with a
+                // check Path when chosen, hollow ring otherwise.
+                ZStack {
+                    Circle().strokeBorder(selected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary.opacity(0.6)), lineWidth: 1.5)
+                        .frame(width: 18, height: 18)
+                    if selected {
+                        Circle().fill(LinearGradient.diagonal).frame(width: 18, height: 18)
+                        Canvas { ctx, sz in
+                            var p = Path()
+                            let s = min(sz.width, sz.height)
+                            p.move(to: CGPoint(x: 0.30 * s, y: 0.52 * s))
+                            p.addLine(to: CGPoint(x: 0.44 * s, y: 0.66 * s))
+                            p.addLine(to: CGPoint(x: 0.72 * s, y: 0.36 * s))
+                            ctx.stroke(p, with: .color(.white), style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                        }.frame(width: 18, height: 18)
+                    }
+                }
             }
             .padding(.horizontal, Space.s3).padding(.vertical, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -680,9 +738,10 @@ private struct ShipperCashOutSheet: View {
             instant = isInstant
         } label: {
             HStack(spacing: 8) {
-                Image(systemName: isInstant ? "bolt.fill" : "clock.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle((selected && !disabled) ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary))
+                WalletGlyph(kind: isInstant ? .bolt : .pulse, size: 14,
+                            filled: isInstant && selected && !disabled,
+                            tint: (selected && !disabled) ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary),
+                            lineWidth: 1.6)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title).font(EType.bodyStrong).foregroundStyle(disabled ? palette.textTertiary : palette.textPrimary)
                     Text(subtitle).font(EType.micro).foregroundStyle(palette.textTertiary).lineLimit(2)
@@ -702,7 +761,7 @@ private struct ShipperCashOutSheet: View {
     private func inlineError(_ text: String) -> some View {
         LifecycleCard(accentDanger: true) {
             HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(Brand.danger)
+                WalletGlyph(kind: .pulse, size: 14, tint: AnyShapeStyle(Brand.danger), lineWidth: 1.5)
                 Text(text).font(EType.caption).foregroundStyle(Brand.danger)
                 Spacer(minLength: 0)
             }
@@ -715,7 +774,7 @@ private struct ShipperCashOutSheet: View {
         } label: {
             HStack(spacing: 8) {
                 if submitting { ProgressView().tint(.white) }
-                else { Image(systemName: "arrow.down.to.line.circle.fill").foregroundStyle(.white) }
+                else { WalletGlyph(kind: .arrowDown, size: 16, tint: AnyShapeStyle(Color.white), lineWidth: 1.8) }
                 Text(submitTitle).font(EType.bodyStrong).foregroundStyle(.white)
             }
             .frame(maxWidth: .infinity)
@@ -744,7 +803,15 @@ private struct ShipperCashOutSheet: View {
             HStack(spacing: 10) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal).frame(width: 40, height: 40)
-                    Image(systemName: "checkmark.seal.fill").font(.system(size: 18, weight: .bold)).foregroundStyle(.white)
+                    // drawn checkmark Path (no SF Symbol)
+                    Canvas { ctx, sz in
+                        var p = Path()
+                        let s = min(sz.width, sz.height)
+                        p.move(to: CGPoint(x: 0.28 * s, y: 0.52 * s))
+                        p.addLine(to: CGPoint(x: 0.44 * s, y: 0.68 * s))
+                        p.addLine(to: CGPoint(x: 0.74 * s, y: 0.34 * s))
+                        ctx.stroke(p, with: .color(.white), style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
+                    }.frame(width: 40, height: 40)
                 }
                 .shadow(color: Brand.magenta.opacity(isDark ? 0.45 : 0.2), radius: 9, x: 0, y: 4)
                 VStack(alignment: .leading, spacing: 1) {
