@@ -215,6 +215,10 @@ struct ShipperLiveTracking: View {
     @StateObject private var store = ShipperLiveTrackingStore()
     @State private var detail: ShipperAPI.ActiveLoad? = nil
     @State private var modeFilter: LiveModeFilter = .all
+    // P2 — per-row position toggle. Rows in this set show raw GPS coordinates
+    // in place of the address shorthand; tapping the position area flips back.
+    // Keyed by `ActiveLoad.id` (the same id `ForEach`/`weatherRisk` use).
+    @State private var coordRowIDs: Set<String> = []
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -693,12 +697,8 @@ struct ShipperLiveTracking: View {
                         .font(.system(size: 10, weight: .heavy).monospacedDigit())
                         .tracking(0.4)
                         .foregroundStyle(palette.textPrimary)
-                    Text(positionLabel(pos))
-                        .font(.system(size: 10, weight: .semibold).monospacedDigit())
-                        .tracking(0.3)
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
-                    Spacer()
+                    positionToggle(l, pos: pos)
+                    Spacer(minLength: Space.s2)
                     Text(pingLabel(pos))
                         .font(.system(size: 10, weight: .heavy).monospacedDigit())
                         .tracking(0.4)
@@ -813,17 +813,102 @@ struct ShipperLiveTracking: View {
         return parts.isEmpty ? "Carrier pending" : parts.joined(separator: " · ")
     }
 
-    private func positionLabel(_ pos: ShipperTelemetryAPI.LiveLocation?) -> String {
-        guard let pos else { return "-" }
-        if pos.stale { return "stale ping" }
+    // MARK: Position toggle (P2 — address ⇄ coordinates)
+    //
+    // The shipmentRow previously crammed the address-derived ETA, the live
+    // position (speed/heading OR lat/lng), and the ping age into one
+    // `.lineLimit(1)` HStack, so the address and the coordinates competed for
+    // the same strip and visibly overlapped on narrow devices. This element
+    // owns that strip: it shows the ADDRESS shorthand by default and flips to
+    // the raw GPS COORDINATES on tap (and back). It's a nested `.plain`
+    // Button, so it intercepts the tap inside the row's open-detail Button
+    // without firing it. Honest: coordinates are only offered/shown when the
+    // feed carries a real lat/lng that isn't stale — otherwise the strip stays
+    // on the address line and shows no tap affordance (nothing to flip to).
+    @ViewBuilder
+    private func positionToggle(_ l: ShipperAPI.ActiveLoad,
+                                pos: ShipperTelemetryAPI.LiveLocation?) -> some View {
+        let canFlip = hasRealGPS(pos)
+        let showingCoords = canFlip && coordRowIDs.contains(l.id)
+        let content = HStack(spacing: 4) {
+            if showingCoords {
+                positionAffordance(filled: true)
+                Text(coordinateLabel(pos))
+                    .font(.system(size: 10, weight: .semibold).monospacedDigit())
+                    .tracking(0.3)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            } else {
+                if canFlip { positionAffordance(filled: false) }
+                Text(addressShorthand(l, pos: pos))
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(0.2)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+        }
+        .contentShape(Rectangle())
+
+        if canFlip {
+            Button {
+                if showingCoords { coordRowIDs.remove(l.id) }
+                else { coordRowIDs.insert(l.id) }
+            } label: { content }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showingCoords
+                ? "Coordinates \(coordinateLabel(pos)). Tap to show address."
+                : "\(addressShorthand(l, pos: pos)). Tap to show coordinates.")
+        } else {
+            content
+        }
+    }
+
+    /// Real GPS == a non-stale fix that actually carries lat AND lng. Stale or
+    /// coordinate-less pings never expose the coordinate face (nothing honest
+    /// to show), so the toggle simply isn't offered.
+    private func hasRealGPS(_ pos: ShipperTelemetryAPI.LiveLocation?) -> Bool {
+        guard let pos, !pos.stale, pos.lat != nil, pos.lng != nil else { return false }
+        return true
+    }
+
+    /// Default face — the lane shorthand, with the live motion cue appended
+    /// when the truck is moving (e.g. "ATL → DFW · 58 mph N"). Falls back to
+    /// the ping state when there's no fix at all.
+    private func addressShorthand(_ l: ShipperAPI.ActiveLoad,
+                                  pos: ShipperTelemetryAPI.LiveLocation?) -> String {
+        let lane = "\(cityShort(l.origin)) → \(cityShort(l.destination))"
+        guard let pos else { return lane }
+        if pos.stale { return "\(lane) · stale ping" }
         if let speed = pos.speed, speed > 0, let h = pos.heading {
-            let dir = headingLabel(h)
-            return String(format: "%.0f mph · %@", speed, dir)
+            return String(format: "%@ · %.0f mph %@", lane, speed, headingLabel(h))
         }
-        if let lat = pos.lat, let lng = pos.lng {
-            return String(format: "%.2f° · %.2f°", lat, lng)
-        }
-        return "-"
+        return lane
+    }
+
+    /// Coordinate face — only ever reached when `hasRealGPS` is true.
+    private func coordinateLabel(_ pos: ShipperTelemetryAPI.LiveLocation?) -> String {
+        guard let lat = pos?.lat, let lng = pos?.lng else { return "—" }
+        return String(format: "%.4f°, %.4f°", lat, lng)
+    }
+
+    /// Trim a free-form "City, ST" / "City, ST 30301" to a compact token so the
+    /// lane shorthand fits the single-line strip. Empty → em-dash (honest).
+    private func cityShort(_ s: String) -> String {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return "—" }
+        guard let head = t.split(separator: ",").first else { return t }
+        return head.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Subtle tap affordance — a small chevron that signals the strip flips.
+    /// Hollow on the address face, filled on the coordinate face so the two
+    /// states read differently at a glance.
+    private func positionAffordance(filled: Bool) -> some View {
+        Image(systemName: filled ? "chevron.left.circle.fill" : "location.circle")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(palette.textTertiary)
+            .accessibilityHidden(true)
     }
 
     private func headingLabel(_ h: Double) -> String {

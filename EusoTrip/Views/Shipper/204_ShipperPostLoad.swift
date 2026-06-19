@@ -743,6 +743,13 @@ struct ShipperPostLoad: View {
                 didHydrateDraft = true
             }
         }
+        // Cancel the pending debounced-persist work item on dismiss.
+        // Navigating BACK tears down this view while a 0.7s
+        // `draftPersistWork` may still be queued; letting it fire
+        // would read now-stale @State and crash ("crashed when going
+        // back in post load"). Mirror the `voice.cancel()` teardown
+        // pattern in 053_ESangDispatchChat.
+        .onDisappear { draftPersistWork?.cancel() }
         // Autosave on every meaningful field change. Collapsed into
         // a single onChange driven by `autosaveDigest` (a hash of
         // every watched value) — chaining 30+ `.onChange` modifiers
