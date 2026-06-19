@@ -363,15 +363,16 @@ struct MarketIntelligenceBody: View {
     @State private var flippedSymbols: Set<String> = []
 
     /// Shared, explicit tile height for BOTH FlipTile faces (founder
-    /// 2026-06-18). The flip-BACK (commodityCardBack) is naturally much
-    /// taller than the FRONT (header + diagonal rule + 30pt price + 40pt
-    /// sparkline + 2-col stat grid + CTA pill), so a FlipTile sized to the
-    /// max of its two faces left the FRONT card floating in dead space and
-    /// the 2-col grid spacing read uneven. Locking BOTH faces (and the
-    /// FlipTile itself) to one taller height makes every tile the same
-    /// breathing shape front and back — no size jump on flip, even grid
-    /// rhythm. Tuned to the back's natural content height.
-    private let tileHeight: CGFloat = 232
+    /// 2026-06-19). The flip-BACK (commodityCardBack) is the TALLER face:
+    /// header + diagonal rule + 30pt price + 40pt sparkline + 3-row 2-col
+    /// stat grid + CTA pill ≈ 282pt. The old 232 CRAMMED it — the back
+    /// overflowed its frame (FlipTile faces weren't clipped) and bled into
+    /// the row below, so every tile read as overlapped by the one under it.
+    /// Lock BOTH faces to the back's TRUE content height so the FRONT *is*
+    /// the taller tapped-shape (founder ask), the back fits with zero
+    /// overflow, and the flip has no size jump. Both faces also clipShape to
+    /// the card rect, so content can never overflow a neighbour again.
+    private let tileHeight: CGFloat = 296
 
     // marketPricing.getCommodities (canonical web feed)
     @State private var commodities: [CommodityRow] = []
@@ -945,13 +946,13 @@ struct MarketIntelligenceBody: View {
         if watchlist.customized && visible.isEmpty {
             customizedEmptyCard
         } else {
-            // Founder 2026-06-18: the taller 232pt flip tiles were touching
-            // their neighbours — column borders kissed and the next row
-            // overlapped — at the old 10pt rhythm. Widen BOTH the inter-column
-            // spacing and the inter-row spacing to 14pt so every tile has a
-            // clean, even gap on all sides (height + flip unchanged).
-            let cols = [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)]
-            LazyVGrid(columns: cols, spacing: 14) {
+            // Founder 2026-06-19: tiles are now the taller 296pt flip-shape
+            // AND hard-clipped to their card rect, so they can no longer
+            // overflow/kiss a neighbour. With overflow impossible, the gap is
+            // tightened to 12pt ("bring them closer and properly spaced") for
+            // a denser, even rhythm on all sides.
+            let cols = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+            LazyVGrid(columns: cols, spacing: 12) {
                 ForEach(visible) { row in
                     let isFlipped = flippedSymbols.contains(row.symbol)
                     FlipTile(isFlipped: isFlipped) {
@@ -1047,13 +1048,13 @@ struct MarketIntelligenceBody: View {
                     .padding(.horizontal, 6).padding(.vertical, 3)
                     .background(Capsule().fill(trendColor))
             }
-            // Full-bleed sparkline (matches the flip-back's live pulse) so
-            // the now-taller front face reads as a deliberate hero card, not
-            // a short card padded with dead space.
+            // Full-bleed sparkline (matches the flip-back's live pulse) that
+            // FLEXES to fill the taller front face, so it reads as a
+            // deliberate hero card instead of a short card padded with dead
+            // space. (Replaces the old fixed 42pt height + trailing Spacer —
+            // the flex now pins price/change/hint to the bottom.)
             MiniSparkline(values: row.sparkline ?? [], color: trendColor)
-                .frame(maxWidth: .infinity)
-                .frame(height: 42)
-            Spacer(minLength: 0)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             Text(formatPrice(row.price))
                 .font(.system(size: 22, weight: .heavy, design: .rounded)).monospacedDigit()
                 .foregroundStyle(palette.textPrimary)
@@ -1093,6 +1094,8 @@ struct MarketIntelligenceBody: View {
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .strokeBorder(palette.borderFaint)
         )
+        // Hard clip: front content can never bleed past the tile into a neighbour.
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     // MARK: Commodity flip-back (the bespoke drill-down)
@@ -1211,6 +1214,8 @@ struct MarketIntelligenceBody: View {
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .strokeBorder(trendColor.opacity(0.55), lineWidth: 1)
         )
+        // Hard clip: back content can never bleed past the tile into a neighbour.
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     /// One micro-label-over-value stat for the flip-back grid. Absent value
