@@ -74,7 +74,11 @@ struct MessagesScreen: View {
                         .toolbar {
                             ToolbarItem(placement: .topBarLeading) {
                                 Button {
-                                    if !path.isEmpty { path.removeLast() }
+                                    // No-slide pop (founder 2026-06-18): strip
+                                    // the default horizontal back-slide.
+                                    if !path.isEmpty {
+                                        withTransaction(Transaction(animation: nil)) { path.removeLast() }
+                                    }
                                 } label: {
                                     HStack(spacing: 4) {
                                         Image(systemName: "chevron.left")
@@ -124,7 +128,10 @@ struct MessagesScreen: View {
             pendingOpenThread = nil
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 250_000_000)
-                path.append(thread)
+                // No-slide push (founder 2026-06-18: kill ALL slide motion).
+                // The default NavigationStack push slides horizontally; strip
+                // the animation so the conversation cross-cuts in instead.
+                withTransaction(Transaction(animation: nil)) { path.append(thread) }
                 await loadInbox(force: false)
             }
         }
@@ -232,7 +239,9 @@ struct MessagesScreen: View {
                 Section {
                     ForEach(threads) { t in
                         Button {
-                            path.append(t)
+                            // No-slide push (founder 2026-06-18): strip the
+                            // default horizontal NavigationStack push slide.
+                            withTransaction(Transaction(animation: nil)) { path.append(t) }
                         } label: {
                             threadRow(t)
                         }
@@ -299,7 +308,8 @@ struct MessagesScreen: View {
         }
         // If the deleted thread is open in the stack, pop it.
         if let topId = path.last?.id, topId == thread.id {
-            path.removeLast()
+            // No-slide pop (founder 2026-06-18).
+            withTransaction(Transaction(animation: nil)) { path.removeLast() }
         }
         do {
             _ = try await EusoTripAPI.shared.messaging.deleteConversation(

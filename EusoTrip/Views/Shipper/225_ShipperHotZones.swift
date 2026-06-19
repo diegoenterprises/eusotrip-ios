@@ -114,8 +114,46 @@ final class ShipperHotZonesStore: ObservableObject {
             let r = try await api.hotZones.getRateFeed(equipment: equipment.serverEquipment)
             phase = .loaded(r)
         } catch {
-            phase = .error("Couldn't reach market feed.")
+            // Surface the REAL failure so a future regression is diagnosable
+            // (decode-shape mismatch, 500, auth, timeout) instead of a blanket
+            // "Couldn't reach market feed." A genuinely-empty feed is NOT an
+            // error — it decodes to `.loaded` with empty `zones`/`coldZones`
+            // and the screen renders its honest "no demand spike" card. We only
+            // reach here when the call itself threw (network/HTTP/decode), and
+            // we keep that exact reason so the cause is never swallowed again.
+            phase = .error(Self.diagnose(error))
         }
+    }
+
+    /// Map a thrown error to a short, honest, diagnosable message. Keeps the
+    /// real reason (HTTP status + server body, or the decode key path) instead
+    /// of a blanket string, so the next time the feed breaks the screenshot
+    /// itself names the cause.
+    private static func diagnose(_ error: Error) -> String {
+        if let apiErr = error as? EusoTripAPIError {
+            return "Market feed: \(apiErr.errorDescription ?? "request failed")"
+        }
+        if let decodeErr = error as? DecodingError {
+            switch decodeErr {
+            case .keyNotFound(let key, _):
+                return "Market feed decode: missing \"\(key.stringValue)\""
+            case .typeMismatch(_, let ctx):
+                let path = ctx.codingPath.map(\.stringValue).joined(separator: ".")
+                return "Market feed decode: type mismatch at \(path.isEmpty ? "root" : path)"
+            case .valueNotFound(_, let ctx):
+                let path = ctx.codingPath.map(\.stringValue).joined(separator: ".")
+                return "Market feed decode: null at \(path.isEmpty ? "root" : path)"
+            case .dataCorrupted(let ctx):
+                return "Market feed decode: corrupted (\(ctx.debugDescription))"
+            @unknown default:
+                return "Market feed decode error."
+            }
+        }
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain {
+            return "Market feed network: \(ns.localizedDescription)"
+        }
+        return "Market feed: \(error.localizedDescription)"
     }
 }
 
@@ -167,7 +205,13 @@ struct ShipperHotZones: View {
                 content
                     .padding(.top, embedded ? Space.s1 : Space.s3)
 
-                Color.clear.frame(height: 96)
+                // Floating-nav clearance. When embedded in MarketHubScreen this
+                // is an INNER ScrollView under the tab bar, so the Shell's own
+                // bottom inset lands below this scroller. Match the Shell's
+                // canonical clearance (Device.navHeight + safeBottom + Space.s4
+                // = 120pt) so the last Hot/Cold Zones row fully clears the nav
+                // plate AND the lifted ESANG orb (founder 2026-06-18).
+                Color.clear.frame(height: Device.navHeight + Device.safeBottom + Space.s4)
             }
             // Hard-lock the scroll content to the viewport width so the page
             // can NEVER pan/rubber-band horizontally — any intrinsically-wide

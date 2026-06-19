@@ -151,7 +151,6 @@ private struct QuickWordmarkSplash: View {
                 .foregroundStyle(LinearGradient.diagonal)
         }
         .opacity(visible ? 1.0 : 0.0)
-        .scaleEffect(visible ? 1.0 : 0.96)
         .onAppear {
             // 200ms fade-in. The parent view's task clock holds for
             // ~700ms total before firing onFinish, so the visible

@@ -121,14 +121,20 @@ public struct TileRevealModifier: ViewModifier {
     }
 
     public func body(content: Content) -> some View {
+        // FOUNDER MANDATE (2026-06-18, build 737): "its still sliding in …
+        // the whole damn app." This modifier backs EVERY entrance primitive
+        // (screenTileRoot / TileStack / TileRow / cafeDoorReveal /
+        // screenTileSurface), so its horizontal/vertical OFFSET + SCALE were
+        // the app-wide slide the founder kept seeing — the routing layer was
+        // already cross-fading, but the screen CONTENT still translated 24pt
+        // on every onAppear. Collapsed to OPACITY-ONLY: no .offset, no
+        // .scaleEffect. The per-tile stagger (a small opacity delay) is the
+        // only "cascade" that remains, which the founder explicitly allowed.
+        // `anchor`, `distance`, `horizontalDistance`, `horizontalSign`,
+        // `scaleStart` are now inert (kept on the type so the 130+ call sites
+        // and the public initializers stay source-compatible).
         content
             .opacity(shown ? 1 : 0)
-            .offset(
-                x: shown ? 0 : (reduceMotion ? 0 : horizontalSign * horizontalDistance),
-                y: shown ? 0 : (reduceMotion ? 0 : distance)
-            )
-            .scaleEffect(shown ? 1 : (reduceMotion ? 1 : scaleStart),
-                         anchor: anchor)
             .onAppear {
                 guard !shown else { return }
                 let ramp: Animation = reduceMotion
