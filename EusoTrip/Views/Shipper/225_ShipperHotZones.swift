@@ -121,15 +121,6 @@ final class ShipperHotZonesStore: ObservableObject {
 
 // MARK: - Screen root
 
-/// Identifier wrapper so `pendingDetailCity` can drive a SwiftUI
-/// `.sheet(item:)`. Uses the human-readable `"City, ST"` label as
-/// both the id and the payload — `HotZoneCityDetailScreen` accepts
-/// the same string format.
-struct HotZoneCityRef: Identifiable, Hashable {
-    let city: String
-    var id: String { city }
-}
-
 struct ShipperHotZones: View {
     /// When hosted inside the consolidated Market Hub (Hot Zones / Market
     /// Intelligence tabs), the hub owns the header + tab bar, so the screen
@@ -140,12 +131,25 @@ struct ShipperHotZones: View {
     @Environment(\.openURL) private var openURL
     @StateObject private var store = ShipperHotZonesStore()
 
-    /// Identifier-wrapped city string so `.sheet(item:)` knows when
-    /// to present the detail. Tapping a hot/cold metro tile sets this
-    /// so `HotZoneCityDetailScreen` renders the in-app drill-down
-    /// (rates, demand index, top commodities, top lanes, carriers
-    /// available). Replaces the previous "no expansion" dead tap.
-    @State private var pendingDetailCity: HotZoneCityRef? = nil
+    /// Per-zone flip state. Tapping a hot tile flips it IN PLACE on its
+    /// X-axis to reveal the demand detail on the back of the same tile
+    /// (founder: "instead of taking you to the second screen, it flips
+    /// over and shows the details on the back"). Tap again — or the
+    /// back-face return chevron — flips it home. Keyed by zone id so each
+    /// tile flips independently. Every surface on this screen now flips:
+    /// the old modal drill-down (.sheet → 436) is GONE; the heatmap cells
+    /// (`flippedCells`) and cold tiles (`flippedColdZones`) flip too.
+    @State private var flippedZones: Set<String> = []
+
+    /// Per-cold-zone flip state — the cold strip tiles flip in place to an
+    /// inspiring glass back (surge headline + live pulse + post-capacity CTA)
+    /// instead of pushing the hated 436 detail screen. Keyed by `ColdZoneEntry.id`.
+    @State private var flippedColdZones: Set<String> = []
+
+    /// Per-heat-cell flip state — the demand-grid cells flip in place to a
+    /// bespoke back (demand multiplier + live pulse + "Find loads" CTA)
+    /// instead of drilling into 436. Keyed by `HotZoneEntry.id`.
+    @State private var flippedCells: Set<String> = []
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -180,11 +184,6 @@ struct ShipperHotZones: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
             Task { await store.load() }
-        }
-        .sheet(item: $pendingDetailCity) { ref in
-            HotZoneCityDetailScreen(theme: palette, city: ref.city)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
         }
     }
 
@@ -408,46 +407,129 @@ struct ShipperHotZones: View {
     /// filtered set is empty we surface an honest empty state.
     @ViewBuilder
     private func heatmapSection(_ f: HotZonesFeedResult) -> some View {
-        let cells = heatCells(f)
+        // FOUNDER FIX 2026-06-13 — the shared `HeatCellMatrix` drilled a cell
+        // tap into the hated 436 detail (`pendingDetailCity`). That nav is
+        // KILLED. We DON'T fork the shared primitive (it drives 544 / rail /
+        // vessel surfaces); instead this screen renders its OWN bespoke
+        // 4-col grid of FlipTile cells whose front recreates the HeatCell
+        // visual (band wash + label + ratio + load count) and whose back is
+        // the inspiring drill-down. The equipment filter is PRESERVED —
+        // we still map over `filteredZones`, `store.equipment` + its didSet
+        // re-fetch are untouched; only the navigation is gone.
+        let cells = filteredZones(f).prefix(12)
         if cells.isEmpty {
             EmptyView()
         } else {
-            HeatCellMatrix(
-                title: "Demand heatmap",
-                eyebrow: "Load-to-truck intensity · live by metro",
-                cells: cells,
-                columns: 4,
-                thresholds: HeatCellThresholds(
-                    warmAt: 1.4, hotAt: 3.0,
-                    minIntensity: 0.0, maxIntensity: 4.0
-                ),
-                onSelect: { cell in
-                    // Tapping a heat cell drills into the same in-app
-                    // city detail the tiles use. `detail` carries the
-                    // "City, ST" label the detail sheet accepts.
-                    if let label = cell.detail {
-                        pendingDetailCity = HotZoneCityRef(city: label)
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("LOAD-TO-TRUCK INTENSITY · LIVE BY METRO")
+                        .font(EType.micro)
+                        .tracking(1.0)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer(minLength: Space.s2)
+                    Text("\(cells.count) cell\(cells.count == 1 ? "" : "s")")
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: Space.s2), count: 4),
+                    alignment: .leading,
+                    spacing: Space.s2
+                ) {
+                    ForEach(Array(cells)) { z in
+                        heatFlipCell(z)
                     }
                 }
+                heatLegendRow
+            }
+            .padding(Space.s4)
+            .background(
+                RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                    .fill(palette.bgCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+                            .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
+                    )
             )
         }
     }
 
-    /// Maps the (equipment-filtered) live zones onto `HeatCell`s. Intensity
-    /// is the live load-to-truck ratio; the value text shows it as "N.N×"
-    /// and the unit caption notes the live load count so a hot cell still
-    /// reads at a glance.
-    private func heatCells(_ f: HotZonesFeedResult) -> [HeatCell] {
-        filteredZones(f).prefix(12).map { z in
-            HeatCell(
-                id: z.zoneId,
-                label: z.state,
-                valueText: String(format: "%.1f×", z.liveRatio),
-                unitText: "\(z.liveLoads) loads",
-                intensity: z.liveRatio,
-                detail: "\(z.zoneName), \(z.state)"
-            )
+    /// HOT · WARM · SOFT legend — same trio + washes the shared HeatCellMatrix
+    /// renders, kept so the bespoke grid still reads at a glance.
+    private var heatLegendRow: some View {
+        HStack(spacing: Space.s4) {
+            ForEach(Array(HeatBand.allCases.enumerated()), id: \.offset) { _, band in
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(band.color.opacity(band.wash))
+                        .frame(width: 8, height: 8)
+                    Text(band.title)
+                        .font(.system(size: 8, weight: .bold))
+                        .tracking(0.4)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            Spacer(minLength: 0)
         }
+        .padding(.top, Space.s1)
+    }
+
+    /// One demand-grid cell as a FlipTile. FRONT recreates the canonical
+    /// HeatCell look (band wash → 12pt rounded rect, bold state label, ratio,
+    /// load-count caption); BACK is the inspiring bespoke drill-down. Tap
+    /// toggles `flippedCells` with the shared spring + haptic; flips only
+    /// when the back has real content (a live ratio is always present, so it
+    /// always has a hero — but we still gate so a degenerate row can't flip
+    /// to an empty face).
+    private func heatFlipCell(_ z: HotZoneEntry) -> some View {
+        let band = HeatBand.band(for: z.liveRatio)
+        let isFlipped = flippedCells.contains(z.id)
+        return FlipTile(isFlipped: isFlipped) {
+            heatCellFront(z, band: band)
+        } back: {
+            cellBack(z)
+        }
+        .frame(height: 96)
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onTapGesture {
+            guard z.liveRatio > 0 || z.liveLoads > 0 else { return }
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) {
+                if isFlipped { flippedCells.remove(z.id) }
+                else { flippedCells.insert(z.id) }
+            }
+        }
+        .sensoryFeedback(.selection, trigger: isFlipped)
+    }
+
+    /// FRONT of a demand cell — verbatim to the 544 HeatCell wash rules
+    /// (HOT #F44336@0.85 / WARM #FFA726@0.55 / SOFT #00C48C@0.35, white ink
+    /// on a dense HOT wash, textPrimary otherwise).
+    private func heatCellFront(_ z: HotZoneEntry, band: HeatBand) -> some View {
+        let textColor: Color = (band == .hot && band.wash >= 0.6) ? .white : palette.textPrimary
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(z.state)
+                .font(.system(size: 16, weight: .heavy))
+                .foregroundStyle(textColor)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            Text(String(format: "%.1f×", z.liveRatio))
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundStyle(textColor)
+            Text("\(z.liveLoads) loads")
+                .font(.system(size: 8, weight: .regular))
+                .foregroundStyle(textColor.opacity(0.85))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(band.color.opacity(band.wash))
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(z.state), \(band.title), \(String(format: "%.1f", z.liveRatio)) loads per truck, \(z.liveLoads) loads. Tap to flip for detail.")
     }
 
     private enum ValueStyle { case gradient, danger, success, neutral }
@@ -605,14 +687,28 @@ struct ShipperHotZones: View {
             guard let p = z.rateChangePercent else { return palette.textSecondary }
             return p >= 0 ? Brand.danger : Brand.success
         }()
-        return Button {
-            pendingDetailCity = HotZoneCityRef(
-                city: "\(z.zoneName), \(z.state)"
-            )
-        } label: {
+        // Refactored 2026-06-13 — the inline ZStack + dual rotation3DEffect
+        // that this tile pioneered is now the shared `FlipTile` primitive
+        // (Views/Components/FlipTile.swift). Behavior is identical (same
+        // X-axis spring, same Reduce-Motion crossfade); the caller still
+        // owns the tap → spring-toggle of `flippedZones` + the selection
+        // haptic, exactly as before.
+        let isFlipped = flippedZones.contains(z.id)
+        return FlipTile(isFlipped: isFlipped) {
+            // FRONT — live demand headline + interactive sparkline.
             hotTileBody(z, demandColor: demandColor, pulse: pulse, pulseColor: pulseColor)
+        } back: {
+            // BACK — the inspiring in-place drill-down.
+            hotTileBack(z, demandColor: demandColor)
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) {
+                if isFlipped { flippedZones.remove(z.id) }
+                else { flippedZones.insert(z.id) }
+            }
+        }
+        .sensoryFeedback(.selection, trigger: isFlipped)
     }
 
     private func hotTileBody(_ z: HotZoneEntry,
@@ -714,6 +810,132 @@ struct ShipperHotZones: View {
         )
     }
 
+    /// The BACK of a flipped HOT tile — the inspiring in-place drill-down
+    /// that replaces the 436 detail screen. Built to the bespoke flip-back
+    /// design language (`FlipBack` scaffold): header + drawn chevron + 2pt
+    /// gradient underline, a LARGE demand-multiplier hero, a prominent live
+    /// pulse chart seeded from this zone's real scalars, a 2-col stat grid
+    /// of the remaining real fields (em-dash any absent optional, drop empty
+    /// rows), and a gradient "Find loads in {state}" CTA that fires the real
+    /// load-search action. ZERO SF Symbols. Tap anywhere to flip home.
+    private func hotTileBack(_ z: HotZoneEntry, demandColor: Color) -> some View {
+        let delta = z.rateChangePercent.map { String(format: "%+.1f%%", $0) }
+        let deltaColor: Color = {
+            guard let p = z.rateChangePercent else { return palette.textTertiary }
+            return p >= 0 ? Brand.danger : Brand.success
+        }()
+        return FlipBack(
+            accent: demandColor,
+            name: z.zoneName,
+            cornerRadius: Radius.lg,
+            palette: palette,
+            hero: {
+                Text(String(format: "%.1f×", z.liveRatio))
+                    .font(.system(size: 30, weight: .heavy).monospacedDigit())
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .accessibilityLabel("Demand \(String(format: "%.1f", z.liveRatio)) times")
+            },
+            pulse: { HotZonePulseChart(zone: z, accent: demandColor).frame(height: 40) },
+            stats: [
+                FlipStat("Demand", z.demandLevel.capitalized, demandColor),
+                FlipStat("Loads", "\(z.liveLoads)", palette.textPrimary),
+                FlipStat("Trucks", z.liveTrucks.formatted(), palette.textPrimary),
+                FlipStat("Rate", String(format: "$%.2f/mi", z.liveRate), palette.textPrimary),
+                FlipStat("30-day Δ", delta, deltaColor),
+                z.topEquipment.isEmpty ? nil : FlipStat(
+                    "Equipment",
+                    z.topEquipment.prefix(2)
+                        .map { $0.replacingOccurrences(of: "_", with: " ").capitalized }
+                        .joined(separator: " · "),
+                    palette.textSecondary
+                ),
+                intermodalSummary(z).map { FlipStat("Intermodal", $0, palette.textSecondary) },
+                (z.reasons?.first).flatMap { $0.isEmpty ? nil : FlipStat("Why hot", $0, palette.textSecondary) }
+            ].compactMap { $0 },
+            ctaTitle: "Find loads in \(z.state)",
+            cta: { tapFindLoads(state: z.state, metro: z.zoneName) }
+        )
+        .accessibilityLabel(
+            "\(z.zoneName) detail. Demand \(String(format: "%.1f", z.liveRatio)) times. "
+            + "Trucks available \(z.liveTrucks). "
+            + "Rate \(String(format: "$%.2f per mile", z.liveRate)). Tap to flip back."
+        )
+    }
+
+    /// BACK of a flipped demand-grid (Intensity) cell — same design language
+    /// as the hot back, sourced from the same `HotZoneEntry`. Hero = the live
+    /// load-to-truck multiplier; CTA fires the real load search. The cell is a
+    /// tiny 96pt 4-col tile, so the back runs in COMPACT mode with a LEAN stat
+    /// pair (Loads · Rate) — the full real field set stays on the larger
+    /// 2-col hot tile back. Em-dash any absent value; drop nothing here since
+    /// loads + rate are non-optional.
+    private func cellBack(_ z: HotZoneEntry) -> some View {
+        let band = HeatBand.band(for: z.liveRatio)
+        return FlipBack(
+            accent: band.color,
+            name: z.state,
+            cornerRadius: 12,
+            palette: palette,
+            compact: true,
+            hero: {
+                Text(String(format: "%.1f×", z.liveRatio))
+                    .font(.system(size: 22, weight: .heavy).monospacedDigit())
+                    .foregroundStyle(LinearGradient.diagonal)
+            },
+            pulse: { HotZonePulseChart(zone: z, accent: band.color).frame(height: 22) },
+            stats: [
+                FlipStat("Loads", "\(z.liveLoads)", palette.textPrimary),
+                FlipStat("Rate", String(format: "$%.2f", z.liveRate), palette.textPrimary)
+            ],
+            ctaTitle: "Find loads",
+            cta: { tapFindLoads(state: z.state, metro: z.zoneName) }
+        )
+        .accessibilityLabel(
+            "\(z.state) detail. Demand \(String(format: "%.1f", z.liveRatio)) times, "
+            + "\(z.liveLoads) loads, \(String(format: "$%.2f per mile", z.liveRate)). Tap to flip back."
+        )
+    }
+
+    /// Real load-search action fired by the Hot + Intensity backs. Same
+    /// pattern as `tapPostRecommendation`: a telemetry post for observability
+    /// plus a Bearer-authed web continuation into the shipper load search
+    /// pre-seeded with the metro. No re-login.
+    private func tapFindLoads(state: String, metro: String) {
+        NotificationCenter.default.post(
+            name: .eusoShipperHotZonesFindLoads,
+            object: nil,
+            userInfo: [
+                "source": "225_ShipperHotZones",
+                "state": state,
+                "metro": metro,
+                "shipperCompanyId": 1
+            ]
+        )
+        let q = metro.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let st = state.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let url = URL(string: "https://app.eusotrip.com/shipper/loads/search?origin=\(q)&state=\(st)") {
+            openURL(url)
+        }
+    }
+
+    /// Intermodal (rail/vessel) one-line summary for the compact tile back.
+    /// Shows REAL facility presence in the zone (yard/port counts) + a demand
+    /// tier only when the server has real volume — nil when the zone has no
+    /// rail/port facilities (so inland metros stay clean). The full breakdown
+    /// lives in the 436 detail.
+    private func intermodalSummary(_ z: HotZoneEntry) -> String? {
+        var parts: [String] = []
+        if let r = z.rail, let yc = r.yardCount, yc > 0 {
+            let d = r.demand.map { " (\($0.capitalized))" } ?? ""
+            parts.append("\(yc) rail yard\(yc == 1 ? "" : "s")\(d)")
+        }
+        if let v = z.vessel, let pc = v.portCount, pc > 0 {
+            let d = v.demand.map { " (\($0.capitalized))" } ?? ""
+            parts.append("\(pc) port\(pc == 1 ? "" : "s")\(d)")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     // MARK: Cold strip
 
     private func coldStrip(_ cold: [ColdZoneEntry]) -> some View {
@@ -728,22 +950,47 @@ struct ShipperHotZones: View {
         // Surge delta vs balanced (1.0×) when the feed carries it; nil
         // (badge hidden) rather than a dead "-" when it doesn't.
         let pulse = c.liveSurge.map { String(format: "%+.1f", ($0 - 1.0) * 100.0) + "%" }
-        return Button {
-            let metro = c.name ?? c.state ?? ""
-            let label = c.state.map { "\(metro), \($0)" } ?? metro
-            pendingDetailCity = HotZoneCityRef(city: label)
-        } label: {
+        // FOUNDER FIX 2026-06-13 — the cold tile used to push the hated 436
+        // detail (`pendingDetailCity`). That nav is KILLED. It now flips in
+        // place to an inspiring glass back (surge hero + live pulse +
+        // post-capacity CTA). Gated: only flips when the back has content —
+        // i.e. it carries at least one real scalar to show. The caller owns
+        // the spring-toggle + selection haptic, matching the hot tiles.
+        let isFlipped = flippedColdZones.contains(c.id)
+        let hasBack = coldHasBackContent(c)
+        return FlipTile(isFlipped: isFlipped) {
             coldTileBody(c, pulse: pulse)
+        } back: {
+            coldTileBack(c)
         }
-        .buttonStyle(.plain)
+        // Fixed height so the compact front and the taller inspiring back
+        // share one frame (the front fills it via maxHeight: .infinity).
+        .frame(height: 188)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard hasBack else { return }
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) {
+                if isFlipped { flippedColdZones.remove(c.id) }
+                else { flippedColdZones.insert(c.id) }
+            }
+        }
+        .sensoryFeedback(.selection, trigger: isFlipped)
+    }
+
+    /// Whether a cold zone has enough REAL data to justify a flip — at least
+    /// one live scalar. A bare row (name only) won't flip to a face of pure
+    /// em-dashes (founder: never an em-dash screen).
+    private func coldHasBackContent(_ c: ColdZoneEntry) -> Bool {
+        c.liveSurge != nil || c.liveRate != nil || c.liveTrucks != nil
     }
 
     private func coldTileBody(_ c: ColdZoneEntry, pulse: String?) -> some View {
         HStack(spacing: Space.s3) {
             ZStack {
                 Circle().fill(Brand.info.opacity(0.18)).frame(width: 36, height: 36)
-                Image(systemName: "snowflake")
-                    .font(.system(size: 14, weight: .heavy))
+                // Bespoke snow glyph (WeatherGlyph) — NOT the SF `snowflake`.
+                WeatherGlyph(kind: .snow)
+                    .frame(width: 14, height: 14)
                     .foregroundStyle(Brand.info)
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -781,13 +1028,70 @@ struct ShipperHotZones: View {
             }
         }
         .padding(Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Fill the FlipTile's fixed height (so the front card matches the
+        // taller back face) and pin the row to the top so the layout reads
+        // the same as the original compact strip tile.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg)
                 .strokeBorder(Brand.info.opacity(0.45), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+    }
+
+    /// BACK of a flipped COLD tile — the inspiring drill-down that replaces
+    /// the 436 detail. Bespoke flip-back design language, accent = `Brand.info`
+    /// (the cold palette). Hero = the surge vs balanced (1.0×) as a colored
+    /// ±% (success when below balance = a real discount to post against,
+    /// danger when above). Pulse = a HotZonePulseChart seeded from the cold
+    /// zone's real scalars (honest flat baseline if none). Stat grid = State /
+    /// Post rate / Capacity — em-dash any absent field, drop nothing here since
+    /// all three are headline cold fields. CTA = "Post capacity at $X.XX/mi"
+    /// firing the SAME real post-capacity action the front action ribbon uses.
+    private func coldTileBack(_ c: ColdZoneEntry) -> some View {
+        // Surge headline: liveSurge vs balanced 1.0×. Below balance reads as a
+        // capacity discount (success); above as tightening (danger). Honest
+        // em-dash when the feed ships no surge.
+        let hero: (text: String, gradient: Bool, color: Color) = {
+            guard let s = c.liveSurge else { return ("—", false, palette.textTertiary) }
+            let pct = (s - 1.0) * 100.0
+            let color: Color = pct <= 0 ? Brand.success : Brand.danger
+            return (String(format: "%+.1f%%", pct), false, color)
+        }()
+        let rateStr = c.liveRate.map { String(format: "$%.2f/mi", $0) }
+        let ctaTitle = c.liveRate.map { String(format: "Post capacity at $%.2f/mi", $0) }
+            ?? "Post capacity"
+        return FlipBack(
+            accent: Brand.info,
+            name: c.name ?? c.state ?? "Cold zone",
+            cornerRadius: Radius.lg,
+            palette: palette,
+            hero: {
+                Group {
+                    if hero.gradient {
+                        Text(hero.text).foregroundStyle(LinearGradient.diagonal)
+                    } else {
+                        Text(hero.text).foregroundStyle(hero.color)
+                    }
+                }
+                .font(.system(size: 30, weight: .heavy).monospacedDigit())
+                .accessibilityLabel("Surge \(hero.text)")
+            },
+            pulse: { ColdZonePulseChart(zone: c).frame(height: 40) },
+            stats: [
+                FlipStat("State", c.state, palette.textPrimary),
+                FlipStat("Post rate", rateStr, Brand.info),
+                FlipStat("Capacity", c.liveTrucks.map { "\($0) trucks" }, palette.textPrimary)
+            ].compactMap { $0 },
+            ctaTitle: ctaTitle,
+            cta: { tapPostRecommendation(c) }
+        )
+        .accessibilityLabel(
+            "\(c.name ?? c.state ?? "Cold zone") detail. Surge \(hero.text). "
+            + (rateStr.map { "Post rate \($0). " } ?? "")
+            + "Tap to flip back."
+        )
     }
 
     // MARK: Action ribbon (cold-zone post recommendation)
@@ -852,10 +1156,16 @@ struct ShipperHotZones: View {
                 "shipperCompanyId": 1
             ]
         )
-        let encoded = metro.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let url = URL(string: "https://app.eusotrip.com/shipper/loads/new?origin=\(encoded)&rate=\(rate)") {
-            openURL(url)
-        }
+        // Founder feedback (build 729): the web continuation
+        // (app.eusotrip.com/shipper/loads/new) errored out in the in-app
+        // browser. Push the NATIVE post-load screen (204) instead — pre-seeded
+        // with the cold-zone metro + recommended rate — via the shipper
+        // push-nav (the same `.eusoShipperNavSwap` slot Search/lifecycle use).
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap,
+            object: nil,
+            userInfo: ["screenId": "204", "prefillOrigin": metro, "prefillRate": rate]
+        )
     }
 
     // MARK: Formula explainer
@@ -1107,6 +1417,321 @@ private enum HotZonePulseSynth {
     }
 }
 
+// MARK: - Bespoke flip-back scaffold (the "catch my eyes" replacement for 436)
+//
+// ONE reusable glass card that every flip BACK on this screen (Hot · Cold ·
+// Intensity) renders through, so they share the exact design language the
+// founder asked for instead of each re-deriving it. Vertical rhythm, top→
+// bottom: (1) HEADER ROW — name + a DRAWN chevron return affordance (never an
+// SF Symbol) under a 2pt LinearGradient.diagonal underline; (2) HERO METRIC —
+// the single eye-grabbing number, large + heavy; (3) LIVE PULSE — a prominent
+// full-width sparkline; (4) STAT GRID — a compact 2-col grid of the remaining
+// REAL fields (em-dash any absent value, the caller drops empty rows before
+// passing them in); (5) CTA PILL — a full-width gradient capsule with a DRAWN
+// arrow that fires the real money action. Same outer frame as the front (the
+// caller passes the matching corner radius + accent-tinted border). Reduce
+// Motion is handled by FlipTile; the hero + pulse subtly fade/scale in here.
+
+private struct FlipStat: Identifiable {
+    let id = UUID()
+    let label: String
+    /// Real value, or nil → renders an em-dash in textTertiary (honest absent).
+    let value: String?
+    let color: Color
+    init(_ label: String, _ value: String?, _ color: Color) {
+        self.label = label
+        self.value = value
+        self.color = color
+    }
+}
+
+/// Bespoke drawn return chevron (a left-pointing ‹ glyph) — Path/Shape, NEVER
+/// an SF Symbol. Drawn on a 24-box to match the WeatherIcons utility corpus.
+private struct FlipBackChevron: View {
+    var lineWidth: CGFloat = 2.4
+    var body: some View {
+        Canvas { ctx, size in
+            let s = min(size.width, size.height) / 24.0
+            ctx.scaleBy(x: s, y: s)
+            // M15 7 l-6 5 l6 5 — a left-pointing chevron (return / flip-home).
+            var p = Path()
+            p.move(to: CGPoint(x: 15, y: 7))
+            p.addLine(to: CGPoint(x: 9, y: 12))
+            p.addLine(to: CGPoint(x: 15, y: 17))
+            ctx.stroke(p, with: .foreground,
+                       style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// Bespoke drawn CTA arrow (a right-pointing → glyph) for the action pill.
+private struct FlipBackArrow: View {
+    var body: some View {
+        Canvas { ctx, size in
+            let s = min(size.width, size.height) / 24.0
+            ctx.scaleBy(x: s, y: s)
+            var p = Path()
+            // shaft
+            p.move(to: CGPoint(x: 4, y: 12)); p.addLine(to: CGPoint(x: 18, y: 12))
+            // head
+            p.move(to: CGPoint(x: 13, y: 7)); p.addLine(to: CGPoint(x: 18, y: 12))
+            p.addLine(to: CGPoint(x: 13, y: 17))
+            ctx.stroke(p, with: .foreground,
+                       style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct FlipBack<Hero: View, Pulse: View>: View {
+    let accent: Color
+    let name: String
+    let cornerRadius: CGFloat
+    let palette: Theme.Palette
+    /// Compact mode for the small 4-col Intensity cells — tighter spacing,
+    /// no CTA-arrow text crowding, single-column stat list.
+    var compact: Bool = false
+    @ViewBuilder let hero: () -> Hero
+    @ViewBuilder let pulse: () -> Pulse
+    let stats: [FlipStat]
+    let ctaTitle: String
+    let cta: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 4 : Space.s2) {
+            // 1 — HEADER ROW + gradient underline.
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(name)
+                        .font(compact ? .system(size: 11, weight: .bold) : EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Spacer(minLength: 0)
+                    FlipBackChevron(lineWidth: compact ? 2.0 : 2.4)
+                        .frame(width: compact ? 12 : 16, height: compact ? 12 : 16)
+                        .foregroundStyle(accent)
+                }
+                LinearGradient.diagonal
+                    .frame(height: 2)
+                    .clipShape(Capsule())
+            }
+
+            // 2 — HERO METRIC.
+            hero()
+                .opacity(appeared || reduceMotion ? 1 : 0)
+                .scaleEffect(appeared || reduceMotion ? 1 : 0.92, anchor: .leading)
+
+            // 3 — LIVE PULSE.
+            pulse()
+                .frame(maxWidth: .infinity)
+                .opacity(appeared || reduceMotion ? 1 : 0)
+
+            // 4 — STAT GRID (2-col, or single column in compact).
+            if !stats.isEmpty {
+                LazyVGrid(
+                    columns: Array(
+                        repeating: GridItem(.flexible(), alignment: .leading),
+                        count: compact ? 2 : 2
+                    ),
+                    alignment: .leading,
+                    spacing: compact ? 3 : 6
+                ) {
+                    ForEach(stats) { stat in
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(stat.label.uppercased())
+                                .font(EType.micro)
+                                .tracking(0.4)
+                                .foregroundStyle(palette.textTertiary)
+                                .lineLimit(1)
+                            if let v = stat.value {
+                                Text(v)
+                                    .font(compact
+                                          ? .system(size: 10, weight: .heavy, design: .monospaced)
+                                          : EType.bodyStrong)
+                                    .foregroundStyle(stat.color)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.6)
+                            } else {
+                                Text("—")
+                                    .font(compact ? .system(size: 10, weight: .heavy) : EType.bodyStrong)
+                                    .foregroundStyle(palette.textTertiary)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            // 5 — CTA PILL (gradient capsule + drawn arrow + real action).
+            Button(action: cta) {
+                HStack(spacing: 6) {
+                    Text(ctaTitle)
+                        .font(.system(size: compact ? 10 : 12, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    FlipBackArrow()
+                        .frame(width: compact ? 12 : 14, height: compact ? 12 : 14)
+                        .foregroundStyle(.white)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, compact ? 6 : 9)
+                .background(Capsule().fill(LinearGradient.diagonal))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(compact ? 10 : Space.s3)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(accent.opacity(0.55), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .onAppear {
+            guard !reduceMotion else { appeared = true; return }
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.82).delay(0.12)) {
+                appeared = true
+            }
+        }
+    }
+}
+
+// MARK: - Demand band (file-scoped · mirrors the shared HeatCellMatrix ramp)
+//
+// The Intensity grid is bespoke to this screen (we don't fork the shared
+// HeatCellMatrix), so it carries its own copy of the canonical 544 band
+// trio + washes: HOT #F44336@0.85 · WARM #FFA726@0.55 · SOFT #00C48C@0.35,
+// cut at ≥3.0 / ≥1.4 (the same load-to-truck thresholds the matrix uses).
+
+private enum HeatBand: CaseIterable {
+    case hot, warm, soft
+
+    static func band(for ratio: Double) -> HeatBand {
+        if ratio >= 3.0 { return .hot }
+        if ratio >= 1.4 { return .warm }
+        return .soft
+    }
+
+    var color: Color {
+        switch self {
+        case .hot:  return Brand.danger
+        case .warm: return Brand.warning
+        case .soft: return Brand.success
+        }
+    }
+
+    var wash: Double {
+        switch self {
+        case .hot:  return 0.85
+        case .warm: return 0.55
+        case .soft: return 0.35
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .hot:  return "HOT"
+        case .warm: return "WARM"
+        case .soft: return "SOFT"
+        }
+    }
+}
+
+// MARK: - Cold-zone pulse sparkline (honest: flat baseline when no scalars)
+//
+// The cold strip back wants the same live sparkline language as the hot tiles,
+// but `ColdZoneEntry` ships a leaner scalar set (liveSurge / liveRate /
+// liveTrucks, all optional). Same honesty doctrine as HotZonePulseSynth:
+// deterministic, seeded by the zone's stable id, shaped ONLY by the real
+// scalars, re-derived per 30s bucket so it moves — and a FLAT baseline when
+// the zone carries no usable scalar (never a fabricated trend).
+
+private struct ColdZonePulseChart: View {
+    let zone: ColdZoneEntry
+    private var timeBucket: Int { Int(Date().timeIntervalSince1970 / 30) }
+
+    var body: some View {
+        TrendSparkline(
+            points: ColdZonePulseSynth.series(for: zone, timeBucket: timeBucket),
+            direction: .brand,
+            lineWidth: 1.8,
+            showArea: true,
+            showLastDot: true,
+            showBaseline: false,
+            smooth: true,
+            scrubMinimumDistance: 10
+        )
+    }
+}
+
+private enum ColdZonePulseSynth {
+    private static let sampleCount = 16
+
+    static func series(for zone: ColdZoneEntry, timeBucket: Int) -> [TrendSparkPoint] {
+        // Center the walk on the surge (vs balanced 1.0×); fall back to a
+        // normalized rate so a zone with a rate but no surge still reads.
+        let surge = zone.liveSurge
+        let center = surge ?? 1.0
+        let hasSignal = surge != nil || zone.liveRate != nil || zone.liveTrucks != nil
+        guard hasSignal else {
+            // Honest flat baseline — no usable scalar, no fabricated trend.
+            return (0..<sampleCount).map { idx in
+                TrendSparkPoint(id: "\(zone.id)-flat\(idx)", value: 1.0,
+                                label: String(format: "%.2f×", 1.0))
+            }
+        }
+
+        let seed = fnv1a(zone.id)
+        // Slope from surge-vs-balance; gentle so the trend stays legible.
+        let slopeSignal = (surge ?? 1.0) - 1.0
+        let totalRise = clamp(slopeSignal * 0.5, -center * 0.6, center * 0.8)
+        let amplitude = clamp((0.04 + abs(slopeSignal) * 0.12) * max(center, 0.6),
+                              0.02, max(center, 0.6) * 0.45)
+
+        let n = sampleCount
+        var values: [Double] = []
+        values.reserveCapacity(n)
+        for i in 0..<n {
+            let t = Double(i) / Double(n - 1)
+            let trendComponent = center - totalRise / 2 + totalRise * t
+            let h = fnv1a("\(seed)-\(i)-\(timeBucket)")
+            let unit = Double(h % 2000) / 1000.0 - 1.0
+            let h2 = fnv1a("\(seed)-h2-\(i)")
+            let unit2 = Double(h2 % 2000) / 1000.0 - 1.0
+            let wobble = (unit * 0.7 + unit2 * 0.3) * amplitude
+            let taper = sin(Double.pi * t)
+            let v = max(0, trendComponent + wobble * (0.35 + 0.65 * taper))
+            values.append(v)
+        }
+        return values.enumerated().map { idx, v in
+            TrendSparkPoint(id: "\(zone.id)-\(idx)", value: v,
+                            label: String(format: "%.2f×", v))
+        }
+    }
+
+    private static func fnv1a(_ s: String) -> Int {
+        var hash: UInt32 = 0x811c9dc5
+        for byte in s.utf8 {
+            hash ^= UInt32(byte)
+            hash = hash &* 0x0100_0193
+        }
+        return Int(hash & 0x7fff_ffff)
+    }
+
+    private static func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double {
+        let a = min(lo, hi), b = max(lo, hi)
+        return min(max(v, a), b)
+    }
+}
+
 // MARK: - File-scoped loading skeleton (bespoke shimmer · no blank-on-load)
 //
 // Mirrors the loaded layout so the first paint communicates "reading the
@@ -1218,6 +1843,8 @@ extension Notification.Name {
     static let eusoShipperHotZonesEquip            = Notification.Name("eusoShipperHotZonesEquip")
     /// Action ribbon tap — cold-zone post recommendation.
     static let eusoShipperHotZonesPostRecommendation = Notification.Name("eusoShipperHotZonesPostRecommendation")
+    /// Hot / Intensity flip-back CTA tap — load search for a hot metro.
+    static let eusoShipperHotZonesFindLoads        = Notification.Name("eusoShipperHotZonesFindLoads")
 }
 
 // MARK: - Previews

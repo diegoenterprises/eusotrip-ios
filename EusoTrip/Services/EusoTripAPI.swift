@@ -213,6 +213,10 @@ final class EusoTripAPI: ObservableObject {
         config.httpCookieStorage = HTTPCookieStorage.shared
         config.httpCookieAcceptPolicy = .always
         config.httpShouldSetCookies = true
+        // Multipath TCP (handover mode): keep API requests alive across a
+        // Wi-Fi↔LTE handoff in yards; degrades gracefully to single-path if
+        // the server/LB doesn't negotiate MPTCP.
+        config.multipathServiceType = .handover
         // App-wide "no long-lingering loading" rule (founder mandate): bound
         // EVERY request on the shared session so a stalled call can't leave a
         // skeleton spinning. Default request timeout is 60s and resource is 7
@@ -5666,6 +5670,60 @@ struct HereMapsAPI {
         return try await api.query("hereMaps.roadAlertsAlongRoute", input: In(polyline: polyline, marginMeters: marginMeters))
     }
 
+    // MARK: Weather hazard reroute (the symbiotic-weather loop)
+    //
+    // Server pulls active Severe/Extreme NWS hazard polygons near the
+    // corridor (already ingested in hz_weather_alerts.geometry), turns them
+    // into HERE avoid[areas], and routes the truck AROUND them — returning the
+    // REAL baseline-vs-avoided miles + the detour polyline. Honest:
+    // hazardCount 0 → no reroute (baseline). Truck only; rail/vessel advise.
+    struct WeatherHazard: Decodable, Hashable {
+        let event: String?
+        let severity: String?
+        let headline: String?
+    }
+    struct WeatherRerouteResult: Decodable, Hashable {
+        let rerouted: Bool
+        let hazardCount: Int
+        let hazards: [WeatherHazard]
+        let baselineMiles: Int?
+        let avoidedMiles: Int?
+        let milesAdded: Int
+        let polyline: String?
+    }
+    /// Standard 5-axle tractor-trailer so the HERE route honors truck
+    /// height/weight restrictions. Callers can override per the real load.
+    struct TruckProfileIn: Encodable {
+        var grossWeightKg: Int? = 36287    // 80,000 lb
+        var heightCm: Int? = 411           // 13'6"
+        var widthCm: Int? = 259            // 102"
+        var axleCount: Int? = 5
+        var trailerCount: Int? = 1
+    }
+    func weatherReroute(origin: LatLng, destination: LatLng, truck: TruckProfileIn = TruckProfileIn()) async throws -> WeatherRerouteResult {
+        struct In: Encodable { let origin: LatLng; let destination: LatLng; let truck: TruckProfileIn }
+        return try await api.query("hereMaps.weatherReroute", input: In(origin: origin, destination: destination, truck: truck))
+    }
+
+    // MARK: Isoline — HOS-reachability polygon
+    //
+    // "How far can I legally drive before my 11h clock runs out" — HERE
+    // Isoline (range=time) around the truck's current position, sized to the
+    // driver's REMAINING HOS drive seconds. Honest: empty polygon when HERE
+    // has no isoline or remaining HOS is unknown.
+    struct IsolinePoint: Decodable, Hashable { let lat: Double; let lng: Double }
+    struct IsolineResult: Decodable, Hashable {
+        let ok: Bool
+        let polygon: [IsolinePoint]
+    }
+    func isoline(origin: LatLng, rangeSec: Int, truck: TruckProfileIn = TruckProfileIn()) async throws -> IsolineResult {
+        struct In: Encodable { let origin: LatLng; let rangeSec: Int; let transportMode: String; let truck: TruckProfileIn }
+        return try await api.query(
+            "hereMaps.isoline",
+            input: In(origin: origin, rangeSec: max(60, min(14_400, rangeSec)), transportMode: "truck", truck: truck)
+        )
+    }
+
     // MARK: Discover / Browse nearby (truck stops, scales, weigh stations)
     struct Place: Decodable, Identifiable, Hashable {
         let id: String
@@ -6190,6 +6248,12 @@ struct HotZoneEntry: Decodable, Identifiable, Equatable {
     let aiRateTrend: String?
     let aiRateAnomaly: Bool?
     let fmcsa: HotZoneFMCSA?
+    // ── Intermodal (rail/vessel) layer. Honest-empty until real volume:
+    // ── `demand`/`shipments` are nil until the server's per-state count
+    // ── clears the floor; `yards`/`ports` are REAL facility presence in the
+    // ── zone (geo-matched). Absent keys decode to nil — no decode failure.
+    let rail: HotZoneRail?
+    let vessel: HotZoneVessel?
     // ── Optional real pulse time-series. The rateFeed envelope does NOT
     // ── ship this today (the 225 Hot Zones tile synthesizes a per-zone
     // ── series from the live scalars below — honest parity with Market
@@ -6247,6 +6311,40 @@ struct HotZoneFMCSA: Decodable, Equatable {
     let oosRate: Double?
 }
 
+/// Intermodal RAIL layer for a hot zone. `demand`/`shipments` are gated
+/// honest-null until real per-state rail volume exists; `yards` is real
+/// rail-yard facility presence physically inside the zone (geo-matched).
+struct HotZoneRail: Decodable, Hashable {
+    let demand: String?              // "HIGH" | "ELEVATED" | nil (no real volume yet)
+    let shipments: Int?              // gated: nil until volume floor
+    let yards: [HotZoneRailYard]?
+    let yardCount: Int?
+}
+
+struct HotZoneRailYard: Decodable, Hashable {
+    let name: String
+    let city: String?
+    let intermodal: Bool?
+    let yardType: String?
+}
+
+/// Intermodal VESSEL layer for a hot zone. `demand`/`shipments` gated
+/// honest-null; `ports` is real seaport/terminal presence in the zone.
+struct HotZoneVessel: Decodable, Hashable {
+    let demand: String?
+    let shipments: Int?
+    let ports: [HotZonePort]?
+    let portCount: Int?
+}
+
+struct HotZonePort: Decodable, Hashable {
+    let name: String
+    let city: String?
+    let teu: Int?
+    let hasRail: Bool?
+    let portType: String?
+}
+
 /// NWS/active weather alert attached to a hot zone. Server sends up to
 /// 3 per zone; we only use a handful of fields for the widget's risk
 /// banner but decode loosely so new fields can ship server-side without
@@ -6259,7 +6357,15 @@ struct HotZoneWeatherAlert: Decodable, Equatable {
 }
 
 struct ColdZoneEntry: Decodable, Identifiable, Equatable {
-    var id: String { zoneId ?? (name ?? UUID().uuidString) }
+    // CRASH FIX 2026-06-13 — `id` was a COMPUTED property
+    // `zoneId ?? name ?? UUID().uuidString`. When both `zoneId` and `name`
+    // decoded nil it minted a BRAND-NEW random UUID on *every* access, so
+    // SwiftUI `ForEach(cold)` saw a different identity each layout pass —
+    // the cold strip thrashed its diff and crashed (225:853). It is now a
+    // STORED `let id` computed ONCE inside `init(from:)` from a
+    // DETERMINISTIC composite of the real fields, so the same wire row
+    // always yields the same id across launches and layout passes.
+    let id: String
     let zoneId: String?
     let name: String?
     let state: String?
@@ -6271,6 +6377,61 @@ struct ColdZoneEntry: Decodable, Identifiable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case zoneId = "id", name, state, center, radius, liveRate, liveSurge, liveTrucks
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let zoneId = try c.decodeIfPresent(String.self, forKey: .zoneId)
+        let name   = try c.decodeIfPresent(String.self, forKey: .name)
+        let state  = try c.decodeIfPresent(String.self, forKey: .state)
+        let center = try c.decodeIfPresent(HotZoneCenter.self, forKey: .center)
+        let radius = try c.decodeIfPresent(Double.self, forKey: .radius)
+        // LENIENT numeric decode (P1) — a single malformed scalar (server
+        // shipped a number as a quoted string, or a stray null) must NOT fail
+        // the whole feed. Mirrors `HotZonePulseSample`'s singleValueContainer
+        // pattern, applied per keyed field.
+        let liveRate   = Self.leniencyDouble(c, .liveRate)
+        let liveSurge  = Self.leniencyDouble(c, .liveSurge)
+        let liveTrucks = Self.leniencyInt(c, .liveTrucks)
+
+        self.zoneId = zoneId
+        self.name = name
+        self.state = state
+        self.center = center
+        self.radius = radius
+        self.liveRate = liveRate
+        self.liveSurge = liveSurge
+        self.liveTrucks = liveTrucks
+
+        // Deterministic, stable id — real key when present, else a composite
+        // of the row's real fields. NEVER a fresh UUID (the old bug).
+        // Explicit closures (not `String.init`, which is overloaded and made
+        // the interpolation chain type-check time out).
+        let ratePart: String = liveRate.map { String($0) } ?? "?"
+        let trucksPart: String = liveTrucks.map { String($0) } ?? "?"
+        let statePart: String = state ?? "?"
+        self.id = zoneId ?? name ?? "\(statePart)-\(ratePart)-\(trucksPart)"
+    }
+
+    /// Decode a Double leniently from a JSON number, a numeric string, or an
+    /// Int; absent / unparseable → nil. `try?` flattens `decodeIfPresent`'s
+    /// `Double?` to a single optional, so one `if let` is the full unwrap.
+    private static func leniencyDouble(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Double? {
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return d }
+        if let i = try? c.decodeIfPresent(Int.self, forKey: key) { return Double(i) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key), let d = Double(s) { return d }
+        return nil
+    }
+
+    /// Lenient Int decode — number, integral-valued number, or numeric string.
+    private static func leniencyInt(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> Int? {
+        if let i = try? c.decodeIfPresent(Int.self, forKey: key) { return i }
+        if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return Int(d) }
+        if let s = try? c.decodeIfPresent(String.self, forKey: key) {
+            if let i = Int(s) { return i }
+            if let d = Double(s) { return Int(d) }
+        }
+        return nil
     }
 
     static func == (lhs: ColdZoneEntry, rhs: ColdZoneEntry) -> Bool { lhs.id == rhs.id }
@@ -6683,6 +6844,11 @@ struct WalletExtrasAPI {
         let amount: Double
         let payoutMethodId: String
         let instant: Bool
+        /// Optional App Attest assertion (PR #107 `assertHighTrust`). Omitted
+        /// (Swift's synthesized encoder drops nil) on simulator / older
+        /// devices / any attestation failure — the server fail-opens. Never
+        /// blocks the payout.
+        let _attest: AppAttestClient.AttestEnvelope?
     }
 
     /// Server return (wallet.ts:897): { id: "payout_N", amount, fee,
@@ -6709,12 +6875,20 @@ struct WalletExtrasAPI {
         payoutMethodId: String,
         instant: Bool = false
     ) async throws -> RequestPayoutAck {
-        try await api.mutation(
+        // Best-effort hardware attestation. `nil` on simulator / unsupported
+        // device / any failure → payout proceeds un-attested (server fail-
+        // opens). Pinned to the payout amount + method so the assertion is
+        // bound to THIS request.
+        let attest = await AppAttestClient.attestation(
+            forContext: "wallet.requestPayout|\(amount)|\(payoutMethodId)|\(instant)"
+        )
+        return try await api.mutation(
             "wallet.requestPayout",
             input: RequestPayoutInput(
                 amount: amount,
                 payoutMethodId: payoutMethodId,
-                instant: instant
+                instant: instant,
+                _attest: attest
             )
         )
     }
@@ -7500,6 +7674,11 @@ struct InterStateAPI {
         let longitude: Double
         let description: String?
         let stateCode: String?
+        /// Optional App Attest assertion (PR #107 `assertHighTrust`). Omitted
+        /// (nil → dropped by the encoder) on simulator / older device / any
+        /// attestation failure — server fail-opens. A life-safety SOS must
+        /// NEVER be blocked by attestation, so this is strictly best-effort.
+        let _attest: AppAttestClient.AttestEnvelope?
     }
 
     /// `interstate.createSOS` — raises a life-safety SOS for the given
@@ -7517,7 +7696,14 @@ struct InterStateAPI {
         description: String? = nil,
         stateCode: String? = nil
     ) async throws -> CreateSOSAck {
-        try await api.mutation(
+        // Best-effort hardware attestation. A life-safety SOS must never be
+        // delayed or blocked: `nil` on simulator / unsupported device / any
+        // failure (incl. the 6s timeout) → SOS fires un-attested and the
+        // server fail-opens. Bound to the load + coordinates.
+        let attest = await AppAttestClient.attestation(
+            forContext: "interstate.createSOS|\(loadId)|\(alertType)|\(latitude)|\(longitude)"
+        )
+        return try await api.mutation(
             "interstate.createSOS",
             input: CreateSOSInput(
                 loadId: loadId,
@@ -7526,7 +7712,8 @@ struct InterStateAPI {
                 latitude: latitude,
                 longitude: longitude,
                 description: description,
-                stateCode: stateCode
+                stateCode: stateCode,
+                _attest: attest
             )
         )
     }
@@ -16893,11 +17080,28 @@ struct MotusAPI {
             let idDocBase64: String
             let idMime: String
             let selfieBase64: String
+            /// Optional App Attest assertion (PR #107 `assertHighTrust`).
+            /// Omitted (nil → dropped by the encoder) on simulator / older
+            /// device / any attestation failure — server fail-opens. Never
+            /// blocks an identity submission.
+            let _attest: AppAttestClient.AttestEnvelope?
         }
+        // Best-effort hardware attestation. `nil` on simulator / unsupported
+        // device / any failure → identity submit proceeds un-attested (server
+        // fail-opens). Bound to the document + selfie payloads (hashed via
+        // their sizes so we don't fold megabytes of base64 into the context).
+        let attest = await AppAttestClient.attestation(
+            forContext: "motusIdentity.verifyIdentity|\(idDocBase64.count)|\(selfieBase64.count)"
+        )
         // CredentialScanCard returns JPEG base64 → the server's default mime.
         return try await api.mutation(
             "motusIdentity.verifyIdentity",
-            input: Input(idDocBase64: idDocBase64, idMime: "image/jpeg", selfieBase64: selfieBase64)
+            input: Input(
+                idDocBase64: idDocBase64,
+                idMime: "image/jpeg",
+                selfieBase64: selfieBase64,
+                _attest: attest
+            )
         )
     }
 

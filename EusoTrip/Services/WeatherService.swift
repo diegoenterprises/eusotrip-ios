@@ -132,28 +132,31 @@ final class WeatherService: NSObject, ObservableObject {
             return nil
         }
 
-        // ── v2: Tomorrow.io backbone (server-side, never a bundle key) ──
+        // ── Apple WeatherKit (on-device) is the PRIMARY source ──
         //
-        // The tRPC `weather.byLatLon` proxy fronts Tomorrow.io
-        // (/v4/weather/realtime + /v4/timelines) server-side — the API
-        // key lives ONLY in the server env (TOMORROW_API_KEY) and never
-        // ships in the iOS bundle. When it returns a populated snapshot
-        // we use it (it carries the real `weatherCode` the v2 glyph set
-        // needs + the Tomorrow.io attribution). When the key is absent,
-        // the call fails, or the server returns no data, we fall through
-        // to the existing WeatherKit → NWS → Open-Meteo chain — NEVER a
-        // fabricated reading. The server is responsible for the same
-        // honesty on its side (em-dash / "unavailable", not invented).
-        if let placemarkPre = try? await reverseGeocode(location),
-           let server = await fetchTomorrowIO(location: location, placemark: placemarkPre) {
-            return server
-        } else if let server = await fetchTomorrowIO(location: location, placemark: nil) {
+        // The carrier `weatherCode` the v2 glyph set needs is produced
+        // on-device from the WeatherKit condition (see `compose`), and the
+        // server procs (weather.realtime / timelines / forLoad) are now
+        // WeatherKit-backed too — so the home card and the lane-impact
+        // card share one honest provider. No weather API key ever ships in
+        // the iOS bundle; on-device WeatherKit uses the app entitlement,
+        // the server uses its own JWT. On any miss we fall through to
+        // NWS → Open-Meteo — NEVER a fabricated reading.
+        // PRIMARY: the server (weather.byLatLon) is WeatherKit-backed
+        // server-side (PR #101), so it reliably carries current + hourly +
+        // the 7-DAY daily strip and is attributed as Apple Weather. The key
+        // lives ONLY in the server env, never the bundle. We prefer it
+        // because on-device WeatherKit needs the App ID capability enabled;
+        // until then it throws (codes 2/3/4/7) and we'd lose the daily strip
+        // (the regression that emptied the 7-day chips). On any server miss
+        // we fall through to on-device WeatherKit → NWS → Open-Meteo — NEVER
+        // a fabricated reading.
+        let placemark = try? await reverseGeocode(location)
+        if let server = await fetchServerWeather(location: location, placemark: placemark) {
             return server
         }
-
         do {
             let weather = try await weatherService.weather(for: location)
-            let placemark = try? await reverseGeocode(location)
             return Self.compose(weather: weather, placemark: placemark)
         } catch {
             // Surface the FULL error in every build (not just DEBUG) so a
@@ -194,10 +197,10 @@ final class WeatherService: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Tomorrow.io (server-proxied) — the v2 backbone
+    // MARK: - Server weather (WeatherKit-backed, server-proxied)
 
-    // Wire types for the tRPC `weather.byLatLon` proc (Tomorrow.io
-    // realtime + hourly + daily + the v2 single alert). All fields are
+    // Wire types for the tRPC `weather.byLatLon` proc (WeatherKit-backed
+    // current + hourly + 7-day daily + the single alert). All fields are
     // optional so a partial/honest server payload (missing key → "no
     // data") decodes cleanly and the client falls back rather than
     // synthesising. Field names mirror the server's normalised shape.
@@ -260,12 +263,12 @@ final class WeatherService: NSObject, ObservableObject {
         let units: String
     }
 
-    /// Fetch the Tomorrow.io-backed snapshot via the tRPC proxy. Returns
+    /// Fetch the WeatherKit-backed snapshot via the tRPC proxy. Returns
     /// `nil` on ANY failure (server unreachable, key absent → server
     /// returns no data, decode error) so `fetchCurrent()` falls through
     /// to the WeatherKit/NWS/Open-Meteo chain. Never fabricates: a nil
     /// `tempF` from the server (no data) yields `nil` here, not a zero.
-    private func fetchTomorrowIO(
+    private func fetchServerWeather(
         location: CLLocation,
         placemark: CLPlacemark?
     ) async -> WeatherSnapshot? {
@@ -399,7 +402,15 @@ final class WeatherService: NSObject, ObservableObject {
             hourly: hourly
         )
         snap.weatherCode = code
-        snap.dataSource = .tomorrowIO
+        // Honest provenance from the server's own source tag. byLatLon is
+        // WeatherKit-backed now (PR #101); credit Apple Weather, never a
+        // retired provider.
+        switch (server.source ?? "").lowercased() {
+        case "weatherkit":               snap.dataSource = .weatherKit
+        case "openweather", "openmeteo": snap.dataSource = .openMeteo
+        case "nws":                      snap.dataSource = .nws
+        default:                         snap.dataSource = .weatherKit
+        }
         snap.uvIndex = cur.uv.map { Int($0.rounded()) }
         snap.alert = alert
         snap.observedAt = parseDate(server.fetchedAt) ?? Date()

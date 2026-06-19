@@ -46,6 +46,14 @@ struct EusoTripApp: App {
     /// card all read from a single source of truth and ProfileEditView
     /// writes propagate everywhere the moment the user taps Save.
     @StateObject private var profile = DriverProfileStore()
+    /// Session-scoped Market Intelligence watchlist (the ordered set of
+    /// pricing symbols the user pinned to their commodity/stock grid).
+    /// Mirrors the `profile` rationale: auth state lives on `session`,
+    /// per-user grid preferences live here. The Market Intelligence grid
+    /// reads `customized`/`selectedSymbols` to decide which tiles render;
+    /// the Customize editor writes through it. UserDefaults-authoritative
+    /// with a silent server mirror so pins follow the user to web + iPad.
+    @StateObject private var marketWatchlist = MarketWatchlistStore()
     /// Shared push service — exposes APNs phase + device token. Stays
     /// `.unknown` on simulator; auto-bootstraps once signed in on device.
     @StateObject private var push = PushService.shared
@@ -74,6 +82,7 @@ struct EusoTripApp: App {
                     AppRoot()
                         .environmentObject(session)
                         .environmentObject(profile)
+                        .environmentObject(marketWatchlist)
                         .environmentObject(push)
                         .environmentObject(realtime)
                         .environmentObject(geo)

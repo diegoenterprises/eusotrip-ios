@@ -142,7 +142,10 @@ struct ShipperHome: View {
                 topBar
                 IridescentHairline()
                     .padding(.horizontal, Space.s5)
-                VStack(alignment: .leading, spacing: Space.s5) {
+                // First-load unlock cascade: each top-level section springs
+                // into place top-to-bottom (scale 0.92 + blur 5pt + 50 ms
+                // stagger) once per cold launch; settled on re-visit.
+                StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
                     // Founder ask 2026-05-07: weather widget pinned
                     // to the top of every role's home, everything
                     // else after.

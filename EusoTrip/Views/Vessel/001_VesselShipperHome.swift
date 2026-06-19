@@ -120,7 +120,10 @@ private struct VesselShipperHomeBody: View {
                     .padding(.horizontal, Space.s5)
                     .padding(.top, Space.s4)
 
-                VStack(alignment: .leading, spacing: Space.s5) {
+                // First-load unlock cascade: top-level sections spring in
+                // top-to-bottom (scale 0.92 + blur 5pt + 50 ms stagger) once
+                // per cold launch; settled on re-visit. Reduce-Motion → fade.
+                StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
                     if let actionError {
                         actionErrorBanner(actionError)
                     }

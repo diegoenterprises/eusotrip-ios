@@ -3357,7 +3357,12 @@ final class SupportStore: ObservableObject, DynamicStore {
 
 @MainActor
 final class HaulStore: ObservableObject, DynamicStore {
-    @Published private(set) var profile: HaulAPI.Profile?
+    // PR5 de-fork: the profile now decodes through the CANONICAL
+    // GamificationAPI.Profile (the same gamification.getProfile endpoint the
+    // rest of the Haul family already uses), retiring the duplicate
+    // HaulAPI.Profile decoder. The missions/badges feeds below still use
+    // HaulAPI pending the deferred proc swap (missions.* → gamification.*).
+    @Published private(set) var profile: GamificationAPI.Profile?
     @Published private(set) var missions: [HaulAPI.Mission] = []
     @Published private(set) var badges: [HaulAPI.Badge] = []
 
@@ -3371,7 +3376,7 @@ final class HaulStore: ObservableObject, DynamicStore {
     func refresh() async {
         isLoading = true
         lastError = nil
-        async let profileTask: HaulAPI.Profile? = try? EusoTripAPI.shared.haul.getProfile()
+        async let profileTask: GamificationAPI.Profile? = try? EusoTripAPI.shared.gamification.getProfile()
         async let missionsTask: [HaulAPI.Mission] = (try? EusoTripAPI.shared.haul.listMyMissions(limit: 20)) ?? []
         async let badgesTask: [HaulAPI.Badge] = (try? EusoTripAPI.shared.haul.listMyBadges(onlyDisplayed: false, limit: 24)) ?? []
         let (p, m, b) = await (profileTask, missionsTask, badgesTask)

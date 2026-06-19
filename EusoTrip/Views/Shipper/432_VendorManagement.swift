@@ -70,13 +70,34 @@ private struct VendorBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            let r: [VendorRow] = try await EusoTripAPI.shared.queryNoInput("vendors.list")
-            rows = r
+            // Founder feedback #16: the server may return {rows:[…]}, a bare
+            // […], or an empty/error object — decode tolerantly so a shape
+            // mismatch shows an honest empty state, never a raw DecodingError.
+            let env: VendorListEnvelope = try await EusoTripAPI.shared.queryNoInput("vendors.list")
+            rows = env.rows
+            loadError = nil
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            // Honest empty — the vendor directory is still coming online.
+            rows = []
+            loadError = nil
         }
         loading = false
     }
+}
+
+/// Tolerant wrapper for `vendors.list` — accepts `{rows:[…]}`, a bare `[…]`,
+/// or an empty object, so a server shape change never leaks a raw decode
+/// error to the user (founder feedback #16).
+private struct VendorListEnvelope: Decodable {
+    let rows: [VendorRow]
+    init(from decoder: Decoder) throws {
+        if let arr = try? decoder.singleValueContainer().decode([VendorRow].self) {
+            rows = arr; return
+        }
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        rows = (try? c.decode([VendorRow].self, forKey: .rows)) ?? []
+    }
+    enum CodingKeys: String, CodingKey { case rows }
 }
 
 #Preview("432 · Vendors · Night") { VendorManagementScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }

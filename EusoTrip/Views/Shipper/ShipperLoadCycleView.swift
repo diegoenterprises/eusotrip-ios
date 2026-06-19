@@ -235,7 +235,7 @@ struct ShipperLoadCycleView: View {
             // etc.) so the visual language carries cross-role.
             kickerLine
                 .id(current) // re-trigger transition on stage flip
-                .transition(.opacity.combined(with: .move(edge: .leading)))
+                .transition(.opacity)
 
             stageStrip
                 .frame(height: 72)

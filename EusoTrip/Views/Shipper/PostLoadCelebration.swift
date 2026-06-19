@@ -31,6 +31,26 @@ import SwiftUI
 /// readable without motion.
 struct PostLoadPostedCelebration: View {
     let loadNumber: String
+    // Generalized (PR2) so the SAME bespoke overlay serves both the 204
+    // shipper "Load posted" moment AND the Haul mission-claim "Recognition
+    // Earned" reveal. Every new field is defaulted, so the 204 call site
+    // — PostLoadPostedCelebration(loadNumber:onContinue:) — compiles
+    // unchanged and behaves byte-for-byte as before.
+    var headline: String = "Posted to the marketplace"
+    var subline: String = "Now live for carriers in this lane"
+    var ctaTitle: String = "Post another load"
+    /// Mono code chip. When nil it falls back to `loadNumber`; when both are
+    /// empty the chip is hidden entirely (mission claims carry no human code).
+    var codeText: String? = nil
+    /// When set, the hero swaps the draw-on check for a gradient
+    /// "Miles Earned" numeral that counts up — the honest claimed value
+    /// (Mission.xpReward, the exact figure the server credits). Never a
+    /// fabricated balance/level/badge/crate.
+    var milesEarned: Int? = nil
+    /// Optional honest secondary line; rendered only when present.
+    var rewardCaption: String? = nil
+    var hapticOnAppear: Bool = false
+    var accessibilityLabelOverride: String? = nil
     var onContinue: () -> Void
 
     @Environment(\.palette) private var palette
@@ -40,6 +60,12 @@ struct PostLoadPostedCelebration: View {
     @State private var checkDraw: CGFloat = 0
     @State private var copySettled = false
     @State private var didFinish = false
+    @State private var milesShown: Int = 0
+
+    private var chipText: String? {
+        if let codeText, !codeText.isEmpty { return codeText }
+        return loadNumber.isEmpty ? nil : loadNumber
+    }
 
     var body: some View {
         ZStack {
@@ -62,34 +88,66 @@ struct PostLoadPostedCelebration: View {
                     PostLoadAuroraBurstHalo(progress: celebrate ? 1 : 0,
                                             reduceMotion: reduceMotion)
                         .frame(width: 260, height: 260)
-                    PostLoadPostedCheck(draw: checkDraw)
-                        .frame(width: 124, height: 124)
+                    if milesEarned != nil {
+                        // Recognition hero: the gradient Miles-Earned numeral
+                        // counts up behind the same aurora burst. Honest — it
+                        // is exactly the value the server credited.
+                        VStack(spacing: 2) {
+                            Text("MILES EARNED")
+                                .font(EType.micro)
+                                .tracking(1.4)
+                                .foregroundStyle(palette.textTertiary)
+                            Text("+\(milesShown)")
+                                .font(.system(size: 54, weight: .bold, design: .monospaced))
+                                .foregroundStyle(LinearGradient.primary)
+                                .contentTransition(.numericText())
+                                .monospacedDigit()
+                        }
+                        .scaleEffect(0.7 + 0.3 * checkDraw)
+                        .opacity(Double(checkDraw))
+                        .accessibilityHidden(true)
+                    } else {
+                        PostLoadPostedCheck(draw: checkDraw)
+                            .frame(width: 124, height: 124)
+                    }
                 }
                 .frame(height: 264)
 
                 VStack(spacing: Space.s3) {
-                    Text("Posted to the marketplace")
+                    Text(headline)
                         .font(EType.h1)
                         .foregroundStyle(palette.textPrimary)
                         .multilineTextAlignment(.center)
 
-                    Text(loadNumber.isEmpty ? "—" : loadNumber)
-                        .font(EType.mono(.caption))
-                        .tracking(0.8)
-                        .foregroundStyle(palette.textPrimary)
-                        .padding(.horizontal, Space.s3)
-                        .padding(.vertical, 6)
-                        .background(Capsule(style: .continuous).fill(palette.bgCardSoft))
-                        .overlay(Capsule(style: .continuous)
-                            .strokeBorder(LinearGradient.diagonal, lineWidth: 1))
+                    if let chip = chipText {
+                        Text(chip)
+                            .font(EType.mono(.caption))
+                            .tracking(0.8)
+                            .foregroundStyle(palette.textPrimary)
+                            .padding(.horizontal, Space.s3)
+                            .padding(.vertical, 6)
+                            .background(Capsule(style: .continuous).fill(palette.bgCardSoft))
+                            .overlay(Capsule(style: .continuous)
+                                .strokeBorder(LinearGradient.diagonal, lineWidth: 1))
+                    }
 
                     HStack(spacing: 6) {
                         PostLoadPulseDot()
-                        Text("Now live for carriers in this lane")
+                        Text(subline)
                             .font(EType.body)
                             .foregroundStyle(palette.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.85)
                     }
                     .padding(.top, 2)
+
+                    if let cap = rewardCaption, !cap.isEmpty {
+                        Text(cap)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textTertiary)
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 .opacity(copySettled ? 1 : 0)
                 .offset(y: copySettled ? 0 : 12)
@@ -98,7 +156,7 @@ struct PostLoadPostedCelebration: View {
                 Spacer(minLength: 0)
 
                 Button(action: finish) {
-                    Text("Post another load")
+                    Text(ctaTitle)
                         .font(EType.bodyStrong)
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, minHeight: 52)
@@ -115,8 +173,14 @@ struct PostLoadPostedCelebration: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Load posted to the marketplace. \(loadNumber). Now live for carriers in this lane.")
+        .accessibilityLabel(accessibilityLabelOverride
+            ?? "Load posted to the marketplace. \(loadNumber). Now live for carriers in this lane.")
         .accessibilityAddTraits(.isModal)
+        // Success haptic, gated so the 204 post-load path stays haptic-free
+        // (hapticOnAppear defaults false). Fires once when the burst kicks in.
+        .sensoryFeedback(trigger: celebrate) { _, now in
+            (hapticOnAppear && now) ? .success : nil
+        }
         .onAppear(perform: run)
     }
 
@@ -129,13 +193,18 @@ struct PostLoadPostedCelebration: View {
     private func run() {
         if reduceMotion {
             celebrate = true; checkDraw = 1; copySettled = true
-            // Give a Reduce-Motion user generous time to read before
-            // auto-returning to a fresh load screen.
+            milesShown = milesEarned ?? 0
+            // Give a Reduce-Motion user generous time to read before the
+            // overlay auto-dismisses.
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.4) { finish() }
             return
         }
         withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) { checkDraw = 1 }
         withAnimation(.easeOut(duration: 1.05)) { celebrate = true }
+        if let m = milesEarned {
+            // Roll the Miles numeral up from zero (.numericText digit roll).
+            withAnimation(.snappy(duration: 0.7).delay(0.25)) { milesShown = m }
+        }
         withAnimation(.spring(response: 0.55, dampingFraction: 0.85).delay(0.2)) {
             copySettled = true
         }

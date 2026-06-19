@@ -37,6 +37,15 @@ struct EsangOrbWatch: View {
     /// error-state smart-retry logic and skips the tap debounce.
     /// Defaulted to a no-op so existing call-sites keep compiling.
     var longPressAction: () -> Void = {}
+    /// Invoked when a press-and-hold is RELEASED (finger lifts). This is
+    /// the key-DOWN half of a walkie-talkie press: `longPressAction` keys
+    /// the chain-group radio UP, `longPressReleaseAction` keys it back
+    /// DOWN so transmission ends the instant the driver lets go — exactly
+    /// the CB-radio feel. Defaulted to a no-op so every existing call site
+    /// (which only uses the ESANG hold-to-talk, where release is handled
+    /// by the recorder watchdog) keeps compiling and behaving unchanged.
+    /// Fires at most once per hold, paired with each `longPressAction`.
+    var longPressReleaseAction: () -> Void = {}
     /// Seconds the finger must stay down before `longPressAction`
     /// fires. 0.55s is the watchOS-native feel — anything shorter
     /// collides with Force-Touch-era muscle memory; anything longer
@@ -62,6 +71,12 @@ struct EsangOrbWatch: View {
     /// Debounce anchor for `invokeLongPress` so a held gesture that
     /// wobbles within the LongPressGesture's tolerance doesn't re-fire.
     @State private var lastLongPressAt: Date = .distantPast
+    /// True between a long-press firing and its release. Gates
+    /// `longPressReleaseAction` so the key-DOWN only fires when there was
+    /// a matching key-UP (a bare tap, which never engages the long-press,
+    /// must NOT trigger a release). This is what makes the walkie-talkie
+    /// key down exactly once per hold.
+    @State private var longPressEngaged: Bool = false
 
     private var rotationPeriod: Double {
         switch intent {
@@ -283,6 +298,21 @@ struct EsangOrbWatch: View {
             LongPressGesture(minimumDuration: longPressMinimum, maximumDistance: 24)
                 .onEnded { _ in invokeLongPress() }
         )
+        // ── Press-release detector (walkie-talkie key-DOWN) ──
+        //
+        // A zero-distance DragGesture's `.onEnded` is the only reliable
+        // signal watchOS gives us for "the finger LIFTED." We use it
+        // SOLELY to close a walkie-talkie transmission: if a long-press
+        // had engaged (`longPressEngaged`), the lift fires
+        // `longPressReleaseAction` (key down) exactly once. It does NOT
+        // touch the tap or ESANG paths — when `longPressReleaseAction` is
+        // the default no-op (every ESANG-only call site) this is inert.
+        // `simultaneousGesture` keeps it from racing the Button's tap or
+        // the ancestor TabView swipes.
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onEnded { _ in invokeLongPressRelease() }
+        )
         .onAppear {
             withAnimation(.linear(duration: rotationPeriod).repeatForever(autoreverses: false)) {
                 rotation = 360
@@ -343,6 +373,7 @@ struct EsangOrbWatch: View {
         let now = Date()
         guard now.timeIntervalSince(lastLongPressAt) > 0.40 else { return }
         lastLongPressAt = now
+        longPressEngaged = true
 
         // `.notification(.success)` is the watchOS "committed action"
         // haptic — distinct from the softer `.click` used for taps.
@@ -356,6 +387,19 @@ struct EsangOrbWatch: View {
         withAnimation(.easeIn(duration: 0.32).delay(0.32)) { tapFlash = false }
 
         longPressAction()
+    }
+
+    /// Finger lifted. Closes a walkie-talkie transmission opened by a
+    /// long-press: fires `longPressReleaseAction` (key down) exactly once
+    /// per engaged hold, then resets the gate. A bare tap never sets
+    /// `longPressEngaged`, so this is a no-op for taps and for every
+    /// ESANG-only call site (default closure).
+    private func invokeLongPressRelease() {
+        guard longPressEngaged else { return }
+        longPressEngaged = false
+        // Lighter "released" tick so the driver feels the radio close.
+        WKInterfaceDevice.current().play(.directionDown)
+        longPressReleaseAction()
     }
 
     private var accessibilityState: String {

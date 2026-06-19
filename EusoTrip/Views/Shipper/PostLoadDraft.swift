@@ -66,6 +66,11 @@ final class PostLoadDraft: ObservableObject {
         var flag: String {
             switch self { case .US: return "🇺🇸"; case .CA: return "🇨🇦"; case .MX: return "🇲🇽"; case .EU: return "🇪🇺"; case .UK: return "🇬🇧"; case .Asia: return "🌏" }
         }
+        /// HERE ISO-3166 alpha-3 code for autosuggest country-bias; nil for
+        /// the multi-country buckets (no single HERE code → unbiased, honest).
+        var hereCountryCode: String? {
+            switch self { case .US: return "USA"; case .CA: return "CAN"; case .MX: return "MEX"; default: return nil }
+        }
     }
 
     @Published var mode: Mode = .truck

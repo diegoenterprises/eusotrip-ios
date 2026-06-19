@@ -203,7 +203,21 @@ final class SparkBriefStore: ObservableObject {
     var isStale: Bool {
         guard let iso = sampledAt,
               let date = SparkBriefStore.iso.date(from: iso) else { return true }
-        return Date().timeIntervalSince(date) > (18 * 3600)
+        // Stale if older than 18h OR if the local day-part changed since it was
+        // sampled (morning→afternoon→evening) — so the brief re-buckets when
+        // the clock crosses noon/evening and never reads "morning priorities"
+        // in the afternoon (founder feedback #12/#17/#19).
+        if Date().timeIntervalSince(date) > (18 * 3600) { return true }
+        return Self.dayPart(of: date) != Self.dayPart(of: Date())
+    }
+
+    /// Local day-part bucket: 0 morning · 1 afternoon · 2 evening.
+    static func dayPart(of d: Date) -> Int {
+        switch Calendar.current.component(.hour, from: d) {
+        case 0..<12:  return 0
+        case 12..<17: return 1
+        default:      return 2
+        }
     }
 
     /// Auto-load entry point driven by the card's `.task`. Fetches the
@@ -215,9 +229,13 @@ final class SparkBriefStore: ObservableObject {
     /// on stale. The stale brief stays on screen while the re-run lands
     /// (no blank flash).
     func autoLoad() async {
-        guard !didAutoLoad else { return }
-        didAutoLoad = true
-        await refresh()
+        // First appearance pulls the cached brief; EVERY appearance re-checks
+        // staleness (incl. the day-part boundary) so a brief that aged into a
+        // new day-part regenerates when the user returns (founder #12/#17/#19).
+        if !didAutoLoad {
+            didAutoLoad = true
+            await refresh()
+        }
         if (brief == nil || isStale) && !running {
             await runNow()
         }

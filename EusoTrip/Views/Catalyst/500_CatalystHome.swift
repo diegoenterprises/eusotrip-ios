@@ -99,7 +99,10 @@ struct CatalystHome: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
+            // First-load unlock cascade: top-level sections spring in
+            // top-to-bottom (scale 0.92 + blur 5pt + 50 ms stagger) once
+            // per cold launch; settled on re-visit. Reduce-Motion → fade.
+            StaggeredEntranceStack(alignment: .leading, spacing: Space.s4) {
                 header
                 weatherSection         // pinned top per founder doctrine
                 // Catalyst Spark Brief — Tier 1 #24 ship 2026-05-21.

@@ -43,6 +43,10 @@ struct HereAddressField: View {
     /// centroid (Lebanon, KS) so US lookups bias toward US results
     /// without requiring location authorization.
     var anchor: (lat: Double, lng: Double) = (39.5, -98.0)
+    /// ISO-3166 alpha-3 country code (USA/CAN/MEX) to bias autosuggest to;
+    /// nil = no country filter. Threaded to HERE `in=countryCode:` server-side
+    /// so a Mexico load surfaces Nuevo Laredo, not Laredo TX.
+    var country: String? = nil
 
     @Environment(\.palette) private var palette
     @State private var suggestions: [HereSuggestion] = []
@@ -179,7 +183,7 @@ struct HereAddressField: View {
 
     private func fetchAutosuggest(_ q: String) async {
         struct Anchor: Encodable { let lat: Double; let lng: Double }
-        struct In: Encodable { let query: String; let anchor: Anchor; let limit: Int }
+        struct In: Encodable { let query: String; let anchor: Anchor; let limit: Int; let country: String? }
         struct Item: Decodable, Identifiable {
             let id: String; let title: String
             let lat: Double?; let lng: Double?
@@ -199,7 +203,8 @@ struct HereAddressField: View {
                 input: In(
                     query: q,
                     anchor: Anchor(lat: anchor.lat, lng: anchor.lng),
-                    limit: 8
+                    limit: 8,
+                    country: country
                 )
             )
             suggestions = items.map {

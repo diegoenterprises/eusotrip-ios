@@ -402,7 +402,11 @@ struct TheHaulWeeklyTile: View {
                 }
             }
             .sheet(isPresented: $showFull) {
-                TheHaulDashboard()
+                // PR4: present the rebuilt bespoke Haul (TheHaulShell — the
+                // same body registry id "060" pushes). Full push-nav for Home
+                // glances needs a Home-surface push channel (separate refactor);
+                // this at least keeps the entry point on the rebuilt shell.
+                TheHaulShell()
                     .environment(\.palette, palette)
                     .eusoSheetX()
             }
@@ -410,7 +414,7 @@ struct TheHaulWeeklyTile: View {
 
     // MARK: Derived
 
-    private var profile: HaulAPI.Profile? { store.profile }
+    private var profile: GamificationAPI.Profile? { store.profile }
 
     private var activeMissions: Int {
         store.missions.filter { $0.status.lowercased() == "in_progress" }.count
@@ -430,10 +434,15 @@ struct TheHaulWeeklyTile: View {
     /// driver is leveled out, so the ring reads full (not empty).
     private var xpFraction: Double {
         guard let p = profile else { return 0 }
-        if p.xpToNextLevel <= 0 { return p.currentXp > 0 ? 1 : 0 }
-        let total = Double(p.currentXp + p.xpToNextLevel)
+        // GamificationAPI.Profile decodes these defensively-optional; the
+        // server returns them on the normal path, so the ring reads the real
+        // fraction and falls back to empty only when genuinely absent.
+        let currentXp = p.currentXp ?? 0
+        let toNext = p.xpToNextLevel ?? 0
+        if toNext <= 0 { return currentXp > 0 ? 1 : 0 }
+        let total = Double(currentXp + toNext)
         guard total > 0 else { return 0 }
-        return max(0, min(1, Double(p.currentXp) / total))
+        return max(0, min(1, Double(currentXp) / total))
     }
 
     /// Settles the ring to a target fraction. Spring for the live fill,

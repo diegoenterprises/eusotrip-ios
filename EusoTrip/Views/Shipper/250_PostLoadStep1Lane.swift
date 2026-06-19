@@ -203,7 +203,8 @@ private struct PostLoadStep1Body: View {
                     text: $draft.origin,
                     lat:  $draft.originLat,
                     lng:  $draft.originLng,
-                    placeholder: "City, ST or lat,lng"
+                    placeholder: "City, ST or lat,lng",
+                    country: draft.originCountry.hereCountryCode
                 )
             }
             field(label: "Destination") {
@@ -211,7 +212,8 @@ private struct PostLoadStep1Body: View {
                     text: $draft.destination,
                     lat:  $draft.destLat,
                     lng:  $draft.destLng,
-                    placeholder: "City, ST or lat,lng"
+                    placeholder: "City, ST or lat,lng",
+                    country: draft.destinationCountry.hereCountryCode
                 )
             }
             field(label: "Pickup window") {

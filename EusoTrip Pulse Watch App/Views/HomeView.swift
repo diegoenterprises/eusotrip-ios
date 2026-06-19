@@ -120,6 +120,10 @@ private struct IdleOrbPage: View {
     // timestamp (not an in-flight bool) so a dropped Task can't wedge
     // the gate shut.
     @State private var lastOrbTapAt: Date = .distantPast
+    /// True only while a chain-group PTT transmission is open from THIS
+    /// hold, so the release keys the radio down exactly once and a plain
+    /// ESANG hold never sends a stray PTT stop.
+    @State private var pttTransmitting: Bool = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -128,7 +132,8 @@ private struct IdleOrbPage: View {
                 intent: orbIntent,
                 diameter: 104,
                 action: { Task { await handleOrbTap() } },
-                longPressAction: { Task { await handleOrbLongPress() } }
+                longPressAction: { Task { await handleOrbLongPress() } },
+                longPressReleaseAction: { Task { await handleOrbPttRelease() } }
             )
             .offset(y: drift)
             // When idle + signed in, stack two shadows (cool blue
@@ -523,15 +528,51 @@ private struct IdleOrbPage: View {
     /// complex error-state smart-retry tree so a held orb always
     /// produces an immediate listening session — "ESANG literally on
     /// your wrist."
+    /// True when the chain-group walkie-talkie is the correct path for a
+    /// hold RIGHT NOW: there's an active load, the phone reports PTT is
+    /// available (its restricted entitlement is granted + framework live),
+    /// and the phone is joined to THIS load's chain-group. When false the
+    /// orb hold stays on the ESANG voice path — today's behavior — so the
+    /// driver never meets a broken walkie-talkie button.
+    private var pttEngaged: Bool {
+        guard connectivity.pttAvailable,
+              let active = LoadStore.shared.active else { return false }
+        // The phone only advertises a chain-group it has actually joined;
+        // require it to match the wrist's active load so we never key up
+        // into the wrong haul's channel.
+        if let phoneGroup = connectivity.pttChainGroupId {
+            return phoneGroup == active.id
+        }
+        return false
+    }
+
     private func handleOrbLongPress() async {
-        // Walkie-talkie hold-to-talk. The long-press fires when the
-        // user has held the orb past EsangOrbWatch's threshold (250ms);
-        // we kick the AVAudioRecorder, then watch for the press
-        // RELEASE to stop + transcribe + submit. Without this gesture
-        // the only path to dictation was the system input picker
-        // (TextFieldLink / presentTextInputController) which fell back
-        // to the watch keyboard far too often. Now: hold orb → speak
-        // → release → transcript hits Gemini → ESANG runs.
+        // BRANCH: chain-group walkie-talkie vs. ESANG voice.
+        //
+        // PTT (human → convoy): when `pttEngaged`, the hold keys the
+        // load's chain-group radio UP via the phone's PTChannelManager
+        // (the wrist can't own one — PushToTalk is iOS-only). The matching
+        // key-DOWN fires from `handleOrbPttRelease` when the finger lifts.
+        // This is a SEPARATE path from ESANG and never mixes with it.
+        if pttEngaged {
+            let now = Date()
+            guard now.timeIntervalSince(lastOrbTapAt) > 0.15 else { return }
+            lastOrbTapAt = now
+            WKInterfaceDevice.current().play(.start)
+            esang.state = .listening          // reuse the "live mic" orb visual
+            pttTransmitting = true
+            connectivity.sendPttTransmit(begin: true)
+            return
+        }
+
+        // ESANG (human → AI): hold-to-talk dictation. The long-press fires
+        // when the user has held the orb past EsangOrbWatch's threshold;
+        // we kick the AVAudioRecorder, then watch for the press RELEASE to
+        // stop + transcribe + submit. Without this gesture the only path
+        // to dictation was the system input picker (TextFieldLink /
+        // presentTextInputController) which fell back to the watch
+        // keyboard far too often. Now: hold orb → speak → release →
+        // transcript hits Gemini → ESANG runs.
         let now = Date()
         guard now.timeIntervalSince(lastOrbTapAt) > 0.15 else { return }
         lastOrbTapAt = now
@@ -591,6 +632,21 @@ private struct IdleOrbPage: View {
             esang.setError("Couldn't reach the transcription service. Try again.",
                            kind: .networkTimeout)
         }
+    }
+
+    /// Finger lifted on the orb. Closes a chain-group PTT transmission if
+    /// one is open — keys the radio DOWN via the phone — and resets the
+    /// orb. A no-op for an ESANG hold (whose release is handled by the
+    /// recorder watchdog), guarded by `pttTransmitting` so a plain
+    /// dictation hold never sends a stray walkie-talkie stop.
+    private func handleOrbPttRelease() async {
+        guard pttTransmitting else { return }
+        pttTransmitting = false
+        connectivity.sendPttTransmit(begin: false)
+        WKInterfaceDevice.current().play(.stop)
+        // Drop the borrowed "listening" visual back to idle; PTT has no
+        // thinking/transcribe phase — the voice already went out live.
+        if case .listening = esang.state { esang.resetToIdle() }
     }
 }
 
@@ -702,6 +758,9 @@ private struct InstrumentPanel: View {
     @State private var pingPhoneTimestamp: Date?
     @State private var now: Date = Date()
     @State private var showDebugHealth: Bool = false
+    /// See IdleOrbPage: open only while THIS hold's chain-group PTT
+    /// transmission is live, so release keys the radio down exactly once.
+    @State private var pttTransmitting: Bool = false
 
     private let clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
@@ -897,7 +956,8 @@ private struct InstrumentPanel: View {
                 intent: orbIntent,
                 diameter: 54,
                 action: { Task { await handleOrbTap() } },
-                longPressAction: { Task { await handleOrbLongPress() } }
+                longPressAction: { Task { await handleOrbLongPress() } },
+                longPressReleaseAction: { Task { await handleOrbPttRelease() } }
             )
             // See the IdleOrbPage rationale — the `allowsHitTesting`
             // gate has been removed. handleOrbTap still no-ops on
@@ -1286,7 +1346,29 @@ private struct InstrumentPanel: View {
     /// and forces a fresh listening session regardless of current
     /// state. The orb itself already fired the stronger haptic +
     /// wider flash ring before this runs.
+    /// Same gate as IdleOrbPage.pttEngaged, resolved against THIS panel's
+    /// injected `loads` store: PTT is the right path only on an active
+    /// load whose chain-group the phone has joined and reports available.
+    private var pttEngaged: Bool {
+        guard connectivity.pttAvailable, let active = loads.active else { return false }
+        if let phoneGroup = connectivity.pttChainGroupId {
+            return phoneGroup == active.id
+        }
+        return false
+    }
+
     private func handleOrbLongPress() async {
+        // BRANCH: chain-group walkie-talkie (human → convoy) vs. ESANG
+        // (human → AI). Held on an active-load chain-group with PTT live →
+        // key the radio UP via the phone. Otherwise → ESANG, unchanged.
+        if pttEngaged {
+            WKInterfaceDevice.current().play(.start)
+            esang.state = .listening
+            pttTransmitting = true
+            connectivity.sendPttTransmit(begin: true)
+            return
+        }
+
         OrbLog.tap(state: esang.state, signedIn: auth.isSignedIn)
         if !auth.isSignedIn {
             connectivity.requestAuthMirror()
@@ -1298,6 +1380,16 @@ private struct InstrumentPanel: View {
             return
         }
         await esang.startListening(auth: auth, connectivity: connectivity)
+    }
+
+    /// Finger lifted — close a chain-group PTT transmission (key down) if
+    /// one is open. No-op for an ESANG hold.
+    private func handleOrbPttRelease() async {
+        guard pttTransmitting else { return }
+        pttTransmitting = false
+        connectivity.sendPttTransmit(begin: false)
+        WKInterfaceDevice.current().play(.stop)
+        if case .listening = esang.state { esang.resetToIdle() }
     }
 }
 

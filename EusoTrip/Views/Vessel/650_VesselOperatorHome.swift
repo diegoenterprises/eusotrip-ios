@@ -73,7 +73,10 @@ private struct VesselOperatorHomeBody: View {
                 topBar
                 IridescentHairline()
                     .padding(.horizontal, Space.s5)
-                VStack(alignment: .leading, spacing: Space.s4) {
+                // First-load unlock cascade: top-level sections spring in
+                // top-to-bottom (scale 0.92 + blur 5pt + 50 ms stagger) once
+                // per cold launch; settled on re-visit. Reduce-Motion → fade.
+                StaggeredEntranceStack(alignment: .leading, spacing: Space.s4) {
                     RoleHomeIntro()
                     if loading {
                         LifecycleCard {

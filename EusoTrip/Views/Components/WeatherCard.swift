@@ -739,14 +739,16 @@ struct WeatherCard: View {
     @ViewBuilder
     private var dayChips: some View {
         if !snapshot.daily.isEmpty {
-            let week = Array(snapshot.daily.prefix(7))
+            // Show up to 6 days and FILL the row evenly — no trailing gap.
+            // (Founder feedback: "fix the last slot's gap and add one more so
+            // it is complete.") The 6th day appears whenever the upstream
+            // forecast carries it; NWS often returns 5, WeatherKit returns more.
+            let week = Array(snapshot.daily.prefix(6))
             let weekLow = week.map(\.lowF).min() ?? 0
             let weekHigh = week.map(\.highF).max() ?? 1
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 7) {
-                    ForEach(Array(week.enumerated()), id: \.element.id) { idx, day in
-                        dayChip(day, isToday: idx == 0, weekLow: weekLow, weekHigh: weekHigh)
-                    }
+            HStack(spacing: 6) {
+                ForEach(Array(week.enumerated()), id: \.element.id) { idx, day in
+                    dayChip(day, isToday: idx == 0, weekLow: weekLow, weekHigh: weekHigh, flex: true)
                 }
             }
         }
@@ -755,7 +757,7 @@ struct WeatherCard: View {
     /// One day chip — weekday · v3 glyph · hi→lo range bar · hi/lo. The
     /// "today" chip carries the magenta-tinted selected style.
     private func dayChip(_ day: WeatherSnapshot.DailyForecast,
-                         isToday: Bool, weekLow: Int, weekHigh: Int) -> some View {
+                         isToday: Bool, weekLow: Int, weekHigh: Int, flex: Bool = false) -> some View {
         // Dark-glass ink (not the adaptive palette.bgCard, which went white
         // in light mode and hid the white chip text). The widget is an
         // always-dark sky surface, so the chips stay dark in both schemes.
@@ -785,7 +787,8 @@ struct WeatherCard: View {
                     .foregroundStyle(.white.opacity(0.5))
             }
         }
-        .frame(width: 62)
+        .frame(width: flex ? nil : 62)
+        .frame(maxWidth: flex ? .infinity : nil)
         .padding(.vertical, 11)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(fill))
         .overlay(
@@ -807,14 +810,33 @@ struct WeatherCard: View {
     /// source (Tomorrow.io only when Tomorrow.io produced the data) and
     /// omits the weatherCode/updated clauses when their data is absent.
     private var sourceLine: some View {
-        Text(snapshot.attributionLine)
-            .font(.system(size: 11))
-            // Adaptive — this line sits directly on the page (no card), so
-            // white-on-light was invisible in light mode. Palette tertiary
-            // contrasts in both schemes.
-            .foregroundStyle(palette.textTertiary)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.top, 1)
+        // Adaptive — this line sits directly on the page (no card), so
+        // white-on-light was invisible in light mode. Palette tertiary
+        // contrasts in both schemes.
+        Group {
+            if snapshot.dataSource == .weatherKit {
+                // Apple WeatherKit legal terms REQUIRE a visible "Apple Weather"
+                // mark (already in attributionLine) PLUS a tappable link to the
+                // attribution page on any surface showing WeatherKit data —
+                // omitting it is an App Review rejection. Only rendered when
+                // WeatherKit actually produced the data (honest attribution).
+                HStack(spacing: 4) {
+                    Text(snapshot.attributionLine)
+                    Link("Legal", destination: URL(string: "https://weatherkit.apple.com/legal-attribution.html")!)
+                        .underline()
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(palette.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 1)
+            } else {
+                Text(snapshot.attributionLine)
+                    .font(.system(size: 11))
+                    .foregroundStyle(palette.textTertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.top, 1)
+            }
+        }
     }
 
     // MARK: Compact — one-row glance (half-tier widget slots)

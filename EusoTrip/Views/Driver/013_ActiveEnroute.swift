@@ -92,6 +92,13 @@ struct ActiveEnroute: View {
     @State private var remainingSeconds: Double?
     /// ISO-8601 arrival time HERE computed for the pickup.
     @State private var etaISO: String?
+    /// Live traffic delay in seconds (HERE traffic-aware duration −
+    /// baseDuration, set only when a departureTime is supplied). Nil when
+    /// HERE ships no base or there's no measurable delay.
+    @State private var trafficDelaySeconds: Double?
+    /// HOS-reachability isoline ring (how far the driver can legally drive on
+    /// the remaining clock). Empty when unknown — no layer drawn.
+    @State private var isolinePolygon: [HereLatLng] = []
     /// First-measured fix→pickup distance (meters). Captured once so
     /// the approach-progress bar has an honest live denominator: the
     /// fraction is (baseline − remaining) / baseline, both numbers
@@ -128,6 +135,9 @@ struct ActiveEnroute: View {
                 topManeuverCard
                     .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s2)
+                weatherRerouteBanner
+                    .padding(.horizontal, Space.s3)
+                    .padding(.top, Space.s2)
                 Spacer()
                 bottomSheet
                     .padding(.horizontal, Space.s3)
@@ -136,6 +146,7 @@ struct ActiveEnroute: View {
         }
         .screenTileRoot()
         .task { await hydrateLiveTrip() }
+        .task { await refreshHosReachability() }
     }
 
     // MARK: - Product + vertical awareness
@@ -156,6 +167,20 @@ struct ActiveEnroute: View {
     /// file that read `vertical.pickupWord`. Any new surface on
     /// 013 should read `ctx.vertical` / `ctx.product` directly.
     private var vertical: TripVertical { ctx.vertical }
+
+    /// The symbiotic-weather reroute banner — truck loads only (rail/vessel
+    /// advise), and only when the load carries real pickup/delivery coords.
+    @ViewBuilder private var weatherRerouteBanner: some View {
+        if ctx.vertical == .truck,
+           let load = activeLoad,
+           let p = load.pickupLocation, let d = load.deliveryLocation,
+           !(p.lat == 0 && p.lng == 0), !(d.lat == 0 && d.lng == 0) {
+            WeatherRerouteBanner(
+                origin: HereMapsAPI.LatLng(lat: p.lat, lng: p.lng),
+                destination: HereMapsAPI.LatLng(lat: d.lat, lng: d.lng)
+            )
+        }
+    }
 
     // MARK: - Hydration
 
@@ -249,17 +274,31 @@ struct ActiveEnroute: View {
         )
         let profile = TruckProfile.from(load: load)
         do {
-            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
+            // departureTime switches HERE Routing into TRAFFIC-AWARE mode, so
+            // `duration`/`arrival` reflect live traffic (not free-flow) and
+            // `baseDuration` arrives for the traffic-delay chip.
+            let resp = try await HereRoutingClient.shared.route(
+                stops: stops, profile: profile,
+                options: HereRoutingOptions(departureTime: Self.hereDepartureNow())
+            )
             guard let section = resp.routes.first?.sections.first,
                   let summary = section.summary else {
                 remainingMeters = nil
                 remainingSeconds = nil
                 etaISO = nil
+                trafficDelaySeconds = nil
                 return
             }
             remainingMeters = Double(summary.length)
             remainingSeconds = Double(summary.duration)
             etaISO = section.arrival.time
+            // Honest live traffic delay = traffic-aware duration − free-flow
+            // base. Nil when HERE ships no base or there's no delay.
+            if let base = summary.baseDuration, summary.duration > base {
+                trafficDelaySeconds = Double(summary.duration - base)
+            } else {
+                trafficDelaySeconds = nil
+            }
             // Capture the approach baseline exactly once so the
             // progress bar has an honest live denominator.
             if baselineMeters == nil { baselineMeters = Double(summary.length) }
@@ -269,6 +308,38 @@ struct ActiveEnroute: View {
             remainingMeters = nil
             remainingSeconds = nil
             etaISO = nil
+            trafficDelaySeconds = nil
+        }
+    }
+
+    /// Current time as a HERE-compatible ISO-8601 departure timestamp —
+    /// switches HERE Routing into traffic-aware mode.
+    private static func hereDepartureNow() -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f.string(from: Date())
+    }
+
+    /// HOS-reachability isoline: how far the driver can legally drive on the
+    /// remaining 11h clock, from the current position. Honest — empty when
+    /// remaining HOS or a fix is unknown, or HERE returns no polygon.
+    private func refreshHosReachability() async {
+        guard let status = HOSClockService.shared.status,
+              status.canDrive,
+              status.drivingRemaining > 0,
+              let fix = await DriverLocationResolver.shared.currentCoordinate() else {
+            isolinePolygon = []
+            return
+        }
+        let rangeSec = Int((status.drivingRemaining * 3600).rounded())
+        let result = try? await EusoTripAPI.shared.hereMaps.isoline(
+            origin: .init(lat: fix.latitude, lng: fix.longitude),
+            rangeSec: rangeSec
+        )
+        if result?.ok == true, let poly = result?.polygon, poly.count >= 3 {
+            isolinePolygon = poly.map { HereLatLng($0.lat, $0.lng) }
+        } else {
+            isolinePolygon = []
         }
     }
 
@@ -512,6 +583,12 @@ struct ActiveEnroute: View {
                                kind: .receiver,
                                breachAt: nil)]
             } ?? []
+            // HOS-reachability isoline — a translucent ring of how far the
+            // driver can legally drive on the remaining clock. Drawn only when
+            // HERE returned a real polygon (≥3 pts).
+            let isolineLayers: [HereMapLayer] = isolinePolygon.count >= 3
+                ? [.adZones([HerePolygon(ring: isolinePolygon, fillHex: "#00C48C", opacity: 0.12, label: "HOS reach")])]
+                : []
             HereLiveMapView(
                 center: .init(pickup.lat, pickup.lng),
                 zoom: 7,
@@ -523,7 +600,7 @@ struct ActiveEnroute: View {
                         .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: destinationFacility),
                         .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: nil)
                     ])
-                ] + fenceLayers,
+                ] + fenceLayers + isolineLayers,
                 addOns: .driverEnRoute
             )
         } else {
@@ -641,8 +718,23 @@ struct ActiveEnroute: View {
                     .font(EType.micro)
                     .tracking(1.1)
                     .foregroundStyle(palette.textTertiary)
+                if let chip = trafficDelayChipText {
+                    Text(chip)
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Brand.warning)
+                        .padding(.top, 1)
+                }
             }
         }
+    }
+
+    /// "+N min traffic" chip when HERE reports a live traffic delay above
+    /// ~1 min; nil otherwise (a clear road shows no chip — honest, the ETA
+    /// itself is already traffic-aware via departureTime).
+    private var trafficDelayChipText: String? {
+        guard let s = trafficDelaySeconds, s >= 60 else { return nil }
+        let mins = Int((s / 60).rounded())
+        return "+\(mins) min traffic"
     }
 
     private var maneuverSubhead: some View {
@@ -948,4 +1040,75 @@ struct ActiveEnrouteScreen: View {
 #Preview("013 · En Route to Pickup · Light") {
     ActiveEnrouteScreen(theme: Theme.light)
         .preferredColorScheme(.light)
+}
+
+// MARK: - Weather hazard reroute banner (the symbiotic-weather loop)
+//
+// Closes the loop the weather program opened: calls hereMaps.weatherReroute
+// (real active Severe/Extreme NWS hazard polygons near the corridor → HERE
+// avoid[areas] → a truck route AROUND them, with REAL baseline-vs-avoided
+// miles). Honest rendering — it shows ONLY real signal:
+//   • a reroute card when a detour actually avoids an ON-ROAD hazard,
+//   • an advisory when hazards are near the corridor but NOT on the road,
+//   • nothing at all when the road is clear.
+// No fabricated detour miles — every number comes from the HERE route diff.
+struct WeatherRerouteBanner: View {
+    let origin: HereMapsAPI.LatLng
+    let destination: HereMapsAPI.LatLng
+
+    @Environment(\.palette) private var palette
+    @State private var result: HereMapsAPI.WeatherRerouteResult?
+    @State private var loaded = false
+
+    var body: some View {
+        Group {
+            if let r = result {
+                if r.rerouted, r.milesAdded > 0 {
+                    card(icon: "cloud.bolt.rain.fill", tint: Brand.warning,
+                         title: "Severe weather ahead",
+                         detail: hazardLine(r),
+                         footer: "Detour avoids it · +\(r.milesAdded) mi")
+                } else if r.hazardCount > 0 {
+                    card(icon: "exclamationmark.triangle.fill", tint: Brand.info,
+                         title: "\(r.hazardCount) weather alert\(r.hazardCount == 1 ? "" : "s") near your route",
+                         detail: hazardLine(r),
+                         footer: "None on your road — monitoring live")
+                }
+                // r.hazardCount == 0 → clear road → render nothing.
+            }
+        }
+        .task {
+            guard !loaded else { return }
+            loaded = true
+            result = try? await EusoTripAPI.shared.hereMaps.weatherReroute(origin: origin, destination: destination)
+        }
+    }
+
+    private func hazardLine(_ r: HereMapsAPI.WeatherRerouteResult) -> String {
+        if let h = r.hazards.first {
+            if let head = h.headline, !head.isEmpty { return head }
+            return [h.event, h.severity].compactMap { $0 }.joined(separator: " · ")
+        }
+        return "Active hazard near the corridor"
+    }
+
+    private func card(icon: String, tint: Color, title: String, detail: String, footer: String) -> some View {
+        HStack(alignment: .top, spacing: Space.s2) {
+            Image(systemName: icon).font(.system(size: 16, weight: .bold)).foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text(detail).font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                Text(footer).font(.system(size: 11, weight: .heavy)).foregroundStyle(tint).padding(.top, 1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(tint.opacity(0.4), lineWidth: 1))
+        )
+    }
 }
