@@ -150,7 +150,14 @@ public struct TrendSparkline: View {
         showLastDot: Bool = true,
         showBaseline: Bool = false,
         smooth: Bool = true,
-        scrubMinimumDistance: CGFloat = 0,
+        // Founder 2026-06-19: a 0-distance scrub STEALS the parent ScrollView's
+        // drag — on the Hot Zones tiles + anywhere a sparkline fills a scrollable
+        // tile, you couldn't scroll because the chart ate the gesture. Default to
+        // a 12pt threshold so a quick/vertical pan scrolls and only a deliberate
+        // horizontal drag scrubs (the value the comment above always recommended
+        // for scroll contexts). Hero charts that own their row are unaffected (a
+        // 12pt drag still scrubs).
+        scrubMinimumDistance: CGFloat = 12,
         selectedIndex: Binding<Int?> = .constant(nil),
         onScrub: @escaping (TrendSparkPoint?) -> Void = { _ in }
     ) {

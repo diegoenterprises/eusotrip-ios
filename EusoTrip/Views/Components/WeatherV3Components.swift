@@ -431,8 +431,14 @@ struct HourlyRibbon: View {
             }
             .contentShape(Rectangle())
             .gesture(
-                DragGesture(minimumDistance: 0)
+                // Founder 2026-06-19: a 0-distance scrub STOLE the home-screen
+                // ScrollView's drag — you couldn't scroll past the weather
+                // widget. Require a 12pt move AND a HORIZONTAL intent: a
+                // vertical/quick pan falls through to the parent scroll, only a
+                // deliberate sideways drag scrubs the hourly ribbon.
+                DragGesture(minimumDistance: 12)
                     .onChanged { v in
+                        guard abs(v.translation.width) >= abs(v.translation.height) else { return }
                         let idx = nearestIndex(toX: v.location.x, points: tps)
                         if idx != scrubIndex {
                             scrubIndex = idx

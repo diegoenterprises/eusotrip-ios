@@ -189,14 +189,42 @@ struct ShipperHotZones: View {
     /// instead of drilling into 436. Keyed by `HotZoneEntry.id`.
     @State private var flippedCells: Set<String> = []
 
-    /// Cold-tile locked height — sized to the COLD `FlipBack`'s TRUE content
-    /// height so a flipped back fits with zero overflow (was 188, which let
-    /// the ~264pt back bleed DOWN over the next cold tile = the "overlapping
-    /// cold zones" bug). FlipBack content math (non-compact):
-    ///   outer padding(s3) 24 + 5 VStack(s2) gaps 40 + header 23 + hero(30) 36
-    ///   + pulse 40 + 2-row stat grid 68 + CTA pill 33 ≈ 264pt; +~12pt slack.
-    /// Both faces are hard-clipped to the tile so neither can ever overflow.
-    private static let coldTileHeight: CGFloat = 276
+    /// HOT-tile locked height — both faces (front + flipped back) share ONE
+    /// frame so the un-tapped hero reads identical in size to the flipped
+    /// detail (founder: "the smaller [front] tile needs to be the size of the
+    /// bigger [flipped] tiles, both front-facing and flipped"). Sized to the
+    /// HOT `FlipBack`'s TALLEST natural content (non-compact, up to 8 stats =
+    /// 4 grid rows). FlipBack content math (non-compact):
+    ///   outer padding(s3) 24 + 4 VStack(s2) gaps 32 + header(name+3+2pt rule)
+    ///   27 + hero(30pt heavy) 36 + pulse 40 + 4-row 2-col stat grid
+    ///   (4·34 + 3·6) 154 + CTA pill 33 ≈ 346pt; +~14pt slack. The `Spacer`
+    ///   before the CTA absorbs the slack on shorter (3-stat) backs so the CTA
+    ///   always pins to the bottom. Both faces hard-clipped to the frame.
+    private static let hotTileHeight: CGFloat = 360
+
+    /// Intensity-grid cell height (the 4-col LOAD-TO-TRUCK INTENSITY cells).
+    /// Both faces are locked to this so the FRONT lays out within these exact
+    /// bounds — the state label + load-to-truck multiplier + load caption all
+    /// sit inside the cell with the 10pt vertical inset keeping the value off
+    /// the bottom edge (founder build 740: the value was being clipped because
+    /// the front expanded to the taller back's height and the outer clip cut
+    /// the bottom-anchored value). The back is still hard-clipped to the cell.
+    private static let heatCellHeight: CGFloat = 96
+
+    /// Cold-tile locked height — COMPACT (founder build 740: "these cold zone
+    /// tiles are way too big for a cold zone … back the way they were before …
+    /// quick information … doesn't need a graph"). Both faces are CHART-LESS
+    /// quick-info. Sized to fit BOTH the compact front identity row and the
+    /// compact chart-less quick-info back with zero overflow:
+    ///   FRONT — one identity row: 36pt snow disc (the row's tallest element),
+    ///     inside outer padding(s3) 12+12 → 36 + 24 = 60pt.
+    ///   BACK — chart-less compact column inside padding 10+10=20:
+    ///     header(name + 2pt rule, spacing 3) ~21 + VStack(4) gap 4 + surge
+    ///     headline (~18pt heavy) 22 + gap 4 + one stat row (label micro 11 +
+    ///     value 12 + 1) 24 + gap 4 + CTA pill (pad 6+6 + ~12 text) 24 ≈ 103pt.
+    ///   The back governs → pick 108 (≥103 back, ≥60 front), +5pt slack. Both
+    ///   faces hard-clipped to the frame; the tile flips HORIZONTALLY (y-axis).
+    private static let coldTileHeight: CGFloat = 108
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -542,11 +570,13 @@ struct ShipperHotZones: View {
         } back: {
             cellBack(z)
         }
-        .frame(height: 96)
-        // HARD-CLIP both faces to the 96pt cell. The compact back is taller
-        // than 96pt at intrinsic size, so without this a flipped cell could
-        // bleed into a neighbouring grid cell (the same overlap class as the
-        // cold strip). The 96pt visual the founder approved is unchanged.
+        .frame(height: Self.heatCellHeight)
+        // HARD-CLIP the BACK to the 96pt cell — the compact back is taller than
+        // 96pt at intrinsic size, so without this a flipped cell could bleed
+        // into a neighbouring grid cell (the same overlap class as the cold
+        // strip). The FRONT is now itself capped to `heatCellHeight` (see
+        // `heatCellFront`), so this clip no longer cuts the front's value — it
+        // only guards the taller back. The 96pt visual is unchanged.
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onTapGesture {
@@ -581,7 +611,15 @@ struct ShipperHotZones: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Lock the FRONT to the cell height so its internal layout (Spacer
+        // pushing the value+caption to the bottom) bottoms out at 96pt — NOT
+        // at the taller back's intrinsic height. Previously `maxHeight:
+        // .infinity` let the front grow to the ZStack height the back forced,
+        // and the outer 96pt clip then cut the bottom-anchored value off
+        // (founder build 740). With the front capped at the cell height the
+        // 10pt vertical inset keeps the value off the bottom edge, fully legible.
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: Self.heatCellHeight, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(band.color.opacity(band.wash))
@@ -759,6 +797,13 @@ struct ShipperHotZones: View {
             // BACK — the inspiring in-place drill-down.
             hotTileBack(z, demandColor: demandColor)
         }
+        // Lock BOTH faces to one frame so the un-tapped hero front reads
+        // IDENTICAL in size to the flipped detail back (founder build 740).
+        // The front fills it (sparkline expands via maxHeight: .infinity); the
+        // rich back keeps its full chart + stat grid. Hard-clip both faces so
+        // neither can ever bleed past the rounded rect into a neighbour tile.
+        .frame(height: Self.hotTileHeight)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture {
             withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) {
@@ -830,8 +875,13 @@ struct ShipperHotZones: View {
             // `pulseSeries` if the server ever ships one. Drag across it to
             // scrub — vertical guide + node + value capsule + haptic per
             // point, exactly like the weather HourlyRibbon.
+            // HERO sparkline — expands to fill the locked tile height so the
+            // un-flipped front reads as a full hero of the SAME size as the
+            // flipped detail back (founder build 740). maxHeight: .infinity
+            // absorbs the extra height that the fixed `hotTileHeight` adds over
+            // the front's intrinsic content.
             HotZonePulseChart(zone: z, accent: demandColor)
-                .frame(height: 28)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, Space.s3)
                 .padding(.top, Space.s2)
 
@@ -853,7 +903,9 @@ struct ShipperHotZones: View {
             .padding(.top, Space.s2)
             .padding(.bottom, Space.s3)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Fill the locked `hotTileHeight` (top-anchored) so the hero sparkline
+        // can expand into the extra height and the front matches the back size.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg)
@@ -1016,16 +1068,20 @@ struct ShipperHotZones: View {
         // the spring-toggle + selection haptic, matching the hot tiles.
         let isFlipped = flippedColdZones.contains(c.id)
         let hasBack = coldHasBackContent(c)
-        return FlipTile(isFlipped: isFlipped) {
+        // FOUNDER FIX build 740 — cold tiles are COMPACT quick-info that flip
+        // HORIZONTALLY (y-axis), not the big chart hero the prior pass made.
+        // Both faces are CHART-LESS. axis (0,1,0) = the horizontal flip the
+        // founder asked for ("flip horizontally and show quick information").
+        return FlipTile(isFlipped: isFlipped, axis: (0, 1, 0)) {
             coldTileBody(c, pulse: pulse)
         } back: {
             coldTileBack(c)
         }
-        // Fixed height SIZED TO THE BACK so the hero front and the taller
-        // inspiring back share one frame (front fills it via maxHeight:
-        // .infinity). HARD-CLIP both faces to the tile so neither the front
-        // hero nor the back can ever bleed past the rounded rect into the
-        // next cold tile (the founder's "overlapping cold zones").
+        // SMALL fixed height (`coldTileHeight` = 108) sized to fit BOTH the
+        // compact front identity row and the compact chart-less quick-info
+        // back with zero overflow. HARD-CLIP both faces so neither can ever
+        // bleed past the rounded rect into the next cold tile (the founder's
+        // "overlapping cold zones").
         .frame(height: Self.coldTileHeight)
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         .contentShape(Rectangle())
@@ -1047,66 +1103,58 @@ struct ShipperHotZones: View {
     }
 
     private func coldTileBody(_ c: ColdZoneEntry, pulse: String?) -> some View {
-        // FOUNDER FIX 2026-06-19 — the front was a compact row pinned
-        // .topLeading at a now-276pt frame = a small row over a big EMPTY
-        // card. Restructured into a deliberate HERO that FILLS the frame
-        // (mirroring the hot tiles): the existing identity row up top, then
-        // the SAME real ColdZonePulseChart the back uses, expanded to take
-        // the remaining height (honest flat baseline when the zone ships no
-        // scalars — never a fabricated trend).
-        VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(spacing: Space.s3) {
-                ZStack {
-                    Circle().fill(Brand.info.opacity(0.18)).frame(width: 36, height: 36)
-                    // Bespoke snow glyph (WeatherGlyph) — NOT the SF `snowflake`.
-                    WeatherGlyph(kind: .snow)
-                        .frame(width: 14, height: 14)
-                        .foregroundStyle(Brand.info)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 6) {
-                        Text(c.name ?? c.state ?? "Unknown")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(palette.textPrimary)
-                            .lineLimit(1)
-                        if let s = c.state {
-                            Text(s.uppercased())
-                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                                .foregroundStyle(Brand.info)
-                                .padding(.horizontal, 4).padding(.vertical, 1)
-                                .background(Capsule().fill(Brand.info.opacity(0.15)))
-                        }
-                    }
-                    HStack(spacing: 8) {
-                        if let r = c.liveRate {
-                            Text(String(format: "$%.2f / mi", r))
-                                .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                                .foregroundStyle(Brand.info)
-                        }
-                        if let t = c.liveTrucks {
-                            Text("\(t) trucks · post")
-                                .font(.system(size: 10))
-                                .foregroundStyle(palette.textSecondary)
-                        }
+        // FOUNDER FIX build 740 — COMPACT identity row ONLY, NO chart. The
+        // prior pass made this a 276pt ColdZonePulseChart hero ("way too big
+        // for a cold zone"). Reverted to the quick-info row the founder
+        // approved before: snow glyph + metro + state badge + $/mi +
+        // trucks·post + trailing surge %. The row is vertically centered in
+        // the small 108pt tile.
+        HStack(spacing: Space.s3) {
+            ZStack {
+                Circle().fill(Brand.info.opacity(0.18)).frame(width: 36, height: 36)
+                // Bespoke snow glyph (WeatherGlyph) — NOT the SF `snowflake`.
+                WeatherGlyph(kind: .snow)
+                    .frame(width: 14, height: 14)
+                    .foregroundStyle(Brand.info)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(c.name ?? c.state ?? "Unknown")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    if let s = c.state {
+                        Text(s.uppercased())
+                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(Brand.info)
+                            .padding(.horizontal, 4).padding(.vertical, 1)
+                            .background(Capsule().fill(Brand.info.opacity(0.15)))
                     }
                 }
-                Spacer(minLength: 0)
-                if let pulse {
-                    Text(pulse)
-                        .font(.system(size: 14, weight: .bold).monospacedDigit())
-                        .foregroundStyle(Brand.success)
+                HStack(spacing: 8) {
+                    if let r = c.liveRate {
+                        Text(String(format: "$%.2f / mi", r))
+                            .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(Brand.info)
+                    }
+                    if let t = c.liveTrucks {
+                        Text("\(t) trucks · post")
+                            .font(.system(size: 10))
+                            .foregroundStyle(palette.textSecondary)
+                    }
                 }
             }
-
-            // HERO pulse — the same honest sparkline the back surfaces,
-            // filling the remaining height so the front reads as a deliberate
-            // hero card (no dead space), parity with the hot-tile front.
-            ColdZonePulseChart(zone: c)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Spacer(minLength: 0)
+            if let pulse {
+                Text(pulse)
+                    .font(.system(size: 14, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Brand.success)
+            }
         }
         .padding(Space.s3)
-        // Fill the FlipTile's fixed height with a top-anchored hero column.
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Center the compact row in the small fixed-height tile (no chart, no
+        // dead space). Both faces hard-clipped at the call site.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg)
@@ -1115,55 +1163,97 @@ struct ShipperHotZones: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
     }
 
-    /// BACK of a flipped COLD tile — the inspiring drill-down that replaces
-    /// the 436 detail. Bespoke flip-back design language, accent = `Brand.info`
-    /// (the cold palette). Hero = the surge vs balanced (1.0×) as a colored
-    /// ±% (success when below balance = a real discount to post against,
-    /// danger when above). Pulse = a HotZonePulseChart seeded from the cold
-    /// zone's real scalars (honest flat baseline if none). Stat grid = State /
-    /// Post rate / Capacity — em-dash any absent field, drop nothing here since
-    /// all three are headline cold fields. CTA = "Post capacity at $X.XX/mi"
-    /// firing the SAME real post-capacity action the front action ribbon uses.
+    /// BACK of a flipped COLD tile — COMPACT, CHART-LESS quick info (founder
+    /// build 740: "it doesn't need a graph like the other tiles"). NOT the
+    /// FlipBack-with-pulse scaffold the hot tiles use — that always paints a
+    /// sparkline. This is a bespoke chart-less compact layout: a header row
+    /// (metro + drawn return chevron under a 2pt gradient rule), the surge
+    /// headline (vs balanced 1.0×, success below balance = a real discount to
+    /// post against, danger above), an inline post-rate · capacity quick line,
+    /// and a small "Post capacity" CTA pill firing the SAME real action the
+    /// front action ribbon uses. Sized to the 108pt `coldTileHeight`.
     private func coldTileBack(_ c: ColdZoneEntry) -> some View {
         // Surge headline: liveSurge vs balanced 1.0×. Below balance reads as a
         // capacity discount (success); above as tightening (danger). Honest
         // em-dash when the feed ships no surge.
-        let hero: (text: String, gradient: Bool, color: Color) = {
-            guard let s = c.liveSurge else { return ("—", false, palette.textTertiary) }
+        let surge: (text: String, color: Color) = {
+            guard let s = c.liveSurge else { return ("—", palette.textTertiary) }
             let pct = (s - 1.0) * 100.0
-            let color: Color = pct <= 0 ? Brand.success : Brand.danger
-            return (String(format: "%+.1f%%", pct), false, color)
+            return (String(format: "%+.1f%%", pct), pct <= 0 ? Brand.success : Brand.danger)
         }()
         let rateStr = c.liveRate.map { String(format: "$%.2f/mi", $0) }
-        let ctaTitle = c.liveRate.map { String(format: "Post capacity at $%.2f/mi", $0) }
+        let ctaTitle = c.liveRate.map { String(format: "Post at $%.2f/mi", $0) }
             ?? "Post capacity"
-        return FlipBack(
-            accent: Brand.info,
-            name: c.name ?? c.state ?? "Cold zone",
-            cornerRadius: Radius.lg,
-            palette: palette,
-            hero: {
-                Group {
-                    if hero.gradient {
-                        Text(hero.text).foregroundStyle(LinearGradient.diagonal)
-                    } else {
-                        Text(hero.text).foregroundStyle(hero.color)
-                    }
+        return VStack(alignment: .leading, spacing: 6) {
+            // Header — metro + drawn return chevron under a 2pt gradient rule.
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(c.name ?? c.state ?? "Cold zone")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Spacer(minLength: 0)
+                    FlipBackChevron(lineWidth: 2.0)
+                        .frame(width: 12, height: 12)
+                        .foregroundStyle(Brand.info)
                 }
-                .font(.system(size: 30, weight: .heavy).monospacedDigit())
-                .accessibilityLabel("Surge \(hero.text)")
-            },
-            pulse: { ColdZonePulseChart(zone: c).frame(height: 40) },
-            stats: [
-                FlipStat("State", c.state, palette.textPrimary),
-                FlipStat("Post rate", rateStr, Brand.info),
-                FlipStat("Capacity", c.liveTrucks.map { "\($0) trucks" }, palette.textPrimary)
-            ].compactMap { $0 },
-            ctaTitle: ctaTitle,
-            cta: { tapPostRecommendation(c) }
+                LinearGradient.diagonal
+                    .frame(height: 2)
+                    .clipShape(Capsule())
+            }
+            // Surge headline — the single eye-grabbing number, NO chart.
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(surge.text)
+                    .font(.system(size: 18, weight: .heavy).monospacedDigit())
+                    .foregroundStyle(surge.color)
+                Text("surge")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            // Quick info — post rate · capacity in one chart-less line.
+            HStack(spacing: 8) {
+                if let rateStr {
+                    Text(rateStr)
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(Brand.info)
+                }
+                if let t = c.liveTrucks {
+                    Text("\(t) trucks")
+                        .font(.system(size: 10))
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            Spacer(minLength: 0)
+            // Small "Post capacity" CTA pill — real post-capacity action.
+            Button(action: { tapPostRecommendation(c) }) {
+                HStack(spacing: 6) {
+                    Text(ctaTitle)
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    FlipBackArrow()
+                        .frame(width: 12, height: 12)
+                        .foregroundStyle(.white)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(LinearGradient.diagonal))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(Brand.info.opacity(0.55), lineWidth: 1)
         )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(
-            "\(c.name ?? c.state ?? "Cold zone") detail. Surge \(hero.text). "
+            "\(c.name ?? c.state ?? "Cold zone") detail. Surge \(surge.text). "
             + (rateStr.map { "Post rate \($0). " } ?? "")
             + "Tap to flip back."
         )
@@ -1720,92 +1810,11 @@ private enum HeatBand: CaseIterable {
     }
 }
 
-// MARK: - Cold-zone pulse sparkline (honest: flat baseline when no scalars)
-//
-// The cold strip back wants the same live sparkline language as the hot tiles,
-// but `ColdZoneEntry` ships a leaner scalar set (liveSurge / liveRate /
-// liveTrucks, all optional). Same honesty doctrine as HotZonePulseSynth:
-// deterministic, seeded by the zone's stable id, shaped ONLY by the real
-// scalars, re-derived per 30s bucket so it moves — and a FLAT baseline when
-// the zone carries no usable scalar (never a fabricated trend).
-
-private struct ColdZonePulseChart: View {
-    let zone: ColdZoneEntry
-    private var timeBucket: Int { Int(Date().timeIntervalSince1970 / 30) }
-
-    var body: some View {
-        TrendSparkline(
-            points: ColdZonePulseSynth.series(for: zone, timeBucket: timeBucket),
-            direction: .brand,
-            lineWidth: 1.8,
-            showArea: true,
-            showLastDot: true,
-            showBaseline: false,
-            smooth: true,
-            scrubMinimumDistance: 10
-        )
-    }
-}
-
-private enum ColdZonePulseSynth {
-    private static let sampleCount = 16
-
-    static func series(for zone: ColdZoneEntry, timeBucket: Int) -> [TrendSparkPoint] {
-        // Center the walk on the surge (vs balanced 1.0×); fall back to a
-        // normalized rate so a zone with a rate but no surge still reads.
-        let surge = zone.liveSurge
-        let center = surge ?? 1.0
-        let hasSignal = surge != nil || zone.liveRate != nil || zone.liveTrucks != nil
-        guard hasSignal else {
-            // Honest flat baseline — no usable scalar, no fabricated trend.
-            return (0..<sampleCount).map { idx in
-                TrendSparkPoint(id: "\(zone.id)-flat\(idx)", value: 1.0,
-                                label: String(format: "%.2f×", 1.0))
-            }
-        }
-
-        let seed = fnv1a(zone.id)
-        // Slope from surge-vs-balance; gentle so the trend stays legible.
-        let slopeSignal = (surge ?? 1.0) - 1.0
-        let totalRise = clamp(slopeSignal * 0.5, -center * 0.6, center * 0.8)
-        let amplitude = clamp((0.04 + abs(slopeSignal) * 0.12) * max(center, 0.6),
-                              0.02, max(center, 0.6) * 0.45)
-
-        let n = sampleCount
-        var values: [Double] = []
-        values.reserveCapacity(n)
-        for i in 0..<n {
-            let t = Double(i) / Double(n - 1)
-            let trendComponent = center - totalRise / 2 + totalRise * t
-            let h = fnv1a("\(seed)-\(i)-\(timeBucket)")
-            let unit = Double(h % 2000) / 1000.0 - 1.0
-            let h2 = fnv1a("\(seed)-h2-\(i)")
-            let unit2 = Double(h2 % 2000) / 1000.0 - 1.0
-            let wobble = (unit * 0.7 + unit2 * 0.3) * amplitude
-            let taper = sin(Double.pi * t)
-            let v = max(0, trendComponent + wobble * (0.35 + 0.65 * taper))
-            values.append(v)
-        }
-        return values.enumerated().map { idx, v in
-            TrendSparkPoint(id: "\(zone.id)-\(idx)", value: v,
-                            label: String(format: "%.2f×", v))
-        }
-    }
-
-    private static func fnv1a(_ s: String) -> Int {
-        var hash: UInt32 = 0x811c9dc5
-        for byte in s.utf8 {
-            hash ^= UInt32(byte)
-            hash = hash &* 0x0100_0193
-        }
-        return Int(hash & 0x7fff_ffff)
-    }
-
-    private static func clamp(_ v: Double, _ lo: Double, _ hi: Double) -> Double {
-        let a = min(lo, hi), b = max(lo, hi)
-        return min(max(v, a), b)
-    }
-}
+// Cold-zone pulse sparkline (ColdZonePulseChart / ColdZonePulseSynth) was
+// REMOVED in build 740 — the founder made the cold tiles COMPACT, chart-less
+// quick-info ("it doesn't need a graph like the other tiles"), so both cold
+// faces are now chart-free and the synth had no remaining call site. The hot
+// tiles keep their live sparkline (HotZonePulseChart / HotZonePulseSynth).
 
 // MARK: - File-scoped loading skeleton (bespoke shimmer · no blank-on-load)
 //
