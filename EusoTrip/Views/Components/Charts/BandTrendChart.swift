@@ -318,8 +318,12 @@ public struct BandTrendChart: View {
     // MARK: Scrub gesture
 
     private func scrubGesture(plot: CGRect) -> some Gesture {
-        DragGesture(minimumDistance: 0)
+        // Founder 2026-06-19: a 0-distance scrub steals a parent ScrollView's
+        // drag. Require a 12pt move + horizontal intent so a vertical/quick pan
+        // scrolls and only a deliberate sideways drag scrubs.
+        DragGesture(minimumDistance: 12)
             .onChanged { value in
+                guard abs(value.translation.width) >= abs(value.translation.height) else { return }
                 let i = nearestIndex(toX: value.location.x, plot: plot)
                 updateSelection(i)
             }
