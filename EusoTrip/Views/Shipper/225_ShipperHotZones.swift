@@ -189,6 +189,15 @@ struct ShipperHotZones: View {
     /// instead of drilling into 436. Keyed by `HotZoneEntry.id`.
     @State private var flippedCells: Set<String> = []
 
+    /// Cold-tile locked height — sized to the COLD `FlipBack`'s TRUE content
+    /// height so a flipped back fits with zero overflow (was 188, which let
+    /// the ~264pt back bleed DOWN over the next cold tile = the "overlapping
+    /// cold zones" bug). FlipBack content math (non-compact):
+    ///   outer padding(s3) 24 + 5 VStack(s2) gaps 40 + header 23 + hero(30) 36
+    ///   + pulse 40 + 2-row stat grid 68 + CTA pill 33 ≈ 264pt; +~12pt slack.
+    /// Both faces are hard-clipped to the tile so neither can ever overflow.
+    private static let coldTileHeight: CGFloat = 276
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
@@ -534,6 +543,11 @@ struct ShipperHotZones: View {
             cellBack(z)
         }
         .frame(height: 96)
+        // HARD-CLIP both faces to the 96pt cell. The compact back is taller
+        // than 96pt at intrinsic size, so without this a flipped cell could
+        // bleed into a neighbouring grid cell (the same overlap class as the
+        // cold strip). The 96pt visual the founder approved is unchanged.
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onTapGesture {
             guard z.liveRatio > 0 || z.liveLoads > 0 else { return }
@@ -1007,9 +1021,13 @@ struct ShipperHotZones: View {
         } back: {
             coldTileBack(c)
         }
-        // Fixed height so the compact front and the taller inspiring back
-        // share one frame (the front fills it via maxHeight: .infinity).
-        .frame(height: 188)
+        // Fixed height SIZED TO THE BACK so the hero front and the taller
+        // inspiring back share one frame (front fills it via maxHeight:
+        // .infinity). HARD-CLIP both faces to the tile so neither the front
+        // hero nor the back can ever bleed past the rounded rect into the
+        // next cold tile (the founder's "overlapping cold zones").
+        .frame(height: Self.coldTileHeight)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture {
             guard hasBack else { return }
@@ -1029,52 +1047,65 @@ struct ShipperHotZones: View {
     }
 
     private func coldTileBody(_ c: ColdZoneEntry, pulse: String?) -> some View {
-        HStack(spacing: Space.s3) {
-            ZStack {
-                Circle().fill(Brand.info.opacity(0.18)).frame(width: 36, height: 36)
-                // Bespoke snow glyph (WeatherGlyph) — NOT the SF `snowflake`.
-                WeatherGlyph(kind: .snow)
-                    .frame(width: 14, height: 14)
-                    .foregroundStyle(Brand.info)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
-                    Text(c.name ?? c.state ?? "Unknown")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(palette.textPrimary)
-                        .lineLimit(1)
-                    if let s = c.state {
-                        Text(s.uppercased())
-                            .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                            .foregroundStyle(Brand.info)
-                            .padding(.horizontal, 4).padding(.vertical, 1)
-                            .background(Capsule().fill(Brand.info.opacity(0.15)))
+        // FOUNDER FIX 2026-06-19 — the front was a compact row pinned
+        // .topLeading at a now-276pt frame = a small row over a big EMPTY
+        // card. Restructured into a deliberate HERO that FILLS the frame
+        // (mirroring the hot tiles): the existing identity row up top, then
+        // the SAME real ColdZonePulseChart the back uses, expanded to take
+        // the remaining height (honest flat baseline when the zone ships no
+        // scalars — never a fabricated trend).
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: Space.s3) {
+                ZStack {
+                    Circle().fill(Brand.info.opacity(0.18)).frame(width: 36, height: 36)
+                    // Bespoke snow glyph (WeatherGlyph) — NOT the SF `snowflake`.
+                    WeatherGlyph(kind: .snow)
+                        .frame(width: 14, height: 14)
+                        .foregroundStyle(Brand.info)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(c.name ?? c.state ?? "Unknown")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1)
+                        if let s = c.state {
+                            Text(s.uppercased())
+                                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(Brand.info)
+                                .padding(.horizontal, 4).padding(.vertical, 1)
+                                .background(Capsule().fill(Brand.info.opacity(0.15)))
+                        }
+                    }
+                    HStack(spacing: 8) {
+                        if let r = c.liveRate {
+                            Text(String(format: "$%.2f / mi", r))
+                                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                                .foregroundStyle(Brand.info)
+                        }
+                        if let t = c.liveTrucks {
+                            Text("\(t) trucks · post")
+                                .font(.system(size: 10))
+                                .foregroundStyle(palette.textSecondary)
+                        }
                     }
                 }
-                HStack(spacing: 8) {
-                    if let r = c.liveRate {
-                        Text(String(format: "$%.2f / mi", r))
-                            .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                            .foregroundStyle(Brand.info)
-                    }
-                    if let t = c.liveTrucks {
-                        Text("\(t) trucks · post")
-                            .font(.system(size: 10))
-                            .foregroundStyle(palette.textSecondary)
-                    }
+                Spacer(minLength: 0)
+                if let pulse {
+                    Text(pulse)
+                        .font(.system(size: 14, weight: .bold).monospacedDigit())
+                        .foregroundStyle(Brand.success)
                 }
             }
-            Spacer(minLength: 0)
-            if let pulse {
-                Text(pulse)
-                    .font(.system(size: 14, weight: .bold).monospacedDigit())
-                    .foregroundStyle(Brand.success)
-            }
+
+            // HERO pulse — the same honest sparkline the back surfaces,
+            // filling the remaining height so the front reads as a deliberate
+            // hero card (no dead space), parity with the hot-tile front.
+            ColdZonePulseChart(zone: c)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .padding(Space.s3)
-        // Fill the FlipTile's fixed height (so the front card matches the
-        // taller back face) and pin the row to the top so the layout reads
-        // the same as the original compact strip tile.
+        // Fill the FlipTile's fixed height with a top-anchored hero column.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(palette.bgCard)
         .overlay(
