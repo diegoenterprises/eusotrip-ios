@@ -220,6 +220,25 @@ final class SparkBriefStore: ObservableObject {
         }
     }
 
+    /// Human day-part label ("Morning" / "Afternoon" / "Evening") derived
+    /// from the real clock — used so the brief never reads "Morning" all
+    /// day (founder feedback #12/#17/#19). Honest: computed from `d`, not
+    /// fabricated.
+    static func dayPartLabel(of d: Date) -> String {
+        switch dayPart(of: d) {
+        case 0:  return "Morning"
+        case 1:  return "Afternoon"
+        default: return "Evening"
+        }
+    }
+
+    /// Parse a brief `sampledAt` ISO string into a Date, falling back to
+    /// now() so the label is always grounded in a real timestamp.
+    static func dayPartLabel(forSampledAt iso: String?) -> String {
+        let date = iso.flatMap { Self.iso.date(from: $0) } ?? Date()
+        return dayPartLabel(of: date)
+    }
+
     /// Auto-load entry point driven by the card's `.task`. Fetches the
     /// cached brief once on appear and — if none exists yet OR the cached
     /// one is stale (>18h, i.e. the overnight cron missed) — silently
@@ -335,9 +354,16 @@ struct SparkBriefCard: View {
         return h.isEmpty ? nil : h
     }
 
+    /// "Morning" / "Afternoon" / "Evening" — derived from the brief's real
+    /// `sampledAt` (or now() when none yet) so the card adapts to the time
+    /// of day instead of reading "Morning" all day (founder #12/#17/#19).
+    private var dayPartLabel: String {
+        SparkBriefStore.dayPartLabel(forSampledAt: store.brief?.sampledAt ?? store.sampledAt)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Eyebrow — role badge + REAL relative sample age.
+            // Eyebrow — role badge + day-part + REAL relative sample age.
             HStack(spacing: 8) {
                 Image(systemName: role.sfSymbol)
                     .font(.system(size: 11, weight: .bold))
@@ -345,6 +371,12 @@ struct SparkBriefCard: View {
                 Text(role.eyebrow)
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textPrimary)
+                // Day-part badge — adapts Morning/Afternoon/Evening from the
+                // brief's real timestamp so the brief never reads "Morning"
+                // all day (founder #12/#17/#19).
+                Text(dayPartLabel.uppercased())
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
                 Spacer()
                 if store.running {
                     Text("UPDATING…")
@@ -467,7 +499,7 @@ private struct ChipRow: View {
             return [
                 .init(label: "\(b.rateConfirmationDrafts?.count ?? 0) rate confirms", symbol: "doc.text"),
                 .init(label: "\(b.reconciliationHints?.count ?? 0) reconcile",       symbol: "arrow.left.arrow.right"),
-                .init(label: "\(b.morningPriorities?.count ?? 0) priorities",       symbol: "flag"),
+                .init(label: "\(b.morningPriorities?.count ?? 0) priorities",        symbol: "flag"),
             ]
         case .dispatcher:
             return [
@@ -507,7 +539,11 @@ struct SparkBriefDetailSheet: View {
                     case .shipper:
                         Section(header: "Rate Confirmation Drafts", items: brief?.rateConfirmationDrafts)
                         Section(header: "Reconciliation Hints",     items: brief?.reconciliationHints)
-                        Section(header: "Morning Priorities",       items: brief?.morningPriorities)
+                        // Day-part-aware label so the brief reads "Afternoon
+                        // Priorities" / "Evening Priorities" when opened later
+                        // in the day — never a stale "Morning" all day.
+                        Section(header: "\(SparkBriefStore.dayPartLabel(forSampledAt: brief?.sampledAt)) Priorities",
+                                items: brief?.morningPriorities)
                     case .dispatcher:
                         Section(header: "Assignments",      items: brief?.assignments)
                         Section(header: "Driver Scorecards", items: brief?.scorecards)
