@@ -18,7 +18,15 @@
 import Foundation
 import SwiftUI
 
-struct WeatherSnapshot: Hashable {
+// Level-100 / always-on doctrine (2026-06-19): the home weather widget
+// must NEVER show "unavailable". The whole snapshot graph is `Codable`
+// so the last-good REAL reading can be persisted to disk (UserDefaults
+// JSON) and survive a cold relaunch — see `WeatherService.cachedSnapshot`.
+// Codability is render-fidelity-preserving (hourly + daily + alerts +
+// lane impact all round-trip); the computed `Color` helpers on the enums
+// are unaffected (computed props aren't encoded). Nothing fabricated:
+// only a genuinely fetched snapshot is ever written.
+struct WeatherSnapshot: Hashable, Codable {
     /// "Meridian, MS"
     let city: String
     /// Current temperature in whole Fahrenheit.
@@ -98,7 +106,7 @@ struct WeatherSnapshot: Hashable {
     var alerts: [SevereAlert] = []
 
     /// One hour in the hourly band.
-    struct HourlyForecast: Hashable, Identifiable {
+    struct HourlyForecast: Hashable, Identifiable, Codable {
         let date: Date
         let tempF: Int
         /// SF Symbol for the hour's condition (legacy paths + a11y).
@@ -134,7 +142,7 @@ struct WeatherSnapshot: Hashable {
     /// NWS CAP ("Minor" | "Moderate" | "Severe" | "Extreme") — the same
     /// strings HERE Destination Weather passes through on `nwsAlerts`
     /// and api.weather.gov returns on /alerts/active.
-    struct SevereAlert: Hashable, Identifiable {
+    struct SevereAlert: Hashable, Identifiable, Codable {
         /// "Winter Storm Warning"
         let event: String
         let severity: AlertSeverity
@@ -156,7 +164,7 @@ struct WeatherSnapshot: Hashable {
     }
 
     /// NWS CAP severity ladder.
-    enum AlertSeverity: String, Hashable, Comparable {
+    enum AlertSeverity: String, Hashable, Comparable, Codable {
         case minor, moderate, severe, extreme, unknown
 
         init(capString: String?) {
@@ -195,7 +203,7 @@ struct WeatherSnapshot: Hashable {
     }
 
     /// A single day in the 5-day look-ahead.
-    struct DailyForecast: Hashable, Identifiable {
+    struct DailyForecast: Hashable, Identifiable, Codable {
         /// Midnight in the driver's local timezone for the day this
         /// forecast represents. Used as the list id + label source.
         let date: Date
@@ -227,7 +235,7 @@ struct WeatherSnapshot: Hashable {
         }
     }
 
-    enum Accent: Hashable {
+    enum Accent: String, Hashable, Codable {
         case calm
         case watch
         case warn
@@ -247,7 +255,7 @@ struct WeatherSnapshot: Hashable {
     /// the "Conditions · Tomorrow.io" attribution; the rest keep their
     /// own honest provenance so the source line never lies about where
     /// a number came from.
-    enum DataSource: String, Hashable {
+    enum DataSource: String, Hashable, Codable {
         case tomorrowIO   // server weather.byLatLon (Tomorrow.io-backed)
         case weatherKit   // Apple WeatherKit
         case nws          // api.weather.gov
@@ -273,7 +281,7 @@ struct WeatherSnapshot: Hashable {
     /// The single hero/collapsed government alert in the v2 shape. The
     /// CAP `alerts[]` array (used by the flip side) is the full list;
     /// this is the one promoted to the bar + pill.
-    struct ActiveAlert: Hashable {
+    struct ActiveAlert: Hashable, Codable {
         /// "Flood watch"
         let title: String
         let severity: AlertSeverity
@@ -292,7 +300,7 @@ struct WeatherSnapshot: Hashable {
 
     /// Transport mode of a lane-impact segment — picks the mode chip
     /// glyph + tint in the LANE IMPACT panel.
-    enum LaneMode: String, Hashable {
+    enum LaneMode: String, Hashable, Codable {
         case truck, rail, vessel
 
         var color: Color {
@@ -310,7 +318,7 @@ struct WeatherSnapshot: Hashable {
     /// §3 contract vocabulary is `none|watch|elevated|severe`. The legacy
     /// case was `.clear`; the server emits `"none"` (and "clear" for the
     /// older payloads), so the decoder maps both onto `.none`.
-    enum RiskTier: String, Hashable, Comparable {
+    enum RiskTier: String, Hashable, Comparable, Codable {
         case none, watch, elevated, severe
 
         var rank: Int {
@@ -337,7 +345,7 @@ struct WeatherSnapshot: Hashable {
     /// §3 `peakLeg: { label, time } | null` — the worst leg the route
     /// reduction surfaced ("I-35", "4 PM"). Drawn as the danger band's
     /// position + label on the route-cell diagram.
-    struct PeakLeg: Hashable {
+    struct PeakLeg: Hashable, Codable {
         /// "I-35" / "Lenexa–Shawnee segment" / "Port of Houston berth".
         let label: String
         /// "4 PM" / "14:00–18:00".
@@ -358,7 +366,7 @@ struct WeatherSnapshot: Hashable {
     /// rail YARD VIS/CROSSWIND/STREAMFLOW · vessel SIG WAVE/GUST @ BERTH/
     /// VISIBILITY). `value` is the formatted live reading or "—" when the
     /// Tomorrow.io field was absent — never fabricated.
-    struct Driver: Hashable, Identifiable {
+    struct Driver: Hashable, Identifiable, Codable {
         /// "CROSSWIND" / "SIG WAVE" / "STREAMFLOW".
         let field: String
         /// "31 mph" / "2.4 m" / "Rising" / "—".
@@ -371,7 +379,7 @@ struct WeatherSnapshot: Hashable {
     /// actionable suggestion, server-authored from the route reduction.
     /// `action` is the highlighted verb-phrase ("Move pickup to 1:30 PM"),
     /// `protects` the outcome it preserves ("the Dallas appointment").
-    struct Recommendation: Hashable {
+    struct Recommendation: Hashable, Codable {
         /// The framing clause — "the cell crosses the I-35 leg at 4 PM".
         let text: String
         /// The highlighted action — "Move pickup to 1:30 PM".
@@ -394,7 +402,7 @@ struct WeatherSnapshot: Hashable {
     /// collapsed strip needs the compact delay). When the server supplies
     /// the structured §3 form the diagram + ESang panel read from it;
     /// when only the legacy flat form arrives they degrade through these.
-    struct LaneImpactSegment: Hashable, Identifiable {
+    struct LaneImpactSegment: Hashable, Identifiable, Codable {
         // ── §3 contract fields ──────────────────────────────────────
         /// "LD-260615"
         let loadId: String

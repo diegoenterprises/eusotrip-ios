@@ -107,24 +107,84 @@ final class WeatherService: NSObject, ObservableObject {
     /// the driver isn't actually at violated §3 "no-mock" and the 2027
     /// motivation "no fake data" pledge. The dashboard's new
     /// `weatherAvailability` state carries the reason up to the view.
-    /// In-memory last-good snapshot, seeded on every successful fetch. A
-    /// returning view (navigation back, app foreground) renders the weather
-    /// INSTANTLY from this instead of flashing a loading skeleton while the
-    /// live fetch runs. Not a fabrication — it's the most recent REAL
-    /// reading, and it's only ever replaced by a newer real one.
+    /// In-memory last-good snapshot, seeded on every successful fetch AND
+    /// lazily rehydrated from disk on first access (see `cachedSnapshot`).
+    /// A returning view (navigation back, app foreground) renders the
+    /// weather INSTANTLY from this instead of flashing a loading skeleton
+    /// while the live fetch runs. Not a fabrication — it's the most recent
+    /// REAL reading, and it's only ever replaced by a newer real one.
+    ///
+    /// `nil` here is ambiguous (never fetched THIS session vs. genuinely
+    /// no cache), so reads go through `cachedSnapshot`, which falls back to
+    /// the persisted blob. Direct writes are funnelled through
+    /// `storeSnapshot(_:)` so the disk copy always stays in lock-step.
     static private(set) var lastSnapshot: WeatherSnapshot?
 
+    /// True once we've attempted to rehydrate `lastSnapshot` from disk this
+    /// process, so the (potentially expensive) JSON decode happens at most
+    /// once per launch.
+    static private var didHydrateFromDisk = false
+
+    /// UserDefaults key for the persisted last-good snapshot JSON. Stable
+    /// across launches + app versions so a cold start always finds the
+    /// most recent REAL reading. Versioned suffix lets us invalidate the
+    /// blob safely if the Codable shape ever changes.
+    private static let persistedSnapshotKey = "eusotrip.weather.lastGoodSnapshot.v1"
+
     /// The cached last-good snapshot, if any. Consumers show it immediately
-    /// and refresh in the background.
-    static var cachedSnapshot: WeatherSnapshot? { lastSnapshot }
+    /// and refresh in the background. On the FIRST access of a process this
+    /// rehydrates the in-memory copy from the persisted disk blob, so a
+    /// COLD launch (where the static `lastSnapshot` is nil) still paints the
+    /// most recent REAL reading instantly instead of a skeleton/"unavailable".
+    static var cachedSnapshot: WeatherSnapshot? {
+        if lastSnapshot == nil, !didHydrateFromDisk {
+            didHydrateFromDisk = true
+            lastSnapshot = loadPersistedSnapshot()
+        }
+        return lastSnapshot
+    }
 
     /// Public entry point — fetches a fresh snapshot and updates the
-    /// last-good cache. Returns nil on failure; the caller keeps showing
-    /// the cache / an honest empty state rather than a blank/stuck card.
+    /// last-good cache (memory + disk). Returns nil on failure; the caller
+    /// keeps showing the cache / an honest empty state rather than a
+    /// blank/stuck card.
     func fetchCurrent() async -> WeatherSnapshot? {
         let snap = await fetchCurrentUncached()
-        if let snap { Self.lastSnapshot = snap }
+        if let snap { Self.storeSnapshot(snap) }
         return snap
+    }
+
+    /// Persist a freshly fetched REAL snapshot to both the in-memory cache
+    /// and disk. Only ever called from `fetchCurrent()` with a genuinely
+    /// fetched snapshot — never a fabricated/placeholder value — so the
+    /// persisted blob is always honest live data.
+    private static func storeSnapshot(_ snap: WeatherSnapshot) {
+        lastSnapshot = snap
+        didHydrateFromDisk = true   // memory is now authoritative
+        do {
+            let data = try JSONEncoder().encode(snap)
+            UserDefaults.standard.set(data, forKey: persistedSnapshotKey)
+        } catch {
+            // Persistence is best-effort: a failed encode just means the
+            // next cold start falls back to the loading/needs-location
+            // state. The in-memory cache still serves this session.
+            print("[WeatherService] failed to persist weather snapshot — \(error.localizedDescription)")
+        }
+    }
+
+    /// Decode the persisted last-good snapshot from disk, if any. Returns
+    /// nil when nothing was ever stored or the blob can't decode (shape
+    /// drift) — both honest "no cache yet" outcomes, never a fabrication.
+    private static func loadPersistedSnapshot() -> WeatherSnapshot? {
+        guard let data = UserDefaults.standard.data(forKey: persistedSnapshotKey) else {
+            return nil
+        }
+        do {
+            return try JSONDecoder().decode(WeatherSnapshot.self, from: data)
+        } catch {
+            print("[WeatherService] failed to decode persisted weather snapshot — \(error.localizedDescription)")
+            return nil
+        }
     }
 
     private func fetchCurrentUncached() async -> WeatherSnapshot? {

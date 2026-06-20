@@ -14,9 +14,24 @@
 //  ALWAYS present on every role home:
 //
 //    • data         → the shared `WeatherCard` (the real bespoke widget)
-//    • loading      → a bespoke skeleton, so the slot is occupied instantly
+//    • loading      → a bespoke "Updating weather…" placeholder
 //    • needsLocation→ an "Enable location" CTA that fires the system prompt
-//    • unavailable  → an honest "Weather unavailable · Tap to retry" card
+//
+//  ALWAYS-ON doctrine (founder mandate 2026-06-19): the widget must NEVER
+//  show "unavailable"/"not available" — not on a screen revisit, a cold
+//  launch, a fetch error, or with no network. Two guarantees enforce this:
+//
+//    1. The last-good REAL snapshot is PERSISTED to disk
+//       (`WeatherService.cachedSnapshot`), so a COLD launch seeds straight
+//       into `.data` from the most recent reading instead of a skeleton.
+//    2. `refresh()` NEVER flips to a "no data" state while ANY cache exists
+//       (memory or disk): a failed fetch KEEPS the last-good card on screen
+//       and schedules a silent faster retry.
+//
+//  The "no data yet" placeholder is reachable ONLY on a brand-new install
+//  whose very first fetch failed AND that has no persisted cache — and even
+//  then it renders a soft, branded "Updating weather…" placeholder that
+//  keeps silently retrying. The word "unavailable" can never render.
 //
 //  Zero fabrication (no invented readings — nil stays honest) and zero SF
 //  Symbols (bespoke-weather doctrine: every glyph via WeatherIcons / shapes).
@@ -37,7 +52,10 @@ struct HomeWeatherWidget: View {
         case loading
         case data(WeatherSnapshot)
         case needsLocation
-        case unavailable
+        // Reachable ONLY on a brand-new install whose first fetch failed
+        // with no persisted cache. Renders the soft "Updating weather…"
+        // placeholder (NEVER the word "unavailable") and keeps retrying.
+        case updating
     }
     @State private var phase: Phase = .loading
     /// True once the first fetch resolves — gates the skeleton so a
@@ -90,7 +108,7 @@ struct HomeWeatherWidget: View {
         case .loading: return 0
         case .data: return 1
         case .needsLocation: return 2
-        case .unavailable: return 3
+        case .updating: return 3
         }
     }
 
@@ -102,8 +120,10 @@ struct HomeWeatherWidget: View {
             HomeWeatherSkeleton()
         case .needsLocation:
             HomeWeatherEnableLocationCard(onTap: handleEnableTap)
-        case .unavailable:
-            HomeWeatherUnavailableCard(onRetry: { Task { await refresh(force: true) } })
+        case .updating:
+            // NOT an error — a soft, branded placeholder that keeps
+            // silently retrying. Never renders the word "unavailable".
+            HomeWeatherUpdatingCard()
         }
     }
 
@@ -114,8 +134,10 @@ struct HomeWeatherWidget: View {
         while !Task.isCancelled {
             // Back off briefly after a FAILED fetch so a transient weather
             // outage self-heals in ~45s instead of forcing the full 600s wait
-            // (or an app restart) — founder feedback #20.
-            let failed: Bool = { if case .unavailable = phase { return true } else { return false } }()
+            // (or an app restart) — founder feedback #20. Applies to the
+            // brand-new-install `.updating` placeholder too, so it keeps
+            // silently retrying until the very first reading lands.
+            let failed: Bool = { if case .updating = phase { return true } else { return false } }()
             let wait: UInt64 = failed ? 45 * 1_000_000_000 : refreshInterval
             try? await Task.sleep(nanoseconds: wait)
             if Task.isCancelled { break }
@@ -124,13 +146,26 @@ struct HomeWeatherWidget: View {
     }
 
     private func refresh(force: Bool = false) async {
-        // Show the skeleton only on the FIRST load (or an explicit retry).
-        // A live/foreground refresh updates the card in place so it never
-        // flashes back to a skeleton under the user.
-        if force || !hasLoadedOnce { phase = .loading }
+        // The persisted/in-memory last-good snapshot — survives a cold
+        // launch, so on EVERY refresh (including the very first of a fresh
+        // process) we know whether weather has ever loaded for this device.
+        let cache = WeatherService.cachedSnapshot
+
+        // If we have ANY cache (memory or disk), paint it INSTANTLY and
+        // never fall to a skeleton — even an explicit retry refreshes the
+        // card in place over the last-good reading.
+        if let cache, !hasLoadedOnce {
+            phase = .data(cache)
+            hasLoadedOnce = true
+        } else if force || !hasLoadedOnce {
+            // No cache at all (brand-new install) → the only time we show
+            // the loading placeholder.
+            phase = .loading
+        }
+
         // Bound the FIRST load so a stalled upstream chain can't leave the
-        // skeleton spinning for minutes; once we have data the live refresh
-        // runs unbounded in the background (it never shows a skeleton).
+        // placeholder spinning for minutes; once we have data the live
+        // refresh runs unbounded in the background (it never shows loading).
         let snap = hasLoadedOnce
             ? await WeatherService.shared.fetchCurrent()
             : await fetchBounded(ceiling: firstLoadCeiling)
@@ -139,15 +174,26 @@ struct HomeWeatherWidget: View {
             hasLoadedOnce = true
             return
         }
-        // Honest reason-aware empty state — distinguish "we never asked for
-        // location" from "granted but momentarily unavailable".
+
+        // Fetch failed. NEVER leave the weather surface blank/"unavailable":
+        //  • If a cache exists (memory or disk), KEEP showing it. The
+        //    auto-refresh loop already retries faster on a miss.
+        let liveCache = WeatherService.cachedSnapshot
+        if let liveCache {
+            phase = .data(liveCache)
+            hasLoadedOnce = true
+            return
+        }
+        //  • No cache AND we've truly never loaded. Distinguish a real,
+        //    actionable permission ask from a transient first-fetch miss.
         switch WeatherService.shared.authorizationStatus {
         case .notDetermined, .denied, .restricted:
             phase = .needsLocation
         default:
-            // A transient miss AFTER we already had data keeps the last-good
-            // card on screen; only show "unavailable" if we never had data.
-            if !hasLoadedOnce { phase = .unavailable }
+            // Granted but the brand-new install's first fetch missed: show
+            // the soft "Updating weather…" placeholder (NOT "unavailable")
+            // and keep silently retrying until the first reading lands.
+            if !hasLoadedOnce { phase = .updating }
         }
     }
 
@@ -221,39 +267,72 @@ private struct HomeWeatherEnableLocationCard: View {
     }
 }
 
-// MARK: - Honest unavailable state (bespoke)
+// MARK: - Soft "Updating weather…" placeholder (bespoke)
+//
+// The ONLY non-data, non-permission state, and it is reachable ONLY on a
+// brand-new install whose first fetch missed with NO persisted cache.
+// Founder mandate (2026-06-19): the widget must NEVER show "unavailable"/
+// "not available". This is deliberately framed as an in-progress update,
+// not an error — a gentle last-known weather glyph + shimmer that keeps
+// silently retrying (the auto-refresh loop backs off to ~45s in this
+// state). There is no error copy, no retry button, and no "unavailable"
+// text anywhere in this view.
 
-private struct HomeWeatherUnavailableCard: View {
-    var onRetry: () -> Void
+private struct HomeWeatherUpdatingCard: View {
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shimmer = false
 
     var body: some View {
-        Button(action: onRetry) {
-            HStack(alignment: .center, spacing: Space.s3) {
-                ZStack {
-                    Circle()
-                        .fill(palette.bgCardSoft)
-                        .frame(width: 48, height: 48)
-                    WeatherIcons.utility(.alert, size: 20, tint: palette.textSecondary)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Weather unavailable")
-                        .font(EType.body.weight(.semibold))
-                        .foregroundStyle(palette.textPrimary)
-                    Text("Couldn't reach a live reading right now. Tap to retry.")
-                        .font(EType.micro)
-                        .foregroundStyle(palette.textSecondary)
-                        .multilineTextAlignment(.leading)
-                }
-                Spacer(minLength: 0)
-                WeatherIcons.utility(.chev, size: 13, tint: palette.textTertiary)
+        HStack(alignment: .center, spacing: Space.s3) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient.diagonal.opacity(0.18))
+                    .frame(width: 48, height: 48)
+                // A soft, branded weather glyph (cloud) — last-known feel,
+                // never an alarm icon.
+                WeatherGlyph(kind: .cloudy)
+                    .frame(width: 26, height: 26)
+                    .opacity(0.85)
             }
-            .padding(Space.s3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .eusoCard(radius: Radius.lg)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Updating weather…")
+                    .font(EType.body.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                Text("Fetching the latest local conditions.")
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textSecondary)
+                    .multilineTextAlignment(.leading)
+            }
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Weather unavailable. Tap to retry.")
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg)
+        .overlay(shimmerSweep.clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)))
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: false)) {
+                shimmer = true
+            }
+        }
+        .accessibilityLabel("Updating weather")
+    }
+
+    @ViewBuilder private var shimmerSweep: some View {
+        if reduceMotion {
+            Color.clear
+        } else {
+            GeometryReader { geo in
+                LinearGradient(
+                    colors: [.clear, palette.textPrimary.opacity(0.05), .clear],
+                    startPoint: .leading, endPoint: .trailing
+                )
+                .frame(width: geo.size.width * 0.5)
+                .offset(x: shimmer ? geo.size.width : -geo.size.width * 0.5)
+            }
+            .allowsHitTesting(false)
+        }
     }
 }
 
