@@ -383,8 +383,37 @@ struct ShipperLockScreenLiveActivity: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/live-activity/\(activity.id)/open") {
-            inAppLink = EusoSafariLink(url: url)
+        // Open the tracked load's TARGET screen natively. The CTA used
+        // to load `…/live-activity/<id>/open` in an in-app Safari sheet,
+        // which re-mounted the live-activity list (mapper "live-
+        // activity"→232 — itself), losing the row's intent.
+        // `ctaTargetScreen` ("205 Load Detail") parses to a screen id;
+        // load-context targets route through the load-open path with the
+        // activity's loadId so the detail mounts on the real id.
+        if let target = ShipperWebToNativeMap.targetScreenId(from: activity.ctaTargetScreen) {
+            let lid = ShipperLoadIdResolver.normalize(activity.loadId)
+            if target == "222", let lid = lid {
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadOpenMap, object: nil,
+                    userInfo: ["loadId": lid]
+                )
+            } else if target == "205", let lid = lid {
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadOpen, object: nil,
+                    userInfo: ["loadId": lid]
+                )
+            } else if target == "205" || target == "222" {
+                // Load-context target with no resolvable id — fall to the
+                // loads list rather than mount a bare 205/222 sentinel.
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadListOpen, object: nil
+                )
+            } else {
+                NotificationCenter.default.post(
+                    name: .eusoShipperNavSwap, object: nil,
+                    userInfo: ["screenId": target]
+                )
+            }
         }
     }
 
@@ -398,9 +427,13 @@ struct ShipperLockScreenLiveActivity: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/live-activity") {
-            inAppLink = EusoSafariLink(url: url)
-        }
+        // Manage-surfaces opens Settings (211) natively (single
+        // scrolling Settings screen — the whole settings/<feature>
+        // family lands there). Previously an in-app Safari sheet.
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "211"]
+        )
     }
 }
 

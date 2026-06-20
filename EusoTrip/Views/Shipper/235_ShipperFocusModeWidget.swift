@@ -333,6 +333,11 @@ struct ShipperFocusModeWidget: View {
     // MARK: - Tap handlers (§20.4 no dead buttons)
 
     private func tapTestFocusWidget() {
+        // Local preview of the active Focus widget — a confirming haptic
+        // pulse. (Was a Safari sheet to `…/focus/test/<id>` that
+        // re-mounted this list; the openURL was a placeholder.) The
+        // telemetry post drives the API-layer preview/donation.
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         NotificationCenter.default.post(
             name: .eusoShipperFocusTestWidget,
             object: nil,
@@ -343,12 +348,12 @@ struct ShipperFocusModeWidget: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/focus/test/\(activeProfile.id)") {
-            inAppLink = EusoSafariLink(url: url)
-        }
     }
 
     private func tapProfileToggle(_ profile: FocusProfile) {
+        // In-place enable/disable — telemetry persists, selection haptic
+        // confirms. (Was a Safari sheet that re-mounted this list.)
+        UISelectionFeedbackGenerator().selectionChanged()
         NotificationCenter.default.post(
             name: .eusoShipperFocusProfileToggle,
             object: nil,
@@ -359,12 +364,12 @@ struct ShipperFocusModeWidget: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/focus/profile/\(profile.id)/toggle") {
-            inAppLink = EusoSafariLink(url: url)
-        }
     }
 
     private func tapProfileRow(_ profile: FocusProfile) {
+        // In-place row selection — preview haptic + telemetry, no nav.
+        // (Was a Safari sheet that re-mounted this list.)
+        UISelectionFeedbackGenerator().selectionChanged()
         NotificationCenter.default.post(
             name: .eusoShipperFocusProfileRow,
             object: nil,
@@ -376,12 +381,11 @@ struct ShipperFocusModeWidget: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/focus/profile/\(profile.id)") {
-            inAppLink = EusoSafariLink(url: url)
-        }
     }
 
     private func tapManageFocusProfiles() {
+        // Manage opens Settings (211) natively (single scrolling Settings
+        // screen). Previously a Safari sheet to `/shipper/settings/focus`.
         NotificationCenter.default.post(
             name: .eusoShipperFocusManageProfiles,
             object: nil,
@@ -391,9 +395,10 @@ struct ShipperFocusModeWidget: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/focus") {
-            inAppLink = EusoSafariLink(url: url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "211"]
+        )
     }
 }
 

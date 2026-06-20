@@ -117,6 +117,11 @@ struct ShipperRFPDetail: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @StateObject private var store: ShipperRFPDetailStore
+    /// "View all N bids" — reveals every ranked bid IN PLACE instead of
+    /// the prior browser-bounce to `/shipper/rfp/<id>/bids` (which the
+    /// mapper dropped to the RFP LIST, losing this RFP's id). The full
+    /// ranked thread is already loaded via `getBidResponses(rfpId:)`.
+    @State private var showAllBids: Bool = false
 
     init(rfpId: String = "0") {
         self.rfpId = rfpId
@@ -265,11 +270,19 @@ struct ShipperRFPDetail: View {
                 let compact = ranked.count > 3 ? ranked[3] : nil
 
                 VStack(spacing: Space.s3) {
-                    ForEach(topThree, id: \.bid.id) { row in
-                        bidRowView(row)
-                    }
-                    if let compact {
-                        compactBidRowView(compact)
+                    if showAllBids {
+                        // Expanded — every ranked bid as a full row.
+                        ForEach(ranked, id: \.bid.id) { row in
+                            bidRowView(row)
+                        }
+                    } else {
+                        // Collapsed — top 3 full rows + a compact 4th.
+                        ForEach(topThree, id: \.bid.id) { row in
+                            bidRowView(row)
+                        }
+                        if let compact {
+                            compactBidRowView(compact)
+                        }
                     }
                 }
                 .padding(.horizontal, Space.s3)
@@ -788,7 +801,9 @@ struct ShipperRFPDetail: View {
 
     private func viewAllLink(_ count: Int) -> some View {
         Button(action: tapViewAll) {
-            Text("View all \(count) bids → composite-score ranked")
+            Text(showAllBids
+                 ? "Show top bids only"
+                 : "View all \(count) bids → composite-score ranked")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(LinearGradient.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -797,17 +812,20 @@ struct ShipperRFPDetail: View {
     }
 
     private func tapViewAll() {
+        // Toggle the full ranked bid thread IN PLACE — this RFP's bids
+        // are already loaded (`getBidResponses(rfpId:)`). Previously
+        // `openURL("/shipper/rfp/<id>/bids")` browser-bounced to the RFP
+        // LIST (the mapper dropped the id), losing this RFP's bid thread.
         NotificationCenter.default.post(
             name: .eusoShipperRfpDetailViewAll,
             object: nil,
             userInfo: [
                 "source": "228_ShipperRFPDetail",
-                "rfpId": rfpId
+                "rfpId": rfpId,
+                "expanded": !showAllBids
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/rfp/\(rfpId)/bids") {
-            openURL(url)
-        }
+        withAnimation(.easeInOut(duration: 0.22)) { showAllBids.toggle() }
     }
 
     // MARK: Error

@@ -180,19 +180,49 @@ struct DriverSurfaceHost: View {
 ///   • strips the `load_` prefix (case-insensitive)
 ///   • rejects empty / whitespace ids
 ///   • rejects non-positive numeric ids (the registry sentinel)
+///   • rejects reserved action keywords ("search", "new", …) so a
+///     `/shipper/loads/<keyword>` path can never become a bogus load
+///     id → 205 → server null → forever-skeleton (founder "Load not
+///     found" class; the 225 call-site was patched 2026-06-19 but the
+///     resolver trap stayed open for every other caller)
+///   • rejects ids that are NEITHER positive-numeric NOR a recognized
+///     loadNumber form (`^LD-` / `^load_`) — a non-numeric, non-
+///     loadNumber keyword has no chance of resolving server-side
 ///   • passes loadNumber forms ("LD-…") through untouched — the
 ///     server's resolveLoadId handles those via loadNumber lookup
 enum ShipperLoadIdResolver {
+    /// Reserved non-id action segments that can appear in a
+    /// `/shipper/loads/<seg>` path. None of these is ever a load id —
+    /// they are list-level actions (search/new/filter/…) whose
+    /// destination is NOT a load-detail mount. Treated as "no id" so
+    /// the caller falls back to the loads list (201) instead of
+    /// mounting 205 on garbage.
+    static let reservedSegments: Set<String> = [
+        "search", "new", "filter", "map", "create", "import", "bulk",
+    ]
+
     static func normalize(_ raw: String?) -> String? {
         guard var id = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
               !id.isEmpty else { return nil }
-        if id.lowercased().hasPrefix("load_") {
+        // Reject reserved action keywords up front (case-insensitive),
+        // before any prefix-stripping, so `/loads/search` etc. never
+        // survive normalization.
+        if reservedSegments.contains(id.lowercased()) { return nil }
+        let hadLoadPrefix = id.lowercased().hasPrefix("load_")
+        if hadLoadPrefix {
             id = String(id.dropFirst("load_".count))
                 .trimmingCharacters(in: .whitespacesAndNewlines)
         }
         guard !id.isEmpty else { return nil }
-        if let n = Int(id), n <= 0 { return nil }
-        return id
+        // Numeric id: accept iff positive (the registry sentinel is 0).
+        if let n = Int(id) { return n > 0 ? id : nil }
+        // Non-numeric: only a recognized loadNumber form can resolve
+        // server-side. Accept `LD-…` (canonical loadNumber) and the
+        // `load_…`-prefixed form we just unwrapped. Anything else is a
+        // stray keyword/garbage segment → reject so 205 never mounts.
+        if hadLoadPrefix { return id }
+        if id.uppercased().hasPrefix("LD-") { return id }
+        return nil
     }
 }
 
@@ -1053,10 +1083,33 @@ enum ShipperWebToNativeMap {
              "recurring":             return "221"
         case "documents",
              "document-center":       return "226"
-        case "settlements":           return "206"
+        // `/shipper/settlements` (bare / list) → 206. But
+        // `/shipper/settlements/<id>/documents/<doc>` is a REAL document
+        // (POD / rate-conf / invoice / lumper / detention / receipt) —
+        // a PDF/web resource that must open in the browser/QuickLook,
+        // NOT be intercepted to the settlements list (which dropped the
+        // id + doc and stranded the user on 206). Return nil for the
+        // documents sub-path so it falls through to the system action.
+        case "settlements":
+            if segments.count >= 4, segments[2] == "documents" {
+                return nil
+            }
+            if segments.count >= 5, segments[3] == "documents" {
+                return nil
+            }
+            return "206"
         case "settlement":            return "227"
         case "payment-methods",
              "payment-method":        return "208"
+        // `bol`/`bols` → registry id "228" = ShipperBOLs (the BOLs
+        // LIST). NOTE: registry ids are NOT the file numbers — file
+        // 228_ShipperRFPDetail registers as "228b", and registry "228"
+        // is the BOLs list (ContentView 711). So this mapping is
+        // CORRECT (a bare `/shipper/bol` link opens the BOL list). The
+        // `/shipper/bol/<id>/audit-trail` sub-resource (229 BOL Upload's
+        // "View audit trail" CTA) is a SHA-256-chain web document opened
+        // in-app via SFSafariViewController on that screen — it never
+        // routes through this mapper, so the audit trail is preserved.
         case "bol",
              "bols":                  return "228"
         case "rfp",
@@ -1076,6 +1129,22 @@ enum ShipperWebToNativeMap {
         case "hot-zones":             return "225"
         case "rate-board":            return "220"
         case "settings":              return "211"
+        // `/shipper/push/<id>/open` (231 hero CTA) and
+        // `/shipper/push/category/<id>` (231 category row) were MISSING
+        // a case → fell through to `.systemAction` → browser-bounced.
+        // Map to 231 (the Push Notification Landing) so any push
+        // deep-link stays in-app. `/shipper/settings/push` is handled
+        // by `case "settings"` below (→ 211) and is unaffected.
+        case "push":                  return "231"
+        // `/shipper/contacts/new` is an INTENTIONAL web continuation in
+        // the audit's original read, BUT 209 now ships a native
+        // `AddContactSheet`, so its add-contact CTAs present the sheet
+        // locally and no longer emit this URL. Returning nil keeps any
+        // legacy/external `contacts` deep-link on the system action
+        // (correct — there is no list-level native `contacts` route to
+        // mount; the contacts list is reached via the Me hub, not a
+        // deep-link). Documented so it is not re-flagged as a gap.
+        case "contacts":              return nil
         case "live-activity":         return "232"
         case "watch":                 return "233"
         case "haptic":                return "234"
@@ -1092,7 +1161,20 @@ enum ShipperWebToNativeMap {
         // requires a load id — `loadId(for:)` below extracts it and
         // the openURL interceptor routes through the load-open path
         // so 205 never mounts on the registry sentinel (Wave I1).
-        case "loads":                 return segments.count >= 3 ? "205" : "201"
+        //
+        // Keyword-leak guard — `/shipper/loads/<keyword>` where the
+        // third segment is a reserved list-level action (search / new /
+        // filter / …) is NOT a detail link. Map it to the loads LIST
+        // (201) so it never tries to mount 205 on a non-id segment.
+        // (Resolver `normalize`/`loadId(for:)` reject the same set; this
+        // keeps the mapper honest at the screen-id layer too — the
+        // founder-reported `/loads/search` "Load not found" class.)
+        case "loads":
+            if segments.count >= 3,
+               ShipperLoadIdResolver.reservedSegments.contains(segments[2].lowercased()) {
+                return "201"
+            }
+            return segments.count >= 3 ? "205" : "201"
         case "load":                  return "205"
         case "market-intelligence",
              "market-pricing",
@@ -1116,7 +1198,77 @@ enum ShipperWebToNativeMap {
               segments[1] == "load" || segments[1] == "loads" else {
             return nil
         }
-        return segments[2]
+        let candidate = segments[2]
+        // Keyword-leak guard — `/shipper/loads/search` (and the rest of
+        // the reserved action family) must NOT be handed back as a load
+        // id. Returning nil here makes the openURL interceptor fall the
+        // bare `loads` deep-link to the loads list (201) instead of
+        // mounting 205 on a non-resolvable segment. `normalize` enforces
+        // the same set, but rejecting here keeps the bogus id from ever
+        // reaching the load-open path. (Resolver-level durable fix for
+        // the whole `/loads/<non-numeric>` family.)
+        if ShipperLoadIdResolver.reservedSegments.contains(candidate.lowercased()) {
+            return nil
+        }
+        return candidate
+    }
+
+    /// Parses a leading screen-id number out of a human-readable
+    /// `targetScreen` label and returns it iff it is a real shipper
+    /// screen. The device-feature leaf screens (231-240) carry their
+    /// row CTAs' destinations as strings like:
+    ///
+    ///   "212 Control Tower"            → "212"
+    ///   "→ 205 Load Detail"           → "205"
+    ///   "212 Control Tower · ACTIVE"  → "212"
+    ///   "231 Push Notification Landing"→ "231"
+    ///
+    /// Those CTAs used to round-trip through `openURL` / an in-app
+    /// Safari sheet (or re-mount their own list); this lets them swap
+    /// natively to the labelled screen instead. Returns nil when the
+    /// label has no leading screen number or the number is not a
+    /// shipper-renderable screen (honest: the caller keeps the user on
+    /// the current screen rather than navigating somewhere fake).
+    ///
+    /// IMPORTANT — these labels carry the WIREFRAME number, which is NOT
+    /// always the registry id (the "iOS numbering vs SVG catalog"
+    /// hazard: file 229_BOLUpload registers as "229b"; registry "229" is
+    /// Allocations). So we reconcile by PURPOSE (the trailing name)
+    /// FIRST, then fall back to the leading number only when the name is
+    /// unrecognized AND the number is a real shipper screen. This stops
+    /// "229 BOL Upload" from mis-routing to Allocations.
+    static func targetScreenId(from label: String?) -> String? {
+        guard let label = label else { return nil }
+        let lower = label.lowercased()
+
+        // Purpose-first reconciliation for the labels these leaf screens
+        // actually emit. Match the screen NAME, return the real registry
+        // id. (Name match wins over the embedded wireframe number.)
+        if lower.contains("bol upload")              { return "229b" }  // not "229" (Allocations)
+        if lower.contains("load detail")             { return "205" }
+        if lower.contains("control tower")           { return "212" }
+        if lower.contains("push notification")       { return "231" }
+        if lower.contains("live activity")           { return "232" }
+        if lower.contains("watch complication")      { return "233" }
+        if lower.contains("rfp")                     { return "215" }
+        if lower.contains("settlement")              { return "227" }
+        if lower.contains("live tracking")           { return "222" }
+
+        // Fallback — the first run of digits is the wireframe number;
+        // accept it only when it is a real shipper screen.
+        var digits = ""
+        var started = false
+        for ch in label {
+            if ch.isNumber { digits.append(ch); started = true }
+            else if started { break }   // stop at the first non-digit after digits began
+        }
+        guard !digits.isEmpty else { return nil }
+        // Only return ids this surface can actually render — an
+        // out-of-role / unknown number must NOT navigate anywhere.
+        guard RoleAccess.canRender(role: .shipper, screenId: digits) else {
+            return nil
+        }
+        return digits
     }
 }
 
