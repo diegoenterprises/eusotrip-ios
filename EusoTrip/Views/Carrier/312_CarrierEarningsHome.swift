@@ -88,6 +88,11 @@ private struct EarningsBody: View {
             link(icon: "creditcard", title: "Settlements", screen: "313")
             link(icon: "fuelpump", title: "Fuel cards", screen: "314")
             link(icon: "wrench.fill", title: "Maintenance (Zeun)", screen: "315")
+            // Wallet card style — the pickup-pass look picker. Mirrors the shipper
+            // (290) / driver (069) / catalyst (319) Wallet hub row. Pushes the shared
+            // "WalletCardStyleCatalyst" screen (the catalyst/carrier pool entry) via
+            // the same .eusoCarrierNavSwap signal — a horizontal push, never a slide-up.
+            link(icon: "sparkles", title: "Wallet card style", screen: "WalletCardStyleCatalyst")
         }
     }
 

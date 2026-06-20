@@ -187,6 +187,8 @@ private struct WalletBody: View {
 
                 ledgerSection
 
+                walletCardStyleRow
+
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 8)
@@ -212,6 +214,54 @@ private struct WalletBody: View {
             }
             .shadow(color: Brand.magenta.opacity(isDark ? 0.45 : 0.22), radius: 10, x: 0, y: 4)
         }
+    }
+
+    // MARK: Wallet card style row (pickup-pass look picker)
+    //
+    // Mirrors the shipper Wallet hub's "Wallet card style" row (290 §Manage) and
+    // the driver one (069). The same pure WalletCardPickerView is registered for
+    // the catalyst/carrier pool as "WalletCardStyleCatalyst"; this row pushes it
+    // through the catalyst/carrier nav signal (`.eusoCarrierNavSwap`, which
+    // CarrierSurface — the catalyst alias surface — observes) — a horizontal push,
+    // never a slide-up. Same drawn-glyph idiom as the rest of this surface.
+
+    private var walletCardStyleRow: some View {
+        Button {
+            NotificationCenter.default.post(
+                name: .eusoCarrierNavSwap, object: nil,
+                userInfo: ["screenId": "WalletCardStyleCatalyst"]
+            )
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient(colors: [Brand.blue.opacity(0.14), Brand.magenta.opacity(0.14)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    WalletGlyph(kind: .spark, size: 16,
+                                tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Wallet card style")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Pick the look of your pickup pass")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                WalletGlyph(kind: .chevron, size: 13,
+                            tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+            }
+            .padding(Space.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .eusoCard(radius: Radius.lg, intensity: .standard)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Loading / error (bespoke shimmer + drawn-glyph error)

@@ -372,7 +372,18 @@ final class WeatherService: NSObject, ObservableObject {
             return iso.date(from: s) ?? isoPlain.date(from: s)
         }
 
-        let condition = cur.condition ?? Self.tomorrowCondition(for: code)
+        // ── DATA-ACCURACY: the authoritative weatherCode is GROUND TRUTH ──
+        //
+        // Founder report: the home card read "Fog/Mist 34%" while Apple
+        // Weather showed "Thunderstorm 100%" at the same point/time. Root
+        // cause: a derived/coarse condition STRING (visibility- or
+        // humidity-flavoured "Fog/Mist" from an upstream that aggregated a
+        // wide cell) was being shown over a real SEVERE numeric code. The
+        // numeric `weatherCode` is the canonical observation — when it
+        // names a severe/authoritative condition the code's label WINS, so
+        // the headline can never coarsen a thunderstorm down to fog. For
+        // non-severe codes we still honour the server's nicer human string.
+        let condition = Self.canonicalCondition(code: code, serverString: cur.condition)
 
         // City — prefer the reverse-geocoded placemark (matches the rest
         // of the pipeline), else the server's, else honest fallback.
@@ -445,6 +456,17 @@ final class WeatherService: NSObject, ObservableObject {
 
         let nextAlert: String? = daily.first.map { "today · H \($0.highF)° / L \($0.lowF)°" }
 
+        // precipChancePct must reflect the REAL condition: a severe-precip
+        // code can never read a misleadingly low/absent chance. The server
+        // value wins when it's already at/above the code's implied floor;
+        // otherwise the floor is applied (honest minimum, not a fabricated
+        // exact number). Benign codes pass through untouched (incl. nil).
+        let serverPrecip = cur.precipPct.map { Int($0.rounded()) }
+        let resolvedPrecip: Int? = {
+            guard let floor = Self.precipFloor(forCode: code) else { return serverPrecip }
+            return max(serverPrecip ?? 0, floor)
+        }()
+
         var snap = WeatherSnapshot(
             city: city,
             tempF: Int(tF.rounded()),
@@ -458,10 +480,23 @@ final class WeatherService: NSObject, ObservableObject {
             feelsLikeF: cur.feelsC.map { Int(cToF($0).rounded()) },
             humidityPct: cur.humidity.map { Int($0.rounded()) },
             windGustMph: cur.windGustKph.map { Int(kphToMph($0).rounded()) },
-            precipChancePct: cur.precipPct.map { Int($0.rounded()) },
+            precipChancePct: resolvedPrecip,
             hourly: hourly
         )
         snap.weatherCode = code
+
+        // ── Sky-engine geometry: carry the REAL observation point ───────
+        // latitude + timezone + today's sunrise/sunset so the animated
+        // scene can pick the right time-of-day / season / sun-arc. Sunrise
+        // and sunset come off the first (today's) server daily entry; nil
+        // when the server omitted them (the snapshot helpers fall back to
+        // an honest hour gate). Never fabricated.
+        snap.latitude = lat
+        snap.timezoneId = placemark?.timeZone?.identifier
+        if let today = (server.daily ?? []).first {
+            snap.sunriseAt = parseDate(today.sunrise)
+            snap.sunsetAt  = parseDate(today.sunset)
+        }
         // Honest provenance from the server's own source tag. byLatLon is
         // WeatherKit-backed now (PR #101); credit Apple Weather, never a
         // retired provider.
@@ -668,6 +703,57 @@ final class WeatherService: NSObject, ObservableObject {
         case 7101: return "Heavy ice pellets"
         case 7102: return "Light ice pellets"
         default:   return "Cloudy"
+        }
+    }
+
+    // ── Condition ground-truth (the "missing thunderstorm" fix) ─────
+    //
+    // The numeric weatherCode is the canonical observation. These are the
+    // codes whose CONDITION must never be coarsened by a derived/visibility
+    // string — a real thunderstorm/heavy-rain/heavy-freezing/ice-pellet
+    // reading that an aggregating upstream might otherwise label "Fog/Mist".
+    // Severe codes own their label end to end so the headline matches the
+    // hourly + the animated scene.
+    static let severeWeatherCodes: Set<Int> = [
+        8000,                 // Thunderstorm
+        4201,                 // Heavy rain
+        4001,                 // Rain (authoritative — not "fog")
+        6201, 6001,           // Heavy / freezing rain
+        7101, 7000,           // Heavy / ice pellets
+        5101                  // Heavy snow
+    ]
+
+    /// Resolve the headline condition string with the numeric code as
+    /// GROUND TRUTH. For a severe/authoritative code the code's canonical
+    /// label always wins (so "Fog/Mist" can never shadow a thunderstorm).
+    /// For benign codes the server's friendlier human string is preferred
+    /// when present, falling back to the code label. Pure + allocation-free
+    /// beyond the returned string.
+    static func canonicalCondition(code: Int, serverString: String?) -> String {
+        if severeWeatherCodes.contains(code) {
+            return tomorrowCondition(for: code)
+        }
+        if let s = serverString?.trimmingCharacters(in: .whitespaces), !s.isEmpty {
+            // Guard the inverse coarsening too: a string that claims a
+            // severe condition while the code says otherwise is itself
+            // suspect, but the code remains authoritative either way.
+            return s
+        }
+        return tomorrowCondition(for: code)
+    }
+
+    /// Lower bound on precip chance implied by a severe-precip code, so the
+    /// card never reads "Thunderstorm · 0%" when the server omitted (or
+    /// under-reported) precipPct for an obviously precipitating regime.
+    /// Returns nil for codes that don't imply precipitation (the value
+    /// stays honestly whatever the server sent, including nil). Never
+    /// fabricates a number for a dry/benign code.
+    static func precipFloor(forCode code: Int) -> Int? {
+        switch code {
+        case 8000:               return 80   // thunderstorm
+        case 4201, 6201, 7101:   return 70   // heavy rain / freezing / ice
+        case 4001, 6001, 5101:   return 60   // rain / freezing rain / heavy snow
+        default:                 return nil
         }
     }
 
@@ -894,9 +980,17 @@ final class WeatherService: NSObject, ObservableObject {
         )
         // v2: name the real provider (NWS, NOT Tomorrow.io) + infer a
         // weatherCode from the symbol so the custom glyph still lights.
+        // NWS is ground-station truth and `nwsSymbol` already resolves
+        // thunder-first, so the inferred code never coarsens a storm to
+        // fog on this path.
         snap.dataSource = .nws
         snap.weatherCode = WeatherIcons.code(forSymbol: symbol)
         snap.observedAt = Date()
+        // Sky-engine geometry — the real coordinate + timezone. NWS's
+        // current/forecast feeds don't carry sunrise/sunset, so those stay
+        // nil and the snapshot helpers fall back to an honest hour gate.
+        snap.latitude = lat
+        snap.timezoneId = placemark?.timeZone?.identifier
         if let top = alerts.max(by: { $0.severity.rank < $1.severity.rank }) {
             snap.alert = .init(title: top.event, severity: top.severity, until: top.endsAt)
         }
@@ -1163,7 +1257,7 @@ final class WeatherService: NSObject, ObservableObject {
             URLQueryItem(name: "longitude", value: String(lon)),
             URLQueryItem(name: "current", value: "temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,weather_code"),
             URLQueryItem(name: "hourly", value: "visibility,temperature_2m,weather_code,precipitation_probability,wind_speed_10m"),
-            URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max"),
+            URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max,sunrise,sunset"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
             URLQueryItem(name: "wind_speed_unit", value: "mph"),
             URLQueryItem(name: "forecast_days", value: "5"),
@@ -1225,7 +1319,23 @@ final class WeatherService: NSObject, ObservableObject {
             return 10
         }()
 
-        let (condition, symbol) = Self.openMeteoCondition(for: payload.current.weather_code)
+        // DATA-ACCURACY: Open-Meteo aggregates multiple models, so WMO 95
+        // ("Thunderstorm") can fire for a single cell anywhere in a wide
+        // coverage area even when the driver's point is outside it — the
+        // mirror of the founder's headline mismatch. When 95/96/99 lands
+        // with a near-zero precipitation probability at the point, treat it
+        // as a scattered/cloudy reading rather than a hard thunderstorm.
+        // We never UPGRADE here (no fabricated storm); we only soften an
+        // over-eager aggregate when its own precip says the point is dry.
+        let omPointPrecip: Int? = Self.composeOpenMeteoHourly(payload: payload).first?.precipChancePct
+        let effectiveWMO: Int = {
+            let raw = payload.current.weather_code
+            if (raw == 95 || raw == 96 || raw == 99), (omPointPrecip ?? 0) < 30 {
+                return 3   // overcast — honest "unsettled but not at-point storm"
+            }
+            return raw
+        }()
+        let (condition, symbol) = Self.openMeteoCondition(for: effectiveWMO)
 
         // Next-alert line — today's H/L pulled from daily.
         let nextAlert: String? = {
@@ -1291,6 +1401,16 @@ final class WeatherService: NSObject, ObservableObject {
         snap.dataSource = .openMeteo
         snap.weatherCode = WeatherIcons.code(forSymbol: symbol)
         snap.observedAt = Date()
+        // Sky-engine geometry — the real coordinate, the IANA zone
+        // Open-Meteo resolved (timezone=auto), and today's local sun pair.
+        snap.latitude = lat
+        snap.timezoneId = placemark?.timeZone?.identifier ?? payload.timezone
+        let omSunFmt = DateFormatter()
+        omSunFmt.locale = Locale(identifier: "en_US_POSIX")
+        omSunFmt.timeZone = TimeZone(identifier: payload.timezone ?? "UTC") ?? .current
+        omSunFmt.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        snap.sunriseAt = payload.daily.sunrise?.first.flatMap { omSunFmt.date(from: $0) }
+        snap.sunsetAt  = payload.daily.sunset?.first.flatMap { omSunFmt.date(from: $0) }
         return snap
     }
 
@@ -1468,6 +1588,10 @@ final class WeatherService: NSObject, ObservableObject {
             let temperature_2m_min: [Double]
             let weather_code: [Int]?
             let precipitation_probability_max: [Int?]?
+            // Local ISO "yyyy-MM-dd'T'HH:mm" sun times (timezone=auto), one
+            // per forecast day. Drives the sky-engine's day/night split.
+            let sunrise: [String]?
+            let sunset: [String]?
         }
     }
 
@@ -1649,6 +1773,20 @@ final class WeatherService: NSObject, ObservableObject {
         snap.dataSource = .weatherKit
         snap.weatherCode = WeatherIcons.code(forSymbol: symbol)
         snap.observedAt = Date()
+        // Sky-engine geometry — latitude off the placemark's coordinate,
+        // the timezone it resolved, and today's real WeatherKit sun pair.
+        snap.latitude = placemark?.location?.coordinate.latitude
+        snap.timezoneId = placemark?.timeZone?.identifier
+        if let today = weather.dailyForecast.first {
+            snap.sunriseAt = today.sun.sunrise
+            snap.sunsetAt  = today.sun.sunset
+        }
+        // WeatherKit names its night symbols (".moon", ".stars") — honour
+        // that explicit signal over the derived gate when present.
+        let symLower = symbol.lowercased()
+        if symLower.contains("moon") || symLower.contains("stars") || symLower.contains("night") {
+            snap.isNightHint = true
+        }
         if let top = alerts.max(by: { $0.severity.rank < $1.severity.rank }) {
             snap.alert = .init(title: top.event, severity: top.severity, until: top.endsAt)
         }

@@ -146,6 +146,7 @@ private struct PortConditions671: Decodable {
 
 private struct VesselMarineWeatherRoutingBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let shipmentId: Int
     let imoNumber: String
 
@@ -336,7 +337,43 @@ private struct VesselMarineWeatherRoutingBody: View {
                                key: "VIS")
                 }
             }
+            // build-751: the continuous animated sky engine as a SUBTLE backdrop
+            // behind the marine strip — bound ONLY to the REAL midpoint wind +
+            // visibility (the marine feed carries no sky-condition code, so the
+            // engine renders its neutral scene with real wind motion + low-vis
+            // choke; nothing fabricated). Reduce Motion → static frame.
+            .padding(14)
+            .background(
+                WeatherSkyView(snapshot: marineSkySnapshot(c), animated: !reduceMotion)
+                    .opacity(0.55)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .allowsHitTesting(false)
+            )
         }
+    }
+
+    /// A REAL `WeatherSnapshot` for the sky engine, built strictly from the
+    /// marine midpoint feed: wind (kt → mph proxy for the wind-shear/streak
+    /// layer), visibility (nm → mi proxy for the low-visibility choke), and the
+    /// resolved midpoint latitude (hemisphere/season). `weatherCode` stays 0 —
+    /// the marine feed has NO sky-condition classification, so the engine draws
+    /// its honest neutral scene rather than an invented precipitation type.
+    private func marineSkySnapshot(_ c: MarineForecastCurrent671) -> WeatherSnapshot {
+        let windMph = Int(((c.windGust ?? c.windSpeed) ?? 0).rounded())
+        let visMi = Int((c.visibility ?? 10).rounded())
+        var snap = WeatherSnapshot(
+            city: "",
+            tempF: 0,
+            windMph: max(0, windMph),
+            visibilityMi: max(0, visMi),
+            condition: "",
+            symbol: "cloud.fill",
+            nextAlert: nil,
+            accent: .calm
+        )
+        snap.weatherCode = 0                  // unknown → engine neutral scene
+        snap.latitude = marine?.lat ?? originCoord?.lat
+        return snap
     }
 
     /// True when the marine current carries at least one of the three fields

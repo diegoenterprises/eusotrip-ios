@@ -156,7 +156,10 @@ struct WeatherCard: View {
     /// real `laneImpact`.
     private var collapsedCard: some View {
         ZStack(alignment: .topLeading) {
-            SkyStageHero(weatherCode: snapshot.weatherCode, compact: true)
+            // build-751: the continuous animated sky engine (WeatherSkyView)
+            // behind the readout, with the brand route motif on top. Reduce
+            // Motion → the engine's single static frame.
+            SkyStageHeroLive(snapshot: snapshot, animated: !reduceMotion, compact: true)
                 .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: 11) {
@@ -302,7 +305,9 @@ struct WeatherCard: View {
     /// live `weatherCode`.
     private var heroBlock: some View {
         ZStack(alignment: .topLeading) {
-            SkyStageHero(weatherCode: snapshot.weatherCode)
+            // build-751: the full continuous animated sky engine behind the
+            // expanded hero readout, with the brand route motif on top.
+            SkyStageHeroLive(snapshot: snapshot, animated: !reduceMotion)
                 .allowsHitTesting(false)
 
             VStack(alignment: .leading, spacing: 0) {
@@ -843,10 +848,11 @@ struct WeatherCard: View {
 
     private var compactBody: some View {
         ZStack(alignment: .leading) {
-            SkyBackdrop(isNight: isNight,
-                        condition: condition,
-                        accent: snapshot.accent.color,
-                        animated: !reduceMotion)
+            // build-751: the continuous animated sky engine — keys off the
+            // live `weatherCode` (fixing the Fog/Mist↔Thunderstorm coarsening
+            // bug) and scales rain/snow/sleet/fog/lightning by the real
+            // precip/wind/visibility fields. Reduce Motion → static frame.
+            WeatherSkyView(snapshot: snapshot, animated: !reduceMotion)
                 .allowsHitTesting(false)
 
             HStack(spacing: Space.s2) {

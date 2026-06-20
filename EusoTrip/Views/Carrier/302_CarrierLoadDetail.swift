@@ -170,7 +170,47 @@ struct CarrierLoadDetail: View {
         scheduleCard(detail)
         cargoCard(detail)
         settlementCard(detail)
+        // Add-to-Wallet — the ONE reusable entry point (AddToWalletButton),
+        // mirroring shipper 205 / catalyst 305. Tap presents the bespoke
+        // card-style picker + mints the THEMED Apple Wallet pickup pass for
+        // THIS load. Sits in the money section beneath settlement. Server:
+        // eusoWallet.listWalletThemes / setWalletTheme + createPickupCredential.
+        AddToWalletButton(loadId: loadId) {
+            walletPassTile
+        }
         notesCard(detail)
+    }
+
+    /// Full-width "Add to Apple Wallet" affordance beneath the settlement card —
+    /// matches the carrier detail-card language (bgCard + faint border).
+    private var walletPassTile: some View {
+        HStack(spacing: Space.s3) {
+            Image(systemName: "wallet.pass.fill")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(LinearGradient.diagonal)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Add to Apple Wallet")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("Themed pickup pass · pick your card style")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .heavy))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
     /// Three-tile row: rate (gross/net), distance, weight. Each tile

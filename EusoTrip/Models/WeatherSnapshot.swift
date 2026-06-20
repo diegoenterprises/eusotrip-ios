@@ -79,6 +79,41 @@ struct WeatherSnapshot: Hashable, Codable {
     /// When this snapshot was produced (server `updatedAt` or fetch
     /// time). Drives "updated Nm ago". Nil → that clause is omitted.
     var observedAt: Date? = nil
+
+    // ── Sky-engine fields (time-of-day · season · moon) ─────────────
+    //
+    // build-751 weather overhaul: the continuous animated sky needs the
+    // REAL observation geometry to choose the right scene — sun-arc angle,
+    // season palette, day/night split, moon phase. Every field is optional
+    // + Codable + persisted with the rest of the snapshot, so a cold
+    // relaunch repaints the correct scene instantly. Honest: each value is
+    // derived from a real upstream field (CLLocation, server daily, the
+    // observation clock) — never fabricated. When a field is absent the
+    // computed helpers fall back to a safe, nil-safe default (northern
+    // hemisphere, hour-gated day/night) rather than inventing data.
+
+    /// Latitude of the observation point (-90…+90 deg). From the resolved
+    /// CLLocation. Drives the sun/moon arc angle, season, and hemisphere.
+    var latitude: Double? = nil
+
+    /// IANA timezone identifier ("America/Chicago", "Europe/London") for
+    /// the observation point. From the CLPlacemark's timeZone (or server).
+    /// Drives local-time computation for the day-part split.
+    var timezoneId: String? = nil
+
+    /// Sunrise at this location/day. Extracted from the server daily strip
+    /// (or NWS period boundaries). Drives the honest day/night + dawn/dusk
+    /// transitions. Nil → the helpers fall back to an hour gate.
+    var sunriseAt: Date? = nil
+
+    /// Sunset at this location/day. Pairs with `sunriseAt`.
+    var sunsetAt: Date? = nil
+
+    /// Explicit night flag when an upstream source states it (e.g. a
+    /// WeatherKit symbol that carries `.fill` night variants, or a server
+    /// `isDaytime: false`). Honest override; when nil, `isNight` derives
+    /// from sunrise/sunset → hour gate.
+    var isNightHint: Bool? = nil
     /// "5h · light rain · pickup window" — the driver-actionable forecast line.
     let nextAlert: String?
     /// Accent color choice — blue for clear/dry, warning for hazard watch.
@@ -639,6 +674,197 @@ struct WeatherSnapshot: Hashable, Codable {
 
     /// Visibility ≤ 2 mi — CMV slow-down territory.
     var visibilityHazard: Bool { visibilityMi <= 2 }
+
+    // ── Sky-engine geometry (time-of-day · season · moon) ───────────
+    //
+    // build-751: the animated sky reads these to pick the scene. All are
+    // derived from the REAL fields above (latitude, sunriseAt/sunsetAt,
+    // observedAt) via the pure helpers at file scope so the engine, a unit
+    // test, and a SwiftUI preview all compute identically. Nothing is
+    // fabricated: when an input is nil the helper falls back honestly
+    // (hour gate for day/night, northern hemisphere for season).
+
+    /// The clock instant the scene is anchored to — the real observation
+    /// time when known, else now. Centralised so every helper agrees.
+    var clockReference: Date { observedAt ?? Date() }
+
+    /// True when the location is currently in night. Honest priority:
+    ///   1. an explicit upstream night hint (`isNightHint`),
+    ///   2. the real sunrise/sunset window,
+    ///   3. an hour gate (≥ 20:00 or < 06:00 local) as last resort.
+    /// Never fabricates daylight — a missing sun pair degrades to the gate.
+    var isNight: Bool {
+        if let hint = isNightHint { return hint }
+        let now = clockReference
+        if let rise = sunriseAt, let set = sunsetAt {
+            return !(now >= rise && now < set)
+        }
+        var cal = Calendar.current
+        if let tz = timezoneId, let zone = TimeZone(identifier: tz) {
+            cal.timeZone = zone
+        }
+        let h = cal.component(.hour, from: now)
+        return h >= 20 || h < 6
+    }
+
+    /// Convenience inverse used by the palette selector.
+    var isDaytime: Bool { !isNight }
+
+    /// Hemisphere from latitude. Defaults to northern when latitude is
+    /// absent (the safe majority assumption — never blocks the scene).
+    var hemisphere: Hemisphere {
+        guard let lat = latitude else { return .northern }
+        return lat >= 0 ? .northern : .southern
+    }
+
+    /// Meteorological season for the observation, hemisphere-aware.
+    var season: Season {
+        WeatherSnapshot.seasonFor(date: clockReference, latitude: latitude)
+    }
+
+    /// Fine-grained part of the local day the scene should render
+    /// (dawn / morning / noon / afternoon / dusk / night). Honest: built
+    /// from the real sun pair when present, else the hour gate.
+    var dayPart: DayPart {
+        WeatherSnapshot.dayPartFor(
+            date: clockReference,
+            sunrise: sunriseAt,
+            sunset: sunsetAt,
+            timezoneId: timezoneId
+        )
+    }
+
+    /// Moon illumination + phase name (0…1). Derived purely from the
+    /// observation date against the astronomical new-moon epoch.
+    var moonPhase: MoonPhase {
+        WeatherSnapshot.computeMoonPhase(date: clockReference)
+    }
+
+    // MARK: - Sky-engine value types
+
+    enum Hemisphere: String, Hashable, Codable { case northern, southern }
+
+    enum Season: String, Hashable, Codable {
+        case spring, summer, fall, winter
+    }
+
+    /// Six day-parts the sky palette keys off. `night` covers everything
+    /// after dusk and before dawn.
+    enum DayPart: String, Hashable, Codable {
+        case dawn, morning, noon, afternoon, dusk, night
+
+        /// True for the two twilight bands (the golden/blue-hour scenes).
+        var isTwilight: Bool { self == .dawn || self == .dusk }
+    }
+
+    /// Moon illumination fraction (0…1) + the eight canonical phase names.
+    /// `illumination` is the lit fraction of the disc (0 = new, 1 = full);
+    /// `fraction` is the 0…1 position through the synodic month (drives
+    /// waxing vs waning so the renderer shadows the correct limb).
+    struct MoonPhase: Hashable, Codable {
+        /// 0…1 lit fraction of the disc — peaks at full.
+        let illumination: Double
+        /// 0…1 position through the lunation (0/1 = new, 0.5 = full).
+        let fraction: Double
+        /// "new" / "waxing crescent" / … / "waning crescent".
+        let name: String
+
+        /// True for the first half of the cycle (new → full): the disc
+        /// lights from the right limb. False = waning (lights from left).
+        var isWaxing: Bool { fraction < 0.5 }
+    }
+
+    // MARK: - Pure helpers (engine · tests · previews share one path)
+
+    /// Moon illumination + phase from a date. Lunation = 29.53059 days
+    /// measured from the 2000-01-06 18:14 UTC astronomical new moon.
+    /// Pure + deterministic — no `Date()`, no allocations beyond the
+    /// returned value.
+    static func computeMoonPhase(date: Date) -> MoonPhase {
+        let synodicMonth = 29.530588853
+        // 2000-01-06 18:14 UTC reference new moon.
+        let newMoonRef = Date(timeIntervalSince1970: 947_182_440)
+        let days = date.timeIntervalSince(newMoonRef) / 86_400.0
+        var fraction = (days / synodicMonth).truncatingRemainder(dividingBy: 1.0)
+        if fraction < 0 { fraction += 1.0 }           // pre-epoch dates
+        // Lit fraction: 0 at new, 1 at full, symmetric across the month.
+        let illumination = (1 - cos(2 * Double.pi * fraction)) / 2
+        let name: String
+        switch fraction {
+        case 0..<0.0625, 0.9375...1.0: name = "new"
+        case 0.0625..<0.1875:          name = "waxing crescent"
+        case 0.1875..<0.3125:          name = "first quarter"
+        case 0.3125..<0.4375:          name = "waxing gibbous"
+        case 0.4375..<0.5625:          name = "full"
+        case 0.5625..<0.6875:          name = "waning gibbous"
+        case 0.6875..<0.8125:          name = "last quarter"
+        default:                       name = "waning crescent"
+        }
+        return MoonPhase(illumination: illumination, fraction: fraction, name: name)
+    }
+
+    /// Meteorological season for a date, hemisphere-aware. A nil latitude
+    /// assumes the northern hemisphere (safe default — never blocks).
+    static func seasonFor(date: Date, latitude: Double?) -> Season {
+        let month = Calendar.current.component(.month, from: date)
+        let northern = (latitude ?? 0) >= 0
+        // Northern meteorological seasons; flip 6 months for the south.
+        let northernSeason: Season
+        switch month {
+        case 3...5:   northernSeason = .spring
+        case 6...8:   northernSeason = .summer
+        case 9...11:  northernSeason = .fall
+        default:      northernSeason = .winter   // 12, 1, 2
+        }
+        if northern { return northernSeason }
+        switch northernSeason {
+        case .spring: return .fall
+        case .summer: return .winter
+        case .fall:   return .spring
+        case .winter: return .summer
+        }
+    }
+
+    /// Fine-grained day-part from the local clock + the real sun pair.
+    /// When sunrise/sunset are present the bands are anchored to them
+    /// (dawn = 1h before sunrise → sunrise · dusk = sunset → 1h after);
+    /// otherwise an hour gate in the location's timezone is used. Pure.
+    static func dayPartFor(
+        date: Date,
+        sunrise: Date?,
+        sunset: Date?,
+        timezoneId: String?
+    ) -> DayPart {
+        if let rise = sunrise, let set = sunset, set > rise {
+            let dawnStart = rise.addingTimeInterval(-3600)
+            let duskEnd   = set.addingTimeInterval(3600)
+            // Quarter-day midpoints between sunrise and sunset.
+            let daySpan   = set.timeIntervalSince(rise)
+            let morningEnd   = rise.addingTimeInterval(daySpan * 0.30)
+            let afternoonStart = set.addingTimeInterval(-daySpan * 0.30)
+            if date < dawnStart        { return .night }
+            if date < rise             { return .dawn }
+            if date < morningEnd       { return .morning }
+            if date < afternoonStart   { return .noon }
+            if date < set              { return .afternoon }
+            if date < duskEnd          { return .dusk }
+            return .night
+        }
+        // Hour-gate fallback in the location's timezone (or device local).
+        var cal = Calendar.current
+        if let tz = timezoneId, let zone = TimeZone(identifier: tz) {
+            cal.timeZone = zone
+        }
+        let h = cal.component(.hour, from: date)
+        switch h {
+        case 5..<7:   return .dawn
+        case 7..<11:  return .morning
+        case 11..<15: return .noon
+        case 15..<18: return .afternoon
+        case 18..<20: return .dusk
+        default:      return .night
+        }
+    }
 }
 
 // MARK: - LaneWeather — the active load's lane, end to end.
