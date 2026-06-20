@@ -24,7 +24,7 @@ struct WalletCardPickerView: View {
         ScrollView {
             VStack(spacing: 18) {
                 WalletCardPreview(theme: store.selected, full: true)
-                    .frame(width: 300, height: 190)
+                    .frame(width: 290, height: 384)
                     .padding(.top, 6)
 
                 HStack {
@@ -95,19 +95,27 @@ struct WalletCardPickerView: View {
     }
 }
 
-// MARK: - The card preview (faithful to the HTML mockups; the cinematic themes
-//         preview their solid fallback + accent — the real scene is the pass art).
+// MARK: - The card preview (faithful to the HTML mockups). When the real card
+//         art is bundled (WalletCardBackgrounds.xcassets, keyed on the theme id),
+//         the preview renders the actual pass background so the picker shows the
+//         TRUE look; otherwise it falls back to the solid color + an accent wash.
 struct WalletCardPreview: View {
     let theme: WalletCardTheme
     let full: Bool
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            theme.bg
-            // a hint of the art themes via an accent wash at the top
-            if theme.isArt {
-                LinearGradient(colors: [theme.accent.opacity(0.35), .clear],
-                               startPoint: .topTrailing, endPoint: .center)
+            // Real bundled art when present (WalletCardBackgrounds.xcassets,
+            // imageset name == theme.id), else the solid color + accent wash.
+            if UIImage(named: theme.id) != nil {
+                Color.clear.overlay { Image(theme.id).resizable().scaledToFill() }.clipped()
+            } else {
+                theme.bg
+                // a hint of the art themes via an accent wash at the top
+                if theme.isArt {
+                    LinearGradient(colors: [theme.accent.opacity(0.35), .clear],
+                                   startPoint: .topTrailing, endPoint: .center)
+                }
             }
             VStack(alignment: .leading, spacing: full ? 10 : 4) {
                 // HEADER — the identity that peeks in a Wallet stack

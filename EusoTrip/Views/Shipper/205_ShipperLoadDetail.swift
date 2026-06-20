@@ -1672,17 +1672,17 @@ struct ShipperLoadDetail: View {
                         stateColor: Brand.success,
                         iconStyle: .success)
             }
-            // Add-to-Wallet — opens the bespoke Wallet card-style picker
-            // (server: eusoWallet.listWalletThemes / setWalletTheme +
-            // createPickupCredential). Pushes in-stack (the 205 detail is
-            // already pushed via pushDetail), never a slide-up. The picker
-            // mints the themed Apple Wallet pickup pass for THIS load.
-            NavigationLink {
-                WalletCardPickerView(loadId: loadId)
-            } label: {
+            // Add-to-Wallet — routes through the ONE reusable entry point
+            // (AddToWalletButton) so the bespoke card-style picker + themed
+            // Add-to-Wallet behave identically everywhere ("across the board").
+            // Server: eusoWallet.listWalletThemes / setWalletTheme +
+            // createPickupCredential. The bespoke document-strip tile is supplied
+            // as the button's label, so the 205 look is preserved while the picker
+            // behavior lives in the shared component. Mints the themed Apple Wallet
+            // pickup pass for THIS load.
+            AddToWalletButton(loadId: loadId) {
                 walletPassTile
             }
-            .buttonStyle(.plain)
         }
     }
 
