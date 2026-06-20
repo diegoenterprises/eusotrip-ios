@@ -326,6 +326,10 @@ struct ShipperWidgetGallery: View {
     // MARK: - Tap handlers (§20.4 no dead buttons)
 
     private func tapReinstallWidget() {
+        // Local reinstall confirmation — a haptic pulse + telemetry that
+        // the API layer acts on. (Was a browser-bounce via openURL to
+        // `…/widgets/reinstall/<id>` — the openURL was a placeholder.)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         NotificationCenter.default.post(
             name: .eusoShipperWidgetReinstall,
             object: nil,
@@ -336,12 +340,12 @@ struct ShipperWidgetGallery: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/widgets/reinstall/\(activeWidget.id)") {
-            openURL(url)
-        }
     }
 
     private func tapSizeToggle(_ size: WidgetSize) {
+        // In-place size enable/disable — telemetry persists, selection
+        // haptic confirms. (Was an openURL browser-bounce.)
+        UISelectionFeedbackGenerator().selectionChanged()
         NotificationCenter.default.post(
             name: .eusoShipperWidgetSizeToggle,
             object: nil,
@@ -352,12 +356,12 @@ struct ShipperWidgetGallery: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/widgets/size/\(size.id)/toggle") {
-            openURL(url)
-        }
     }
 
     private func tapSizeRow(_ size: WidgetSize) {
+        // In-place row selection — preview haptic + telemetry, no nav.
+        // (Was an openURL browser-bounce.)
+        UISelectionFeedbackGenerator().selectionChanged()
         NotificationCenter.default.post(
             name: .eusoShipperWidgetSizeRow,
             object: nil,
@@ -369,12 +373,11 @@ struct ShipperWidgetGallery: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/widgets/size/\(size.id)") {
-            openURL(url)
-        }
     }
 
     private func tapManageWidgets() {
+        // Manage opens Settings (211) natively (single scrolling Settings
+        // screen). Previously an openURL to `/shipper/settings/widgets`.
         NotificationCenter.default.post(
             name: .eusoShipperWidgetManage,
             object: nil,
@@ -384,9 +387,10 @@ struct ShipperWidgetGallery: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/widgets") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "211"]
+        )
     }
 }
 

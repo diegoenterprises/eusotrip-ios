@@ -558,8 +558,38 @@ struct ShipperWatchComplication: View {
                 "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/watch/\(watch.id)/open") {
-            inAppLink = EusoSafariLink(url: url)
+        // Open the complication's TARGET screen natively. The CTA used
+        // to load `…/watch/<id>/open` in an in-app Safari sheet, which
+        // re-mounted the watch list (mapper "watch"→233 — the screen
+        // itself), losing the row's real intent. `ctaTargetScreen` is a
+        // "<id> <Name>" label (e.g. "205 Load Detail", "231 Push
+        // Notification Landing"); parse it and swap. Load-context
+        // targets (205/222) route through the load-open path with the
+        // row's loadId so the detail mounts on the real id.
+        if let target = ShipperWebToNativeMap.targetScreenId(from: watch.ctaTargetScreen) {
+            let lid = ShipperLoadIdResolver.normalize(watch.loadId)
+            if target == "222", let lid = lid {
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadOpenMap, object: nil,
+                    userInfo: ["loadId": lid]
+                )
+            } else if target == "205", let lid = lid {
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadOpen, object: nil,
+                    userInfo: ["loadId": lid]
+                )
+            } else if target == "205" || target == "222" {
+                // Load-context target with no resolvable id — fall to the
+                // loads list rather than mount a bare 205/222 sentinel.
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadListOpen, object: nil
+                )
+            } else {
+                NotificationCenter.default.post(
+                    name: .eusoShipperNavSwap, object: nil,
+                    userInfo: ["screenId": target]
+                )
+            }
         }
     }
 
@@ -573,9 +603,15 @@ struct ShipperWatchComplication: View {
                 "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/watch") {
-            inAppLink = EusoSafariLink(url: url)
-        }
+        // Manage-surfaces opens Settings (211) natively. Previously an
+        // in-app Safari sheet to `/shipper/settings/watch`; 211 is a
+        // single scrolling Settings screen (notification toggles + lane
+        // templates + security), so the whole `settings/<feature>`
+        // family lands there.
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "211"]
+        )
     }
 }
 
