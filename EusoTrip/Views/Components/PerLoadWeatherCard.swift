@@ -87,9 +87,22 @@ struct PerLoadWeatherCard: View {
         }
         .task(id: loadId) {
             if isActive {
+                // Active loads already poll on a live cadence; a failed tick
+                // keeps the last-good card and self-heals on the next poll.
                 store.startAutoRefresh(loadId: loadId, inProgress: true)
             } else {
+                // One-shot load. If the FIRST fetch misses with no last-good
+                // card, the view shows the soft "Updating lane weather…"
+                // placeholder (never "unavailable"); keep silently retrying
+                // (~45s back-off, mirroring the build-747 HomeWeatherWidget)
+                // until the first real reading lands, then stop. SwiftUI
+                // cancels this loop when the card leaves the screen.
                 await store.load(loadId: loadId)
+                while !Task.isCancelled && store.card == nil {
+                    try? await Task.sleep(nanoseconds: 45 * 1_000_000_000)
+                    if Task.isCancelled { break }
+                    await store.load(loadId: loadId)
+                }
             }
         }
         .onDisappear { store.stop() }
@@ -834,25 +847,49 @@ struct PerLoadWeatherCard: View {
             .strokeBorder(Color.white.opacity(0.07), lineWidth: 1))
     }
 
+    /// Reached ONLY when the very first per-load fetch missed and the store
+    /// holds NO last-good card (`store.card == nil` AND `phase == .failed`).
+    /// Founder mandate (2026-06-19, extends the build-747 HomeWeatherWidget):
+    /// NEVER render "unavailable"/"not available" on the weather surface.
+    /// Mirrors the home widget's `HomeWeatherUpdatingCard` — a soft, branded
+    /// "Updating lane weather…" placeholder framed as an in-progress update,
+    /// not an error. The `.task(id:)` silent-retry loop (see `body`) keeps
+    /// re-fetching until the first real reading lands; the moment the store
+    /// has a card it flips to the real content. Zero fabrication — no invented
+    /// reading is ever shown, only the honest "still fetching" placeholder.
     private var failedState: some View {
-        VStack(spacing: 6) {
-            WeatherIcons.utility(.alert, size: 22, tint: Brand.warning)
-            Text("Lane weather unavailable")
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(.white.opacity(0.8))
-            if let err = store.errorText {
-                Text(err)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.white.opacity(0.45))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
+        HStack(alignment: .center, spacing: 13) {
+            ZStack {
+                Circle()
+                    .fill(AngularGradient(
+                        gradient: Gradient(colors: [WeatherV3.auroraA, WeatherV3.auroraB,
+                                                    WeatherV3.auroraC, WeatherV3.auroraA]),
+                        center: .center, angle: .degrees(160)))
+                    .opacity(0.18)
+                    .frame(width: 48, height: 48)
+                // Soft, branded last-known weather glyph — never an alarm icon.
+                WeatherGlyph(kind: .cloudy)
+                    .frame(width: 26, height: 26)
+                    .opacity(0.85)
             }
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Updating lane weather…")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                Text("Fetching the latest conditions for this lane.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.55))
+                    .multilineTextAlignment(.leading)
+            }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24).padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 20).padding(.horizontal, 16)
         .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(palette.bgCard))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
             .strokeBorder(Color.white.opacity(0.07), lineWidth: 1))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Updating lane weather")
     }
 
     /// Server returned a card but `available == false` (no coords / route
@@ -862,9 +899,14 @@ struct PerLoadWeatherCard: View {
             eyebrow
             HStack(spacing: 9) {
                 WeatherIcons.utility(.pin, size: 16, tint: WeatherV3.nodeOrigin)
-                Text("No live weather for this lane yet")
+                // Honest empty: the server returned `available == false`
+                // (no coords / route-weather tier absent for this lane), NOT
+                // a fetch failure. Worded as "coming when coords resolve",
+                // never as an error and never the banned "unavailable".
+                Text("Live lane weather lights up once this load has mapped endpoints")
                     .font(.system(size: 13))
                     .foregroundStyle(.white.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(14)
