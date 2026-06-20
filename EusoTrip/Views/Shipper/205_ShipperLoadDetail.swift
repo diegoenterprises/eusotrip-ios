@@ -1672,7 +1672,48 @@ struct ShipperLoadDetail: View {
                         stateColor: Brand.success,
                         iconStyle: .success)
             }
+            // Add-to-Wallet — opens the bespoke Wallet card-style picker
+            // (server: eusoWallet.listWalletThemes / setWalletTheme +
+            // createPickupCredential). Pushes in-stack (the 205 detail is
+            // already pushed via pushDetail), never a slide-up. The picker
+            // mints the themed Apple Wallet pickup pass for THIS load.
+            NavigationLink {
+                WalletCardPickerView(loadId: loadId)
+            } label: {
+                walletPassTile
+            }
+            .buttonStyle(.plain)
         }
+    }
+
+    /// Full-width "Add to Apple Wallet" affordance beneath the document tiles.
+    private var walletPassTile: some View {
+        HStack(spacing: Space.s3) {
+            Image(systemName: "wallet.pass.fill")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(LinearGradient.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Add to Apple Wallet")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("Themed pickup pass · pick your card style")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        .contentShape(Rectangle())
     }
 
     private var bolStateText: String {

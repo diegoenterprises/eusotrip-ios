@@ -330,6 +330,7 @@ private struct WalletHomeBody: View {
         VStack(alignment: .leading, spacing: Space.s3) {
             WalletEyebrow(glyph: .pie, text: "MANAGE").padding(.leading, 2)
             VStack(spacing: 8) {
+                link(glyph: .spark, title: "Wallet card style", subtitle: "Pick the look of your pickup pass", screenId: "WalletCardStyle")
                 link(glyph: .pulse, title: "EusoWallet detail", subtitle: "Activity, holds, and pass", screenId: "291")
                 link(glyph: .bank, title: "Settlements", subtitle: "Load payouts and invoices", screenId: "292")
                 link(glyph: .bank, title: "Payment methods", subtitle: "Linked banks and cards", screenId: "295")

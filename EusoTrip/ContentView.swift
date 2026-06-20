@@ -929,6 +929,10 @@ enum ScreenRegistry {
         // 290-299 — Wallet / Settlements / Reports
         list.append(.init(id: "290", title: "Shipper · Wallet Home",             role: .shipper) { p in AnyView(WalletHomeScreen(theme: p)) })
         list.append(.init(id: "291", title: "Shipper · EusoWallet Detail",       role: .shipper) { p in AnyView(EusoWalletDetailScreen(theme: p)) })
+        // Wallet card-style picker — pure style chooser (no load). Server:
+        // eusoWallet.listWalletThemes / getWalletTheme / setWalletTheme. Reached
+        // from the Wallet hub "Wallet card style" row via .eusoShipperNavSwap.
+        list.append(.init(id: "WalletCardStyle", title: "Shipper · Wallet Card Style", role: .shipper) { p in AnyView(WalletCardStyleScreen(theme: p)) })
         list.append(.init(id: "292", title: "Shipper · Settlements List",        role: .shipper) { p in AnyView(SettlementsListScreen(theme: p)) })
         list.append(.init(id: "437", title: "Shipper · Invoices & AR",           role: .shipper) { p in AnyView(ShipperInvoicesScreen(theme: p)) })
         list.append(.init(id: "293", title: "Shipper · Settlement Detail",       role: .shipper) { p in AnyView(SettlementDetailScreen(theme: p, settlementId: "0")) })
