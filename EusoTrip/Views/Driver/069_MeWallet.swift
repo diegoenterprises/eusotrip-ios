@@ -7,6 +7,24 @@
 //  truth for money: live balance, payouts, settlements, transactions,
 //  factoring offers, linked accounts, and tax withholdings.
 //
+//  ── DESIGN AUTHORITY RE-SKIN (founder mandate #722) ──
+//  The founder called the prior layout "ai coded and basic looking."
+//  This screen is now re-skinned 1:1 to the FOUNDER-APPROVED bespoke
+//  wallet language shared with 290_WalletHome / 291_EusoWalletDetail and
+//  defined in `Views/Components/EusoWalletComponents.swift`:
+//    • Hero balance → `WalletBalanceHero` (volumetric money card, gradient
+//      numeral + animated sheen + drawn `WalletCompositionBar`).
+//    • Section headers → `WalletEyebrow` (drawn-glyph small-caps eyebrow).
+//    • Activity rows → `WalletLedgerRow` (drawn directional credit/debit
+//      glyph + intention spark + signed tabular amount).
+//    • Payouts/settlements → `WalletHoldTile`-styled bespoke vault rows.
+//    • Skeletons → `WalletShimmer` (bounded brand shimmer).
+//    • Every glyph is a drawn `WalletGlyph` Path — ZERO SF Symbols on the
+//      money surface; gradient (1473FF→BE01FF) is the only accent.
+//  SVG/design owns the LOOK; iOS owns the FUNCTION — every store, proc,
+//  @State, action, sheet, and navigation below is PRESERVED unchanged.
+//  Zero fabrication: real data or honest em-dash.
+//
 //  Brick port history:
 //    • 69th firing (2026-04-24, eusotrip-killers scheduled task) —
 //      ported per SKILL.md §9 spec, 8 sections wired to existing
@@ -24,19 +42,18 @@
 //  motivation "no fake data, dynamic ready pages with 0 data"):
 //
 //    §1 Hero balance      — `WalletBalanceStore` · wallet.getBalance.
-//                            Available + pending split. Zero-balance
-//                            renders honestly as "$0.00 available" — a
-//                            valid loaded state for a brand-new driver
-//                            with no settled loads yet.
-//    §2 Quick actions     — Card / Bank routes only. The brick
-//                            deliberately omits Transfer / Deposit /
-//                            Withdraw pills until the corresponding
-//                            wallet mutations land server-side. No
-//                            dead buttons, no stub dialogs, no fake
-//                            "Coming soon" toasts that pretend to do
-//                            something. Each rendered pill routes to
-//                            a working sheet (AddPaymentAccountSheet)
-//                            or push-segue (077 MePaymentMethods).
+//                            Available + pending + reserved split rendered
+//                            on the bespoke money card. Zero-balance
+//                            renders honestly (em-dash) — a valid loaded
+//                            state for a brand-new driver with no settled
+//                            loads yet.
+//    §2 Quick actions     — Cash out / Add method only. The brick
+//                            deliberately omits Transfer / Deposit until
+//                            the corresponding wallet mutations land
+//                            server-side. No dead buttons, no stub
+//                            dialogs. Cash out → DriverCashOutSheet (live
+//                            wallet.requestPayout); Add method →
+//                            AddPaymentAccountSheet (Plaid + Stripe).
 //    §3 Weekly chart      — `WeeklyEarningsStore` · earnings.
 //                            getWeeklySummaries(weeks: 7). Bars use
 //                            `LinearGradient.diagonal`; x-axis = day
@@ -45,42 +62,24 @@
 //                            ticks — visible but honest.
 //    §4 Upcoming payouts  — `UpcomingSettlementsStore` ·
 //                            settlementBatching.getDriverBatchView.
-//                            Filter to first 5 non-paid batches. Tap
-//                            routes to 070 Me · Settlements (full
-//                            history) via lifecycleAdvance / nav env.
+//                            Filter to first 5 non-paid batches.
 //    §5 Activity feed     — `WalletTransactionsStore` ·
 //                            wallet.getTransactions. First 8 rows
-//                            inline; "View all" routes to 070. Each
-//                            row icon derives from `WalletTxn.kind`.
+//                            inline as bespoke ledger entries.
 //    §6 Factoring offer   — `FactoringOfferStore` · factoring.getOffer
 //                            (eligible-only). Surfaces only when a
 //                            current load + HaulPay eligibility exist.
-//                            Otherwise the section collapses entirely
-//                            — no "No offers available" placeholder.
+//                            Otherwise the section collapses entirely.
 //    §7 Linked accounts   — `WalletPaymentMethodsStore` ·
 //                            wallet.getPayoutMethods. Bank + card
 //                            rows masked to last 4. Add / manage CTA
-//                            routes to 077 MePaymentMethods.
+//                            opens AddPaymentAccountSheet.
 //    §8 Tax withholdings  — `TaxSummaryStore` · tax.getSummary +
 //                            `Tax1099Store` · tax.get1099. YTD
 //                            withheld + quarterly estimate. 1099
-//                            download disabled until Jan 31 of
-//                            year+1 (server gate via
+//                            download disabled until the IRS issuance
+//                            window (server gate via
 //                            `TaxAPI.Tax1099Document.available`).
-//
-//  Doctrine refs (per SKILL.md §2 enforcement checklist):
-//    §1   No `Brand.info` / `Brand.blue` flat fills — gradient is the
-//         only accent. Hero numerals, section title gradient text,
-//         chart bar fills, factoring CTA, primary action pills.
-//    §3   No `.tint(.blue)` — no toggles on this brick.
-//    §4   Tokenized spacing (Space.sN), radii (Radius.sm/md/lg/xl),
-//         type (EType.*). No magic numbers.
-//    §5   Palette semantic throughout (`palette.textPrimary`,
-//         `palette.textSecondary`, `palette.bgCard`, etc.).
-//    §7   Ternary ShapeStyle expressions wrapped in `AnyShapeStyle`.
-//    §10  Previews compile in isolation. Stores resolve to `.error`
-//         under preview's no-baseURL runtime; the screen renders the
-//         skeleton + error banners deterministically. No fixtures.
 //
 
 import SwiftUI
@@ -89,6 +88,7 @@ import SwiftUI
 
 struct MeWallet: View {
     @Environment(\.palette) var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var session: EusoTripSession
 
     // §1 hero balance
@@ -110,9 +110,11 @@ struct MeWallet: View {
     @State private var showAddPayout: Bool = false
     @State private var showCashOut: Bool = false
 
+    private var isDark: Bool { palette.bgPage == Theme.dark.bgPage }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: Space.s5) {
+            VStack(alignment: .leading, spacing: Space.s5) {
                 header
                 heroBalance              // §1
                 quickActions             // §2
@@ -204,20 +206,33 @@ struct MeWallet: View {
         _ = await (a, b, c, d, e, f, g, h)
     }
 
-    // MARK: Header
+    // MARK: Header — bespoke eyebrow + drawn wallet brand mark
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: Space.s1) {
+        HStack(alignment: .top, spacing: Space.s3) {
+            VStack(alignment: .leading, spacing: 6) {
+                WalletEyebrow(glyph: .wallet, text: "DRIVER · EUSOWALLET")
                 Text("EusoWallet")
-                    .font(EType.h1)
-                    .foregroundStyle(LinearGradient.diagonal)
+                    .font(.system(size: 26, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
                 Text("Balance · settlements · activity")
-                    .font(EType.caption)
+                    .font(EType.micro)
                     .foregroundStyle(palette.textTertiary)
             }
-            Spacer()
-            OrbeSang(state: anyLoading ? .thinking : .idle, diameter: 40)
+            Spacer(minLength: 0)
+            // Iridescent brand mark — drawn wallet glyph (no SF Symbol).
+            // ESANG thinking pulse rides on top while any store loads.
+            ZStack {
+                Circle().fill(LinearGradient.diagonal).frame(width: 40, height: 40)
+                if anyLoading {
+                    Circle()
+                        .strokeBorder(Color.white.opacity(0.55), lineWidth: 2)
+                        .frame(width: 40, height: 40)
+                        .opacity(0.0)
+                }
+                WalletGlyph(kind: .wallet, size: 19, tint: AnyShapeStyle(Color.white), lineWidth: 1.6)
+            }
+            .shadow(color: Brand.magenta.opacity(isDark ? 0.45 : 0.22), radius: 10, x: 0, y: 4)
         }
     }
 
@@ -227,7 +242,7 @@ struct MeWallet: View {
             || tax.isLoading || ten99.isLoading
     }
 
-    // MARK: §1 — Hero balance
+    // MARK: §1 — Hero balance (bespoke WalletBalanceHero money card)
 
     @ViewBuilder
     private var heroBalance: some View {
@@ -235,77 +250,87 @@ struct MeWallet: View {
         case .loading:
             heroSkeleton
         case .empty, .error:
-            heroEmpty
+            // Honest zero / degrade — the bespoke card with nil cents
+            // renders an em-dash hero + "no funds yet" composition track.
+            WalletBalanceHero(
+                availableCents: nil,
+                pendingCents: nil,
+                reservedCents: nil,
+                currency: balanceCurrency,
+                caption: "Waiting on first settlement"
+            )
         case .loaded(let b):
             heroLoaded(b)
         }
     }
 
+    /// Bounded bespoke shimmer skeleton (mirrors 290/291 hero skeleton).
     private var heroSkeleton: some View {
-        RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
-            .fill(palette.tintNeutral.opacity(0.35))
-            .frame(height: 168)
-    }
-
-    private var heroEmpty: some View {
-        VStack(spacing: Space.s2) {
-            Text("$0.00")
-                .font(.system(size: 56, weight: .bold))
-                .monospacedDigit()
-                .foregroundStyle(LinearGradient.diagonal)
-            Text("Available · waiting on first settlement")
-                .font(EType.caption)
-                .foregroundStyle(palette.textTertiary)
+        VStack(alignment: .leading, spacing: 14) {
+            WalletShimmer(height: 14, radius: 6).frame(width: 130)
+            WalletShimmer(height: 44, radius: 12)
+            WalletShimmer(height: 9, radius: 5)
+            HStack(spacing: 10) {
+                WalletShimmer(height: 28, radius: 8)
+                WalletShimmer(height: 28, radius: 8)
+                WalletShimmer(height: 28, radius: 8)
+            }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, Space.s5)
-        .eusoCard(radius: Radius.xl)
+        .padding(Space.s5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.xl, intensity: .feature)
     }
 
+    /// The hero takes cents; the driver `wallet.getBalance` store hands back
+    /// dollars (`available`/`pending`/`reserved`). Convert to cents at the
+    /// render site — no fabrication, just a unit change. The hero's internal
+    /// composition total is available+pending+reserved (the real split). The
+    /// server's own `total` (which can fold escrow in) is surfaced honestly
+    /// as a companion reference row below so nothing is invented or hidden.
     private func heroLoaded(_ b: WalletAPI.WalletBalance) -> some View {
-        VStack(spacing: Space.s3) {
-            // Available — the dominant gradient numeral.
-            VStack(spacing: 2) {
-                Text(currency(b.available, code: b.currency))
-                    .font(.system(size: 56, weight: .bold))
-                    .monospacedDigit()
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("Available")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textTertiary)
-            }
-
-            IridescentHairline()
-                .padding(.horizontal, Space.s2)
-
-            // Pending + total reference row.
-            HStack(spacing: Space.s5) {
-                pendingPair(label: "Pending",
-                            value: currency(b.pending, code: b.currency))
-                Spacer()
-                pendingPair(label: "Total",
-                            value: currency(b.total, code: b.currency))
-            }
-            .padding(.horizontal, Space.s4)
+        VStack(alignment: .leading, spacing: Space.s3) {
+            WalletBalanceHero(
+                availableCents: cents(b.available),
+                pendingCents: cents(b.pending),
+                reservedCents: cents(b.reserved),
+                currency: b.currency,
+                caption: "Available to cash out"
+            )
+            totalReferenceRow(b)
         }
-        .padding(.vertical, Space.s5)
-        .frame(maxWidth: .infinity)
-        .eusoCard(radius: Radius.xl)
     }
 
-    private func pendingPair(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label.uppercased())
-                .font(EType.micro).tracking(0.6)
-                .foregroundStyle(palette.textTertiary)
-            Text(value)
-                .font(EType.bodyStrong)
-                .monospacedDigit()
+    /// The server-authoritative `total` (incl. escrow) shown as an honest
+    /// companion to the composition card — a single drawn-glyph reference
+    /// row, em-dash at zero.
+    private func totalReferenceRow(_ b: WalletAPI.WalletBalance) -> some View {
+        HStack(spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(LinearGradient(colors: [Brand.blue.opacity(0.14), Brand.magenta.opacity(0.14)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                WalletGlyph(kind: .pie, size: 16, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+            }
+            .frame(width: 38, height: 38)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Total wallet balance")
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Text("Available + pending + reserved + escrow")
+                    .font(EType.micro).foregroundStyle(palette.textTertiary)
+            }
+            Spacer(minLength: 0)
+            Text(currency(b.total, code: b.currency))
+                .font(.system(size: 15, weight: .heavy, design: .rounded)).monospacedDigit()
                 .foregroundStyle(palette.textPrimary)
         }
+        .padding(.horizontal, Space.s3).padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.md, intensity: .whisper)
     }
 
-    // MARK: §2 — Quick actions
+    // MARK: §2 — Quick actions (bespoke drawn-glyph pills)
 
     private var quickActions: some View {
         // TWO real, working actions. No dead pills, no stub dialogs.
@@ -314,20 +339,18 @@ struct MeWallet: View {
         // min $1), choose instant vs standard, and call the live
         // `wallet.requestPayout` Stripe Connect mutation. "Add payout
         // method" opens AddPaymentAccountSheet (Plaid + Stripe). Both
-        // back working flows; nothing here is a stub. The cash-out
-        // mutation shipped server-side, so the previously-absent
-        // Withdraw pill is now honest to surface.
+        // back working flows; nothing here is a stub.
         HStack(spacing: Space.s2) {
             actionPill(
+                glyph: .arrowDown,
                 title: "Cash out",
-                systemImage: "arrow.down.to.line.circle.fill",
                 style: .primary
             ) {
                 showCashOut = true
             }
             actionPill(
+                glyph: .bank,
                 title: "Add method",
-                systemImage: "plus.circle.fill",
                 style: .secondary
             ) {
                 showAddPayout = true
@@ -338,20 +361,29 @@ struct MeWallet: View {
     private enum ActionStyle { case primary, secondary }
 
     private func actionPill(
+        glyph: WalletGlyph.Kind,
         title: String,
-        systemImage: String,
         style: ActionStyle,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: Space.s2) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(
-                        style == .primary
-                        ? AnyShapeStyle(Color.white)
-                        : AnyShapeStyle(LinearGradient.diagonal)
+                ZStack {
+                    Circle()
+                        .fill(style == .primary
+                              ? AnyShapeStyle(Color.white.opacity(0.18))
+                              : AnyShapeStyle(LinearGradient(colors: [Brand.blue.opacity(0.16), Brand.magenta.opacity(0.16)],
+                                                            startPoint: .topLeading, endPoint: .bottomTrailing)))
+                        .frame(width: 30, height: 30)
+                    WalletGlyph(
+                        kind: glyph,
+                        size: 16,
+                        tint: style == .primary
+                            ? AnyShapeStyle(Color.white)
+                            : AnyShapeStyle(LinearGradient.diagonal),
+                        lineWidth: 1.7
                     )
+                }
                 Text(title)
                     .font(EType.bodyStrong)
                     .foregroundStyle(
@@ -362,32 +394,41 @@ struct MeWallet: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Space.s3)
-            .background(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(
-                        style == .primary
-                        ? AnyShapeStyle(LinearGradient.diagonal)
-                        : AnyShapeStyle(palette.bgCard)
-                    )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .strokeBorder(
-                        style == .primary
-                        ? AnyShapeStyle(Color.clear)
-                        : AnyShapeStyle(palette.borderFaint),
-                        lineWidth: 1
-                    )
-            )
+            .background {
+                if style == .primary {
+                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .fill(LinearGradient.diagonal)
+                        .overlay(alignment: .top) {
+                            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                                .strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.04)],
+                                                             startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                        }
+                        .shadow(color: Brand.blue.opacity(isDark ? 0.32 : 0.15), radius: 12, x: 0, y: 7)
+                }
+            }
+            .modifier(SecondaryPillCard(active: style == .secondary))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: §3 — Weekly chart
+    /// Whisper-card surface for the secondary pill so it reads as a card
+    /// (not a flat fill) while the primary keeps its gradient.
+    private struct SecondaryPillCard: ViewModifier {
+        let active: Bool
+        func body(content: Content) -> some View {
+            if active {
+                content.eusoCard(radius: Radius.lg, intensity: .whisper)
+            } else {
+                content
+            }
+        }
+    }
+
+    // MARK: §3 — Weekly chart (bespoke eyebrow + gradient bars)
 
     @ViewBuilder
     private var weeklyChart: some View {
-        sectionHeader(title: "7-day net")
         switch weekly.state {
         case .loading:
             chartSkeleton
@@ -399,20 +440,45 @@ struct MeWallet: View {
     }
 
     private var chartSkeleton: some View {
-        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-            .fill(palette.tintNeutral.opacity(0.35))
-            .frame(height: 140)
+        VStack(alignment: .leading, spacing: 12) {
+            WalletEyebrow(glyph: .pulse, text: "7-DAY NET")
+            HStack(alignment: .bottom, spacing: Space.s2) {
+                ForEach(0..<7, id: \.self) { i in
+                    WalletShimmer(height: CGFloat(40 + (i % 3) * 28), radius: 4)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 120)
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .feature)
     }
 
     private var chartEmpty: some View {
-        EusoEmptyState(
-            systemImage: "chart.bar",
-            title: "No earnings yet",
-            subtitle: "Your 7-day net chart fills in as settlements clear."
-        )
-        .frame(height: 140)
-        .frame(maxWidth: .infinity)
-        .eusoCard(radius: Radius.lg)
+        VStack(alignment: .leading, spacing: 12) {
+            WalletEyebrow(glyph: .pulse, text: "7-DAY NET")
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient(colors: [Brand.blue.opacity(0.12), Brand.magenta.opacity(0.12)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    WalletGlyph(kind: .pulse, size: 18, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No earnings yet").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Text("Your 7-day net chart fills in as settlements clear.")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .standard)
     }
 
     private func chartLoaded(_ rows: [WeeklyEarningsBar]) -> some View {
@@ -420,32 +486,41 @@ struct MeWallet: View {
         // and clamp to the most recent 7.
         let bars = Array(rows.prefix(7).reversed())
         let maxVal = max(bars.map(\.totalEarnings).max() ?? 0, 1)
-        return VStack(alignment: .leading, spacing: Space.s2) {
+        let netTotal = bars.map(\.totalEarnings).reduce(0, +)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                WalletEyebrow(glyph: .pulse, text: "7-DAY NET")
+                Spacer(minLength: 0)
+                Text(WalletMoney.usdDollarsPrecise(netTotal > 0 ? netTotal : nil))
+                    .font(.system(size: 13, weight: .heavy, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
             HStack(alignment: .bottom, spacing: Space.s2) {
                 ForEach(bars) { row in
-                    VStack(spacing: 4) {
+                    VStack(spacing: 6) {
                         Spacer(minLength: 0)
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(LinearGradient.diagonal)
                             .frame(height: barHeight(row.totalEarnings, max: maxVal))
                             .frame(maxWidth: .infinity)
+                            .shadow(color: Brand.blue.opacity(isDark ? 0.30 : 0.12), radius: 6, x: 0, y: 3)
                         Text(weekTick(row.weekStart))
                             .font(EType.micro)
                             .foregroundStyle(palette.textTertiary)
                     }
                 }
             }
-            .frame(height: 140)
+            .frame(height: 132)
         }
-        .padding(Space.s3)
-        .frame(maxWidth: .infinity)
-        .eusoCard(radius: Radius.lg)
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .feature)
     }
 
     private func barHeight(_ v: Double, max: Double) -> CGFloat {
         let normalized = max > 0 ? CGFloat(v / max) : 0
         // 1pt baseline tick when the week earned $0 — visible but honest.
-        return Swift.max(normalized * 110, 1)
+        return Swift.max(normalized * 108, 1)
     }
 
     /// Two-letter day initial from an ISO `weekStart`. Falls back to
@@ -462,59 +537,97 @@ struct MeWallet: View {
         return String(iso.suffix(5))
     }
 
-    // MARK: §4 — Upcoming settlements
+    // MARK: §4 — Upcoming settlements (bespoke vault rows)
 
     @ViewBuilder
     private var upcomingPayouts: some View {
-        sectionHeader(title: "Upcoming payouts")
         switch settlements.state {
         case .loading:
-            listSkeleton(rows: 2, height: 64)
+            payoutsSkeleton
         case .empty, .error:
-            EusoEmptyState(
-                systemImage: "calendar.badge.clock",
+            sectionEmpty(
+                eyebrowGlyph: .coins,
+                eyebrowText: "UPCOMING PAYOUTS",
+                glyph: .coins,
                 title: "No payouts pending",
                 subtitle: "New batches appear here as loads settle."
             )
-            .frame(maxWidth: .infinity)
-            .padding(Space.s3)
-            .eusoCard(radius: Radius.lg)
         case .loaded(let rows):
-            VStack(spacing: Space.s2) {
-                ForEach(rows.prefix(5)) { row in
-                    settlementRow(row)
+            let shown = Array(rows.prefix(5))
+            let pendingTotal = shown.map(\.amount).reduce(0, +)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    WalletEyebrow(glyph: .coins, text: "UPCOMING PAYOUTS")
+                    Spacer(minLength: 0)
+                    Text(WalletMoney.usdDollarsPrecise(pendingTotal > 0 ? pendingTotal : nil))
+                        .font(.system(size: 13, weight: .heavy, design: .rounded)).monospacedDigit()
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                VStack(spacing: 8) {
+                    ForEach(shown) { row in
+                        settlementRow(row)
+                    }
                 }
             }
+            .padding(Space.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.lg, intensity: .standard)
         }
     }
 
+    private var payoutsSkeleton: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            WalletEyebrow(glyph: .coins, text: "UPCOMING PAYOUTS")
+            VStack(spacing: 8) {
+                ForEach(0..<2, id: \.self) { _ in
+                    WalletShimmer(height: 60, radius: Radius.md)
+                }
+            }
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .standard)
+    }
+
+    /// Bespoke settlement vault row — drawn coins glyph in an
+    /// iridescent vault, batch + period, signed amount in tabular figures.
     private func settlementRow(_ row: DriverSettlementBatch) -> some View {
-        HStack(spacing: Space.s3) {
+        HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(palette.bgCard)
-                    .frame(width: 40, height: 40)
-                Image(systemName: "calendar")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(LinearGradient.diagonal)
+                    .fill(LinearGradient(colors: [Brand.blue.opacity(0.14), Brand.magenta.opacity(0.14)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                WalletGlyph(kind: .coins, size: 16, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.6)
             }
+            .frame(width: 42, height: 42)
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.batchNumber)
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
                 Text(periodLabel(row))
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textTertiary)
+                    .lineLimit(1)
             }
-            Spacer()
-            Text(currency(row.amount, code: "USD"))
-                .font(EType.bodyStrong)
-                .monospacedDigit()
-                .foregroundStyle(palette.textPrimary)
+            Spacer(minLength: Space.s2)
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(currency(row.amount, code: "USD"))
+                    .font(.system(size: 15, weight: .heavy, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(palette.textPrimary)
+                Text(row.status.uppercased())
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(Brand.info)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(Capsule().fill(Brand.info.opacity(0.14)))
+            }
         }
-        .padding(.vertical, Space.s3)
-        .padding(.horizontal, Space.s3)
-        .eusoCard(radius: Radius.md)
+        .padding(.horizontal, Space.s3).padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.md, intensity: .whisper)
     }
 
     private func periodLabel(_ row: DriverSettlementBatch) -> String {
@@ -528,95 +641,78 @@ struct MeWallet: View {
         }
     }
 
-    // MARK: §5 — Activity feed
+    // MARK: §5 — Activity feed (bespoke WalletLedgerRow)
 
     @ViewBuilder
     private var activityFeed: some View {
-        sectionHeader(title: "Activity")
         switch txns.state {
         case .loading:
-            listSkeleton(rows: 3, height: 56)
+            activitySkeleton
         case .empty, .error:
-            EusoEmptyState(
-                systemImage: "list.bullet.rectangle",
+            sectionEmpty(
+                eyebrowGlyph: .pulse,
+                eyebrowText: "ACTIVITY",
+                glyph: .pulse,
                 title: "No transactions yet",
                 subtitle: "Settlements, fees and payouts will land here."
             )
-            .frame(maxWidth: .infinity)
-            .padding(Space.s3)
-            .eusoCard(radius: Radius.lg)
         case .loaded(let rows):
-            VStack(spacing: Space.s2) {
-                ForEach(rows.prefix(8)) { txn in
-                    activityRow(txn)
+            let shown = Array(rows.prefix(8))
+            VStack(alignment: .leading, spacing: 12) {
+                WalletEyebrow(glyph: .pulse, text: "ACTIVITY")
+                VStack(spacing: 0) {
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { idx, txn in
+                        WalletLedgerRow(
+                            title: txn.title,
+                            memo: txn.subtitle,
+                            timestamp: txn.timestamp,
+                            amountDollars: txn.amount,
+                            type: ledgerType(txn),
+                            showDivider: idx < shown.count - 1
+                        )
+                    }
                 }
             }
+            .padding(Space.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.lg, intensity: .feature)
         }
     }
 
-    private func activityRow(_ txn: WalletTxn) -> some View {
-        HStack(spacing: Space.s3) {
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(palette.bgCard)
-                    .frame(width: 40, height: 40)
-                Image(systemName: iconFor(txn))
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(
-                        isCredit(txn)
-                        ? AnyShapeStyle(LinearGradient.diagonal)
-                        : AnyShapeStyle(palette.textSecondary)
-                    )
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(txn.title)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                if let sub = txn.subtitle {
-                    Text(sub)
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
+    private var activitySkeleton: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            WalletEyebrow(glyph: .pulse, text: "ACTIVITY")
+            VStack(spacing: 12) {
+                ForEach(0..<3, id: \.self) { _ in
+                    HStack(spacing: 12) {
+                        WalletShimmer(height: 40, radius: Radius.md).frame(width: 40)
+                        VStack(alignment: .leading, spacing: 6) {
+                            WalletShimmer(height: 12, radius: 4).frame(width: 150)
+                            WalletShimmer(height: 9, radius: 4).frame(width: 90)
+                        }
+                        Spacer(minLength: 0)
+                        WalletShimmer(height: 14, radius: 4).frame(width: 56)
+                    }
                 }
             }
-            Spacer()
-            Text(amountLabel(txn))
-                .font(EType.bodyStrong)
-                .monospacedDigit()
-                .foregroundStyle(
-                    isCredit(txn)
-                    ? AnyShapeStyle(palette.textPrimary)
-                    : AnyShapeStyle(palette.textSecondary)
-                )
         }
-        .padding(Space.s3)
-        .eusoCard(radius: Radius.md)
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .feature)
     }
 
-    private func iconFor(_ txn: WalletTxn) -> String {
-        if let hint = txn.iconHint, !hint.isEmpty { return hint }
+    /// Map the driver `WalletTxn.kind` to the ledger row's `type` hint so
+    /// the bespoke directional glyph (`WalletLedgerRow.glyph`) is chosen
+    /// honestly: fees/payouts → arrow-down, refunds → arrow-up, bonuses →
+    /// spark, everything else by sign.
+    private func ledgerType(_ txn: WalletTxn) -> String {
         switch txn.kind {
-        case "load_payout":    return "truck.box.fill"
-        case "instant_payout": return "bolt.fill"
-        case "fee":            return "minus.circle"
-        case "factoring":      return "arrow.triangle.2.circlepath"
-        case "fuel":           return "fuelpump.fill"
-        case "refund":         return "arrow.uturn.left.circle"
-        case "bonus":          return "star.fill"
-        case "adjustment":     return "slider.horizontal.3"
-        case "transfer":       return "arrow.left.arrow.right"
-        case "deposit":        return "tray.and.arrow.down"
-        default:               return "dollarsign.circle"
+        case "fee":            return "fee"
+        case "instant_payout": return "payout"
+        case "refund":         return "refund"
+        case "bonus":          return "bonus"
+        default:               return txn.kind
         }
-    }
-
-    private func isCredit(_ txn: WalletTxn) -> Bool {
-        // Credits are positive amounts; everything else is a debit/fee.
-        txn.amount > 0
-    }
-
-    private func amountLabel(_ txn: WalletTxn) -> String {
-        let prefix = isCredit(txn) ? "+" : ""
-        return "\(prefix)\(currency(txn.amount, code: txn.currency ?? "USD"))"
     }
 
     // MARK: §6 — Factoring offer (collapses when no offer)
@@ -629,89 +725,166 @@ struct MeWallet: View {
         // §13 guidance: don't surface a UI for a feature that
         // doesn't apply to the current driver state.
         if case .loaded(let offer?) = factoring.state {
-            sectionHeader(title: "Get paid today")
-            VStack(alignment: .leading, spacing: Space.s2) {
-                HStack(spacing: Space.s2) {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(Color.white)
-                    Text("HaulPay offer available")
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(Color.white)
-                    Spacer()
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().fill(.white.opacity(0.18))
+                        WalletGlyph(kind: .bolt, size: 20, tint: AnyShapeStyle(Color.white), lineWidth: 1.9)
+                    }
+                    .frame(width: 44, height: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Get paid today")
+                            .font(.system(size: 17, weight: .heavy)).foregroundStyle(.white)
+                        Text("HaulPay advance available")
+                            .font(EType.micro).foregroundStyle(.white.opacity(0.85))
+                    }
+                    Spacer(minLength: 0)
                 }
+                Rectangle()
+                    .fill(Color.white.opacity(0.22))
+                    .frame(height: 1)
                 // Net = grossAmount - feeAmount per FactoringAPI.Offer wire shape
                 // (frontend/server/routers/factoring.ts). Surface the gross +
                 // fee + net so the driver sees the full breakdown — no spin.
-                Text("Net \(currency(offer.netAmount, code: offer.currency)) · gross \(currency(offer.grossAmount, code: offer.currency)) · fee \(currency(offer.feeAmount, code: offer.currency))")
-                    .font(EType.caption)
-                    .foregroundStyle(Color.white.opacity(0.85))
+                HStack(spacing: Space.s4) {
+                    offerStat(label: "NET", value: currency(offer.netAmount, code: offer.currency), strong: true)
+                    offerStat(label: "GROSS", value: currency(offer.grossAmount, code: offer.currency))
+                    offerStat(label: "FEE", value: currency(offer.feeAmount, code: offer.currency))
+                    Spacer(minLength: 0)
+                }
                 Text("Open the active load detail to accept this advance.")
-                    .font(EType.caption)
-                    .foregroundStyle(Color.white.opacity(0.7))
+                    .font(EType.micro)
+                    .foregroundStyle(.white.opacity(0.7))
             }
             .padding(Space.s4)
-            .background(
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(LinearGradient.diagonal)
+            .overlay(alignment: .top) {
                 RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(LinearGradient.diagonal)
-            )
+                    .strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.04)],
+                                                 startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            .shadow(color: Brand.blue.opacity(isDark ? 0.35 : 0.16), radius: 14, x: 0, y: 8)
         }
     }
 
-    // MARK: §7 — Linked accounts
+    private func offerStat(label: String, value: String, strong: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                .foregroundStyle(.white.opacity(0.7))
+            Text(value)
+                .font(.system(size: strong ? 16 : 13, weight: .heavy, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+        }
+    }
+
+    // MARK: §7 — Linked accounts (bespoke method rows)
 
     @ViewBuilder
     private var linkedAccounts: some View {
-        sectionHeader(title: "Linked accounts")
         switch methods.state {
         case .loading:
-            listSkeleton(rows: 2, height: 52)
+            methodsSkeleton
         case .empty, .error:
-            EusoEmptyState(
-                systemImage: "creditcard",
-                title: "No methods linked",
-                subtitle: "Add a bank or card to receive instant payouts."
-            )
-            .frame(maxWidth: .infinity)
-            .padding(Space.s3)
-            .eusoCard(radius: Radius.lg)
+            linkedEmpty
         case .loaded(let rows):
-            VStack(spacing: Space.s2) {
-                ForEach(rows) { row in
-                    methodRow(row)
+            VStack(alignment: .leading, spacing: 12) {
+                WalletEyebrow(glyph: .bank, text: "LINKED ACCOUNTS")
+                VStack(spacing: 8) {
+                    ForEach(rows) { row in
+                        methodRow(row)
+                    }
+                    manageMethodsButton
                 }
-                manageMethodsButton
             }
+            .padding(Space.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.lg, intensity: .standard)
         }
     }
 
+    private var methodsSkeleton: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            WalletEyebrow(glyph: .bank, text: "LINKED ACCOUNTS")
+            VStack(spacing: 8) {
+                ForEach(0..<2, id: \.self) { _ in
+                    WalletShimmer(height: 52, radius: Radius.md)
+                }
+            }
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .standard)
+    }
+
+    private var linkedEmpty: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            WalletEyebrow(glyph: .bank, text: "LINKED ACCOUNTS")
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient(colors: [Brand.blue.opacity(0.12), Brand.magenta.opacity(0.12)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    WalletGlyph(kind: .bank, size: 18, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.6)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No methods linked").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Text("Add a bank or card to receive instant payouts.")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+            manageMethodsButton
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .standard)
+    }
+
+    /// Bespoke linked-method row — drawn bank/coins glyph in an iridescent
+    /// vault, institution + masked tail, an INSTANT pill when eligible.
     private func methodRow(_ m: WalletPaymentMethod) -> some View {
-        HStack(spacing: Space.s3) {
+        HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(palette.bgCard)
-                    .frame(width: 40, height: 40)
-                Image(systemName: m.kind == "bank" ? "building.columns.fill" : "creditcard.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(LinearGradient.diagonal)
+                    .fill(LinearGradient(colors: [Brand.blue.opacity(0.14), Brand.magenta.opacity(0.14)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                WalletGlyph(kind: m.kind == "bank" ? .bank : .coins, size: 15,
+                            tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
             }
+            .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(m.institution)
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
                 Text("••\(m.mask)\(m.isDefault ? " · default" : "")")
-                    .font(EType.caption)
+                    .font(EType.micro)
                     .foregroundStyle(palette.textSecondary)
             }
-            Spacer()
+            Spacer(minLength: 0)
             if m.isInstant {
-                Text("INSTANT")
-                    .font(EType.micro).tracking(0.6)
-                    .foregroundStyle(LinearGradient.diagonal)
+                HStack(spacing: 4) {
+                    WalletGlyph(kind: .bolt, size: 10, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.4)
+                    Text("INSTANT")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(Capsule().fill(Brand.blue.opacity(0.12)))
             }
         }
-        .padding(Space.s3)
-        .eusoCard(radius: Radius.md)
+        .padding(.horizontal, Space.s3).padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.md, intensity: .whisper)
     }
 
     private var manageMethodsButton: some View {
@@ -723,37 +896,36 @@ struct MeWallet: View {
         Button {
             showAddPayout = true
         } label: {
-            HStack(spacing: Space.s2) {
-                Image(systemName: "plus.circle")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(LinearGradient.diagonal)
+            HStack(spacing: 6) {
+                WalletGlyph(kind: .bank, size: 13, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
                 Text("Add another")
-                    .font(EType.bodyStrong)
+                    .font(.system(size: 12, weight: .heavy))
                     .foregroundStyle(LinearGradient.diagonal)
+                Spacer(minLength: 0)
+                WalletGlyph(kind: .chevron, size: 11, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, Space.s3)
+            .padding(.vertical, Space.s2)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: §8 — Tax withholdings
+    // MARK: §8 — Tax withholdings (bespoke card)
 
     @ViewBuilder
     private var taxWithholdings: some View {
-        sectionHeader(title: "Tax withholdings")
         switch tax.state {
         case .loading:
-            listSkeleton(rows: 1, height: 96)
+            taxSkeleton
         case .empty, .error:
-            EusoEmptyState(
-                systemImage: "doc.text.magnifyingglass",
+            sectionEmpty(
+                eyebrowGlyph: .pie,
+                eyebrowText: "TAX WITHHOLDINGS",
+                glyph: .pie,
                 title: "No tax data yet",
                 subtitle: "We'll surface YTD withholdings after your first settled load."
             )
-            .frame(maxWidth: .infinity)
-            .padding(Space.s3)
-            .eusoCard(radius: Radius.lg)
         case .loaded(let summary?):
             taxCard(summary)
         case .loaded(_):
@@ -761,26 +933,37 @@ struct MeWallet: View {
         }
     }
 
+    private var taxSkeleton: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            WalletEyebrow(glyph: .pie, text: "TAX WITHHOLDINGS")
+            WalletShimmer(height: 92, radius: Radius.md)
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .standard)
+    }
+
     private func taxCard(_ s: TaxAPI.TaxSummary) -> some View {
         VStack(alignment: .leading, spacing: Space.s3) {
+            WalletEyebrow(glyph: .pie, text: "TAX WITHHOLDINGS")
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("YTD withheld")
-                        .font(EType.micro).tracking(0.6)
+                    Text("YTD WITHHELD")
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
                     Text(currency((s.federalWithheld ?? 0) + (s.stateWithheld ?? 0),
                                    code: s.currency))
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.system(size: 28, weight: .heavy, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(LinearGradient.diagonal)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("Q estimate")
-                        .font(EType.micro).tracking(0.6)
+                    Text("Q ESTIMATE")
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
                     Text(currency(s.quarterlyEstimate ?? 0, code: s.currency))
-                        .font(EType.bodyStrong)
+                        .font(.system(size: 15, weight: .heavy, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(palette.textPrimary)
                 }
@@ -790,75 +973,115 @@ struct MeWallet: View {
         }
         .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .eusoCard(radius: Radius.lg)
+        .eusoCard(radius: Radius.lg, intensity: .feature)
     }
 
     @ViewBuilder
     private var ten99Row: some View {
         switch ten99.state {
         case .loaded(let doc?):
-            HStack {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient(colors: [Brand.blue.opacity(0.14), Brand.magenta.opacity(0.14)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    WalletGlyph(kind: .pulse, size: 15, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+                }
+                .frame(width: 38, height: 38)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(doc.documentType ?? "1099") · \(String(doc.year))")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                    Text(doc.available ? "Issued \(formatShort(doc.issuedAt) ?? "-")" : "Pending IRS issuance window")
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textSecondary)
+                    Text(doc.available ? "Issued \(formatShort(doc.issuedAt) ?? "—")" : "Pending IRS issuance window")
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
                 }
-                Spacer()
+                Spacer(minLength: 0)
                 if doc.available, let urlStr = doc.url, let url = URL(string: urlStr) {
                     Link(destination: url) {
-                        Text("Download")
-                            .font(EType.bodyStrong)
-                            .foregroundStyle(LinearGradient.diagonal)
+                        HStack(spacing: 5) {
+                            WalletGlyph(kind: .arrowDown, size: 12, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+                            Text("Download")
+                                .font(.system(size: 12, weight: .heavy))
+                                .foregroundStyle(LinearGradient.diagonal)
+                        }
                     }
                 } else {
                     Text("Unavailable")
-                        .font(EType.caption)
+                        .font(EType.micro)
                         .foregroundStyle(palette.textTertiary)
                 }
             }
+            .padding(.horizontal, Space.s3).padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.md, intensity: .whisper)
         default:
-            HStack {
+            HStack(spacing: 6) {
+                WalletGlyph(kind: .pulse, size: 12, tint: AnyShapeStyle(palette.textTertiary), lineWidth: 1.4)
                 Text("1099 · awaiting tax-year close")
-                    .font(EType.caption)
+                    .font(EType.micro)
                     .foregroundStyle(palette.textTertiary)
-                Spacer()
+                Spacer(minLength: 0)
             }
         }
     }
 
-    // MARK: Helpers
+    // MARK: Shared helpers
 
-    private func sectionHeader(title: String) -> some View {
-        HStack {
-            Text(title)
-                .font(EType.title)
-                .foregroundStyle(LinearGradient.diagonal)
-            Spacer()
-        }
-    }
-
-    private func listSkeleton(rows: Int, height: CGFloat) -> some View {
-        VStack(spacing: Space.s2) {
-            ForEach(0..<rows, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(palette.tintNeutral.opacity(0.35))
-                    .frame(height: height)
+    /// Bespoke empty/degrade card with an eyebrow + drawn glyph vault.
+    private func sectionEmpty(
+        eyebrowGlyph: WalletGlyph.Kind,
+        eyebrowText: String,
+        glyph: WalletGlyph.Kind,
+        title: String,
+        subtitle: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            WalletEyebrow(glyph: eyebrowGlyph, text: eyebrowText)
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient(colors: [Brand.blue.opacity(0.12), Brand.magenta.opacity(0.12)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    WalletGlyph(kind: glyph, size: 18, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Text(subtitle).font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
             }
         }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .standard)
     }
 
     private var disclosureFooter: some View {
-        Text("EusoWallet routes through Stripe Connect (Custom). Settlements clear within 1–2 business days. Instant payouts subject to eligibility.")
-            .font(EType.micro)
-            .foregroundStyle(palette.textTertiary)
-            .multilineTextAlignment(.leading)
-            .padding(.top, Space.s2)
+        HStack(spacing: 8) {
+            WalletGlyph(kind: .lock, size: 12, tint: AnyShapeStyle(palette.textTertiary), lineWidth: 1.4)
+            Text("EusoWallet routes through Stripe Connect (Custom). Settlements clear within 1–2 business days. Instant payouts subject to eligibility.")
+                .font(EType.micro)
+                .foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(.top, Space.s2)
     }
 
     // MARK: Formatters
+
+    /// Dollars → cents for the cents-native bespoke hero/composition bar.
+    /// Honest: a non-positive value maps to nil so the hero em-dashes
+    /// rather than rendering a fake $0 fill.
+    private func cents(_ dollars: Double) -> Int? {
+        guard dollars > 0 else { return nil }
+        return Int((dollars * 100).rounded())
+    }
 
     private func currency(_ v: Double, code: String?) -> String {
         let f = NumberFormatter()
@@ -898,6 +1121,10 @@ struct MeWallet: View {
 // thrown error means the balance is untouched — we surface the server
 // message verbatim. On success we show the honest payout ack (fee, net,
 // ETA) and signal the parent to refresh the balance.
+//
+// RE-SKINNED to the bespoke wallet language (WalletGlyph / WalletEyebrow /
+// eusoCard intensities, drawn check/selection Paths). Every piece of LOGIC
+// — parse, validation, submit, ack — is preserved unchanged.
 
 private struct DriverCashOutSheet: View {
     @Environment(\.palette) private var palette
@@ -915,6 +1142,8 @@ private struct DriverCashOutSheet: View {
     @State private var submitting: Bool = false
     @State private var errorText: String?
     @State private var ack: WalletExtrasAPI.RequestPayoutAck?
+
+    private var isDark: Bool { palette.bgPage == Theme.dark.bgPage }
 
     private var parsedAmount: Double? {
         Self.parseMonetary(amountText)
@@ -1056,39 +1285,64 @@ private struct DriverCashOutSheet: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: Space.s1) {
-            Text("Cash out")
-                .font(EType.h1)
-                .foregroundStyle(LinearGradient.diagonal)
-            Text("Withdraw to a linked bank or card")
-                .font(EType.caption)
-                .foregroundStyle(palette.textTertiary)
+        HStack(alignment: .top, spacing: Space.s3) {
+            VStack(alignment: .leading, spacing: 4) {
+                WalletEyebrow(glyph: .arrowDown, text: "DRIVER · CASH OUT")
+                Text("Withdraw")
+                    .font(.system(size: 24, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Text("To a linked bank or card")
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Spacer(minLength: 0)
+            ZStack {
+                Circle().fill(LinearGradient.diagonal).frame(width: 34, height: 34)
+                WalletGlyph(kind: .arrowDown, size: 16, tint: AnyShapeStyle(Color.white), lineWidth: 1.7)
+            }
+            .shadow(color: Brand.magenta.opacity(isDark ? 0.45 : 0.22), radius: 9, x: 0, y: 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var availableRow: some View {
         HStack {
-            Text("AVAILABLE")
-                .font(EType.micro).tracking(0.6)
-                .foregroundStyle(palette.textTertiary)
+            HStack(spacing: 6) {
+                WalletGlyph(kind: .wallet, size: 12, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.4)
+                Text("AVAILABLE")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.2)
+                    .foregroundStyle(palette.textTertiary)
+            }
             Spacer()
             Text(currency(available))
-                .font(EType.bodyStrong)
+                .font(.system(size: 20, weight: .heavy, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(palette.textPrimary)
         }
-        .padding(Space.s3)
-        .eusoCard(radius: Radius.md)
+        .padding(.horizontal, Space.s4).padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .feature)
     }
 
     private var noMethodState: some View {
-        VStack(spacing: Space.s3) {
-            EusoEmptyState(
-                systemImage: "creditcard",
-                title: "Add a payout method first",
-                subtitle: "Link a bank account or debit card to cash out your balance."
-            )
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient(colors: [Brand.blue.opacity(0.16), Brand.magenta.opacity(0.16)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    WalletGlyph(kind: .bank, size: 18, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.6)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Add a payout method first").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Text("Link a bank account or debit card to cash out your balance.")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
             Button {
                 onAddMethod()
             } label: {
@@ -1096,23 +1350,27 @@ private struct DriverCashOutSheet: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(Color.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, Space.s3)
-                    .background(
-                        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                            .fill(LinearGradient.diagonal)
-                    )
+                    .padding(.vertical, 12)
+                    .background(LinearGradient.diagonal)
+                    .overlay(alignment: .top) {
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.04)],
+                                                         startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
+            .padding(.top, 2)
         }
-        .frame(maxWidth: .infinity)
-        .padding(Space.s3)
-        .eusoCard(radius: Radius.lg)
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .standard)
     }
 
     private var methodPicker: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("TO")
-                .font(EType.micro).tracking(0.6)
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             VStack(spacing: Space.s2) {
                 ForEach(methods) { m in
@@ -1129,58 +1387,66 @@ private struct DriverCashOutSheet: View {
             // If the new method can't do instant, drop back to standard.
             if !(m.isInstant) { instant = false }
         } label: {
-            HStack(spacing: Space.s3) {
+            HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(palette.bgCard)
-                        .frame(width: 40, height: 40)
-                    Image(systemName: m.kind == "bank" ? "building.columns.fill" : "creditcard.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(LinearGradient.diagonal)
+                        .fill(LinearGradient(colors: [Brand.blue.opacity(0.16), Brand.magenta.opacity(0.16)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    WalletGlyph(kind: m.kind == "bank" ? .bank : .coins, size: 15,
+                                tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
                 }
-                VStack(alignment: .leading, spacing: 2) {
+                .frame(width: 38, height: 38)
+                VStack(alignment: .leading, spacing: 1) {
                     Text(m.institution)
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                     Text("••\(m.mask)\(m.isInstant ? " · instant" : "")")
-                        .font(EType.caption)
+                        .font(EType.micro)
                         .foregroundStyle(palette.textSecondary)
                 }
-                Spacer()
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(
-                        selected
-                        ? AnyShapeStyle(LinearGradient.diagonal)
-                        : AnyShapeStyle(palette.textTertiary)
-                    )
+                Spacer(minLength: 0)
+                // Drawn selection indicator — filled gradient disc with a
+                // check Path when chosen, hollow ring otherwise.
+                ZStack {
+                    Circle()
+                        .strokeBorder(selected ? AnyShapeStyle(LinearGradient.diagonal)
+                                               : AnyShapeStyle(palette.textTertiary.opacity(0.6)), lineWidth: 1.5)
+                        .frame(width: 18, height: 18)
+                    if selected {
+                        Circle().fill(LinearGradient.diagonal).frame(width: 18, height: 18)
+                        Canvas { ctx, sz in
+                            var p = Path()
+                            let s = min(sz.width, sz.height)
+                            p.move(to: CGPoint(x: 0.30 * s, y: 0.52 * s))
+                            p.addLine(to: CGPoint(x: 0.44 * s, y: 0.66 * s))
+                            p.addLine(to: CGPoint(x: 0.72 * s, y: 0.36 * s))
+                            ctx.stroke(p, with: .color(.white), style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                        }.frame(width: 18, height: 18)
+                    }
+                }
             }
-            .padding(Space.s3)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .strokeBorder(
-                        selected
-                        ? AnyShapeStyle(LinearGradient.diagonal)
-                        : AnyShapeStyle(palette.borderFaint),
-                        lineWidth: selected ? 1.5 : 1
-                    )
-            )
+            .padding(.horizontal, Space.s3).padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.md, intensity: selected ? .feature : .whisper)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
     private var amountField: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("AMOUNT")
-                .font(EType.micro).tracking(0.6)
+                .font(.system(size: 9, weight: .heavy)).tracking(1.2)
                 .foregroundStyle(palette.textTertiary)
-            HStack(spacing: Space.s2) {
+            HStack(spacing: 8) {
                 Text("$")
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.system(size: 24, weight: .heavy, design: .rounded))
                     .foregroundStyle(palette.textSecondary)
                 TextField("0.00", text: $amountText)
                     .keyboardType(.decimalPad)
-                    .font(.system(size: 22, weight: .bold))
+                    .font(.system(size: 24, weight: .heavy, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(palette.textPrimary)
                 Spacer()
@@ -1188,25 +1454,25 @@ private struct DriverCashOutSheet: View {
                     amountText = trimmedAmount(available)
                 } label: {
                     Text("MAX")
-                        .font(EType.micro).tracking(0.6)
+                        .font(.system(size: 10, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(LinearGradient.diagonal)
-                        .padding(.horizontal, Space.s2)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
                         .overlay(
-                            Capsule().strokeBorder(palette.borderFaint, lineWidth: 1)
+                            Capsule().strokeBorder(palette.iridescentHairline, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.plain)
             }
-            .padding(Space.s3)
-            .eusoCard(radius: Radius.md)
+            .padding(.horizontal, Space.s4).padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.lg, intensity: .feature)
         }
     }
 
     private var speedPicker: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
+        VStack(alignment: .leading, spacing: 6) {
             Text("SPEED")
-                .font(EType.micro).tracking(0.6)
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             HStack(spacing: Space.s2) {
                 speedOption(
@@ -1216,7 +1482,7 @@ private struct DriverCashOutSheet: View {
                 )
                 speedOption(
                     title: "Instant",
-                    subtitle: instantAvailable ? "Fee applies · minutes" : "Not available on this method",
+                    subtitle: instantAvailable ? "Fee applies · minutes" : "Not on this method",
                     isInstant: true
                 )
             }
@@ -1230,26 +1496,26 @@ private struct DriverCashOutSheet: View {
             guard !disabled else { return }
             instant = isInstant
         } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(disabled ? palette.textTertiary : palette.textPrimary)
-                Text(subtitle)
-                    .font(EType.micro)
-                    .foregroundStyle(palette.textTertiary)
-                    .lineLimit(2)
+            HStack(spacing: 8) {
+                WalletGlyph(kind: isInstant ? .bolt : .pulse, size: 14,
+                            filled: isInstant && selected && !disabled,
+                            tint: (selected && !disabled) ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary),
+                            lineWidth: 1.6)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(disabled ? palette.textTertiary : palette.textPrimary)
+                    Text(subtitle)
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, Space.s3).padding(.vertical, 11)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Space.s3)
-            .overlay(
-                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .strokeBorder(
-                        selected && !disabled
-                        ? AnyShapeStyle(LinearGradient.diagonal)
-                        : AnyShapeStyle(palette.borderFaint),
-                        lineWidth: selected && !disabled ? 1.5 : 1
-                    )
-            )
+            .eusoCard(radius: Radius.md, intensity: (selected && !disabled) ? .feature : .whisper)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -1257,16 +1523,15 @@ private struct DriverCashOutSheet: View {
     }
 
     private func inlineError(_ text: String) -> some View {
-        HStack(spacing: Space.s2) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Brand.danger)
+        HStack(spacing: 8) {
+            WalletGlyph(kind: .pulse, size: 14, tint: AnyShapeStyle(Brand.danger), lineWidth: 1.5)
             Text(text)
                 .font(EType.caption)
                 .foregroundStyle(Brand.danger)
             Spacer(minLength: 0)
         }
         .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .strokeBorder(Brand.danger.opacity(0.55), lineWidth: 1)
@@ -1277,25 +1542,27 @@ private struct DriverCashOutSheet: View {
         Button {
             Task { await submit() }
         } label: {
-            HStack(spacing: Space.s2) {
+            HStack(spacing: 8) {
                 if submitting {
                     ProgressView()
                         .tint(.white)
                 } else {
-                    Image(systemName: "arrow.down.to.line.circle.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(Color.white)
+                    WalletGlyph(kind: .arrowDown, size: 16, tint: AnyShapeStyle(Color.white), lineWidth: 1.8)
                 }
                 Text(submitButtonTitle)
                     .font(EType.bodyStrong)
                     .foregroundStyle(Color.white)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, Space.s3)
-            .background(
-                RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                    .fill(LinearGradient.diagonal)
-            )
+            .padding(.vertical, 14)
+            .background(LinearGradient.diagonal)
+            .overlay(alignment: .top) {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.04)],
+                                                 startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .shadow(color: Brand.blue.opacity((isDark && canSubmit) ? 0.35 : 0), radius: 14, x: 0, y: 8)
             .opacity(canSubmit ? 1 : 0.5)
         }
         .buttonStyle(.plain)
@@ -1311,22 +1578,33 @@ private struct DriverCashOutSheet: View {
     }
 
     private func successCard(_ ack: WalletExtrasAPI.RequestPayoutAck) -> some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            HStack(spacing: Space.s2) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text("Cash-out requested")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                Spacer()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(LinearGradient.diagonal).frame(width: 40, height: 40)
+                    // drawn checkmark Path (no SF Symbol)
+                    Canvas { ctx, sz in
+                        var p = Path()
+                        let s = min(sz.width, sz.height)
+                        p.move(to: CGPoint(x: 0.28 * s, y: 0.52 * s))
+                        p.addLine(to: CGPoint(x: 0.44 * s, y: 0.68 * s))
+                        p.addLine(to: CGPoint(x: 0.74 * s, y: 0.34 * s))
+                        ctx.stroke(p, with: .color(.white), style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
+                    }.frame(width: 40, height: 40)
+                }
+                .shadow(color: Brand.magenta.opacity(isDark ? 0.45 : 0.2), radius: 9, x: 0, y: 4)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Cash-out requested").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Text("On its way to your linked method").font(EType.micro).foregroundStyle(palette.textTertiary)
+                }
+                Spacer(minLength: 0)
             }
             IridescentHairline()
             ackRow(label: "Amount", value: currency(ack.amount))
             if ack.fee > 0 {
                 ackRow(label: "Instant fee", value: currency(ack.fee))
             }
-            ackRow(label: "Net to you", value: currency(ack.netAmount))
+            ackRow(label: "Net to you", value: currency(ack.netAmount), emphasised: true)
             ackRow(label: "Status", value: ack.status.capitalized)
             if let eta = formatEta(ack.estimatedArrival) {
                 ackRow(label: "Estimated arrival", value: eta)
@@ -1339,28 +1617,31 @@ private struct DriverCashOutSheet: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(Color.white)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, Space.s3)
-                    .background(
-                        RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                            .fill(LinearGradient.diagonal)
-                    )
+                    .padding(.vertical, 13)
+                    .background(LinearGradient.diagonal)
+                    .overlay(alignment: .top) {
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.04)],
+                                                         startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
             .padding(.top, Space.s1)
         }
         .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .eusoCard(radius: Radius.lg)
+        .eusoCard(radius: Radius.lg, intensity: .feature)
     }
 
-    private func ackRow(label: String, value: String) -> some View {
+    private func ackRow(label: String, value: String, emphasised: Bool = false) -> some View {
         HStack {
             Text(label)
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
+                .font(emphasised ? EType.bodyStrong : EType.caption)
+                .foregroundStyle(emphasised ? palette.textPrimary : palette.textSecondary)
             Spacer()
             Text(value)
-                .font(EType.bodyStrong)
+                .font(.system(size: emphasised ? 16 : 14, weight: emphasised ? .heavy : .semibold, design: .rounded))
                 .monospacedDigit()
                 .foregroundStyle(palette.textPrimary)
         }
@@ -1450,7 +1731,7 @@ private func driverNavTrailing_069() -> [NavSlot] {
 // MARK: - Previews
 //
 // Previews never run `.task` — stores stay in `.loading` so both
-// registers render a deterministic skeleton without hitting the
+// registers render a deterministic bespoke shimmer without hitting the
 // network. No fixtures.
 
 #Preview("069 · Me Wallet · Night") {

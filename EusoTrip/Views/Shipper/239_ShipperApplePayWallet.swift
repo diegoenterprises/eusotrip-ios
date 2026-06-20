@@ -3,47 +3,42 @@
 //  EusoTrip iOS — Shipper Apple Pay / PassKit / Wallet authoring
 //                 (§35.3 Arc L)
 //
-//  iOS twin of:
-//    /Users/diegousoro/Desktop/EusoTrip 2027 UI Wireframes/02 Shipper/Code/
-//    239_ShipperApplePayWallet.swift
+//  REDESIGNED to the Design Authority level (founder mandate 722): the
+//  Apple Pay / Wallet surface is now bespoke to the FOUNDER-APPROVED
+//  EusoWallet design language (290_WalletHome / 291_EusoWalletDetail).
+//  It shares the EusoWalletComponents primitives (WalletGlyph / WalletEyebrow
+//  / WalletShimmer / eusoCard surfaces) so it speaks the same volumetric,
+//  alive, trustworthy money-card voice as the rest of the wallet — not the
+//  prior flat "AI-coded basic" list. Every section glyph is a drawn
+//  `WalletGlyph` Path; ZERO SF Symbols on this surface.
 //
-//  Surface: per-load Wallet pickup-credential pass + per-card Apple Pay
-//  authoring. Ninth Arc L brick after 231→232→233→234→235→236→237→238.
-//  Hero = the shipper's active `.pkpass` pickup window, fetched live
-//  from wallet.shipperPassesSnapshot. Tapping "Add to Wallet" fires
-//  PKAddPassesViewController. Two cards below: passes-in-Wallet and
-//  Apple Pay methods (live Stripe Customer cards), both on the
-//  Eusorone Technologies merchant account.
+//  SVG/design owns the LOOK · iOS owns the FUNCTION (bespoke-conformance
+//  bridge): the visual layer was rebuilt to the wallet language while EVERY
+//  data fetch, proc call, action, navigation, and @State is preserved 1:1:
 //
-//  §11 Diego canon anchored.
-//  Doctrine: §2 nav, §3 numbers-first, §4.3 single hairline, §7 breathe
-//  density, §17.2 width-locked status grammar, §19.2 file-scoped helpers
-//  (GradientPassHeader, GradientCapsuleCTA, DecorativeQRGrid,
-//  TierLetterBadge, LDTile, WalletStatusPill, PassRow, PaymentCardRow), §20.4
-//  no dead buttons, §22.2 counter eyebrow color encodes screen-status,
-//  §35.3 Arc L iOS-platform integration surfaces.
+//    • Data:   wallet.shipperPassesSnapshot (active + passes) +
+//              wallet.listPaymentMethods (live Stripe Customer cards).
+//    • Actions: tapAddToWallet → EusoWalletPassService.addPass (PassKit) ·
+//               tapPassRow → same PassKit flow · tapPaymentMethod →
+//               wallet.setDefaultPaymentMethod (Stripe default-card flip) ·
+//               tapManageApplePay → nav-swap to 295 (the already-fixed
+//               Manage-Apple-Pay routing, untouched).
+//    • State:  inlineQrPayload / inlineShortCode / passBanner* /
+//              activePass / passes / paymentMethods / snapshotPhase /
+//              settingDefaultMethodId — all preserved.
 //
-//  Backend (server) endpoints owed (EUSO-2160):
-//    wallet.listPaymentMethods           -> [PaymentMethod]
-//    wallet.generatePassFor(loadId)      -> URL (signed .pkpass)
-//    wallet.recordPaymentEvent(loadId, paymentMethodId, amount)
-//    wallet.getPassReleaseQueue          -> [QueueEntry]
+//  Surface: per-load Wallet pickup-credential pass (hero) + the live
+//  passes-in-Wallet list + Apple Pay methods (live Stripe cards), both on
+//  the Eusorone Technologies merchant account. ZERO fabrication — real data
+//  or an honest em-dash.
 //
-//  iOS API surface (consumed by LiveDataStore):
-//    ShipperWalletAPI.currentPasses()           -> [WalletPass]
-//    ShipperWalletAPI.generatePass(forLoadId:)  -> Result<URL, Error>
-//    ShipperWalletAPI.addToWallet(passUrl:)      -> PKAddPassesViewController
-//    ShipperWalletAPI.paymentMethods()           -> [PaymentMethod]
-//    ShipperWalletAPI.setDefaultMethod(_:)
-//
-//  iOS framework binding:
+//  iOS framework binding (unchanged):
 //    PassKit (PKPass / PKPassLibrary / PKAddPassesViewController) +
 //    Apple Pay (PKPaymentRequest / PKPaymentAuthorizationViewController).
-//    Each .pkpass is signed against the Eusorone PassKit certificate
-//    and carries: serialNumber = LD-id, primaryFields = lane,
-//    secondaryFields = ETA, auxiliaryFields = carrier + escrow,
-//    barcodes[0].message = "eusotrip://load/LD-..." for gate-scanner
-//    verification.
+//    Each .pkpass is signed against the Eusorone PassKit certificate and
+//    carries: serialNumber = LD-id, primaryFields = lane, secondaryFields =
+//    ETA, auxiliaryFields = carrier + escrow, barcodes[0].message =
+//    "eusotrip://load/LD-..." for gate-scanner verification.
 //
 //  Both #Preview blocks (Dark + Light) ship per §11.4 doctrine.
 //
@@ -55,10 +50,12 @@ import SwiftUI
 struct ShipperApplePayWallet: View {
     @Environment(\.palette) var palette
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Inline QR payload, set when `EusoWalletPassService` falls back
     /// to the no-pkpass branch. The hero pickup card swaps from the
-    /// decorative grid to a live `EusoQRView` whenever this is non-nil.
+    /// canonical credential deeplink to a live `EusoQRView` whenever this
+    /// is non-nil.
     @State var inlineQrPayload: String? = nil
     /// 5-digit fallback code shown next to the QR for the "type-it"
     /// path when the gate scanner can't read the QR (camera issue,
@@ -90,6 +87,8 @@ struct ShipperApplePayWallet: View {
         case error(String)
     }
 
+    private var isDark: Bool { palette.bgPage == Theme.dark.bgPage }
+
     /// Numeric DB load id of the active pass — the stable key the list
     /// rows match against to highlight the active credential. (The
     /// string `id` carries a "pass_" prefix that never matched a list
@@ -109,75 +108,38 @@ struct ShipperApplePayWallet: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 0) {
-                topBar
-                    .padding(.top, Space.s5)
-                titleBlock
-                    .padding(.top, Space.s3)
-
-                IridescentHairline()
-                    .padding(.top, Space.s3)
+            VStack(alignment: .leading, spacing: Space.s5) {
+                header
 
                 // ── Active pass hero ───────────────────────────────────
-                // Renders the gradient pickup-credential card with QR +
-                // Add-to-Wallet CTA when the shipper has a live load.
-                // Empty state when none — never a fake hardcoded pass.
+                // Renders the bespoke gradient pickup-credential money-card
+                // with the live QR + Add-to-Wallet CTA when the shipper has
+                // a live load. Honest empty/loading/error states otherwise —
+                // never a fake hardcoded pass.
                 if let pass = activePass {
-                    sectionLabel(pass.matrixRowLabel ?? "ACTIVE PASS")
-                        .padding(.top, Space.s5)
                     heroPassCard(for: pass)
-                        .padding(.horizontal, Space.s5)
-                        .padding(.top, Space.s2)
                 } else if snapshotPhase == .empty {
-                    sectionLabel("ACTIVE PASS")
-                        .padding(.top, Space.s5)
                     emptyHeroCard
-                        .padding(.horizontal, Space.s5)
-                        .padding(.top, Space.s2)
                 } else if snapshotPhase == .loading {
-                    sectionLabel("ACTIVE PASS")
-                        .padding(.top, Space.s5)
                     loadingHeroCard
-                        .padding(.horizontal, Space.s5)
-                        .padding(.top, Space.s2)
                 } else if case .error(let msg) = snapshotPhase {
-                    sectionLabel("ACTIVE PASS")
-                        .padding(.top, Space.s5)
                     errorHeroCard(message: msg)
-                        .padding(.horizontal, Space.s5)
-                        .padding(.top, Space.s2)
                 }
 
                 // ── Pass list ──────────────────────────────────────────
                 if !passes.isEmpty {
-                    sectionLabel("PASSES · \(passes.count) IN WALLET")
-                        .padding(.top, Space.s5)
                     passesCard
-                        .padding(.horizontal, Space.s5)
-                        .padding(.top, Space.s2)
                 }
 
                 // ── Apple Pay methods ──────────────────────────────────
-                sectionLabel("APPLE PAY · \(paymentMethods.count) METHODS")
-                    .padding(.top, Space.s5)
-                if paymentMethods.isEmpty {
-                    emptyPaymentMethodsCard
-                        .padding(.horizontal, Space.s5)
-                        .padding(.top, Space.s2)
-                } else {
-                    paymentMethodsCard
-                        .padding(.horizontal, Space.s5)
-                        .padding(.top, Space.s2)
-                }
+                paymentMethodsSection
 
-                settingsPointerLink
-                    .padding(.horizontal, Space.s5)
-                    .padding(.top, Space.s4)
+                // ── Manage Apple Pay (the already-fixed 295 routing) ───
+                manageSection
 
-                footer
-                    .padding(.top, Space.s4)
-                    .padding(.bottom, Space.s5)
+                Color.clear.frame(height: 96)
             }
+            .padding(.horizontal, 14).padding(.top, 56)
         }
         .overlay(alignment: .top) { passBannerOverlay }
         .animation(.easeInOut(duration: 0.2), value: passBannerText)
@@ -185,32 +147,68 @@ struct ShipperApplePayWallet: View {
         .refreshable { await loadAll() }
     }
 
-    // MARK: — Empty / loading / error hero states
+    // MARK: — Header (290 wallet-home recipe: eyebrow + heavy title +
+    //          drawn iridescent wallet mark)
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            VStack(alignment: .leading, spacing: 6) {
+                WalletEyebrow(glyph: .wallet, text: "SHIPPER · APPLE PAY WALLET")
+                Text("Wallet")
+                    .font(.system(size: 26, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Text(counterEyebrow)
+                    .font(.system(size: 10, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                    .accessibilityLabel("\(passes.count) Apple Wallet passes. \(activePass != nil ? "One is the active pickup credential." : "None currently active.")")
+            }
+            Spacer(minLength: 0)
+            // Iridescent brand mark — drawn wallet glyph (no SF Symbol).
+            ZStack {
+                Circle().fill(LinearGradient.diagonal).frame(width: 38, height: 38)
+                WalletGlyph(kind: .wallet, size: 18, tint: AnyShapeStyle(Color.white), lineWidth: 1.6)
+            }
+            .shadow(color: Brand.magenta.opacity(isDark ? 0.45 : 0.22), radius: 10, x: 0, y: 4)
+        }
+    }
+
+    // MARK: — Empty / loading / error hero states (bespoke, drawn glyphs)
 
     private var loadingHeroCard: some View {
-        VStack(spacing: 10) {
-            ProgressView().scaleEffect(0.9).tint(palette.textPrimary)
-            Text("Loading your active pickup credential…")
-                .font(EType.caption).foregroundStyle(palette.textTertiary)
+        VStack(alignment: .leading, spacing: 14) {
+            WalletEyebrow(glyph: .wallet, text: "ACTIVE PASS")
+            WalletShimmer(height: 18, radius: 6).frame(width: 140)
+            WalletShimmer(height: 40, radius: 12)
+            WalletShimmer(height: 12, radius: 5).frame(width: 180)
+            HStack(spacing: 12) {
+                WalletShimmer(height: 36, radius: Radius.md).frame(width: 36)
+                WalletShimmer(height: 12, radius: 5)
+                WalletShimmer(height: 22, radius: 11).frame(width: 120)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 160)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .padding(Space.s5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.xl, intensity: .feature)
     }
 
     private var emptyHeroCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "wallet.pass")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(LinearGradient.primary)
-                Text("No active pickup credential")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient(colors: [Brand.blue.opacity(0.16), Brand.magenta.opacity(0.16)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    WalletGlyph(kind: .wallet, size: 20, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.6)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No active pickup credential")
+                        .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Text("Nothing in-transit yet")
+                        .font(EType.micro).foregroundStyle(palette.textTertiary)
+                }
+                Spacer(minLength: 0)
             }
             Text("Post a load and accept a carrier's bid. We'll mint a signed .pkpass for your gate scanner the moment the load goes in-transit.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
@@ -218,72 +216,113 @@ struct ShipperApplePayWallet: View {
             Button {
                 NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "204"])
             } label: {
-                GradientCapsuleCTA(label: "Post a load", width: 140)
+                HStack(spacing: 8) {
+                    WalletGlyph(kind: .spark, size: 14, tint: AnyShapeStyle(Color.white), lineWidth: 1.7)
+                    Text("Post a load").font(EType.bodyStrong).foregroundStyle(.white)
+                }
+                .padding(.horizontal, 18).padding(.vertical, 11)
+                .background(LinearGradient.diagonal)
+                .overlay(alignment: .top) {
+                    Capsule().strokeBorder(LinearGradient(colors: [.white.opacity(0.5), .white.opacity(0.04)], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+                }
+                .clipShape(Capsule())
+                .shadow(color: Brand.blue.opacity(isDark ? 0.3 : 0.14), radius: 10, x: 0, y: 5)
             }
             .buttonStyle(.plain)
-            .padding(.top, 4)
+            .padding(.top, 2)
         }
-        .padding(16)
+        .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .eusoCard(radius: Radius.lg, intensity: .standard)
     }
 
     private func errorHeroCard(message: String) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 14, weight: .heavy))
-                    .foregroundStyle(Brand.danger)
-                Text("Couldn't load wallet").font(.system(size: 14, weight: .heavy)).foregroundStyle(palette.textPrimary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(Brand.danger.opacity(0.12))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(Brand.danger.opacity(0.40), lineWidth: 1)
+                    WalletGlyph(kind: .pulse, size: 18, tint: AnyShapeStyle(Brand.danger), lineWidth: 1.6)
+                }
+                .frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Couldn't load wallet").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Text(message).font(EType.caption).foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
             }
-            Text(message).font(EType.caption).foregroundStyle(palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
             Button { Task { await loadAll() } } label: {
                 Text("Retry")
                     .font(.system(size: 12, weight: .heavy))
-                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .padding(.horizontal, 16).padding(.vertical, 8)
                     .foregroundStyle(.white)
-                    .background(LinearGradient.primary)
+                    .background(LinearGradient.diagonal)
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
-            .padding(.top, 4)
+            .padding(.top, 2)
         }
-        .padding(16)
+        .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .eusoCard(radius: Radius.lg, intensity: .standard)
+    }
+
+    // MARK: — Apple Pay methods section
+
+    @ViewBuilder
+    private var paymentMethodsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                WalletEyebrow(glyph: .bank, text: "APPLE PAY")
+                Spacer(minLength: 0)
+                Text("\(paymentMethods.count) METHOD\(paymentMethods.count == 1 ? "" : "S")")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            if paymentMethods.isEmpty {
+                emptyPaymentMethodsCard
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(paymentMethods) { method in
+                        PaymentCardRow(
+                            method: method,
+                            isSettingDefault: settingDefaultMethodId == method.id,
+                            onRowTap: { tapPaymentMethod(method) }
+                        )
+                    }
+                }
+            }
+        }
     }
 
     private var emptyPaymentMethodsCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("No payment methods on file")
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(palette.textPrimary)
-            Text("Add a card via Apple Pay or Plaid to fund escrow + accept settlements.")
-                .font(EType.caption).foregroundStyle(palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(LinearGradient(colors: [Brand.blue.opacity(0.12), Brand.magenta.opacity(0.12)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                WalletGlyph(kind: .bank, size: 18, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.6)
+            }
+            .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("No payment methods on file")
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Text("Add a card via Apple Pay or Plaid to fund escrow + accept settlements.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
         }
-        .padding(14)
+        .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .eusoCard(radius: Radius.lg, intensity: .standard)
     }
 
-    // MARK: — Data loading
+    // MARK: — Data loading (UNCHANGED — same two procs, same mapping)
 
     @MainActor
     private func loadAll() async {
@@ -436,291 +475,251 @@ struct ShipperApplePayWallet: View {
         )
     }
 
-    private var topBar: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("\u{2726} SHIPPER · WALLET")
-                .font(EType.micro)
-                .tracking(1.0)
-                .foregroundStyle(LinearGradient.primary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-            Spacer()
-            Text(counterEyebrow)
-                .font(EType.micro)
-                .tracking(1.0)
-                .foregroundStyle(palette.textTertiary)
-                .accessibilityLabel("Three Apple Wallet passes installed. One is currently the active pickup credential.")
-        }
-        .padding(.horizontal, Space.s5)
-    }
-
-    private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Wallet")
-                .font(.system(size: 28, weight: .bold))
-                .tracking(-0.4)
-                .foregroundStyle(palette.textPrimary)
-            Text("Apple Pay · Eusorone Technologies")
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s5)
-    }
-
-    @ViewBuilder
-    private func sectionLabel(_ text: String) -> some View {
-        Text(text)
-            .font(EType.micro)
-            .tracking(1.0)
-            .foregroundStyle(palette.textTertiary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Space.s5)
-    }
-
-    // MARK: - HERO PASS CARD (active Wallet pass)
+    // MARK: - HERO PASS CARD (active Wallet pass — bespoke money-card)
+    //
+    // The pickup credential rendered in the wallet money-card idiom: a
+    // layered volumetric gradient card (aurora bloom + sheen sweep +
+    // top-rim catch-light + dual iridescent glow) carrying the LOAD ID
+    // numeral, the lane, the live ETA + equipment, the carrier band, the
+    // genuine gate QR, and the Add-to-Wallet CTA. Same data + same action
+    // (tapAddToWallet → PassKit) as before; only the surface is elevated.
 
     private func heroPassCard(for pass: ActiveWalletPass) -> some View {
-        // Local alias so the (large) body below keeps referring to
-        // `activePass` exactly as it did when this was a computed
-        // var off the @State property. The optional unwrap happens
-        // at the call site (`if let pass = activePass`).
-        let activePass = pass
-        return ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .fill(palette.bgCard)
-                .overlay(
-                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                        .strokeBorder(palette.borderFaint)
-                )
+        let shape = RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
+        return VStack(alignment: .leading, spacing: 0) {
+            // ── issuer header strip + Apple Pay chip ──
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        WalletGlyph(kind: .wallet, size: 12, tint: AnyShapeStyle(Color.white.opacity(0.9)), lineWidth: 1.4)
+                        Text(pass.issuerLine)
+                            .font(.system(size: 8, weight: .heavy)).tracking(1.2)
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    Text(pass.title)
+                        .font(.system(size: 13, weight: .heavy)).tracking(0.3)
+                        .foregroundStyle(.white)
+                }
+                Spacer(minLength: 0)
+                ZStack {
+                    Capsule().fill(.white.opacity(0.18))
+                    Capsule().strokeBorder(.white.opacity(0.22), lineWidth: 0.75)
+                    Text("Pay")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 50, height: 20)
+            }
 
-            VStack(alignment: .leading, spacing: 0) {
-                GradientPassHeader(
-                    issuerLine: activePass.issuerLine,
-                    title:      activePass.title
-                )
+            // ── LOAD ID / LANE + the genuine gate QR ──
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("LOAD ID")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(.white.opacity(0.72))
+                        .padding(.top, 16)
+                    Text(pass.loadId)
+                        .font(.system(size: 18, weight: .heavy, design: .monospaced)).tracking(0.4)
+                        .foregroundStyle(.white)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .padding(.top, 3)
 
-                ZStack(alignment: .topLeading) {
-                    // SVG-canonical offsets: LOAD ID label y=62 (22pt
-                    // below the 40h header strip), LOAD ID value y=80,
-                    // LANE label y=102, LANE value y=124, ETA/EQUIPMENT
-                    // row y=144. Spacings retuned to those gaps.
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("LOAD ID")
-                            .font(.system(size: 8, weight: .heavy))
-                            .tracking(0.6)
-                            .foregroundStyle(palette.textTertiary)
-                            .padding(.top, 22)
-
-                        Text(activePass.loadId)
-                            .font(.system(size: 17, weight: .bold, design: .monospaced))
-                            .tracking(0.4)
-                            .foregroundStyle(LinearGradient.primary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
-                            .padding(.top, 4)
-
-                        Text("LANE")
-                            .font(.system(size: 8, weight: .heavy))
-                            .tracking(0.6)
-                            .foregroundStyle(palette.textTertiary)
-                            .padding(.top, 14)
-
-                        Text(activePass.lane)
-                            .font(.system(size: 20, weight: .heavy))
-                            .tracking(-0.3)
-                            .foregroundStyle(palette.textPrimary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
-                            .padding(.top, 4)
-
-                        HStack(alignment: .top, spacing: 16) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("ETA")
-                                    .font(.system(size: 8, weight: .heavy))
-                                    .tracking(0.6)
-                                    .foregroundStyle(palette.textTertiary)
-                                Text(activePass.eta)
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(palette.textPrimary)
-                                    .monospacedDigit()
-                            }
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("EQUIPMENT")
-                                    .font(.system(size: 8, weight: .heavy))
-                                    .tracking(0.6)
-                                    .foregroundStyle(palette.textTertiary)
-                                Text(activePass.equipment)
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundStyle(palette.textPrimary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.78)
-                            }
-                        }
+                    Text("LANE")
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(.white.opacity(0.72))
                         .padding(.top, 14)
+                    Text(pass.lane)
+                        .font(.system(size: 21, weight: .heavy)).tracking(-0.3)
+                        .foregroundStyle(.white)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .padding(.top, 2)
 
-                        Spacer(minLength: 0)
+                    HStack(alignment: .top, spacing: 18) {
+                        heroField("ETA", pass.eta, mono: true)
+                        heroField("EQUIPMENT", pass.equipment, mono: false)
                     }
-                    .padding(.horizontal, 20)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    HStack {
-                        Spacer()
-                        // Real QR code via the shared EusoQR primitive.
-                        // When Wallet signing is offline the service hands
-                        // back the server-signed credential token; we
-                        // render THAT (the exact payload the gate scanner
-                        // verifies) so the in-app QR is the genuine pass.
-                        // Before any mint we fall back to the deterministic
-                        // load-credential deeplink, which also scans
-                        // cleanly. Founder mandate 2026-05-06 — every QR
-                        // surface needs to actually work.
-                        VStack(alignment: .trailing, spacing: 6) {
-                            EusoQRView(
-                                kind: inlineQrPayload.map { .raw(text: $0) }
-                                    ?? .loadCredential(
-                                        loadId: activePass.apiLoadId,
-                                        mode: .credential
-                                    ),
-                                role: .shipper,
-                                size: 92,
-                                cornerRadius: 8
-                            )
-                            if let code = inlineShortCode {
-                                Text(code)
-                                    .font(EType.mono(.micro)).tracking(2.0)
-                                    .foregroundStyle(palette.textPrimary)
-                                    .accessibilityLabel("Gate fallback code \(code.map(String.init).joined(separator: " "))")
-                            }
-                        }
-                        .padding(.top, 12)
-                        .padding(.trailing, 20)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
-
-                HStack(alignment: .center, spacing: 12) {
-                    TierLetterBadge(letter: activePass.carrierTier)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(activePass.carrierLine)
-                            .font(.system(size: 11, weight: .heavy))
-                            .foregroundStyle(palette.textPrimary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
-                        Text(activePass.escrowLine)
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(LinearGradient.primary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
-                    }
-
-                    Spacer(minLength: 0)
-
-                    Button(action: tapAddToWallet) {
-                        GradientCapsuleCTA(label: activePass.ctaLabel, width: 140)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Add the active pickup credential to Apple Wallet. Installs a .pkpass bundle bound to \(activePass.loadId).")
-                }
-                .padding(.horizontal, 20)
-                // SVG carrier band sits at y=178 within the 220h card;
-                // body content ends near y=160 (ETA value baseline), so
-                // the gap is ~18pt. The prior 56pt was driven by the
-                // unbounded body and pushed the carrier band off-card.
-                .padding(.top, 14)
-                .padding(.bottom, 14)
-            }
-        }
-        // SVG-canonical hero pass-card height — 220pt fixed. Locking
-        // minHeight = maxHeight so the gradient header strip (40) +
-        // body block (140) + carrier band (40) total exactly to the
-        // spec and the QR + Add-to-Wallet pill sit in their
-        // SVG-defined positions instead of drifting on long strings.
-        .frame(maxWidth: .infinity, minHeight: 220, maxHeight: 220, alignment: .topLeading)
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-    }
-
-    private var passesCard: some View {
-        VStack(spacing: 0) {
-            ForEach(passes.indices, id: \.self) { idx in
-                PassRow(
-                    pass:        passes[idx],
-                    isActive:    passes[idx].loadId == activePassLoadId,
-                    onRowTap:    { tapPassRow(passes[idx]) }
-                )
-                if idx < passes.count - 1 {
-                    Rectangle()
-                        .fill(palette.borderFaint)
-                        .frame(height: 1)
-                        .padding(.horizontal, 20)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-    }
-
-    private var paymentMethodsCard: some View {
-        VStack(spacing: 0) {
-            ForEach(paymentMethods.indices, id: \.self) { idx in
-                PaymentCardRow(
-                    method:    paymentMethods[idx],
-                    onRowTap:  { tapPaymentMethod(paymentMethods[idx]) }
-                )
-                if idx < paymentMethods.count - 1 {
-                    Rectangle()
-                        .fill(palette.borderFaint)
-                        .frame(height: 1)
-                        .padding(.horizontal, 20)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-    }
-
-    private var settingsPointerLink: some View {
-        Button(action: tapManageApplePay) {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Manage Apple Pay integration")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(palette.textPrimary)
-                    Text("Per-card · per-pass settings · Payment Methods")
-                        .font(.system(size: 11))
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+                    .padding(.top, 14)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text("\u{2192}")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(palette.textSecondary)
+                // Real QR via the shared EusoQR primitive on a white chip.
+                // When Wallet signing is offline the service hands back the
+                // server-signed credential token; we render THAT (the exact
+                // payload the gate scanner verifies). Before any mint we fall
+                // back to the deterministic load-credential deeplink, which
+                // also scans cleanly. Founder mandate — every QR must work.
+                VStack(spacing: 6) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(.white)
+                            .frame(width: 96, height: 96)
+                        EusoQRView(
+                            kind: inlineQrPayload.map { .raw(text: $0) }
+                                ?? .loadCredential(
+                                    loadId: pass.apiLoadId,
+                                    mode: .credential
+                                ),
+                            role: .shipper,
+                            size: 84,
+                            cornerRadius: 6
+                        )
+                    }
+                    if let code = inlineShortCode {
+                        Text(code)
+                            .font(EType.mono(.micro)).tracking(2.0)
+                            .foregroundStyle(.white)
+                            .accessibilityLabel("Gate fallback code \(code.map(String.init).joined(separator: " "))")
+                    }
+                }
+                .padding(.top, 14)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-            .frame(minHeight: 48)
+
+            // ── carrier band + Add-to-Wallet CTA ──
+            Rectangle().fill(.white.opacity(0.18)).frame(height: 1)
+                .padding(.top, 14)
+
+            HStack(alignment: .center, spacing: 12) {
+                // tier badge — drawn, gradient-inverse on the gradient card
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(.white.opacity(0.22))
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(.white.opacity(0.30), lineWidth: 1)
+                    Text(pass.carrierTier)
+                        .font(.system(size: 14, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(.white)
+                }
+                .frame(width: 26, height: 26)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(pass.carrierLine)
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(1).minimumScaleFactor(0.78)
+                    Text(pass.escrowLine)
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(1).minimumScaleFactor(0.78)
+                }
+                Spacer(minLength: 0)
+
+                Button(action: tapAddToWallet) {
+                    HStack(spacing: 6) {
+                        WalletGlyph(kind: .wallet, size: 13, tint: AnyShapeStyle(Brand.blue), lineWidth: 1.6)
+                        Text(pass.ctaLabel)
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(Brand.blue)
+                            .lineLimit(1).minimumScaleFactor(0.85)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(.white)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add the active pickup credential to Apple Wallet. Installs a .pkpass bundle bound to \(pass.loadId).")
+            }
+            .padding(.top, 14)
         }
-        .buttonStyle(.plain)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Manage Apple Pay integration. Per-card and per-pass settings live in Payment Methods.")
+        .padding(Space.s5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            ZStack {
+                LinearGradient.diagonal
+                RadialGradient(colors: [.white.opacity(0.30), .clear],
+                               center: .topLeading, startRadius: 0, endRadius: 340)
+                LinearGradient(colors: [.clear, .white.opacity(0.10), .clear],
+                               startPoint: .top, endPoint: .bottomTrailing)
+            }
+        }
+        .overlay(alignment: .top) {
+            shape.strokeBorder(
+                LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.04)],
+                               startPoint: .top, endPoint: .bottom),
+                lineWidth: 1)
+        }
+        .clipShape(shape)
+        .shadow(color: Brand.blue.opacity(isDark ? 0.42 : 0.18), radius: 20, x: 0, y: 10)
+        .shadow(color: Brand.magenta.opacity(isDark ? 0.30 : 0.12), radius: 24, x: 0, y: 14)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(pass.matrixRowLabel ?? "Active pass")
+    }
+
+    private func heroField(_ label: String, _ value: String, mono: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                .foregroundStyle(.white.opacity(0.72))
+            Text(value)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(.white)
+                .lineLimit(1).minimumScaleFactor(0.78)
+                .modifier(MonoDigit(on: mono))
+        }
+    }
+
+    // MARK: — Passes list (bespoke rows in a carded ledger)
+
+    private var passesCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                WalletEyebrow(glyph: .pulse, text: "PASSES")
+                Spacer(minLength: 0)
+                Text("\(passes.count) IN WALLET")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(passes.enumerated()), id: \.element.id) { idx, pass in
+                    PassRow(
+                        pass: pass,
+                        isActive: pass.loadId == activePassLoadId,
+                        showDivider: idx < passes.count - 1,
+                        onRowTap: { tapPassRow(pass) }
+                    )
+                }
+            }
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .feature)
+    }
+
+    // MARK: — Manage section (the already-fixed 295 routing — UNCHANGED)
+
+    private var manageSection: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            WalletEyebrow(glyph: .pie, text: "MANAGE").padding(.leading, 2)
+            Button(action: tapManageApplePay) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .fill(LinearGradient(colors: [Brand.blue.opacity(0.16), Brand.magenta.opacity(0.16)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                        WalletGlyph(kind: .bank, size: 16, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+                    }
+                    .frame(width: 38, height: 38)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Manage Apple Pay integration")
+                            .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                        Text("Per-card · per-pass settings · Payment Methods")
+                            .font(EType.micro).foregroundStyle(palette.textTertiary)
+                            .lineLimit(1).minimumScaleFactor(0.85)
+                    }
+                    Spacer(minLength: 0)
+                    WalletGlyph(kind: .chevron, size: 13, tint: AnyShapeStyle(palette.textTertiary), lineWidth: 1.5)
+                }
+                .padding(.horizontal, Space.s3).padding(.vertical, 11)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .eusoCard(radius: Radius.md, intensity: .whisper)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Manage Apple Pay integration. Per-card and per-pass settings live in Payment Methods.")
+
+            footer
+        }
     }
 
     private var footer: some View {
@@ -733,10 +732,10 @@ struct ShipperApplePayWallet: View {
                 .foregroundStyle(palette.textTertiary)
         }
         .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.horizontal, Space.s5)
+        .padding(.top, Space.s2)
     }
 
-    // MARK: - Banner overlay
+    // MARK: - Banner overlay (drawn glyphs — no SF Symbols)
 
     @ViewBuilder
     private var passBannerOverlay: some View {
@@ -749,25 +748,27 @@ struct ShipperApplePayWallet: View {
 
     @ViewBuilder
     private func walletBanner(_ text: String, kind: WalletBannerKind) -> some View {
-        HStack(alignment: .top, spacing: Space.s2) {
-            Image(systemName: kind == .success ? "checkmark.circle.fill" : kind == .error ? "exclamationmark.triangle.fill" : "info.circle.fill")
-                .foregroundStyle(kind == .success ? Brand.success : kind == .error ? Brand.danger : palette.textSecondary)
-                .font(.system(size: 14, weight: .semibold))
-                .padding(.top, 2)
+        let tint: Color = kind == .success ? Brand.success : kind == .error ? Brand.danger : Brand.blue
+        let glyph: WalletGlyph.Kind = kind == .success ? .spark : kind == .error ? .pulse : .bolt
+        return HStack(alignment: .top, spacing: Space.s2) {
+            ZStack {
+                Circle().fill(tint.opacity(0.14)).frame(width: 26, height: 26)
+                WalletGlyph(kind: glyph, size: 14, tint: AnyShapeStyle(tint), lineWidth: 1.6)
+            }
             Text(text)
                 .font(EType.caption)
                 .foregroundStyle(palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.md, intensity: .standard)
         .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
         .transition(.move(edge: .top).combined(with: .opacity))
     }
 
-    // MARK: - Tap handlers (§20.4 no dead buttons)
+    // MARK: - Tap handlers (§20.4 no dead buttons — UNCHANGED behavior)
 
     private func tapAddToWallet() {
         // Guard against the empty / loading hero state — the button
@@ -923,11 +924,12 @@ struct ShipperApplePayWallet: View {
         }
     }
 
-    /// Tapping the footer routes to the in-app Payment Methods screen
-    /// (295) where Apple Pay cards/passes are actually managed — NOT the
-    /// generic Settings screen (211), which dropped the user into an
+    /// Tapping the Manage pointer routes to the in-app Payment Methods
+    /// screen (295) where Apple Pay cards/passes are actually managed — NOT
+    /// the generic Settings screen (211), which dropped the user into an
     /// "abyss" with no focused Apple Pay surface (founder report). 295 is
     /// the real destination for per-card / per-pass management.
+    /// (The already-fixed Manage-Apple-Pay routing — preserved verbatim.)
     private func tapManageApplePay() {
         NotificationCenter.default.post(
             name: .eusoShipperNavSwap,
@@ -938,6 +940,15 @@ struct ShipperApplePayWallet: View {
                 "deeplinkSection": "wallet",
             ]
         )
+    }
+}
+
+// MARK: - MonoDigit helper (conditional monospacedDigit on the hero field)
+
+private struct MonoDigit: ViewModifier {
+    let on: Bool
+    func body(content: Content) -> some View {
+        if on { content.monospacedDigit() } else { content }
     }
 }
 
@@ -985,12 +996,14 @@ private enum WalletPassStatus {
         }
     }
 
-    var pillWidth: CGFloat {
+    /// Status tint in the bespoke wallet palette — active reads gradient,
+    /// the rest map to the brand semantic inks.
+    var tint: Color {
         switch self {
-        case .active:    return 60
-        case .inTransit: return 78
-        case .escort:    return 60
-        case .pending:   return 68
+        case .active:    return Brand.success
+        case .inTransit: return Brand.blue
+        case .escort:    return Brand.warning
+        case .pending:   return Brand.info
         }
     }
 
@@ -1076,341 +1089,140 @@ private struct PaymentMethod: Identifiable {
     let tag:       PaymentTag
 }
 
-// MARK: - GradientPassHeader (40pt Apple Wallet pass-issuer header strip
-//          — gradient diagonal fill, white issuer line + title + Apple
-//          Pay "Pay" capsule on the right)
-
-private struct GradientPassHeader: View {
-    let issuerLine: String
-    let title:      String
-
-    var body: some View {
-        ZStack(alignment: .leading) {
-            UnevenRoundedRectangle(
-                topLeadingRadius:     Radius.lg,
-                bottomLeadingRadius:  0,
-                bottomTrailingRadius: 0,
-                topTrailingRadius:    Radius.lg,
-                style: .continuous
-            )
-            .fill(LinearGradient.diagonal)
-
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(issuerLine)
-                        .font(.system(size: 8, weight: .heavy))
-                        .tracking(1.0)
-                        .foregroundStyle(Color.white.opacity(0.85))
-                    Text(title)
-                        .font(.system(size: 11, weight: .heavy))
-                        .tracking(0.3)
-                        .foregroundStyle(.white)
-                }
-                Spacer()
-                ZStack {
-                    Capsule().fill(Color.white.opacity(0.18))
-                    Text("Pay")
-                        .font(.system(size: 9, weight: .heavy))
-                        .tracking(0.4)
-                        .foregroundStyle(.white)
-                }
-                .frame(width: 50, height: 18)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 56)
-        }
-        .frame(maxWidth: .infinity, minHeight: 40, maxHeight: 40)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(issuerLine) - \(title) - Apple Pay")
-    }
-}
-
-// MARK: - GradientCapsuleCTA (140×22 hero CTA — 234/235/236/237/238 recipe)
-
-private struct GradientCapsuleCTA: View {
-    let label: String
-    let width: CGFloat
-
-    var body: some View {
-        ZStack {
-            Capsule().fill(LinearGradient.primary)
-            Text(label)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-                .padding(.horizontal, 8)
-        }
-        .frame(width: width, height: 22)
-    }
-}
-
-// MARK: - DecorativeQRGrid (90×90 pseudo-QR with 3 position markers +
-//          module pattern. Decorative — production renders a real QR
-//          via CIQRCodeGenerator from "eusotrip://load/LD-...")
-
-private struct DecorativeQRGrid: View {
-    @Environment(\.palette) var palette
-
-    private let modules: [(CGFloat, CGFloat)] = [
-        (32,6),(38,6),(44,6),(56,6),
-        (32,12),(50,12),(56,12),
-        (38,18),(44,18),(56,18),
-        (32,24),(44,24),(50,24),
-        (6,32),(18,32),(32,32),(44,32),(56,32),(68,32),(80,32),
-        (12,38),(24,38),(38,38),(50,38),(62,38),(74,38),
-        (6,44),(18,44),(32,44),(44,44),(56,44),(68,44),(80,44),
-        (12,50),(24,50),(38,50),(50,50),(62,50),(74,50),
-        (32,56),(44,56),(56,56),(68,56),(80,56),
-        (38,64),(50,64),(62,64),(74,64),
-        (32,70),(50,70),(56,70),(68,70),(80,70),
-        (38,76),(44,76),(62,76),(74,76),
-        (32,82),(44,82),(56,82),(68,82),(80,82)
-    ]
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(Color.white)
-
-            positionMarker(at: CGPoint(x: 6, y: 6))
-            positionMarker(at: CGPoint(x: 64, y: 6))
-            positionMarker(at: CGPoint(x: 6, y: 64))
-
-            ForEach(modules.indices, id: \.self) { idx in
-                let p = modules[idx]
-                Rectangle()
-                    .fill(Color(red: 0.05, green: 0.07, blue: 0.09))
-                    .frame(width: 3, height: 3)
-                    .offset(x: p.0, y: p.1)
-            }
-        }
-        .frame(width: 90, height: 90)
-        .accessibilityHidden(true)
-    }
-
-    @ViewBuilder
-    private func positionMarker(at p: CGPoint) -> some View {
-        let mark = Color(red: 0.05, green: 0.07, blue: 0.09)
-        ZStack(alignment: .topLeading) {
-            Rectangle()
-                .fill(mark)
-                .frame(width: 20, height: 20)
-            Rectangle()
-                .fill(Color.white)
-                .frame(width: 14, height: 14)
-                .offset(x: 3, y: 3)
-            Rectangle()
-                .fill(mark)
-                .frame(width: 8, height: 8)
-                .offset(x: 6, y: 6)
-        }
-        .offset(x: p.x, y: p.y)
-    }
-}
-
-// MARK: - TierLetterBadge (24×24 — 233 catalyst-grade recipe at
-//          compact pass-band scale)
-
-private struct TierLetterBadge: View {
-    let letter: String
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(LinearGradient.primary)
-            Text(letter)
-                .font(.system(size: 14, weight: .heavy, design: .monospaced))
-                .foregroundStyle(.white)
-        }
-        .frame(width: 24, height: 24)
-        .accessibilityLabel("Catalyst tier \(letter)")
-    }
-}
-
-// MARK: - LDTile (36×36 — 237/238 InitialsTile recipe, semantic pivot to
-//          "active pass")
-
-private struct LDTile: View {
-    @Environment(\.palette) var palette
-    let prefix: String
-    let active: Bool
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(active
-                      ? AnyShapeStyle(LinearGradient.primary)
-                      : AnyShapeStyle(palette.textPrimary.opacity(0.06)))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .strokeBorder(active
-                                      ? Color.clear
-                                      : palette.borderFaint)
-                )
-            Text(prefix)
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                .tracking(0.4)
-                .foregroundStyle(active
-                                 ? AnyShapeStyle(Color.white)
-                                 : AnyShapeStyle(palette.textTertiary))
-        }
-        .frame(width: 36, height: 36)
-        .accessibilityHidden(true)
-    }
-}
-
-// MARK: - WalletStatusPill (60×18 gradient or 78×18 outlined — per-pass status)
-
-private struct WalletStatusPill: View {
-    @Environment(\.palette) var palette
-    let status: WalletPassStatus
-
-    var body: some View {
-        ZStack {
-            if status == .active {
-                Capsule().fill(LinearGradient.primary)
-            } else {
-                Capsule()
-                    .strokeBorder(palette.textPrimary.opacity(0.20),
-                                  lineWidth: 1)
-            }
-            Text(status.label)
-                .font(.system(size: 9, weight: .heavy))
-                .tracking(0.6)
-                .foregroundStyle(status == .active
-                                 ? AnyShapeStyle(Color.white)
-                                 : AnyShapeStyle(palette.textSecondary))
-        }
-        .frame(width: status.pillWidth, height: 18)
-    }
-}
-
-// MARK: - PassRow (per-pass row — LD-tile + lane + italic spec + mono
-//          LD-id + status pill; active variant gets gradient wash)
+// MARK: - PassRow (bespoke per-pass row — drawn LD-tile + lane + spec +
+//          mono LD-id + drawn status dot; active variant gets the
+//          iridescent gradient wash + a live pulse dot)
 
 private struct PassRow: View {
     @Environment(\.palette) var palette
     let pass:        WalletPass
     let isActive:    Bool
+    let showDivider: Bool
     let onRowTap:    () -> Void
 
     var body: some View {
-        Button(action: onRowTap) {
-            ZStack(alignment: .leading) {
-                if isActive {
-                    LinearGradient.primary
-                        .opacity(0.12)
-                }
-
+        VStack(spacing: 0) {
+            Button(action: onRowTap) {
                 HStack(alignment: .center, spacing: 12) {
-                    if isActive {
-                        Circle()
-                            .fill(LinearGradient.primary)
-                            .frame(width: 6, height: 6)
-                            .padding(.leading, 4)
-                    } else {
-                        Color.clear.frame(width: 10, height: 6)
+                    // drawn LD tile — gradient fill when active, soft otherwise
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .fill(isActive
+                                  ? AnyShapeStyle(LinearGradient.diagonal)
+                                  : AnyShapeStyle(palette.textPrimary.opacity(0.06)))
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .strokeBorder(isActive
+                                          ? AnyShapeStyle(Color.clear)
+                                          : AnyShapeStyle(palette.iridescentHairline), lineWidth: 1)
+                        Text(pass.tilePrefix)
+                            .font(.system(size: 11, weight: .heavy, design: .monospaced)).tracking(0.4)
+                            .foregroundStyle(isActive
+                                             ? AnyShapeStyle(Color.white)
+                                             : AnyShapeStyle(palette.textTertiary))
                     }
-
-                    LDTile(prefix: pass.tilePrefix, active: isActive)
+                    .frame(width: 40, height: 40)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(pass.lane)
-                            .font(.system(size: 13, weight: .heavy))
+                            .font(EType.bodyStrong)
                             .foregroundStyle(isActive
-                                             ? AnyShapeStyle(LinearGradient.primary)
+                                             ? AnyShapeStyle(LinearGradient.diagonal)
                                              : AnyShapeStyle(palette.textPrimary))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
-
+                            .lineLimit(1).minimumScaleFactor(0.78)
                         Text(pass.spec)
-                            .font(.system(size: 10).italic())
-                            .foregroundStyle(palette.textSecondary)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.78)
-
+                            .font(EType.micro)
+                            .foregroundStyle(palette.textTertiary)
+                            .lineLimit(1).minimumScaleFactor(0.78)
                         Text("\(pass.id) · \(pass.installedNote)")
-                            .font(EType.mono(.micro))
-                            .tracking(0.3)
+                            .font(EType.mono(.micro)).tracking(0.3)
                             .foregroundStyle(isActive
-                                             ? AnyShapeStyle(LinearGradient.primary)
-                                             : AnyShapeStyle(palette.textTertiary))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
+                                             ? AnyShapeStyle(LinearGradient.diagonal)
+                                             : AnyShapeStyle(palette.textSecondary))
+                            .lineLimit(1).minimumScaleFactor(0.75)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                    WalletStatusPill(status: pass.status)
+                    // status — drawn dot + small-caps label, color-keyed
+                    HStack(spacing: 5) {
+                        Circle().fill(pass.status.tint).frame(width: 6, height: 6)
+                        Text(pass.status.label)
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(pass.status.tint)
+                    }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.vertical, 10)
+                .contentShape(Rectangle())
             }
-            .frame(minHeight: 52)
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("\(pass.lane). \(pass.spec). \(pass.id), \(pass.installedNote). Status \(pass.status.label).\(isActive ? " Active pickup credential." : "")")
+
+            if showDivider {
+                Rectangle()
+                    .fill(palette.iridescentHairline)
+                    .frame(height: 1)
+                    .opacity(0.4)
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(pass.lane). \(pass.spec). \(pass.id), \(pass.installedNote). Status \(pass.status.label).\(isActive ? " Active pickup credential." : "")")
     }
 }
 
-// MARK: - PaymentCardRow (per-payment-method row · 32×20 card glyph +
-//          masked PAN + textSecondary spec + status tag — mirrors 208's
-//          larger PaymentMethod row recipe at compact-row scale)
+// MARK: - PaymentCardRow (bespoke per-payment-method tile — drawn card
+//          glyph in a brand-tinted vault + masked PAN + spec + DEFAULT/
+//          BACKUP tag; carries an inline spinner while the default flip
+//          is in flight)
 
 private struct PaymentCardRow: View {
     @Environment(\.palette) var palette
-    let method:    PaymentMethod
-    let onRowTap:  () -> Void
+    let method:           PaymentMethod
+    let isSettingDefault: Bool
+    let onRowTap:         () -> Void
 
     var body: some View {
         Button(action: onRowTap) {
             HStack(alignment: .center, spacing: 12) {
+                // drawn payment-method glyph — bank rail in a brand vault
                 ZStack {
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(Color(red: 0.05, green: 0.07, blue: 0.09))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .strokeBorder(palette.borderFaint, lineWidth: 1)
-                        )
-                    VStack(spacing: 0) {
-                        Rectangle()
-                            .fill(Color.white.opacity(0.40))
-                            .frame(height: 3)
-                            .padding(.top, 5)
-                        Spacer(minLength: 0)
-                    }
-                    Text(method.brand.rawValue)
-                        .font(.system(size: 7, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(.white)
-                        .padding(.top, 6)
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient(colors: [Brand.blue.opacity(0.16), Brand.magenta.opacity(0.16)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    WalletGlyph(kind: .bank, size: 18, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
                 }
-                .frame(width: 32, height: 20)
+                .frame(width: 42, height: 42)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(method.maskedPAN)
-                        .font(.system(size: 13, weight: .heavy))
+                        .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+                        .lineLimit(1).minimumScaleFactor(0.85)
                     Text(method.spec)
-                        .font(.system(size: 10))
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1).minimumScaleFactor(0.78)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(method.tag.label)
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(0.6)
-                    .foregroundStyle(method.tag == .defaultMethod
-                                     ? AnyShapeStyle(LinearGradient.primary)
-                                     : AnyShapeStyle(palette.textTertiary))
+                if isSettingDefault {
+                    ProgressView().scaleEffect(0.7).tint(palette.textTertiary)
+                } else {
+                    Text(method.tag.label)
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(method.tag == .defaultMethod
+                                         ? AnyShapeStyle(LinearGradient.diagonal)
+                                         : AnyShapeStyle(palette.textTertiary))
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(method.tag == .defaultMethod
+                                           ? Brand.blue.opacity(0.10)
+                                           : palette.textPrimary.opacity(0.04))
+                        )
+                }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 6)
-            .frame(minHeight: 32)
+            .padding(.horizontal, Space.s3).padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.md, intensity: method.tag == .defaultMethod ? .feature : .whisper)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .contain)
@@ -1477,6 +1289,5 @@ struct ShipperApplePayWalletScreen: View {
 #Preview("Shipper Apple Pay Wallet · Light") {
     ShipperApplePayWalletScreen(theme: Theme.light)
         .preferredColorScheme(.light)
-        .padding(24)
         .background(Theme.light.bgPage)
 }
