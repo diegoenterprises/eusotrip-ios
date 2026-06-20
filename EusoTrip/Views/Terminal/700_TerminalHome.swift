@@ -165,6 +165,7 @@ struct TerminalHome: View {
                 header
                 HomeWeatherWidget()
                 kpiStrip
+                accessControlCTA
                 facilityLocatorCard
                 attentionStrip
                 HomeWidgetGrid(
@@ -387,6 +388,46 @@ struct TerminalHome: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    // MARK: - Access control · scan entry
+    //
+    // The access-controller entry on the home: opens the scanner/verify surface
+    // ("TerminalAccessScan") where a gate guard scans a staff access-card QR or
+    // types the 6-digit code, verified honestly against the real
+    // `staffAccessTokens`. Pushed via .eusoTerminalNavSwap (matches every other
+    // Terminal nav hop). Bespoke gradient-rim row, no decorative chrome.
+    private var accessControlCTA: some View {
+        Button {
+            NotificationCenter.default.post(
+                name: .eusoTerminalNavSwap, object: nil,
+                userInfo: ["screenId": "TerminalAccessScan"])
+        } label: {
+            HStack(spacing: Space.s3) {
+                ZStack {
+                    Circle().fill(LinearGradient.diagonal.opacity(0.14)).frame(width: 40, height: 40)
+                    Image(systemName: "qrcode.viewfinder")
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Access control · scan")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Verify a staff access card — QR or 6-digit code")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .padding(Space.s3)
+            .eusoCard(radius: Radius.lg)
+        }
+        .buttonStyle(.plain)
     }
 
     private var kpiSkeleton: some View {

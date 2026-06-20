@@ -55,6 +55,7 @@ struct PerLoadWeatherCard: View {
 
     @StateObject private var store = WeatherCardStore()
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// v3 two-state: collapsed dashboard tile ↔ expanded full view.
     @State private var expanded: Bool
@@ -64,6 +65,35 @@ struct PerLoadWeatherCard: View {
         self.isActive = isActive
         self.startExpanded = startExpanded
         _expanded = State(initialValue: startExpanded ?? isActive)
+    }
+
+    /// Build the REAL `WeatherSnapshot` the build-751 sky engine consumes,
+    /// from this load's live origin realtime block. Every input maps from a
+    /// genuine upstream field (`origin.realtime.*`, `origin.lat`,
+    /// `realtime.observedAt`); absent fields fall through to the snapshot's
+    /// own nil-safe defaults — zero fabrication. The engine keys its scene off
+    /// `weatherCode` (so Drizzle/Rain/Heavy-Rain/Thunderstorm each animate
+    /// distinctly) and scales precipitation/wind/fog/visibility by the live
+    /// numbers.
+    private func heroSkySnapshot(_ card: WeatherForLoad) -> WeatherSnapshot {
+        let rt = card.origin?.realtime
+        var snap = WeatherSnapshot(
+            city: card.origin?.name ?? "",
+            tempF: Int((rt?.temperature ?? 0).rounded()),
+            windMph: Int((rt?.windSpeedMph ?? 0).rounded()),
+            visibilityMi: Int((rt?.visibilityMi ?? 10).rounded()),
+            condition: rt?.condition ?? "",
+            symbol: "cloud.fill",
+            nextAlert: nil,
+            accent: .calm
+        )
+        snap.weatherCode = card.heroWeatherCode
+        if let p = rt?.precipitationProbability { snap.precipChancePct = Int(p.rounded()) }
+        snap.latitude = card.origin?.lat
+        if let iso = rt?.observedAt {
+            snap.observedAt = ISO8601DateFormatter().date(from: iso)
+        }
+        return snap
     }
 
     var body: some View {
@@ -188,7 +218,10 @@ struct PerLoadWeatherCard: View {
     @ViewBuilder
     private func collapsedBody(_ card: WeatherForLoad) -> some View {
         ZStack(alignment: .bottomLeading) {
-            SkyStageHero(weatherCode: card.heroWeatherCode, compact: true)
+            // build-751: the continuous animated sky engine behind the
+            // per-load hero, driven by this lane's live origin weather.
+            SkyStageHeroLive(snapshot: heroSkySnapshot(card),
+                             animated: !reduceMotion, compact: true)
                 .frame(height: 150)
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 
@@ -243,7 +276,10 @@ struct PerLoadWeatherCard: View {
         VStack(alignment: .leading, spacing: 13) {
             // ── Sky-stage hero + readout ───────────────────────────────
             ZStack(alignment: .topLeading) {
-                SkyStageHero(weatherCode: card.heroWeatherCode)
+                // build-751: the full continuous animated sky engine behind
+                // the expanded per-load hero, driven by live origin weather.
+                SkyStageHeroLive(snapshot: heroSkySnapshot(card),
+                                 animated: !reduceMotion)
                     .frame(height: 220)
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
 

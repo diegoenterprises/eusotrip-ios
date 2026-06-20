@@ -140,6 +140,10 @@ enum ScreenRegistry {
             .init(id: "067", title: "Me · Profile",                 role: .driver) { p in AnyView(MeProfileScreen(theme: p)) },
             .init(id: "068", title: "Me · Earnings",                role: .driver) { p in AnyView(MeEarnings068(theme: p)) },
             .init(id: "069", title: "Me · Wallet",                  role: .driver) { p in AnyView(MeWalletScreen(theme: p)) },
+            // Driver Wallet card-style picker — same pure WalletCardPickerView as the
+            // shipper "WalletCardStyle" entry, wrapped in driver Me chrome. Reached from
+            // the driver Wallet hub (069) "Wallet card style" row via .eusoDriverMeNavSwap.
+            .init(id: "WalletCardStyleDriver", title: "Driver · Wallet Card Style", role: .driver) { p in AnyView(DriverWalletCardStyleScreen(theme: p)) },
             .init(id: "070", title: "Me · Settlements",             role: .driver) { p in AnyView(MeSettlementsScreen(theme: p)) },
             .init(id: "071", title: "Me · Tax",                     role: .driver) { p in AnyView(MeTaxScreen(theme: p)) },
             .init(id: "072", title: "Me · Docs",                    role: .driver) { p in AnyView(MeDocsScreen(theme: p)) },
@@ -1569,6 +1573,14 @@ enum ScreenRegistry {
         list.append(.init(id: "312", title: "Catalyst · Hot Zones",        role: .catalyst) { p in AnyView(CatalystHotZonesScreen(theme: p)) })
         list.append(.init(id: "314", title: "Catalyst · Maintenance Zeun", role: .catalyst) { p in AnyView(CatalystMaintenanceZeunScreen(theme: p)) })
         list.append(.init(id: "319", title: "Catalyst · Wallet",           role: .catalyst) { p in AnyView(CatalystWalletScreen(theme: p)) })
+        // Catalyst/Carrier Wallet card-style picker — same pure WalletCardPickerView
+        // as the shipper "WalletCardStyle" / driver "WalletCardStyleDriver" entries,
+        // wrapped in the catalyst/carrier Wallet chrome. role:.catalyst so it lands in
+        // the concatenated .carrier+.catalyst pool CarrierSurface resolves, serving BOTH
+        // surfaces. Reached from the catalyst Wallet hub (319) AND the carrier Earnings
+        // hub (312) "Wallet card style" row via .eusoCarrierNavSwap. Server:
+        // eusoWallet.listWalletThemes / getWalletTheme / setWalletTheme.
+        list.append(.init(id: "WalletCardStyleCatalyst", title: "Catalyst · Wallet Card Style", role: .catalyst) { p in AnyView(CatalystWalletCardStyleScreen(theme: p)) })
         // 2026-05-21 — Load board trio (web → iOS port).
         list.append(.init(id: "340", title: "Catalyst · Matched Loads",  role: .catalyst) { p in AnyView(MatchedLoadsScreen(theme: p)) })
         list.append(.init(id: "341", title: "Catalyst · Find Loads",     role: .catalyst) { p in AnyView(FindLoadsScreen(theme: p)) })
@@ -1744,6 +1756,14 @@ enum ScreenRegistry {
             // tracks for Escort/Admin (and overshooting Broker/Catalyst
             // until they reach 3).
             .init(id: "702", title: "Terminal · Yard Map",            role: .terminal) { p in AnyView(TerminalYardMapScreen(theme: p)) },
+            // Terminal · Access control · scan — the access-controller side of
+            // the staff ACCESS CARD. A gate guard / temporary access-card
+            // scanner scans a staff member's access-card QR or types the
+            // 6-digit code, and `terminals.verifyStaffAccess` answers honestly
+            // (valid / expired / denied — never a fabricated pass). Reached
+            // from 700_TerminalHome ("Access control · scan") and 703 Me
+            // (Operations). A pushed leaf (not a tabRoot) via .eusoTerminalNavSwap.
+            .init(id: "TerminalAccessScan", title: "Terminal · Access control · scan", role: .terminal) { p in AnyView(TerminalAccessScanScreen(theme: p)) },
             // 800 Admin Home — first real brick on the Admin role track
             // (108th eusotrip-killers firing). Replaced the
             // RolePlaceholderScreen stub. Backend wiring: `admin.*` tRPC

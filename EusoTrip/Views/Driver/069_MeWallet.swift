@@ -123,6 +123,7 @@ struct MeWallet: View {
                 activityFeed             // §5
                 factoringOffer           // §6
                 linkedAccounts           // §7
+                walletCardStyleRow       // §7b — pickup-pass look picker
                 taxWithholdings          // §8
                 disclosureFooter
             }
@@ -804,6 +805,53 @@ struct MeWallet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .eusoCard(radius: Radius.lg, intensity: .standard)
         }
+    }
+
+    // MARK: §7b — Wallet card style (pickup-pass look picker)
+    //
+    // Mirrors the shipper Wallet hub's "Wallet card style" row (290 §Manage).
+    // The same pure WalletCardPickerView is registered for the driver role as
+    // "WalletCardStyleDriver"; this row pushes it through the canonical driver
+    // Me nav signal (`.eusoDriverMeNavSwap`) — a horizontal push, never a
+    // slide-up. Same glyph/title/subtitle voice as the shipper row.
+
+    private var walletCardStyleRow: some View {
+        Button {
+            NotificationCenter.default.post(
+                name: .eusoDriverMeNavSwap, object: nil,
+                userInfo: ["screenId": "WalletCardStyleDriver"]
+            )
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .fill(LinearGradient(colors: [Brand.blue.opacity(0.14), Brand.magenta.opacity(0.14)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    WalletGlyph(kind: .spark, size: 16,
+                                tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+                }
+                .frame(width: 44, height: 44)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Wallet card style")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Pick the look of your pickup pass")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                WalletGlyph(kind: .chevron, size: 13,
+                            tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+            }
+            .padding(Space.s4)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .eusoCard(radius: Radius.lg, intensity: .standard)
+        }
+        .buttonStyle(.plain)
     }
 
     private var methodsSkeleton: some View {

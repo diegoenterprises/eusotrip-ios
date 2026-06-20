@@ -131,6 +131,49 @@ final class WalletCardStore: ObservableObject {
         }
     }
 
+    // MARK: Add to Apple Wallet — themed STAFF ACCESS CARD (no load).
+    //
+    // Sibling of `addToWallet(loadId:present:)`, but for the staff access
+    // credential. The server-side `terminals.createStaffAccessCredential` proc
+    // (being built on the existing `staffAccessTokens` grant) signs the themed
+    // pass for the caller's REAL temporary access token — the client never
+    // invents an access code. When PassKit isn't configured server-side,
+    // `pkpassUrl` is nil and the caller falls back to the inline QR + 6-digit
+    // code (posted via `.eusoAccessFallbackToInlineQR`), never a fabricated pass.
+    func addAccessCardToWallet(present: (PKAddPassesViewController) -> Void) async {
+        await syncTask?.value                                          // ensure the choice is committed
+        do {
+            let cred = try await api.createStaffAccessCredential(themeId: selectedId, expiresInHours: 24)
+
+            guard let urlString = cred.pkpassUrl, let url = URL(string: urlString) else {
+                // PassKit not configured server-side → caller shows the inline
+                // QR (cred.qrPayload) + the real 6-digit code (cred.accessCode).
+                NotificationCenter.default.post(
+                    name: .eusoAccessFallbackToInlineQR, object: nil,
+                    userInfo: [
+                        "accessCode": cred.accessCode,
+                        "qrPayload":  cred.qrPayload,
+                        "expiresAt":  cred.expiresAt as Any
+                    ])
+                return
+            }
+            let (data, _) = try await api.fetchAuthenticatedData(url)
+            let pass = try PKPass(data: data)
+
+            if PKPassLibrary().containsPass(pass) {
+                errorMessage = "This access card is already in your Wallet."
+                return
+            }
+            guard let vc = PKAddPassesViewController(pass: pass) else {
+                errorMessage = "Couldn't open Apple Wallet."
+                return
+            }
+            present(vc)
+        } catch {
+            errorMessage = "Couldn't add your access card to Wallet: \(error.localizedDescription)"
+        }
+    }
+
     /// Reduce a display load id to the digits the server's `parseInt` expects.
     /// "1039" → "1039", "LD-1039" → "1039", "load_1039" → "1039".
     private static func numericLoadId(from raw: String) -> String {
@@ -145,4 +188,8 @@ final class WalletCardStore: ObservableObject {
 
 extension Notification.Name {
     static let eusoFallbackToInlineQR = Notification.Name("eusoFallbackToInlineQR")
+    /// Posted when a STAFF ACCESS CARD mint succeeds but PassKit isn't yet
+    /// configured server-side (pkpassUrl == nil): the holder UI shows the
+    /// inline QR (`qrPayload`) + the real 6-digit `accessCode`.
+    static let eusoAccessFallbackToInlineQR = Notification.Name("eusoAccessFallbackToInlineQR")
 }
