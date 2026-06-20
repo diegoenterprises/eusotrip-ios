@@ -2,12 +2,23 @@
 //  055_DayCloseWallet.swift
 //  EusoTrip — Lifecycle screen 055 · Day Close Wallet.
 //
-//  Pixel-matched to the 2026-04-24 Figma frame
-//  `055 Day Close Wallet.png`. End-of-day wallet summary — big
-//  day total + best-saturday delta chip + spark chart, day ledger
-//  (3 settlement entries, last entry adapts to active product),
-//  fuel / tolls / per-diem row, week net + week miles tiles,
-//  ESANG voice, Export / Close day CTAs.
+//  REDESIGNED to the Design Authority level (founder mandate #13). The
+//  end-of-day money surface now speaks the bespoke EusoWallet language
+//  shared with the wallet home (290) and detail (291) via
+//  `EusoWalletComponents`: a volumetric gradient hero "money card" with
+//  the day/week net + animated sheen + drawn composition legend, the day
+//  ledger as bespoke credit/debit `WalletLedgerRow`s, the fuel / tolls /
+//  per-diem spend as bespoke debit tiles, week net + miles as drawn-glyph
+//  reference tiles, an ESANG advisory rail, and the Export / Close-day
+//  actions. ZERO SF Symbols on the money surface — every glyph is a drawn
+//  `WalletGlyph` Path.
+//
+//  FUNCTION PRESERVED 1:1 — same canonical earnings store
+//  (`earnings.getSummary` / `getYTDSummary` / `getEarnings`), same
+//  lifecycle hydration, same `closeDay()` (ICS export + close-class
+//  lifecycle transition + `advance?()`) and `exportSummary()` flows, same
+//  navigation. Only the presentation changed. ZERO fabrication: real data
+//  or honest em-dash.
 //
 //  Powered by ESANG AI™.
 //
@@ -18,6 +29,7 @@ struct DayCloseWallet: View {
     @Environment(\.palette) private var palette
     @Environment(\.lifecycleAdvance) private var advance
     @Environment(\.driverNavBack) private var navBack
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var lifecycle = TripLifecycleStore()
@@ -29,6 +41,7 @@ struct DayCloseWallet: View {
     @StateObject private var earnings = MeEarningsStore()
     @State private var activeLoad: Load?
     @State private var isClosing: Bool = false
+    @State private var firstLoad: Bool = true
 
     enum Register { case night, afternoon }
     let register: Register
@@ -37,6 +50,8 @@ struct DayCloseWallet: View {
     private var ctx: LifecycleProductContext {
         LifecycleProductContext(load: activeLoad, role: session.user?.role)
     }
+
+    private var isDark: Bool { palette.bgPage == Theme.dark.bgPage }
 
     // Honest sentinels (no live feed / no source on this screen). KEPT.
     private let fallbackResetState   = "CLOSED · RESET RUNNING"
@@ -72,6 +87,15 @@ struct DayCloseWallet: View {
         return formatMoney(s.totalEarnings)
     }
 
+    /// Day/week net in cents for the bespoke `WalletBalanceHero`. The hero
+    /// formats this honestly (em-dash at nil/zero). nil until a real total
+    /// lands — never a seeded figure.
+    private var dayNetCents: Int? {
+        guard let s = weekSummary else { return nil }
+        let cents = Int((s.totalEarnings * 100).rounded())
+        return cents > 0 ? cents : nil
+    }
+
     /// Period-over-period change pill. Real signed `changePct` from the
     /// summary's `comparison`; collapses (empty) when flat or absent so
     /// no "+18%" is ever invented.
@@ -79,6 +103,11 @@ struct DayCloseWallet: View {
         guard let s = weekSummary, abs(s.changePct) >= 0.1 else { return nil }
         let rounded = Int(s.changePct.rounded())
         return rounded > 0 ? "+\(rounded)%" : "\(rounded)%"
+    }
+
+    private var deltaIsUp: Bool {
+        guard let s = weekSummary else { return true }
+        return s.changePct >= 0
     }
 
     /// Sub-copy under the hero. Real loads + miles for the week from the
@@ -126,19 +155,30 @@ struct DayCloseWallet: View {
         .screenTileRoot()
     }
 
+    // MARK: - Header
+    //
+    // Back chevron in a drawn pill, the live device date eyebrow + mode
+    // badge, and the reset-state pulse + live clock. Identical data
+    // bindings to the prior header; re-skinned to the wallet voice.
+
     private var header: some View {
         HStack(alignment: .top, spacing: 10) {
             Button { navBack?() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 36, height: 36)
-                    .background(palette.bgCard)
-                    .overlay(Circle().strokeBorder(palette.borderFaint))
-                    .clipShape(Circle())
+                ZStack {
+                    Circle().fill(palette.bgCard)
+                    Circle().strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                    WalletGlyph(kind: .chevron, size: 12,
+                                tint: AnyShapeStyle(palette.textPrimary), lineWidth: 1.8)
+                        .rotationEffect(.degrees(180))
+                }
+                .frame(width: 36, height: 36)
             }
-            VStack(alignment: .leading, spacing: 2) {
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
+                    WalletGlyph(kind: .wallet, size: 11,
+                                tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.4)
                     // Live device date — "WEEKDAY · yyyy-MM-dd" from the
                     // real wall clock, not a seeded "SATURDAY · 2026-04-18".
                     TimelineView(.everyMinute) { tl in
@@ -146,133 +186,201 @@ struct DayCloseWallet: View {
                             .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                             .foregroundStyle(LinearGradient.diagonal)
                     }
+                }
+                HStack(spacing: 6) {
+                    Text("DAY CLOSE")
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
                     LoadModeBadge(modeRaw: activeLoad?.transportMode,
                                   multiVehicleCount: activeLoad?.multiVehicleCount,
                                   compact: true)
                 }
             }
             Spacer(minLength: 0)
-            HStack(spacing: 4) {
-                Circle().fill(Brand.success).frame(width: 6, height: 6)
-                Text(fallbackResetState)
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(Brand.success)
-            }
-            // Live device clock (HH:mm), refreshed each minute — not a
-            // seeded "09:40".
-            TimelineView(.everyMinute) { tl in
-                Text(tl.date, format: .dateTime.hour().minute())
-                    .font(EType.mono(.caption)).fontWeight(.semibold)
-                    .foregroundStyle(palette.textPrimary)
+            VStack(alignment: .trailing, spacing: 4) {
+                HStack(spacing: 4) {
+                    Circle().fill(Brand.success).frame(width: 6, height: 6)
+                    Text(fallbackResetState)
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(Brand.success)
+                }
+                // Live device clock (HH:mm), refreshed each minute — not a
+                // seeded "09:40".
+                TimelineView(.everyMinute) { tl in
+                    Text(tl.date, format: .dateTime.hour().minute())
+                        .font(EType.mono(.caption)).fontWeight(.semibold)
+                        .foregroundStyle(palette.textSecondary)
+                }
             }
         }
         .padding(.top, 4)
     }
 
+    // MARK: - Hero "money card"
+    //
+    // The day/week net rendered on the bespoke `WalletBalanceHero`
+    // gradient card (gradient base, aurora bloom, animated sheen numeral).
+    // Day-close has a single net figure (no available/reserved/pending
+    // split), so the figure is carried in `availableCents` with the other
+    // two left nil — the composition bar then honestly shows the single
+    // segment. Beneath the card a bespoke rail carries the week-to-date
+    // meta + the real period-over-period delta chip + a drawn spark line.
+    // While the store hydrates we show the bespoke `WalletShimmer`
+    // skeleton (bounded by the store's own timeout).
+
+    @ViewBuilder
     private var heroCard: some View {
+        if dayNetCents != nil || !firstLoad {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                WalletBalanceHero(
+                    availableCents: dayNetCents,
+                    pendingCents: nil,
+                    reservedCents: nil,
+                    currency: "USD",
+                    caption: "Day net · week to date"
+                )
+                heroMetaRail
+            }
+        } else {
+            heroSkeleton
+        }
+    }
+
+    /// The week-to-date meta + the real delta chip + a drawn earnings spark
+    /// line, carded under the hero. The delta chip renders ONLY when the
+    /// live summary carries a non-flat `changePct` — never a seeded "+18%".
+    private var heroMetaRail: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            HStack(alignment: .firstTextBaseline) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(dayBig)
-                        .font(.system(size: 56, weight: .heavy, design: .rounded))
-                        .foregroundStyle(palette.textPrimary)
-                        .monospacedDigit()
-                    Text(fallbackDaySub)
-                        .font(.system(size: 28, weight: .heavy, design: .rounded))
-                        .foregroundStyle(palette.textPrimary)
-                }
-                Spacer()
-                // Real period-over-period change. Renders ONLY when the
-                // live summary carries a non-flat `changePct` — never a
-                // seeded "+18%".
+            HStack(alignment: .center, spacing: 8) {
+                Text(weekMetaCopy)
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
                 if let delta = deltaLabel {
-                    Text(delta)
-                        .font(.system(size: 12, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(Capsule().fill(LinearGradient.diagonal))
-                }
-            }
-            Text(weekMetaCopy)
-                .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                .foregroundStyle(palette.textTertiary)
-            // Stylized spark line
-            GeometryReader { geo in
-                Path { p in
-                    let pts: [CGFloat] = [0.6, 0.55, 0.52, 0.5, 0.45, 0.40, 0.30, 0.22]
-                    for (i, h) in pts.enumerated() {
-                        let x = geo.size.width * CGFloat(i) / CGFloat(pts.count - 1)
-                        let y = geo.size.height * h
-                        if i == 0 { p.move(to: CGPoint(x: x, y: y)) }
-                        else { p.addLine(to: CGPoint(x: x, y: y)) }
+                    HStack(spacing: 4) {
+                        WalletGlyph(kind: deltaIsUp ? .arrowUp : .arrowDown, size: 9,
+                                    tint: AnyShapeStyle(Color.white), lineWidth: 1.7)
+                        Text(delta)
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(.white)
                     }
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Capsule().fill(LinearGradient.diagonal))
                 }
-                .stroke(LinearGradient.diagonal, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                Circle()
-                    .fill(LinearGradient.diagonal)
-                    .frame(width: 8, height: 8)
-                    .position(x: geo.size.width, y: geo.size.height * 0.22)
             }
-            .frame(height: 50)
+            // Earnings sparkline REMOVED 2026-06-19: it drew a HARDCODED upward
+            // curve ([0.6...0.22]) unbound to any real series — a fabricated
+            // "earnings climbing" read for every driver regardless of their
+            // actual week. Zero-fabrication mandate: the hero shows only the
+            // REAL day-close total + delta + week meta. A real trend can return
+            // here once it's bound to the live weekly earnings series.
         }
         .padding(Space.s4)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.5), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .standard)
     }
+
+    private var heroSkeleton: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            WalletShimmer(height: 14, radius: 6).frame(width: 130)
+            WalletShimmer(height: 44, radius: 12)
+            WalletShimmer(height: 9, radius: 5)
+            HStack(spacing: 10) {
+                WalletShimmer(height: 28, radius: 8)
+                WalletShimmer(height: 28, radius: 8)
+                WalletShimmer(height: 28, radius: 8)
+            }
+        }
+        .padding(Space.s5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.xl, intensity: .feature)
+    }
+
+    // MARK: - Day ledger
+    //
+    // The live settled-load rows from `earnings.getEarnings` rendered as
+    // bespoke credit `WalletLedgerRow`s (drawn directional glyph + memo +
+    // tabular signed figure). Every field is real; honest empty state when
+    // nothing has settled. While first-loading we show the shimmer rows.
 
     @ViewBuilder
     private var ledgerList: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("DAY LEDGER")
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.8)
-                    .foregroundStyle(palette.textTertiary)
-                Spacer()
+                WalletEyebrow(glyph: .pulse, text: "DAY LEDGER")
+                Spacer(minLength: 0)
                 // Real settled-row count off the live ledger — never "3".
                 Text(settledCountLabel)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textSecondary)
             }
             // Live settled-load rows from `earnings.getEarnings` (the same
-            // projection brick 068 renders as "top loads"). The highest-
-            // revenue row is emphasized to keep the figma's accent-row
-            // treatment, but every field is real. Honest empty state when
-            // no loads have settled yet — invent no brand/BOL/POD/amount.
+            // projection brick 068 renders as "top loads"). Honest empty
+            // state when no loads have settled yet — invent no
+            // brand/BOL/POD/amount.
             if ledgerRows.isEmpty {
-                ledgerEmpty
+                if firstLoad {
+                    ledgerSkeleton
+                } else {
+                    ledgerEmpty
+                }
             } else {
-                ForEach(Array(ledgerRows.enumerated()), id: \.element.id) { idx, row in
-                    ledgerRow(brand: ledgerRowBrand(row),
-                              note: ledgerRowNote(row),
-                              amount: "+" + formatMoney(row.totalPay),
-                              emphasized: idx == 0)
+                VStack(spacing: 0) {
+                    ForEach(Array(ledgerRows.enumerated()), id: \.element.id) { idx, row in
+                        WalletLedgerRow(
+                            title: ledgerRowBrand(row),
+                            memo: ledgerRowNote(row),
+                            timestamp: nil,
+                            amountDollars: row.totalPay,
+                            type: "earnings",
+                            showDivider: idx < ledgerRows.count - 1
+                        )
+                    }
+                }
+            }
+        }
+        .padding(Space.s4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .feature)
+    }
+
+    private var ledgerSkeleton: some View {
+        VStack(spacing: 12) {
+            ForEach(0..<3, id: \.self) { _ in
+                HStack(spacing: 12) {
+                    WalletShimmer(height: 40, radius: Radius.md).frame(width: 40)
+                    VStack(alignment: .leading, spacing: 6) {
+                        WalletShimmer(height: 12, radius: 4).frame(width: 150)
+                        WalletShimmer(height: 9, radius: 4).frame(width: 90)
+                    }
+                    Spacer(minLength: 0)
+                    WalletShimmer(height: 14, radius: 4).frame(width: 56)
                 }
             }
         }
     }
 
     private var ledgerEmpty: some View {
-        HStack(spacing: Space.s3) {
-            Image(systemName: "tray")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(palette.textTertiary)
-            Text("No settled loads yet today")
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-            Spacer()
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(LinearGradient(colors: [Brand.blue.opacity(0.12), Brand.magenta.opacity(0.12)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                WalletGlyph(kind: .pulse, size: 18,
+                            tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+            }
+            .frame(width: 44, height: 44)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("No settled loads yet today")
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Text("Settled payouts will appear here as your day closes.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, Space.s3)
-        .padding(.vertical, 14)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                .strokeBorder(palette.borderFaint, lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        .padding(.vertical, 6)
     }
 
     /// Ledger row title — real origin → destination off the settled-load
@@ -297,135 +405,144 @@ struct DayCloseWallet: View {
         }
     }
 
-    private func ledgerRow(brand: String, note: String, amount: String, emphasized: Bool = false) -> some View {
-        HStack(spacing: Space.s3) {
-            ZStack {
-                RoundedRectangle(cornerRadius: Radius.sm)
-                    .fill(emphasized ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCardSoft))
-                Image(systemName: emphasized ? ctx.product.symbol : "doc.fill")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(emphasized ? Color.white : palette.textSecondary)
-            }
-            .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(brand)
-                    .font(EType.caption.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .lineLimit(1)
-                Text(note)
-                    .font(.system(size: 8, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            Spacer()
-            Text(amount)
-                .font(.system(size: 13, weight: .heavy, design: .rounded))
-                .foregroundStyle(Brand.success)
-        }
-        .padding(.horizontal, Space.s3)
-        .padding(.vertical, 9)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                .strokeBorder(emphasized ? AnyShapeStyle(LinearGradient.diagonal.opacity(0.45)) : AnyShapeStyle(palette.borderFaint), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
-    }
+    // MARK: - Spend row (FUEL / TOLLS / PER DIEM)
+    //
+    // No live feed on this screen → honest em-dash sentinels, KEPT. Drawn
+    // as bespoke debit tiles (drawn glyph in a danger-tinted vault).
 
     private var spendRow: some View {
         HStack(spacing: Space.s2) {
-            spendCell(label: "FUEL",    primary: fallbackFuel,    sub: fallbackFuelSub)
-            spendCell(label: "TOLLS",   primary: fallbackTolls,   sub: fallbackTollsSub)
-            spendCell(label: "PER DIEM", primary: fallbackPerDiem, sub: fallbackPerDiemSub)
+            spendCell(glyph: .bolt,  label: "FUEL",     primary: fallbackFuel,    sub: fallbackFuelSub)
+            spendCell(glyph: .coins, label: "TOLLS",    primary: fallbackTolls,   sub: fallbackTollsSub)
+            spendCell(glyph: .bank,  label: "PER DIEM", primary: fallbackPerDiem, sub: fallbackPerDiemSub)
         }
     }
 
-    private func spendCell(label: String, primary: String, sub: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.system(size: 8, weight: .heavy)).tracking(0.8)
-                .foregroundStyle(palette.textTertiary)
-            Text(primary)
-                .font(.system(size: 13, weight: .heavy, design: .rounded))
-                .foregroundStyle(Brand.danger)
-            Text(sub)
-                .font(.system(size: 8, weight: .heavy)).tracking(0.5)
-                .foregroundStyle(palette.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
+    private func spendCell(glyph: WalletGlyph.Kind, label: String, primary: String, sub: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                    .fill(Brand.danger.opacity(0.12))
+                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                    .strokeBorder(Brand.danger.opacity(0.35), lineWidth: 1)
+                WalletGlyph(kind: glyph, size: 14, tint: AnyShapeStyle(Brand.danger), lineWidth: 1.5)
+            }
+            .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Text(primary)
+                    .font(.system(size: 14, weight: .heavy, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(Brand.danger)
+                Text(sub)
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
         }
-        .padding(Space.s2)
+        .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        .eusoCard(radius: Radius.md, intensity: .whisper)
     }
+
+    // MARK: - Week row (NET WK / MILES WK)
+    //
+    // Real week net + week miles off the live summary, drawn as bespoke
+    // reference tiles with a drawn glyph (em-dash when absent, KEPT).
 
     private var weekRow: some View {
         HStack(spacing: Space.s2) {
-            weekCell(label: "NET WK",   value: weekNetValue,   sub: fallbackWkNetSub)
-            weekCell(label: "MILES WK", value: weekMilesValue, sub: "")
+            weekCell(glyph: .arrowUp, label: "NET WK",   value: weekNetValue,   sub: fallbackWkNetSub, accent: true)
+            weekCell(glyph: .pulse,   label: "MILES WK", value: weekMilesValue, sub: "",               accent: false)
         }
     }
 
-    private func weekCell(label: String, value: String, sub: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(.system(size: 8, weight: .heavy)).tracking(0.8)
-                .foregroundStyle(palette.textTertiary)
-            Text(value)
-                .font(.system(size: 18, weight: .heavy, design: .rounded))
-                .foregroundStyle(palette.textPrimary)
-            Text(sub)
-                .font(.system(size: 8, weight: .heavy)).tracking(0.5)
-                .foregroundStyle(palette.textTertiary)
+    private func weekCell(glyph: WalletGlyph.Kind, label: String, value: String, sub: String, accent: Bool) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(LinearGradient(colors: [Brand.blue.opacity(0.14), Brand.magenta.opacity(0.14)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(palette.iridescentHairline, lineWidth: 1)
+                WalletGlyph(kind: glyph, size: 15,
+                            tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+            }
+            .frame(width: 38, height: 38)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(label)
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.8)
+                    .foregroundStyle(palette.textTertiary)
+                Text(value)
+                    .font(.system(size: 18, weight: .heavy, design: .rounded)).monospacedDigit()
+                    .foregroundStyle(accent ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textPrimary))
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                if !sub.isEmpty {
+                    Text(sub)
+                        .font(.system(size: 8, weight: .heavy)).tracking(0.5)
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            Spacer(minLength: 0)
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .eusoCard(radius: Radius.md, intensity: .standard)
     }
 
+    // MARK: - ESANG advisory
+    //
+    // No live advisory source on this screen → honest em-dash, KEPT.
+    // Drawn as a bespoke iridescent rail with a drawn spark glyph.
+
     private var esangAdvisory: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(LinearGradient.diagonal)
-            Text(fallbackeSang)
-                .font(.system(size: 9, weight: .heavy)).tracking(0.5)
-                .foregroundStyle(palette.textSecondary)
-                .lineLimit(2)
-            Spacer()
+        HStack(spacing: 10) {
+            ZStack {
+                Circle().fill(LinearGradient.diagonal.opacity(0.16))
+                WalletGlyph(kind: .spark, size: 14,
+                            tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+            }
+            .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("ESANG")
+                    .font(.system(size: 8, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(fallbackeSang)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
         }
         .padding(Space.s3)
-        .background(palette.bgCard)
-        .overlay(
-            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(LinearGradient.diagonal.opacity(0.4), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.md, intensity: .whisper)
     }
+
+    // MARK: - Actions (Export · Close day)
+    //
+    // Same two actions, same handlers. Export is a bespoke ghost card with
+    // a drawn pulse glyph; Close day keeps the shared `CTAButton` (the
+    // canonical primary action treatment with its loading state).
 
     private var actions: some View {
         HStack(spacing: Space.s3) {
             Button { exportSummary() } label: {
-                Text("Export")
-                    .font(EType.body.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(palette.bgCard)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderSoft)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                HStack(spacing: 8) {
+                    WalletGlyph(kind: .pulse, size: 15,
+                                tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.6)
+                    Text("Export")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .eusoCard(radius: Radius.md, intensity: .whisper)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
             CTAButton(
                 title: "Close day",
                 action: { Task { await closeDay() } },
@@ -448,6 +565,7 @@ struct DayCloseWallet: View {
             activeLoad = try? await EusoTripAPI.shared.loads.getById(n)
         }
         await earningsTask
+        firstLoad = false
     }
 
     // MARK: - Formatters
