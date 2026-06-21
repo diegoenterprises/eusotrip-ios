@@ -91,7 +91,7 @@ private struct CounterOfferBody: View {
             let _ : Out = try await EusoTripAPI.shared.mutation("shippers.counterBid", input: In(loadId: loadId, bidId: bidId, rate: rate ?? 0, note: note.isEmpty ? nil : note))
             sent = true
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = EusoTripAPIError.bidActionMessage(for: error, noun: "counter")
         }
         sending = false
     }

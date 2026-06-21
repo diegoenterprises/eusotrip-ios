@@ -2224,14 +2224,28 @@ struct CounterOfferSheet: View {
             ack = .bidding(id: resp.id, status: resp.status)
             lastError = nil
         } catch {
-            // Surface tRPC user-facing messages verbatim — common
-            // ones include the EusoWallet payout-account precondition,
-            // duplicate-bid 409, and CDL/hazmat endorsement gates.
-            if let api = error as? EusoTripAPIError, case .trpcError(let m) = api {
-                lastError = m
-            } else {
-                lastError = "Couldn't send counter. Try again."
+            // Honest, diagnosable message for EVERY failure class — not just
+            // tRPC. Before build-753's fix this branch only matched
+            // `.trpcError` and funneled everything else (most critically the
+            // server FORBIDDEN that `perform()` promotes to `.unauthenticated`
+            // when the DRIVER role lacked CREATE BID) into the dead-end
+            // "Couldn't send counter. Try again." Now `bidActionMessage`
+            // surfaces the real reason: the verbatim tRPC copy (wallet/CDL/
+            // dup-bid/mode-eligibility), an auth/permission line, a network
+            // line, or a decode line. Mirrors the `book()` fix at this file's
+            // booking action.
+            if let api = error as? EusoTripAPIError, case .unauthenticated = api {
+                // Give the driver a real path back to a bid-capable session —
+                // the same channel every "Sign out" affordance uses
+                // (`eusoLogoutRequested` is observed at the app root and lands
+                // them on Sign In). Without this a permission/expiry FORBIDDEN
+                // showed a banner and then dead-ended.
+                NotificationCenter.default.post(
+                    name: Notification.Name("eusoLogoutRequested"),
+                    object: nil
+                )
             }
+            lastError = EusoTripAPIError.bidActionMessage(for: error, noun: "counter")
         }
     }
 }

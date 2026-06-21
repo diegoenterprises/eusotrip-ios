@@ -250,30 +250,46 @@ private struct CounterReviewBody: View {
                 actionError = "Accept returned no success flag. Reload and try again."
             }
         } catch let err {
-            actionError = (err as? LocalizedError)?.errorDescription ?? "Accept failed: \(err)"
+            actionError = EusoTripAPIError.bidActionMessage(for: err, noun: "acceptance")
         }
     }
 
     private func sendCounterBack() async {
         guard let bidId = counter?.id, let amount = Double(counterAmountText) else { return }
+        // `loadBidding.counter` keys the new round on the PARENT bid + the
+        // numeric loadId and returns `{ id, round, status }`. The prior input
+        // here ({ bidId, counterAmount, message }) and `{ success }` decode
+        // never matched that contract — `parentBidId`/`loadId` are required,
+        // so the server Zod rejected the call and `success` was never present,
+        // dead-ending every shipper counter-back on "no success flag". Wire
+        // the real shape so the round actually persists.
+        guard let loadIdNum = Int(loadId) else {
+            actionError = "Load id is missing. Reload this counter and try again."
+            return
+        }
         actionInFlight = "counter"; actionAck = nil; actionError = nil
         defer { actionInFlight = nil }
-        struct In: Encodable { let bidId: Int; let counterAmount: Double; let message: String? }
-        struct Out: Decodable { let success: Bool? }
+        struct In: Encodable {
+            let parentBidId: Int
+            let loadId: Int
+            let counterAmount: Double
+            let rateType: String
+            let conditions: String?
+            let expiresInHours: Int
+        }
+        struct Out: Decodable { let id: Int?; let round: Int?; let status: String? }
         do {
             let resp: Out = try await EusoTripAPI.shared.mutation(
                 "loadBidding.counter",
-                input: In(bidId: bidId, counterAmount: amount, message: "Shipper countered via SH241")
+                input: In(parentBidId: bidId, loadId: loadIdNum, counterAmount: amount,
+                          rateType: "flat", conditions: nil, expiresInHours: 24)
             )
-            if resp.success == true {
-                actionAck = "Counter sent · $\(Int(amount)) back to carrier · bid #\(bidId) updated."
-                counterAmountText = ""
-                await self.load()
-            } else {
-                actionError = "Counter returned no success flag. Reload and try again."
-            }
+            let round = resp.round.map { " · round \($0)" } ?? ""
+            actionAck = "Counter sent · $\(Int(amount)) back to carrier\(round) · bid #\(bidId) updated."
+            counterAmountText = ""
+            await self.load()
         } catch let err {
-            actionError = (err as? LocalizedError)?.errorDescription ?? "Counter failed: \(err)"
+            actionError = EusoTripAPIError.bidActionMessage(for: err, noun: "counter")
         }
     }
 

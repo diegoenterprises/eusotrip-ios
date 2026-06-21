@@ -51,6 +51,63 @@ enum EusoTripAPIError: Error, LocalizedError {
         }
     }
 
+    /// Honest, context-aware message for a bid / counter-offer action.
+    ///
+    /// The generic "Couldn't send counter. Try again." (and the cryptic
+    /// `NSError.localizedDescription` "…EusoTripAPIError error 5…") masked
+    /// the real reason behind every bid/counter failure — most notably the
+    /// build-753 case where a server `FORBIDDEN` (the DRIVER role lacking
+    /// `CREATE BID`, or a mode-eligibility gate) was promoted to
+    /// `.unauthenticated` and then swallowed by a `.trpcError`-only catch.
+    ///
+    /// This collapses every error class into a specific, diagnosable line so
+    /// the next failure tells the user WHY, never a dead-end retry. The
+    /// verbatim tRPC message is always preserved (that's the server's own
+    /// human copy — duplicate-bid 409, wallet/CDL precondition gates, the
+    /// mode-eligibility "isn't enabled for … freight" reason). `noun` lets
+    /// callers say "counter" / "bid" / "response" in the offline line.
+    func bidActionMessage(noun: String = "counter") -> String {
+        switch self {
+        case .unauthenticated:
+            // A FORBIDDEN authorization failure also lands here (perform()
+            // promotes 401/403/UNAUTHORIZED/FORBIDDEN → .unauthenticated).
+            // Name BOTH possibilities honestly: an expired session OR an
+            // account that genuinely isn't permitted to bid this lane.
+            return "Your session expired, or this account isn't allowed to bid on this lane. Sign in again, or switch to a carrier / dispatcher account."
+        case .trpcError(let m):
+            return m
+        case .httpStatus(let code, _):
+            if code == 401 || code == 403 {
+                return "This account isn't allowed to bid on this lane (HTTP \(code))."
+            }
+            return "Server error \(code). Try again in a moment."
+        case .decodingFailed:
+            return "We couldn't read the server's response to your \(noun). Try again — if it persists, refresh from the load board."
+        case .notConfigured:
+            return "The app isn't fully configured. Try restarting it."
+        case .badURL:
+            return "The \(noun) request URL was malformed. Refresh the load board and try again."
+        case .empty:
+            return "The server returned an empty response to your \(noun). Try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — your \(noun) will be sent automatically when you reconnect."
+        }
+    }
+
+    /// Convenience for a `catch` over an arbitrary `Error`: maps a
+    /// `EusoTripAPIError` via `bidActionMessage`, a raw `URLError` to a
+    /// network line, and anything else to its `localizedDescription` — so a
+    /// caller never has to hand-roll the `as? EusoTripAPIError` ladder (and
+    /// never leaks the cryptic `NSError` "error N" string).
+    static func bidActionMessage(for error: Error, noun: String = "counter") -> String {
+        if let api = error as? EusoTripAPIError { return api.bidActionMessage(noun: noun) }
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain {
+            return "Network unavailable. Check your connection and try again."
+        }
+        return error.localizedDescription
+    }
+
     /// Humanize a tRPC error message before it ever reaches the UI.
     ///
     /// The server's tRPC errorFormatter (`_core/trpc.ts`) only rewrites
@@ -13080,6 +13137,20 @@ struct LoadBiddingAPI {
     struct SubmitAck: Decodable, Equatable {
         let id: Int?
         let status: String
+        // Tolerate BOTH server success branches — auto-accept `{id,status}`
+        // and the normal pending `{id,status,aiFraudCheck}` — plus any future
+        // shape that omits `status`. `status` defaults to "pending" rather
+        // than throwing `.decodingFailed` on a valid 2xx, so a real success
+        // never surfaces as a counter failure. Extra keys (aiFraudCheck) are
+        // ignored. `id` was already optional (the auto-accept row id can be
+        // absent on a race).
+        enum CodingKeys: String, CodingKey { case id, status }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.id = try c.decodeIfPresent(Int.self, forKey: .id)
+            self.status = (try c.decodeIfPresent(String.self, forKey: .status)) ?? "pending"
+        }
+        init(id: Int?, status: String) { self.id = id; self.status = status }
     }
 
     /// `loadBidding.submit` — one-tap accept at posted rate (Book Now
