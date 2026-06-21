@@ -49,6 +49,12 @@ struct MeELDLogsDetail: View {
     @Environment(\.palette) var palette
     @EnvironmentObject private var session: EusoTripSession
     @StateObject private var store = HOSLiveStore()
+    /// Real ELD connection state — drives the footer's honest
+    /// connected/disconnected claim instead of the prior unconditional
+    /// "ELD-connected · §395.15 compliant" string. Reads off the same
+    /// `eld.getConnectionStatus` the ELD Integration panel uses, so the
+    /// RODS surface never asserts a vendor link the server hasn't confirmed.
+    @StateObject private var eld = ELDIntegrationStore()
 
     /// Currently-selected date (YYYY-MM-DD). Defaults to today.
     @State private var selectedDate: String = Self.todayISO()
@@ -59,6 +65,9 @@ struct MeELDLogsDetail: View {
     @State private var showCertifySheet: Bool = false
     @State private var signatureText: String = ""
     @State private var lastToast: String?
+    /// Presents the ELD Integration panel so a driver with no connected
+    /// device can wire one up straight from the honest footer CTA.
+    @State private var showingELDIntegration = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -81,8 +90,16 @@ struct MeELDLogsDetail: View {
             .padding(.top, Space.s4)
             .padding(.bottom, Space.s8)
         }
-        .task { await store.bootstrap() }
-        .refreshable { await store.refreshAll() }
+        .task {
+            await store.bootstrap()
+            // Resolve the real ELD connection state so the footer's
+            // compliance claim is honest the moment the screen lands.
+            await eld.bootstrap()
+        }
+        .refreshable {
+            await store.refreshAll()
+            await eld.refresh()
+        }
         // RealtimeService → live ELD duty-status changes refresh
         // the daily log + segment viewer in place.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
@@ -94,6 +111,14 @@ struct MeELDLogsDetail: View {
         }
         .sheet(isPresented: $showCertifySheet, onDismiss: { signatureText = "" }) {
             certifySheet
+                .eusoSheetX()
+        }
+        .sheet(isPresented: $showingELDIntegration, onDismiss: {
+            // Re-resolve connection state after the panel closes so the
+            // footer flips to "ELD-connected" the instant a device links.
+            Task { await eld.refresh() }
+        }) {
+            ELDIntegrationView()
                 .eusoSheetX()
         }
         .overlay(alignment: .bottom) {
@@ -660,13 +685,25 @@ struct MeELDLogsDetail: View {
 
     // MARK: Footer
 
+    @ViewBuilder
     private var disclosureFooter: some View {
+        if eld.isConnected {
+            connectedFooter
+        } else {
+            noEldFooter
+        }
+    }
+
+    /// Honest "connected" footer — only renders the §395.15 compliance
+    /// claim when `eld.getConnectionStatus` actually reports a linked
+    /// device. Names the live provider so the claim is verifiable.
+    private var connectedFooter: some View {
         VStack(alignment: .leading, spacing: Space.s1) {
             HStack(spacing: Space.s2) {
                 Image(systemName: "scroll")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(palette.textTertiary)
-                Text("ELD-connected · §395.15 compliant")
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text(connectedFooterTitle)
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
@@ -684,6 +721,69 @@ struct MeELDLogsDetail: View {
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .strokeBorder(palette.borderFaint.opacity(0.5), lineWidth: 1)
+        )
+    }
+
+    /// "ELD-connected · <Provider> · §395.15 compliant" when we can name
+    /// the vendor; falls back to the bare connected claim otherwise — but
+    /// never asserts compliance when `eld.isConnected` is false.
+    private var connectedFooterTitle: String {
+        if let slug = eld.primaryConnectedSlug,
+           let provider = eld.provider(for: slug) {
+            return "ELD-connected · \(provider.name) · §395.15 compliant"
+        }
+        return "ELD-connected · §395.15 compliant"
+    }
+
+    /// Honest "no ELD connected" footer. Replaces the false compliance
+    /// claim with an accurate state + a Connect CTA that opens the ELD
+    /// Integration panel. RODS segments shown above are self-reported /
+    /// historical until a device is linked, so we say so plainly.
+    private var noEldFooter: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Brand.warning)
+                Text("No ELD connected")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+            }
+            Text("These records aren't backed by a connected Electronic Logging Device. Connect your ELD provider so duty-status segments are vendor-sourced and your daily log meets 49 CFR §395.15 for roadside inspections.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button {
+                showingELDIntegration = true
+            } label: {
+                HStack(spacing: Space.s2) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Connect ELD device")
+                        .font(EType.bodyStrong)
+                    Spacer()
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, Space.s3)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, Space.s1)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCard.opacity(0.6))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(Brand.warning.opacity(0.35), lineWidth: 1)
         )
     }
 

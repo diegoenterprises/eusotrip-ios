@@ -175,6 +175,11 @@ final class TruckPostingViewModel: ObservableObject {
     private var originCity: String? = nil
     private var originState: String? = nil
 
+    /// The merged `vehicle.getAssigned` assignment discriminator from the
+    /// last resolve — lets `load()` show a PRECISE empty reason ("no driver
+    /// profile" vs "no truck assigned") instead of one generic string.
+    private var assignmentStatus: VehicleAPI.AssignmentStatus = .noVehicleAssigned
+
     /// Live market pulse for the posted-state header (load-to-truck ratio).
     @Published var marketRatio: Double? = nil
     @Published var marketLabel: String = "—"
@@ -190,8 +195,20 @@ final class TruckPostingViewModel: ObservableObject {
         await resolveOrigin()
 
         guard let vid = vehicleId else {
-            // No assigned vehicle → can't post. Honest, first-class state.
-            phase = .error("No truck assigned to your profile yet. Once dispatch assigns your unit you can post it here.")
+            // No assigned vehicle → can't post. PRECISE reason from the
+            // merged `vehicle.getAssigned` status discriminator (build-752):
+            //   • no_driver           → the caller has no `drivers` row yet
+            //     (onboarding incomplete) — dispatch has to create it.
+            //   • no_vehicle_assigned → driver profile exists, just no truck
+            //     bound to it — dispatch assigns the unit.
+            switch assignmentStatus {
+            case .noDriver:
+                phase = .error("No driver profile yet. Contact dispatch to finish your driver setup, then you can post your truck here.")
+            case .noVehicleAssigned, .vehicleFound:
+                // .vehicleFound is unreachable here (vid would be set); fold it
+                // into the no-truck copy defensively.
+                phase = .error("Your driver profile exists, but no truck is assigned to you yet. Once dispatch assigns your unit you can post it here.")
+            }
             return
         }
 
@@ -207,9 +224,12 @@ final class TruckPostingViewModel: ObservableObject {
     }
 
     /// Read the driver's assigned truck → vehicleId + equipment + unit.
+    /// Also captures the merged `assignmentStatus` discriminator so the
+    /// empty state can name the PRECISE reason (no driver row vs no truck).
     private func resolveVehicle() async {
         do {
             let v = try await api.vehicle.getAssigned()
+            assignmentStatus = v.assignmentStatus
             guard !v.isUnassigned else { vehicleId = nil; return }
             vehicleId = Int(v.id)
             unitLabel = v.unitNumber.isEmpty ? "—" : "Unit \(v.unitNumber)"

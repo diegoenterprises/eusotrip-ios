@@ -48,6 +48,13 @@ struct LoadSummary: Codable, Identifiable, Hashable {
     /// Rate in USD (loads.ts returns `parseFloat(...)`).
     let rate: Double
     let pickupDate: String
+    /// Committed delivery date (ISO-8601). Added to the `loads.search`
+    /// projection in the build-752 server batch so the 058 Weekly Plan can
+    /// place each load on its delivery day. OPTIONAL: legacy deploys omit it
+    /// from the projection (it decodes nil) and draft rows may have no date,
+    /// so the Weekly Plan falls back to `pickupDate` when it's nil. Empty
+    /// string from the server (`?.toISOString() || ''`) is normalized to nil.
+    let deliveryDate: String?
     let createdAt: String
     // 2026-05-17 — Multi-modal payload on every load row. Nullable on
     // the wire so older deploys decode cleanly; UI defaults `mode` to
@@ -74,7 +81,7 @@ struct LoadSummary: Codable, Identifiable, Hashable {
 extension LoadSummary {
     private enum WireKeys: String, CodingKey {
         case id, loadNumber, status, cargoType, origin, destination
-        case rate, pickupDate, createdAt
+        case rate, pickupDate, deliveryDate, createdAt
         case transportMode, multiVehicleCount, permitType, rateUnit, worldscalePct
     }
 
@@ -89,6 +96,17 @@ extension LoadSummary {
             }
             return nil   // absent / explicit null / unexpected shape
         }()
+        // deliveryDate: present on the build-752 projection, absent on legacy.
+        // The server emits `?.toISOString() || ''`, so an empty string means
+        // "no committed delivery date" — normalize it to nil so the 058
+        // Weekly Plan can cleanly fall back to pickupDate.
+        // `try?` flattens `decodeIfPresent`'s `String??` to `String?`, so a
+        // single bind unwraps the value; empty string ⇒ no committed date.
+        let deliveryDate: String? = {
+            guard let raw = try? c.decodeIfPresent(String.self, forKey: .deliveryDate),
+                  !raw.isEmpty else { return nil }
+            return raw
+        }()
         self.init(
             id: try c.decode(String.self, forKey: .id),
             loadNumber: try c.decode(String.self, forKey: .loadNumber),
@@ -98,6 +116,7 @@ extension LoadSummary {
             destination: try c.decode(String.self, forKey: .destination),
             rate: try c.decode(Double.self, forKey: .rate),
             pickupDate: try c.decode(String.self, forKey: .pickupDate),
+            deliveryDate: deliveryDate,
             createdAt: try c.decode(String.self, forKey: .createdAt),
             transportMode: try c.decodeIfPresent(String.self, forKey: .transportMode),
             multiVehicleCount: (try? c.decodeIfPresent(Int.self, forKey: .multiVehicleCount)) ?? nil,
@@ -613,6 +632,9 @@ extension LoadSummary {
         let createdISO = ISO8601DateFormatter().string(
             from: now.addingTimeInterval(-60 * 60 * 3)   // created 3h ago
         )
+        let deliveryISO = ISO8601DateFormatter().string(
+            from: now.addingTimeInterval(60 * 60 * 10)   // delivery +10h
+        )
         return LoadSummary(
             id: "2026041500198",
             loadNumber: "EUSO-2026-04-18-001984",
@@ -622,6 +644,7 @@ extension LoadSummary {
             destination: "Dallas, TX",
             rate: 2440,
             pickupDate: pickupISO,
+            deliveryDate: deliveryISO,
             createdAt: createdISO,
             transportMode: "truck",
             multiVehicleCount: 1,

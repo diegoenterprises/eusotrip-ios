@@ -61,6 +61,16 @@ struct ShipperApplePayWallet: View {
     /// path when the gate scanner can't read the QR (camera issue,
     /// glare, rooted device with no camera permission).
     @State var inlineShortCode: String? = nil
+    /// The GATE CODE for the active pickup credential — the 5-digit
+    /// `shortCode` the server PassKit signer mints (and stamps onto the
+    /// .pkpass) via `eusoWallet.createPickupCredential`. Surfaced as a
+    /// prominent field on the hero card so the shipper can read it (or
+    /// dictate it to the gate) without first triggering Add-to-Wallet.
+    /// Honest em-dash until the credential mints; never fabricated.
+    @State var gateCode: String? = nil
+    /// True while the gate code is being minted for the active pass, so
+    /// the hero field shows a bounded loading dash rather than a blank.
+    @State private var gateCodeLoading: Bool = false
     /// Inline banner — shown after every Add-to-Wallet attempt so the
     /// user always knows the result. Auto-clears after 4 s.
     @State var passBannerText: String? = nil
@@ -349,6 +359,32 @@ struct ShipperApplePayWallet: View {
         activePass = snap.active.map(Self.heroFromRow)
         paymentMethods = mts.map(Self.methodFromRow)
         snapshotPhase = (snap.active == nil && snap.passes.isEmpty) ? .empty : .loaded
+
+        // Mint / fetch the GATE CODE for the active pickup credential so the
+        // hero card can surface it as a prominent field. Best-effort: a nil
+        // result leaves an honest em-dash — never a fabricated PIN.
+        await loadGateCode()
+    }
+
+    /// Fetch the active pass's gate code — the `shortCode` the server
+    /// PassKit signer mints via `eusoWallet.createPickupCredential` (RBAC:
+    /// the shipper is a party on the load). `createPickupCredential` is
+    /// idempotent enough for this read-through: it returns a usable code
+    /// even when .pkpass signing/storage is unconfigured. Bounded; honest
+    /// em-dash on any failure or when there's no active pass.
+    @MainActor
+    private func loadGateCode() async {
+        guard let pass = activePass else { gateCode = nil; return }
+        gateCodeLoading = true
+        defer { gateCodeLoading = false }
+        do {
+            // MUST be the numeric apiLoadId — the server parseInt()s it.
+            let cred = try await EusoTripAPI.shared.createPickupCredential(loadId: pass.apiLoadId)
+            gateCode = cred.shortCode.isEmpty ? nil : cred.shortCode
+        } catch {
+            // Honest em-dash; the field renders "—" rather than a fake code.
+            gateCode = nil
+        }
     }
 
     /// Strip dev/seed batch tags + bracket/key=value tokens out of any
@@ -539,6 +575,15 @@ struct ShipperApplePayWallet: View {
                         heroField("EQUIPMENT", pass.equipment, mono: false)
                     }
                     .padding(.top, 14)
+
+                    // GATE CODE — the prominent credential the gate scanner /
+                    // yard worker verifies. The server PassKit signer mints
+                    // this 5-digit shortCode and stamps it on the .pkpass;
+                    // we surface it here so the shipper can read or dictate it
+                    // without first installing the pass. Honest em-dash until
+                    // the credential mints — never a fabricated PIN.
+                    gateCodeField
+                        .padding(.top, 14)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -655,6 +700,44 @@ struct ShipperApplePayWallet: View {
                 .lineLimit(1).minimumScaleFactor(0.78)
                 .modifier(MonoDigit(on: mono))
         }
+    }
+
+    /// The prominent GATE CODE field on the hero card — a glassy chip
+    /// carrying the large, spaced, monospaced PIN the gate verifies. Reads
+    /// the live `gateCode` (server `shortCode`); shows a bounded loading dash
+    /// while minting and an honest "— · ISSUED AT THE GATE" when none yet.
+    private var gateCodeField: some View {
+        let display: String = gateCode ?? (gateCodeLoading ? "·····" : "—")
+        let spaced = gateCode.map { $0.map(String.init).joined(separator: "  ") } ?? display
+        return HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("GATE CODE")
+                    .font(.system(size: 8, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(.white.opacity(0.78))
+                Text(spaced)
+                    .font(.system(size: 22, weight: .heavy, design: .monospaced)).tracking(2.0)
+                    .foregroundStyle(.white)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .accessibilityLabel(gateCode.map { "Gate code \($0.map(String.init).joined(separator: " "))" }
+                                        ?? "Gate code issued at the gate")
+                if gateCode == nil && !gateCodeLoading {
+                    Text("Issued when the credential mints")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.65))
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(.white.opacity(0.16))
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(.white.opacity(0.28), lineWidth: 1)
+            }
+        )
     }
 
     // MARK: — Passes list (bespoke rows in a carded ledger)
@@ -843,6 +926,9 @@ struct ShipperApplePayWallet: View {
             passBannerText = "Apple Wallet signing is offline — present this in-app pass: scan the QR or enter code \(shortCode) at the gate."
             inlineQrPayload = qrPayload
             inlineShortCode = shortCode
+            // Keep the hero's GATE CODE field in sync with the freshly-minted
+            // credential's shortCode (same value the .pkpass is stamped with).
+            gateCode = shortCode
             dwell = 8_000_000_000
         case .failure(let message):
             passBannerKind = .error

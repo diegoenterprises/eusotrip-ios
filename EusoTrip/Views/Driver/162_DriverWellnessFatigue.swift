@@ -214,6 +214,12 @@ struct DriverWellnessFatigue_162: View {
     @State private var loadError: String? = nil
     @State private var actionAck: String? = nil
     @State private var checkInPresented = false
+    /// Distinct from `checkInPresented`: the "Self-assessment" CTA opens a
+    /// READ-ONLY fatigue self-assessment — a guided fit-for-duty self-check
+    /// derived from the live `factors` + weather load, plus the check-in
+    /// history line. It does NOT re-open the log-check-in mutation form
+    /// (that was the build-751 duplicate-button bug).
+    @State private var selfAssessmentPresented = false
     /// Live current-location snapshot — the SAME source Driver Home uses
     /// (WeatherService.shared.fetchCurrent → server weather.byLatLon /
     /// WeatherKit chain, no Tomorrow.io key in the bundle). Drives the
@@ -405,6 +411,25 @@ struct DriverWellnessFatigue_162: View {
                 await submitCheckIn(mood: mood, sleepQuality: sleepQuality,
                                     sleepHours: sleepHours, stress: stress)
             }
+            .environment(\.palette, palette)
+        }
+        .sheet(isPresented: $selfAssessmentPresented) {
+            // Read-only fit-for-duty self-assessment — derived from the
+            // already-loaded live factors + weather (no new network), with a
+            // "Log a check-in" hand-off to the REAL mutation form so the two
+            // CTAs stay connected without being identical.
+            FatigueSelfAssessmentSheet162(
+                risk: risk,
+                weatherImpact: weatherImpact,
+                effectiveRiskScore: effectiveRiskScore,
+                riskLevelWord: riskLevelWord,
+                riskColor: riskColor,
+                nextBreakRelative: nextBreakRelative,
+                lastCheckInLine: lastCheckInLine,
+                onLogCheckIn: {
+                    selfAssessmentPresented = false
+                    checkInPresented = true
+                })
             .environment(\.palette, palette)
         }
     }
@@ -757,10 +782,14 @@ struct DriverWellnessFatigue_162: View {
 
     private var actionRow: some View {
         HStack(spacing: Space.s3) {
+            // "Log check-in" → the mood/sleep/stress self-REPORT (mutation).
             CTAButton(title: "Log check-in",
                       action: { checkInPresented = true })
 
-            Button(action: { checkInPresented = true }) {
+            // "Self-assessment" → a DISTINCT read-only fit-for-duty self-check
+            // derived from the live fatigue factors + weather load. Never the
+            // same form as Log check-in (build-751 duplicate-button fix).
+            Button(action: { selfAssessmentPresented = true }) {
                 Text("Self-assessment")
                     .font(EType.title)
                     .foregroundStyle(palette.textPrimary)
@@ -880,9 +909,273 @@ struct DriverWellnessFatigue_162: View {
     }
 }
 
+// MARK: - Fatigue self-assessment sheet (DISTINCT from Log check-in)
+//
+// The "Self-assessment" CTA's real purpose — a READ-ONLY fit-for-duty
+// self-check, NOT a second copy of the mood/sleep/stress log form (that was
+// the build-751 duplicate-button bug). It takes the SAME live data the hero
+// already decoded (driverWellness.getFatigueRiskAssessment factors + the
+// live-derived weather load) and reframes it as a §392.3 fit-for-duty
+// self-review: the derived risk verdict up top, then each live factor turned
+// into a plain-language self-question with a derived OK / WATCH / STOP flag,
+// then the check-in history line + a hand-off to Log check-in. Zero new
+// network, zero fabrication — every flag is derived from a real factor, and an
+// absent factor reads an honest em-dash (never a fake "OK").
+//
+// PULSE WATCH ROLE (note, not yet wired here — larger follow-up): the same
+// fatigue factors stream to the EusoTrip Pulse watch face, where the wrist's
+// HOS strip surfaces the live ON-DUTY / SINCE-REST counters and can raise a
+// haptic fit-for-duty nudge. This sheet is the phone-side review of that same
+// signal; a deeper Pulse integration (wrist-initiated self-assessment +
+// haptic prompt at the circadian low) is tracked separately.
+
+private struct FatigueSelfAssessmentSheet162: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    let risk: FatigueRisk162?
+    let weatherImpact: WeatherImpact162
+    let effectiveRiskScore: Int?
+    let riskLevelWord: String
+    let riskColor: Color
+    let nextBreakRelative: String
+    let lastCheckInLine: String
+    let onLogCheckIn: () -> Void
+
+    /// A derived fit-for-duty flag per factor — never fabricated; `.unknown`
+    /// when the underlying factor is absent so it reads an honest em-dash.
+    private enum Flag { case ok, watch, stop, unknown }
+
+    private func tint(_ f: Flag) -> Color {
+        switch f {
+        case .ok:      return Brand.success
+        case .watch:   return Brand.warning
+        case .stop:    return Brand.danger
+        case .unknown: return palette.textTertiary
+        }
+    }
+    private func flagWord(_ f: Flag) -> String {
+        switch f {
+        case .ok:      return "OK"
+        case .watch:   return "WATCH"
+        case .stop:    return "STOP"
+        case .unknown: return "—"
+        }
+    }
+
+    // ── Per-factor derivations (all from the live assessment) ──────────────
+    // On duty: FMCSA 11-hour driving / 14-hour on-duty window. WATCH at 10h,
+    // STOP at 13h+ (the regulatory ceiling is near).
+    private var onDuty: (value: String, flag: Flag, q: String) {
+        guard let h = risk?.factors?.hoursOnDuty else {
+            return ("—", .unknown, "How many hours have you been on duty this shift?")
+        }
+        let flag: Flag = h >= 13 ? .stop : (h >= 10 ? .watch : .ok)
+        return ("\(h)h", flag, "You've been on duty \(h)h this shift. Still alert and within your window?")
+    }
+    // Since rest: hours since the last 10-hour reset. WATCH past 8h, STOP past 11h.
+    private var sinceRest: (value: String, flag: Flag, q: String) {
+        guard let h = risk?.factors?.hoursSinceRest else {
+            return ("—", .unknown, "When did your last full rest break end?")
+        }
+        let flag: Flag = h >= 11 ? .stop : (h >= 8 ? .watch : .ok)
+        return ("\(h)h", flag, "It's been \(h)h since your last reset. Could you keep driving safely?")
+    }
+    // Consecutive days: cumulative-fatigue signal. WATCH at 5, STOP at 6+ of 7.
+    private var consecDays: (value: String, flag: Flag, q: String) {
+        guard let d = risk?.factors?.consecutiveDrivingDays else {
+            return ("—", .unknown, "How many days in a row have you driven?")
+        }
+        let flag: Flag = d >= 6 ? .stop : (d >= 5 ? .watch : .ok)
+        return ("\(d) of 7", flag, "You've driven \(d) of the last 7 days. Feeling the cumulative wear?")
+    }
+    // Time of day: the server's circadian-low signal (high|moderate|low).
+    private var timeOfDay: (value: String, flag: Flag, q: String) {
+        guard let t = risk?.factors?.timeOfDayFactor, !t.isEmpty else {
+            return ("—", .unknown, "Are you driving into your usual sleep window?")
+        }
+        let flag: Flag = t.lowercased() == "high" ? .watch : (t.lowercased() == "moderate" ? .watch : .ok)
+        return (t.capitalized, flag, "Time-of-day fatigue load is \(t.lowercased()). Are you fighting drowsiness?")
+    }
+    // Weather load: the live-derived factor (none|low|moderate|elevated|severe).
+    private var weather: (value: String, flag: Flag, q: String) {
+        let wi = weatherImpact
+        guard wi.hasData else {
+            return ("—", .unknown, "What are the road and visibility conditions ahead?")
+        }
+        let flag: Flag = {
+            switch wi.word {
+            case "severe", "elevated": return .stop
+            case "moderate":           return .watch
+            case "low":                return .watch
+            default:                   return .ok
+            }
+        }()
+        let chips = wi.drivers.isEmpty ? "clear" : wi.drivers.joined(separator: " · ").lowercased()
+        return (wi.word.capitalized, flag, "Weather load is \(wi.word) (\(chips)). Conditions still safe to push through?")
+    }
+
+    private var rows: [(label: String, value: String, flag: Flag, q: String)] {
+        [
+            ("ON DUTY", onDuty.value, onDuty.flag, onDuty.q),
+            ("SINCE REST", sinceRest.value, sinceRest.flag, sinceRest.q),
+            ("CONSEC DAYS", consecDays.value, consecDays.flag, consecDays.q),
+            ("TIME OF DAY", timeOfDay.value, timeOfDay.flag, timeOfDay.q),
+            ("WEATHER LOAD", weather.value, weather.flag, weather.q),
+        ]
+    }
+
+    /// The single-line verdict from the derived flags — the worst flag wins.
+    private var verdict: (word: String, sub: String, tint: Color) {
+        let flags = rows.map(\.flag)
+        if flags.contains(.stop) {
+            return ("Consider stopping", "One or more factors are at the limit. If you feel impaired, stop and rest.", Brand.danger)
+        }
+        if flags.contains(.watch) {
+            return ("Drive with care", "A few factors are stacking up. Stay sharp and plan your next break.", Brand.warning)
+        }
+        if flags.allSatisfy({ $0 == .unknown }) {
+            return ("Self-review", "Answer each question honestly to gauge your fitness for duty.", palette.textTertiary)
+        }
+        return ("Fit to drive", "Your factors look good. Keep monitoring how you feel.", Brand.success)
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s5) {
+                    intro
+                    verdictCard
+                    questionList
+                    pulseNote
+                    handoff
+                }
+                .padding(Space.s5)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .navigationTitle("Self-assessment")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private var intro: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("FIT-FOR-DUTY · §392.3")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                .foregroundStyle(palette.textTertiary)
+            Text("A quick honest self-check before you drive. We pull your live duty factors — you answer how you actually feel.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    private var verdictCard: some View {
+        let v = verdict
+        return VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("ASSESSMENT")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    Text(v.word)
+                        .font(.system(size: 22, weight: .bold)).kerning(-0.3)
+                        .foregroundStyle(v.tint)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("NEXT BREAK")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    Text(nextBreakRelative)
+                        .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(palette.textPrimary)
+                }
+            }
+            HStack(spacing: 8) {
+                Text("RISK \(effectiveRiskScore.map(String.init) ?? "—")/100")
+                    .font(.system(size: 10, weight: .heavy)).tracking(0.4)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(riskColor.opacity(0.85))
+                    .clipShape(Capsule())
+                Text(riskLevelWord)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                Spacer(minLength: 0)
+            }
+            Text(v.sub)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(palette.textPrimary)
+        }
+        .padding(Space.s5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .feature)
+    }
+
+    private var questionList: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text("SELF-CHECK")
+                .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            ForEach(Array(rows.enumerated()), id: \.offset) { idx, row in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(row.label)
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                            .foregroundStyle(palette.textTertiary)
+                        Spacer()
+                        Text(row.value)
+                            .font(EType.mono(.caption))
+                            .foregroundStyle(palette.textSecondary)
+                        Text(flagWord(row.flag))
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                            .foregroundStyle(tint(row.flag))
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(tint(row.flag).opacity(0.16))
+                            .clipShape(Capsule())
+                    }
+                    Text(row.q)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(palette.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(Space.s4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .eusoRow()
+            }
+        }
+    }
+
+    private var pulseNote: some View {
+        HStack(alignment: .top, spacing: Space.s2) {
+            Image(systemName: "applewatch")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(palette.textSecondary)
+            Text("These same factors stream to your EusoTrip Pulse watch, where the wrist HOS strip can nudge you at the circadian low.")
+                .font(EType.mono(.micro)).tracking(0.3)
+                .foregroundStyle(palette.textTertiary)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var handoff: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            Text(lastCheckInLine)
+                .font(EType.mono(.micro)).tracking(0.3)
+                .foregroundStyle(palette.textTertiary)
+            CTAButton(title: "Log a check-in", action: onLogCheckIn)
+        }
+    }
+}
+
 // MARK: - Wellness check-in sheet (drives the REAL logWellnessCheckIn mutation)
 //
-// A compact, real self-assessment form — mood / sleep quality / sleep hours /
+// A compact, real self-report form — mood / sleep quality / sleep hours /
 // stress. Submits the exact zod-validated shape the server expects
 // (moodSchema / sleepQualitySchema / stressLevelSchema · sleepHours 0…24).
 // No fabricated defaults are sent silently: the driver picks every value.

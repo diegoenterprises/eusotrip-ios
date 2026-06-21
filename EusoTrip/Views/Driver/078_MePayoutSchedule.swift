@@ -84,6 +84,9 @@ struct MePayoutSchedule: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: Space.s5) {
                 header
+                if store.saveError != nil {
+                    saveErrorBanner
+                }
                 switch store.state {
                 case .loading:
                     skeleton
@@ -128,6 +131,35 @@ struct MePayoutSchedule: View {
             Spacer()
             OrbeSang(state: (store.isLoading || store.isSaving) ? .thinking : .idle, diameter: 40)
         }
+    }
+
+    // MARK: Save-error banner
+    //
+    // The selection stays on-screen (no revert) even when the write fails;
+    // this honest banner tells the driver it didn't save so they can retry.
+    // It clears the moment the next write succeeds.
+
+    private var saveErrorBanner: some View {
+        HStack(spacing: Space.s2) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(palette.warning)
+            Text("Couldn't save that change. It's still selected — pull to refresh or change it again to retry.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(palette.warning.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.warning.opacity(0.35), lineWidth: 1)
+        )
     }
 
     // MARK: States
