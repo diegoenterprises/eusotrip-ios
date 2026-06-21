@@ -66,6 +66,10 @@
 //
 
 import SwiftUI
+import HealthKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Data shapes (decoded from the REAL driverWellness payloads)
 
@@ -228,6 +232,17 @@ struct DriverWellnessFatigue_162: View {
     /// no service produced a reading → the weather factor is honestly
     /// neutral (0 / "none"), never fabricated.
     @State private var weather: WeatherSnapshot? = nil
+    /// Live Apple-Health recovery snapshot — read by HealthService from the
+    /// SHARED HealthKit store (the phone reads Apple-Watch-synced sleep / RHR /
+    /// HRV; there is NO custom watch channel). Best-effort: nil when HealthKit
+    /// is unavailable, the driver hasn't connected Health, or no samples exist
+    /// → the RECOVERY row degrades to honest em-dashes and the sleep bump is 0.
+    /// NEVER fabricated.
+    @State private var health: HealthSnapshot? = nil
+    /// The HealthKit authorization status for the sleep read, mirrored into
+    /// @State so the RECOVERY row can offer the right CTA reactively
+    /// (notDetermined → "Connect Apple Health" / request; denied → Settings).
+    @State private var healthAuth: HKAuthorizationStatus = .notDetermined
     /// Set only by the DEBUG preview init so `.task` doesn't overwrite seeded
     /// sample data with a network call. Always false in production.
     @State private var seeded = false
@@ -256,18 +271,36 @@ struct DriverWellnessFatigue_162: View {
     /// snapshot. Neutral zero when no snapshot (honest, never fabricated).
     private var weatherImpact: WeatherImpact162 { WeatherImpact162(snapshot: weather) }
 
+    /// The live SLEEP-driven fatigue bump — IDENTICAL to the server contract
+    /// (driverWellness.logHealthMetrics) and the HealthSnapshot.sleepBump: a
+    /// short main-sleep session raises the score (< 5h → +20, [5, 6) → +8, else
+    /// 0). Guarded by `!= null` (the optional sleepHours), so a driver with no
+    /// Health data — or no connected Apple Health — contributes EXACTLY 0 and
+    /// scores precisely as today. HRV + resting heart rate are context/display
+    /// only and never bump. NEVER fabricated.
+    private var healthSleepBump: Int {
+        (health?.sleepHours).map { $0 < 5 ? 20 : $0 < 6 ? 8 : 0 } ?? 0
+    }
+
     /// The displayed risk score: the server's base assessment PLUS the live
-    /// weather bump (the dormant factor, now active), capped at 100. When the
-    /// server gave no score we surface nothing (nil) — the weather bump is an
-    /// ADDITION to a real assessment, never a fabricated standalone score.
+    /// weather bump (the dormant factor, now active) PLUS the live Apple-Health
+    /// sleep bump, capped at 100. When the server gave no score we surface
+    /// nothing (nil) — both bumps are ADDITIONS to a real assessment, never a
+    /// fabricated standalone score.
     private var effectiveRiskScore: Int? {
         guard let base = risk?.riskScore else { return nil }
-        return min(100, max(0, base) + weatherImpact.bump)
+        return min(100, max(0, base) + weatherImpact.bump + healthSleepBump)
     }
     /// True when the live weather actually raised the tier vs the server base
     /// — drives the bespoke "+N weather" annotation on the gauge.
     private var weatherRaisedScore: Bool {
         weatherImpact.bump > 0 && risk?.riskScore != nil
+    }
+    /// True when the live Apple-Health sleep reading actually raised the score
+    /// — drives the bespoke "+N sleep" capsule on the gauge (parallel to the
+    /// weather capsule).
+    private var sleepRaisedScore: Bool {
+        healthSleepBump > 0 && risk?.riskScore != nil
     }
 
     /// The server's level ladder, as a comparable rank so the weather bump can
@@ -366,6 +399,14 @@ struct DriverWellnessFatigue_162: View {
     private func num(_ n: Int?) -> String { n.map(String.init) ?? "-" }
     private func hrs(_ n: Int?) -> String { n.map { "\($0)h" } ?? "-" }
 
+    /// Short "as of" formatter for the Apple-Health provenance line.
+    private static let healthAsOf: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = .current
+        f.dateFormat = "MMM d, h:mm a"
+        return f
+    }()
+
     /// "last check-in 2d ago" computed from resources.lastCheckIn.
     private var lastCheckInLine: String {
         let base = "Self-assessment available"
@@ -421,6 +462,7 @@ struct DriverWellnessFatigue_162: View {
             FatigueSelfAssessmentSheet162(
                 risk: risk,
                 weatherImpact: weatherImpact,
+                sleepHours: health?.sleepHours,
                 effectiveRiskScore: effectiveRiskScore,
                 riskLevelWord: riskLevelWord,
                 riskColor: riskColor,
@@ -521,6 +563,22 @@ struct DriverWellnessFatigue_162: View {
                     .background(riskColor.opacity(0.14))
                     .clipShape(Capsule())
                 }
+                // Bespoke "+N sleep" annotation — drawn ONLY when the live
+                // Apple-Health sleep reading actually raised the score (short
+                // main-sleep session), parallel to the weather capsule. Never a
+                // phantom delta: gated on `sleepRaisedScore`.
+                if sleepRaisedScore {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bed.double.fill").font(.system(size: 11))
+                            .foregroundStyle(riskColor)
+                        Text("+\(healthSleepBump) sleep")
+                            .font(.system(size: 10, weight: .heavy)).tracking(0.3)
+                            .foregroundStyle(riskColor)
+                    }
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(riskColor.opacity(0.14))
+                    .clipShape(Capsule())
+                }
             }
 
             // Risk gauge rail (track + gradient fill scaled to riskFraction).
@@ -551,6 +609,7 @@ struct DriverWellnessFatigue_162: View {
                 .foregroundStyle(palette.textTertiary)
 
             weatherFactorRow
+            healthFactorRow
         }
         .padding(Space.s5)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -605,6 +664,96 @@ struct DriverWellnessFatigue_162: View {
             Spacer(minLength: 0)
         }
         .padding(.top, 2)
+    }
+
+    // MARK: Recovery factor (Apple Health — sleep / RHR / HRV)
+    //
+    // A thin, screen-consistent row inside the hero card mirroring the weather
+    // row: a RECOVERY eyebrow + three metric chips (SLEEP <h> / RHR <bpm> /
+    // HRV <ms>) read live from the shared HealthKit store (the phone reads the
+    // Apple-Watch-synced metrics — no custom watch channel). Each chip shows an
+    // honest em-dash when its metric is missing (partial grant / no sample).
+    // Only SLEEP bumps the fatigue score (§ contract); RHR + HRV are context.
+    // When Health isn't connected (notDetermined) or was denied, the row shows
+    // a "Connect Apple Health" CTA instead of fabricating any reading.
+    @ViewBuilder
+    private var healthFactorRow: some View {
+        let connected = healthAuth == .sharingAuthorized
+        let hasData = health?.hasAnyData == true
+        HStack(alignment: .center, spacing: Space.s2) {
+            Image(systemName: "heart.text.square.fill")
+                .font(.system(size: 18))
+                .foregroundStyle(hasData ? riskColor : palette.textTertiary)
+                .opacity(hasData ? 1 : 0.5)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text("RECOVERY")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    if sleepRaisedScore {
+                        Text("SLEEP +\(healthSleepBump)")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                            .foregroundStyle(riskColor)
+                    } else if hasData {
+                        Text("APPLE HEALTH")
+                            .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                            .foregroundStyle(Brand.success)
+                    }
+                }
+                if HealthService.shared.isHealthDataAvailable == false {
+                    Text("Health unavailable on this device")
+                        .font(EType.mono(.micro)).tracking(0.3)
+                        .foregroundStyle(palette.textTertiary)
+                } else if hasData {
+                    // Live metric chips — em-dash per missing metric. Only
+                    // sleep drives the bump; RHR + HRV are context/display.
+                    HStack(spacing: 5) {
+                        recoveryChip("SLEEP", health?.sleepHours.map { String(format: "%.1fh", $0) })
+                        recoveryChip("RHR", health?.restingHeartRate.map { "\($0) bpm" })
+                        recoveryChip("HRV", health?.hrvMs.map { "\(Int($0.rounded())) ms" })
+                    }
+                } else {
+                    Text(connected
+                         ? "No recent Apple Health samples yet"
+                         : "Connect Apple Health to fold sleep into your fatigue score")
+                        .font(EType.mono(.micro)).tracking(0.3)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            }
+            Spacer(minLength: 0)
+            // CTA — only when Health is available AND not yet connected.
+            // notDetermined → fire the HealthKit auth sheet; denied → deep-link
+            // to Settings (we can't re-prompt once the user has declined).
+            if HealthService.shared.isHealthDataAvailable,
+               healthAuth == .notDetermined || healthAuth == .sharingDenied {
+                Button(action: { Task { await connectHealth() } }) {
+                    Text(healthAuth == .sharingDenied ? "Settings" : "Connect")
+                        .font(.system(size: 10, weight: .heavy)).tracking(0.4)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(LinearGradient.diagonal)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    /// One RECOVERY metric chip — the live value or an honest em-dash. The
+    /// label always shows; a nil value renders "—" (never a fabricated zero).
+    private func recoveryChip(_ label: String, _ value: String?) -> some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.system(size: 8.5, weight: .heavy)).tracking(0.4)
+                .foregroundStyle(palette.textTertiary)
+            Text(value ?? "—")
+                .font(.system(size: 9, weight: .bold)).tracking(0.2)
+                .foregroundStyle(value == nil ? palette.textTertiary : palette.textPrimary)
+        }
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(Color.white.opacity(0.06))
+        .clipShape(Capsule())
     }
 
     // MARK: Wellness-score card (composite + grade + 3 sub-rails)
@@ -668,11 +817,35 @@ struct DriverWellnessFatigue_162: View {
     // MARK: Factor cells (3)
 
     private var factorCells: some View {
-        HStack(spacing: Space.s3) {
-            factorCell("ON DUTY", value: hrs(risk?.factors?.hoursOnDuty), sub: "this shift")
-            factorCell("SINCE REST", value: hrs(risk?.factors?.hoursSinceRest), sub: "last 10h reset")
-            factorCell("CONSEC DAYS", value: num(risk?.factors?.consecutiveDrivingDays), sub: "of last 7")
+        // 2×2 grid so the new live SLEEP cell (Apple Health) fits cleanly
+        // alongside the three duty factors without crushing each cell below the
+        // legibility threshold. SLEEP shows the live main-sleep hours or an
+        // honest em-dash; its sub-line names whether it's currently bumping the
+        // score so the contribution is legible.
+        VStack(spacing: Space.s3) {
+            HStack(spacing: Space.s3) {
+                factorCell("ON DUTY", value: hrs(risk?.factors?.hoursOnDuty), sub: "this shift")
+                factorCell("SINCE REST", value: hrs(risk?.factors?.hoursSinceRest), sub: "last 10h reset")
+            }
+            HStack(spacing: Space.s3) {
+                factorCell("CONSEC DAYS", value: num(risk?.factors?.consecutiveDrivingDays), sub: "of last 7")
+                factorCell("SLEEP", value: sleepCellValue, sub: sleepCellSub)
+            }
         }
+    }
+
+    /// The SLEEP factor cell value — live main-sleep hours from Apple Health,
+    /// or an honest em-dash when no reading. Never a fabricated figure.
+    private var sleepCellValue: String {
+        guard let h = health?.sleepHours else { return "-" }
+        return String(format: "%.1fh", h)
+    }
+    /// The SLEEP cell sub-line — names the live contribution (or its absence)
+    /// so the driver sees why sleep is/ isn't moving the score.
+    private var sleepCellSub: String {
+        guard health?.sleepHours != nil else { return "Apple Health" }
+        if healthSleepBump > 0 { return "+\(healthSleepBump) to risk" }
+        return "well rested"
     }
 
     private func factorCell(_ label: String, value: String, sub: String) -> some View {
@@ -811,7 +984,13 @@ struct DriverWellnessFatigue_162: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Wellness derived · HOS + inspections + incidents (90-day rolling)")
             Text(dash(score?.driverId.map { "Driver record · DRIVER \($0)" }))
-            Text("Self-report confidential · not shared with shipper-of-record")
+            // Honest provenance — only stated when Apple Health actually backed
+            // the RECOVERY row this session (live samples), never implied.
+            if health?.hasAnyData == true {
+                Text("Recovery · Apple Health (sleep · RHR · HRV) · "
+                     + (health?.asOf.map { "as of " + Self.healthAsOf.string(from: $0) } ?? "live"))
+            }
+            Text("Self-report + health data confidential · not shared with shipper-of-record")
         }
         .font(EType.mono(.micro)).tracking(0.3)
         .foregroundStyle(palette.textTertiary)
@@ -859,7 +1038,82 @@ struct DriverWellnessFatigue_162: View {
         // the weather factor degrades to the honest neutral, never failing the
         // wellness summary above.
         weather = await WeatherService.shared.fetchCurrent()
+
+        // Live Apple-Health recovery snapshot — the phone reads the
+        // Apple-Watch-synced sleep / RHR / HRV from the shared HealthKit store
+        // (no custom watch channel). Best-effort, never fails the summary: nil
+        // when Health is unavailable, not connected, or no samples exist → the
+        // RECOVERY row degrades to honest em-dashes and the sleep bump is 0.
+        // We mirror the auth status into @State so the CTA renders reactively.
+        healthAuth = HealthService.shared.authorizationStatus
+        health = await HealthService.shared.fetchRecovery()
+        // After a successful read WITH data, best-effort persist the metrics to
+        // the server (driverWellness.logHealthMetrics). Non-blocking and
+        // error-swallowing — the feature works locally whether or not the proc
+        // is deployed.
+        if let snap = health, snap.hasAnyData {
+            await submitHealthMetrics(snap)
+        }
         loading = false
+    }
+
+    /// Fire the HealthKit auth sheet (notDetermined) or deep-link to Settings
+    /// (denied) from the RECOVERY "Connect Apple Health" CTA, then re-read so
+    /// the row + sleep bump reflect the new grant. Best-effort throughout.
+    private func connectHealth() async {
+        switch HealthService.shared.authorizationStatus {
+        case .notDetermined:
+            _ = await HealthService.shared.requestAuthorization()
+            healthAuth = HealthService.shared.authorizationStatus
+            let snap = await HealthService.shared.fetchRecovery()
+            health = snap
+            if let snap, snap.hasAnyData { await submitHealthMetrics(snap) }
+        case .sharingDenied:
+            // Can't re-prompt once declined — send the driver to Settings.
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                await UIApplication.shared.open(url)
+            }
+        default:
+            // Already authorized (or unavailable) — just refresh.
+            let snap = await HealthService.shared.fetchRecovery()
+            health = snap
+            if let snap, snap.hasAnyData { await submitHealthMetrics(snap) }
+        }
+    }
+
+    /// Best-effort persist of the live Apple-Health metrics to the server via
+    /// driverWellness.logHealthMetrics. Non-blocking and error-swallowing: the
+    /// proc may not be deployed yet, and the RECOVERY surface + sleep bump work
+    /// entirely client-side regardless. Sends ONLY the metrics that came back
+    /// real — every nil metric is omitted (never defaulted to 0), exactly the
+    /// shared contract's partial-grant rule. Source tag "healthkit".
+    private func submitHealthMetrics(_ snap: HealthSnapshot) async {
+        // Require at least one non-null metric (the proc no-ops otherwise).
+        guard snap.hasAnyData else { return }
+        struct In: Encodable {
+            let sleepHours: Double?
+            let restingHeartRate: Int?
+            let hrvMs: Double?
+            let recordedAt: String?
+            let source: String
+        }
+        struct Out: Decodable { let success: Bool?; let persisted: Bool? }
+        let recordedAt = ISO8601DateFormatter().string(from: snap.asOf ?? Date())
+        let input = In(
+            sleepHours: snap.sleepHours,
+            restingHeartRate: snap.restingHeartRate,
+            hrvMs: snap.hrvMs,
+            recordedAt: recordedAt,
+            source: "healthkit"
+        )
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "driverWellness.logHealthMetrics", input: input)
+        } catch {
+            // Swallow — the proc may not be deployed yet. The RECOVERY row and
+            // the sleep bump are entirely client-side; this submit is additive.
+            print("[162] logHealthMetrics best-effort failed — \(error.localizedDescription)")
+        }
     }
 
     private func fetchRisk() async -> FatigueRisk162? {
@@ -935,6 +1189,9 @@ private struct FatigueSelfAssessmentSheet162: View {
 
     let risk: FatigueRisk162?
     let weatherImpact: WeatherImpact162
+    /// Live Apple-Health main-sleep hours (nil when Health off / no sample) —
+    /// drives the 6th, sleep self-assessment row. Never fabricated.
+    let sleepHours: Double?
     let effectiveRiskScore: Int?
     let riskLevelWord: String
     let riskColor: Color
@@ -1014,6 +1271,17 @@ private struct FatigueSelfAssessmentSheet162: View {
         let chips = wi.drivers.isEmpty ? "clear" : wi.drivers.joined(separator: " · ").lowercased()
         return (wi.word.capitalized, flag, "Weather load is \(wi.word) (\(chips)). Conditions still safe to push through?")
     }
+    // Sleep: the live Apple-Health main-sleep reading. OK at 7h+, WATCH in
+    // [5, 7), STOP under 5h. Em-dash (.unknown) when Health off / no sample —
+    // never a fabricated "OK". Mirrors the §392.3 rest-quality thresholds.
+    private var sleep: (value: String, flag: Flag, q: String) {
+        guard let h = sleepHours else {
+            return ("—", .unknown, "How many hours did you actually sleep last night?")
+        }
+        let flag: Flag = h < 5 ? .stop : (h < 7 ? .watch : .ok)
+        let v = String(format: "%.1fh", h)
+        return (v, flag, "Apple Health logged \(v) of sleep. Did you wake up rested enough to drive?")
+    }
 
     private var rows: [(label: String, value: String, flag: Flag, q: String)] {
         [
@@ -1022,6 +1290,7 @@ private struct FatigueSelfAssessmentSheet162: View {
             ("CONSEC DAYS", consecDays.value, consecDays.flag, consecDays.q),
             ("TIME OF DAY", timeOfDay.value, timeOfDay.flag, timeOfDay.q),
             ("WEATHER LOAD", weather.value, weather.flag, weather.q),
+            ("SLEEP", sleep.value, sleep.flag, sleep.q),
         ]
     }
 

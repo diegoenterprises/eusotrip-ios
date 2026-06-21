@@ -111,6 +111,8 @@
 	<string>EusoTrip uses your camera to scan dock-door markers for AR-guided back-in alignment, capture proof-of-delivery photos, and read BOL barcodes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>EusoTrip lets you attach photos from your library to load documents (BOL, rate con, damage reports).</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>EusoTrip reads your recent sleep, resting heart rate, and heart-rate variability from Apple Health to assess fatigue and fitness-for-duty (§392.3). Your health data stays private — it is never shared with your shipper or carrier.</string>
 	<!-- ActivityKit Live Activities — required for ShipperLoadActivityAttributes.
 	     When YES, `Activity<…>.request(...)` succeeds; when NO/missing, every
 	     request throws and the lock-screen card never appears. -->

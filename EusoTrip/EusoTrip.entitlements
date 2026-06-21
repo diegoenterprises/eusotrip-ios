@@ -9,6 +9,17 @@
 	<key>com.apple.developer.weatherkit</key>
 	<true/>
 	<!--
+	  HealthKit. The App-ID HealthKit capability was enabled by the
+	  founder (2026-06-20). The PHONE reads Apple-Watch-synced metrics
+	  (sleep, resting heart rate, HRV SDNN) directly from the shared
+	  HealthKit store to assess driver fatigue / fitness-for-duty
+	  (§392.3). READ-ONLY — no clinical-records access, so we add only
+	  the base healthkit key (NOT healthkit.access). HealthService.swift
+	  guards HKHealthStore.isHealthDataAvailable() and never fabricates.
+	-->
+	<key>com.apple.developer.healthkit</key>
+	<true/>
+	<!--
 	  Shared container for iOS ↔ Pulse Watch App. Used for shared
 	  UserDefaults and file storage alongside WCSession, so HOS,
 	  load, and auth state stay in sync across the two bundles.
