@@ -555,6 +555,12 @@ public struct HereLiveMapView: View {
     let missionPins: [HereMarker]
     let showLegend: Bool
     let showTicker: Bool
+    /// Cartography register hint forwarded to the underlying
+    /// `HereVectorMapView` → `BespokeMapCanvas`. Defaults to `.auto` so every
+    /// existing caller renders unchanged. Hot Zones surfaces pass `.geothermal`
+    /// (alongside a `.heatmap(points:)` baseLayer) to light up the continuous
+    /// blue→red demand field under the tappable zone pins.
+    let styleHint: BespokeMapStyleHint
     let onSelectMarker: ((String) -> Void)?
 
     @StateObject private var model = HereAddOnsModel()
@@ -571,6 +577,7 @@ public struct HereLiveMapView: View {
         missionPins: [HereMarker] = [],
         showLegend: Bool = false,
         showTicker: Bool = true,
+        styleHint: BespokeMapStyleHint = .auto,
         onSelectMarker: ((String) -> Void)? = nil
     ) {
         self.center = center
@@ -583,6 +590,7 @@ public struct HereLiveMapView: View {
         self.missionPins = missionPins
         self.showLegend = showLegend
         self.showTicker = showTicker
+        self.styleHint = styleHint
         self.onSelectMarker = onSelectMarker
     }
 
@@ -597,6 +605,7 @@ public struct HereLiveMapView: View {
                 interactive: interactive,
                 tilt: firstPerson ? 55 : 0,
                 layers: base.layers + model.layers,
+                styleHint: styleHint,
                 onSelectMarker: { id in
                     // A caller-actionable pin (e.g. a load on the board) →
                     // route to the caller. Everything else → detail card.
