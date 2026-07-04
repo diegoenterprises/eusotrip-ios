@@ -504,6 +504,22 @@ private struct RailReleaseOrderBody: View {
         return "Eusorone Technologies (DU) · \(num)"
     }
 
+    private var holdDetailLines: [String] {
+        var lines = [
+            "Shipment: \(detail?.shipmentNumber ?? "-")",
+            "Status: \(detail?.status ?? "-")",
+            "Container: \(detail?.containerNumber ?? "-")",
+            "Lane: \(detail?.originCity ?? "-"), \(detail?.originState ?? "-") to \(detail?.destCity ?? "-"), \(detail?.destState ?? "-")"
+        ]
+        for hold in holds {
+            lines.append("\(hold.title): \(hold.value) - \(hold.detail)")
+        }
+        if let event = detail?.events?.first {
+            lines.append("Latest event: \(event.description ?? event.eventType ?? "-")")
+        }
+        return lines
+    }
+
     // MARK: - CTA pair (Release container / Hold detail)
 
     private var ctaPair: some View {
@@ -513,25 +529,13 @@ private struct RailReleaseOrderBody: View {
                 action: { Task { await releaseContainer() } },
                 isLoading: releasing
             )
-            holdDetailButton
-                .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "Hold detail",
+                sheetTitle: "Release hold detail",
+                lines: holdDetailLines,
+                systemImage: "lock.open"
+            )
         }
-    }
-
-    /// Secondary CTA (#232932 glass per SVG) — the muted "Hold detail"
-    /// variant the wireframe specifies, distinct from the gradient primary.
-    private var holdDetailButton: some View {
-        Button(action: {}) {
-            Text("Hold detail")
-                .font(EType.title)
-                .foregroundStyle(palette.textPrimary)
-                .frame(maxWidth: .infinity, minHeight: 52)
-        }
-        .background(Color(hex: 0x232932))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-            .strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
-        .buttonStyle(.plain)
     }
 
     // MARK: - Formatting helpers

@@ -309,25 +309,40 @@ private struct RailShipperHome: View {
 
     private var ctaRow: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Create shipment", leadingIcon: "plus")
+            RailSecondaryActionButton(
+                title: "Shipment context",
+                sheetTitle: "Rail shipment creation context",
+                lines: railHomeContextLines,
+                fillWidth: true,
+                systemImage: "plus"
+            )
                 .frame(maxWidth: .infinity)
 
-            Button(action: {}) {
-                Text("Track cars")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 132, height: 48)
-                    .background(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(palette.bgCardSoft)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .strokeBorder(palette.borderFaint, lineWidth: 1)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Track cars",
+                sheetTitle: "Active railcar tracking",
+                lines: railTrackingContextLines,
+                width: 132,
+                systemImage: "tram.fill"
+            )
+        }
+    }
+
+    private var railHomeContextLines: [String] {
+        var lines = [
+            "\(stats?.activeShipments ?? shipments.count) active rail shipment\(shipments.count == 1 ? "" : "s")",
+            "\(alerts.count) attention item\(alerts.count == 1 ? "" : "s") · \(stats?.carsRolling ?? 0) cars rolling",
+            "Transit \(transitLabel) · spend \(spendLabel)"
+        ]
+        if let tip = demurrage {
+            lines.append("\(tip.headline ?? "Demurrage watch") · \(tip.action ?? "review release timing")")
+        }
+        return lines
+    }
+
+    private var railTrackingContextLines: [String] {
+        shipments.prefix(8).map { s in
+            "\(s.railRef ?? s.id) · \(s.origin ?? "origin") → \(s.destination ?? "destination") · \(s.status ?? "status pending")"
         }
     }
 
@@ -530,7 +545,7 @@ private struct RailShipperHome: View {
     // MARK: - eSang strip (SVG: orb + demurrage tip + chevron)
 
     private var esangStrip: some View {
-        Button(action: {}) {
+        Button(action: { Task { await refreshAll() } }) {
             HStack(spacing: Space.s3) {
                 OrbeSang(state: .idle, diameter: 32)
                 VStack(alignment: .leading, spacing: 2) {

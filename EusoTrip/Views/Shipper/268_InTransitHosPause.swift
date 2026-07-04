@@ -19,6 +19,7 @@ struct InTransitHosPauseScreen: View {
 
 private struct HosPauseBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let live: ShipperAPI.LifecycleSnapshot
 
     /// The snapshot carries no `transportMode` column — only `equipmentType`.
@@ -74,9 +75,9 @@ private struct HosPauseBody: View {
         let enabled = (phone?.isEmpty == false) || (icon == "map.fill" && mapDeepLink != nil)
         return Button {
             if let p = phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") {
-                UIApplication.shared.open(url)
+                openURL(url)
             } else if let url = mapDeepLink {
-                UIApplication.shared.open(url)
+                openURL(url)
             }
         } label: {
             VStack(spacing: 4) {

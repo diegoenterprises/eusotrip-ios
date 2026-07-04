@@ -462,17 +462,24 @@ private struct RailIMDGHazmatManifestBody: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Link DG declaration", action: { Task { await generateDeclaration() } }, leadingIcon: "doc.fill", isLoading: isGenerating)
-            Button {} label: {
-                Text("Emergency")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Brand.danger)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.danger.opacity(0.40)))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Emergency",
+                sheetTitle: "Hazmat emergency references",
+                lines: emergencyReferenceLines,
+                systemImage: "phone.fill"
+            )
         }
+    }
+
+    private var emergencyReferenceLines: [String] {
+        var lines = [
+            "Container \(containerNumber) · rail \(railId)",
+            "UN \(unLabel) · class \(classLabel) · PG \(pgLabel)"
+        ]
+        lines.append(contentsOf: rows.filter { $0.status == "active" || $0.status == "ref" }.prefix(6).map { row in
+            "\(row.title) · \(row.sub) · \(row.result)"
+        })
+        return lines
     }
 
     @ViewBuilder

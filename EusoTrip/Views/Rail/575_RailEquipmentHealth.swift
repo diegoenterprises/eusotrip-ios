@@ -423,17 +423,25 @@ private struct RailEquipmentHealthBody: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Schedule shop", action: { Task { await scheduleShop() } }, isLoading: isScheduling)
-            Button {} label: {
-                Text("Order parts")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Parts review",
+                sheetTitle: "Equipment parts context",
+                lines: partsReviewLines,
+                systemImage: "wrench.and.screwdriver"
+            )
         }
+    }
+
+    private var partsReviewLines: [String] {
+        var lines = [
+            fleetSubLabel,
+            "Health \(healthIndexLabel) · healthy \(healthyPct) · watch \(watchCount) · defects \(defectCount)",
+            "Due service \(dueServiceLabel) · avg miles \(avgMilesLabel)"
+        ]
+        lines.append(contentsOf: cars.prefix(6).map { car in
+            "\(car.reportingMark ?? "Railcar") · \(carSub(car)) · \(conditionInfo(car.condition).label)"
+        })
+        return lines
     }
 
     // MARK: - Load / Actions

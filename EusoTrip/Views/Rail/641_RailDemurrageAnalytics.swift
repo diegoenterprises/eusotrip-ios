@@ -478,9 +478,29 @@ private struct RailDemurrageAnalyticsBody: View {
 
     // MARK: - CTA pair (Export report · Dispute)
 
+    private var exportReportLines: [String] {
+        var lines = [
+            "Active accruals: \(summary?.activeAccruals ?? 0)",
+            "Accruing charges: \(usd(accruedUsd))",
+            "Open disputes: \(summary?.disputesOpen ?? 0)",
+            "Waivers pending: \(summary?.waiversPending ?? 0)",
+            "Dwell reasons: \(rankedReasons.count)"
+        ]
+        for reason in rankedReasons.prefix(4) {
+            lines.append("\(prettyReason(reason.reason)): \(reason.count ?? 0) cars, \(usd(reason.totalCharges ?? 0))")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Export report", action: {}, leadingIcon: "square.and.arrow.up")
+            RailSecondaryActionButton(
+                title: "Report review",
+                sheetTitle: "Demurrage analytics report",
+                lines: exportReportLines,
+                fillWidth: true,
+                systemImage: "square.and.arrow.up"
+            )
                 .frame(maxWidth: .infinity)
             Button(action: { Task { await openDispute() } }) {
                 HStack(spacing: 6) {

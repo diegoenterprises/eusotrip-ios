@@ -455,17 +455,26 @@ private struct RailEquipmentLeaseBody: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Calculate lease cost", action: { Task { await calculateCost() } }, leadingIcon: "tablecells", isLoading: isCalculating)
-            Button {} label: {
-                Text("Specs")
-                    .font(EType.bodyStrong)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 116, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Specs",
+                sheetTitle: "Lease equipment specs",
+                lines: leaseSpecLines,
+                width: 116,
+                systemImage: "tram.fill"
+            )
         }
+    }
+
+    private var leaseSpecLines: [String] {
+        var lines = [
+            "\(leasesCount) active lease\(leasesCount == 1 ? "" : "s")",
+            "Per diem \(perDiemLabel) · accrued \(totalAccrLabel)",
+            "\(renewalCount) renewal event\(renewalCount == 1 ? "" : "s") in window"
+        ]
+        lines.append(contentsOf: leases.prefix(5).map { unit in
+            "\(unitTitle(unit)) · \(unitSub(unit)) · \(healthLabel(unit))"
+        })
+        return lines
     }
 
     // MARK: - Load / Actions

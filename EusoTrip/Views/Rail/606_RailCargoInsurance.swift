@@ -357,6 +357,7 @@ struct RailCargoInsurance_606: View {
     @Environment(\.colorScheme) private var scheme
     @EnvironmentObject private var session: EusoTripSession
     @StateObject private var vm = InsuranceVM_606()
+    @State private var showClause = false
     private var ink: Ink_606 { Ink_606(scheme: scheme) }
     private let eusoPrimary  = LinearGradient(colors: [Color(red: 0.078, green: 0.451, blue: 1.0), Color(red: 0.745, green: 0.004, blue: 1.0)], startPoint: .leading, endPoint: .trailing)
     private let eusoDiagonal = LinearGradient(colors: [Color(red: 0.078, green: 0.451, blue: 1.0), Color(red: 0.745, green: 0.004, blue: 1.0)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -394,6 +395,9 @@ struct RailCargoInsurance_606: View {
         .foregroundColor(ink.text)
         .task { await vm.load() }
         .refreshable { await vm.load() }
+        .sheet(isPresented: $showClause) {
+            clauseSheet
+        }
     }
 
     private var topBar: some View {
@@ -537,8 +541,8 @@ struct RailCargoInsurance_606: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("Shipper of record · \(holderName)").font(.system(size: 12, weight: .semibold))
-                Text(vm.isBound ? "getMyPerLoadPolicies · bound"
-                     : (vm.hasQuote ? "getPerLoadQuote · quoted" : "getMyPerLoadPolicies · no policy on file"))
+                Text(vm.isBound ? "coverage bound"
+                     : (vm.hasQuote ? "quote ready" : "no policy on file"))
                     .font(.system(size: 11, design: .monospaced)).foregroundColor(ink.sub)
             }
             Spacer()
@@ -563,11 +567,142 @@ struct RailCargoInsurance_606: View {
                 .frame(maxWidth: .infinity).frame(height: 48).background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(eusoPrimary))
             }
             .disabled(vm.isWorking)
-            Button { } label: {
+            Button { showClause = true } label: {
                 Text("Clause").font(.system(size: 15, weight: .semibold)).foregroundColor(ink.text)
                     .frame(width: 116, height: 48).background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(ink.soft).overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).stroke(ink.hair, lineWidth: 1)))
             }
         }
+    }
+
+    private var clauseSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(clauseStatusTitle)
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(ink.text)
+                    Text(clauseStatusSubtitle)
+                        .font(.system(size: 12))
+                        .foregroundColor(ink.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(spacing: 0) {
+                        clauseRow("Insured value", vm.c.insuredValue)
+                        Divider().overlay(ink.hair)
+                        clauseRow("Premium", vm.c.premium)
+                        Divider().overlay(ink.hair)
+                        clauseRow("Rate", vm.c.ratePct)
+                        Divider().overlay(ink.hair)
+                        clauseRow("Deductible", vm.c.deductible)
+                        Divider().overlay(ink.hair)
+                        clauseRow("Certificate", vm.c.certStatus)
+                        Divider().overlay(ink.hair)
+                        clauseRow("Terms", vm.c.bindTerms)
+                    }
+                    .background(RoundedRectangle(cornerRadius: 16).fill(ink.card))
+                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(ink.hair, lineWidth: 1))
+
+                    if vm.c.lines.isEmpty {
+                        Text("Get a quote from declared cargo before purchase terms can be reviewed.")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(ink.sub)
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 16).fill(ink.note))
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Quote lines")
+                                .font(.system(size: 9, weight: .heavy))
+                                .kerning(1.0)
+                                .foregroundColor(ink.faint)
+                            ForEach(vm.c.lines) { line in
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text(line.title)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundColor(ink.text)
+                                    Spacer(minLength: 8)
+                                    Text(line.amount)
+                                        .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                        .foregroundColor(ink.text)
+                                }
+                                Text(line.detail)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(ink.sub)
+                            }
+                        }
+                        .padding(14)
+                        .background(RoundedRectangle(cornerRadius: 16).fill(ink.card))
+                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(ink.hair, lineWidth: 1))
+                    }
+
+                    ShareLink(item: clausePacket) {
+                        Text("Share clause summary")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
+                            .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(eusoPrimary))
+                    }
+                    .disabled(vm.c.insuredValue == "—" && vm.c.premium == "—")
+                }
+                .padding(20)
+            }
+            .background(ink.page.ignoresSafeArea())
+            .navigationTitle("Clause")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { showClause = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func clauseRow(_ title: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(ink.sub)
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundColor(ink.text)
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+    }
+
+    private var clauseStatusTitle: String {
+        if vm.isBound { return "Bound cargo clause" }
+        if vm.hasQuote { return "Quoted cargo clause" }
+        return "Cargo clause pending"
+    }
+
+    private var clauseStatusSubtitle: String {
+        if vm.isBound { return "These terms are generated from the active per-load policy on file." }
+        if vm.hasQuote { return "These terms are generated from the live quote and bind only after purchase." }
+        return "No per-load policy or quote is selected yet."
+    }
+
+    private var clausePacket: String {
+        let holderName = session.user?.name ?? "Unknown holder"
+        let lineText = vm.c.lines.map { "- \($0.title): \($0.amount) · \($0.detail)" }.joined(separator: "\n")
+        return """
+        EusoTrip Cargo Insurance Clause Summary
+        Holder: \(holderName)
+        Status: \(clauseStatusTitle)
+        Insured value: \(vm.c.insuredValue)
+        Premium: \(vm.c.premium)
+        Rate: \(vm.c.ratePct)
+        Deductible: \(vm.c.deductible)
+        Certificate: \(vm.c.certStatus)
+        Terms: \(vm.c.bindTerms)
+
+        Quote lines:
+        \(lineText.isEmpty ? "No quote lines on file." : lineText)
+        """
     }
 }
 

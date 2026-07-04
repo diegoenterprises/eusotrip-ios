@@ -548,6 +548,23 @@ private struct RailCrossBorderInterchangeBody: View {
 
     // MARK: CTA pair
 
+    private var borderDocsLines: [String] {
+        var lines = [
+            "Rail ID: \(railId)",
+            "Port: \(interchangePoint?.port ?? "-")",
+            "Direction: \(interchangePoint?.direction ?? "-")",
+            "Carriers: \(interchangePoint?.carrierFrom ?? "-") to \(interchangePoint?.carrierTo ?? "-")",
+            "Cars: \(interchangePoint?.cars.map(String.init) ?? "-")",
+            "Trade agreement: \(interchangePoint?.tradeAgreement ?? "-")",
+            "Crossing ETA: \(crossingTime?.estimatedHours.map { String(format: "%.1fh", $0) } ?? "-")",
+            "Crew certified: \((crewCerts?.certified ?? false) ? "yes" : "review")"
+        ]
+        for check in complianceChecks.prefix(4) {
+            lines.append("\(check.checkName ?? check.checkCode ?? "Check"): \(check.status ?? "-")")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
             CTAButton(
@@ -556,16 +573,13 @@ private struct RailCrossBorderInterchangeBody: View {
                 leadingIcon: "plus",
                 isLoading: isRunningCheck
             )
-            Button("Border docs") {}
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(palette.textPrimary)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(
-                    Capsule()
-                        .fill(palette.bgCard)
-                        .overlay(Capsule().stroke(Color.black.opacity(0.10), lineWidth: 1))
-                )
+            RailSecondaryActionButton(
+                title: "Border docs",
+                sheetTitle: "Cross-border document context",
+                lines: borderDocsLines,
+                fillWidth: true,
+                systemImage: "doc.text.magnifyingglass"
+            )
         }
     }
 

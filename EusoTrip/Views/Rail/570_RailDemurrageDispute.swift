@@ -656,17 +656,22 @@ private struct RailDemurrageDisputeBody: View {
         let cLabel = contestedAmount > 0 ? "File dispute · $\(Int(contestedAmount))" : "File dispute"
         return HStack(spacing: Space.s2) {
             CTAButton(title: cLabel, action: { Task { await fileDispute() } }, leadingIcon: "list.bullet.rectangle", isLoading: isFiling)
-            Button {} label: {
-                Text("Save draft")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Review draft",
+                sheetTitle: "Demurrage dispute draft",
+                lines: disputeDraftLines,
+                systemImage: "doc.text.magnifyingglass"
+            )
         }
+    }
+
+    private var disputeDraftLines: [String] {
+        [
+            "Charge \(disputeIdCaption) · accrued \(accruedLabel) · contested \(contestedLabel)",
+            chargeContextSub,
+            "Win rate \(winRateLabel) · evidence \(citationFooter(weatherEvidence))",
+            dwellWindowLabel.map { "Dwell window \($0) · \(facilityLocaleLabel)" } ?? "Dwell window pending"
+        ]
     }
 
     // MARK: - Load / Actions

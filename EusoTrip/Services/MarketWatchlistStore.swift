@@ -15,10 +15,10 @@
 //
 //  Persistence doctrine (founder parity mandate, same as
 //  `DriverProfileStore`): UserDefaults is the local cache and stays
-//  AUTHORITATIVE; every mutation also fires a fire-and-forget server
-//  write so the preference follows the user to web + iPad. The server
-//  proc may not exist yet — the write is `try?`/silent and NEVER fakes
-//  success, so local UserDefaults always wins until the backend lands.
+//  AUTHORITATIVE; every mutation also syncs to the server watchlist
+//  contract so the preference follows the user to web + iPad. A sync
+//  failure is surfaced on `lastSyncError` while local UserDefaults
+//  remains the source of truth offline.
 //
 //  Honest-empty rule: if the user has NEVER customized, `selectedSymbols`
 //  stays empty and `customized` stays false. The grid reads that as
@@ -49,6 +49,10 @@ final class MarketWatchlistStore: ObservableObject {
     /// their watchlist. Gates `refreshFromServer()` from clobbering a
     /// local customization with a stale server snapshot.
     @Published var customized: Bool
+
+    /// Last server sync failure. The watchlist remains locally applied even
+    /// when this is non-nil; the UI can surface it as "saved on this device".
+    @Published private(set) var lastSyncError: String? = nil
 
     // MARK: - Init
 
@@ -122,7 +126,7 @@ final class MarketWatchlistStore: ObservableObject {
 
     /// Fold the server-saved watchlist into local state, but only if the
     /// user has NOT locally customized — a local customization always wins
-    /// (offline-first). `try?`/silent: the proc may not exist yet.
+    /// (offline-first). Server failures are exposed on `lastSyncError`.
     func refreshFromServer() async {
         // Local customization is authoritative — never let a server
         // snapshot clobber a pin the user just made.
@@ -132,8 +136,12 @@ final class MarketWatchlistStore: ObservableObject {
             let symbols: [String]?
             let customized: Bool?
         }
-        guard let w: Watchlist = try? await EusoTripAPI.shared
-            .queryNoInput("marketPricing.getWatchlist") else {
+        let w: Watchlist
+        do {
+            w = try await EusoTripAPI.shared.queryNoInput("marketPricing.getWatchlist")
+            lastSyncError = nil
+        } catch {
+            lastSyncError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
             return
         }
         // Re-check after the await — the user may have customized while
@@ -160,9 +168,9 @@ final class MarketWatchlistStore: ObservableObject {
     // MARK: - Private
 
     /// Persist the current state to UserDefaults immediately (local cache
-    /// is authoritative), then fire a fire-and-forget server write. The
-    /// server proc may not exist yet, so the write is `try?`/silent and
-    /// never fakes success — local UserDefaults stays the source of truth.
+    /// is authoritative), then sync the same value to the server watchlist.
+    /// A server failure never rolls back the local choice; it is surfaced
+    /// through `lastSyncError`.
     private func persistAndSync() {
         let d = UserDefaults.standard
         if let data = try? JSONEncoder().encode(selectedSymbols) {
@@ -174,13 +182,19 @@ final class MarketWatchlistStore: ObservableObject {
         Task {
             struct In: Encodable { let symbols: [String] }
             struct Out: Decodable { let success: Bool? }
-            // try?/silent — if `marketPricing.setWatchlist` isn't deployed
-            // yet this throws and we swallow it. UserDefaults already holds
-            // the authoritative value; we do NOT surface a fake success.
-            let _: Out? = try? await EusoTripAPI.shared.mutation(
-                "marketPricing.setWatchlist",
-                input: In(symbols: snapshot)
-            )
+            do {
+                let out: Out = try await EusoTripAPI.shared.mutation(
+                    "marketPricing.setWatchlist",
+                    input: In(symbols: snapshot)
+                )
+                if out.success == false {
+                    lastSyncError = "Market watchlist stayed saved on this device, but server sync was not accepted."
+                } else {
+                    lastSyncError = nil
+                }
+            } catch {
+                lastSyncError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
         }
     }
 

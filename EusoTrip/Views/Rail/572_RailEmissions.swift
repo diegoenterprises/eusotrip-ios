@@ -387,17 +387,22 @@ private struct RailEmissionsBody: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Export CO2 report", action: { Task { await exportReport() } }, leadingIcon: "doc.text", isLoading: isExporting)
-            Button {} label: {
-                Text("Buy offset · \(offsetLabel)")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Offset review",
+                sheetTitle: "Carbon offset review",
+                lines: offsetReviewLines,
+                systemImage: "leaf.fill"
+            )
         }
+    }
+
+    private var offsetReviewLines: [String] {
+        [
+            "\(routeLabel) · \(ladenLabel)",
+            "Rail/intermodal \(totalLabel) vs truck \(truckLabel)",
+            "Saved \(savedLabel) · intensity \(intensityLabel)",
+            "Offset estimate \(offsetLabel)"
+        ]
     }
 
     // MARK: - Load / Actions

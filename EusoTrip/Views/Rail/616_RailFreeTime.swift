@@ -481,22 +481,50 @@ private struct RailFreeTimeBody: View {
 
     // MARK: - Actions (Schedule pickup · LFD alerts)
 
+    private var pickupContextLines: [String] {
+        var lines = [
+            "Live containers: \(totalContainers)",
+            "At risk now: \(atRiskCount)",
+            "Free-time window: US \(freeWindowHours)h"
+        ]
+        if let leadAlert {
+            lines.append("Lead container: \(leadAlert.containerNumber ?? "-")")
+            lines.append("Terminal: \(leadAlert.terminal ?? leadAlert.port?.name ?? "-")")
+            lines.append("Action: \(leadAlert.actionRequired ?? "Pull before last free day")")
+        }
+        return lines
+    }
+
+    private var lfdAlertLines: [String] {
+        var lines = [
+            "Critical: \(criticalCount)",
+            "Urgent: \(urgentCount)",
+            "Warning: \(warningCount)"
+        ]
+        if let leadAlert {
+            let lfd = leadAlert.lastFreeDay.map { humanDate($0) } ?? "-"
+            lines.append("Next LFD: \(lfd)")
+            lines.append("Booking: \(leadAlert.bookingRef ?? "-")")
+        }
+        return lines
+    }
+
     private var actions: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Schedule pickup", action: {})
+            RailSecondaryActionButton(
+                title: "Pickup review",
+                sheetTitle: "Schedule pickup context",
+                lines: pickupContextLines,
+                fillWidth: true,
+                systemImage: "calendar.badge.clock"
+            )
                 .frame(maxWidth: .infinity)
-            Button(action: {}) {
-                Text("LFD alerts")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Color(hex: 0x232932))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "LFD alerts",
+                sheetTitle: "Last free day alerts",
+                lines: lfdAlertLines,
+                systemImage: "bell.badge"
+            )
         }
     }
 

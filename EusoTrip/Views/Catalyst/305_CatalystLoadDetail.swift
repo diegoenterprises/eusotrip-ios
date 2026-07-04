@@ -141,6 +141,15 @@ private struct CatalystLoadDetail: View {
     @State private var driverPickerLoading: Bool = false
     @State private var availableDrivers: [CatalystAPI.FleetDriver] = []
     @State private var driverAssignError: String? = nil
+    @State private var showShipperSheet: Bool = false
+    @State private var showEusoTicketRenderer: Bool = false
+    @State private var eusoTicketInitialDoc: String = "BOL"
+    @State private var showRateConSheet: Bool = false
+    @State private var rateConLoading: Bool = false
+    @State private var rateConRows: [RateConfirmationsAPI.Detail] = []
+    @State private var docActionError: String? = nil
+    @State private var pdfPresentation: EusoPDFPresentation? = nil
+    @State private var signingRateConIds: Set<Int> = []
     /// RIOS §12 — set true when a load party fails a HARD sanctions gate.
     /// Blocks the carrier's lifecycle-advance CTA until resolved.
     @State private var gateLocked: Bool = false
@@ -175,7 +184,7 @@ private struct CatalystLoadDetail: View {
                     emptyLoadState
                 }
 
-                if let err = statusUpdateError ?? driverAssignError {
+                if let err = statusUpdateError ?? driverAssignError ?? docActionError {
                     Text(err)
                         .font(EType.caption)
                         .foregroundStyle(Brand.danger)
@@ -221,6 +230,27 @@ private struct CatalystLoadDetail: View {
                 }
             )
             .environment(\.palette, palette)
+        }
+        .sheet(isPresented: $showShipperSheet) {
+            shipperSheet
+                .environment(\.palette, palette)
+        }
+        .sheet(isPresented: $showEusoTicketRenderer) {
+            CatalystEusoTicketRendererScreen(theme: palette, loadId: loadId, initialDoc: eusoTicketInitialDoc)
+        }
+        .sheet(isPresented: $showRateConSheet) {
+            rateConSheet
+                .environment(\.palette, palette)
+        }
+        .sheet(item: $pdfPresentation) { pres in
+            EusoPDFViewer(
+                title: pres.title,
+                subtitle: pres.subtitle,
+                source: .url(pres.url),
+                allowSigning: false,
+                onSigned: nil,
+                loadIdForWalletPass: pres.loadIdForWalletPass
+            )
         }
     }
 
@@ -938,24 +968,14 @@ private struct CatalystLoadDetail: View {
     }
 
     private func shipperRow(_ l: LoadsAPI.LoadDetail) -> some View {
-        // Without a separate `shipper.getById` fetch wired here, the
-        // §11 canonical mapping (companyId 1 = Diego Usoro / Eusorone
-        // Technologies) covers our flagship persona. For other
-        // shipperIds the row paints a generic shipperId line — never
-        // a fabricated name.
-        let isFlagship = l.shipperId == 1
-        let shipperName = isFlagship ? "Diego Usoro · Eusorone Technologies" : "Shipper #\(l.shipperId ?? 0)"
-        let shipperMeta = isFlagship
-            ? "companyId 1 · pays net-7 EusoQuickPay"
-            : "companyId \(l.shipperId ?? 0)"
-        let monogram = isFlagship ? "DU" : "S\(l.shipperId ?? 0)"
+        let shipperName = partyName(l.shipper, fallbackId: l.shipperId)
+        let shipperMeta = shipperMetaLine(l.shipper, fallbackId: l.shipperId)
+        let monogram = nonEmpty(l.shipper?.initials) ?? monogramForName(shipperName)
+        let companyId = l.shipper?.companyId ?? l.shipperId
 
         return Button {
-            NotificationCenter.default.post(
-                name: Notification.Name("eusoCatalystOpenShipper"),
-                object: nil,
-                userInfo: ["shipperId": l.shipperId ?? 0]
-            )
+            docActionError = nil
+            showShipperSheet = true
         } label: {
             HStack(spacing: 12) {
                 ZStack {
@@ -977,14 +997,14 @@ private struct CatalystLoadDetail: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                if isFlagship {
-                    Text("DIAMOND")
+                if let companyId {
+                    Text("ID \(companyId)")
                         .font(.system(size: 10, weight: .heavy))
                         .tracking(0.4)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Brand.blue)
                         .padding(.horizontal, 10)
                         .frame(height: 22)
-                        .background(LinearGradient.diagonal)
+                        .background(Brand.blue.opacity(0.12))
                         .clipShape(Capsule())
                 }
                 Image(systemName: "chevron.right")
@@ -1013,9 +1033,9 @@ private struct CatalystLoadDetail: View {
                 .foregroundStyle(palette.textTertiary)
             HStack(spacing: 8) {
                 let docMode = TransportMode(rawValue: l.transportMode ?? "truck") ?? .truck
-                docTile(label: TransportLexicon.short(.billOfLading, mode: docMode, equipmentRaw: l.equipmentType), icon: "doc.text", status: bolStatus(l), action: "openBOL")
-                docTile(label: "Rate-con", icon: "checkmark.seal", status: rateconStatus(l), action: "openRatecon")
-                docTile(label: TransportLexicon.short(.proofOfDelivery, mode: docMode, equipmentRaw: l.equipmentType), icon: "photo", status: podStatus(l), action: "openPOD")
+                docTile(label: TransportLexicon.short(.billOfLading, mode: docMode, equipmentRaw: l.equipmentType), icon: "doc.text", status: bolStatus(l), action: "BOL", load: l)
+                docTile(label: "Rate-con", icon: "checkmark.seal", status: rateconStatus(l), action: "RATECON", load: l)
+                docTile(label: TransportLexicon.short(.proofOfDelivery, mode: docMode, equipmentRaw: l.equipmentType), icon: "photo", status: podStatus(l), action: "POD", load: l)
             }
         }
     }
@@ -1042,13 +1062,9 @@ private struct CatalystLoadDetail: View {
         }
     }
 
-    private func docTile(label: String, icon: String, status: (text: String, tint: Color), action: String) -> some View {
+    private func docTile(label: String, icon: String, status: (text: String, tint: Color), action: String, load: LoadsAPI.LoadDetail) -> some View {
         Button {
-            NotificationCenter.default.post(
-                name: Notification.Name("eusoCatalystOpenDoc"),
-                object: nil,
-                userInfo: ["doc": action, "loadId": loadId]
-            )
+            openDocument(action, load: load)
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Image(systemName: icon)
@@ -1071,6 +1087,253 @@ private struct CatalystLoadDetail: View {
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+
+    private var shipperSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            Text("Shipper of Record")
+                .font(EType.title)
+                .foregroundStyle(palette.textPrimary)
+            if let l = load {
+                let party = l.shipper
+                VStack(spacing: 0) {
+                    detailLine("Name", partyName(party, fallbackId: l.shipperId))
+                    Divider().overlay(palette.borderFaint)
+                    detailLine("Company", nonEmpty(party?.companyName) ?? "—")
+                    Divider().overlay(palette.borderFaint)
+                    detailLine("Email", nonEmpty(party?.email) ?? "—")
+                    Divider().overlay(palette.borderFaint)
+                    detailLine("MC", nonEmpty(party?.mcNumber) ?? "—")
+                    Divider().overlay(palette.borderFaint)
+                    detailLine("DOT", nonEmpty(party?.dotNumber) ?? "—")
+                    Divider().overlay(palette.borderFaint)
+                    detailLine("Company ID", (party?.companyId ?? l.shipperId).map(String.init) ?? "—")
+                }
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            } else {
+                EusoEmptyState(systemImage: "person.crop.circle.badge.questionmark",
+                               title: "No shipper loaded",
+                               subtitle: "Reload the load detail to view party metadata.")
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+    }
+
+    private var rateConSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Rate Confirmation")
+                        .font(EType.title)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(load?.loadNumber ?? loadId)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer()
+                if rateConLoading {
+                    ProgressView().tint(Brand.blue)
+                }
+            }
+            ScrollView {
+                VStack(spacing: Space.s3) {
+                    if rateConRows.isEmpty && !rateConLoading {
+                        EusoEmptyState(systemImage: "checkmark.seal",
+                                       title: "No rate confirmation on this load",
+                                       subtitle: "A signed or draft rate confirmation appears here once the backend has one for this load.")
+                            .padding(.vertical, Space.s4)
+                    }
+                    ForEach(rateConRows) { row in
+                        rateConRow(row)
+                    }
+                }
+                .padding(.bottom, Space.s4)
+            }
+        }
+        .padding(Space.s5)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func rateConRow(_ rc: RateConfirmationsAPI.Detail) -> some View {
+        let busy = signingRateConIds.contains(rc.id)
+        return VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("RC #\(rc.id)")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("\(rc.status.replacingOccurrences(of: "_", with: " ").uppercased()) · \(moneyLabel(rc.rateAmount, currency: rc.currency))")
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.blue)
+                    if let terms = nonEmpty(rc.terms) {
+                        Text(terms)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(2)
+                    }
+                }
+                Spacer()
+                if busy {
+                    ProgressView().tint(Brand.blue)
+                }
+            }
+            HStack(spacing: Space.s2) {
+                Button {
+                    openRateConPDF(rc)
+                } label: {
+                    Text("Open PDF")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 38)
+                        .background(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).fill(LinearGradient.primary))
+                }
+                .buttonStyle(.plain)
+                .disabled(absoluteURL(rc.pdfUrl) == nil)
+                .opacity(absoluteURL(rc.pdfUrl) == nil ? 0.45 : 1)
+                if !rc.isVoid && !rc.carrierHasSigned {
+                    Button {
+                        Task { await signCarrierRateCon(rc) }
+                    } label: {
+                        Text("Sign")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(palette.textPrimary)
+                            .frame(width: 86, height: 38)
+                            .background(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).fill(palette.bgElev))
+                            .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(palette.borderFaint))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                }
+            }
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+    }
+
+    private func detailLine(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer()
+            Text(value)
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(Space.s3)
+    }
+
+    private func openDocument(_ action: String, load: LoadsAPI.LoadDetail) {
+        docActionError = nil
+        switch action {
+        case "BOL":
+            eusoTicketInitialDoc = "BOL"
+            showEusoTicketRenderer = true
+        case "POD":
+            eusoTicketInitialDoc = "POD"
+            showEusoTicketRenderer = true
+        case "RATECON":
+            showRateConSheet = true
+            Task { await loadRateConfirmations(load) }
+        default:
+            docActionError = "This document type is not wired for load \(load.loadNumber)."
+        }
+    }
+
+    private func loadRateConfirmations(_ load: LoadsAPI.LoadDetail) async {
+        guard let id = Int(load.id) else {
+            docActionError = "Couldn't resolve this load id for rate confirmations."
+            return
+        }
+        rateConLoading = true
+        defer { rateConLoading = false }
+        do {
+            rateConRows = try await EusoTripAPI.shared.rateConfirmations.listForLoad(loadId: id)
+        } catch {
+            rateConRows = []
+            docActionError = "Couldn't load rate confirmations: \(surfaceMessage(error))"
+        }
+    }
+
+    private func openRateConPDF(_ rc: RateConfirmationsAPI.Detail) {
+        guard let url = absoluteURL(rc.pdfUrl) else {
+            docActionError = "This rate confirmation does not have a PDF URL yet."
+            return
+        }
+        pdfPresentation = EusoPDFPresentation(
+            url: url,
+            title: "Rate Confirmation #\(rc.id)",
+            subtitle: load?.loadNumber,
+            loadIdForWalletPass: load?.id
+        )
+    }
+
+    private func signCarrierRateCon(_ rc: RateConfirmationsAPI.Detail) async {
+        docActionError = nil
+        signingRateConIds.insert(rc.id)
+        defer { signingRateConIds.remove(rc.id) }
+        do {
+            _ = try await EusoTripAPI.shared.rateConfirmations.signCarrier(id: rc.id)
+            if let l = load { await loadRateConfirmations(l) }
+        } catch {
+            docActionError = "Couldn't sign rate confirmation #\(rc.id): \(surfaceMessage(error))"
+        }
+    }
+
+    private func absoluteURL(_ raw: String?) -> URL? {
+        guard let raw = nonEmpty(raw) else { return nil }
+        if let absolute = URL(string: raw), absolute.scheme != nil { return absolute }
+        guard let base = EusoTripAPI.shared.baseURL else { return nil }
+        return URL(string: raw, relativeTo: base)?.absoluteURL
+    }
+
+    private func partyName(_ party: LoadsAPI.LoadParty?, fallbackId: Int?) -> String {
+        nonEmpty(party?.companyName)
+            ?? nonEmpty(party?.name)
+            ?? fallbackId.map { "Shipper #\($0)" }
+            ?? "Shipper"
+    }
+
+    private func shipperMetaLine(_ party: LoadsAPI.LoadParty?, fallbackId: Int?) -> String {
+        let mc = nonEmpty(party?.mcNumber).map { "MC \($0)" }
+        let dot = nonEmpty(party?.dotNumber).map { "DOT \($0)" }
+        let email = nonEmpty(party?.email)
+        let company = (party?.companyId ?? fallbackId).map { "companyId \($0)" }
+        let parts = [company, mc, dot, email].compactMap { $0 }
+        return parts.isEmpty ? "party metadata pending" : parts.joined(separator: " · ")
+    }
+
+    private func monogramForName(_ name: String) -> String {
+        let letters = name
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .prefix(2)
+            .compactMap { $0.first }
+        let value = String(letters).uppercased()
+        return value.isEmpty ? "S" : value
+    }
+
+    private func moneyLabel(_ amount: Double?, currency: String) -> String {
+        guard let amount else { return "\(currency) —" }
+        return "\(currency) \(Int(amount.rounded()))"
+    }
+
+    private func nonEmpty(_ raw: String?) -> String? {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func surfaceMessage(_ error: Error) -> String {
+        let localized = error.localizedDescription
+        return localized.isEmpty ? String(describing: error) : localized
     }
 
     // MARK: - Bottom CTAs

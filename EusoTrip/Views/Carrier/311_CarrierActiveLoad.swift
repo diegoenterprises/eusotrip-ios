@@ -23,6 +23,7 @@ struct CarrierActiveLoadScreen: View {
 
 private struct ActiveLoadBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let loadId: String
     @StateObject private var snap = ShipperLifecycleSnapshotStore()
 
@@ -146,7 +147,7 @@ private struct ActiveLoadBody: View {
     private func actionRow(_ live: ShipperAPI.LifecycleSnapshot) -> some View {
         HStack(spacing: 10) {
             Button {
-                if let p = live.driver?.phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") { UIApplication.shared.open(url) }
+                if let p = live.driver?.phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") { openURL(url) }
             } label: {
                 Text("Call driver").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)

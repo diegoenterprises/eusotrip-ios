@@ -48,11 +48,10 @@
 //  Driver proximity miles are computed client-side via haversine when
 //  BOTH the driver GPS fix and the pickup coords exist, else "—".
 //
-//  STUB CTAs (no iOS wrapper this fire — the server procs
-//  catalysts.acceptTender / catalysts.assignDriver EXIST but have no
-//  typed Swift binding; left as labeled no-ops, no fake success):
-//    • ACKNOWLEDGE TENDER → future catalysts.acceptTender wrapper
-//    • ASSIGN DRIVER      → future catalysts.assignDriver wrapper
+//  Action wiring:
+//    • ACKNOWLEDGE TENDER → catalysts.acknowledgeTender audit row.
+//    • ASSIGN DRIVER      → catalysts.assignDriver with ownership, fleet,
+//                            lock, audit and realtime fan-out gates.
 //
 //  Powered by ESANG AI™.
 //
@@ -104,6 +103,10 @@ private struct CelIdentity_373: Decodable, Hashable {
 // File-local tRPC inputs.
 private struct LoadIdInput_373: Encodable { let loadId: String }
 private struct EmptyInput_373: Encodable {}
+private struct TenderAckInput_373: Encodable { let loadId: String; let ackedAtIso: String }
+private struct TenderAckResult_373: Decodable { let success: Bool; let loadId: String; let ackedAt: String? }
+private struct AssignDriverInput_373: Encodable { let loadId: String; let driverId: String; let vehicleId: String?; let notes: String? }
+private struct AssignDriverResult_373: Decodable { let success: Bool; let loadId: String; let driverId: String; let assignedAt: String }
 
 // MARK: - Identity-row rank (catalyst-vantage AWARDED-confirmed roster)
 
@@ -171,6 +174,10 @@ private struct CatalystAwardedCelM04Body: View {
 
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
+    @State private var actionBusy: Bool = false
+    @State private var actionError: String? = nil
+    @State private var actionMessage: String? = nil
+    @State private var showDriverPicker: Bool = false
 
     /// Decoded HERE Routing v8 section polyline for the awarded
     /// pickup→delivery corridor — the REAL road geometry painted on the
@@ -369,6 +376,7 @@ private struct CatalystAwardedCelM04Body: View {
                     rosterCard
                     driverAssignStrip
                     actionRibbon
+                    actionFeedback
                 }
 
                 Color.clear.frame(height: 96)
@@ -380,6 +388,10 @@ private struct CatalystAwardedCelM04Body: View {
         .refreshable { await fetch() }
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await fetch() }
+        }
+        .sheet(isPresented: $showDriverPicker) {
+            assignDriverSheet
+                .environment(\.palette, palette)
         }
     }
 
@@ -1085,16 +1097,14 @@ private struct CatalystAwardedCelM04Body: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    // MARK: - Action ribbon (3 CTAs · ACK / ASSIGN are STUB)
+    // MARK: - Action ribbon (3 CTAs · live tender / assignment)
 
     private var actionRibbon: some View {
         HStack(spacing: 8) {
-            // STUB — catalysts.acceptTender EXISTS on the server but has
-            // no iOS wrapper yet; labeled no-op (no fake success).
             Button {
-                // no-op until a catalysts.acceptTender wrapper lands
+                Task { await acknowledgeTender() }
             } label: {
-                Text("ACKNOWLEDGE TENDER")
+                Text(actionBusy ? "WORKING…" : "ACKNOWLEDGE TENDER")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.4)
                     .foregroundStyle(.white)
@@ -1104,13 +1114,14 @@ private struct CatalystAwardedCelM04Body: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
+            .disabled(actionBusy || loadId.isEmpty || loadId == "0")
 
-            // STUB — catalysts.assignDriver EXISTS on the server but has
-            // no iOS wrapper yet; labeled no-op (no fake success).
             Button {
-                // no-op until a catalysts.assignDriver wrapper lands
+                actionError = nil
+                actionMessage = nil
+                showDriverPicker = true
             } label: {
-                Text("ASSIGN DRIVER")
+                Text(driverAssigned ? "REASSIGN DRIVER" : "ASSIGN DRIVER")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.4)
                     .foregroundStyle(LinearGradient.diagonal)
@@ -1122,6 +1133,7 @@ private struct CatalystAwardedCelM04Body: View {
                     )
             }
             .buttonStyle(.plain)
+            .disabled(actionBusy || drivers.isEmpty)
 
             // Message the shipper-of-record via the canonical ESANG funnel.
             Button {
@@ -1144,6 +1156,149 @@ private struct CatalystAwardedCelM04Body: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private var actionFeedback: some View {
+        Group {
+            if let actionError {
+                Text(actionError)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .padding(Space.s3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Brand.danger.opacity(0.35)))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            } else if let actionMessage {
+                Text(actionMessage)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.blue)
+                    .padding(Space.s3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Brand.blue.opacity(0.35)))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            }
+        }
+    }
+
+    private var assignDriverSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Assign Driver")
+                        .font(EType.title)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(loadNumberDisplay)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer()
+                if actionBusy {
+                    ProgressView().tint(Brand.blue)
+                }
+            }
+            ScrollView {
+                VStack(spacing: Space.s3) {
+                    if drivers.isEmpty {
+                        EusoEmptyState(systemImage: "person.crop.circle.badge.exclamationmark",
+                                       title: "No fleet drivers available",
+                                       subtitle: "Add drivers to the fleet before assigning this tender.")
+                            .padding(.vertical, Space.s4)
+                    }
+                    ForEach(drivers) { driver in
+                        assignDriverRow(driver)
+                    }
+                }
+                .padding(.bottom, Space.s4)
+            }
+        }
+        .padding(Space.s5)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func assignDriverRow(_ driver: CatalystAPI.FleetDriver) -> some View {
+        let available = isAvailable(driver.status)
+        return HStack(alignment: .top, spacing: Space.s3) {
+            ZStack {
+                Circle().fill(available ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint))
+                Text(driverInitials(driver.name))
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(available ? AnyShapeStyle(Color.white) : AnyShapeStyle(palette.textPrimary))
+            }
+            .frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(driver.name)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("\(availabilityLabel(driver.status)) · \(hosSlug(driver.hoursRemaining)) · \(proximitySlug(driver.location))")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Spacer()
+            Button {
+                Task { await assignDriver(driver) }
+            } label: {
+                Text("Assign")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 82, height: 34)
+                    .background(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).fill(LinearGradient.primary))
+            }
+            .buttonStyle(.plain)
+            .disabled(actionBusy || !available)
+            .opacity(available ? 1 : 0.45)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+    }
+
+    private func acknowledgeTender() async {
+        actionBusy = true
+        actionError = nil
+        actionMessage = nil
+        defer { actionBusy = false }
+        do {
+            let result: TenderAckResult_373 = try await EusoTripAPI.shared.mutation(
+                "catalysts.acknowledgeTender",
+                input: TenderAckInput_373(loadId: loadId, ackedAtIso: ISO8601DateFormatter().string(from: Date()))
+            )
+            actionMessage = result.success ? "Tender acknowledged for load \(result.loadId)." : "Tender acknowledgement did not complete."
+            await fetch()
+        } catch {
+            actionError = "Couldn't acknowledge tender: \(surfaceMessage(error))"
+        }
+    }
+
+    private func assignDriver(_ driver: CatalystAPI.FleetDriver) async {
+        actionBusy = true
+        actionError = nil
+        actionMessage = nil
+        defer { actionBusy = false }
+        do {
+            let result: AssignDriverResult_373 = try await EusoTripAPI.shared.mutation(
+                "catalysts.assignDriver",
+                input: AssignDriverInput_373(
+                    loadId: loadId,
+                    driverId: driver.id,
+                    vehicleId: nil,
+                    notes: "Assigned from Catalyst Awarded M04"
+                )
+            )
+            actionMessage = "Driver \(result.driverId) assigned to load \(result.loadId)."
+            showDriverPicker = false
+            await fetch()
+        } catch {
+            actionError = "Couldn't assign \(driver.name): \(surfaceMessage(error))"
+        }
+    }
+
+    private func surfaceMessage(_ error: Error) -> String {
+        let localized = error.localizedDescription
+        return localized.isEmpty ? String(describing: error) : localized
     }
 
     // MARK: - Loading / error

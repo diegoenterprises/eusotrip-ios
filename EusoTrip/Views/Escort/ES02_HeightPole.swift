@@ -19,21 +19,16 @@
 //          clear / warning / blocked classification). This feeds
 //          the gauge, the structure rail, the map pins, and the
 //          low-clearance banner.
-//    REAL  incidents.report → LOG STRIKE writes a real safety
-//          incident (strike → accident, near miss → near_miss,
-//          clearance check → other) with GPS, structure, pole
-//          set-height, and haul-stopped context in the description.
-//          Critical/major severities notify the safety desk.
-//    DEVICE  pole configuration (load height + offset) is kept on
-//          this device and feeds the clearance check directly. The
-//          assignment record has no pole-configuration column, so
-//          the panel says exactly that.
-//    ABSENT (named gaps — see backendGaps in the firing report):
-//          setPoleConfig, getLowClearanceProximity,
-//          logClearanceEvent, getClearanceEventHistory,
-//          getStructureClearanceHistory + clearance_events table +
-//          the clearance_strike incident subtype. ALERT CONVOY has
-//          no broadcast spine → honest notice, never a fake send.
+//    REAL  escorts.logClearanceEvent → LOG STRIKE first writes the
+//          structured clearance-event row for corridor memory/history.
+//    REAL  incidents.report → strike events also open a visible safety
+//          incident with GPS, structure, pole set-height, and haul-
+//          stopped context in the description.
+//    REAL  escorts.setPoleConfig → persists the current load height
+//          + offset to escortAssignments.poleConfig so the setup
+//          survives across devices.
+//    ABSENT (named gap): ALERT CONVOY has no broadcast spine on this
+//          screen yet → honest notice, never a fake send.
 //
 //  RBAC: registered role .escort only.
 //
@@ -157,14 +152,16 @@ struct EscortHeightPole: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var session: EusoTripSession
 
-    // Pole configuration — kept on this device (the assignment
-    // record carries no pole-configuration column; see file header).
+    // Pole configuration — local first, then synced to the assignment
+    // poleConfig record via escorts.setPoleConfig.
     @AppStorage("escort.pole.loadHeightInches") private var loadHeightInches: Int = 0
     @AppStorage("escort.pole.offsetInches") private var offsetInches: Int = 4
 
     @State private var assignment: EscortAssignmentRow? = nil
     @State private var clearance: ClearanceEnvelope? = nil
     @State private var clearanceFailed: Bool = false
+    @State private var poleSyncMessage: String? = nil
+    @State private var poleSyncError: String? = nil
     @State private var userCoord: CLLocationCoordinate2D? = nil
 
     /// Strike-capture sheet toggle + last committed incident ref.
@@ -511,10 +508,21 @@ struct EscortHeightPole: View {
                 activePoleTile
                 stateRuleTile
             }
-            Text("Kept on this device and fed straight into the clearance check. The assignment record doesn't carry a pole configuration.")
+            Text("Saved on this device and synced to the assignment record when an active escort move is loaded.")
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
+            if let poleSyncError {
+                Text(poleSyncError)
+                    .font(EType.mono(.micro)).tracking(0.3)
+                    .foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let poleSyncMessage {
+                Text(poleSyncMessage)
+                    .font(EType.mono(.micro)).tracking(0.3)
+                    .foregroundStyle(Brand.success)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -941,6 +949,8 @@ struct EscortHeightPole: View {
         guard poleIsSet else {
             clearance = nil
             clearanceFailed = false
+            poleSyncMessage = nil
+            poleSyncError = nil
             return
         }
         do {
@@ -953,15 +963,33 @@ struct EscortHeightPole: View {
             )
             clearance = env
             clearanceFailed = false
-            // Persist the pole setup to the assignment (best-effort) so the
-            // config survives across devices and feeds the clearance history.
-            if let aid = assignment.flatMap({ Int($0.id) }), aid > 0 {
-                let _: SetPoleConfigResult? = try? await EusoTripAPI.shared.mutation(
-                    "escorts.setPoleConfig",
-                    input: SetPoleConfigInput(assignmentId: aid, loadHeightFt: loadHeightFt, offsetIn: offsetInches))
-            }
         } catch {
             clearanceFailed = true
+        }
+        await syncPoleConfig()
+    }
+
+    private func syncPoleConfig() async {
+        guard let aid = assignment.flatMap({ Int($0.id) }), aid > 0 else {
+            poleSyncMessage = nil
+            poleSyncError = "Pole setup is saved on this device; no active escort assignment was returned to sync."
+            return
+        }
+        do {
+            let out: SetPoleConfigResult = try await EusoTripAPI.shared.mutation(
+                "escorts.setPoleConfig",
+                input: SetPoleConfigInput(assignmentId: aid, loadHeightFt: loadHeightFt, offsetIn: offsetInches)
+            )
+            if out.success == false {
+                poleSyncMessage = nil
+                poleSyncError = "Pole setup is saved on this device, but the assignment sync was not accepted."
+            } else {
+                poleSyncError = nil
+                poleSyncMessage = "Pole setup synced to assignment \(aid)."
+            }
+        } catch {
+            poleSyncMessage = nil
+            poleSyncError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
     }
 }

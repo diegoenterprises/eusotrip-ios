@@ -803,18 +803,45 @@ private struct RailRouteWeatherBody: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Reroute advisory", action: {}, leadingIcon: "arrow.triangle.branch")
-            Button {} label: {
-                Text("Notify shipper")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Reroute review",
+                sheetTitle: "Route weather reroute context",
+                lines: rerouteReviewLines,
+                width: 176,
+                systemImage: "arrow.triangle.branch"
+            )
+            RailSecondaryActionButton(
+                title: "Notify review",
+                sheetTitle: "Shipper weather notification context",
+                lines: notifyReviewLines,
+                systemImage: "paperplane.fill"
+            )
         }
+    }
+
+    private var rerouteReviewLines: [String] {
+        var lines = [
+            "Risk \(overallRisk.uppercased()) · impacted \(impactedCount) · reroute candidates \(rerouteCount)",
+            corridorCaption ?? "Corridor endpoints pending"
+        ]
+        lines.append(contentsOf: (route?.segments ?? []).prefix(6).map { seg in
+            "\(seg.from ?? "origin") → \(seg.to ?? "destination") · \(seg.risk ?? seg.overallRisk ?? "risk pending") · \(seg.condition ?? "condition pending")"
+        })
+        lines.append(contentsOf: alerts.prefix(4).map { alert in
+            "\(alert.headline ?? alert.eventType ?? "Alert") · \(alert.severity ?? "severity pending") · \(statesLabel(alert.states))"
+        })
+        return lines
+    }
+
+    private var notifyReviewLines: [String] {
+        var lines = [
+            "\(impactedCount) impacted load\(impactedCount == 1 ? "" : "s") · corridor \(overallRisk)",
+            "Alerts \(alerts.count) · route feed \(corridorAvailable ? "available" : "unavailable")"
+        ]
+        lines.append(contentsOf: impacted.prefix(6).map { load in
+            "\(load.loadNumber ?? "Load") · \(load.origin ?? "origin") → \(load.destination ?? "destination") · \(load.alertSeverity ?? "severity pending")"
+        })
+        return lines
     }
 
     // MARK: - Load

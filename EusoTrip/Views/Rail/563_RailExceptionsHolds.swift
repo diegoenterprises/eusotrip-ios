@@ -442,8 +442,34 @@ private struct RailExceptionsHoldsBody: View {
 
     private var actionsRow: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "View shipment", action: {}, leadingIcon: "list.bullet.rectangle")
-            CTAButton(title: "Resolve hold", leadingIcon: "checkmark.circle")
+            RailSecondaryActionButton(
+                title: "Shipment review",
+                sheetTitle: "Exception shipment context",
+                lines: exceptionReviewLines,
+                fillWidth: true,
+                systemImage: "list.bullet.rectangle"
+            )
+            RailSecondaryActionButton(
+                title: "Hold review",
+                sheetTitle: "Hold resolution context",
+                lines: holdReviewLines,
+                fillWidth: true,
+                systemImage: "checkmark.circle"
+            )
+        }
+    }
+
+    private var exceptionReviewLines: [String] {
+        [
+            "\(totalExceptions) total exception\(totalExceptions == 1 ? "" : "s") · \(holdCount) hold\(holdCount == 1 ? "" : "s")",
+            "\(alertCount) FRA alert\(alertCount == 1 ? "" : "s") · demurrage \(demurrageAmount)",
+            "Asset health \(assetHealth?.condition ?? assetHealth?.status ?? "pending")"
+        ]
+    }
+
+    private var holdReviewLines: [String] {
+        (badOrderItems + fraItems + demurrageItems).prefix(8).map { item in
+            "\(item.title) · \(item.subtitle) · \(item.pill) · \(item.detail)"
         }
     }
 

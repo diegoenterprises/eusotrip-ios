@@ -548,25 +548,40 @@ private struct RailBorderCrossingETABody: View {
 
     // MARK: - CTA pair
 
+    private var interchangePointLines: [String] {
+        var lines = [
+            "Interchange: \(point?.name ?? point?.id ?? routeShortName)",
+            "Countries: \(point?.countryA ?? "-") / \(point?.countryB ?? "-")",
+            "States: \(point?.stateProvinceA ?? "-") / \(point?.stateProvinceB ?? "-")",
+            "Customs office: \(point?.customsOffice ?? "-")",
+            "Hazmat allowed: \((point?.hazmatAllowed ?? false) ? "yes" : "no")",
+            "Estimate: \(estimate.map { hm($0.estimatedHours) } ?? "-")"
+        ]
+        if let point {
+            let left = (point.railroadsA ?? []).joined(separator: ", ")
+            let right = (point.railroadsB ?? []).joined(separator: ", ")
+            lines.append("Railroads: \(left.isEmpty ? "-" : left) / \(right.isEmpty ? "-" : right)")
+            if let lat = point.lat, let lng = point.lng {
+                lines.append("Coordinates: \(String(format: "%.4f", lat)), \(String(format: "%.4f", lng))")
+            }
+            if let notes = point.notes, !notes.isEmpty {
+                lines.append("Notes: \(notes)")
+            }
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: reestimating ? "Re-estimating…" : "Re-estimate",
                       action: { Task { await reload(forcePreClear: true) } },
                       isLoading: reestimating)
-            Button(action: {}) {
-                Text("Interchange pts")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(palette.bgCardSoft)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderSoft, lineWidth: 1)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "Interchange pts",
+                sheetTitle: "Live interchange points",
+                lines: interchangePointLines,
+                systemImage: "point.topleft.down.curvedto.point.bottomright.up"
+            )
         }
     }
 

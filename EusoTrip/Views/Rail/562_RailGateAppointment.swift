@@ -65,6 +65,7 @@ private struct CreateResult562: Decodable {
 
 private struct RailGateAppointmentBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var session: EusoTripSession
     let facilityId: String
     let shipmentId: String
@@ -315,7 +316,7 @@ private struct RailGateAppointmentBody: View {
                 leadingIcon: "checkmark",
                 isLoading: submitting || selectedTime == nil
             )
-            CTAButton(title: "Cancel")
+            CTAButton(title: "Cancel", action: { dismiss() })
         }
     }
 

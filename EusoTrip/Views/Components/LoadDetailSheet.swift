@@ -64,6 +64,7 @@ struct LoadDetailSheet: View {
     @Environment(\.palette)     private var palette
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss)     private var dismiss
+    @Environment(\.openURL)     private var openURL
 
     // MARK: - State
 
@@ -1213,11 +1214,9 @@ struct LoadDetailSheet: View {
                 .overlay(Capsule().strokeBorder(palette.borderFaint))
             if let phone = r.escortPhone, !phone.isEmpty,
                let url = URL(string: "tel:\(phone.filter { "+0123456789".contains($0) })") {
-                Button {
-                    #if canImport(UIKit)
-                    UIApplication.shared.open(url)
-                    #endif
-                } label: {
+	                Button {
+	                    openURL(url)
+	                } label: {
                     Image(systemName: "phone.fill")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white)

@@ -417,6 +417,23 @@ private struct RailTransloadConnectionBody: View {
 
     // MARK: CTA pair
 
+    private var containerLines: [String] {
+        var lines = [
+            "Rail ID: \(railId)",
+            "Status: \(tracking?.status ?? "-")",
+            "Mode: \(tracking?.legDescription ?? "-")",
+            "Location: \(tracking?.locationName ?? "-")",
+            "Transfer cost: \(transfer?.transferCostUsd.map { String(format: "$%.0f", $0) } ?? "-")",
+            "Cutoff: \(transfer?.cutoffLabel ?? container?.drayCutoffLabel ?? "-")",
+            "Container: \(container?.containerNumber ?? "-")",
+            "Last event: \(container?.lastEventLabel ?? "-")"
+        ]
+        for segment in segments.prefix(4) {
+            lines.append("\(segment.segmentName ?? "Segment"): \(segment.status ?? "-") - \(segment.detail ?? "-")")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
             CTAButton(
@@ -425,16 +442,13 @@ private struct RailTransloadConnectionBody: View {
                 leadingIcon: "plus",
                 isLoading: isConfirming
             )
-            Button("Container") {}
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(palette.textPrimary)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(palette.bgCard)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).stroke(Color.black.opacity(0.10), lineWidth: 1))
-                )
+            RailSecondaryActionButton(
+                title: "Container",
+                sheetTitle: "Transload container context",
+                lines: containerLines,
+                fillWidth: true,
+                systemImage: "shippingbox"
+            )
         }
     }
 

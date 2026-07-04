@@ -488,15 +488,18 @@ private struct RailEquipmentSpecsBody: View {
                       action: { Task { await pullHealth() } },
                       trailingIcon: "arrow.right",
                       isLoading: pulling)
-            Button {} label: {
-                Text("UMLER")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(Color(hex: 0x232932))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "UMLER",
+                sheetTitle: "UMLER equipment context",
+                lines: [
+                    "\(reportingMark) · \(specs?.carType ?? "car type pending")",
+                    "GRL \(grossLabel) · length \(lengthLabel) · platform \(platformLabel)",
+                    "Owner \(specs?.owner ?? "pending") · lessee \(specs?.lessee ?? "pending")",
+                    wheelsetLine,
+                    lastInspectionLine
+                ],
+                systemImage: "tram.fill"
+            )
         }
     }
 

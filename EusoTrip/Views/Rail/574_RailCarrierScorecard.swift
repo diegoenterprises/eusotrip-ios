@@ -527,17 +527,25 @@ private struct RailCarrierScorecardBody: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Compare carriers", action: { Task { await compareCarriers() } }, isLoading: isComparing)
-            Button {} label: {
-                Text("Export report")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Report review",
+                sheetTitle: "Carrier scorecard report",
+                lines: scorecardReportLines,
+                systemImage: "doc.text.magnifyingglass"
+            )
         }
+    }
+
+    private var scorecardReportLines: [String] {
+        var lines = [
+            "Composite \(scoreLabel) · grade \(gradeLabel) · \(qoqLabel)",
+            "\(compositeSubLabel)",
+            "On-time \(ontimeLabel) · claims-free \(claimsLabel) · tender \(tenderLabel) · billing \(billingLabel)"
+        ]
+        lines.append(contentsOf: carriers.prefix(6).map { c in
+            "\(c.name ?? c.code ?? "Carrier") · \(carrierSub(c)) · \(c.grade ?? "-")"
+        })
+        return lines
     }
 
     // MARK: - Load / Actions

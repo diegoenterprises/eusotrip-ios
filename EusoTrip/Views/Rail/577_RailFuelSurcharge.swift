@@ -404,17 +404,28 @@ private struct RailFuelSurchargeBody: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Recalculate FSC", action: { Task { await recalculate() } }, isLoading: isRecalculating)
-            Button {} label: {
-                Text("Publish schedule")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Schedule review",
+                sheetTitle: "Fuel surcharge schedule",
+                lines: fscScheduleLines,
+                systemImage: "fuelpump"
+            )
         }
+    }
+
+    private var fscScheduleLines: [String] {
+        var lines = [
+            "\(captionLabel) · diesel \(priceLabel) · updated \(updatedLabel)",
+            "Current FSC \(fscRateLabel) · applied MTD \(appliedMtdLabel)",
+            "Per mile \(perMileLabel) · lanes \(laneCountLabel)"
+        ]
+        lines.append(contentsOf: bands.prefix(6).map { band in
+            let lo = band.minPriceGal.map { String(format: "$%.2f", $0) } ?? "-"
+            let hi = band.maxPriceGal.map { String(format: "$%.2f", $0) } ?? "-"
+            let pct = band.surchargePercent.map { String(format: "%.1f%%", $0) } ?? "-"
+            return "\(band.bandName ?? "Band") · \(lo)-\(hi) · \(pct)"
+        })
+        return lines
     }
 
     // MARK: - Load / Actions

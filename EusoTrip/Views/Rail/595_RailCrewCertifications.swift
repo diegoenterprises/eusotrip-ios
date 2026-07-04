@@ -366,23 +366,48 @@ private struct RailCrewCertificationsBody: View {
 
     // MARK: - CTA row
 
+    private var renewCertLines: [String] {
+        var lines = [
+            "Crew assigned: \(crew.count)",
+            "Lane-ready by live roster: \(laneReadyCount)",
+            "US requirements: \(certReqsUS.count)",
+            "MX requirements: \(certReqsMX.count)",
+            "Expired or missing cells: \(expiredOrMissingCells)"
+        ]
+        for req in (certReqsUS + certReqsMX).prefix(5) {
+            lines.append("\(req.country ?? "-") \(req.certType ?? "-"): \(req.regulation ?? req.issuingAuthority ?? "-")")
+        }
+        return lines
+    }
+
+    private var rosterLines: [String] {
+        var lines = [
+            "Corridor: \(corridorName)",
+            "Railroads: \(corridorRailroads)",
+            "Active crew: \(crew.filter { $0.relievedAt == nil }.count)"
+        ]
+        for member in crew.prefix(5) {
+            lines.append("\(displayName(for: member)) - \(roleLabel(member.role)) - HOS \((member.hoursOfServiceCompliant ?? false) ? "ok" : "review")")
+        }
+        return lines
+    }
+
     private var ctaRow: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Renew cert")
+            RailSecondaryActionButton(
+                title: "Renew review",
+                sheetTitle: "Crew certification renewal context",
+                lines: renewCertLines,
+                fillWidth: true,
+                systemImage: "checkmark.shield"
+            )
                 .frame(maxWidth: .infinity)
-            Button {
-            } label: {
-                Text("Roster")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(palette.bgCardSoft)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous)
-                        .strokeBorder(palette.borderFaint))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "Roster",
+                sheetTitle: "Crew roster",
+                lines: rosterLines,
+                systemImage: "person.3.sequence"
+            )
         }
     }
 

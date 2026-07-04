@@ -49,6 +49,7 @@ import SwiftUI
 
 struct CarrierHome: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = CarrierHomeDashboardStore()
@@ -134,7 +135,7 @@ struct CarrierHome: View {
             if status == .notDetermined {
                 WeatherService.shared.requestPermissionIfNeeded()
             } else if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url)
+                openURL(url)
             }
         } label: {
             HStack(spacing: 10) {

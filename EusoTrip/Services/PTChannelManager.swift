@@ -75,6 +75,11 @@ final class PTChannelManager: NSObject, ObservableObject {
     /// honest hint line. Never surfaced as a hard error to the driver.
     @Published private(set) var unavailableReason: String?
 
+    /// Backend token-registration status for the currently joined channel.
+    /// PushToTalk can join locally while server fan-out fails; this keeps
+    /// that distinction visible without breaking the local join.
+    @Published private(set) var registrationError: String?
+
     // MARK: - Private
 
     /// Apple's channel manager. Optional because creating it THROWS when
@@ -290,7 +295,9 @@ final class PTChannelManager: NSObject, ObservableObject {
     /// backend, keyed to this chain-group. The server stores it in
     /// `push_tokens_ptt` and uses it from `broadcastPttTransmission` to
     /// wake every other member with a `pushType: 'pushtotalk'` payload.
-    /// Fire-and-forget; a failure must never break the join.
+    /// A backend failure must never break the local join, but it is surfaced
+    /// via `registrationError` because remote wake-up will not work until the
+    /// server accepts the ephemeral token.
     private func registerEphemeralToken(
         _ token: Data, chainGroupId: String
     ) async {
@@ -298,16 +305,28 @@ final class PTChannelManager: NSObject, ObservableObject {
             let loadChainGroupId: String
             let ephemeralPushToken: String
         }
-        struct Ack: Decodable { let success: Bool? }
+        struct Ack: Decodable { let success: Bool?; let registered: Bool? }
 
         let hex = token.map { String(format: "%02x", $0) }.joined()
-        let _: Ack? = try? await EusoTripAPI.shared.mutation(
-            "notifications.registerPttToken",
-            input: Input(loadChainGroupId: chainGroupId, ephemeralPushToken: hex)
-        )
+        do {
+            let ack: Ack = try await EusoTripAPI.shared.mutation(
+                "notifications.registerPttToken",
+                input: Input(loadChainGroupId: chainGroupId, ephemeralPushToken: hex)
+            )
+            if ack.success == false || ack.registered == false {
+                registrationError = "Push-to-Talk joined locally, but server wake-up registration was not accepted."
+            } else {
+                registrationError = nil
+            }
+        } catch {
+            registrationError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
         #if DEBUG
-        print("[PTChannelManager] registered ephemeral PTT token " +
-              "for chain-group \(chainGroupId) · \(hex.prefix(8))…")
+        if let registrationError {
+            print("[PTChannelManager] PTT token registration failed for chain-group \(chainGroupId): \(registrationError)")
+        } else {
+            print("[PTChannelManager] registered ephemeral PTT token for chain-group \(chainGroupId)")
+        }
         #endif
     }
 }

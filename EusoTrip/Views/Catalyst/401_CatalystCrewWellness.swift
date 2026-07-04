@@ -35,6 +35,7 @@ import SwiftUI
 private struct CrewMember_401: Identifiable {
     enum Risk { case fit, watch, rest }
     let id: String              // unit
+    let driverId: String
     let initials: String        // "RS"
     let nameUnit: String        // live driver name · driver id
     let context: String         // mono on-duty/sleep/HOS line
@@ -143,6 +144,13 @@ private struct CrewWellnessBody_401: View {
     @State private var scheduling: Bool = false
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var showInsight = false
+    @State private var showRestPlan = false
+    @State private var showHistory = false
+    @State private var historyRows: [WellnessHistoryRow_401] = []
+    @State private var historyDriverId: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -155,6 +163,7 @@ private struct CrewWellnessBody_401: View {
                     crewSection
                     insightRow
                     ctaPair
+                    actionFeedback
                     Color.clear.frame(height: 96)
                 }
                 .padding(.horizontal, Space.s5)
@@ -166,6 +175,9 @@ private struct CrewWellnessBody_401: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
+        .sheet(isPresented: $showInsight) { insightSheet }
+        .sheet(isPresented: $showRestPlan) { restPlanSheet }
+        .sheet(isPresented: $showHistory) { historySheet }
     }
 
     // MARK: TopBar
@@ -345,10 +357,7 @@ private struct CrewWellnessBody_401: View {
     // MARK: ESang insight row
 
     private var insightRow: some View {
-        Button {
-            NotificationCenter.default.post(name: .eusoCatalystWellnessInsight_401, object: nil,
-                userInfo: ["source": "401_CatalystCrewWellness"])
-        } label: {
+        Button { showInsight = true } label: {
             HStack(spacing: Space.s3) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal)
@@ -376,21 +385,18 @@ private struct CrewWellnessBody_401: View {
         HStack(spacing: Space.s2) {
             Button {
                 scheduling = true
-                // WIRE: hos.scheduleReset via catalystProcedure (_core/trpc.ts:150)
-                //       rest block + 34-hr reset; blockchainAudit row; carrier WS wellness update.
-                NotificationCenter.default.post(name: .eusoCatalystWellnessScheduleRest_401, object: nil,
-                    userInfo: ["source": "401_CatalystCrewWellness"])
+                actionError = nil
+                actionMessage = nil
+                showRestPlan = true
                 scheduling = false
             } label: {
-                Text("Schedule rest").font(EType.bodyStrong).foregroundStyle(.white)
+                Text("Rest plan").font(EType.bodyStrong).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
                     .opacity(scheduling ? 0.6 : 1.0)
             }.buttonStyle(.plain).disabled(scheduling)
             Button {
-                // WIRE: driverWellness.getWellnessHistory (driverWellness.ts:610)
-                NotificationCenter.default.post(name: .eusoCatalystWellnessLog_401, object: nil,
-                    userInfo: ["source": "401_CatalystCrewWellness"])
+                Task { await loadWellnessHistory() }
             } label: {
                 Text("Wellness log").font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
                     .frame(width: 144, height: 48)
@@ -400,9 +406,135 @@ private struct CrewWellnessBody_401: View {
         }
     }
 
+    @ViewBuilder
+    private var actionFeedback: some View {
+        if let actionError {
+            Text(actionError)
+                .font(EType.caption)
+                .foregroundStyle(Brand.danger)
+                .padding(Space.s3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Brand.danger.opacity(0.10))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Brand.danger.opacity(0.35)))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        } else if let actionMessage {
+            Text(actionMessage)
+                .font(EType.caption)
+                .foregroundStyle(Brand.success)
+                .padding(Space.s3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Brand.success.opacity(0.10))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Brand.success.opacity(0.35)))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        }
+    }
+
+    private var insightSheet: some View {
+        wellnessSheet(title: "Fatigue insight") {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(vm.insightTitle).font(.system(size: 17, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text(vm.insightSub).font(EType.caption).foregroundStyle(palette.textSecondary)
+                Text(vm.bandCaption).font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+        }
+    }
+
+    private var restPlanSheet: some View {
+        wellnessSheet(title: "Rest plan") {
+            VStack(alignment: .leading, spacing: 10) {
+                if let driver = vm.crew.first {
+                    Text(driver.nameUnit).font(.system(size: 17, weight: .bold)).foregroundStyle(palette.textPrimary)
+                    Text(driver.context).font(EType.caption).foregroundStyle(palette.textSecondary)
+                    Text("Dispatch rest scheduling does not have a persisted write contract yet. Use this live risk packet to coordinate rest outside the app until that endpoint exists.")
+                        .font(EType.caption).foregroundStyle(Brand.warning)
+                    ForEach(restPlanItems(for: driver), id: \.self) { item in
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "checkmark.circle.fill").foregroundStyle(Brand.success)
+                            Text(item).font(EType.caption).foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                    ShareLink(item: restPlanText(for: driver)) {
+                        Label("Share rest plan", systemImage: "square.and.arrow.up")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(LinearGradient.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    EusoEmptyState(systemImage: "moon.zzz", title: "No rest plan needed", subtitle: "No active fatigue alert is loaded.")
+                }
+            }
+        }
+    }
+
+    private var historySheet: some View {
+        wellnessSheet(title: "Wellness log") {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                if let historyDriverId {
+                    Text(historyDriverId).font(EType.mono(.caption)).foregroundStyle(palette.textTertiary)
+                }
+                if historyRows.isEmpty {
+                    EusoEmptyState(systemImage: "list.clipboard", title: "No wellness check-ins", subtitle: "Stored wellness check-ins appear here once the driver has logged them.")
+                } else {
+                    ForEach(historyRows) { row in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(row.date).font(.system(size: 13, weight: .bold)).foregroundStyle(palette.textPrimary)
+                            Text("\(row.mood) · \(row.sleepHours, specifier: "%.1f")h sleep · stress \(row.stressLevel)")
+                                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        }
+                        .padding(Space.s3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(palette.bgCard)
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                    }
+                }
+            }
+        }
+    }
+
+    private func wellnessSheet<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        NavigationStack {
+            ScrollView {
+                content()
+                    .padding(16)
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") {
+                        showInsight = false
+                        showRestPlan = false
+                        showHistory = false
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
     // MARK: Network (LIVE — driverWellness.getWellnessDashboard + getFatigueAlerts)
 
     private struct AlertsInput_401: Encodable { let severity: String; let limit: Int }
+    private struct HistoryInput_401: Encodable { let driverId: String?; let days: Int }
+    private struct WellnessHistoryWire_401: Decodable {
+        let driverId: String?
+        let history: [WellnessHistoryRow_401]
+    }
+    private struct WellnessHistoryRow_401: Decodable, Identifiable {
+        let id: String
+        let date: String
+        let mood: String
+        let sleepQuality: String
+        let sleepHours: Double
+        let stressLevel: String
+        let physicalPain: Double?
+        let exercised: Bool?
+        let hydratedWell: Bool?
+    }
 
     private func loadAll() async {
         loading = true
@@ -428,6 +560,7 @@ private struct CrewWellnessBody_401: View {
                 }
                 return CrewMember_401(
                     id: a.id,
+                    driverId: a.driverId,
                     initials: initials_401(a.driverName),
                     nameUnit: "\(a.driverName) · \(a.driverId)",
                     context: a.reason,
@@ -465,20 +598,63 @@ private struct CrewWellnessBody_401: View {
         }
     }
 
+    private func loadWellnessHistory() async {
+        actionMessage = nil
+        actionError = nil
+        let driverId = vm.crew.first?.driverId
+        do {
+            let out: WellnessHistoryWire_401 = try await EusoTripAPI.shared.query(
+                "driverWellness.getWellnessHistory",
+                input: HistoryInput_401(driverId: driverId, days: 30))
+            historyDriverId = out.driverId ?? driverId
+            historyRows = out.history
+            showHistory = true
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func restPlanItems(for driver: CrewMember_401) -> [String] {
+        switch driver.risk {
+        case .rest:
+            return [
+                "Pull this driver from dispatch consideration until rest status is reviewed.",
+                "Verify HOS, last pickup timestamp, and the reason shown in the fatigue alert before assigning the next load.",
+                "Document any off-app rest coordination in the driver wellness log once completed."
+            ]
+        case .watch:
+            return [
+                "Keep the driver on watch and avoid assigning a tight pickup window without a fresh fatigue check.",
+                "Review route length, night-driving exposure, and current HOS before the next dispatch.",
+                "Ask for a wellness check-in if the risk score continues to rise."
+            ]
+        case .fit:
+            return [
+                "No rest intervention is required from the live alert board.",
+                "Keep wellness check-ins current so the fatigue model remains auditable."
+            ]
+        }
+    }
+
+    private func restPlanText(for driver: CrewMember_401) -> String {
+        var lines = [
+            "EusoTrip Crew Wellness Rest Plan",
+            driver.nameUnit,
+            "Score: \(driver.score) · \(driver.riskLabel)",
+            driver.context,
+            "",
+            "Actions:"
+        ]
+        lines.append(contentsOf: restPlanItems(for: driver).map { "- \($0)" })
+        return lines.joined(separator: "\n")
+    }
+
     private func initials_401(_ name: String) -> String {
         let parts = name.split(separator: " ")
         let first = parts.first?.first.map(String.init) ?? "?"
         let last = parts.count > 1 ? parts.last?.first.map(String.init) ?? "" : ""
         return (first + last).uppercased()
     }
-}
-
-// MARK: - Notifications (file-private hooks)
-
-extension Notification.Name {
-    static let eusoCatalystWellnessScheduleRest_401 = Notification.Name("eusoCatalystWellnessScheduleRest_401")
-    static let eusoCatalystWellnessLog_401          = Notification.Name("eusoCatalystWellnessLog_401")
-    static let eusoCatalystWellnessInsight_401      = Notification.Name("eusoCatalystWellnessInsight_401")
 }
 
 // MARK: - Previews

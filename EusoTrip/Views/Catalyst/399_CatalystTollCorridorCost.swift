@@ -18,18 +18,13 @@
 //  ported into the iOS house Shell + BottomNav chrome.
 //
 //  Web peer: /catalyst/wallet/toll-spend.
-//  LIVE WIRING (zero-fallback purge · 2026-06-09 · audit B13):
-//    • route ledger → tolls.getRecentRoutes (tolls.ts:15) — REAL completed
-//      routes, decoded in-file against the exact server projection.
-//    • hero spend / split / per-mile / transponders / IFTA basis — SERVER
-//      WIRE-GAP: no toll-spend ledger proc exists (tolls.calculate is a
-//      zero-stub awaiting an external toll API). All dollar figures render
-//      honest em-dash; the old $4,182 MTD seed board is GONE.
-//    • "Reconcile to loads" CTA           → catalystProcedure write (_core/trpc.ts:150)
-//      (posts the toll accessorial line on each load settlement via the
-//       accessorial router, inserts a blockchainAudit row, broadcasts the
-//       settlement delta on the wallet WS channel for the carrier)
-//    • "IFTA export" CTA                  → iftaCalculator (loaded-mile toll basis)
+//  LIVE WIRING:
+//    • toll expense ledger → tolls.getSpendLedger — run-ticket toll expenses,
+//      company-scoped through the signed-in Catalyst's companyId.
+//    • completed route context → tolls.getRecentRoutes — route backup for
+//      corridors that have not produced run-ticket toll expenses yet.
+//    • IFTA basis → iftaCalculator.estimateFromLoads + CatalystFleetIFTA sheet.
+//    • row / CTA drilldowns → native CatalystLoadDetailScreen and Fleet IFTA.
 //  transportMode = truck; country = US (FHWA tollway agencies, USD). CA 407-ETR /
 //  MX casetas resolve through detectLoadCountry when a corridor crosses.
 //  Reimbursable share is billed to shipper-of-record Diego Usoro / Eusorone (§11).
@@ -78,16 +73,18 @@ private func catalystNavTrailing_399() -> [NavSlot] {
 
 private struct TollCorridor_399: Identifiable {
     enum Verdict { case reimbursable, absorbed, unknown }
-    let id: String              // load id
-    let name: String            // "Houston, TX → Dallas, TX" (real route)
-    let tagLine: String         // completion date line
-    let amount: String          // "—" until a per-route toll ledger exists
+    let id: String
+    let loadNumber: String?
+    let name: String
+    let tagLine: String
+    let amount: String
     let verdict: Verdict
     let verdictLabel: String
     let tint: Color
 }
 
 private struct TollSpendVM_399 {
+    let headerSub: String
     let spendMTD: String
     let monthLabel: String
     let reimbursable: String
@@ -96,32 +93,30 @@ private struct TollSpendVM_399 {
     let splitCaption: String
     let perLoadedMile: String
     let perMileDelta: String
-    let transponders: String
+    let tollEvents: String
+    let tollEventsSub: String
     let iftaBasis: String
+    let iftaBasisSub: String
     let corridors: [TollCorridor_399]
     let corridorCount: String
     let insightTitle: String
     let insightSub: String
 
-    /// Honest empty envelope — em-dash everywhere until real data exists.
-    /// WIRE-GAP: no toll-spend ledger procedure exists server-side
-    /// (tolls.calculate is a stub awaiting an external toll API), so the
-    /// dollar figures can NEVER light up from this build — they stay
-    /// em-dash by design instead of inventing "$4,182".
     static let empty = TollSpendVM_399(
+        headerSub: "No toll expenses on file",
         spendMTD: "—", monthLabel: "MTD",
         reimbursable: "—", absorbed: "—", reimbursableFrac: 0,
-        splitCaption: "Toll reimbursement split appears once toll events are connected.",
+        splitCaption: "Run-ticket toll expenses appear here as soon as receipts post.",
         perLoadedMile: "—", perMileDelta: "",
-        transponders: "—", iftaBasis: "—",
+        tollEvents: "—", tollEventsSub: "No toll rows",
+        iftaBasis: "—", iftaBasisSub: "Fleet IFTA",
         corridors: [],
         corridorCount: "—",
-        insightTitle: "No toll insight yet",
-        insightSub: "Connect toll events to see leakage analysis."
+        insightTitle: "No toll spend on file",
+        insightSub: "Toll receipts and run-ticket expenses will populate this ledger."
     )
 }
 
-/// Mirrors one row of `tolls.getRecentRoutes` (tolls.ts:15) — bare array.
 private struct RecentRouteWire_399: Decodable {
     let id: Int
     let origin: String
@@ -129,15 +124,40 @@ private struct RecentRouteWire_399: Decodable {
     let completedAt: String?
 }
 
+private struct TollLedgerEntryWire_399: Decodable, Identifiable {
+    let id: String
+    let ticketNumber: String
+    let loadNumber: String?
+    let origin: String?
+    let destination: String?
+    let amount: Double
+    let description: String?
+    let incurredAt: String?
+}
+
+private struct TollLedgerSummaryWire_399: Decodable {
+    let totalSpend: Double
+    let last30DaysSpend: Double
+    let entryCount: Int
+}
+
+private struct TollLedgerWire_399: Decodable {
+    let entries: [TollLedgerEntryWire_399]
+    let summary: TollLedgerSummaryWire_399
+}
+
 // MARK: - Body
 
 private struct TollCorridorBody_399: View {
     @Environment(\.palette) private var palette
 
-    // Live state — honest empty envelope until tolls.getRecentRoutes answers.
     @State private var vm: TollSpendVM_399 = .empty
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
+    @State private var selectedLoadId: String?
+    @State private var showIFTA: Bool = false
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -157,6 +177,16 @@ private struct TollCorridorBody_399: View {
             }
         }
         .task { await loadAll() }
+        .sheet(item: Binding(
+            get: { selectedLoadId.map { LoadDrilldown_399(id: $0) } },
+            set: { selectedLoadId = $0?.id }
+        )) { item in
+            CatalystLoadDetailScreen(theme: palette, loadId: item.id)
+        }
+        .sheet(isPresented: $showIFTA) {
+            CatalystFleetIFTA()
+                .environment(\.palette, palette)
+        }
     }
 
     // MARK: TopBar
@@ -176,9 +206,7 @@ private struct TollCorridorBody_399: View {
                     .accessibilityLabel("Back to Wallet")
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Toll Spend").font(EType.display).foregroundStyle(palette.textPrimary)
-                    Text(vm.corridors.isEmpty
-                         ? "Toll events not yet connected"
-                         : "\(vm.corridors.count) recent route\(vm.corridors.count == 1 ? "" : "s") · toll basis pending")
+                    Text(vm.headerSub)
                         .font(EType.caption).foregroundStyle(palette.textSecondary)
                 }
                 Spacer()
@@ -240,11 +268,11 @@ private struct TollCorridorBody_399: View {
 
     private var kpiStrip: some View {
         HStack(spacing: Space.s3) {
-            kpiTile("$ / LOADED MI", vm.perLoadedMile, sub: vm.perMileDelta.isEmpty ? "not connected" : vm.perMileDelta,
+            kpiTile("$ / LOADED MI", vm.perLoadedMile, sub: vm.perMileDelta,
                     valueStyle: AnyShapeStyle(LinearGradient.diagonal), subColor: palette.textSecondary)
-            kpiTile("TRANSPONDERS", vm.transponders, sub: "not connected",
+            kpiTile("TOLL EVENTS", vm.tollEvents, sub: vm.tollEventsSub,
                     valueStyle: AnyShapeStyle(palette.textPrimary), subColor: palette.textSecondary)
-            kpiTile("IFTA BASIS", vm.iftaBasis, sub: "not connected",
+            kpiTile("IFTA BASIS", vm.iftaBasis, sub: vm.iftaBasisSub,
                     valueStyle: AnyShapeStyle(palette.textPrimary), subColor: palette.textSecondary)
         }
     }
@@ -277,12 +305,21 @@ private struct TollCorridorBody_399: View {
                     EusoEmptyState(
                         systemImage: "road.lanes",
                         title: loading ? "Loading recent routes…" : "No completed routes yet",
-                        subtitle: loading ? "" : (loadError ?? "Completed loads appear here with their toll basis once toll events are connected.")
+                        subtitle: loading ? "" : (loadError ?? "Run-ticket toll expenses appear here after drivers submit receipts or connected toll providers sync transactions.")
                     )
                     .padding(.vertical, Space.s3)
                 } else {
                     ForEach(Array(vm.corridors.enumerated()), id: \.element.id) { idx, c in
-                        corridorRow(c)
+                        Button {
+                            selectedLoadId = c.loadNumber
+                            if c.loadNumber == nil {
+                                actionMessage = nil
+                                actionError = "This toll expense is not matched to a load yet."
+                            }
+                        } label: {
+                            corridorRow(c)
+                        }
+                        .buttonStyle(.plain)
                         if idx < vm.corridors.count - 1 {
                             Rectangle().fill(palette.borderFaint).frame(height: 1).padding(.leading, 52)
                         }
@@ -332,9 +369,14 @@ private struct TollCorridorBody_399: View {
 
     private var insightRow: some View {
         Button {
-            // WIRE: tolls.getRecentRoutes (tolls.ts:15) — tap drills into the
-            // empty-leg detail the ESang insight surfaces; routes off the
-            // corridor envelope once the tolls client lands.
+            if let first = vm.corridors.first(where: { $0.loadNumber != nil })?.loadNumber {
+                selectedLoadId = first
+            } else {
+                actionMessage = nil
+                actionError = vm.corridors.isEmpty
+                    ? "No toll expense rows are available yet."
+                    : "No toll expenses are matched to a load yet."
+            }
         } label: {
             HStack(spacing: Space.s3) {
                 ZStack {
@@ -361,32 +403,44 @@ private struct TollCorridorBody_399: View {
     // MARK: CTA pair
 
     private var ctaPair: some View {
-        HStack(spacing: Space.s2) {
-            Button {
-                // WIRE: catalystProcedure write (_core/trpc.ts:150) — posts the
-                // toll accessorial line on each load settlement via the
-                // accessorial router, inserts a blockchainAudit row, broadcasts
-                // the settlement delta on the wallet WS channel for the carrier.
-            } label: {
-                Text("Reconcile to loads").font(EType.bodyStrong).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
-            }.buttonStyle(.plain)
-            Button {
-                // WIRE: iftaCalculator (loaded-mile toll basis) — hands the
-                // loaded-mile toll basis to the IFTA estimator for the Q2 filing.
-            } label: {
-                Text("IFTA export").font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
-                    .frame(width: 144, height: 48)
-                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-            }.buttonStyle(.plain)
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: Space.s2) {
+                Button {
+                    if let first = vm.corridors.first(where: { $0.loadNumber != nil })?.loadNumber {
+                        actionError = nil
+                        actionMessage = "Opening matched load \(first)."
+                        selectedLoadId = first
+                    } else {
+                        actionMessage = nil
+                        actionError = "No toll expense is matched to a load yet."
+                    }
+                } label: {
+                    Text("Review matched loads").font(EType.bodyStrong).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
+                }.buttonStyle(.plain)
+                Button {
+                    showIFTA = true
+                } label: {
+                    Text("IFTA export").font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
+                        .frame(width: 144, height: 48)
+                        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                }.buttonStyle(.plain)
+            }
+            if let actionMessage {
+                Text(actionMessage).font(EType.caption).foregroundStyle(Brand.success)
+            }
+            if let actionError {
+                Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
         }
     }
 
-    // MARK: Network (LIVE — tolls.getRecentRoutes; spend ledger is a server WIRE-GAP)
+    // MARK: Network
 
     private struct RecentRoutesInput_399: Encodable { let limit: Int }
+    private struct TollLedgerInput_399: Encodable { let limit: Int }
 
     private func loadAll() async {
         loading = true
@@ -394,42 +448,227 @@ private struct TollCorridorBody_399: View {
         defer { loading = false }
 
         do {
-            let routes: [RecentRouteWire_399] = try await EusoTripAPI.shared.query(
-                "tolls.getRecentRoutes", input: RecentRoutesInput_399(limit: 8))
+            async let ledgerTask: TollLedgerWire_399 = EusoTripAPI.shared.query(
+                "tolls.getSpendLedger",
+                input: TollLedgerInput_399(limit: 50)
+            )
+            async let routesTask: [RecentRouteWire_399] = EusoTripAPI.shared.query(
+                "tolls.getRecentRoutes",
+                input: RecentRoutesInput_399(limit: 8)
+            )
+            async let iftaTask: IftaAPI.Estimate? = fetchIftaEstimate_399()
 
-            let corridors: [TollCorridor_399] = routes.map { r in
-                TollCorridor_399(
-                    id: "route-\(r.id)",
-                    name: "\(r.origin) → \(r.destination)",
-                    tagLine: r.completedAt.map { "completed \(String($0.prefix(10))) · toll basis not yet connected" }
-                        ?? "completed — · toll basis not yet connected",
-                    amount: "—",
-                    verdict: .unknown,
-                    verdictLabel: "—",
-                    tint: Brand.blue
-                )
+            let ledger = try await ledgerTask
+            let ifta = await iftaTask
+            let routes: [RecentRouteWire_399]
+            do {
+                routes = try await routesTask
+            } catch {
+                routes = []
             }
 
-            // Dollar figures stay em-dash: NO toll-spend ledger proc exists
-            // (tolls.calculate is a zero-stub). Routes are the only live data.
-            vm = TollSpendVM_399(
-                spendMTD: "—", monthLabel: "MTD",
-                reimbursable: "—", absorbed: "—", reimbursableFrac: 0,
-                splitCaption: "Toll reimbursement split appears once toll events are connected.",
-                perLoadedMile: "—", perMileDelta: "",
-                transponders: "—", iftaBasis: "—",
-                corridors: corridors,
-                corridorCount: corridors.isEmpty ? "—" : "\(corridors.count) recent",
-                insightTitle: corridors.isEmpty ? "No toll insight yet" : "Toll events not yet connected",
-                insightSub: corridors.isEmpty
-                    ? "Connect toll events to see leakage analysis."
-                    : "These completed routes await per-route toll reconciliation."
-            )
+            vm = buildVM_399(ledger: ledger, routes: routes, ifta: ifta)
         } catch {
             vm = .empty
             loadError = "Couldn't reach the tolls service - retry."
         }
     }
+
+    private func fetchIftaEstimate_399() async -> IftaAPI.Estimate? {
+        let now = Date()
+        let year = Calendar.current.component(.year, from: now)
+        do {
+            return try await EusoTripAPI.shared.ifta.estimateFromLoads(
+                year: year,
+                quarter: IftaAPI.Quarter.current(in: now)
+            )
+        } catch {
+            return nil
+        }
+    }
+
+    private func buildVM_399(
+        ledger: TollLedgerWire_399,
+        routes: [RecentRouteWire_399],
+        ifta: IftaAPI.Estimate?
+    ) -> TollSpendVM_399 {
+        let entries = ledger.entries
+        let now = Date()
+        let mtdSpend = entries.reduce(0.0) { total, entry in
+            guard let date = parseDate_399(entry.incurredAt),
+                  Calendar.current.isDate(date, equalTo: now, toGranularity: .month)
+            else { return total }
+            return total + entry.amount
+        }
+        let quarterSpend = entries.reduce(0.0) { total, entry in
+            guard let date = parseDate_399(entry.incurredAt),
+                  quarterOf_399(date) == quarterOf_399(now),
+                  Calendar.current.component(.year, from: date) == Calendar.current.component(.year, from: now)
+            else { return total }
+            return total + entry.amount
+        }
+        let matched = entries.filter { clean_399($0.loadNumber) != nil }
+        let unmatched = entries.count - matched.count
+        let matchedSpend = matched.reduce(0.0) { $0 + $1.amount }
+        let unmatchedSpend = max(0, ledger.summary.totalSpend - matchedSpend)
+        let totalSpend = max(ledger.summary.totalSpend, matchedSpend + unmatchedSpend)
+        let reimbursableFrac = totalSpend > 0 ? matchedSpend / totalSpend : 0
+
+        let iftaMiles = ifta?.estimatedTotalMiles ?? 0
+        let perMile: String
+        let perMileSub: String
+        if quarterSpend > 0, iftaMiles > 0 {
+            perMile = currency_399(quarterSpend / iftaMiles, fractionDigits: 3)
+            perMileSub = "\(currency_399(quarterSpend)) / \(miles_399(iftaMiles)) \(IftaAPI.Quarter.current(in: now).label)"
+        } else if iftaMiles > 0 {
+            perMile = "—"
+            perMileSub = "\(miles_399(iftaMiles)) IFTA miles"
+        } else {
+            perMile = "—"
+            perMileSub = "Awaiting IFTA miles"
+        }
+
+        let iftaBasis: String
+        let iftaSub: String
+        if let ifta {
+            iftaBasis = miles_399(ifta.estimatedTotalMiles)
+            iftaSub = "\(ifta.loadsInPeriod) load\(ifta.loadsInPeriod == 1 ? "" : "s") · \(ifta.period)"
+        } else {
+            iftaBasis = "—"
+            iftaSub = "Fleet IFTA unavailable"
+        }
+
+        let entryRows = entries.map { entryRow_399($0) }
+        let routeRows = routes.map { routeRow_399($0) }
+        let corridors = entryRows.isEmpty ? routeRows : entryRows
+        let headerSub: String
+        if entries.isEmpty {
+            headerSub = routes.isEmpty
+                ? "No toll expenses on file"
+                : "\(routes.count) completed route\(routes.count == 1 ? "" : "s") · no toll expense rows"
+        } else {
+            headerSub = "\(entries.count) toll expense\(entries.count == 1 ? "" : "s") · run-ticket ledger"
+        }
+
+        return TollSpendVM_399(
+            headerSub: headerSub,
+            spendMTD: entries.isEmpty ? "—" : currency_399(mtdSpend),
+            monthLabel: "MTD",
+            reimbursable: entries.isEmpty ? "—" : currency_399(matchedSpend),
+            absorbed: entries.isEmpty ? "—" : currency_399(unmatchedSpend),
+            reimbursableFrac: reimbursableFrac,
+            splitCaption: entries.isEmpty
+                ? "No run-ticket toll expenses have posted for this company yet."
+                : "\(matched.count) matched to loads · \(unmatched) awaiting load link",
+            perLoadedMile: perMile,
+            perMileDelta: perMileSub,
+            tollEvents: entries.isEmpty ? "—" : "\(ledger.summary.entryCount)",
+            tollEventsSub: entries.isEmpty ? "No toll rows" : "\(currency_399(ledger.summary.last30DaysSpend)) last 30d",
+            iftaBasis: iftaBasis,
+            iftaBasisSub: iftaSub,
+            corridors: corridors,
+            corridorCount: corridors.isEmpty ? "—" : "\(corridors.count) row\(corridors.count == 1 ? "" : "s")",
+            insightTitle: entries.isEmpty ? "No toll spend on file" : "\(matched.count) load-matched toll row\(matched.count == 1 ? "" : "s")",
+            insightSub: entries.isEmpty
+                ? "Completed routes show below until toll receipts or provider transactions post."
+                : "Review unmatched toll rows before settlement so pass-through costs do not leak margin."
+        )
+    }
+
+    private func entryRow_399(_ entry: TollLedgerEntryWire_399) -> TollCorridor_399 {
+        let routeName = [clean_399(entry.origin), clean_399(entry.destination)]
+            .compactMap { $0 }
+            .joined(separator: " → ")
+        let matchedLoad = clean_399(entry.loadNumber)
+        let name = routeName.isEmpty ? (matchedLoad ?? entry.ticketNumber) : routeName
+        let dateLine = shortDate_399(entry.incurredAt)
+        var lineParts = [entry.ticketNumber]
+        if let matchedLoad { lineParts.append("load \(matchedLoad)") }
+        if let dateLine { lineParts.append(dateLine) }
+        if let desc = clean_399(entry.description) { lineParts.append(desc) }
+        let matched = matchedLoad != nil
+        return TollCorridor_399(
+            id: "toll-\(entry.id)",
+            loadNumber: matchedLoad,
+            name: name,
+            tagLine: lineParts.joined(separator: " · "),
+            amount: currency_399(entry.amount),
+            verdict: matched ? .reimbursable : .absorbed,
+            verdictLabel: matched ? "LOAD MATCH" : "UNMATCHED",
+            tint: matched ? Brand.success : Brand.warning
+        )
+    }
+
+    private func routeRow_399(_ route: RecentRouteWire_399) -> TollCorridor_399 {
+        TollCorridor_399(
+            id: "route-\(route.id)",
+            loadNumber: String(route.id),
+            name: "\(route.origin) → \(route.destination)",
+            tagLine: route.completedAt.map { "completed \(String($0.prefix(10))) · no toll expense row" }
+                ?? "completed date unavailable · no toll expense row",
+            amount: "—",
+            verdict: .unknown,
+            verdictLabel: "ROUTE",
+            tint: Brand.blue
+        )
+    }
+
+    private func clean_399(_ value: String?) -> String? {
+        guard let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !trimmed.isEmpty,
+              trimmed != "—",
+              trimmed.lowercased() != "unknown"
+        else { return nil }
+        return trimmed
+    }
+
+    private func parseDate_399(_ value: String?) -> Date? {
+        guard let value = clean_399(value) else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: value) { return date }
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        if let date = plain.date(from: value) { return date }
+        let day = DateFormatter()
+        day.calendar = Calendar(identifier: .gregorian)
+        day.locale = Locale(identifier: "en_US_POSIX")
+        day.dateFormat = "yyyy-MM-dd"
+        return day.date(from: String(value.prefix(10)))
+    }
+
+    private func shortDate_399(_ value: String?) -> String? {
+        guard let date = parseDate_399(value) else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MMM d"
+        return f.string(from: date)
+    }
+
+    private func quarterOf_399(_ date: Date) -> Int {
+        let month = Calendar.current.component(.month, from: date)
+        return ((month - 1) / 3) + 1
+    }
+
+    private func currency_399(_ value: Double, fractionDigits: Int = 2) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.currencyCode = "USD"
+        f.maximumFractionDigits = fractionDigits
+        f.minimumFractionDigits = fractionDigits
+        return f.string(from: NSNumber(value: value)) ?? "$\(String(format: "%.\(fractionDigits)f", value))"
+    }
+
+    private func miles_399(_ value: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = 0
+        return "\(f.string(from: NSNumber(value: value)) ?? "\(Int(value.rounded()))") mi"
+    }
+}
+
+private struct LoadDrilldown_399: Identifiable {
+    let id: String
 }
 
 // MARK: - Previews

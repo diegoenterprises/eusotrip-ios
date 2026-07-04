@@ -373,23 +373,44 @@ private struct RailHazmatDGRulesBody: View {
 
     // MARK: - CTA row (Open 49 CFR 172 · Placards)
 
+    private var regulationReferenceLines: [String] {
+        var lines = [
+            "UN number: \(consistUNNumber)",
+            "Commodity: \(consistCommodity)",
+            "Hazard class: \(consistHazClass)",
+            "Consist: \(consistDetail)"
+        ]
+        for reg in [usRegs, caRegs, mxRegs].compactMap({ $0 }) {
+            lines.append("\(reg.country ?? "-"): \(reg.regulationName ?? "-")")
+            for rule in (reg.keyRules ?? []).prefix(2) {
+                lines.append("Rule: \(rule)")
+            }
+        }
+        return lines
+    }
+
+    private var placardReferenceLines: [String] {
+        [usRegs, caRegs, mxRegs].compactMap { reg in
+            guard let reg else { return nil }
+            return "\(reg.country ?? "-"): \(reg.placardDifferences ?? reg.crossBorderNotes ?? "No placard delta returned")"
+        }
+    }
+
     private var ctaRow: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Open 49 CFR 172")
-            Button {
-                // Placard reference — opens the placard library sheet when wired.
-            } label: {
-                Text("Placards")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(palette.bgCardSoft)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "49 CFR review",
+                sheetTitle: "Hazmat DG regulations",
+                lines: regulationReferenceLines,
+                fillWidth: true,
+                systemImage: "book.closed"
+            )
+            RailSecondaryActionButton(
+                title: "Placards",
+                sheetTitle: "Hazmat placard references",
+                lines: placardReferenceLines,
+                systemImage: "diamond"
+            )
         }
     }
 

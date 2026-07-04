@@ -105,6 +105,18 @@ private struct ScheduleResult683: Decodable {
     let scheduledDate: String?
 }
 
+/// zeun.getWorkOrdersForCarrier -> live Zeun work orders for this company fleet.
+private struct WorkOrder683: Decodable, Identifiable, Hashable {
+    let id: String
+    let truckNumber: String?
+    let kind: String
+    let status: String
+    let openedAt: String?
+    let costEstimate: Double?
+    let mechanic: String?
+    let summary: String?
+}
+
 // MARK: - Body
 
 private struct VesselFleetHealthBody: View {
@@ -121,6 +133,10 @@ private struct VesselFleetHealthBody: View {
     @State private var scheduling = false
     @State private var scheduleAck: String? = nil
     @State private var scheduleError: String? = nil
+    @State private var showingWorkOrders = false
+    @State private var loadingWorkOrders = false
+    @State private var workOrders: [WorkOrder683] = []
+    @State private var workOrdersError: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -581,18 +597,134 @@ private struct VesselFleetHealthBody: View {
                 .disabled(scheduling || asset == nil)
                 .opacity(asset == nil ? 0.6 : 1.0)
 
-                Button { } label: {
-                    Text("Work orders")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(palette.textPrimary)
-                        .frame(maxWidth: .infinity, minHeight: 48)
-                        .background(palette.bgCard)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                Button {
+                    Task { await toggleWorkOrders() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if loadingWorkOrders {
+                            ProgressView().tint(palette.textPrimary).scaleEffect(0.8)
+                        }
+                        Text(showingWorkOrders ? "Hide orders" : "Work orders")
+                    }
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)
+                .disabled(loadingWorkOrders)
+            }
+
+            workOrderPanel
+        }
+    }
+
+    @ViewBuilder private var workOrderPanel: some View {
+        if showingWorkOrders {
+            if loadingWorkOrders {
+                LifecycleCard {
+                    HStack(spacing: 8) {
+                        ProgressView().scaleEffect(0.8)
+                        Text("Loading live Zeun work orders...")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+            } else if let err = workOrdersError {
+                LifecycleCard(accentDanger: true) {
+                    Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                }
+            } else if workOrders.isEmpty {
+                LifecycleCard {
+                    HStack(spacing: 8) {
+                        Image(systemName: "wrench.and.screwdriver")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(palette.textSecondary)
+                        Text("No live Zeun work orders are open for this fleet.")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+            } else {
+                LifecycleCard(accentGradient: true) {
+                    VStack(alignment: .leading, spacing: Space.s3) {
+                        HStack {
+                            LifecycleSection(label: "\(workOrders.count) WORK ORDER\(workOrders.count == 1 ? "" : "S")", icon: "wrench.and.screwdriver.fill")
+                            Spacer()
+                            Button {
+                                Task { await loadWorkOrders() }
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(palette.textSecondary)
+                                    .frame(width: 32, height: 32)
+                                    .background(palette.bgCard)
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(loadingWorkOrders)
+                        }
+                        ForEach(Array(workOrders.prefix(4).enumerated()), id: \.element.id) { idx, order in
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(alignment: .top, spacing: Space.s2) {
+                                    Text(order.kind.uppercased())
+                                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                                        .foregroundStyle(workOrderAccent(order))
+                                        .padding(.horizontal, 8).padding(.vertical, 4)
+                                        .background(Capsule().fill(workOrderAccent(order).opacity(0.13)))
+                                    Spacer()
+                                    Text(order.status.uppercased())
+                                        .font(EType.mono(.micro))
+                                        .foregroundStyle(palette.textTertiary)
+                                }
+                                Text(dashIfEmpty(order.summary))
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(palette.textPrimary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.75)
+                                Text("\(assetLabel(order)) · opened \(humanDate(order.openedAt)) · \(money(order.costEstimate))")
+                                    .font(EType.mono(.caption))
+                                    .foregroundStyle(palette.textSecondary)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                            }
+                            if idx < min(workOrders.count, 4) - 1 {
+                                Divider().overlay(palette.borderFaint)
+                            }
+                        }
+                    }
+                }
             }
         }
+    }
+
+    private func workOrderAccent(_ order: WorkOrder683) -> Color {
+        let kind = order.kind.lowercased()
+        let status = order.status.lowercased()
+        if kind.contains("breakdown") || status.contains("reported") { return Brand.danger }
+        if status.contains("progress") || status.contains("queued") { return Brand.warning }
+        return Brand.success
+    }
+
+    private func dashIfEmpty(_ value: String?) -> String {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "-" }
+        return value
+    }
+
+    private func assetLabel(_ order: WorkOrder683) -> String {
+        dashIfEmpty(order.truckNumber)
+    }
+
+    private func humanDate(_ value: String?) -> String {
+        guard let value, !value.isEmpty else { return "-" }
+        return String(value.prefix(10))
+    }
+
+    private func money(_ value: Double?) -> String {
+        guard let value else { return "estimate pending" }
+        return value.formatted(.currency(code: "USD"))
     }
 
     // MARK: - Derived condition values (all from live endpoints)
@@ -707,6 +839,27 @@ private struct VesselFleetHealthBody: View {
             scheduleError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         scheduling = false
+    }
+
+    private func toggleWorkOrders() async {
+        if showingWorkOrders {
+            showingWorkOrders = false
+            return
+        }
+        showingWorkOrders = true
+        await loadWorkOrders()
+    }
+
+    private func loadWorkOrders() async {
+        loadingWorkOrders = true
+        workOrdersError = nil
+        do {
+            let rows: [WorkOrder683] = try await EusoTripAPI.shared.queryNoInput("zeun.getWorkOrdersForCarrier")
+            workOrders = rows
+        } catch {
+            workOrdersError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        loadingWorkOrders = false
     }
 }
 

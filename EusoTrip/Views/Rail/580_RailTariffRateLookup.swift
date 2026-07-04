@@ -381,17 +381,25 @@ private struct RailTariffRateLookupBody: View {
                       action: { Task { await requestQuote() } },
                       leadingIcon: "plus",
                       isLoading: isQuoting)
-            Button {} label: {
-                Text("Routings")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Routings",
+                sheetTitle: "Tariff routing context",
+                lines: routingReviewLines,
+                systemImage: "point.topleft.down.curvedto.point.bottomright.up"
+            )
         }
+    }
+
+    private var routingReviewLines: [String] {
+        var lines = [
+            "\(routeLabel) · \(ruleTypeLabel) · \(routeMilesLabel) mi",
+            "Base \(rateLabel) · total \(quoteLabel) · \(carCount) car\(carCount == 1 ? "" : "s")",
+            "Free time \(freeDaysLabel) · \(dailyRateLabel) · \(demurrageEquipLabel)"
+        ]
+        lines.append(contentsOf: routings.prefix(6).map { routing in
+            "\(routing.routeName ?? "Routing") · \(routing.railroadCodes ?? "-") · \(routing.miles.map { "\($0) mi" } ?? "-")"
+        })
+        return lines
     }
 
     // MARK: - Load / Actions

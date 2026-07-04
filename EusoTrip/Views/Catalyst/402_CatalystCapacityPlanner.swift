@@ -109,6 +109,17 @@ private struct CapacityBody_402: View {
     @State private var vm: CapacityVM_402 = .empty
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
+    @State private var actionLoading: Bool = false
+    @State private var actionError: String? = nil
+    @State private var actionMessage: String? = nil
+    @State private var showInsightSheet: Bool = false
+    @State private var showPostTruckSheet: Bool = false
+    @State private var showMatchSheet: Bool = false
+    @State private var fleetRows: [TruckFleetVehicle] = []
+    @State private var inboundOffers: [CarrierTruckInboundOffer] = []
+    @State private var postingResults: [TruckPostResult] = []
+    @State private var postingBusyIds: Set<Int> = []
+    @State private var offerBusyIds: Set<Int> = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -120,6 +131,7 @@ private struct CapacityBody_402: View {
                 openWindowSection
                 insightRow
                 ctaPair
+                actionFeedback
             }
             .padding(.horizontal, Space.s5)
             .padding(.top, Space.s3)
@@ -129,6 +141,9 @@ private struct CapacityBody_402: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll_402() }
         }
+        .sheet(isPresented: $showInsightSheet) { insightSheet }
+        .sheet(isPresented: $showPostTruckSheet) { postTruckSheet }
+        .sheet(isPresented: $showMatchSheet) { matchSheet }
     }
 
     // MARK: TopBar
@@ -373,9 +388,8 @@ private struct CapacityBody_402: View {
 
     private var insightRow: some View {
         Button {
-            NotificationCenter.default.post(
-                name: .eusoCatalystCapacityInsight_402, object: nil,
-                userInfo: ["source": "402_CatalystCapacityPlanner"])
+            actionError = nil
+            showInsightSheet = true
         } label: {
             HStack(spacing: Space.s3) {
                 ZStack {
@@ -411,9 +425,7 @@ private struct CapacityBody_402: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             Button {
-                NotificationCenter.default.post(
-                    name: .eusoCatalystCapacityPost_402, object: nil,
-                    userInfo: ["source": "402_CatalystCapacityPlanner"])
+                openPostTruckSheet()
             } label: {
                 Text("Post open trucks")
                     .font(EType.bodyStrong)
@@ -423,9 +435,7 @@ private struct CapacityBody_402: View {
             }
             .buttonStyle(.plain)
             Button {
-                NotificationCenter.default.post(
-                    name: .eusoCatalystCapacityAutoMatch_402, object: nil,
-                    userInfo: ["source": "402_CatalystCapacityPlanner"])
+                openMatchSheet()
             } label: {
                 Text("Auto-match")
                     .font(.system(size: 15, weight: .semibold))
@@ -436,6 +446,405 @@ private struct CapacityBody_402: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private var actionFeedback: some View {
+        Group {
+            if let actionError {
+                Text(actionError)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.hazmat)
+                    .padding(Space.s3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Brand.hazmat.opacity(0.35)))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            } else if let actionMessage {
+                Text(actionMessage)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.blue)
+                    .padding(Space.s3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Brand.blue.opacity(0.35)))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+            }
+        }
+    }
+
+    private var insightSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            Text("Capacity Insight")
+                .font(EType.title)
+                .foregroundStyle(palette.textPrimary)
+            Text(vm.insightTitle)
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+            Text(vm.insightSub)
+                .font(EType.body)
+                .foregroundStyle(palette.textSecondary)
+            VStack(spacing: 0) {
+                metricRow(label: "Utilization", value: vm.utilization)
+                Divider().overlay(palette.borderFaint)
+                metricRow(label: "Open slots", value: vm.openSlots)
+                Divider().overlay(palette.borderFaint)
+                metricRow(label: "Fleet", value: vm.unitCount)
+            }
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+    }
+
+    private var postTruckSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Post Open Trucks")
+                        .font(EType.title)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Only vehicles with a live GPS fix can be posted.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer()
+                if actionLoading {
+                    ProgressView().tint(Brand.blue)
+                }
+            }
+            ScrollView {
+                VStack(spacing: Space.s3) {
+                    if fleetRows.isEmpty && !actionLoading {
+                        EusoEmptyState(
+                            systemImage: "truck.box",
+                            title: "No available trucks ready to post",
+                            subtitle: "Available fleet rows appear here after vehicles report a live location."
+                        )
+                        .padding(.vertical, Space.s4)
+                    }
+                    ForEach(fleetRows) { truck in
+                        postTruckRow(truck)
+                    }
+                    if !postingResults.isEmpty {
+                        VStack(alignment: .leading, spacing: Space.s2) {
+                            Text("RECENT POSTS")
+                                .font(EType.micro).tracking(1.0)
+                                .foregroundStyle(palette.textTertiary)
+                            ForEach(postingResults, id: \.postingId) { result in
+                                Text("Posting #\(result.postingId) · vehicle \(result.vehicleId) · \(result.offersSurfaced ?? 0) offers surfaced")
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(Space.s3)
+                        .background(palette.bgCard)
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                    }
+                }
+                .padding(.bottom, Space.s4)
+            }
+        }
+        .padding(Space.s5)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func postTruckRow(_ truck: TruckFleetVehicle) -> some View {
+        let location = liveLocation(truck)
+        let isBusy = postingBusyIds.contains(truck.id)
+        return VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(alignment: .top, spacing: Space.s3) {
+                Image(systemName: "truck.box.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(Brand.blue)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(Brand.blue.opacity(0.12)))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(truckTitle(truck))
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(truckSubtitle(truck))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    Text(location == nil ? "GPS fix required before posting" : "Live location ready")
+                        .font(EType.caption)
+                        .foregroundStyle(location == nil ? Brand.hazmat : Brand.blue)
+                }
+                Spacer()
+                Button {
+                    Task { await postTruck(truck) }
+                } label: {
+                    if isBusy {
+                        ProgressView().tint(.white)
+                            .frame(width: 72, height: 34)
+                            .background(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).fill(LinearGradient.primary))
+                    } else {
+                        Text("Post")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 72, height: 34)
+                            .background(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).fill(LinearGradient.primary))
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(location == nil || isBusy)
+                .opacity(location == nil ? 0.45 : 1)
+            }
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+    }
+
+    private var matchSheet: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Auto-Match")
+                        .font(EType.title)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Live inbound offers from posted trucks and the matching engine.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer()
+                if actionLoading {
+                    ProgressView().tint(Brand.blue)
+                }
+            }
+            ScrollView {
+                VStack(spacing: Space.s3) {
+                    if inboundOffers.isEmpty && !actionLoading {
+                        EusoEmptyState(
+                            systemImage: "arrow.triangle.branch",
+                            title: "No live offers yet",
+                            subtitle: "Post an available truck, then auto-match will surface compatible broker loads here."
+                        )
+                        .padding(.vertical, Space.s4)
+                    }
+                    ForEach(inboundOffers) { offer in
+                        offerRow(offer)
+                    }
+                }
+                .padding(.bottom, Space.s4)
+            }
+        }
+        .padding(Space.s5)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func offerRow(_ offer: CarrierTruckInboundOffer) -> some View {
+        let busy = offerBusyIds.contains(offer.offerId)
+        let load = offer.load
+        let route = load.map { "\(placeLabel($0.origin)) → \(placeLabel($0.destination))" } ?? "Route unavailable"
+        let title = load?.loadNumber ?? "Offer #\(offer.offerId)"
+        let rate = offer.offeredRate.map { "$\(Int($0.rounded()))" } ?? "Rate pending"
+        return VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(route)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    Text("\(rate) · \(offer.status.uppercased())")
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.blue)
+                }
+                Spacer()
+                if busy {
+                    ProgressView().tint(Brand.blue)
+                }
+            }
+            HStack(spacing: Space.s2) {
+                Button {
+                    Task { await acceptOffer(offer) }
+                } label: {
+                    Text("Accept")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, minHeight: 38)
+                        .background(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).fill(LinearGradient.primary))
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                Button {
+                    Task { await declineOffer(offer) }
+                } label: {
+                    Text("Decline")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(maxWidth: .infinity, minHeight: 38)
+                        .background(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).fill(palette.bgElev))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(palette.borderFaint))
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+    }
+
+    private func metricRow(label: String, value: String) -> some View {
+        HStack {
+            Text(label)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer()
+            Text(value)
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+        }
+        .padding(Space.s3)
+    }
+
+    private func openPostTruckSheet() {
+        actionError = nil
+        actionMessage = nil
+        showPostTruckSheet = true
+        Task { await loadFleetAvailability() }
+    }
+
+    private func openMatchSheet() {
+        actionError = nil
+        actionMessage = nil
+        showMatchSheet = true
+        Task { await loadInboundOffers() }
+    }
+
+    private func loadFleetAvailability() async {
+        actionLoading = true
+        defer { actionLoading = false }
+        do {
+            fleetRows = try await EusoTripAPI.shared.truckPosting.getMyFleetAvailability(status: "available")
+        } catch {
+            actionError = "Couldn't load available trucks: \(surfaceMessage(error))"
+        }
+    }
+
+    private func loadInboundOffers() async {
+        actionLoading = true
+        defer { actionLoading = false }
+        do {
+            let envelope = try await EusoTripAPI.shared.truckPosting.listInboundOffers(status: "pending", runMatcher: true)
+            inboundOffers = envelope.offers
+        } catch {
+            actionError = "Couldn't run auto-match: \(surfaceMessage(error))"
+        }
+    }
+
+    private func postTruck(_ truck: TruckFleetVehicle) async {
+        actionError = nil
+        guard let location = liveLocation(truck) else {
+            actionError = "Vehicle \(truck.id) needs a live GPS fix before it can be posted."
+            return
+        }
+        postingBusyIds.insert(truck.id)
+        defer { postingBusyIds.remove(truck.id) }
+        do {
+            let result = try await EusoTripAPI.shared.truckPosting.postTruck(
+                vehicleId: truck.id,
+                currentLocation: location,
+                availableDate: ISO8601DateFormatter().string(from: Date()),
+                driverId: truck.currentDriverId,
+                equipmentType: truck.vehicleType,
+                notes: "Posted from Catalyst Capacity Planner"
+            )
+            postingResults.removeAll { $0.vehicleId == result.vehicleId }
+            postingResults.insert(result, at: 0)
+            actionMessage = "Truck \(truck.id) posted. \(result.offersSurfaced ?? 0) live offer\(result.offersSurfaced == 1 ? "" : "s") surfaced."
+            await loadFleetAvailability()
+            await loadInboundOffers()
+        } catch {
+            actionError = "Couldn't post truck \(truck.id): \(surfaceMessage(error))"
+        }
+    }
+
+    private func acceptOffer(_ offer: CarrierTruckInboundOffer) async {
+        actionError = nil
+        offerBusyIds.insert(offer.offerId)
+        defer { offerBusyIds.remove(offer.offerId) }
+        do {
+            let result = try await EusoTripAPI.shared.truckPosting.acceptOffer(offerId: offer.offerId)
+            let confirmation = result.confirmationNumber ?? result.bookingId ?? "load \(result.loadId)"
+            actionMessage = "Offer \(offer.offerId) booked: \(confirmation)."
+            await loadInboundOffers()
+            await loadAll_402()
+        } catch {
+            actionError = "Couldn't accept offer \(offer.offerId): \(surfaceMessage(error))"
+        }
+    }
+
+    private func declineOffer(_ offer: CarrierTruckInboundOffer) async {
+        actionError = nil
+        offerBusyIds.insert(offer.offerId)
+        defer { offerBusyIds.remove(offer.offerId) }
+        do {
+            _ = try await EusoTripAPI.shared.truckPosting.declineOffer(offerId: offer.offerId)
+            actionMessage = "Offer \(offer.offerId) declined."
+            await loadInboundOffers()
+        } catch {
+            actionError = "Couldn't decline offer \(offer.offerId): \(surfaceMessage(error))"
+        }
+    }
+
+    private func liveLocation(_ truck: TruckFleetVehicle) -> TruckPostLocation? {
+        guard let lat = truck.location?.lat,
+              let lng = truck.location?.lng,
+              abs(lat) <= 90,
+              abs(lng) <= 180,
+              !(abs(lat) < 0.000001 && abs(lng) < 0.000001) else {
+            return nil
+        }
+        return TruckPostLocation(lat: lat, lng: lng, city: nil, state: nil)
+    }
+
+    private func truckTitle(_ truck: TruckFleetVehicle) -> String {
+        let pieces = [truck.year.map(String.init), truck.make, truck.model]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return pieces.isEmpty ? "Vehicle \(truck.id)" : pieces.joined(separator: " ")
+    }
+
+    private func truckSubtitle(_ truck: TruckFleetVehicle) -> String {
+        let type = truck.vehicleType?
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let status = truck.status?
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let plate = truck.licensePlate?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = [type, status, plate].compactMap { value in
+            value.flatMap { $0.isEmpty ? nil : $0 }
+        }
+        return parts.isEmpty ? "Fleet vehicle" : parts.joined(separator: " · ")
+    }
+
+    private func placeLabel(_ place: CarrierTruckInboundOffer.OfferLoad.Place) -> String {
+        let parts = [place.city, place.state].compactMap { value -> String? in
+            let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        return parts.isEmpty ? "—" : parts.joined(separator: ", ")
+    }
+
+    private func surfaceMessage(_ error: Error) -> String {
+        let localized = error.localizedDescription
+        return localized.isEmpty ? String(describing: error) : localized
     }
 
     // MARK: - Network (LIVE — getCapacityDashboard + getCapacityCalendar)
@@ -560,14 +969,6 @@ private struct CapacityBody_402: View {
             insightSub: "\(dash.activeLoads) active load\(dash.activeLoads == 1 ? "" : "s") · \(dash.pendingLoads) pending on the board"
         )
     }
-}
-
-// MARK: - Notifications
-
-private extension Notification.Name {
-    static let eusoCatalystCapacityPost_402      = Notification.Name("eusoCatalystCapacityPost_402")
-    static let eusoCatalystCapacityAutoMatch_402 = Notification.Name("eusoCatalystCapacityAutoMatch_402")
-    static let eusoCatalystCapacityInsight_402   = Notification.Name("eusoCatalystCapacityInsight_402")
 }
 
 // MARK: - Honest empty envelope (em-dash until a real hydrate)

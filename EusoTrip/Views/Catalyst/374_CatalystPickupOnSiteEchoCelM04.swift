@@ -54,9 +54,12 @@
 //      loads.getById is not read on this echo surface → the shipper card
 //      paints "—" (no Diego Usoro / Eusorone / founder pin fabrication).
 //
-//  No carrier-side "confirm at dock" mutation exists on the catalysts
-//  router (the dock-arrival verb is the driver's drivers.updateLoadStatus),
-//  so the action ribbon stays a labeled read-only echo — no fake success.
+//  Action ribbon wiring:
+//    • Confirm at dock → loads.updateLoadStatus(status:"loading") through the
+//      catalyst-authorized load lifecycle proc (persist + fan-out).
+//    • Message driver → messages.getOrCreateLoadConversation, then native
+//      DriverConversationView composer for the persisted load thread.
+//    • View load → native CatalystLoadDetailScreen for this real load id.
 //
 //  Seed data lives ONLY in #Preview.
 //
@@ -409,20 +412,40 @@ private struct ShipperOfRecordCard_374: View {
 
 private struct ActionRibbonPickupOnSiteCatalyst_374: View {
     let driverInitials: String
+    let isBusy: Bool
+    let hasLoad: Bool
+    let confirmAtDock: () -> Void
+    let messageDriver: () -> Void
+    let viewLoad: () -> Void
+
     var body: some View {
         HStack(spacing: 8) {
-            // STUB — no carrier-side "confirm at dock" mutation exists on the
-            // catalysts router; the dock-arrival verb is the driver's
-            // drivers.updateLoadStatus. Catalyst echo is read-only this stage.
-            Text("CONFIRM AT DOCK").font(.system(size: 9, weight: .heavy)).kerning(0.5)
-                .foregroundColor(.white).frame(width: 156, height: 36)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Theme374.gradient))
-            Text("MESSAGE \(driverInitials)").font(.system(size: 9, weight: .heavy)).kerning(0.5)
-                .foregroundStyle(Theme374.gradient).frame(width: 120, height: 36)
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme374.gradient.opacity(0.55), lineWidth: 1))
-            Text("VIEW LOAD").font(.system(size: 9, weight: .heavy)).kerning(0.5)
-                .foregroundColor(.secondary).frame(width: 108, height: 36)
-                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
+            Button(action: confirmAtDock) {
+                Text(isBusy ? "CONFIRMING…" : "CONFIRM AT DOCK")
+                    .font(.system(size: 9, weight: .heavy)).kerning(0.5)
+                    .foregroundColor(.white).frame(width: 156, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Theme374.gradient))
+            }
+            .buttonStyle(.plain)
+            .disabled(isBusy || !hasLoad)
+
+            Button(action: messageDriver) {
+                Text("MESSAGE \(driverInitials)")
+                    .font(.system(size: 9, weight: .heavy)).kerning(0.5)
+                    .foregroundStyle(Theme374.gradient).frame(width: 120, height: 36)
+                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme374.gradient.opacity(0.55), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(isBusy || !hasLoad)
+
+            Button(action: viewLoad) {
+                Text("VIEW LOAD")
+                    .font(.system(size: 9, weight: .heavy)).kerning(0.5)
+                    .foregroundColor(.secondary).frame(width: 108, height: 36)
+                    .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.18), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(!hasLoad)
         }
     }
 }
@@ -430,10 +453,16 @@ private struct ActionRibbonPickupOnSiteCatalyst_374: View {
 // MARK: - Surface body
 
 private struct CatalystPickupOnSiteEchoCelM04View: View {
+    @Environment(\.palette) private var palette
     @State private var vm = CatalystPickupOnSiteVM_374()
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var hasOnSiteEcho = false
+    @State private var actionBusy = false
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var showLoadDetail = false
+    @State private var activeThread: InboxThread? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -470,6 +499,13 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
             .padding(.top, 44)
         }
         .task { await fetch() }
+        .sheet(isPresented: $showLoadDetail) {
+            CatalystLoadDetailScreen(theme: palette, loadId: vm.loadId)
+        }
+        .sheet(item: $activeThread) { thread in
+            DriverConversationView(thread: thread)
+                .environment(\.palette, palette)
+        }
     }
 
     // MARK: - Loaded content
@@ -517,7 +553,25 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
 
         ShipperOfRecordCard_374(vm: vm)
 
-        ActionRibbonPickupOnSiteCatalyst_374(driverInitials: vm.fleet.driverInitials)
+        ActionRibbonPickupOnSiteCatalyst_374(
+            driverInitials: vm.fleet.driverInitials,
+            isBusy: actionBusy,
+            hasLoad: hasResolvedLoad,
+            confirmAtDock: { Task { await confirmAtDock() } },
+            messageDriver: { Task { await openLoadConversation() } },
+            viewLoad: { openLoadDetail() }
+        )
+
+        if let actionMessage {
+            Text(actionMessage)
+                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                .foregroundStyle(Brand.success)
+        }
+        if let actionError {
+            Text(actionError)
+                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                .foregroundStyle(Brand.warning)
+        }
 
         Color.clear.frame(height: 24)
     }
@@ -548,6 +602,12 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
     }
 
     // MARK: - Network (generic client · MCP-confirmed shapes)
+
+    private var hasResolvedLoad: Bool {
+        !vm.loadId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && vm.loadId != "0"
+            && vm.loadNumber != "—"
+    }
 
     private func fetch() async {
         loading = true
@@ -613,6 +673,72 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
+    }
+
+    private func confirmAtDock() async {
+        guard hasResolvedLoad else {
+            actionError = "No active pickup load is available to update."
+            return
+        }
+        guard !actionBusy else { return }
+        actionBusy = true
+        actionError = nil
+        actionMessage = nil
+        defer { actionBusy = false }
+        do {
+            let out = try await EusoTripAPI.shared.loads.updateLoadStatus(
+                loadId: vm.loadId,
+                status: .loading,
+                notes: "Catalyst confirmed driver at pickup dock from screen 374."
+            )
+            if out.success == false {
+                actionError = "Dock confirmation did not persist. Refresh and try again."
+                return
+            }
+            let status = (out.newStatus ?? "loading").uppercased()
+            actionMessage = "Dock confirmed · load status \(status)"
+            await fetch()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func openLoadConversation() async {
+        guard hasResolvedLoad else {
+            actionError = "No active pickup load is available for messaging."
+            return
+        }
+        guard !actionBusy else { return }
+        actionBusy = true
+        actionError = nil
+        actionMessage = nil
+        defer { actionBusy = false }
+        do {
+            let conversation = try await EusoTripAPI.shared.messaging.getOrCreateLoadConversation(loadId: vm.loadId)
+            activeThread = InboxThread(
+                id: conversation.id,
+                glyph: "shippingbox",
+                title: conversation.loadNumber.map { "Load \($0)" } ?? vm.loadNumber,
+                subtitle: "Pickup load thread",
+                preview: "Driver, shipper, and catalyst conversation",
+                time: "Now",
+                unread: 0,
+                allowsTransfer: false
+            )
+            actionMessage = conversation.existing == true ? "Opened load conversation." : "Created load conversation."
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func openLoadDetail() {
+        guard hasResolvedLoad else {
+            actionError = "No active pickup load is available to open."
+            return
+        }
+        actionError = nil
+        actionMessage = nil
+        showLoadDetail = true
     }
 
     /// "Origin → Dest" lane from the server-joined city strings. The proc

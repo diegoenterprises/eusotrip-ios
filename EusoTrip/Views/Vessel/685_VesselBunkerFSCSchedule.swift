@@ -23,10 +23,10 @@
 //    • vesselShipments.getVesselShipmentDetail EXISTS — the applied
 //      amount derives from the active booking loadRate (vessel detail,
 //      vesselShipments.ts:234).
-//    • getBunkerFSCSchedule — PORT-GAP. The live VLSFO Singapore index
-//      feed + stepped bracket table the staircase needs has no procedure
-//      yet (the agreement row stores only a scalar surcharge type/value).
-//      Surfaced to the-oath. Falls back to a real empty/error state.
+//    • vesselShipments.getBunkerFSCSchedule EXISTS — live VLSFO Singapore
+//      index feed + company-scoped stepped bracket table.
+//    • vesselShipments.getBunkerFSCHistory EXISTS — persisted applied index
+//      history for the secondary "Index history" CTA.
 //
 
 import SwiftUI
@@ -58,9 +58,8 @@ struct VesselBunkerFSCScheduleScreen: View {
 
 // MARK: - Data shapes
 
-/// `getBunkerFSCSchedule` row (PORT-GAP — not on server). Shape mirrors
-/// the named gap in the wireframe <desc>: a VLSFO Singapore index reading
-/// plus the stepped bracket table the staircase renders.
+/// `vesselShipments.getBunkerFSCSchedule` row: a VLSFO Singapore index
+/// reading plus the stepped bracket table the staircase renders.
 private struct BunkerFSCSchedule: Decodable {
     let index: String?              // 'VLSFO_SINGAPORE'
     let indexUsdPerMt: Double?
@@ -95,6 +94,23 @@ private struct VesselBookingFSC: Decodable {
     let carrierName: String?
 }
 
+private struct BunkerFSCHistoryInput: Encodable {
+    let limit: Int
+}
+
+private struct BunkerFSCHistoryResponse: Decodable {
+    let scheduleName: String?
+    let fuelType: String?
+    let rows: [BunkerFSCHistoryRow]
+}
+
+private struct BunkerFSCHistoryRow: Decodable, Identifiable {
+    let id: Int
+    let indexUsdPerMt: Double?
+    let surchargePct: Double?
+    let appliedAt: String?
+}
+
 // MARK: - Body
 
 private struct VesselBunkerFSCScheduleBody: View {
@@ -107,7 +123,12 @@ private struct VesselBunkerFSCScheduleBody: View {
     @State private var booking: VesselBookingFSC? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
-    @State private var scheduleGap = false   // true → getBunkerFSCSchedule unavailable
+    @State private var scheduleGap = false   // true → no configured/live schedule available
+    @State private var showHistory = false
+    @State private var historyLoading = false
+    @State private var historyRows: [BunkerFSCHistoryRow] = []
+    @State private var historyError: String? = nil
+    @State private var historyScheduleName: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -128,6 +149,7 @@ private struct VesselBunkerFSCScheduleBody: View {
                         appliedStrip(s)
                         esangInsight(s)
                         ctaPair
+                        if showHistory { historyPanel }
                     } else {
                         scheduleEmptyState
                     }
@@ -377,8 +399,18 @@ private struct VesselBunkerFSCScheduleBody: View {
             .background(LinearGradient.primary)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
 
-            Button { } label: {
-                Text("Index history")
+            Button {
+                showHistory.toggle()
+                if showHistory && historyRows.isEmpty {
+                    Task { await loadHistory() }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if historyLoading {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text("Index history")
+                }
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 136, height: 48)
@@ -387,6 +419,86 @@ private struct VesselBunkerFSCScheduleBody: View {
             .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
+    }
+
+    private var historyPanel: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("INDEX HISTORY")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Text(historyScheduleName ?? "persisted FSC")
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+            }
+
+            if let historyError {
+                LifecycleCard(accentDanger: true) {
+                    Text(historyError)
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else if historyLoading && historyRows.isEmpty {
+                LifecycleCard {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading applied index history.")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                }
+            } else if historyRows.isEmpty {
+                EusoEmptyState(systemImage: "clock.arrow.circlepath",
+                               title: "No index history yet",
+                               subtitle: "Applied FSC history appears after the schedule records its first index update.")
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(historyRows.enumerated()), id: \.element.id) { idx, row in
+                        historyRow(row)
+                        if idx < historyRows.count - 1 {
+                            Rectangle()
+                                .fill(palette.borderFaint)
+                                .frame(height: 1)
+                                .padding(.horizontal, 16)
+                        }
+                    }
+                }
+                .background(palette.bgCardSoft)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            }
+        }
+    }
+
+    private func historyRow(_ row: BunkerFSCHistoryRow) -> some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Brand.info.opacity(0.16))
+                    .frame(width: 38, height: 38)
+                Image(systemName: "chart.line.uptrend.xyaxis")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Brand.info)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(row.indexUsdPerMt.map { "$\(Int($0.rounded())) / MT" } ?? "Index —")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .monospacedDigit()
+                Text(formatHistoryDate(row.appliedAt))
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Spacer(minLength: 8)
+            Text(row.surchargePct.map { String(format: "%.2f%%", $0) } ?? "—")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(LinearGradient.diagonal)
+                .monospacedDigit()
+        }
+        .padding(16)
     }
 
     // MARK: - Loading / empty
@@ -416,7 +528,7 @@ private struct VesselBunkerFSCScheduleBody: View {
                             .font(EType.micro).tracking(0.8)
                             .foregroundStyle(palette.textPrimary)
                     }
-                    Text("The live Singapore VLSFO index feed and stepped bracket table are not live yet. The agreement stores only a scalar surcharge type/value.")
+                    Text("No bunker-grade FSC schedule is configured for this company yet. Agreement-level surcharge terms still appear below when available.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                     if let t = terms, let type = t.fuelSurchargeType {
@@ -448,7 +560,7 @@ private struct VesselBunkerFSCScheduleBody: View {
     private func load() async {
         loading = true; loadError = nil; scheduleGap = false
         // Agreement fuel-surcharge terms + active booking detail are real
-        // server reads; the stepped VLSFO bracket feed is the named gap.
+        // server reads; the stepped VLSFO bracket feed is company-scoped.
         struct IdIn: Encodable { let id: Int }
 
         // Agreement terms (best-effort — scalar surcharge type/value).
@@ -470,10 +582,6 @@ private struct VesselBunkerFSCScheduleBody: View {
             } catch { booking = nil }
         }
 
-        // PORT-GAP: getBunkerFSCSchedule not on server — the live VLSFO
-        // Singapore index feed + stepped bracket table the staircase needs
-        // has no procedure yet (agreement stores only a scalar surcharge
-        // type/value). Surface a real "unavailable" state, never mock data.
         do {
             schedule = try await EusoTripAPI.shared.queryNoInput("vesselShipments.getBunkerFSCSchedule")
         } catch {
@@ -481,6 +589,27 @@ private struct VesselBunkerFSCScheduleBody: View {
             scheduleGap = true
         }
         loading = false
+    }
+
+    private func loadHistory() async {
+        historyLoading = true
+        historyError = nil
+        do {
+            let response: BunkerFSCHistoryResponse = try await EusoTripAPI.shared.query(
+                "vesselShipments.getBunkerFSCHistory",
+                input: BunkerFSCHistoryInput(limit: 12)
+            )
+            historyRows = response.rows
+            historyScheduleName = response.scheduleName ?? response.fuelType
+        } catch {
+            historyError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        historyLoading = false
+    }
+
+    private func formatHistoryDate(_ iso: String?) -> String {
+        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return "recorded" }
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 }
 

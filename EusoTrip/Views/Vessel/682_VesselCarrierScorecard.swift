@@ -94,6 +94,18 @@ private struct CSHazmatQual: Decodable {
     }
 }
 
+private struct CSCompareRow: Decodable, Identifiable {
+    let carrierId: Int?
+    let companyName: String?
+    let grade: String?
+    let overallScore: Int?
+    let oceanShipments: Int?
+    let rolloverPct: Int?
+    let transitDaysAvg: Int?
+    let scheduleReliabilityPct: Int?
+    var id: Int { carrierId ?? (companyName ?? "").hashValue }
+}
+
 // MARK: - Body
 
 private struct VesselCarrierScorecardBody: View {
@@ -106,6 +118,9 @@ private struct VesselCarrierScorecardBody: View {
     @State private var hazmat: CSHazmatQual? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var comparing = false
+    @State private var compareRows: [CSCompareRow] = []
+    @State private var compareError: String? = nil
 
     /// Resolved carrier under review: the supplied id, else the top-ranked.
     private var resolvedCarrierId: Int? { carrierId ?? topCarriers.first?.carrierId }
@@ -139,6 +154,7 @@ private struct VesselCarrierScorecardBody: View {
                         rankedCarriers
                         imdgStrip
                         ctaPair
+                        comparePanel
                     }
                     Color.clear.frame(height: 96)
                 }
@@ -486,8 +502,8 @@ private struct VesselCarrierScorecardBody: View {
         return HStack(spacing: Space.s3) {
             CTAButton(title: "View \(bookings) bookings")
                 .frame(maxWidth: .infinity)
-            Button { } label: {
-                Text("Compare")
+            Button { Task { await compareCarriers() } } label: {
+                Text(comparing ? "Comparing" : "Compare")
                     .font(EType.title)
                     .foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: 148, minHeight: 52)
@@ -498,6 +514,51 @@ private struct VesselCarrierScorecardBody: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
+            .disabled(comparing)
+        }
+    }
+
+    @ViewBuilder private var comparePanel: some View {
+        if let compareError {
+            LifecycleCard(accentDanger: true) {
+                Text(compareError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if !compareRows.isEmpty {
+            LifecycleCard {
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    Text("LIVE CARRIER COMPARISON")
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(palette.textTertiary)
+                    ForEach(Array(compareRows.prefix(3).enumerated()), id: \.element.id) { idx, row in
+                        HStack(spacing: Space.s3) {
+                            Text("\(idx + 1)")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(palette.textSecondary)
+                                .frame(width: 20)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.companyName ?? "Carrier")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(palette.textPrimary)
+                                Text("\(row.oceanShipments ?? 0) ocean shipments · \(row.transitDaysAvg.map { "\($0)d avg transit" } ?? "transit pending")")
+                                    .font(EType.mono(.caption))
+                                    .foregroundStyle(palette.textSecondary)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(row.grade ?? "-")
+                                    .font(.system(size: 13, weight: .heavy))
+                                    .foregroundStyle((row.overallScore ?? 0) >= 80 ? Brand.success : Brand.warning)
+                                Text("\(row.scheduleReliabilityPct ?? row.overallScore ?? 0)%")
+                                    .font(EType.mono(.caption))
+                                    .foregroundStyle(palette.textSecondary)
+                            }
+                        }
+                        if idx < min(compareRows.count, 3) - 1 {
+                            Divider().overlay(palette.borderFaint)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -507,6 +568,7 @@ private struct VesselCarrierScorecardBody: View {
     private struct TrendsIn: Encodable { let carrierId: Int; let months: Int }
     private struct HazmatIn: Encodable { let carrierId: Int }
     private struct TopIn: Encodable { let limit: Int; let hazmatOnly: Bool; let minScore: Int }
+    private struct CompareIn: Encodable { let carrierIds: [Int] }
 
     private func load() async {
         loading = true; loadError = nil
@@ -543,6 +605,36 @@ private struct VesselCarrierScorecardBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+
+    private func compareCarriers() async {
+        compareError = nil
+        compareRows = []
+        let ids = ([resolvedCarrierId] + topCarriers.compactMap(\.carrierId))
+            .compactMap { $0 }
+            .reduce(into: [Int]()) { acc, id in
+                if !acc.contains(id) { acc.append(id) }
+            }
+            .prefix(5)
+        guard ids.count >= 2 else {
+            compareError = "At least two ranked carriers are needed for comparison."
+            return
+        }
+        comparing = true
+        defer { comparing = false }
+        do {
+            let rows: [CSCompareRow] = try await EusoTripAPI.shared.query(
+                "carrierScorecard.compareScorecards",
+                input: CompareIn(carrierIds: Array(ids))
+            )
+            if rows.isEmpty {
+                compareError = "Carrier comparison returned no rows."
+            } else {
+                compareRows = rows
+            }
+        } catch {
+            compareError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
     }
 }
 

@@ -61,9 +61,38 @@ private struct AutoDetentionRulesResponse: Decodable {
 private struct ConfigureAutoDetentionResult: Decodable, Equatable {
     let success: Bool?
     let ruleId: String?
+    let id: String?
     let enabled: Bool?
     let freeTimeMinutes: Int?
     let autoCreateClaim: Bool?
+}
+
+private struct ConfigureAutoDetentionInput: Encodable {
+    let ruleId: String
+    let name: String?
+    let description: String?
+    let triggerType: String?
+    let enabled: Bool
+    let freeTimeMinutes: Int?
+    let autoCreateClaim: Bool?
+}
+
+private struct AutoDetentionHistoryInput: Encodable {
+    let limit: Int
+}
+
+private struct AutoDetentionHistoryResponse: Decodable {
+    let events: [AutoDetentionHistoryEvent]
+}
+
+private struct AutoDetentionHistoryEvent: Decodable, Identifiable, Equatable {
+    let id: Int
+    let ruleId: String?
+    let enabled: Bool?
+    let freeTimeMinutes: Int?
+    let autoCreateClaim: Bool?
+    let actorUserId: Int?
+    let changedAt: String?
 }
 
 // MARK: - Body
@@ -75,10 +104,35 @@ private struct RailAutoDetentionRulesBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var savingRuleId: String? = nil
+    @State private var actionAck: String? = nil
+    @State private var actionError: String? = nil
+    @State private var lastSyncedAt: Date? = nil
+
+    @State private var showingAddRule = false
+    @State private var addRuleSaving = false
+    @State private var draftRuleName = ""
+    @State private var draftRuleDescription = ""
+    @State private var draftTriggerType = "manual_review"
+    @State private var draftEnabled = true
+    @State private var draftFreeTimeMinutes = 120
+    @State private var draftAutoCreateClaim = false
+
+    @State private var showingHistory = false
+    @State private var historyLoading = false
+    @State private var historyEvents: [AutoDetentionHistoryEvent] = []
+    @State private var historyError: String? = nil
 
     // Verbatim catalog/wireframe context labels (carrier-of-record copy).
     private let carrierLabel  = "BNSF"
     private let configLine    = "Carrier BNSF Intermodal · Eusorone Technologies (DU) · auto-detention v3"
+    private let triggerOptions = [
+        ("manual_review", "Manual review"),
+        ("geofence", "Geofence"),
+        ("eld", "ELD stop"),
+        ("appointment", "Appointment"),
+        ("timer", "Timer"),
+        ("analytics", "Pattern alert")
+    ]
 
     // MARK: - Derived counters (LIVE — never fabricated)
 
@@ -122,6 +176,8 @@ private struct RailAutoDetentionRulesBody: View {
                     kpiStrip
                     ruleSetSection
                     configureStrip
+                    actionStatusPanel
+                    if showingHistory { historyPanel }
                     ctaPair
                 }
 
@@ -132,6 +188,9 @@ private struct RailAutoDetentionRulesBody: View {
         }
         .task { await reload() }
         .refreshable { await reload() }
+        .sheet(isPresented: $showingAddRule) {
+            addRuleSheet
+        }
     }
 
     // MARK: - Eyebrow (✦ RAIL ENGINEER · AUTOMATION  ·  RULES)
@@ -161,11 +220,16 @@ private struct RailAutoDetentionRulesBody: View {
                 Text(carrierLabel)
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
-                Text("synced 1m ago")
+                Text(syncLabel)
                     .font(EType.mono(.caption)).tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
             }
         }
+    }
+
+    private var syncLabel: String {
+        guard let lastSyncedAt else { return loading ? "syncing" : "sync pending" }
+        return "synced \(lastSyncedAt.formatted(date: .omitted, time: .shortened))"
     }
 
     // MARK: - Loading placeholder
@@ -213,7 +277,7 @@ private struct RailAutoDetentionRulesBody: View {
                         Text("active automation")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(palette.textSecondary)
-                        Text("\(monitored) boxes monitored today")
+                        Text("\(monitored) rule checks active")
                             .font(.system(size: 11))
                             .foregroundStyle(palette.textTertiary)
                     }
@@ -289,7 +353,7 @@ private struct RailAutoDetentionRulesBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getAutoDetentionRules:1260")
+                Text("live rules")
                     .font(.system(size: 12))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -438,15 +502,129 @@ private struct RailAutoDetentionRulesBody: View {
         .background(palette.bgCard)
         .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
             .strokeBorder(palette.borderFaint))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    // MARK: - Action status + persisted history
+
+    @ViewBuilder
+    private var actionStatusPanel: some View {
+        if let actionError {
+            LifecycleCard(accentDanger: true) {
+                Text(actionError)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+            }
+        } else if let actionAck {
+            LifecycleCard {
+                HStack(spacing: Space.s2) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .foregroundStyle(Color(hex: 0x4FD6A6))
+                    Text(actionAck)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private var historyPanel: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("CONFIRMED CHANGES")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                if historyLoading {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Button {
+                        Task { await loadHistory() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if let historyError {
+                Text(historyError)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if historyLoading && historyEvents.isEmpty {
+                Text("Loading confirmed rule changes.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            } else if historyEvents.isEmpty {
+                EusoEmptyState(systemImage: "clock.arrow.circlepath",
+                               title: "No confirmed changes yet",
+                               subtitle: "Saved rule changes appear here after the audit record is written.")
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(historyEvents.enumerated()), id: \.element.id) { idx, event in
+                        historyRow(event)
+                        if idx < historyEvents.count - 1 {
+                            Rectangle()
+                                .fill(palette.borderFaint)
+                                .frame(height: 1)
+                                .padding(.horizontal, 16)
+                        }
+                    }
+                }
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            }
+        }
+    }
+
+    private func historyRow(_ event: AutoDetentionHistoryEvent) -> some View {
+        let enabled = event.enabled ?? false
+        let label = humanRuleLabel(event.ruleId ?? "auto_detention_rule")
+        let changedAt = formatAuditTime(event.changedAt)
+        return HStack(alignment: .top, spacing: Space.s3) {
+            Image(systemName: enabled ? "checkmark.shield.fill" : "pause.circle.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(enabled ? Color(hex: 0x4FD6A6) : Color(hex: 0xFFB74D))
+                .frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Text("\(enabled ? "enabled" : "muted") · \(event.freeTimeMinutes ?? 0) min free · \(event.autoCreateClaim ?? false ? "auto-claim" : "queue")")
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Text(changedAt)
+                .font(EType.mono(.caption))
+                .foregroundStyle(palette.textTertiary)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(16)
     }
 
     // MARK: - CTA pair (Add rule · History)
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            Button { } label: {
-                Text("Add rule")
+            Button {
+                resetDraftRule()
+                showingAddRule = true
+            } label: {
+                HStack(spacing: 8) {
+                    if addRuleSaving {
+                        ProgressView().tint(.white).controlSize(.small)
+                    }
+                    Text(addRuleSaving ? "Saving" : "Add rule")
+                }
                     .font(EType.title)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
@@ -454,9 +632,18 @@ private struct RailAutoDetentionRulesBody: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
+            .disabled(addRuleSaving)
 
-            Button { } label: {
-                Text("History")
+            Button {
+                showingHistory.toggle()
+                if showingHistory && historyEvents.isEmpty {
+                    Task { await loadHistory() }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: showingHistory ? "clock.arrow.circlepath" : "clock")
+                    Text("History")
+                }
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
@@ -468,6 +655,44 @@ private struct RailAutoDetentionRulesBody: View {
         }
     }
 
+    private var addRuleSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Rule") {
+                    TextField("Rule name", text: $draftRuleName)
+                    TextField("Description", text: $draftRuleDescription, axis: .vertical)
+                        .lineLimit(2...4)
+                    Picker("Trigger", selection: $draftTriggerType) {
+                        ForEach(triggerOptions, id: \.0) { option in
+                            Text(option.1).tag(option.0)
+                        }
+                    }
+                }
+
+                Section("Automation") {
+                    Stepper(value: $draftFreeTimeMinutes, in: 0...1440, step: 30) {
+                        Text("\(draftFreeTimeMinutes) minutes free")
+                    }
+                    Toggle("Enabled", isOn: $draftEnabled)
+                    Toggle("Auto-create claim", isOn: $draftAutoCreateClaim)
+                }
+            }
+            .navigationTitle("Add rule")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showingAddRule = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(addRuleSaving ? "Saving" : "Save") {
+                        Task { await addRule() }
+                    }
+                    .disabled(addRuleSaving || draftRuleName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
     // MARK: - Load (named reload per house convention)
 
     private func reload() async {
@@ -476,6 +701,7 @@ private struct RailAutoDetentionRulesBody: View {
             let resp: AutoDetentionRulesResponse = try await EusoTripAPI.shared
                 .queryNoInput("detentionAccessorials.getAutoDetentionRules")
             self.rules = resp.rules
+            self.lastSyncedAt = Date()
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -487,19 +713,18 @@ private struct RailAutoDetentionRulesBody: View {
     private func toggle(_ rule: AutoDetentionRule) async {
         let newEnabled = !(rule.enabled ?? false)
         savingRuleId = rule.id
-        struct Input: Encodable {
-            let ruleId: String
-            let enabled: Bool
-            let freeTimeMinutes: Int?
-            let autoCreateClaim: Bool?
-        }
+        actionError = nil
+        actionAck = nil
         do {
             let result: ConfigureAutoDetentionResult = try await EusoTripAPI.shared.mutation(
                 "detentionAccessorials.configureAutoDetention",
-                input: Input(ruleId: rule.id,
-                             enabled: newEnabled,
-                             freeTimeMinutes: rule.freeTimeMinutes,
-                             autoCreateClaim: rule.autoCreateClaim)
+                input: ConfigureAutoDetentionInput(ruleId: rule.id,
+                                                   name: nil,
+                                                   description: nil,
+                                                   triggerType: nil,
+                                                   enabled: newEnabled,
+                                                   freeTimeMinutes: rule.freeTimeMinutes,
+                                                   autoCreateClaim: rule.autoCreateClaim)
             )
             if result.success ?? true, let idx = rules.firstIndex(where: { $0.id == rule.id }) {
                 let updated = AutoDetentionRule(
@@ -512,11 +737,96 @@ private struct RailAutoDetentionRulesBody: View {
                     autoCreateClaim: result.autoCreateClaim ?? rule.autoCreateClaim
                 )
                 rules[idx] = updated
+                actionAck = "\(rule.name ?? humanRuleLabel(rule.id)) \(newEnabled ? "enabled" : "muted")."
+                await loadHistory()
             }
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         savingRuleId = nil
+    }
+
+    private func addRule() async {
+        let trimmedName = draftRuleName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else { return }
+        let trimmedDescription = draftRuleDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ruleId = makeRuleId(from: trimmedName)
+        addRuleSaving = true
+        actionError = nil
+        actionAck = nil
+        do {
+            let result: ConfigureAutoDetentionResult = try await EusoTripAPI.shared.mutation(
+                "detentionAccessorials.configureAutoDetention",
+                input: ConfigureAutoDetentionInput(ruleId: ruleId,
+                                                   name: trimmedName,
+                                                   description: trimmedDescription.isEmpty ? nil : trimmedDescription,
+                                                   triggerType: draftTriggerType,
+                                                   enabled: draftEnabled,
+                                                   freeTimeMinutes: draftFreeTimeMinutes,
+                                                   autoCreateClaim: draftAutoCreateClaim)
+            )
+            if result.success ?? true {
+                showingAddRule = false
+                actionAck = "\(trimmedName) saved."
+                await reload()
+                await loadHistory()
+            } else {
+                actionError = "Rule was not saved."
+            }
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        addRuleSaving = false
+    }
+
+    private func loadHistory() async {
+        historyLoading = true
+        historyError = nil
+        do {
+            let response: AutoDetentionHistoryResponse = try await EusoTripAPI.shared.query(
+                "detentionAccessorials.getAutoDetentionHistory",
+                input: AutoDetentionHistoryInput(limit: 20)
+            )
+            historyEvents = response.events
+        } catch {
+            historyError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        historyLoading = false
+    }
+
+    private func resetDraftRule() {
+        draftRuleName = ""
+        draftRuleDescription = ""
+        draftTriggerType = "manual_review"
+        draftEnabled = true
+        draftFreeTimeMinutes = 120
+        draftAutoCreateClaim = false
+        actionError = nil
+        actionAck = nil
+    }
+
+    private func makeRuleId(from name: String) -> String {
+        let lower = name.lowercased()
+        let mapped = lower.map { ch -> Character in
+            if ch.isLetter || ch.isNumber { return ch }
+            return "_"
+        }
+        let collapsed = String(mapped).split(separator: "_").joined(separator: "_")
+        let base = collapsed.isEmpty ? "manual_review" : String(collapsed.prefix(36))
+        return "custom_\(base)_\(Int(Date().timeIntervalSince1970))"
+    }
+
+    private func humanRuleLabel(_ ruleId: String) -> String {
+        ruleId
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
+
+    private func formatAuditTime(_ iso: String?) -> String {
+        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return "recorded" }
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 }
 

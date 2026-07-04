@@ -10735,6 +10735,22 @@ struct ComplianceAPI {
     }
 
     struct CatalystComplianceOverview: Decodable, Hashable {
+        struct FilingStatus: Decodable, Hashable {
+            let status: String?
+            let detail: String?
+            let identifier: String?
+            let expiresAt: String?
+            let dueDate: String?
+        }
+
+        struct Filings: Decodable, Hashable {
+            let hazmat: FilingStatus?
+            let twic: FilingStatus?
+            let ucr: FilingStatus?
+            let ifta: FilingStatus?
+            let irp: FilingStatus?
+        }
+
         /// 0–100 overall score. Sum of: MC (20) + DOT (20) + insurance
         /// not expired (20) + compliance_status compliant (20) + hazmat
         /// license (10) + baseline (10).
@@ -10752,6 +10768,9 @@ struct ComplianceAPI {
         let safetyRating: String
         /// FMCSA CSA composite score; 0 until the SMS feed is wired.
         let csaScore: Int
+        /// Live company filing statuses derived server-side from companies,
+        /// compliance_events, and irp_registrations.
+        let filings: Filings?
     }
 
     func getCatalystCompliance() async throws -> CatalystComplianceOverview {
@@ -19861,6 +19880,10 @@ struct AuthorityAPI {
         let dotNumber: String?
         let insurancePolicy: String?
         let insuranceExpiry: String?
+        let hazmatLicense: String?
+        let hazmatExpiry: String?
+        let twicCard: String?
+        let twicExpiry: String?
         let complianceStatus: String?
         let isActive: Bool?
     }

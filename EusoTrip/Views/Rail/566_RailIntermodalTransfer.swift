@@ -553,17 +553,43 @@ private struct RailIntermodalTransferBody: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Record transfer", leadingIcon: "plus")
-            Button {} label: {
-                Text("History")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 116, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Transfer context",
+                sheetTitle: "Intermodal transfer context",
+                lines: transferContextLines,
+                width: 176,
+                systemImage: "plus"
+            )
+            RailSecondaryActionButton(
+                title: "History",
+                sheetTitle: "Transfer history",
+                lines: transferHistoryLines,
+                width: 116,
+                systemImage: "clock.arrow.circlepath"
+            )
+        }
+    }
+
+    private var transferContextLines: [String] {
+        var lines = [
+            "Shipment \(shipmentId)",
+            "\(todayCount) transfer row\(todayCount == 1 ? "" : "s") today",
+            "\(pendingCount) pending · average cycle \(avgTimeLabel)"
+        ]
+        if let t = activeTransfer {
+            let container = t.containerNumber ?? "Container"
+            let facility = t.facilityName ?? t.locationLabel ?? "facility pending"
+            lines.append("\(container) · \(transferTypeLabel(t)) · \(facility)")
+        }
+        return lines
+    }
+
+    private var transferHistoryLines: [String] {
+        transfers.prefix(8).map { t in
+            let container = t.containerNumber ?? "Container"
+            let facility = t.facilityName ?? t.locationLabel ?? "facility pending"
+            let status = t.status ?? "status pending"
+            return "\(container) · \(facility) · \(status)"
         }
     }
 

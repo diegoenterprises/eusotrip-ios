@@ -26,6 +26,7 @@ private struct HelpArticle: Decodable, Identifiable, Hashable {
 
 private struct HelpSupportBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @Environment(\.rolePushDetail) private var pushDetail
     @State private var query: String = ""
     @State private var articles: [HelpArticle] = []
@@ -80,7 +81,7 @@ private struct HelpSupportBody: View {
                 .background(LinearGradient.diagonal)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }.buttonStyle(.plain)
-            Button { if let u = URL(string: "mailto:support@eusotrip.com") { UIApplication.shared.open(u) } } label: {
+            Button { if let u = URL(string: "mailto:support@eusotrip.com") { openURL(u) } } label: {
                 HStack {
                     Image(systemName: "envelope").foregroundStyle(LinearGradient.diagonal)
                     Text("Email support@eusotrip.com").font(EType.body).foregroundStyle(palette.textPrimary)

@@ -734,21 +734,36 @@ private struct RailFRASafetyBody: View {
 
     // MARK: CTA pair
 
+    private var fraReportLines: [String] {
+        var lines = [
+            "Railroad: \(railroadName ?? railId)",
+            "Safety index: \(safetyIndex.map { String(format: "%.0f", $0) } ?? "-")",
+            "Class I average: \(classIAvg.map(String.init) ?? "-")",
+            "Open inspections: \(openInspections.map(String.init) ?? "-")",
+            "Accidents 12mo: \(accidents12mo.map(String.init) ?? "-")",
+            "Regulatory items: \(regulatoryItems.count)"
+        ]
+        if let caption = trendCaption {
+            lines.append("Trend: \(caption)")
+        }
+        for item in regulatoryItems.prefix(3) {
+            lines.append("\(item.title ?? "Compliance item"): \(item.rightValue ?? item.status ?? "-")")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
             CTAButton(title: "File FRA inspection",
                       action: { isFiling = true; Task { await refresh() } },
                       leadingIcon: "plus", isLoading: isFiling)
-            Button("Reports") {}
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
-                .frame(maxWidth: .infinity).frame(height: 52)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(palette.bgCard)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(palette.borderFaint))
-                )
+            RailSecondaryActionButton(
+                title: "Reports",
+                sheetTitle: "FRA safety report",
+                lines: fraReportLines,
+                fillWidth: true,
+                systemImage: "doc.text.magnifyingglass"
+            )
         }
     }
 

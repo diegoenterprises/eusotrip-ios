@@ -452,28 +452,47 @@ private struct RailClaimsDashboardBody: View {
 
     // MARK: - CTA pair
 
+    private var fileClaimLines: [String] {
+        [
+            "Open claims: \(openCount)",
+            "Exposure: \(currency(exposure))",
+            "Escalated: \(escalatedCount)",
+            "Recent claims available: \(dashboard?.recentClaims.count ?? 0)",
+            "Carrier: BNSF Intermodal",
+            "Shipper: Eusorone Technologies (DU)"
+        ]
+    }
+
+    private var allClaimsLines: [String] {
+        var lines = [
+            "Open: \(dashboard?.open ?? 0)",
+            "Pending: \(dashboard?.pending ?? 0)",
+            "Resolved: \(dashboard?.resolved ?? 0)",
+            "Denied: \(dashboard?.denied ?? 0)",
+            "Exposure: \(currency(exposure))",
+            "Escalated: \(escalatedCount)"
+        ]
+        for claim in (dashboard?.recentClaims ?? []).prefix(6) {
+            lines.append("\(claim.type): \(claim.status) - \(currency(claim.amount))")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            Button(action: fileClaim) {
-                Text("File claim")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(LinearGradient.primary)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-
-            Button(action: { /* All claims → 652 feed list (in-place) */ }) {
-                Text("All claims")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgSecondary)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Claim review",
+                sheetTitle: "Rail claim filing context",
+                lines: fileClaimLines,
+                fillWidth: true,
+                systemImage: "plus"
+            )
+            RailSecondaryActionButton(
+                title: "All claims",
+                sheetTitle: "Claims feed",
+                lines: allClaimsLines,
+                systemImage: "tray.full"
+            )
         }
     }
 

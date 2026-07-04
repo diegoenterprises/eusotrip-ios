@@ -37,6 +37,7 @@ private struct RailStatusOption: Identifiable {
 
 private struct RailStatusUpdateBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
     let shipmentId: Int
     let currentStatus: String
     @State private var selected: String = "at_interchange"
@@ -147,7 +148,7 @@ private struct RailStatusUpdateBody: View {
                 CTAButton(title: submitting ? "Confirming…" : "Confirm advance",
                           action: { Task { await confirm() } },
                           leadingIcon: "arrow.triangle.2.circlepath")
-                CTAButton(title: "Cancel")
+                CTAButton(title: "Cancel", action: { dismiss() })
             }
         }
     }

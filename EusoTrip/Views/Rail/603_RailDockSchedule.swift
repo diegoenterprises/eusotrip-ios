@@ -523,17 +523,25 @@ private struct RailDockScheduleBody: View {
                       action: { Task { await bookAppointment() } },
                       leadingIcon: "calendar.badge.plus",
                       isLoading: isBooking)
-            Button {} label: {
-                Text("Doors")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCardSoft)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Doors",
+                sheetTitle: "Door window context",
+                lines: doorContextLines,
+                systemImage: "door.garage.open"
+            )
         }
+    }
+
+    private var doorContextLines: [String] {
+        var lines = [
+            "\(doorCount) door\(doorCount == 1 ? "" : "s") · \(totalCount) appointment row\(totalCount == 1 ? "" : "s")",
+            "\(nextTwoHours.count) next 2h · \(laterToday.count) later today",
+            "\(openCount) open · \(bookedCount) booked · \(lateCount) late"
+        ]
+        if let next = nextTwoHours.first ?? laterToday.first {
+            lines.append("\(directionLabel(next)) · \(next.dockId ?? "door pending") · \(timeLabel(next.startISO)) · \(relativeLabel(next))")
+        }
+        return lines
     }
 
     // MARK: - Load

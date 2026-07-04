@@ -15,6 +15,8 @@
 //
 //  Wire bindings (all real, no stubs):
 //    vehicles.list                  — vehicle roster + status
+//    vehicles.create                — add vehicle CTA
+//    vehicles.scheduleMaintenance   — schedule PM CTA
 //    iftaCalculator.calculateQuarter — per-quarter IFTA summary
 //    maintenance.getUpcoming         — next-PM + DOT inspection + cert rows
 //    maintenance.getAlerts           — alert count badge on Zeun header
@@ -42,6 +44,36 @@ private struct VehicleRow: Decodable, Hashable, Identifiable {
     let lastServiceDate: String?
     let nextServiceDate: String?
     let assignedDriverId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, vin, make, model, year, licensePlate, vehicleType, type, status
+        case currentLat, currentLng, currentMileage, mileage
+        case lastServiceDate, nextServiceDate, nextMaintenanceDate
+        case assignedDriverId, currentDriverId, driver
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.vin = try container.decodeIfPresent(String.self, forKey: .vin)
+        self.make = try container.decodeIfPresent(String.self, forKey: .make)
+        self.model = try container.decodeIfPresent(String.self, forKey: .model)
+        self.year = try container.decodeIfPresent(Int.self, forKey: .year)
+        self.licensePlate = try container.decodeIfPresent(String.self, forKey: .licensePlate)
+        self.vehicleType = try container.decodeIfPresent(String.self, forKey: .vehicleType)
+            ?? container.decodeIfPresent(String.self, forKey: .type)
+        self.status = try container.decodeIfPresent(String.self, forKey: .status)
+        self.currentLat = try container.decodeIfPresent(Double.self, forKey: .currentLat)
+        self.currentLng = try container.decodeIfPresent(Double.self, forKey: .currentLng)
+        self.currentMileage = try container.decodeIfPresent(Int.self, forKey: .currentMileage)
+            ?? container.decodeIfPresent(Int.self, forKey: .mileage)
+        self.lastServiceDate = try container.decodeIfPresent(String.self, forKey: .lastServiceDate)
+        self.nextServiceDate = try container.decodeIfPresent(String.self, forKey: .nextServiceDate)
+            ?? container.decodeIfPresent(String.self, forKey: .nextMaintenanceDate)
+        self.assignedDriverId = try container.decodeIfPresent(String.self, forKey: .assignedDriverId)
+            ?? container.decodeIfPresent(String.self, forKey: .currentDriverId)
+            ?? container.decodeIfPresent(String.self, forKey: .driver)
+    }
 }
 
 private struct VehiclesList: Decodable {
@@ -49,6 +81,21 @@ private struct VehiclesList: Decodable {
     let items: [VehicleRow]?
     let total: Int?
     var rows: [VehicleRow] { vehicles ?? items ?? [] }
+
+    enum CodingKeys: String, CodingKey { case vehicles, items, total }
+
+    init(from decoder: Decoder) throws {
+        if let bareRows = try? [VehicleRow](from: decoder) {
+            self.vehicles = bareRows
+            self.items = nil
+            self.total = bareRows.count
+            return
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.vehicles = try container.decodeIfPresent([VehicleRow].self, forKey: .vehicles)
+        self.items = try container.decodeIfPresent([VehicleRow].self, forKey: .items)
+        self.total = try container.decodeIfPresent(Int.self, forKey: .total)
+    }
 }
 
 private struct IFTAQuarterResult: Decodable, Hashable {
@@ -71,13 +118,54 @@ private struct MaintenanceUpcoming: Decodable, Hashable, Identifiable {
     let description: String?
     let location: String?
     let urgency: String?  // low/medium/high
+
+    enum CodingKeys: String, CodingKey {
+        case id, vehicleId, type, dueAt, title, description, location, urgency
+        case serviceType, nextDueDate, priority, isOverdue
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.vehicleId = try container.decodeIfPresent(String.self, forKey: .vehicleId)
+        let serviceType = try container.decodeIfPresent(String.self, forKey: .serviceType)
+        self.type = try container.decodeIfPresent(String.self, forKey: .type) ?? serviceType
+        self.dueAt = try container.decodeIfPresent(String.self, forKey: .dueAt)
+            ?? container.decodeIfPresent(String.self, forKey: .nextDueDate)
+        self.title = try container.decodeIfPresent(String.self, forKey: .title) ?? serviceType?.replacingOccurrences(of: "_", with: " ").capitalized
+        self.description = try container.decodeIfPresent(String.self, forKey: .description)
+        self.location = try container.decodeIfPresent(String.self, forKey: .location)
+        let priority = try container.decodeIfPresent(String.self, forKey: .priority)
+        let overdue = try container.decodeIfPresent(Bool.self, forKey: .isOverdue) ?? false
+        self.urgency = try container.decodeIfPresent(String.self, forKey: .urgency) ?? (overdue ? "high" : priority?.lowercased())
+    }
 }
 
 private struct MaintenanceAlerts: Decodable {
     let alerts: Int?
     let total: Int?
     var count: Int { alerts ?? total ?? 0 }
+
+    enum CodingKeys: String, CodingKey { case alerts, total }
+
+    init(from decoder: Decoder) throws {
+        if var array = try? decoder.unkeyedContainer() {
+            var count = 0
+            while !array.isAtEnd {
+                _ = try? array.decode(DiscardedDecodable.self)
+                count += 1
+            }
+            self.alerts = count
+            self.total = count
+            return
+        }
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.alerts = try container.decodeIfPresent(Int.self, forKey: .alerts)
+        self.total = try container.decodeIfPresent(Int.self, forKey: .total)
+    }
 }
+
+private struct DiscardedDecodable: Decodable {}
 
 // MARK: - Screen
 
@@ -106,6 +194,24 @@ private struct FleetVehiclesBody: View {
     @State private var alertCount: Int = 0
     @State private var loading: Bool = true
     @State private var error: String?
+    @State private var actionMessage: String?
+    @State private var actionError: String?
+    @State private var showAddVehicle: Bool = false
+    @State private var showSchedulePM: Bool = false
+    @State private var savingVehicle: Bool = false
+    @State private var schedulingPM: Bool = false
+    @State private var addVIN: String = ""
+    @State private var addMake: String = ""
+    @State private var addModel: String = ""
+    @State private var addYear: String = ""
+    @State private var addPlate: String = ""
+    @State private var addVehicleType: String = "tractor"
+    @State private var addCapacity: String = ""
+    @State private var pmVehicleId: String = ""
+    @State private var pmDate: Date = Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date()
+    @State private var pmNotes: String = ""
+
+    private let vehicleTypes = ["tractor", "trailer", "tanker", "flatbed", "refrigerated", "dry_van", "lowboy", "step_deck"]
 
     private var activeCount: Int {
         vehicles.filter { ($0.status ?? "").lowercased() == "in_use" || ($0.status ?? "").lowercased() == "available" }.count
@@ -133,6 +239,7 @@ private struct FleetVehiclesBody: View {
                         vehicleCard(v)
                     }
                 }
+                actionFeedback
                 iftaStrip
                 maintenanceSection
                 schedulePmCard
@@ -142,6 +249,8 @@ private struct FleetVehiclesBody: View {
         }
         .task { await loadAll() }
         .refreshable { await loadAll() }
+        .sheet(isPresented: $showAddVehicle) { addVehicleSheet }
+        .sheet(isPresented: $showSchedulePM) { schedulePMSheet }
     }
 
     // MARK: - Header
@@ -163,13 +272,7 @@ private struct FleetVehiclesBody: View {
                     .foregroundStyle(palette.textPrimary)
                 Spacer()
                 Button {
-                    // 2026-05-21 — wire to existing vehicle-add flow via
-                    // the Catalyst settings vehicle composer. Future:
-                    // open a dedicated 303A "Add Vehicle" sheet.
-                    NotificationCenter.default.post(
-                        name: NSNotification.Name("eusoCatalystAddVehicleRequested"),
-                        object: nil
-                    )
+                    openAddVehicle()
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "plus.circle.fill").font(.caption)
@@ -189,6 +292,135 @@ private struct FleetVehiclesBody: View {
             Text("\(activeCount) ACTIVE · \(maintCount) MAINTENANCE")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                 .foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    @ViewBuilder
+    private var actionFeedback: some View {
+        if let actionError {
+            LifecycleCard(accentDanger: true) {
+                Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if let actionMessage {
+            LifecycleCard {
+                Text(actionMessage).font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+        }
+    }
+
+    private var addVehicleSheet: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Add Vehicle")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Register a real fleet asset to your company roster.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    LifecycleCard {
+                        VStack(spacing: 10) {
+                            formField("VIN", text: $addVIN)
+                            formField("Make", text: $addMake)
+                            formField("Model", text: $addModel)
+                            formField("Year", text: $addYear, keyboard: .numberPad)
+                            formField("License plate", text: $addPlate)
+                            formField("Capacity", text: $addCapacity)
+                            Picker("Vehicle type", selection: $addVehicleType) {
+                                ForEach(vehicleTypes, id: \.self) { type in
+                                    Text(type.replacingOccurrences(of: "_", with: " ").capitalized).tag(type)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                        }
+                    }
+                    if let actionError {
+                        Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+                    }
+                    Button {
+                        Task { await createVehicle() }
+                    } label: {
+                        HStack {
+                            if savingVehicle { ProgressView().tint(.white) }
+                            Text(savingVehicle ? "Saving…" : "Save vehicle")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(savingVehicle || !addVehicleValid)
+                }
+                .padding(18)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showAddVehicle = false }
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    private var schedulePMSheet: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Schedule PM")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Set the next maintenance date on a real vehicle record.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    LifecycleCard {
+                        VStack(spacing: 10) {
+                            Picker("Vehicle", selection: $pmVehicleId) {
+                                ForEach(vehicles) { vehicle in
+                                    Text(vehicleTitle(vehicle)).tag(vehicle.id)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            DatePicker("Service date", selection: $pmDate, displayedComponents: .date)
+                            formField("Notes", text: $pmNotes)
+                        }
+                    }
+                    if let actionError {
+                        Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+                    }
+                    Button {
+                        Task { await schedulePM() }
+                    } label: {
+                        HStack {
+                            if schedulingPM { ProgressView().tint(.white) }
+                            Text(schedulingPM ? "Scheduling…" : "Schedule PM")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(schedulingPM || pmVehicleId.isEmpty)
+                }
+                .padding(18)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showSchedulePM = false }
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func formField(_ title: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased()).font(.system(size: 9, weight: .heavy)).tracking(0.7).foregroundStyle(palette.textTertiary)
+            TextField(title, text: text)
+                .font(EType.body)
+                .foregroundStyle(palette.textPrimary)
+                .keyboardType(keyboard)
+                .textInputAutocapitalization(title == "VIN" ? .characters : .words)
+                .autocorrectionDisabled(title == "VIN")
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(palette.bgSecondary))
         }
     }
 
@@ -473,12 +705,7 @@ private struct FleetVehiclesBody: View {
 
     private var schedulePmCard: some View {
         Button {
-            // Future: schedule-PM sheet. For now, post a notification
-            // the Zeun composer can subscribe to.
-            NotificationCenter.default.post(
-                name: NSNotification.Name("eusoCatalystSchedulePmRequested"),
-                object: nil
-            )
+            openSchedulePM()
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "wrench.and.screwdriver.fill")
@@ -608,6 +835,141 @@ private struct FleetVehiclesBody: View {
             let r: MaintenanceAlerts = try await EusoTripAPI.shared.queryNoInput("maintenance.getAlerts")
             alertCount = r.count
         } catch { /* */ }
+    }
+
+    // MARK: - Actions
+
+    private var addVehicleValid: Bool {
+        let vin = addVIN.trimmed.uppercased()
+        guard !vin.isEmpty, vin.count <= 17, vehicleTypes.contains(addVehicleType) else { return false }
+        if let year = Int(addYear.trimmed), !(1900...2100).contains(year) { return false }
+        if !addYear.trimmed.isEmpty, Int(addYear.trimmed) == nil { return false }
+        return true
+    }
+
+    private func openAddVehicle() {
+        actionError = nil
+        actionMessage = nil
+        addVIN = ""
+        addMake = ""
+        addModel = ""
+        addYear = ""
+        addPlate = ""
+        addVehicleType = "tractor"
+        addCapacity = ""
+        showAddVehicle = true
+    }
+
+    private func openSchedulePM() {
+        actionError = nil
+        actionMessage = nil
+        guard !vehicles.isEmpty else {
+            actionError = "Add or load a vehicle before scheduling PM."
+            return
+        }
+        if pmVehicleId.isEmpty || !vehicles.contains(where: { $0.id == pmVehicleId }) {
+            pmVehicleId = vehicles[0].id
+        }
+        showSchedulePM = true
+    }
+
+    private func createVehicle() async {
+        guard addVehicleValid else {
+            actionError = "Enter a valid VIN and vehicle type."
+            return
+        }
+        savingVehicle = true
+        actionError = nil
+        actionMessage = nil
+        defer { savingVehicle = false }
+
+        struct In: Encodable {
+            let vin: String
+            let make: String?
+            let model: String?
+            let year: Int?
+            let licensePlate: String?
+            let vehicleType: String
+            let capacity: String?
+        }
+        struct Out: Decodable {
+            let success: Bool
+            let id: String?
+            let error: String?
+        }
+
+        do {
+            let out: Out = try await EusoTripAPI.shared.mutation(
+                "vehicles.create",
+                input: In(
+                    vin: addVIN.trimmed.uppercased(),
+                    make: addMake.trimmed.nilIfEmpty,
+                    model: addModel.trimmed.nilIfEmpty,
+                    year: Int(addYear.trimmed),
+                    licensePlate: addPlate.trimmed.nilIfEmpty,
+                    vehicleType: addVehicleType,
+                    capacity: addCapacity.trimmed.nilIfEmpty
+                )
+            )
+            guard out.success else {
+                actionError = out.error ?? "Vehicle was not saved."
+                return
+            }
+            actionMessage = "Vehicle \(out.id.map { "#\($0)" } ?? "") saved to the live fleet roster."
+            showAddVehicle = false
+            await loadVehicles()
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+        }
+    }
+
+    private func schedulePM() async {
+        guard !pmVehicleId.isEmpty else {
+            actionError = "Choose a vehicle for PM."
+            return
+        }
+        schedulingPM = true
+        actionError = nil
+        actionMessage = nil
+        defer { schedulingPM = false }
+
+        struct In: Encodable {
+            let vehicleId: String
+            let scheduledDate: String
+            let notes: String?
+        }
+        struct Out: Decodable {
+            let success: Bool
+            let maintenanceId: String?
+            let error: String?
+        }
+
+        do {
+            let scheduledDate = ISO8601DateFormatter().string(from: pmDate)
+            let out: Out = try await EusoTripAPI.shared.mutation(
+                "vehicles.scheduleMaintenance",
+                input: In(vehicleId: pmVehicleId, scheduledDate: scheduledDate, notes: pmNotes.trimmed.nilIfEmpty)
+            )
+            guard out.success else {
+                actionError = out.error ?? "PM was not scheduled."
+                return
+            }
+            actionMessage = "PM scheduled\(out.maintenanceId.map { " as Zeun #\($0)" } ?? "")."
+            showSchedulePM = false
+            await loadVehicles()
+            await loadMaintenance()
+            await loadAlerts()
+        } catch {
+            actionError = (error as? LocalizedError)?.errorDescription ?? "\(error)"
+        }
+    }
+}
+
+private extension String {
+    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+    var nilIfEmpty: String? {
+        let value = trimmed
+        return value.isEmpty ? nil : value
     }
 }
 

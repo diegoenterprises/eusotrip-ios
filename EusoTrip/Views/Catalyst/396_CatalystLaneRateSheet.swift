@@ -24,9 +24,8 @@
 //    • diesel / FSC band                 → rateSheet.getCurrentDiesel            (rateSheet.ts:611)
 //    • per-lane your-rate rows           → rateSheet.getRateSheet                (rateSheet.ts:1425)
 //                                          + rateSheet.listMyRateSheets          (rateSheet.ts:1618)
-//    • "Recalculate rates" CTA           → rateSheet.calculateRate               (rateSheet.ts:812)
-//    • "Edit sheet" / save + version     → rateSheet.saveRateSheet               (rateSheet.ts:1370)
-//                                          → getVersionHistory                   (rateSheet.ts:1578)
+//    • refresh live rates CTA            → getCurrentDiesel + getPlatformRateIntelligence
+//    • sheet history CTA                 → getVersionHistory
 //  RBAC: isolatedApprovedProcedure — carrier-scoped. transportMode = truck · USD.
 //
 //  ZERO-FALLBACK WIRING (2026-06-09 · audit M5):
@@ -111,7 +110,14 @@ private struct LaneRateSheetBody_396: View {
     @State private var underMarketNote: String = ""
     @State private var version: String = "—"
     @State private var sheetName: String? = nil
+    @State private var activeSheetId: Int?
+    @State private var activeSheetDetail: RateSheetAPI.RateSheetDetail?
     @State private var loadingSheet: Bool = true
+    @State private var actionMessage: String?
+    @State private var actionError: String?
+    @State private var showVersionHistory: Bool = false
+    @State private var loadingHistory: Bool = false
+    @State private var versions: [RateSheetAPI.Version] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -122,6 +128,7 @@ private struct LaneRateSheetBody_396: View {
                 heroCard_396
                 lanesSection_396
                 ctaRow_396
+                actionFeedback_396
                 legend_396
             }
             .padding(.horizontal, Space.s5)
@@ -132,6 +139,7 @@ private struct LaneRateSheetBody_396: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
+        .sheet(isPresented: $showVersionHistory) { versionHistorySheet_396 }
     }
 
     // MARK: TopBar — eyebrow + back chevron + "Lane rates" + version + kebab
@@ -425,35 +433,90 @@ private struct LaneRateSheetBody_396: View {
     private var ctaRow_396: some View {
         HStack(spacing: Space.s2) {
             Button {
-                // WIRE: rateSheet.calculateRate (rateSheet.ts:812) —
-                // recompute every lane RPM against the live diesel/FSC peg.
-                NotificationCenter.default.post(
-                    name: .eusoCatalystRateRecalculate_396, object: nil,
-                    userInfo: ["source": "396_CatalystLaneRateSheet"])
+                Task { await refreshLiveRates_396() }
             } label: {
-                Text("Recalculate rates").font(EType.bodyStrong).foregroundStyle(.white)
+                Text("Refresh live rates").font(EType.bodyStrong).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 40)
                     .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Recalculate all lane rates")
+            .accessibilityLabel("Refresh live diesel and market rate intelligence")
 
             Button {
-                // WIRE: rateSheet.saveRateSheet (rateSheet.ts:1370) +
-                // getVersionHistory (rateSheet.ts:1578) — edit + version bump.
-                NotificationCenter.default.post(
-                    name: .eusoCatalystRateEditSheet_396, object: nil,
-                    userInfo: ["source": "396_CatalystLaneRateSheet"])
+                Task { await openVersionHistory_396() }
             } label: {
-                Text("Edit sheet").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Text("Sheet history").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: .infinity, minHeight: 40)
                     .background(palette.bgCard)
                     .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Edit rate sheet")
+            .accessibilityLabel("Open rate sheet version history")
         }
+    }
+
+    @ViewBuilder
+    private var actionFeedback_396: some View {
+        if let actionError {
+            LifecycleCard(accentDanger: true) {
+                Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if let actionMessage {
+            LifecycleCard {
+                Text(actionMessage).font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+        }
+    }
+
+    private var versionHistorySheet_396: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    Text("Rate Sheet History")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text(sheetName ?? "No active sheet")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    if loadingHistory {
+                        LifecycleCard { Text("Loading versions…").font(EType.caption).foregroundStyle(palette.textSecondary) }
+                    } else if versions.isEmpty {
+                        EusoEmptyState(
+                            systemImage: "clock.arrow.circlepath",
+                            title: "No saved versions yet",
+                            subtitle: activeSheetId == nil ? "Create a rate sheet before version history can appear." : "This sheet has no prior snapshots in the live version store."
+                        )
+                    } else {
+                        ForEach(versions) { version in
+                            LifecycleCard {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("v\(version.version) · \(version.name ?? sheetName ?? "Rate sheet")")
+                                        .font(EType.bodyStrong)
+                                        .foregroundStyle(palette.textPrimary)
+                                    Text([version.region, version.productType, version.tierCount.map { "\($0) tiers" }].compactMap { $0 }.joined(separator: " · "))
+                                        .font(EType.caption)
+                                        .foregroundStyle(palette.textSecondary)
+                                    if let snapshotAt = version.snapshotAt, !snapshotAt.isEmpty {
+                                        Text(String(snapshotAt.prefix(19)))
+                                            .font(EType.mono(.micro))
+                                            .foregroundStyle(palette.textTertiary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(18)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showVersionHistory = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     private var legend_396: some View {
@@ -515,12 +578,16 @@ private struct LaneRateSheetBody_396: View {
         if let sheets = try? await EusoTripAPI.shared.rateSheet.listMyRateSheets(),
            let first = sheets.first {
             sheetName = first.name ?? "Sheet \(first.id)"
+            activeSheetId = first.id
             // `try?` flattens the client's RateSheetDetail? — one bind suffices.
             if let d = try? await EusoTripAPI.shared.rateSheet.getRateSheet(id: first.id) {
+                activeSheetDetail = d
                 version = "v\(d.version)"
             }
         } else {
             sheetName = nil
+            activeSheetId = nil
+            activeSheetDetail = nil
             version = "—"
         }
 
@@ -533,13 +600,35 @@ private struct LaneRateSheetBody_396: View {
             marketClears = "—"
         }
     }
-}
 
-// MARK: - Notifications (no dead buttons per §20.4 doctrine)
+    private func refreshLiveRates_396() async {
+        actionError = nil
+        actionMessage = nil
+        await loadAll()
+        if let detail = activeSheetDetail {
+            actionMessage = "Refreshed \(detail.name ?? "rate sheet") \(version) with \(refreshedAgo) diesel and live market intelligence."
+        } else {
+            actionError = "No active rate sheet is available for this company yet."
+        }
+    }
 
-extension Notification.Name {
-    static let eusoCatalystRateRecalculate_396 = Notification.Name("eusoCatalystRateRecalculate_396")
-    static let eusoCatalystRateEditSheet_396   = Notification.Name("eusoCatalystRateEditSheet_396")
+    private func openVersionHistory_396() async {
+        actionError = nil
+        guard let sheetId = activeSheetId else {
+            versions = []
+            actionError = "No active rate sheet is available for version history."
+            return
+        }
+        loadingHistory = true
+        showVersionHistory = true
+        defer { loadingHistory = false }
+        do {
+            versions = try await EusoTripAPI.shared.rateSheet.getVersionHistory(sheetId: sheetId)
+        } catch {
+            versions = []
+            actionError = "Rate sheet history couldn't load. \(error.eusoUserCopy)"
+        }
+    }
 }
 
 // MARK: - Previews

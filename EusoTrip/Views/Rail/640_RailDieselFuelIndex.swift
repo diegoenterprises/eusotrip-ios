@@ -492,17 +492,26 @@ private struct RailDieselFuelIndexBody: View {
             CTAButton(title: "Update prices",
                       action: { Task { await updatePrices() } },
                       isLoading: isUpdating)
-            Button {} label: {
-                Text("History")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "History",
+                sheetTitle: "Diesel index history",
+                lines: dieselHistoryLines,
+                systemImage: "chart.xyaxis.line"
+            )
         }
+    }
+
+    private var dieselHistoryLines: [String] {
+        var lines = [
+            "Source \(index?.source ?? "pending")",
+            "Week \(index?.weekOf ?? "pending") · national \(heroPriceLabel)",
+            "FSC peg \(pegRateLabel)/mi over \(pegBaseLabel) base"
+        ]
+        if !hiLoLabel.isEmpty { lines.append(hiLoLabel) }
+        if !seriesDates.isEmpty {
+            lines.append("Series \(startTick) → \(endTick) · \(series.count) live point\(series.count == 1 ? "" : "s")")
+        }
+        return lines
     }
 
     // MARK: - Chart helpers

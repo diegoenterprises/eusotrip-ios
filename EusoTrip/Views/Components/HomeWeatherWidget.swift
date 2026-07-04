@@ -32,6 +32,7 @@ struct HomeWeatherWidget: View {
 
     @Environment(\.palette) private var palette
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
 
     private enum Phase {
         case loading
@@ -191,7 +192,7 @@ struct HomeWeatherWidget: View {
                 await refresh(force: true)
             }
         } else if let url = URL(string: UIApplication.openSettingsURLString) {
-            UIApplication.shared.open(url)
+            openURL(url)
         }
     }
 }

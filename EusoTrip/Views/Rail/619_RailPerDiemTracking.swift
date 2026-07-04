@@ -444,25 +444,49 @@ private struct RailPerDiemTrackingBody: View {
 
     // MARK: - CTA pair
 
+    private var disputeChargeLines: [String] {
+        guard let accrual else { return [] }
+        let topCar = accrual.cars?.max { ($0.perDiemDue ?? 0) < ($1.perDiemDue ?? 0) }
+        return [
+            "Consist: \(accrual.consistId ?? "-")",
+            "Carrier: \(accrual.carrier ?? "-")",
+            "Accruing cars: \(accrual.carCount ?? 0) of \(accrual.activeCars ?? 0)",
+            "Total due: \(currency(accrual.totalDue ?? 0))",
+            "Largest car: \(topCar?.carInitial ?? "-") \(currency(topCar?.perDiemDue ?? 0))",
+            "Lease: \(accrual.leaseRef ?? "-")"
+        ]
+    }
+
+    private var perDiemLogLines: [String] {
+        guard let accrual else { return [] }
+        var lines = [
+            "Rate: \(currency(accrual.ratePerCarDay ?? 0)) per car/day",
+            "Average over: \(String(format: "%.1f", accrual.avgDaysOver ?? 0)) days",
+            "Status: \((accrual.consistStatus ?? "-").uppercased())"
+        ]
+        for car in (accrual.cars ?? []).prefix(3) {
+            lines.append("\(car.carInitial ?? "-") - \(String(format: "%.1f", car.daysOver ?? 0))d - \(currency(car.perDiemDue ?? 0))")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            // Dispute charge — primary gradient (244w in wireframe, ~62%)
-            CTAButton(title: "Dispute charge", action: {})
+            RailSecondaryActionButton(
+                title: "Dispute review",
+                sheetTitle: "Per-diem dispute context",
+                lines: disputeChargeLines,
+                fillWidth: true,
+                systemImage: "exclamationmark.bubble"
+            )
                 .frame(maxWidth: .infinity)
 
-            // Per-diem log — secondary glass (148w, ~38%)
-            Button(action: {}) {
-                Text("Per-diem log")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Color(hex: 0x232932))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderSoft, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "Per-diem log",
+                sheetTitle: "Per-diem live log",
+                lines: perDiemLogLines,
+                systemImage: "list.bullet.clipboard"
+            )
         }
     }
 

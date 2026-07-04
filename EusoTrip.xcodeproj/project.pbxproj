@@ -764,8 +764,9 @@
 		FE410000000000000000297B /* 297_ShipperCargoInsurance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */; };
 		FE410000000000000000298B /* 298_ShipperDetentionExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */; };
 		FE410000000000000000533B /* 533_DispatcherAIDispatchAssist.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */; };
-		FE410000000000000000539B /* 539_DispatcherCarrierScorecard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000539F /* 539_DispatcherCarrierScorecard.swift */; };
-		FBB000000000000000000000 /* 559_RailYardOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA000000000000000000000 /* 559_RailYardOperations.swift */; };
+			FE410000000000000000539B /* 539_DispatcherCarrierScorecard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000539F /* 539_DispatcherCarrierScorecard.swift */; };
+			A7A704000000000000000002 /* RailSecondaryActionButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7A704000000000000000001 /* RailSecondaryActionButton.swift */; };
+			FBB000000000000000000000 /* 559_RailYardOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA000000000000000000000 /* 559_RailYardOperations.swift */; };
 		FBB010000000000000000000 /* 591_RailConsigneeTrackingLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA010000000000000000000 /* 591_RailConsigneeTrackingLink.swift */; };
 		FBB020000000000000000000 /* 592_RailForwarderPortal.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA020000000000000000000 /* 592_RailForwarderPortal.swift */; };
 		FBB030000000000000000000 /* 593_RailSettlementBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBA030000000000000000000 /* 593_RailSettlementBatch.swift */; };
@@ -1002,6 +1003,11 @@
 		RGA20260804613BUILD01A1 /* 613_RailGateActivityLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = RGA20260804613FREF001A1 /* 613_RailGateActivityLog.swift */; };
 		RTI20260804612BUILD01A1 /* 612_RailTransloadInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = RTI20260804612FREF001A1 /* 612_RailTransloadInventory.swift */; };
 		RBO20260804699BUILD01A1 /* 699_RailBadOrderMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = RBO20260804699FREF001A1 /* 699_RailBadOrderMonitor.swift */; };
+		RRM20260804609BUILD01A1 /* 609_RailReeferMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = RRM20260804609FREF001A1 /* 609_RailReeferMonitor.swift */; };
+		RTM20260804610BUILD01A1 /* 610_RailTankCarMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = RTM20260804610FREF001A1 /* 610_RailTankCarMonitor.swift */; };
+		RFC20260804611BUILD01A1 /* 611_RailFSMACompliance.swift in Sources */ = {isa = PBXBuildFile; fileRef = RFC20260804611FREF001A1 /* 611_RailFSMACompliance.swift */; };
+		RIH20260804694BUILD01A1 /* 694_RailInterchangeHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = RIH20260804694FREF001A1 /* 694_RailInterchangeHandoff.swift */; };
+		RIR20260804697BUILD01A1 /* 697_RailInterlineRoutePlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = RIR20260804697FREF001A1 /* 697_RailInterlineRoutePlan.swift */; };
 		LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */; };
 		MMCO2026051700000011A1 /* MultiModalCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = MMCO2026051700000012A1 /* MultiModalCore.swift */; };
 		MSGS00010CE0FF10000011A1 /* MessagesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */; };
@@ -1860,10 +1866,11 @@
 		FEH020000000000000000000 /* 617_RailDrayageOrders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 617_RailDrayageOrders.swift; sourceTree = "<group>"; };
 		FEH030000000000000000000 /* 618_RailModeOptimization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 618_RailModeOptimization.swift; sourceTree = "<group>"; };
 		FEH040000000000000000000 /* 619_RailPerDiemTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 619_RailPerDiemTracking.swift; sourceTree = "<group>"; };
-		FEH050000000000000000000 /* 620_RailReleaseOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 620_RailReleaseOrder.swift; sourceTree = "<group>"; };
-		FEH060000000000000000000 /* 621_RailYardMoveQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 621_RailYardMoveQueue.swift; sourceTree = "<group>"; };
-		FEH070000000000000000000 /* 622_RailMoveScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 622_RailMoveScheduler.swift; sourceTree = "<group>"; };
-		EAH000000000000000000000 /* 631_RailFRAAccidentReports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 631_RailFRAAccidentReports.swift; sourceTree = "<group>"; };
+			FEH050000000000000000000 /* 620_RailReleaseOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 620_RailReleaseOrder.swift; sourceTree = "<group>"; };
+			FEH060000000000000000000 /* 621_RailYardMoveQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 621_RailYardMoveQueue.swift; sourceTree = "<group>"; };
+			FEH070000000000000000000 /* 622_RailMoveScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 622_RailMoveScheduler.swift; sourceTree = "<group>"; };
+			A7A704000000000000000001 /* RailSecondaryActionButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RailSecondaryActionButton.swift; sourceTree = "<group>"; };
+			EAH000000000000000000000 /* 631_RailFRAAccidentReports.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 631_RailFRAAccidentReports.swift; sourceTree = "<group>"; };
 		EAH010000000000000000000 /* 632_RailCrewAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 632_RailCrewAvailability.swift; sourceTree = "<group>"; };
 		EAH020000000000000000000 /* 633_RailBorderCrossingETA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 633_RailBorderCrossingETA.swift; sourceTree = "<group>"; };
 		EAH030000000000000000000 /* 634_RailRailcarInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 634_RailRailcarInventory.swift; sourceTree = "<group>"; };
@@ -2086,6 +2093,11 @@
 		RGA20260804613FREF001A1 /* 613_RailGateActivityLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 613_RailGateActivityLog.swift; path = EusoTrip/Views/Rail/613_RailGateActivityLog.swift; sourceTree = SOURCE_ROOT; };
 		RTI20260804612FREF001A1 /* 612_RailTransloadInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 612_RailTransloadInventory.swift; path = EusoTrip/Views/Rail/612_RailTransloadInventory.swift; sourceTree = SOURCE_ROOT; };
 		RBO20260804699FREF001A1 /* 699_RailBadOrderMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 699_RailBadOrderMonitor.swift; path = EusoTrip/Views/Rail/699_RailBadOrderMonitor.swift; sourceTree = SOURCE_ROOT; };
+		RRM20260804609FREF001A1 /* 609_RailReeferMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 609_RailReeferMonitor.swift; path = EusoTrip/Views/Rail/609_RailReeferMonitor.swift; sourceTree = SOURCE_ROOT; };
+		RTM20260804610FREF001A1 /* 610_RailTankCarMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 610_RailTankCarMonitor.swift; path = EusoTrip/Views/Rail/610_RailTankCarMonitor.swift; sourceTree = SOURCE_ROOT; };
+		RFC20260804611FREF001A1 /* 611_RailFSMACompliance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 611_RailFSMACompliance.swift; path = EusoTrip/Views/Rail/611_RailFSMACompliance.swift; sourceTree = SOURCE_ROOT; };
+		RIH20260804694FREF001A1 /* 694_RailInterchangeHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 694_RailInterchangeHandoff.swift; path = EusoTrip/Views/Rail/694_RailInterchangeHandoff.swift; sourceTree = SOURCE_ROOT; };
+		RIR20260804697FREF001A1 /* 697_RailInterlineRoutePlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 697_RailInterlineRoutePlan.swift; path = EusoTrip/Views/Rail/697_RailInterlineRoutePlan.swift; sourceTree = SOURCE_ROOT; };
 		LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingTrustBadge.swift; sourceTree = "<group>"; };
 		MMCO2026051700000012A1 /* MultiModalCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MultiModalCore.swift; path = EusoTrip/Models/Multimodal/MultiModalCore.swift; sourceTree = SOURCE_ROOT; };
 		MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagesScreen.swift; sourceTree = "<group>"; };
@@ -3049,6 +3061,11 @@
 				RGA20260804613FREF001A1 /* 613_RailGateActivityLog.swift */,
 				RTI20260804612FREF001A1 /* 612_RailTransloadInventory.swift */,
 				RBO20260804699FREF001A1 /* 699_RailBadOrderMonitor.swift */,
+				RRM20260804609FREF001A1 /* 609_RailReeferMonitor.swift */,
+				RTM20260804610FREF001A1 /* 610_RailTankCarMonitor.swift */,
+				RFC20260804611FREF001A1 /* 611_RailFSMACompliance.swift */,
+				RIH20260804694FREF001A1 /* 694_RailInterchangeHandoff.swift */,
+				RIR20260804697FREF001A1 /* 697_RailInterlineRoutePlan.swift */,
 				PKMV2026051900000012A1 /* PasskeysManagementView.swift */,
 				AABT2026051900000012A1 /* AppleAuthButtons.swift */,
 				AAPR2026051900000012A1 /* AppleAuthProvider.swift */,
@@ -3191,9 +3208,10 @@
 		};
 		FD97CEC22FC1D4AC0016DF5F /* Rail */ = {
 			isa = PBXGroup;
-			children = (
-				FD97CEC42FC1D4BC0016DF5F /* RailEngineerNavController.swift */,
-				FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */,
+				children = (
+					FD97CEC42FC1D4BC0016DF5F /* RailEngineerNavController.swift */,
+					A7A704000000000000000001 /* RailSecondaryActionButton.swift */,
+					FD97CEC82FC1D5110016DF5F /* 550_RailEngineerHome.swift */,
 				FE5C0E060000000000000000 /* 001_RailShipperHome.swift */,
 				RL7002026070300000000002 /* 700_RailCarmanCertRegistry.swift */,
 				RL7012026070300000000002 /* 701_RailRepairWorkOrder.swift */,
@@ -3914,6 +3932,11 @@
 				RGA20260804613BUILD01A1 /* 613_RailGateActivityLog.swift in Sources */,
 				RTI20260804612BUILD01A1 /* 612_RailTransloadInventory.swift in Sources */,
 				RBO20260804699BUILD01A1 /* 699_RailBadOrderMonitor.swift in Sources */,
+				RRM20260804609BUILD01A1 /* 609_RailReeferMonitor.swift in Sources */,
+				RTM20260804610BUILD01A1 /* 610_RailTankCarMonitor.swift in Sources */,
+				RFC20260804611BUILD01A1 /* 611_RailFSMACompliance.swift in Sources */,
+				RIH20260804694BUILD01A1 /* 694_RailInterchangeHandoff.swift in Sources */,
+				RIR20260804697BUILD01A1 /* 697_RailInterlineRoutePlan.swift in Sources */,
 				PKMV2026051900000011A1 /* PasskeysManagementView.swift in Sources */,
 				AABT2026051900000011A1 /* AppleAuthButtons.swift in Sources */,
 				AAPR2026051900000011A1 /* AppleAuthProvider.swift in Sources */,
@@ -4249,10 +4272,11 @@
 				FEG020000000000000000000 /* 617_RailDrayageOrders.swift in Sources */,
 				FEG030000000000000000000 /* 618_RailModeOptimization.swift in Sources */,
 				FEG040000000000000000000 /* 619_RailPerDiemTracking.swift in Sources */,
-				FEG050000000000000000000 /* 620_RailReleaseOrder.swift in Sources */,
-				FEG060000000000000000000 /* 621_RailYardMoveQueue.swift in Sources */,
-				FEG070000000000000000000 /* 622_RailMoveScheduler.swift in Sources */,
-				EAG000000000000000000000 /* 631_RailFRAAccidentReports.swift in Sources */,
+					FEG050000000000000000000 /* 620_RailReleaseOrder.swift in Sources */,
+					FEG060000000000000000000 /* 621_RailYardMoveQueue.swift in Sources */,
+					FEG070000000000000000000 /* 622_RailMoveScheduler.swift in Sources */,
+					A7A704000000000000000002 /* RailSecondaryActionButton.swift in Sources */,
+					EAG000000000000000000000 /* 631_RailFRAAccidentReports.swift in Sources */,
 				EAG010000000000000000000 /* 632_RailCrewAvailability.swift in Sources */,
 				EAG020000000000000000000 /* 633_RailBorderCrossingETA.swift in Sources */,
 				EAG030000000000000000000 /* 634_RailRailcarInventory.swift in Sources */,

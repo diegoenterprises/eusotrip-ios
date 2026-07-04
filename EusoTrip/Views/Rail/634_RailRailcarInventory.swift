@@ -505,23 +505,49 @@ private struct RailRailcarInventoryBody: View {
 
     // MARK: - CTA pair
 
+    private var assignCarLines: [String] {
+        let available = cars.filter { $0.assignedShipmentId == nil && isActive($0.status) }
+        var lines = [
+            "Fleet: \(totalCars) cars",
+            "Active: \(activeCount)",
+            "Repair: \(repairCount)",
+            "Idle or staged: \(idleCount)",
+            "Available to assign: \(available.count)",
+            "Yard: \(yardLabel)"
+        ]
+        for car in available.prefix(3) {
+            lines.append("\(car.railcarNumber ?? "Car \(car.id)") - \(car.carType ?? "unknown") - \(car.status ?? "-")")
+        }
+        return lines
+    }
+
+    private var carDetailLines: [String] {
+        var lines = [
+            "Carrier: \(carrierName)",
+            "Shipper: \(shipperLabel)",
+            "Fleet ref: \(fleetRef)"
+        ]
+        for bucket in buckets.prefix(5) {
+            lines.append("\(bucket.title): \(bucket.count) cars, \(bucket.loaded) loaded, \(bucket.shopped) shopped")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Assign cars", action: {})
-            Button(action: {}) {
-                Text("Car detail")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Color(hex: 0x232932))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.10))
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "Assign review",
+                sheetTitle: "Railcar assignment context",
+                lines: assignCarLines,
+                fillWidth: true,
+                systemImage: "tram"
+            )
+            RailSecondaryActionButton(
+                title: "Car detail",
+                sheetTitle: "Railcar inventory detail",
+                lines: carDetailLines,
+                systemImage: "list.bullet.rectangle"
+            )
         }
     }
 

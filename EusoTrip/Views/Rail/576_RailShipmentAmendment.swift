@@ -430,17 +430,24 @@ private struct RailShipmentAmendmentBody: View {
         HStack(spacing: Space.s2) {
             CTAButton(title: submitted ? "Submitted" : "Submit amendment",
                       action: { Task { await submitAmendment() } }, isLoading: isSubmitting)
-            Button {} label: {
-                Text("Discard")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Review changes",
+                sheetTitle: "Shipment amendment changes",
+                lines: amendmentReviewLines,
+                systemImage: "doc.text.magnifyingglass"
+            )
         }
+    }
+
+    private var amendmentReviewLines: [String] {
+        var lines = [
+            "Rail \(railId) · \(lifecycleContextLabel)",
+            "Current stage \(shipment?.lifecycleStatus ?? "-") · submitted \(submitted ? "yes" : "no")"
+        ]
+        lines.append(contentsOf: changes.prefix(8).map { c in
+            "\(c.fieldName ?? "Field") · \(c.oldValue ?? "-") → \(c.newValue ?? "-") · \(pillInfo(c)?.label ?? "review")"
+        })
+        return lines
     }
 
     // MARK: - Load / Actions

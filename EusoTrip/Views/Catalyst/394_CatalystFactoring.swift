@@ -22,9 +22,9 @@
 //    • last advance strip                      → getOverview.recentActivity
 //  All decoded against the exact server projections (Number()-wrapped on the
 //  server, plain Doubles on the wire). NO seed fixture remains: every figure
-//  is live or an honest em-dash / EusoEmptyState. The "Advance now" CTA stays
-//  a NotificationCenter intent (factoring.instantPay not yet bridged) and is
-//  disabled until real selected invoices exist.
+//  is live or an honest em-dash / EusoEmptyState. "Advance now" calls
+//  factoring.instantPay for approved invoices only; server preconditions are
+//  surfaced to the user instead of faked as successful funding.
 //
 //  Bottom nav (Catalyst variant): HOME · DISPATCH · [orb] · WALLET · ME.
 //
@@ -59,6 +59,7 @@ private struct FactorInvoice_394: Identifiable {
     let shipper: String        // invoice number (title line)
     let idLane: String         // load ref + submitted date
     let statusLine: String     // raw server status, honest
+    let rawStatus: String
     let verify: Verify
     let face: String
     let advance: String?       // nil when holding
@@ -83,7 +84,7 @@ private struct FactoringOverviewWire_394: Decodable {
         let feesCharged: Double
         let pendingPayments: Int
     }
-    struct Activity: Decodable {
+    struct Activity: Decodable, Identifiable, Hashable {
         let id: String
         let invoiceNumber: String?
         let status: String?
@@ -129,6 +130,11 @@ private struct FactoringBody_394: View {
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
     @State private var funding: Bool = false
+    @State private var showFundingReview: Bool = false
+    @State private var showFeeSchedule: Bool = false
+    @State private var selectedAdvanceActivity: FactoringOverviewWire_394.Activity? = nil
+    @State private var fundingMessage: String?
+    @State private var fundingError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -145,6 +151,7 @@ private struct FactoringBody_394: View {
                     feeBand_394
                     invoicesSection_394
                     fundCTA_394
+                    fundingFeedback_394
                     assuranceText_394
                     lastAdvanceStrip_394
                     Color.clear.frame(height: 96)
@@ -156,6 +163,11 @@ private struct FactoringBody_394: View {
         }
         .task { await loadAll() }
         .refreshable { await loadAll() }
+        .sheet(isPresented: $showFundingReview) { fundingReviewSheet_394 }
+        .sheet(isPresented: $showFeeSchedule) { feeScheduleSheet_394 }
+        .sheet(item: $selectedAdvanceActivity) { activity in
+            advanceActivitySheet_394(activity)
+        }
     }
 
     // MARK: Derived (live-only)
@@ -178,8 +190,9 @@ private struct FactoringBody_394: View {
         return money_394(a.reserveBalance)
     }
     private var selectedRows: [FactorInvoice_394] { invoices.filter { selectedIds.contains($0.id) } }
-    private var selectedTotal: Double { selectedRows.reduce(0) { $0 + $1.advanceAmount } }
-    private var selectedTotalDisplay: String { selectedRows.isEmpty ? "—" : money_394(selectedTotal) }
+    private var selectedApprovedRows: [FactorInvoice_394] { selectedRows.filter { $0.rawStatus == "approved" } }
+    private var selectedTotal: Double { selectedApprovedRows.reduce(0) { $0 + $1.advanceAmount } }
+    private var selectedTotalDisplay: String { selectedApprovedRows.isEmpty ? "—" : money_394(selectedTotal) }
 
     // MARK: TopBar (inline — eyebrow / back / title / carrier)
 
@@ -406,14 +419,97 @@ private struct FactoringBody_394: View {
 
     private var fundCTA_394: some View {
         CTAButton(
-            title: selectedRows.isEmpty ? "Select invoices to advance" : "Advance \(selectedTotalDisplay) now",
+            title: selectedRows.isEmpty
+                ? "Select invoices to advance"
+                : (selectedApprovedRows.isEmpty ? "No approved invoices selected" : "Advance \(selectedTotalDisplay) now"),
             action: { fundSelected() },
             leadingIcon: "arrow.right",
             isLoading: funding
         )
-        .disabled(selectedRows.isEmpty)
-        .opacity(selectedRows.isEmpty ? 0.5 : 1.0)
-        .accessibilityLabel(selectedRows.isEmpty ? "Select invoices to advance" : "Advance \(selectedTotalDisplay) now")
+        .disabled(selectedApprovedRows.isEmpty)
+        .opacity(selectedApprovedRows.isEmpty ? 0.5 : 1.0)
+        .accessibilityLabel(selectedApprovedRows.isEmpty ? "Select approved invoices to advance" : "Advance \(selectedTotalDisplay) now")
+    }
+
+    @ViewBuilder
+    private var fundingFeedback_394: some View {
+        if let fundingError {
+            LifecycleCard(accentDanger: true) {
+                Text(fundingError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if let fundingMessage {
+            LifecycleCard {
+                Text(fundingMessage).font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+        }
+    }
+
+    private var fundingReviewSheet_394: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    Text("Instant Pay Review")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Only approved invoices are eligible for same-day funding.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    LifecycleCard {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("ADVANCE TOTAL")
+                                    .font(EType.micro).tracking(0.8)
+                                    .foregroundStyle(palette.textTertiary)
+                                Text(selectedTotalDisplay)
+                                    .font(.system(size: 24, weight: .heavy).monospacedDigit())
+                                    .foregroundStyle(LinearGradient.diagonal)
+                            }
+                            Spacer()
+                            Text("\(selectedApprovedRows.count) approved")
+                                .font(EType.caption.weight(.semibold))
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                    ForEach(selectedApprovedRows) { invoice in
+                        LifecycleCard {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(invoice.shipper)
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(palette.textPrimary)
+                                Text("\(invoice.idLane) · \(invoice.face)")
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textSecondary)
+                                Text(invoice.advance ?? "advance pending")
+                                    .font(EType.mono(.micro))
+                                    .foregroundStyle(Brand.success)
+                            }
+                        }
+                    }
+                    if let fundingError {
+                        Text(fundingError).font(EType.caption).foregroundStyle(Brand.danger)
+                    }
+                    Button {
+                        Task { await submitInstantPay_394() }
+                    } label: {
+                        HStack {
+                            if funding { ProgressView().tint(.white) }
+                            Text(funding ? "Submitting…" : "Submit Instant Pay")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(funding || selectedApprovedRows.isEmpty)
+                }
+                .padding(18)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showFundingReview = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     private var assuranceText_394: some View {
@@ -422,10 +518,11 @@ private struct FactoringBody_394: View {
                 .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Space.s2)
-            Button { } label: {
+            Button { showFeeSchedule = true } label: {
                 Text("Fee schedule").font(EType.micro).tracking(0.4).fontWeight(.heavy)
                     .foregroundStyle(LinearGradient.primary)
             }.buttonStyle(.plain)
+                .accessibilityLabel("Open live factoring fee schedule")
         }
     }
 
@@ -434,7 +531,7 @@ private struct FactoringBody_394: View {
         // Live: most recent funded row from getOverview.recentActivity.
         // Hidden entirely when there is no real advance history.
         if let last = overview?.recentActivity.first(where: { ($0.status ?? "").lowercased() == "funded" || ($0.status ?? "").lowercased() == "collected" }) {
-            Button { } label: {
+            Button { selectedAdvanceActivity = last } label: {
                 HStack(spacing: Space.s3) {
                     ZStack {
                         Circle().fill(Brand.success.opacity(0.18))
@@ -462,21 +559,147 @@ private struct FactoringBody_394: View {
         }
     }
 
+    private var feeScheduleSheet_394: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    Text("Factoring Fee Schedule")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Live terms from the platform fee engine and your factoring account.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+
+                    LifecycleCard {
+                        VStack(spacing: Space.s3) {
+                            scheduleRow_394("Current factor fee", factorFeeDisplay)
+                            scheduleRow_394("Standard", percent_394(rates?.standard))
+                            scheduleRow_394("Quick Pay", percent_394(rates?.quickPay))
+                            scheduleRow_394("Same day", percent_394(rates?.sameDay))
+                            scheduleRow_394("Advance rate", advanceRatePct > 0 ? "\(advanceRatePct)%" : "—")
+                            scheduleRow_394("Reserve held", reserveHeldDisplay)
+                            scheduleRow_394("Account status", overview?.account.status.uppercased() ?? "—")
+                        }
+                    }
+                }
+                .padding(18)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showFeeSchedule = false }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func advanceActivitySheet_394(_ activity: FactoringOverviewWire_394.Activity) -> some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    Text("Advance Activity")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Live activity row from the factoring ledger.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+
+                    LifecycleCard {
+                        VStack(spacing: Space.s3) {
+                            scheduleRow_394("Invoice", activity.invoiceNumber ?? "—")
+                            scheduleRow_394("Status", (activity.status ?? "—").uppercased())
+                            scheduleRow_394("Amount", money_394(activity.amount))
+                            scheduleRow_394("Date", shortDate_394(activity.date))
+                            scheduleRow_394("Activity ID", activity.id)
+                        }
+                    }
+                }
+                .padding(18)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { selectedAdvanceActivity = nil }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func scheduleRow_394(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            Text(label)
+                .font(EType.micro)
+                .tracking(0.8)
+                .foregroundStyle(palette.textTertiary)
+            Spacer(minLength: Space.s3)
+            Text(value)
+                .font(EType.mono(.caption).weight(.bold))
+                .foregroundStyle(palette.textPrimary)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
     // MARK: Actions
 
     private func fundSelected() {
-        // factoring.instantPay (factoring.ts:882) is not yet bridged to the iOS
-        // client — the CTA hands the REAL selected ids + total to the host
-        // action layer and is disabled when nothing real is selected.
-        guard !selectedRows.isEmpty else { return }
-        NotificationCenter.default.post(
-            name: .eusoCatalystFactoringFund_394, object: nil,
-            userInfo: [
-                "source": "394_CatalystFactoring",
-                "amount": selectedTotal,
-                "invoiceIds": selectedRows.map(\.id),
-            ]
-        )
+        fundingError = nil
+        fundingMessage = nil
+        guard !selectedApprovedRows.isEmpty else {
+            fundingError = "Select at least one approved invoice for Instant Pay."
+            return
+        }
+        showFundingReview = true
+    }
+
+    private struct InstantPayInput_394: Encodable { let factoringId: String }
+    private struct InstantPayOut_394: Decodable {
+        let factoringId: String
+        let invoiceNumber: String?
+        let invoiceAmount: Double
+        let feeAmount: Double
+        let netAmount: Double
+        let status: String
+        let estimatedFundingTime: String?
+    }
+
+    private func submitInstantPay_394() async {
+        fundingError = nil
+        fundingMessage = nil
+        let rows = selectedApprovedRows
+        guard !rows.isEmpty else {
+            fundingError = "Select at least one approved invoice for Instant Pay."
+            return
+        }
+        funding = true
+        defer { funding = false }
+        var funded: [InstantPayOut_394] = []
+        var failures: [String] = []
+        for row in rows {
+            do {
+                let out: InstantPayOut_394 = try await EusoTripAPI.shared.mutation(
+                    "factoring.instantPay",
+                    input: InstantPayInput_394(factoringId: row.id)
+                )
+                funded.append(out)
+            } catch {
+                failures.append("\(row.shipper): \(error.eusoUserCopy)")
+            }
+        }
+        await loadAll()
+        if funded.isEmpty {
+            fundingError = failures.first ?? "Instant Pay did not fund any invoice."
+        } else {
+            let net = funded.reduce(0) { $0 + $1.netAmount }
+            fundingMessage = "Instant Pay submitted for \(funded.count) invoice\(funded.count == 1 ? "" : "s") · net \(money_394(net))."
+            selectedIds.subtract(Set(funded.map(\.factoringId)))
+            if failures.isEmpty {
+                showFundingReview = false
+            } else {
+                fundingError = failures.joined(separator: "\n")
+            }
+        }
     }
 
     // MARK: Network — live procs only (factoring.getOverview/getInvoices/getRates)
@@ -516,6 +739,7 @@ private struct FactoringBody_394: View {
             shipper: w.invoiceNumber ?? "Invoice \(w.id)",
             idLane: "\(loadRef) · submitted \(submitted)",
             statusLine: status.isEmpty ? "—" : status.replacingOccurrences(of: "_", with: " "),
+            rawStatus: status,
             verify: verified ? .verified : .pending,
             face: money_394(w.invoiceAmount),
             advance: w.advanceAmount > 0 ? "adv \(money_394(w.advanceAmount))" : nil,
@@ -533,15 +757,14 @@ private struct FactoringBody_394: View {
         return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
     }
 
+    private func percent_394(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.2f%%", value * 100)
+    }
+
     private func shortDate_394(_ iso: String) -> String {
         iso.count >= 10 ? String(iso.prefix(10)) : (iso.isEmpty ? "—" : iso)
     }
-}
-
-// MARK: - Notifications
-
-extension Notification.Name {
-    static let eusoCatalystFactoringFund_394 = Notification.Name("eusoCatalystFactoringFund_394")
 }
 
 // MARK: - Previews

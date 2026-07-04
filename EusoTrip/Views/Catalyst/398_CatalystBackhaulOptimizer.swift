@@ -18,9 +18,9 @@
 //    • power-only / drop-trailer    → capacityPlanning.getPowerOnlyMatching  (capacityPlanning.ts:755)
 //    • candidate loads near dropoff → loadBoard.search                       (loadBoard.ts)
 //    • deadhead mileage             → routeOptimization.*                    (routeOptimization.ts)
-//    • "Tender" CTA                 → loadBidding.createQuote                (loadBidding.ts)
-//      (on win writes the loads row + blockchainAudit row, broadcasts
-//       WS_EVENTS.LOAD_TENDERED on WS_CHANNELS.catalyst(carrierId))
+//    • "Open tender" CTA            → CatalystBackhaulTenderScreen           (CV357)
+//      using the real backhaulLoadId returned by capacityPlanning, then
+//      `dispatch.assignDriver` / `catalysts.declineBackhaulTender` in CV357.
 //  RBAC: isolatedProcedure carrier-scope (capacityPlanning.ts:10).
 //
 //  LIVE WIRING (zero-fallback purge · 2026-06-09 · audit B13): reload()
@@ -42,8 +42,8 @@
 //      (capacityPlanning.ts:690) extracts ONLY `$.state`/`$.city` from the
 //      loads JSON and matches by STATE-NAME equality
 //      (`del.deliveryState === pend.pickupState`); its `opportunities[]`
-//      shape returns `fromState`/`toState`/`loadNumber`/`estimatedSavings`
-//      and emits NO lat/lng (the `$.lat`/`$.lng` keys present on the
+//      shape returns `fromState`/`toState`/`loadNumber`/`backhaulLoadId`/
+//      `estimatedSavings` and emits NO lat/lng (the `$.lat`/`$.lng` keys present on the
 //      `loads.pickupLocation`/`deliveryLocation` JSON are never selected).
 //    • No `capacityPlanning` iOS client exists, and `loads.getById`
 //      (LoadDetail) narrows pickup/delivery to {city,state} only — so there
@@ -101,6 +101,7 @@ private struct BackhaulMatch_398: Identifiable {
     let spec: String          // "return for LD-… · candidate LD-…"
     let equipment: BackhaulEquipment_398
     let savings: String       // "$1,228" — server estimatedSavings
+    let backhaulLoadId: String?
     let backhaulLoadNumber: String
 }
 
@@ -133,7 +134,9 @@ private struct BackhaulVM_398 {
 /// Mirrors `capacityPlanning.getBackhaulOptimizer` (capacityPlanning.ts:690).
 private struct BackhaulWire_398: Decodable {
     struct Opportunity: Decodable {
+        let deliveryLoadId: String?
         let deliveryLoad: String
+        let backhaulLoadId: String?
         let backhaulLoad: String
         let fromState: String
         let toState: String
@@ -144,14 +147,6 @@ private struct BackhaulWire_398: Decodable {
     let potentialSavings: Double
 }
 
-// MARK: - Notifications (carry the tap intent into the host action layer)
-
-extension Notification.Name {
-    static let eusoCatalystBackhaulTender_398     = Notification.Name("eusoCatalystBackhaulTender")
-    static let eusoCatalystBackhaulTenderBest_398 = Notification.Name("eusoCatalystBackhaulTenderBest")
-    static let eusoCatalystBackhaulRadius_398     = Notification.Name("eusoCatalystBackhaulRadius")
-}
-
 // MARK: - Body
 
 private struct BackhaulBody_398: View {
@@ -160,6 +155,12 @@ private struct BackhaulBody_398: View {
     @State private var vm: BackhaulVM_398 = .empty
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
+    @State private var actionError: String? = nil
+    @State private var selectedTender: TenderSheet_398?
+
+    private struct TenderSheet_398: Identifiable {
+        let id: String
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -175,6 +176,11 @@ private struct BackhaulBody_398: View {
                     heroCard
                     matchesSection
                     ctaRow
+                    if let actionError {
+                        LifecycleCard(accentDanger: true) {
+                            Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+                        }
+                    }
                     if !vm.searchNote.isEmpty {
                         Text(vm.searchNote)
                             .font(.system(size: 10))
@@ -191,6 +197,9 @@ private struct BackhaulBody_398: View {
         .task { await loadAll() }
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await reload() }
+        }
+        .sheet(item: $selectedTender) { item in
+            CatalystBackhaulTenderScreen(theme: palette, loadId: item.id)
         }
     }
 
@@ -397,15 +406,9 @@ private struct BackhaulBody_398: View {
                 }
                 HStack {
                     Button {
-                        // Hands the REAL candidate load number to the host
-                        // action layer (loadBidding.createQuote not yet bridged).
-                        NotificationCenter.default.post(
-                            name: .eusoCatalystBackhaulTender_398, object: nil,
-                            userInfo: ["source": "398_CatalystBackhaulOptimizer",
-                                       "loadNumber": m.backhaulLoadNumber]
-                        )
+                        openTender(m)
                     } label: {
-                        Text("TENDER NOW →")
+                        Text("OPEN TENDER →")
                             .font(EType.micro).tracking(0.4).fontWeight(.heavy)
                             .foregroundStyle(LinearGradient.primary)
                             .padding(.horizontal, 14).padding(.vertical, 4)
@@ -492,13 +495,9 @@ private struct BackhaulBody_398: View {
     private var ctaRow: some View {
         HStack(spacing: Space.s2) {
             Button {
-                // WIRE: loadBidding.createQuote on the best return (loadBidding.ts)
-                NotificationCenter.default.post(
-                    name: .eusoCatalystBackhaulTenderBest_398, object: nil,
-                    userInfo: ["source": "398_CatalystBackhaulOptimizer"]
-                )
+                openBestTender()
             } label: {
-                Text("Tender best return")
+                Text("Open best return")
                     .font(EType.bodyStrong)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 40)
@@ -508,12 +507,9 @@ private struct BackhaulBody_398: View {
             .accessibilityLabel("Tender the best return load")
 
             Button {
-                NotificationCenter.default.post(
-                    name: .eusoCatalystBackhaulRadius_398, object: nil,
-                    userInfo: ["source": "398_CatalystBackhaulOptimizer"]
-                )
+                Task { await reload() }
             } label: {
-                Text("Adjust radius")
+                Text("Refresh scan")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: .infinity, minHeight: 40)
@@ -522,7 +518,7 @@ private struct BackhaulBody_398: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Adjust search radius")
+            .accessibilityLabel("Refresh backhaul scan")
         }
     }
 
@@ -550,6 +546,7 @@ private struct BackhaulBody_398: View {
                     spec: "return for \(o.deliveryLoad) · candidate \(o.backhaulLoad)",
                     equipment: .unknown,
                     savings: money_398(o.estimatedSavings),
+                    backhaulLoadId: o.backhaulLoadId,
                     backhaulLoadNumber: o.backhaulLoad
                 )
             }
@@ -572,6 +569,23 @@ private struct BackhaulBody_398: View {
             vm = .empty
             loadError = "Couldn't reach the backhaul optimizer - retry."
         }
+    }
+
+    private func openTender(_ match: BackhaulMatch_398) {
+        actionError = nil
+        guard let id = match.backhaulLoadId, !id.isEmpty else {
+            actionError = "This optimizer result did not include a load id. Refresh the scan and try again."
+            return
+        }
+        selectedTender = TenderSheet_398(id: id)
+    }
+
+    private func openBestTender() {
+        guard let best = vm.matches.first else {
+            actionError = "No return candidates are available right now."
+            return
+        }
+        openTender(best)
     }
 
     private func money_398(_ value: Double) -> String {

@@ -513,6 +513,12 @@ private struct RailYardAnalyticsBody: View {
         .padding(Space.s4)
     }
 
+    /// Whole-dollar currency for the accrued-charge summary lines.
+    private func money(_ v: Double) -> String {
+        let f = NumberFormatter(); f.numberStyle = .currency; f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
+    }
+
     /// Rail-vocabulary titles for the reason buckets the demurrage engine
     /// reports. Preserves yard/interchange/chassis/crew grammar.
     private func reasonTitle(_ raw: String?) -> String {
@@ -539,11 +545,31 @@ private struct RailYardAnalyticsBody: View {
 
     // MARK: - Action row (Export report · Range)
 
+    private var reportReviewLines: [String] {
+        var lines = [
+            "Range: \(range.label)",
+            "Gate entries: \(agg?.totalGateEntries.map(String.init) ?? "-")",
+            "Gate exits: \(agg?.totalGateExits.map(String.init) ?? "-")",
+            "Yard moves: \(agg?.totalYardMoves.map(String.init) ?? "-")",
+            "Avg dwell: \(agg?.avgDwellTimeMinutes.map { "\($0)m" } ?? "-")",
+            "Active detention: \(detention?.activeDetentions.map(String.init) ?? "-")",
+            "Accrued detention: \(detention?.totalAccruedCharges.map { money($0) } ?? "-")"
+        ]
+        for reason in reasons.prefix(4) {
+            lines.append("\(reasonTitle(reason.reason)): \(reason.count ?? 0) rows, \(money(reason.totalCharges ?? 0))")
+        }
+        return lines
+    }
+
     private var actionRow: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Export report",
-                      action: { Task { await load() } },
-                      leadingIcon: "doc.text")
+            RailSecondaryActionButton(
+                title: "Report review",
+                sheetTitle: "Yard analytics report",
+                lines: reportReviewLines,
+                fillWidth: true,
+                systemImage: "doc.text.magnifyingglass"
+            )
             Button {
                 // Cycle the analytics window — same control the pills drive.
                 let all = Range.allCases

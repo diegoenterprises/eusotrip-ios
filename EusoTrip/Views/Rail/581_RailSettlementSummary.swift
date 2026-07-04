@@ -419,17 +419,26 @@ private struct RailSettlementSummaryBody: View {
                       action: { Task { await exportStatement() } },
                       leadingIcon: "plus",
                       isLoading: isExporting)
-            Button {} label: {
-                Text("Open AR")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Open AR",
+                sheetTitle: "Open accounts receivable",
+                lines: openARLines,
+                systemImage: "tray.full"
+            )
         }
+    }
+
+    private var openARLines: [String] {
+        var lines = [
+            "Gross \(grossLabel) · settled \(settledLabel) · open \(openLabel)",
+            "\(openCount) open invoice\(openCount == 1 ? "" : "s") · hold \(formatK(holdTotal))",
+            periodStatsLine1,
+            periodStatsLine2
+        ]
+        lines.append(contentsOf: settlements.filter { !["paid","settled"].contains(($0.status ?? "").lowercased()) }.prefix(6).map { s in
+            "\(s.shipmentNumber ?? "Shipment") · \(s.origin ?? "origin") → \(s.destination ?? "destination") · \(formatK(settlementAmount(s))) · \(s.status ?? "open")"
+        })
+        return lines
     }
 
     // MARK: - Load / Actions

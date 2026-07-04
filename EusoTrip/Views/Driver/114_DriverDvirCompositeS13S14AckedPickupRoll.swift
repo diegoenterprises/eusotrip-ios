@@ -430,8 +430,19 @@ private struct DVCBody: View {
             struct AckOut: Decodable { let success: Bool?; let allAcked: Bool? }
             let ackedKeys = [s13Acked ? "S13" : nil, s14Acked ? "S14" : nil].compactMap { $0 }
             if !ackedKeys.isEmpty {
-                let _: AckOut? = try? await EusoTripAPI.shared.mutation(
-                    "dvir.acknowledgeComposite", input: AckIn(id: id, sectionKeys: ackedKeys))
+                do {
+                    let ack: AckOut = try await EusoTripAPI.shared.mutation(
+                        "dvir.acknowledgeComposite",
+                        input: AckIn(id: id, sectionKeys: ackedKeys)
+                    )
+                    guard ack.success != false, ack.allAcked != false else {
+                        actionError = "The final DVIR acknowledgements did not persist. Review S13 and S14, then try again."
+                        return
+                    }
+                } catch {
+                    actionError = "The final DVIR acknowledgements did not persist. Check signal and try again."
+                    return
+                }
             }
             do {
                 let resp: Out = try await EusoTripAPI.shared.mutation("dvir.submit", input: In(id: id))

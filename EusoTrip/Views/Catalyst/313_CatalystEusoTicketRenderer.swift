@@ -80,15 +80,17 @@ private enum CatalystDocType: String, CaseIterable, Hashable, Identifiable {
 struct CatalystEusoTicketRendererScreen: View {
     let theme: Theme.Palette
     let loadId: String
+    let initialDoc: String
 
-    init(theme: Theme.Palette, loadId: String = "0") {
+    init(theme: Theme.Palette, loadId: String = "0", initialDoc: String = "BOL") {
         self.theme = theme
         self.loadId = loadId
+        self.initialDoc = initialDoc
     }
 
     var body: some View {
         Shell(theme: theme) {
-            CatalystEusoTicketRenderer(loadId: loadId)
+            CatalystEusoTicketRenderer(loadId: loadId, initialDoc: initialDoc)
         } nav: {
             BottomNav(
                 leading: catalystNavLeading_313(),
@@ -136,6 +138,11 @@ private struct CatalystEusoTicketRenderer: View {
 
     /// Honest no-source token — em-dash everywhere a field is absent.
     private let dash = "—"
+
+    init(loadId: String, initialDoc: String = "BOL") {
+        self.loadId = loadId
+        _selectedDoc = State(initialValue: CatalystDocType(rawValue: initialDoc) ?? .bol)
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {

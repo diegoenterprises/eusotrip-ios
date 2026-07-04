@@ -442,24 +442,54 @@ private struct RailFleetHealthBody: View {
 
     // MARK: CTA pair
 
+    private var maintenanceAlertLines: [String] {
+        var lines = [
+            "Rail ID: \(railId)",
+            "Availability: \(summary?.availabilityPct.map { String(format: "%.0f%%", $0) } ?? "-")",
+            "Healthy: \(summary?.healthyCount ?? 0)",
+            "Watch: \(summary?.watchCount ?? 0)",
+            "Down: \(summary?.downCount ?? 0)",
+            "Open work orders: \(summary?.openWorkOrders ?? predictions?.openWorkOrders ?? 0)"
+        ]
+        for asset in assetClasses.prefix(3) {
+            let alerts = asset.maintenanceAlerts ?? []
+            lines.append("\(asset.railcarNumber ?? "-"): \(asset.overallCondition ?? "-") - \(alerts.count) alerts")
+            for alert in alerts.prefix(1) {
+                lines.append("Alert: \(alert.severity ?? "-") \(alert.description ?? alert.component ?? "-")")
+            }
+        }
+        return lines
+    }
+
+    private var fleetLines: [String] {
+        var lines = [
+            "Fleet status: \(summary?.fleetStatus ?? "-")",
+            "Pool size: \(summary?.poolSize ?? 0)",
+            "Prediction flags: \(predictions?.flagCount ?? 0)",
+            "Worst flag: \(predictions?.worstFlagDescription ?? "-")"
+        ]
+        for asset in assetClasses.prefix(5) {
+            lines.append("\(asset.railcarNumber ?? "-") - \(asset.mechanicalCondition ?? asset.overallCondition ?? "-")")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(
+            RailSecondaryActionButton(
                 title: "Maintenance alerts",
-                action: {},
-                leadingIcon: "plus",
-                isLoading: false
+                sheetTitle: "Fleet maintenance alerts",
+                lines: maintenanceAlertLines,
+                fillWidth: true,
+                systemImage: "wrench.and.screwdriver"
             )
-            Button("Fleet") {}
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(palette.textPrimary)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(palette.bgCard)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).stroke(Color.black.opacity(0.10), lineWidth: 1))
-                )
+            RailSecondaryActionButton(
+                title: "Fleet",
+                sheetTitle: "Fleet health roster",
+                lines: fleetLines,
+                fillWidth: true,
+                systemImage: "tram"
+            )
         }
     }
 

@@ -19,6 +19,7 @@ struct InTransitExceptionScreen: View {
 
 private struct ExceptionBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let live: ShipperAPI.LifecycleSnapshot
     let loadId: String
 
@@ -93,7 +94,7 @@ private struct ExceptionBody: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }.buttonStyle(.plain)
             Button {
-                if let p = live.driver?.phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") { UIApplication.shared.open(url) }
+                if let p = live.driver?.phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") { openURL(url) }
             } label: {
                 Image(systemName: "phone.fill").font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)
                     .frame(width: 44, height: 44).background(palette.bgCard)

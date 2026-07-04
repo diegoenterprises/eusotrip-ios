@@ -419,24 +419,36 @@ private struct RailFinancialSummaryBody: View {
 
     // MARK: - CTA pair (Approve payout · Bill detail)
 
+    private var billDetailLines: [String] {
+        var lines = [
+            "Dashboard revenue: \(stats?.revenue.map { money($0) } ?? "-")",
+            "Active shipments: \(stats?.activeShipments.map(String.init) ?? "-")",
+            "Cars in transit: \(stats?.carsInTransit.map(String.init) ?? "-")",
+            "Average transit: \(stats?.avgTransitDays.map { String(format: "%.1f days", $0) } ?? "-")",
+            "P&L endpoint: \(summaryAvailable ? "served" : "not served")"
+        ]
+        if let summary {
+            lines.append("Cycle: \(summary.cycle ?? "-")")
+            lines.append("Net cleared: \(summary.netCleared.map { money($0) } ?? "-")")
+            lines.append("Held bills: \(summary.heldBills ?? 0)")
+            lines.append("Dispute hold: \(summary.dispute.map { money($0) } ?? "-")")
+            lines.append("Payee: \(summary.payee ?? "-")")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Approve payout",
                       action: { Task { await approvePayout() } },
                       isLoading: approving)
                 .frame(maxWidth: .infinity)
-            Button(action: {}) {
-                Text("Bill detail")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(palette.bgSecondary)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderSoft, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "Bill detail",
+                sheetTitle: "Rail financial bill detail",
+                lines: billDetailLines,
+                systemImage: "doc.text.magnifyingglass"
+            )
         }
     }
 

@@ -15,6 +15,7 @@ struct AccountSuspendedScreen: View {
 
 private struct SuspendedBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let reason: String
 
     var body: some View {
@@ -30,7 +31,7 @@ private struct SuspendedBody: View {
             }
             .padding(.horizontal, 14)
             Spacer()
-            Button { if let u = URL(string: "mailto:support@eusotrip.com") { UIApplication.shared.open(u) } } label: {
+            Button { if let u = URL(string: "mailto:support@eusotrip.com") { openURL(u) } } label: {
                 Text("Email support").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                     .padding(.horizontal, 24).padding(.vertical, 12)
                     .background(LinearGradient.diagonal)

@@ -444,21 +444,44 @@ private struct RailETAPredictionBody: View {
 
     // MARK: - CTA row (Share ETA · Timeline)
 
+    private var etaShareLines: [String] {
+        var lines = [
+            "Shipment: \(shipmentRef)",
+            "Intermodal number: \(detail?.intermodalNumber ?? "-")",
+            "Status: \(detail?.status ?? "-")",
+            "Origin: \(detail?.originDescription ?? "-")",
+            "Destination: \(detail?.destinationDescription ?? "-")",
+            "Current mode: \(tracking?.currentMode ?? "-")",
+            "Active segment: \(activeSegmentId.map(String.init) ?? "-")"
+        ]
+        for segment in segments.prefix(5) {
+            lines.append("\(legName(segment)): \(legClock(segment)) - \(segment.status ?? "-")")
+        }
+        return lines
+    }
+
+    private var timelineLines: [String] {
+        segments.map { segment in
+            let state: SegmentState = segment.id == activeSegmentId ? .live : .upcoming
+            return "\(legName(segment)): \(legSubtitle(segment, state: state))"
+        }
+    }
+
     private var ctaRow: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Share ETA", action: { /* portal.createShareToken — UNVERIFIED on router; no-op until wired */ })
-            Button(action: { /* navigates to 565 Container Timeline via nav controller */ }) {
-                Text("Timeline")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: 148)
+            RailSecondaryActionButton(
+                title: "ETA review",
+                sheetTitle: "Shareable ETA context",
+                lines: etaShareLines,
+                fillWidth: true,
+                systemImage: "square.and.arrow.up"
+            )
+            RailSecondaryActionButton(
+                title: "Timeline",
+                sheetTitle: "Intermodal timeline",
+                lines: timelineLines,
+                systemImage: "timeline.selection"
+            )
         }
     }
 

@@ -15,6 +15,7 @@ struct ForceUpdateScreen: View {
 
 private struct ForceUpdateBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let minVersion: String
 
     private var installed: String { Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-" }
@@ -33,7 +34,7 @@ private struct ForceUpdateBody: View {
             .padding(.horizontal, 14)
             Spacer()
             Button {
-                if let u = URL(string: "itms-apps://itunes.apple.com/app/id6448492283") { UIApplication.shared.open(u) }
+                if let u = URL(string: "itms-apps://itunes.apple.com/app/id6448492283") { openURL(u) }
             } label: {
                 Text("Open App Store").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                     .padding(.horizontal, 24).padding(.vertical, 12)

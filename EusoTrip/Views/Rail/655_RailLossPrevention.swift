@@ -435,22 +435,52 @@ private struct RailLossPreventionBody: View {
 
     // MARK: - CTA pair
 
+    private var actionReviewLines: [String] {
+        var lines = [
+            "Total losses: \(dashboard?.metrics?.totalLosses ?? 0)",
+            "Loss value: \(currencyFull(lossValue))",
+            "Prevented losses: \(dashboard?.metrics?.preventedLosses ?? 0)",
+            "Prevention savings: \(currencyFull(dashboard?.metrics?.preventionSavings ?? 0))",
+            "Trend: \(trendDirection)"
+        ]
+        for alert in (dashboard?.alerts ?? []).prefix(3) {
+            lines.append("\(alert.severity ?? "alert"): \(alert.message ?? "-") \(alert.lane ?? "")")
+        }
+        for rec in (analysis?.recommendations ?? []).prefix(3) {
+            lines.append("Recommendation: \(rec)")
+        }
+        return lines
+    }
+
+    private var analysisLines: [String] {
+        var lines = [
+            "Group by: \(analysis?.groupBy ?? "lane")",
+            "Period: \(analysis?.period ?? "year")",
+            "Hotspots: \(analysis?.data?.count ?? 0)",
+            "Loss ratio: \(String(format: "%.1f%%", lossRatioPct))"
+        ]
+        for row in (analysis?.data ?? []).prefix(4) {
+            lines.append("\(row.group): \(row.claimCount ?? 0) claims, \(currencyFull(row.totalValue ?? 0)), \(row.trend ?? "-")")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "View actions", action: {})
+            RailSecondaryActionButton(
+                title: "Action review",
+                sheetTitle: "Loss-prevention actions",
+                lines: actionReviewLines,
+                fillWidth: true,
+                systemImage: "shield.checkered"
+            )
                 .frame(maxWidth: .infinity)
-            Button(action: {}) {
-                Text("Analysis")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(palette.bgSecondary)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "Analysis",
+                sheetTitle: "Loss-prevention analysis",
+                lines: analysisLines,
+                systemImage: "chart.xyaxis.line"
+            )
         }
     }
 
