@@ -2119,6 +2119,7 @@ enum ScreenRegistry {
             .init(id: "Rail567", title: "Rail Engineer · Chain of Custody", role: .railEngineer) { p in AnyView(RailChainOfCustodyScreen(theme: p, loadId: "0")) },
             .init(id: "Rail606", title: "Rail Engineer · Cargo Insurance", role: .railEngineer) { p in AnyView(RailCargoInsuranceScreen(theme: p)) },
             .init(id: "Rail608", title: "Rail Engineer · Demurrage Alerts", role: .railEngineer) { p in AnyView(RailDemurrageAlertsScreen(theme: p)) },
+            .init(id: "Rail613", title: "Rail Engineer · Gate Activity Log", role: .railEngineer) { p in AnyView(RailGateActivityLogScreen(theme: p)) },
             .init(id: "Rail656", title: "Rail Engineer · Claim Payments", role: .railEngineer) { p in AnyView(RailClaimPaymentsScreen(theme: p)) },
             .init(id: "Rail669", title: "Rail Engineer · Overcharge Recovery", role: .railEngineer) { p in AnyView(RailOverchargeRecoveryScreen(theme: p)) },
             .init(id: "Rail670", title: "Rail Engineer · Shortage Claims", role: .railEngineer) { p in AnyView(RailShortageClaimsScreen(theme: p)) },
