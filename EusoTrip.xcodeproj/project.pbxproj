@@ -998,6 +998,7 @@
 		VDC82026060200000011A1 /* 815_VesselDemurrageChargeApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = VDC82026060200000012A1 /* 815_VesselDemurrageChargeApproval.swift */; };
 		VDL72026060200000011A1 /* 757_VesselDetentionLetters.swift in Sources */ = {isa = PBXBuildFile; fileRef = VDL72026060200000012A1 /* 757_VesselDetentionLetters.swift */; };
 		RCI62026060200000011A1 /* 606_RailCargoInsurance.swift in Sources */ = {isa = PBXBuildFile; fileRef = RCI62026060200000012A1 /* 606_RailCargoInsurance.swift */; };
+		RDA20260804608BUILD01A1 /* 608_RailDemurrageAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = RDA20260804608FREF001A1 /* 608_RailDemurrageAlerts.swift */; };
 		LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */; };
 		MMCO2026051700000011A1 /* MultiModalCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = MMCO2026051700000012A1 /* MultiModalCore.swift */; };
 		MSGS00010CE0FF10000011A1 /* MessagesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */; };
@@ -2078,6 +2079,7 @@
 		VDC82026060200000012A1 /* 815_VesselDemurrageChargeApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 815_VesselDemurrageChargeApproval.swift; path = EusoTrip/Views/Vessel/815_VesselDemurrageChargeApproval.swift; sourceTree = SOURCE_ROOT; };
 		VDL72026060200000012A1 /* 757_VesselDetentionLetters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 757_VesselDetentionLetters.swift; path = EusoTrip/Views/Vessel/757_VesselDetentionLetters.swift; sourceTree = SOURCE_ROOT; };
 		RCI62026060200000012A1 /* 606_RailCargoInsurance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 606_RailCargoInsurance.swift; path = EusoTrip/Views/Rail/606_RailCargoInsurance.swift; sourceTree = SOURCE_ROOT; };
+		RDA20260804608FREF001A1 /* 608_RailDemurrageAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 608_RailDemurrageAlerts.swift; path = EusoTrip/Views/Rail/608_RailDemurrageAlerts.swift; sourceTree = SOURCE_ROOT; };
 		LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingTrustBadge.swift; sourceTree = "<group>"; };
 		MMCO2026051700000012A1 /* MultiModalCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MultiModalCore.swift; path = EusoTrip/Models/Multimodal/MultiModalCore.swift; sourceTree = SOURCE_ROOT; };
 		MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagesScreen.swift; sourceTree = "<group>"; };
@@ -3037,6 +3039,7 @@
 				VDC82026060200000012A1 /* 815_VesselDemurrageChargeApproval.swift */,
 				VDL72026060200000012A1 /* 757_VesselDetentionLetters.swift */,
 				RCI62026060200000012A1 /* 606_RailCargoInsurance.swift */,
+				RDA20260804608FREF001A1 /* 608_RailDemurrageAlerts.swift */,
 				PKMV2026051900000012A1 /* PasskeysManagementView.swift */,
 				AABT2026051900000012A1 /* AppleAuthButtons.swift */,
 				AAPR2026051900000012A1 /* AppleAuthProvider.swift */,
@@ -3898,6 +3901,7 @@
 				VDC82026060200000011A1 /* 815_VesselDemurrageChargeApproval.swift in Sources */,
 				VDL72026060200000011A1 /* 757_VesselDetentionLetters.swift in Sources */,
 				RCI62026060200000011A1 /* 606_RailCargoInsurance.swift in Sources */,
+				RDA20260804608BUILD01A1 /* 608_RailDemurrageAlerts.swift in Sources */,
 				PKMV2026051900000011A1 /* PasskeysManagementView.swift in Sources */,
 				AABT2026051900000011A1 /* AppleAuthButtons.swift in Sources */,
 				AAPR2026051900000011A1 /* AppleAuthProvider.swift in Sources */,
