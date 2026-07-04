@@ -1001,6 +1001,7 @@
 		RDA20260804608BUILD01A1 /* 608_RailDemurrageAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = RDA20260804608FREF001A1 /* 608_RailDemurrageAlerts.swift */; };
 		RGA20260804613BUILD01A1 /* 613_RailGateActivityLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = RGA20260804613FREF001A1 /* 613_RailGateActivityLog.swift */; };
 		RTI20260804612BUILD01A1 /* 612_RailTransloadInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = RTI20260804612FREF001A1 /* 612_RailTransloadInventory.swift */; };
+		RBO20260804699BUILD01A1 /* 699_RailBadOrderMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = RBO20260804699FREF001A1 /* 699_RailBadOrderMonitor.swift */; };
 		LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */ = {isa = PBXBuildFile; fileRef = LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */; };
 		MMCO2026051700000011A1 /* MultiModalCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = MMCO2026051700000012A1 /* MultiModalCore.swift */; };
 		MSGS00010CE0FF10000011A1 /* MessagesScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */; };
@@ -2084,6 +2085,7 @@
 		RDA20260804608FREF001A1 /* 608_RailDemurrageAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 608_RailDemurrageAlerts.swift; path = EusoTrip/Views/Rail/608_RailDemurrageAlerts.swift; sourceTree = SOURCE_ROOT; };
 		RGA20260804613FREF001A1 /* 613_RailGateActivityLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 613_RailGateActivityLog.swift; path = EusoTrip/Views/Rail/613_RailGateActivityLog.swift; sourceTree = SOURCE_ROOT; };
 		RTI20260804612FREF001A1 /* 612_RailTransloadInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 612_RailTransloadInventory.swift; path = EusoTrip/Views/Rail/612_RailTransloadInventory.swift; sourceTree = SOURCE_ROOT; };
+		RBO20260804699FREF001A1 /* 699_RailBadOrderMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 699_RailBadOrderMonitor.swift; path = EusoTrip/Views/Rail/699_RailBadOrderMonitor.swift; sourceTree = SOURCE_ROOT; };
 		LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListingTrustBadge.swift; sourceTree = "<group>"; };
 		MMCO2026051700000012A1 /* MultiModalCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MultiModalCore.swift; path = EusoTrip/Models/Multimodal/MultiModalCore.swift; sourceTree = SOURCE_ROOT; };
 		MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagesScreen.swift; sourceTree = "<group>"; };
@@ -3046,6 +3048,7 @@
 				RDA20260804608FREF001A1 /* 608_RailDemurrageAlerts.swift */,
 				RGA20260804613FREF001A1 /* 613_RailGateActivityLog.swift */,
 				RTI20260804612FREF001A1 /* 612_RailTransloadInventory.swift */,
+				RBO20260804699FREF001A1 /* 699_RailBadOrderMonitor.swift */,
 				PKMV2026051900000012A1 /* PasskeysManagementView.swift */,
 				AABT2026051900000012A1 /* AppleAuthButtons.swift */,
 				AAPR2026051900000012A1 /* AppleAuthProvider.swift */,
@@ -3910,6 +3913,7 @@
 				RDA20260804608BUILD01A1 /* 608_RailDemurrageAlerts.swift in Sources */,
 				RGA20260804613BUILD01A1 /* 613_RailGateActivityLog.swift in Sources */,
 				RTI20260804612BUILD01A1 /* 612_RailTransloadInventory.swift in Sources */,
+				RBO20260804699BUILD01A1 /* 699_RailBadOrderMonitor.swift in Sources */,
 				PKMV2026051900000011A1 /* PasskeysManagementView.swift in Sources */,
 				AABT2026051900000011A1 /* AppleAuthButtons.swift in Sources */,
 				AAPR2026051900000011A1 /* AppleAuthProvider.swift in Sources */,

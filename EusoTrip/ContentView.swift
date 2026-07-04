@@ -2121,6 +2121,7 @@ enum ScreenRegistry {
             .init(id: "Rail608", title: "Rail Engineer · Demurrage Alerts", role: .railEngineer) { p in AnyView(RailDemurrageAlertsScreen(theme: p)) },
             .init(id: "Rail613", title: "Rail Engineer · Gate Activity Log", role: .railEngineer) { p in AnyView(RailGateActivityLogScreen(theme: p)) },
             .init(id: "Rail612", title: "Rail Engineer · Transload Inventory", role: .railEngineer) { p in AnyView(RailTransloadInventoryScreen(theme: p)) },
+            .init(id: "Rail699", title: "Rail Engineer · Bad-Order Handoff", role: .railEngineer) { p in AnyView(RailBadOrderMonitorScreen(theme: p)) },
             .init(id: "Rail656", title: "Rail Engineer · Claim Payments", role: .railEngineer) { p in AnyView(RailClaimPaymentsScreen(theme: p)) },
             .init(id: "Rail669", title: "Rail Engineer · Overcharge Recovery", role: .railEngineer) { p in AnyView(RailOverchargeRecoveryScreen(theme: p)) },
             .init(id: "Rail670", title: "Rail Engineer · Shortage Claims", role: .railEngineer) { p in AnyView(RailShortageClaimsScreen(theme: p)) },
