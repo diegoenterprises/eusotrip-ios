@@ -783,7 +783,7 @@ private struct RailRouteWeatherBody: View {
                 Text("\(impactedCount) active shipment\(impactedCount == 1 ? "" : "s") impacted")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("getImpactedLoads · \(rerouteCount) reroute candidate\(rerouteCount == 1 ? "" : "s")")
+                Text("Impacted loads · \(rerouteCount) reroute candidate\(rerouteCount == 1 ? "" : "s")")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
             }

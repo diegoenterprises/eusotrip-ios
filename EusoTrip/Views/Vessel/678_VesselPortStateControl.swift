@@ -168,10 +168,21 @@ private struct VesselPortStateControlBody: View {
                             Text(err).font(EType.caption).foregroundStyle(Brand.danger)
                         }
                     } else {
+                        // COUNTRY-DONE (678): PSC inspection regime by flag-state
+                        // authority. US active (vessel-native reads); CA/MX standby
+                        // until vessel.getPscRegime lands (named gap).
+                        CountrySegment(chips: [
+                            .init(code: "US · USCG", instrument: "QUALSHIP 21", active: true),
+                            .init(code: "CA · TC", instrument: "PARIS + TOKYO MOU", active: false),
+                            .init(code: "MX · SEMAR", instrument: "VIÑA DEL MAR", active: false)])
                         examHero
                         kpiStrip
                         deficiencySection
                         esangAdvisory
+                        TriCountryAuthorityBand(title: "TRI-COUNTRY PSC · INSPECTION REGIME", regimes: [
+                            .init(code: "US", authority: "USCG · QUALSHIP 21", detail: "own regime · 33 CFR · USD", consequence: "detain risk", state: .active),
+                            .init(code: "CA", authority: "Transport Canada · Paris+Tokyo MOU", detail: "Canada Shipping Act 2001 · CAD", consequence: nil, state: .standby),
+                            .init(code: "MX", authority: "SEMAR · Viña del Mar (ROCRAM)", detail: "Acuerdo Latinoamericano · MXN", consequence: nil, state: .standby)])
                         ctaPair
                     }
                     Color.clear.frame(height: 96)
@@ -344,7 +355,7 @@ private struct VesselPortStateControlBody: View {
 
     private var deficiencySection: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            Text("DEFICIENCIES · getVesselCompliance")
+            Text("DEFICIENCIES · compliance record")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
 
@@ -421,7 +432,7 @@ private struct VesselPortStateControlBody: View {
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("estimateVesselClearanceTime · ~4h added if unresolved")
+                Text("Clearance estimate · ~4h added if unresolved")
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(palette.textSecondary)
             }

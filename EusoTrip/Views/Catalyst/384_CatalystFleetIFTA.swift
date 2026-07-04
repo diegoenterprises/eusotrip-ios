@@ -476,7 +476,7 @@ struct CatalystFleetIFTA: View {
         VStack(spacing: Space.s2) {
             Text("Couldn't load IFTA")
                 .font(EType.title).foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption).foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
             Button { Task { await store.refresh() } } label: {

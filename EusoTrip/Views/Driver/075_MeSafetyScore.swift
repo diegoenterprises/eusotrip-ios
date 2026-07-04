@@ -116,13 +116,12 @@ struct MeSafetyScore: View {
         .task { await seedAndRefresh() }
         .refreshable { await seedAndRefresh() }
         .onChange(of: session.user?.id) { _, newId in
-            store.driverId = newId ?? ""
+            guard newId != nil else { return }
             Task { await store.refresh() }
         }
     }
 
     private func seedAndRefresh() async {
-        store.driverId = session.user?.id ?? ""
         await store.refresh()
     }
 
@@ -181,7 +180,7 @@ struct MeSafetyScore: View {
             Text("Can't load safety score")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)

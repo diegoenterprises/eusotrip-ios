@@ -1095,9 +1095,9 @@ struct ActiveEnrouteScreen: View {
 // MARK: - Weather hazard reroute banner (the symbiotic-weather loop)
 //
 // Closes the loop the weather program opened: calls hereMaps.weatherReroute
-// (real active Severe/Extreme NWS hazard polygons near the corridor → HERE
+// (live HERE Destination Weather alerts sampled along the corridor → HERE
 // avoid[areas] → a truck route AROUND them, with REAL baseline-vs-avoided
-// miles). Honest rendering — it shows ONLY real signal:
+// miles when HERE can produce a detour). Honest rendering shows ONLY real signal:
 //   • a reroute card when a detour actually avoids an ON-ROAD hazard,
 //   • an advisory when hazards are near the corridor but NOT on the road,
 //   • nothing at all when the road is clear.
@@ -1108,6 +1108,7 @@ struct WeatherRerouteBanner: View {
 
     @Environment(\.palette) private var palette
     @State private var result: HereMapsAPI.WeatherRerouteResult?
+    @State private var errorText: String?
     @State private var loaded = false
 
     var body: some View {
@@ -1125,12 +1126,23 @@ struct WeatherRerouteBanner: View {
                          footer: "None on your road — monitoring live")
                 }
                 // r.hazardCount == 0 → clear road → render nothing.
+            } else if let errorText {
+                card(icon: "wifi.exclamationmark", tint: Brand.warning,
+                     title: "Route weather unavailable",
+                     detail: errorText,
+                     footer: "Live monitor paused")
             }
         }
         .task {
             guard !loaded else { return }
             loaded = true
-            result = try? await EusoTripAPI.shared.hereMaps.weatherReroute(origin: origin, destination: destination)
+            do {
+                result = try await EusoTripAPI.shared.hereMaps.weatherReroute(origin: origin, destination: destination)
+                errorText = nil
+            } catch {
+                result = nil
+                errorText = weatherError(error)
+            }
         }
     }
 
@@ -1140,6 +1152,11 @@ struct WeatherRerouteBanner: View {
             return [h.event, h.severity].compactMap { $0 }.joined(separator: " · ")
         }
         return "Active hazard near the corridor"
+    }
+
+    private func weatherError(_ error: Error) -> String {
+        let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty ? "Couldn’t reach the live route-weather monitor." : message
     }
 
     private func card(icon: String, tint: Color, title: String, detail: String, footer: String) -> some View {

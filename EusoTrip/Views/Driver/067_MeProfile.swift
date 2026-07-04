@@ -402,7 +402,7 @@ struct MeProfile: View {
             Text("Couldn't load this section")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)

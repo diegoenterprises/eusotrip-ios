@@ -384,7 +384,7 @@ private struct RailBorderCrossingETABody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("railShipments.ts:912")
+                Text("live crossing factors")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -497,7 +497,7 @@ private struct RailBorderCrossingETABody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("railShipments.ts:887")
+                Text("customs timing")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }

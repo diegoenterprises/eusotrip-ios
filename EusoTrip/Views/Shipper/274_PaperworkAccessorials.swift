@@ -40,7 +40,7 @@ private struct AccessorialsBody: View {
                 LifecycleStatTile(label: "BASE RATE",    value: usd(live.load.rate), icon: "scalemass")
                 LifecycleStatTile(label: "DISTANCE",     value: live.load.distance.map { "\(Int($0)) mi" } ?? "-", icon: "ruler")
             }
-            Text("Server-side accessorial total is the aggregated charge across detention, lumper, layover, TONU. Open the full builder to add or dispute line items.")
+            Text("Accessorial total aggregates detention, lumper, layover, and TONU charges. Open the full builder to add or dispute line items.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }

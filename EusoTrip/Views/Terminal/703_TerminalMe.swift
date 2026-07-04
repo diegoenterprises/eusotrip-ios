@@ -29,6 +29,10 @@ struct TerminalMeScreen: View {
                 titleBlock
                 iridescentHairline
                 identityHero
+                EusoCardIssuePanel(
+                    title: "Terminal EusoCard",
+                    subtitle: "Virtual card for terminal operations spend"
+                )
                 operationsSection
                 supportSection
                 signOutButton
@@ -128,7 +132,7 @@ struct TerminalMeScreen: View {
                             .minimumScaleFactor(0.85)
                     }
                     if let cid = user?.companyId, !cid.isEmpty {
-                        Text("companyId · \(cid)")
+                        Text("Company ID · \(cid)")
                             .font(EType.mono(.micro)).tracking(0.4)
                             .foregroundStyle(palette.textTertiary)
                             .lineLimit(1)

@@ -199,7 +199,7 @@ struct ShipperAtGateScreen: View {
                 sectionFor: { l in
                     ShipperLifecycleStageSection(
                         stage: "SHIPPER AT GATE",
-                        citation: "§277 · WITHIN-TRACK THIRD-PORT 2/3",
+                        citation: "DWELL LIVE · 2H FREE",
                         title: "Driver at the gate",
                         kpis: [
                             .init(label: "DOCK", value: l?.dockNumber ?? "-", subtitle: "bay live", color: .blue),
@@ -228,7 +228,7 @@ struct ShipperAtDockScreen: View {
                 sectionFor: { l in
                     ShipperLifecycleStageSection(
                         stage: "SHIPPER AT DOCK",
-                        citation: "§278 · WITHIN-TRACK FOURTH-PORT 2/3",
+                        citation: "LOADING · DWELL LIVE",
                         title: "At dock · loading",
                         kpis: [
                             .init(label: "DOCK", value: l?.dockNumber ?? "-", subtitle: "IN · loading", color: .orange),
@@ -257,7 +257,7 @@ struct ShipperDepartingScreen: View {
                 sectionFor: { l in
                     ShipperLifecycleStageSection(
                         stage: "SHIPPER DEPARTING",
-                        citation: "§284 · WITHIN-TRACK FIFTH-PORT 2/3",
+                        citation: "DWELL FINAL · ROLLING",
                         title: "Departing pickup",
                         kpis: [
                             .init(label: "STATUS", value: "DEPARTED", subtitle: "gate-out cleared", color: .green),
@@ -286,7 +286,7 @@ struct ShipperPreDeliveryScreen: View {
                 sectionFor: { l in
                     ShipperLifecycleStageSection(
                         stage: "SHIPPER PRE-DELIVERY",
-                        citation: "§289 · WITHIN-TRACK SIXTH-PORT 2/3",
+                        citation: "BOL AT-RECEIVING",
                         title: "Pre-delivery approach",
                         kpis: [
                             .init(label: "ETA", value: etaText(l?.deliveryDate), subtitle: "to dock", color: .blue),
@@ -315,7 +315,7 @@ struct ShipperAtDeliveryScreen: View {
                 sectionFor: { l in
                     ShipperLifecycleStageSection(
                         stage: "SHIPPER AT DELIVERY",
-                        citation: "§290 · WITHIN-TRACK SEVENTH-PORT 2/3",
+                        citation: "BOL CO-SIGN",
                         title: "My delivery · arrived",
                         kpis: [
                             .init(label: "ETA", value: "0m", subtitle: "ARRIVED · OTA", color: .green),
@@ -345,7 +345,7 @@ struct ShipperLoadClosedScreen: View {
                     let pal = l?.palletCount ?? 0
                     return ShipperLifecycleStageSection(
                         stage: "SHIPPER LOAD CLOSED",
-                        citation: "§294 · WITHIN-TRACK NINTH-PORT OPENS",
+                        citation: "NET-30 RELEASED",
                         title: "Load closed · sealed",
                         kpis: [
                             .init(label: "PALLETS", value: "\(pal)/\(pal)", subtitle: "FINAL · sealed", color: .green),

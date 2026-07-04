@@ -160,6 +160,12 @@ private struct VesselSettlementBody: View {
                     if let note = actionNote {
                         Text(note).font(EType.caption).foregroundStyle(palette.textSecondary)
                     }
+                    // COUNTRY-DONE (684 money band): settlement currency by
+                    // discharge port-charge regime. US active (live settlement
+                    // above); CA/MX standby until vessel.getSettlementRegime
+                    // lands (named gap).
+                    TriCountryAuthorityBand(title: "SETTLEMENT CURRENCY · DISCHARGE PORT-CHARGE REGIME",
+                                            regimes: VesselMoneyCountryDone.settlement)
                     ctaPair
                 } else {
                     EusoEmptyState(
@@ -344,7 +350,7 @@ private struct VesselSettlementBody: View {
     private var breakdownSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("BREAKDOWN · getVesselSettlement")
+                Text("BREAKDOWN · settlement lines")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

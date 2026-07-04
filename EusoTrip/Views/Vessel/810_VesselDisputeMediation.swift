@@ -80,7 +80,7 @@ private struct VesselDisputeMediationBody810: View {
 
     @State private var events: [MedEvent810] = [
         MedEvent810(date: "05-27", title: "Mediator assigned", sub: "SMA NY assigned panel of 3",       tag: "DONE",     state: .done),
-        MedEvent810(date: "06-05", title: "Vessel brief due",  sub: "submitMediationBrief · 9 exhibits", tag: "ACTIVE",   state: .active),
+        MedEvent810(date: "06-05", title: "Vessel brief due",  sub: "Mediation brief · 9 exhibits", tag: "ACTIVE",   state: .active),
         MedEvent810(date: "06-12", title: "Session 1 · panel", sub: "NY office + Zoom · all parties",    tag: "SCHED",    state: .scheduled),
         MedEvent810(date: "07-02", title: "Award expected",    sub: "binding · SMA-NY rules",            tag: "EXPECTED", state: .future)
     ]
@@ -100,7 +100,7 @@ private struct VesselDisputeMediationBody810: View {
                     RimCard810 { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     mediatorHero
-                    Text("MEDIATION TIMELINE · getDisputeMediation · \(events.count) EVENTS")
+                    Text("MEDIATION TIMELINE · \(events.count) EVENTS")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     timelineCard
                     esangCard

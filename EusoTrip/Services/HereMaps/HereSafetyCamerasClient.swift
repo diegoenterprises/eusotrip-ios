@@ -6,12 +6,11 @@
 //      GET https://browse.search.hereapi.com/v1/browse
 //      with categories=900-9300-0001 (Speed Camera / Safety Camera)
 //
-//  HERE surfaces safety cameras via the same Browse Places API
-//  used for EV + Parking. The dedicated Safety Cameras feed ships
-//  mobile-camera pings on top — those require the premium
-//  subscription. For fixed-camera coverage the Browse path is
-//  sufficient and is the one uniform auth/query shape the rest of
-//  this folder uses.
+//  HERE has not provisioned the Safety Cameras data product on this
+//  account yet. Browse category probes for 900-9300-0001 return an
+//  honest empty set on the live enterprise key, so this client keeps
+//  the stable query shape and lets the add-on layer fail soft rather
+//  than fabricating camera pins.
 //
 //  Required params:
 //      at=<lat>,<lng>  OR  in=corridor:<flexible-polyline>;w=<meters>

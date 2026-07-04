@@ -14,15 +14,14 @@
 //      input  → { claimId?, status?, limit, offset }
 //      output → { payments:[{id,claimId,claimNumber,amount,status,method,
 //                            scheduledDate,paidDate,reference}], total, totalPaid, totalPending }
-//    NOTE: payments[] is EMPTY today server-side (GAP to the-oath) — the recon list
-//          honestly renders its empty state; the hero binds to live total/totalPaid/totalPending.
-//    processClaimPayment (EXISTS:756, "Reconcile") · generateClaimReport (EXISTS:1301, "Export")
-//      → no client mutation wired here yet: both CTAs are STUB (re-run load() on return).
+//    processClaimPayment reconciles the next pending claim payout from the live ledger.
+//    generateClaimReport exports the selected claim as CSV from the server-side report generator.
 //
 //  NAV (REAL): HOME · SHIPMENTS · [orb] · COMPLIANCE(current) · ME
 //
 
 import SwiftUI
+import UIKit
 
 struct RailClaimPaymentsScreen: View {
     let theme: Theme.Palette
@@ -64,6 +63,35 @@ private struct ClaimPaymentsResp656: Decodable {
     let total: Double?
     let totalPaid: Double?
     let totalPending: Double?
+}
+
+private struct ProcessClaimPaymentInput656: Encodable {
+    let claimId: String
+    let amount: Double
+    let method: String
+    let reference: String?
+    let notes: String?
+}
+
+private struct ProcessClaimPaymentResp656: Decodable {
+    let success: Bool
+    let paymentId: String?
+    let status: String?
+}
+
+private struct ClaimReportInput656: Encodable {
+    let claimId: String
+    let format: String
+    let includeEvidence: Bool
+    let includeTimeline: Bool
+    let includeFinancials: Bool
+    let purpose: String
+}
+
+private struct ClaimReportResp656: Decodable {
+    let success: Bool
+    let filename: String?
+    let content: String?
 }
 
 // MARK: - Aging bar (decorative payables-aging visual)
@@ -226,11 +254,11 @@ private struct RailClaimPaymentsBody656: View {
     private var list: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("RECONCILE · getClaimPayments")
+                Text("RECONCILE · CLAIM PAYMENTS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("freightClaims.ts:728")
+                Text("settlement ledger")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -246,7 +274,7 @@ private struct RailClaimPaymentsBody656: View {
                             Divider().overlay(palette.borderFaint)
                         }
                     }
-                    Text("ties payouts to settlements.totalShipperCharge · per-diem basis")
+                    Text("ties payouts to the settlement's shipper charge · per-diem basis")
                         .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
                 }
@@ -292,14 +320,27 @@ private struct RailClaimPaymentsBody656: View {
         .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCardSoft))
     }
 
-    // MARK: - CTA row (both STUB — no client mutation wired yet)
+    private var nextPendingPayment: ClaimPayment656? {
+        payments.first { payment in
+            (payment.status ?? "").lowercased() == "pending" &&
+            !(payment.claimId ?? "").isEmpty &&
+            (payment.amount ?? 0) > 0
+        }
+    }
+
+    private var reportClaimId: String? {
+        payments.first { !($0.claimId ?? "").isEmpty }?.claimId
+    }
+
+    // MARK: - CTA row
 
     private var ctaRow: some View {
         HStack(spacing: Space.s2) {
-            // STUB: processClaimPayment (freightClaims.ts:756) — no client mutation wired; re-run load().
-            CTAButton(title: "Reconcile", action: { Task { await load() } })
+            CTAButton(title: "Reconcile", action: { Task { await reconcileNextPayment() } })
+                .disabled(nextPendingPayment == nil)
+                .opacity(nextPendingPayment == nil ? 0.45 : 1)
             Button {
-                // STUB: generateClaimReport (freightClaims.ts:1301) — no client export wired yet.
+                Task { await exportClaimReport() }
             } label: {
                 Text("Export")
                     .font(.system(size: 15, weight: .semibold))
@@ -310,6 +351,8 @@ private struct RailClaimPaymentsBody656: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
+            .disabled(reportClaimId == nil)
+            .opacity(reportClaimId == nil ? 0.45 : 1)
         }
     }
 
@@ -354,6 +397,56 @@ private struct RailClaimPaymentsBody656: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+
+    private func reconcileNextPayment() async {
+        guard let payment = nextPendingPayment,
+              let claimId = payment.claimId,
+              let amount = payment.amount
+        else {
+            await load()
+            return
+        }
+        do {
+            let _: ProcessClaimPaymentResp656 = try await EusoTripAPI.shared.mutation(
+                "freightClaims.processClaimPayment",
+                input: ProcessClaimPaymentInput656(
+                    claimId: claimId,
+                    amount: amount,
+                    method: "ach",
+                    reference: nil,
+                    notes: "Rail claim reconciliation release"
+                )
+            )
+            await load()
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func exportClaimReport() async {
+        guard let claimId = reportClaimId else {
+            await load()
+            return
+        }
+        do {
+            let report: ClaimReportResp656 = try await EusoTripAPI.shared.mutation(
+                "freightClaims.generateClaimReport",
+                input: ClaimReportInput656(
+                    claimId: claimId,
+                    format: "csv",
+                    includeEvidence: true,
+                    includeTimeline: true,
+                    includeFinancials: true,
+                    purpose: "internal"
+                )
+            )
+            if let content = report.content, !content.isEmpty {
+                UIPasteboard.general.string = content
+            }
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
     }
 }
 

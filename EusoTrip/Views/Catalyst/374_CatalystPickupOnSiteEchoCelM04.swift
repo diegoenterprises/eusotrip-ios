@@ -489,7 +489,7 @@ private struct CatalystPickupOnSiteEchoCelM04View: View {
         }
 
         // On-site check-in echo sub-rows
-        Text("FLEET-TRACKER ECHO · ON-SITE CHECK-IN · drivers.updateLoadStatus(at_pickup)")
+        Text("FLEET-TRACKER ECHO · ON-SITE CHECK-IN · driver marked at pickup")
             .font(.system(size: 8, weight: .heavy)).kerning(0.5).foregroundColor(.secondary)
         if vm.checkIns.isEmpty {
             // No catalyst-router check-in / event-log source — honest empty.

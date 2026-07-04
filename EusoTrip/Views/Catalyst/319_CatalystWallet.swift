@@ -80,9 +80,13 @@ private struct WalletBody: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
-                header
-                ownerOpSeamBanner
-                kpiStrip
+	                header
+	                ownerOpSeamBanner
+	                EusoCardIssuePanel(
+	                    title: "EusoCard",
+	                    subtitle: "Fleet spend card backed by EusoWallet Treasury"
+	                )
+	                kpiStrip
                 filterTabs
                 if loading && txns.isEmpty {
                     LifecycleCard { Text("Loading wallet…").font(EType.caption).foregroundStyle(palette.textSecondary) }
@@ -120,7 +124,7 @@ private struct WalletBody: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("OWNER-OP SEAM · CLEAN BOOKS")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text("Diego pays Eusotrans pays Michael · same companyId · zero days-to-pay")
+                Text("Diego pays Eusotrans pays Michael · same company · zero days-to-pay")
                     .font(EType.caption).foregroundStyle(palette.textPrimary)
             }
         }

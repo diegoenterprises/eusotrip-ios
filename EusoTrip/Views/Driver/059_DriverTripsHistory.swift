@@ -3,9 +3,8 @@
 //  EusoTrip 2027 UI — Wave 7 (driver · trips history)
 //
 //  Screen 059 · Driver Trips History — retrospective view of the
-//  driver's completed trips. Pulls `loads.search(status: "completed",
-//  limit: 30)` through `MyLoadsStore` (pre-existing store declared at
-//  ViewModels/LiveDataStores.swift L66) and renders the result with a
+//  driver's completed trips. Pulls `drivers.getAssignments(status:
+//  "completed", limit: 30)` through `DriverCompletedTripsStore` and renders the result with a
 //  small header summary (total trips, aggregate revenue) plus a
 //  reverse-chronological list of completed loads.
 //
@@ -14,7 +13,7 @@
 //
 //    • Every row — loadNumber, origin, destination, cargoType, rate,
 //      pickupDate — is rendered from the `LoadSummary` the server
-//      returns on `loads.search`. No hardcoded trip numbers, no seed
+//      returns on `drivers.getAssignments`. No hardcoded trip numbers, no seed
 //      third-party customer brand literals (the prior big-box DC /
 //      consignee / chemical-distributor fixtures were excised). The
 //      branded `EusoEmptyState` is what a freshly-provisioned driver
@@ -29,7 +28,7 @@
 //
 //    • CTAs route through the existing env surface — no dead buttons.
 //      "View full earnings" presents `MeEarnings068` (the canonical
-//      earnings sheet), "Refresh" hits `MyLoadsStore.refresh()` which
+//      earnings sheet), "Refresh" hits `DriverCompletedTripsStore.refresh()` which
 //      round-trips the server, "Open weekly plan" presents
 //      `DriverWeeklyPlan` so the driver can pivot from history →
 //      current week. There are no `.onTapGesture { }` placeholders.
@@ -76,8 +75,8 @@ struct DriverTripsHistory: View {
 
     @EnvironmentObject private var session: EusoTripSession
 
-    // MARK: Live store — pre-existing, declared at LiveDataStores.swift:66.
-    @StateObject private var loadsStore = MyLoadsStore()
+    // MARK: Live store — driver-scoped retrospective assignments.
+    @StateObject private var tripsStore = DriverCompletedTripsStore()
 
     // MARK: Local UI state
 
@@ -104,17 +103,10 @@ struct DriverTripsHistory: View {
             .padding(.bottom, Space.s8)
         }
         .refreshable {
-            await loadsStore.refresh()
+            await tripsStore.refresh()
         }
         .task {
-            // Pin the bucket to .finished — this screen is retrospective.
-            // didSet on MyLoadsStore.bucket drives the first refresh so we
-            // don't need a second explicit call here.
-            if loadsStore.bucket != .finished {
-                loadsStore.bucket = .finished
-            } else {
-                await loadsStore.refresh()
-            }
+            await tripsStore.refresh()
         }
         .sheet(isPresented: $showEarningsSheet) {
             MeEarnings068(theme: palette)
@@ -146,7 +138,7 @@ struct DriverTripsHistory: View {
                     .minimumScaleFactor(0.85)
             }
             Spacer()
-            if case .loaded(let items) = loadsStore.state, !items.isEmpty {
+            if case .loaded(let items) = tripsStore.state, !items.isEmpty {
                 Text("\(items.count)")
                     .font(.system(size: 28, weight: .semibold, design: .rounded))
                     .monospacedDigit()
@@ -163,7 +155,7 @@ struct DriverTripsHistory: View {
 
     @ViewBuilder
     private var statsCard: some View {
-        switch loadsStore.state {
+        switch tripsStore.state {
         case .loaded(let items) where !items.isEmpty:
             HStack(alignment: .top, spacing: Space.s4) {
                 statTile(
@@ -223,7 +215,7 @@ struct DriverTripsHistory: View {
                 .tracking(1.4)
                 .foregroundColor(palette.textSecondary)
 
-            switch loadsStore.state {
+            switch tripsStore.state {
             case .loading:
                 loadingPane
             case .empty:
@@ -265,7 +257,7 @@ struct DriverTripsHistory: View {
             title: "No completed trips yet",
             subtitle: "Once a load is marked delivered, it moves here with final pay, miles and cargo.",
             cta: (label: "Refresh", action: {
-                Task { await loadsStore.refresh() }
+                Task { await tripsStore.refresh() }
             })
         )
     }
@@ -274,9 +266,9 @@ struct DriverTripsHistory: View {
         EusoEmptyState(
             systemImage: "exclamationmark.triangle",
             title: "Couldn't load trip history",
-            subtitle: err.localizedDescription,
+            subtitle: err.eusoUserCopy,
             cta: (label: "Retry", action: {
-                Task { await loadsStore.refresh() }
+                Task { await tripsStore.refresh() }
             })
         )
     }
@@ -356,9 +348,8 @@ struct DriverTripsHistory: View {
     }
 
     private func statusColor(status: String) -> Color {
-        // The bucket is pinned to `.finished` so the server almost
-        // always returns `completed`. A `disputed` or `cancelled`
-        // completed-bucket row is surfaced with the canonical danger
+        // The server query is pinned to the completed status class.
+        // A `disputed` or `cancelled` completed-row exception is surfaced with the canonical danger
         // color; an unexpected status falls through to tertiary so we
         // never render a missing server label as green success.
         switch status.lowercased() {
@@ -378,7 +369,7 @@ struct DriverTripsHistory: View {
                 title: "Refresh trip history",
                 subtitle: "Pulls the latest completed loads from dispatch"
             ) {
-                Task { await loadsStore.refresh() }
+                Task { await tripsStore.refresh() }
             }
             Divider().background(palette.borderFaint)
             actionRow(
@@ -393,8 +384,7 @@ struct DriverTripsHistory: View {
             actionRow(
                 systemImage: "chart.bar.xaxis",
                 title: "View full earnings breakdown",
-                subtitle: "Period splits, top loads, tax summary",
-                disabled: !hasAnyTrips
+                subtitle: "Period splits, top loads, tax summary"
             ) {
                 showEarningsSheet = true
             }
@@ -449,13 +439,6 @@ struct DriverTripsHistory: View {
     }
 
     // MARK: - Derived
-
-    private var hasAnyTrips: Bool {
-        if case .loaded(let items) = loadsStore.state, !items.isEmpty {
-            return true
-        }
-        return false
-    }
 
     private func aggregateRevenue(_ items: [LoadSummary]) -> Double {
         items.reduce(into: 0.0) { $0 += $1.rate }

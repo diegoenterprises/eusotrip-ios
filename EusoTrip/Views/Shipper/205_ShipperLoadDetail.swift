@@ -2178,29 +2178,20 @@ struct ShipperLoadDetail: View {
         //     stop hiding real errors behind a generic schema hint.
         let raw: String
         if let api = error as? EusoTripAPIError {
-            raw = api.errorDescription ?? "Request failed."
+            raw = api.eusoUserCopy
         } else if let decode = error as? DecodingError {
-            // Log so the device console catches the gory details.
+            // Log so the device console catches the gory details —
+            // the shopper-facing copy stays in user terms.
             print("[ShipperLoadDetail] DecodingError on loads.getById: \(decode)")
-            switch decode {
-            case .keyNotFound(let key, _):
-                return "Server response is missing key \"\(key.stringValue)\". The deploy target's loads.getById response is older than this build."
-            case .typeMismatch(let type, let ctx):
-                return "Server returned \(type) where iOS expected something else (path: \(ctx.codingPath.map { $0.stringValue }.joined(separator: "."))). Server response shape doesn't match."
-            case .valueNotFound(let type, let ctx):
-                return "Server returned null for a required \(type) at \(ctx.codingPath.map { $0.stringValue }.joined(separator: "."))."
-            case .dataCorrupted(let ctx):
-                return "Couldn't parse server response: \(ctx.debugDescription)"
-            @unknown default:
-                return "Couldn't parse server response."
-            }
+            return "EusoTrip couldn't read this load's details — the data came back in a shape this version of the app doesn't expect. Your other loads are unaffected. Pull to refresh, and update the app if it keeps happening."
         } else {
-            raw = error.localizedDescription
+            raw = error.eusoUserCopy
         }
         let lower = raw.lowercased()
         // True MySQL schema-drift signal only.
         if lower.contains("unknown column") || lower.contains("er_bad_field") {
-            return "Server-side schema is out of sync, missing column on `loads`. Apply the latest migrations on the deploy target."
+            print("[ShipperLoadDetail] schema-drift error suppressed from UI: \(raw)")
+            return "EusoTrip couldn't read this load right now. Your other loads are unaffected — try again shortly."
         }
         // Emergency Wave I1 — SQL-shaped leak gate (iOS belt to S2's
         // server-side braces). Drizzle internals surface as
@@ -2217,11 +2208,11 @@ struct ShipperLoadDetail: View {
             || (lower.contains("select ") && lower.contains(" from "))
         if sqlShaped {
             print("[ShipperLoadDetail] SQL-shaped error suppressed from UI: \(raw)")
-            return "The server hit a database error reading this load — the deploy target is behind this build. Apply the latest migrations, then retry."
+            return "EusoTrip hit a data error reading this load. Your other loads are unaffected — try again shortly."
         }
         if lower.contains("network") || lower.contains("offline")
             || lower.contains("could not connect") {
-            return "We can't reach the server right now. Pull to refresh once you're back online."
+            return "EusoTrip can't be reached right now. Pull to refresh once you're back online."
         }
         // Log everything else to the device console for debugging.
         print("[ShipperLoadDetail] raw error on loads.getById: \(raw)")

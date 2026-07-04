@@ -1194,21 +1194,21 @@ struct DriverHome: View {
     // MARK: TopBar
 
     // Figma 212:444 / SVG 010 — bespoke eyebrow chip ("✦ DRIVER · DASHBOARD"
-    // gradient, GOOD-NIGHT · CITY tertiary on the right), then a two-line
+    // gradient, live status · CITY tertiary on the right), then a two-line
     // display greeting left, uppercase right-column label, chat round button
     // with magenta iridescent badge dot. The eyebrow is the SVG's defining
     // header motif (sparkle glyph used exactly once per surface, §4.3 budget).
     private var topBar: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             // Bespoke eyebrow row — gradient role chip + tertiary
-            // time-of-day · location, matching the Dark-SVG header and
+            // live status · location, matching the Dark-SVG header and
             // the Shipper-200 idiom so the role homes read as one family.
             HStack {
                 Text("✦ DRIVER · DASHBOARD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)
-                Text("\(timeOfDayGreeting.uppercased()) · \(vm.locationCity.uppercased())")
+                Text("\(driverHeaderSignal.uppercased()) · \(vm.locationCity.uppercased())")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1)
@@ -1294,6 +1294,15 @@ struct DriverHome: View {
         case 12..<17: return "Good afternoon"
         case 17..<22: return "Good evening"
         default:      return "Good night"
+        }
+    }
+
+    private var driverHeaderSignal: String {
+        switch vm.weatherAvailability {
+        case .live: return "Weather live"
+        case .needsLocation: return "Location needed"
+        case .pending: return "Syncing"
+        case .unavailable: return "Weather unavailable"
         }
     }
 
@@ -1616,7 +1625,7 @@ struct DriverHome: View {
                 HStack(spacing: Space.s2) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(Brand.warning)
-                    Text("Backend unavailable")
+                    Text("Connection unavailable")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                 }

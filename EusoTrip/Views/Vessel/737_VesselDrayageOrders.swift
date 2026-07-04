@@ -144,7 +144,7 @@ private struct VesselDrayageOrdersBody: View {
                                    subtitle: "getDrayageManagement returned no terminal-tagged moves. Nothing to dispatch, the board is clear.")
                 } else {
                     hero
-                    Text("DISPATCH BOARD · getDrayageManagement")
+                    Text("DISPATCH BOARD · drayage")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
                     ForEach(Array(laneCounts.enumerated()), id: \.offset) { _, pair in
@@ -259,7 +259,7 @@ private struct VesselDrayageOrdersBody: View {
 
     private var guardCard: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("DRAYAGE GUARD · createDrayageOrder").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary)
+            Text("DRAYAGE GUARD · new order").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary)
             Text("\(nDispatched) dispatched · \(nCompleted) completed · pier-pass 18:00–08:00 windows tracked")
                 .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
         }

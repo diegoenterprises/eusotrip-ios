@@ -338,7 +338,7 @@ private struct EusoTicketBolBody: View {
         let companyId = session.user?.companyId ?? ""
         let meta = companyId.isEmpty
             ? "EusoTrip shipper"
-            : "Eusorone Technologies · companyId \(companyId)"
+            : "Eusorone Technologies · Company ID \(companyId)"
         return EusoTicketParty(
             name: name,
             monogram: monogram(for: name),
@@ -355,7 +355,7 @@ private struct EusoTicketBolBody: View {
             // driver's company. Counterparty.role tells us who this
             // resolved to.
             let name = cp.companyName ?? cp.userName ?? "Carrier"
-            let meta = cp.companyId.map { "companyId \($0) · \(cp.role)" } ?? cp.role
+            let meta = cp.companyId.map { "Company ID \($0) · \(cp.role)" } ?? cp.role
             return EusoTicketParty(
                 name: name,
                 monogram: monogram(for: name),
@@ -396,10 +396,10 @@ private struct EusoTicketBolBody: View {
     }
 
     private var canvasBolNumber: String {
-        if let ln = load?.loadNumber, let dashRange = ln.range(of: "-", options: [.backwards]) {
-            return String(ln[dashRange.upperBound...])
+        if let ln = load?.loadNumber, !ln.isEmpty {
+            return "BOL-\(ln)"
         }
-        return load?.id ?? loadId
+        return "BOL-\(load?.id ?? loadId)"
     }
 
     private var footerForCanvas: EusoTicketFooter {

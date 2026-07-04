@@ -4,9 +4,9 @@
 //
 //  Endpoint:
 //      GET https://browse.search.hereapi.com/v1/browse
-//      with categories=800-8400-0141 (Parking Lot)
-//                     +800-8400-0135 (Parking Garage)
-//                     +400-4100-0199 (Truck Stop / Truck Parking)
+//      with categories=800-8500      (Parking family)
+//                     +700-7900-0131 (Truck & Trailer Parking)
+//                     +700-7900-0132 (Truck Stop / Plaza)
 //
 //  HERE exposes parking through the Browse Places API — on-street
 //  parking metering, off-street parking lots, and truck-specific

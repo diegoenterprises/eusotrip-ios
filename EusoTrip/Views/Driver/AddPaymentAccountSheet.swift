@@ -144,7 +144,7 @@ struct AddPaymentAccountSheet: View {
                 Text("Add a payment method")
                     .font(EType.h1)
                     .foregroundStyle(palette.textPrimary)
-                Text("Link a bank via Plaid or add a card via Stripe. Your credentials never touch EusoTrip's servers.")
+                Text("Link a bank via Plaid or add a card via Stripe. EusoTrip never stores your credentials.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .multilineTextAlignment(.center)
@@ -230,7 +230,7 @@ struct AddPaymentAccountSheet: View {
     }
 
     private var footnote: some View {
-        Text("Eusorone Technologies never stores your bank or card credentials. Plaid and Stripe are independently certified processors.")
+        Text("Eusorone Technologies never stores your bank or card credentials. Plaid and Stripe safeguard the connection.")
             .font(EType.micro).tracking(0.3)
             .foregroundStyle(palette.textTertiary)
             .multilineTextAlignment(.center)

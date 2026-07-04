@@ -409,7 +409,7 @@ private struct RailShipmentAmendmentBody: View {
                 Text(note)
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
-                Text("createRailWaybill regenerates · shipper notified")
+                Text("Waybill regenerates on amendment · shipper notified")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }

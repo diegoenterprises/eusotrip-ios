@@ -233,7 +233,7 @@ private struct RailTariffRateLookupBody: View {
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(palette.textSecondary)
                     }
-                    Text("getTariffRate · STB basis")
+                    Text("Tariff rate · STB basis")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 }

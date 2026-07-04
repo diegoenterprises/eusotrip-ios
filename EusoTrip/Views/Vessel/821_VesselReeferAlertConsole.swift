@@ -394,7 +394,7 @@ private struct VesselReeferAlertConsoleBody821: View {
             .background(palette.bgCardSoft)
             .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-            Text("Telemetry tick · ingestTelemetry reeferTemp.ts:265")
+            Text("Telemetry tick · reefer temperature stream")
                 .font(.system(size: 10)).foregroundStyle(palette.textTertiary)
         }
     }
@@ -469,7 +469,7 @@ private struct VesselReeferAlertConsoleBody821: View {
                 Text(openCount == 1 ? "1 open" : "\(openCount) open")
                     .font(EType.mono(.caption)).foregroundStyle(openCount > 0 ? Brand.warning : Brand.success)
             }
-            Text("acknowledgeAlert closes the loop · CET temp log signed · 21 CFR 1.908")
+            Text("Acknowledging closes the loop · CET temp log signed · 21 CFR 1.908")
                 .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             // Honest scope line — real load ref or em-dash; never an invented carrier/booking string.
             Text(loadId > 0 ? "LOAD \(loadId) · live alert feed" : "— · all loads · live alert feed")

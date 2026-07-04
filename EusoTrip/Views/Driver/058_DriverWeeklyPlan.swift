@@ -7,7 +7,7 @@
 //  screen lands in Cohort B (fully dynamic) from day one, per the 54th
 //  firing hand-off:
 //
-//    • `MyLoadsStore`        · `loads.search(status:, limit:)`
+//    • `MyLoadsStore`        · `drivers.getAssignments(status:, limit:)`
 //    • `WeeklyEarningsStore` · `earnings.getWeeklySummaries(weeks:)`
 //
 //  Cohort-B dynamization · zero mock data, zero stubs
@@ -264,7 +264,7 @@ struct DriverWeeklyPlan: View {
         EusoEmptyState(
             systemImage: "exclamationmark.triangle",
             title: "Couldn't load your roster",
-            subtitle: err.localizedDescription,
+            subtitle: err.eusoUserCopy,
             cta: (label: "Retry", action: {
                 Task { await loadsStore.refresh() }
             })
@@ -385,7 +385,7 @@ struct DriverWeeklyPlan: View {
                 .foregroundColor(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         case .error(let err):
-            Text("Weekly earnings unavailable - \(err.localizedDescription)")
+            Text("Weekly earnings unavailable - \(err.eusoUserCopy)")
                 .font(EType.caption)
                 .foregroundColor(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -447,8 +447,7 @@ struct DriverWeeklyPlan: View {
             actionRow(
                 systemImage: "chart.bar.xaxis",
                 title: "View full earnings breakdown",
-                subtitle: "Period splits, top loads, tax summary",
-                disabled: !hasAnyEarnings
+                subtitle: "Period splits, top loads, tax summary"
             ) {
                 showEarningsSheet = true
             }
@@ -503,14 +502,6 @@ struct DriverWeeklyPlan: View {
     }
 
     // MARK: - Derived state
-
-    private var hasAnyEarnings: Bool {
-        if case .loaded(let bars) = earningsStore.state,
-           bars.contains(where: { $0.totalEarnings > 0 }) {
-            return true
-        }
-        return false
-    }
 
     // MARK: - Load row helpers
 

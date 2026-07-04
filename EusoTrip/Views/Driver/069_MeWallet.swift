@@ -113,10 +113,14 @@ struct MeWallet: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: Space.s5) {
-                header
-                heroBalance              // §1
-                quickActions             // §2
-                weeklyChart              // §3
+	                header
+	                heroBalance              // §1
+	                quickActions             // §2
+	                EusoCardIssuePanel(
+	                    title: "EusoCard",
+	                    subtitle: "Virtual spend card for fuel, tolls and settlement cash"
+	                )
+	                weeklyChart              // §3
                 upcomingPayouts          // §4
                 activityFeed             // §5
                 factoringOffer           // §6

@@ -103,7 +103,7 @@ private struct VesselBunkerPricesBody: View {
                 } else if !hasData {
                     EusoEmptyState(systemImage: "fuelpump",
                                    title: "No bunker index to show",
-                                   subtitle: "fuel.getTrends and fuel.getPrices returned no price history. Nothing to chart, the marine VLSFO/MGO spot feed (vesselBunker.getPrices) is a surfaced backend gap.")
+                                   subtitle: "No marine bunker price history is available for this lane yet. Pull to refresh once the VLSFO or MGO feed posts data.")
                 } else {
                     heroCard
                     if series.count >= 2 {

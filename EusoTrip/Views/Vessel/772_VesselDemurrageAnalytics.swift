@@ -194,7 +194,7 @@ private struct VesselDemurrageAnalyticsBody: View {
     private var causeCard: some View {
         let maxV = max(1, causes.map { $0.usd }.max() ?? 1)
         return VStack(alignment: .leading, spacing: Space.s2) {
-            Text("BY CHARGE TYPE · getVesselFinancialSummary").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("BY CHARGE TYPE · financial summary").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             VStack(spacing: 14) {
                 ForEach(causes) { c in
                     VStack(spacing: 6) {

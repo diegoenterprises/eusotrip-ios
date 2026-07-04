@@ -3,217 +3,179 @@
 //  EusoTrip
 //
 //  EusoTrip by Eusorone Technologies, Inc.
-//  Powered by ESANG AI™
+//  Powered by ESANG AI
 //
-//  Two-mode launch surface:
-//
-//    1) FIRST INSTALL — full branded Lottie reveal (3.0s native, slowed
-//       to ~4.0s wall-clock at 0.75× playback). Light/Dark compositions
-//       are separate Lottie bundles selected by colorScheme. Sets the
-//       persistence flag on completion so it never plays again.
-//
-//    2) EVERY SUBSEQUENT LAUNCH — quick gradient-wordmark splash:
-//       flame logo + "EUSOTRIP" wordmark center-stacked, ~700ms total
-//       (200ms fade-in, 350ms hold, 200ms fade-out). Black background
-//       on dark, white on light. Matches the founder's reference shot
-//       2026-04-27 (logo + EUSOTRIP wordmark, blue→magenta gradient).
-//
-//  Persistence: `UserDefaults.standard.bool(forKey: "EusoTrip.hasShownFullIntro")`
-//  flips to `true` the first time the Lottie animation completes (or
-//  the hardTimeout fires). Reinstalling the app clears UserDefaults and
-//  the full intro plays again — exactly the founder's intent.
+//  Full-screen launch splash driven by
+//  EusoTrip_Splash_iOS_3s_1080x1920.mp4.
 //
 
+import AVFoundation
 import SwiftUI
-import Lottie
-
-// MARK: - Persistence key
-
-private enum IntroPersistence {
-    static let key = "EusoTrip.hasShownFullIntro"
-
-    static var hasShownFull: Bool {
-        UserDefaults.standard.bool(forKey: key)
-    }
-
-    static func markShown() {
-        UserDefaults.standard.set(true, forKey: key)
-    }
-}
+import UIKit
 
 // MARK: - Public wrapper
 
-/// Full-screen intro splash. On first install plays the Lottie reveal
-/// then fires `onFinish`. On every subsequent launch plays a quick
-/// gradient-wordmark splash (~700ms) and fires `onFinish`.
+/// Full-screen intro splash. Plays the bundled 3-second EusoTrip launch
+/// film once per app process, aspect-filled edge to edge, then hands off
+/// to AppRoot.
 struct IntroSplash: View {
-    @Environment(\.colorScheme) private var colorScheme
     var onFinish: () -> Void
 
-    /// Hard ceiling — if Lottie's completion handler never fires (e.g. bundle
-    /// issue), we still advance to AppRoot after this many seconds.
-    /// Tuned slightly above the 4.0s playback window so the animation can
-    /// complete naturally when it fires correctly.
-    private let hardTimeout: Double = 5.0
-
-    /// Quick-splash duration on warm launches. 700ms total — long
-    /// enough to register as branding, short enough to feel like a
-    /// boot, not an animation.
-    private let quickSplashDuration: Double = 0.7
+    private let minimumDisplayDuration: Double = 1.5
+    private let maximumDisplayDuration: Double = 3.0
 
     @State private var didFinish = false
-    /// Resolved on appear so the choice is made once per launch and
-    /// the view body doesn't keep re-querying UserDefaults.
-    @State private var mode: SplashMode = .quick
-
-    private enum SplashMode { case full, quick }
+    @State private var canSkip = false
 
     var body: some View {
         ZStack {
-            // Stage color matches the comp / quick-splash background.
-            (colorScheme == .dark ? Color.black : Color.white)
+            Color(red: 0.039, green: 0.039, blue: 0.078)
                 .ignoresSafeArea()
 
-            switch mode {
-            case .full:
-                LottieIntroView(
-                    animationName: colorScheme == .dark ? "intro_dark" : "intro_light",
-                    speed: 0.75,
-                    onComplete: finishOnce
-                )
-                .ignoresSafeArea()
-
-            case .quick:
-                QuickWordmarkSplash(colorScheme: colorScheme)
-            }
+            SplashVideoView(
+                resourceName: "EusoTrip_Splash_iOS_3s_1080x1920",
+                resourceExtension: "mp4",
+                onComplete: finishOnce
+            )
+            .ignoresSafeArea()
         }
-        .transition(.opacity)
-        .onAppear {
-            mode = IntroPersistence.hasShownFull ? .quick : .full
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if canSkip { finishOnce() }
         }
         .task {
-            // Branch the timeout off the resolved mode so quick splash
-            // doesn't sit through the 5s Lottie ceiling.
-            let waited = IntroPersistence.hasShownFull
-                ? quickSplashDuration
-                : hardTimeout
-            try? await Task.sleep(nanoseconds: UInt64(waited * 1_000_000_000))
-            finishOnce()
+            async let skipGate: Void = {
+                try? await Task.sleep(nanoseconds: UInt64(minimumDisplayDuration * 1_000_000_000))
+                await MainActor.run { canSkip = true }
+            }()
+
+            async let ceiling: Void = {
+                try? await Task.sleep(nanoseconds: UInt64(maximumDisplayDuration * 1_000_000_000))
+                await MainActor.run { finishOnce() }
+            }()
+
+            _ = await (skipGate, ceiling)
         }
-        // Uniform cafe-door entrance.
+        .transition(.opacity)
         .screenTileRoot()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("EusoTrip")
     }
 
     private func finishOnce() {
         guard !didFinish else { return }
         didFinish = true
-        // The first time we ever finish, persist the flag so future
-        // launches take the quick-splash path. We mark it AFTER the
-        // animation finishes (or the hardTimeout fires) so a user
-        // who force-quits during the very first reveal still gets the
-        // full intro on their next launch.
-        if !IntroPersistence.hasShownFull {
-            IntroPersistence.markShown()
-        }
         onFinish()
     }
 }
 
-// MARK: - Quick wordmark splash (warm launches)
+// MARK: - Video bridge
 
-/// Lightweight 2-frame splash matching the founder's reference shot
-/// (2026-04-27): EusoTrip flame logo + "EUSOTRIP" wordmark with the
-/// canonical blue→magenta gradient, center-stacked, animated in/out
-/// with a quick fade. Black background on dark, white on light —
-/// matches the system status-bar so the launch feels seamless.
-private struct QuickWordmarkSplash: View {
-    let colorScheme: ColorScheme
+private struct SplashVideoView: UIViewRepresentable {
+    let resourceName: String
+    let resourceExtension: String
+    var onComplete: () -> Void
 
-    @State private var visible = false
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onComplete: onComplete)
+    }
 
-    var body: some View {
-        VStack(spacing: 14) {
-            // Flame mark from the asset catalog. SwiftUI tints a
-            // template image, but the logo is rendered with multiple
-            // gradient stops so we ship it as a regular asset and let
-            // the image carry its own coloring.
-            Image("EusoTripLogo")
-                .resizable()
-                .renderingMode(.original)
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 96, height: 96)
+    func makeUIView(context: Context) -> SplashVideoContainerView {
+        let view = SplashVideoContainerView()
+        view.backgroundColor = UIColor(red: 0.039, green: 0.039, blue: 0.078, alpha: 1.0)
 
-            // Wordmark — gradient text over a transparent backdrop.
-            // Uses the canonical `LinearGradient.diagonal` so the
-            // splash matches every other gradient surface in the app.
-            Text("EUSOTRIP")
-                .font(.system(size: 18, weight: .heavy)).tracking(4)
-                .foregroundStyle(LinearGradient.diagonal)
+        guard let url = Bundle.main.url(forResource: resourceName, withExtension: resourceExtension) else {
+            DispatchQueue.main.async { onComplete() }
+            return view
         }
-        .opacity(visible ? 1.0 : 0.0)
-        .onAppear {
-            // 200ms fade-in. The parent view's task clock holds for
-            // ~700ms total before firing onFinish, so the visible
-            // window is ~500ms — long enough to read, short enough
-            // to feel snappy.
-            withAnimation(.easeOut(duration: 0.20)) {
-                visible = true
+
+        context.coordinator.play(url: url, in: view)
+        return view
+    }
+
+    func updateUIView(_ uiView: SplashVideoContainerView, context: Context) {}
+
+    static func dismantleUIView(_ uiView: SplashVideoContainerView, coordinator: Coordinator) {
+        coordinator.stop()
+        uiView.detachPlayer()
+    }
+
+    final class Coordinator {
+        private var player: AVPlayer?
+        private var playbackObserver: NSObjectProtocol?
+        private let onComplete: () -> Void
+
+        init(onComplete: @escaping () -> Void) {
+            self.onComplete = onComplete
+        }
+
+        func play(url: URL, in view: SplashVideoContainerView) {
+            let item = AVPlayerItem(url: url)
+            let player = AVPlayer(playerItem: item)
+            player.isMuted = true
+            player.actionAtItemEnd = .pause
+            self.player = player
+
+            playbackObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime,
+                object: item,
+                queue: .main
+            ) { [weak self] _ in
+                self?.onComplete()
+            }
+
+            view.attach(player: player)
+            player.play()
+        }
+
+        func stop() {
+            player?.pause()
+            player = nil
+
+            if let playbackObserver {
+                NotificationCenter.default.removeObserver(playbackObserver)
+                self.playbackObserver = nil
             }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("EusoTrip")
+
+        deinit {
+            stop()
+        }
     }
 }
 
-// MARK: - UIViewRepresentable
+private final class SplashVideoContainerView: UIView {
+    private let playerLayer = AVPlayerLayer()
 
-/// Thin bridge from Lottie's UIView-based player into SwiftUI. We use a
-/// UIView wrapper (not `LottieView`, the SwiftUI-native API) so we can
-/// reliably hook the completion callback across Lottie 4.x versions.
-private struct LottieIntroView: UIViewRepresentable {
-    let animationName: String
-    var speed: CGFloat = 1.0
-    var onComplete: () -> Void
-
-    func makeUIView(context: Context) -> UIView {
-        let container = UIView(frame: .zero)
-        container.backgroundColor = .clear
-        container.clipsToBounds = true
-
-        let anim = LottieAnimationView(name: animationName)
-        anim.contentMode = .scaleAspectFill
-        anim.loopMode = .playOnce
-        anim.animationSpeed = speed
-        anim.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(anim)
-
-        NSLayoutConstraint.activate([
-            anim.topAnchor.constraint(equalTo: container.topAnchor),
-            anim.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            anim.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            anim.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-        ])
-
-        anim.play { finished in
-            // Fire completion whether we ran to end or were interrupted
-            // (interrupted → still advance; worst case the hardTimeout covers it).
-            if finished { onComplete() }
-        }
-
-        return container
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        clipsToBounds = true
+        playerLayer.videoGravity = .resizeAspectFill
+        layer.addSublayer(playerLayer)
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) { /* no dynamic state */ }
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        playerLayer.frame = bounds
+    }
+
+    func attach(player: AVPlayer) {
+        playerLayer.player = player
+        setNeedsLayout()
+    }
+
+    func detachPlayer() {
+        playerLayer.player = nil
+    }
 }
 
 // MARK: - Preview
 
-#Preview("Intro Splash – Dark") {
+#Preview("Intro Splash") {
     IntroSplash(onFinish: {})
         .preferredColorScheme(.dark)
-}
-
-#Preview("Intro Splash – Light") {
-    IntroSplash(onFinish: {})
-        .preferredColorScheme(.light)
 }

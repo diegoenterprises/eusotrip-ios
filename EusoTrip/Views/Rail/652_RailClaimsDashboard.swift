@@ -426,7 +426,7 @@ private struct RailClaimsDashboardBody: View {
     private var claimsFeedStrip: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("CLAIMS FEED · getClaims")
+                Text("CLAIMS FEED · live")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

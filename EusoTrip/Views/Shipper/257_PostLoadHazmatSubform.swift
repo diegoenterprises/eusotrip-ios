@@ -30,6 +30,10 @@ private struct HazmatBody: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
                 regulatoryChips
+                if showsMC331CargoTankWatch {
+                    mc331CargoTankPanel
+                    regulatorySourceWatchCard
+                }
                 idCard
                 classificationCard
                 psnCard
@@ -300,6 +304,106 @@ private struct HazmatBody: View {
             f.append("USMCA · CTPAT-eligible")
         }
         return f
+    }
+
+    private var showsMC331CargoTankWatch: Bool {
+        guard draft.mode == .truck else { return false }
+        let equipment = draft.equipmentType.lowercased()
+        let cargo = [
+            draft.cargoType.rawValue,
+            draft.commodity,
+            draft.properShippingName,
+            draft.unNumber,
+            draft.hazmatClass
+        ]
+        .joined(separator: " ")
+        .lowercased()
+        let class2 = draft.hazmatClass.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("2")
+        let gasLanguage = [
+            "lpg", "propane", "anhydrous ammonia", "compressed gas",
+            "liquefied gas", "flammable gas", "mc-331", "mc331"
+        ].contains { cargo.contains($0) || equipment.contains($0) }
+        let tankerLanguage = equipment.contains("tanker_gas")
+            || equipment.contains("tanker_hazmat")
+            || equipment.contains("tank")
+        return class2 || gasLanguage || (tankerLanguage && (draft.cargoType == .gas || draft.cargoType == .hazmat))
+    }
+
+    private var mc331CargoTankPanel: some View {
+        ComplianceInlinePanel(
+            tags: [.mc331CargoTank],
+            topic: "MC-331 cargo tank inspection",
+            mode: .truck
+        )
+    }
+
+    private var regulatorySourceWatchCard: some View {
+        let sources = ComplianceSourceMonitor.sources(
+            for: .truck,
+            countries: regulatoryCountryScopes,
+            keywords: ["mc-331", "cargo tank", "lpg", "leakage", "phmsa"]
+        )
+        return LifecycleCard(accentWarning: true) {
+            LifecycleSection(label: "REGULATORY SOURCE WATCH", icon: "antenna.radiowaves.left.and.right")
+            Text("Mode/country sources EusoTrip tracks for this cargo-tank context.")
+                .font(.system(size: 11))
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(sources.prefix(4))) { source in
+                    sourceRow(source)
+                }
+            }
+            if sources.count > 4 {
+                Text("+ \(sources.count - 4) more source\(sources.count - 4 == 1 ? "" : "s") in the compliance registry")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+    }
+
+    private var regulatoryCountryScopes: [ComplianceCountryScope] {
+        var out: [ComplianceCountryScope] = []
+        for country in [draft.originCountry, draft.destinationCountry] {
+            let scope = scope(for: country)
+            if !out.contains(scope) { out.append(scope) }
+        }
+        return out
+    }
+
+    private func scope(for country: PostLoadDraft.Country) -> ComplianceCountryScope {
+        switch country {
+        case .US: return .usa
+        case .CA: return .canada
+        case .MX: return .mexico
+        case .EU: return .europe
+        case .UK: return .unitedKingdom
+        case .Asia: return .global
+        }
+    }
+
+    private func sourceRow(_ source: ComplianceSourceWatch) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Brand.warning)
+                .frame(width: 18, height: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(source.title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                Text("\(source.authority) · \(source.cadence)")
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(source.sourceURL.host ?? source.sourceURL.absoluteString)
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(palette.tintNeutral, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     private var idCard: some View {

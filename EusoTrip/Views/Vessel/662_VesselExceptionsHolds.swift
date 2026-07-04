@@ -290,7 +290,7 @@ private struct VesselExceptionsHoldsBody: View {
     private var holdsSection: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
-                Text("HOLDS · BY URGENCY · getCBPAlerts")
+                Text("HOLDS · BY URGENCY · CBP alerts")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -397,7 +397,7 @@ private struct VesselExceptionsHoldsBody: View {
                 Text(clearedBannerTitle)
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("release pending CBP exam only · getCBPEntryStatus :1169")
+                Text("release pending CBP exam only · live entry status")
                     .font(.system(size: 11))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -534,7 +534,7 @@ private struct VesselExceptionsHoldsBody: View {
             rows.append(DerivedHold(
                 id: "demurrage",
                 title: "Demurrage accruing",
-                subtitle: "\(d.lfdPassedCount ?? 0) past LFD\(perDay) · getVesselDemurrage",
+                subtitle: "\(d.lfdPassedCount ?? 0) past LFD\(perDay) · live demurrage",
                 icon: "clock",
                 tier: .review,
                 agency: "Terminal",

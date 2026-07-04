@@ -11,11 +11,27 @@ import SwiftUI
 
 struct PostLoadStep1LaneScreen: View {
     let theme: Theme.Palette
-    @StateObject var draft = PostLoadDraft()
+    @StateObject private var ownedDraft: PostLoadDraft
+    private let injectedDraft: PostLoadDraft?
+    let resumeDraftId: String?
+
+    @MainActor
+    init(
+        theme: Theme.Palette,
+        draft: PostLoadDraft? = nil,
+        resumeDraftId: String? = nil
+    ) {
+        self.theme = theme
+        self.injectedDraft = draft
+        _ownedDraft = StateObject(wrappedValue: draft ?? PostLoadDraft())
+        self.resumeDraftId = resumeDraftId
+    }
+
+    private var draft: PostLoadDraft { injectedDraft ?? ownedDraft }
 
     var body: some View {
         Shell(theme: theme) {
-            PostLoadStep1Body(draft: draft)
+            PostLoadStep1Body(draft: draft, resumeDraftId: resumeDraftId)
         } nav: {
             shipperLifecycleNav()
         }
@@ -25,17 +41,23 @@ struct PostLoadStep1LaneScreen: View {
 private struct PostLoadStep1Body: View {
     @Environment(\.palette) private var palette
     @ObservedObject var draft: PostLoadDraft
+    let resumeDraftId: String?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                hydrateStatus
                 fieldsCard
                 ctaRow
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14)
             .padding(.top, 56)
+        }
+        .task(id: resumeDraftId ?? "") {
+            guard let resumeDraftId, !resumeDraftId.isEmpty else { return }
+            await draft.hydrateFromServerDraft(id: resumeDraftId)
         }
     }
 
@@ -57,6 +79,59 @@ private struct PostLoadStep1Body: View {
             Text("Enter origin, destination and the pickup window.")
                 .font(EType.body).foregroundStyle(palette.textSecondary)
                 .lineLimit(2).minimumScaleFactor(0.85)
+        }
+    }
+
+    @ViewBuilder
+    private var hydrateStatus: some View {
+        if draft.isHydratingDraft {
+            LifecycleCard(accentGradient: true) {
+                HStack(spacing: 8) {
+                    ProgressView().scaleEffect(0.8)
+                    Text("Resuming saved draft...")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+            }
+        } else if let error = draft.hydrateError {
+            LifecycleCard(accentDanger: true) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Could not resume that draft")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(Brand.danger)
+                    Text(error)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let resumeDraftId {
+                        Button {
+                            Task { await draft.hydrateFromServerDraft(id: resumeDraftId) }
+                        } label: {
+                            Text("Retry")
+                                .font(.system(size: 11, weight: .heavy))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(LinearGradient.diagonal)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        } else if let id = draft.hydratedDraftId, id == resumeDraftId {
+            LifecycleCard(accentGradient: true) {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    Text("Saved draft resumed.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+            }
         }
     }
 

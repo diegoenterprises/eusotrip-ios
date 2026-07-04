@@ -385,7 +385,7 @@ private struct VesselReeferPreCoolBody820: View {
             .background(palette.bgCardSoft)
             .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).strokeBorder(palette.borderFaint))
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-            Text("FSMA log · recordFSMATemp reeferTemp.ts:359").font(.system(size: 10)).foregroundStyle(palette.textTertiary)
+            Text("FSMA log · reefer temperature record").font(.system(size: 10)).foregroundStyle(palette.textTertiary)
         }
     }
 
@@ -426,7 +426,7 @@ private struct VesselReeferPreCoolBody820: View {
                 Spacer()
                 Text("\(monitored) reefers").font(EType.mono(.caption)).foregroundStyle(palette.textTertiary)
             }
-            Text("verifyPreCool gate · setpoint pulldown before stuffing").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+            Text("Pre-cool gate · setpoint pulldown before stuffing").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             // Honest scope line — real load ref or em-dash; never an invented carrier/booking string.
             Text(loadId > 0 ? "LOAD \(loadId) · live zone telemetry" : "— · no load threaded").font(EType.mono(.caption)).foregroundStyle(palette.textTertiary)
         }

@@ -76,17 +76,23 @@ struct HereNotice: Decodable {
 }
 
 /// Per-span metadata (speed limits, road class, country codes). Optional —
-/// only populated when the request asked for `return=polyline,summary,spans`.
+/// only populated when the request asked for `return=polyline,...` and the
+/// separate `spans=` query param.
 struct HereSpan: Decodable {
     let offset: Int
     let length: Int?
     let names: [NamedValue]?
     let routeNumbers: [NamedValue]?
+    /// HERE v8's current span speed field. Older responses and a few local
+    /// callsites still know the deprecated `speedLimit`, so decode both.
+    let maxSpeed: Double?
     let speedLimit: Double?
     let countryCode: String?
     let stateCode:   String?
     let functionalClass: Int?
     let truckAttributes: TruckAttributes?
+
+    var effectiveMaxSpeed: Double? { maxSpeed ?? speedLimit }
 
     struct NamedValue: Decodable {
         let value: String

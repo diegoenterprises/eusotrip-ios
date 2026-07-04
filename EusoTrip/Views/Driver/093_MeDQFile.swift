@@ -43,6 +43,11 @@ struct MeDQFile: View {
                 header
                 scoreHero
                 documentsBreakdown
+                // COUNTRY-DONE (wireframe 079): commercial-licence equivalence
+                // by country. US active until the licence-equivalence resolver
+                // lands (named gap: credentials.getLicenceByJurisdiction —
+                // underlying cert reads exist on drivers/profile/training).
+                DriverCrossBorderLicenceBand(active: .us)
                 expiringSection
                 documentsSection
                 footer

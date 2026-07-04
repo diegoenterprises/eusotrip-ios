@@ -4,7 +4,7 @@
 //
 //  Pixel-match to `03 Catalyst/Dark-SVG/314 Maintenance Zeun.svg`.
 //  Owner-op asset-bound maintenance ledger — Eusotrans owns the
-//  asset, Michael drives, same companyId, clean DVIR chain. Real
+//  asset, Michael drives, same company, clean DVIR chain. Real
 //  endpoints from the Zeun router (no stubs).
 //
 //  Wire bindings:
@@ -166,7 +166,7 @@ private struct ZeunBody: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("OWNER-OP SEAM · CLEAN DVIR CHAIN")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text("Eusotrans owns the asset · Michael drives it · same companyId · zero off-rotation drift")
+                Text("Eusotrans owns the asset · Michael drives it · same company · zero off-rotation drift")
                     .font(EType.caption).foregroundStyle(palette.textPrimary)
             }
         }

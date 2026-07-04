@@ -274,7 +274,7 @@ private struct RailGateAppointmentBody: View {
                 Text("CONF-XXXXXX issued on confirm")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
-                Text("GP-XXXXXX · gatePass valid 4h from slot")
+                Text("GP-XXXXXX · gate pass valid 4h from slot")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
                     .padding(.top, 4)

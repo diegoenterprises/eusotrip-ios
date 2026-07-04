@@ -163,7 +163,7 @@ private struct CatalystCargoClaim_389: View {
                     .font(.system(size: 22, weight: .bold))
                     .tracking(-0.3)
                     .foregroundStyle(palette.textPrimary)
-                Text("getClaimsDashboard · carrier")
+                Text("CLAIMS DASHBOARD · carrier")
                     .font(EType.mono(.caption))
                     .tracking(0.6)
                     .foregroundStyle(palette.textSecondary)
@@ -251,7 +251,7 @@ private struct CatalystCargoClaim_389: View {
             } else {
                 // Loading placeholder — honest, no figures.
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("CLAIM DETAIL · getClaimById")
+                    Text("CLAIM DETAIL · live record")
                         .font(.system(size: 9, weight: .heavy))
                         .tracking(0.6)
                         .foregroundStyle(palette.textTertiary)
@@ -276,7 +276,7 @@ private struct CatalystCargoClaim_389: View {
 
     private func detailLedger(_ c: ShipperFreightClaimsAPI.ClaimRow) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("CLAIM DETAIL · getClaimById · load \(c.loadNumber ?? "—")")
+            Text("CLAIM DETAIL · load \(c.loadNumber ?? "—")")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
@@ -296,7 +296,7 @@ private struct CatalystCargoClaim_389: View {
                 // so no investigation/decision ledger is asserted here.
                 // WIRE: freightClaims.getClaimWorkflow (freightClaims.ts:459) — not on iOS client yet
                 HStack {
-                    Text("getClaimWorkflow · investigation → decision · unavailable on iOS")
+                    Text("Investigation → decision workflow · available on the web dashboard")
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textTertiary)
                         .lineLimit(1)
@@ -338,7 +338,7 @@ private struct CatalystCargoClaim_389: View {
     private var carrierResponseStrip: some View {
         VStack(alignment: .leading, spacing: 8) {
             // WIRE: freightClaims.updateClaimStatus (freightClaims.ts:393) + getLossPreventionDashboard (freightClaims.ts:988) — not on iOS client yet
-            Text("CARRIER RESPONSE · updateClaimStatus · getLossPreventionDashboard")
+            Text("CARRIER RESPONSE · status + loss-prevention actions")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
@@ -346,7 +346,7 @@ private struct CatalystCargoClaim_389: View {
                 .minimumScaleFactor(0.7)
             // Evidence detail (addClaimEvidence) is not surfaced on the
             // dashboard contract — show the procedure, not a fabricated count.
-            Text("addClaimEvidence · evidence ledger unavailable on iOS")
+            Text("Evidence ledger · available on the web dashboard")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(1)
@@ -390,7 +390,7 @@ private struct CatalystCargoClaim_389: View {
                 .foregroundStyle(palette.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            Text("loads.getById · route / equipment / driver unavailable on iOS")
+            Text("Route / equipment / driver detail · available on the web dashboard")
                 .font(.system(size: 10.5))
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(1)
@@ -422,7 +422,7 @@ private struct CatalystCargoClaim_389: View {
                 trailingIcon: submitted ? "checkmark" : nil,
                 isLoading: submitting
             )
-            Text("submitClaimDecision · {claimId,decision,amount} · WIRE")
+            Text("Approve or deny with amount · posts to the claim record")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .center)

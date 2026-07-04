@@ -434,7 +434,7 @@ private struct VesselContainerTimelineBody: View {
                 addError = "The server rejected the event."
             }
         } catch {
-            addError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            addError = error.eusoUserCopy
         }
         addingEvent = false
     }

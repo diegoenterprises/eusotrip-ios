@@ -340,7 +340,7 @@ private struct RailBidBoardBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("railShipments.ts:328")
+                Text("rate-ranked")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -441,7 +441,7 @@ private struct RailBidBoardBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("railShipments.ts:350")
+                Text("award action")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }

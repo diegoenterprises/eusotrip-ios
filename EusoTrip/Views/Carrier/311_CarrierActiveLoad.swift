@@ -53,7 +53,7 @@ private struct ActiveLoadBody: View {
         switch snap.state {
         case .loading: LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
         case .empty: EusoEmptyState(systemImage: "doc.text", title: "Load not found", subtitle: "Pull to refresh.")
-        case .error(let err): LifecycleCard(accentDanger: true) { Text((err as? EusoTripAPIError)?.errorDescription ?? err.localizedDescription).font(EType.caption).foregroundStyle(Brand.danger) }
+        case .error(let err): LifecycleCard(accentDanger: true) { Text(err.eusoUserCopy).font(EType.caption).foregroundStyle(Brand.danger) }
         case .loaded(let opt):
             if let live = opt {
                 LifecycleCard(accentGradient: true) {

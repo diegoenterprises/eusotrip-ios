@@ -283,6 +283,9 @@ final class PostLoadDraft: ObservableObject {
     @Published var postError: String? = nil
     @Published var postedLoadNumber: String? = nil
     @Published var postedLoadId: String? = nil
+    @Published var isHydratingDraft: Bool = false
+    @Published var hydrateError: String? = nil
+    @Published var hydratedDraftId: String? = nil
 
     /// Server-emitted `LD-` number once the load lands. Cleared when
     /// the user starts a new draft.
@@ -317,6 +320,176 @@ final class PostLoadDraft: ObservableObject {
         biddingDurationHours = 24
         isPosting = false; postError = nil
         postedLoadNumber = nil; postedLoadId = nil
+        isHydratingDraft = false; hydrateError = nil; hydratedDraftId = nil
+    }
+
+    struct ServerDraft: Decodable {
+        struct Location: Decodable {
+            let address: String?
+            let city: String?
+            let state: String?
+            let zipCode: String?
+            let lat: Double?
+            let lng: Double?
+
+            private enum CodingKeys: String, CodingKey {
+                case address, city, state, zipCode, lat, lng
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                address = try c.decodeIfPresent(String.self, forKey: .address)
+                city = try c.decodeIfPresent(String.self, forKey: .city)
+                state = try c.decodeIfPresent(String.self, forKey: .state)
+                zipCode = try c.decodeIfPresent(String.self, forKey: .zipCode)
+                lat = Self.decodeDouble(c, .lat)
+                lng = Self.decodeDouble(c, .lng)
+            }
+
+            var displayText: String {
+                let cityState = [city, state]
+                    .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: ", ")
+                if let address = address?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !address.isEmpty {
+                    if !cityState.isEmpty, !address.localizedCaseInsensitiveContains(cityState) {
+                        return "\(address), \(cityState)"
+                    }
+                    return address
+                }
+                return cityState
+            }
+
+            private static func decodeDouble<K: CodingKey>(
+                _ c: KeyedDecodingContainer<K>,
+                _ key: K
+            ) -> Double? {
+                if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return d }
+                if let i = try? c.decodeIfPresent(Int.self, forKey: key) { return Double(i) }
+                if let s = try? c.decodeIfPresent(String.self, forKey: key) { return Double(s) }
+                return nil
+            }
+        }
+
+        let id: String
+        let loadNumber: String?
+        let origin: Location?
+        let destination: Location?
+        let cargoType: String?
+        let rate: Double?
+        let weight: Double?
+        let notes: String?
+        let pickupDate: String?
+        let deliveryDate: String?
+        let transportMode: String?
+        let trailer: String?
+        let vertical: String?
+        let attachedDocuments: [String]?
+        let ePodLockEnabled: Bool?
+
+        private enum CodingKeys: String, CodingKey {
+            case id, loadNumber, origin, destination, cargoType, rate, weight, notes
+            case pickupDate, deliveryDate, transportMode, trailer, vertical
+            case attachedDocuments, ePodLockEnabled
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            id = try c.decode(String.self, forKey: .id)
+            loadNumber = try c.decodeIfPresent(String.self, forKey: .loadNumber)
+            origin = try c.decodeIfPresent(Location.self, forKey: .origin)
+            destination = try c.decodeIfPresent(Location.self, forKey: .destination)
+            cargoType = try c.decodeIfPresent(String.self, forKey: .cargoType)
+            rate = Self.decodeDouble(c, .rate)
+            weight = Self.decodeDouble(c, .weight)
+            notes = try c.decodeIfPresent(String.self, forKey: .notes)
+            pickupDate = try c.decodeIfPresent(String.self, forKey: .pickupDate)
+            deliveryDate = try c.decodeIfPresent(String.self, forKey: .deliveryDate)
+            transportMode = try c.decodeIfPresent(String.self, forKey: .transportMode)
+            trailer = try c.decodeIfPresent(String.self, forKey: .trailer)
+            vertical = try c.decodeIfPresent(String.self, forKey: .vertical)
+            attachedDocuments = try c.decodeIfPresent([String].self, forKey: .attachedDocuments)
+            if let decodedBool = try c.decodeIfPresent(Bool.self, forKey: .ePodLockEnabled) {
+                ePodLockEnabled = decodedBool
+            } else if let decodedInt = try c.decodeIfPresent(Int.self, forKey: .ePodLockEnabled) {
+                ePodLockEnabled = decodedInt != 0
+            } else if let decodedString = try c.decodeIfPresent(String.self, forKey: .ePodLockEnabled) {
+                ePodLockEnabled = decodedString == "1" || decodedString.lowercased() == "true"
+            } else {
+                ePodLockEnabled = nil
+            }
+        }
+
+        private static func decodeDouble<K: CodingKey>(
+            _ c: KeyedDecodingContainer<K>,
+            _ key: K
+        ) -> Double? {
+            if let d = try? c.decodeIfPresent(Double.self, forKey: key) { return d }
+            if let i = try? c.decodeIfPresent(Int.self, forKey: key) { return Double(i) }
+            if let s = try? c.decodeIfPresent(String.self, forKey: key) { return Double(s) }
+            return nil
+        }
+    }
+
+    func hydrateFromServerDraft(id draftId: String) async {
+        if hydratedDraftId == draftId { return }
+        isHydratingDraft = true
+        hydrateError = nil
+        struct In: Encodable { let id: String }
+        do {
+            let row: ServerDraft = try await EusoTripAPI.shared.query(
+                "loads.getDraft",
+                input: In(id: draftId)
+            )
+            apply(serverDraft: row)
+            hydratedDraftId = draftId
+        } catch {
+            hydrateError = (error as? EusoTripAPIError)?.errorDescription
+                ?? error.localizedDescription
+        }
+        isHydratingDraft = false
+    }
+
+    private func apply(serverDraft row: ServerDraft) {
+        origin = row.origin?.displayText ?? ""
+        destination = row.destination?.displayText ?? ""
+        originLat = row.origin?.lat
+        originLng = row.origin?.lng
+        destLat = row.destination?.lat
+        destLng = row.destination?.lng
+        pickupDate = row.pickupDate.flatMap(Self.parseISODate)
+        deliveryDate = row.deliveryDate.flatMap(Self.parseISODate)
+        if let cargo = row.cargoType, let resolved = CargoType(rawValue: cargo) {
+            cargoType = resolved
+        }
+        rate = row.rate
+        weight = row.weight
+        notes = row.notes ?? ""
+        if let mode = row.transportMode, let resolved = Mode(rawValue: mode) {
+            self.mode = resolved
+        }
+        if let trailer = row.trailer, let resolved = TrailerCode(rawValue: trailer) {
+            self.trailer = resolved
+            equipmentType = resolved.rawValue
+        }
+        if let vertical = row.vertical, let resolved = Vertical(rawValue: vertical) {
+            self.vertical = resolved
+        }
+        if let docs = row.attachedDocuments {
+            attachedDocuments = Set(docs.compactMap(DocumentType.init(rawValue:)))
+        }
+        if let locked = row.ePodLockEnabled {
+            ePodLockOverride = locked
+        }
+    }
+
+    private static func parseISODate(_ raw: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        return fractional.date(from: raw) ?? plain.date(from: raw)
     }
 
     // MARK: - Validation

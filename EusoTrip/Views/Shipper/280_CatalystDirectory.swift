@@ -67,7 +67,7 @@ private struct CatalystDirectoryBody: View {
             }
         case .error(let err):
             LifecycleCard(accentDanger: true) {
-                Text((err as? EusoTripAPIError)?.errorDescription ?? err.localizedDescription).font(EType.caption).foregroundStyle(Brand.danger)
+                Text(err.eusoUserCopy).font(EType.caption).foregroundStyle(Brand.danger)
             }
         }
     }

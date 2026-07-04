@@ -365,7 +365,7 @@ private struct RateConSignBody: View {
                 phase = .empty
             }
         } catch {
-            let msg = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            let msg = error.eusoUserCopy
             phase = .failed(msg)
         }
     }
@@ -404,7 +404,7 @@ private struct RateConSignBody: View {
                 docusignReason = seam.reason ?? "E-signature provider not provisioned in this environment."
             }
         } catch {
-            docusignReason = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            docusignReason = error.eusoUserCopy
         }
     }
 }

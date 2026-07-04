@@ -68,7 +68,7 @@ private struct CatalystRatingsBody: View {
     private var reviewListCard: some View {
         LifecycleCard {
             LifecycleSection(label: "REVIEWS", icon: "text.bubble")
-            Text("Per-load reviews ship in a future round (server `ratings.listForCatalyst` not yet exposed). Composite score above is the live signal until then.")
+            Text("Per-load reviews will appear when review history is available. Composite score above is the live signal until then.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }

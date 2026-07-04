@@ -410,7 +410,7 @@ private struct RailLossPreventionBody: View {
     private var preventionStrip: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top) {
-                Text("PREVENTION · getLossPreventionDashboard")
+                Text("PREVENTION · loss dashboard")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

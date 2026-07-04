@@ -246,7 +246,7 @@ private struct DriverEusoTicketRendererBody: View {
             return EusoTicketParty(
                 name: "Diego Usoro",
                 monogram: "DU",
-                meta: "Eusorone Technologies · companyId 1",
+                meta: "Eusorone Technologies · Company ID 1",
                 avatarStyle: .gradient
             )
         }

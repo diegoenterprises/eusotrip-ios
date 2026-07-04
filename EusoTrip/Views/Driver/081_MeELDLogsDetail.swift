@@ -64,6 +64,11 @@ struct MeELDLogsDetail: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: Space.s5) {
                 header
+                if let message = store.lastError {
+                    HOSConnectionBanner(message: message, isLoading: store.isLoading) {
+                        Task { await store.refreshAll() }
+                    }
+                }
                 daysStrip
                 if store.status == nil && store.isLoading {
                     skeleton

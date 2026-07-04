@@ -26,9 +26,13 @@ struct CarrierMeScreen: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 topBar
                 titleBlock
-                iridescentHairline
-                identityHero
-                accountSection
+	                iridescentHairline
+	                identityHero
+	                EusoCardIssuePanel(
+	                    title: "EusoCard",
+	                    subtitle: "Carrier spend card backed by EusoWallet Treasury"
+	                )
+	                accountSection
                 operationsSection
                 fleetSection
                 financialsSection
@@ -131,7 +135,7 @@ struct CarrierMeScreen: View {
                             .minimumScaleFactor(0.85)
                     }
                     if let cid = user?.companyId, !cid.isEmpty {
-                        Text("companyId · \(cid)")
+                        Text("Company ID · \(cid)")
                             .font(EType.mono(.micro)).tracking(0.4)
                             .foregroundStyle(palette.textTertiary)
                             .lineLimit(1)

@@ -83,7 +83,7 @@ public struct CartView: View {
             )
             items = result.cart
         } catch {
-            loadError = "Couldn't load cart: \((error as NSError).localizedDescription)"
+            loadError = "Couldn't load cart. \(error.eusoUserCopy)"
         }
     }
 }

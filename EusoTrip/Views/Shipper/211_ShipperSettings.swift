@@ -498,7 +498,7 @@ struct ShipperSettings: View {
             .padding(.horizontal, Space.s5)
 
             if let err = prefsStore.lastError {
-                Text("Couldn't save: \(err.localizedDescription)")
+                Text("Couldn't save: \(err.eusoUserCopy)")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .padding(.horizontal, Space.s5)
@@ -636,7 +636,7 @@ struct ShipperSettings: View {
             laneTemplatesPlaceholder(
                 icon: "exclamationmark.triangle",
                 title: "Couldn't load configs",
-                subtitle: err.localizedDescription,
+                subtitle: err.eusoUserCopy,
                 showSpinner: false,
                 showAddRow: true
             )

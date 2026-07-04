@@ -427,7 +427,7 @@ struct DriverVehicleCard: View {
                 .foregroundColor(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         case .error(let err):
-            Text("Maintenance unavailable - \(err.localizedDescription)")
+            Text("Maintenance unavailable - \(err.eusoUserCopy)")
                 .font(EType.caption)
                 .foregroundColor(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -577,7 +577,7 @@ struct DriverVehicleCard: View {
         EusoEmptyState(
             systemImage: "exclamationmark.triangle",
             title: "Fleet temporarily unavailable",
-            subtitle: err.localizedDescription,
+            subtitle: err.eusoUserCopy,
             cta: (label: "Retry", action: {
                 Task { await fleetStore.refresh() }
             })
@@ -739,7 +739,7 @@ private struct VehicleMaintenanceSheet: View {
                         EusoEmptyState(
                             systemImage: "exclamationmark.triangle",
                             title: "Maintenance unavailable",
-                            subtitle: err.localizedDescription
+                            subtitle: err.eusoUserCopy
                         )
                     }
                 }

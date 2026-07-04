@@ -82,11 +82,10 @@ final class LoadBoardStore: BaseDynamicListStore<LoadSummary> {
     }
 }
 
-// MARK: - MyLoadsStore — `loads.search(status:)`
+// MARK: - MyLoadsStore — `drivers.getAssignments(status:)`
 
 /// Drives the "My Loads" sheet — three buckets (active / pending /
-/// finished) that each map to a different `status` filter on the
-/// existing `loads.search` tRPC procedure.
+/// finished) that each map to a driver-scoped assignment status class.
 @MainActor
 final class MyLoadsStore: BaseDynamicListStore<LoadSummary> {
     var bucket: Bucket = .active {
@@ -99,11 +98,12 @@ final class MyLoadsStore: BaseDynamicListStore<LoadSummary> {
         case active, pending, finished
         var id: String { rawValue }
 
-        /// Status filter passed to `loads.search`. The backend accepts
-        /// the canonical set { assigned, in_transit, at_pickup, at_delivery, pending, completed }.
+        /// Status class passed to `drivers.getAssignments`. The backend
+        /// expands these through loadStatusAliases, so "active" covers the
+        /// full pickup→POD lifecycle instead of only literal `in_transit`.
         var statusFilter: String? {
             switch self {
-            case .active:   return "in_transit"
+            case .active:   return "active"
             case .pending:  return "pending"
             case .finished: return "completed"
             }
@@ -111,10 +111,23 @@ final class MyLoadsStore: BaseDynamicListStore<LoadSummary> {
     }
 
     override func fetch() async throws -> [LoadSummary] {
-        try await EusoTripAPI.shared.loads.search(
+        try await EusoTripAPI.shared.drivers.getAssignments(
             status: bucket.statusFilter,
             limit: 30
         )
+    }
+}
+
+// MARK: - DriverCompletedTripsStore — `drivers.getAssignments(status: "completed")`
+
+/// Driver-owned retrospective trip feed. Unlike `loads.search`, this path is
+/// scoped to the signed-in driver through `drivers.getAssignments`, so the
+/// completed-history screen cannot accidentally render marketplace or
+/// shipper-owned loads.
+@MainActor
+final class DriverCompletedTripsStore: BaseDynamicListStore<LoadSummary> {
+    override func fetch() async throws -> [LoadSummary] {
+        try await EusoTripAPI.shared.drivers.getAssignments(status: "completed", limit: 30)
     }
 }
 
@@ -1658,10 +1671,10 @@ final class VehicleMaintenanceHistoryStore: BaseDynamicListStore<VehicleAPI.Main
 
 // MARK: - DriverSafetyScoreStore — `safety.getDriverScoreDetail`
 //
-// Drives brick 075 Me · Safety Score. The driver's own id is seeded
-// from the session on bootstrap; an empty id means the session
-// hasn't resolved yet — the view stays in `.loading` until the
-// session's `user?.id` publishes, then the store refreshes.
+// Drives brick 075 Me · Safety Score. For the driver's own Me surface,
+// `driverId` stays empty and the server resolves the driver row from
+// the authenticated user. Other role drilldowns may set a concrete
+// driver-row id before refreshing.
 //
 // Server-authoritative: we don't recompute category scores on the
 // client. `overallScore`, per-category values, and recent events all
@@ -1671,16 +1684,13 @@ final class VehicleMaintenanceHistoryStore: BaseDynamicListStore<VehicleAPI.Main
 
 @MainActor
 final class DriverSafetyScoreStore: BaseDynamicStore<SafetyAPI.DriverScoreDetail> {
-    /// Seeded from `EusoTripSession.user?.id`. Empty string keeps the
-    /// store in `.loading` (fetch throws a clear error that the view
-    /// silently ignores until the id lands).
+    /// Optional explicit driver-row id. Empty means "my signed-in driver".
     var driverId: String = ""
 
     override func fetch() async throws -> SafetyAPI.DriverScoreDetail {
-        guard !driverId.isEmpty else {
-            throw StoreAvailability.comingSoon("Safety score")
-        }
-        return try await EusoTripAPI.shared.safety.getDriverScoreDetail(driverId: driverId)
+        try await EusoTripAPI.shared.safety.getDriverScoreDetail(
+            driverId: driverId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : driverId
+        )
     }
 }
 
@@ -1921,6 +1931,7 @@ final class ViolationsStore: BaseDynamicListStore<UnifiedViolation> {
     @discardableResult
     func resolve(id: String, notes: String? = nil) async -> Bool {
         resolvingId = id
+        lastError = nil
         defer { resolvingId = nil }
         do {
             _ = try await EusoTripAPI.shared.compliance.resolveViolation(
@@ -1931,7 +1942,9 @@ final class ViolationsStore: BaseDynamicListStore<UnifiedViolation> {
             await refresh()
             return true
         } catch {
+            let resolutionError = error
             await refresh()
+            lastError = resolutionError
             return false
         }
     }
@@ -2592,7 +2605,8 @@ final class ContactsStore: ObservableObject, DynamicStore {
                 phone: c.phone,
                 address: c.address,
                 favorite: !c.favorite,
-                lastContact: c.lastContact
+                lastContact: c.lastContact,
+                canDelete: c.canDelete
             )
         }
         do {
@@ -2601,6 +2615,42 @@ final class ContactsStore: ObservableObject, DynamicStore {
             if !DynamicStoreUtil.isTransientCancellation(error) {
                 lastError = error
             }
+        }
+    }
+
+    func createContact(type: String, name: String, company: String?, email: String?, phone: String?) async -> Bool {
+        lastError = nil
+        do {
+            _ = try await EusoTripAPI.shared.contacts.create(
+                type: type,
+                name: name,
+                company: company,
+                email: email,
+                phone: phone
+            )
+            await refresh()
+            return true
+        } catch {
+            if !DynamicStoreUtil.isTransientCancellation(error) {
+                lastError = error
+            }
+            return false
+        }
+    }
+
+    func deleteContact(_ contact: ContactsAPI.Contact) async -> Bool {
+        lastError = nil
+        contacts.removeAll { $0.id == contact.id }
+        do {
+            _ = try await EusoTripAPI.shared.contacts.delete(id: contact.id)
+            await refresh()
+            return true
+        } catch {
+            if !DynamicStoreUtil.isTransientCancellation(error) {
+                lastError = error
+            }
+            await refresh()
+            return false
         }
     }
 }

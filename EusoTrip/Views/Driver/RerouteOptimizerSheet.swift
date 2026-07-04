@@ -410,7 +410,7 @@ struct RerouteOptimizerSheet: View {
     }
 
     private var honestyFooter: some View {
-        Text("Alternates + deltas are estimated against your saved route — server ranks them by a composite ETA · fuel · risk score. Live HERE/OSRM multi-route geometry follows; today every option shares the current corridor preview.")
+        Text("Alternates + deltas are estimated against your saved route. EusoTrip ranks them by composite ETA, fuel, and risk score. Live multi-route geometry follows; today every option shares the current corridor preview.")
             .font(EType.micro)
             .foregroundStyle(palette.textTertiary)
             .fixedSize(horizontal: false, vertical: true)

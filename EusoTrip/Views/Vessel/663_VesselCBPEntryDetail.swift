@@ -224,7 +224,7 @@ private struct VesselCBPEntryDetailBody: View {
                 // Disposition label + figure row.
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("DISPOSITION · getCBPEntryStatus")
+                        Text("DISPOSITION · live entry status")
                             .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                             .foregroundStyle(palette.textTertiary)
                         Text(dispositionTitle)

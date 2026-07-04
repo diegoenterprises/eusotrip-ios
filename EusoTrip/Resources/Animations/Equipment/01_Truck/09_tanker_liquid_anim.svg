@@ -291,7 +291,7 @@
         <!-- UN1789 orange ID-number panel (US 49 CFR 172.332) -->
         <g>
           <rect x="900" y="320" width="80" height="22" rx="2" fill="#F08200" stroke="#000000" stroke-width="1.5"/>
-          <text x="940" y="335" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" fill="#000000" letter-spacing="1">1789</text>
+          <text x="940" y="335" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="13" fill="#000000" letter-spacing="1" data-bind="un_panel_number">1789</text>
         </g>
       </g>
   
@@ -308,7 +308,7 @@
         </g>
         <g>
           <rect x="900" y="320" width="80" height="22" rx="2" fill="#F08200" stroke="#000000" stroke-width="1.5"/>
-          <text x="940" y="335" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="12" fill="#000000" letter-spacing="0.6">ONU 1789</text>
+          <text x="940" y="335" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="12" fill="#000000" letter-spacing="0.6" data-bind="un_panel_number">1789</text>
         </g>
       </g>
   

@@ -107,7 +107,7 @@ private struct VesselCrewCertificationsBody: View {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     summaryTiles
-                    Text("CREW · getVesselCrew")
+                    Text("CREW · certifications on file")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     VStack(spacing: Space.s2) { ForEach(crew) { crewRow($0) } }
                 }

@@ -392,7 +392,7 @@ private struct RailDetentionByCustomerBody: View {
     private var contextStrip: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .firstTextBaseline) {
-                Text("ACTIVE DETENTIONS · getActiveDetentions")
+                Text("ACTIVE DETENTIONS · live")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

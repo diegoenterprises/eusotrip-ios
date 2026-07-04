@@ -288,7 +288,7 @@ private struct RailClaimsListBody: View {
                 .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
 
                 // PORT-GAP: freightClaims.getClaimById is not on the Swift API.
-                Text("+ tap a row -> getClaimById · evidence + workflow stage")
+                Text("+ tap a row for evidence + workflow stage")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textTertiary)
                     .padding(.top, Space.s2)
@@ -344,7 +344,7 @@ private struct RailClaimsListBody: View {
     private var contextStrip: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("CLAIM DETAIL · getClaimById")
+                Text("CLAIM DETAIL · live record")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

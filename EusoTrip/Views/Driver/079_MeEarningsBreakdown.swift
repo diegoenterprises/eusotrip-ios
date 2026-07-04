@@ -179,7 +179,7 @@ struct MeEarningsBreakdown: View {
             Text("Can't load earnings")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)

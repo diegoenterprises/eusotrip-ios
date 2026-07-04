@@ -943,9 +943,9 @@ struct EnRouteDrive: View {
                     .route(polyline: line, colorHex: "#1473FF"),
                     .markers([
                         .init(at: .init(pickup.lat, pickup.lng), kind: .pickup,
-                              label: pickup.cityState.isEmpty ? nil : pickup.cityState),
+                              label: pickup.optionalMapDisplayLabel),
                         .init(at: .init(delivery.lat, delivery.lng), kind: .delivery,
-                              label: delivery.cityState.isEmpty ? nil : delivery.cityState)
+                              label: delivery.optionalMapDisplayLabel)
                     ])
                 ] + fenceLayers,
                 addOns: .driverEnRoute

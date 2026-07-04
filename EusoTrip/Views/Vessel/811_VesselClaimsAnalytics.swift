@@ -93,10 +93,10 @@ private struct VesselClaimsAnalyticsBody: View {
                     RimCard811 { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
                 } else {
                     recoveryHero
-                    Text("PEER RECOVERY · getClaimsAnalytics · topCarriers")
+                    Text("PEER RECOVERY · top carriers")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     peerCard
-                    Text("BY PERIL · byType · \(perilTotalLabel)")
+                    Text("BY PERIL · \(perilTotalLabel)")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     perilCard
                     esangCard

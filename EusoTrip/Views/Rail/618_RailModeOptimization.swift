@@ -22,8 +22,8 @@
 //                                (server/routers/routeOptimization.ts:1402)
 //    • lane context             ← intermodal.getIntermodalDashboard
 //                                (server/routers/intermodal.ts:341)
-//    • 'Apply mode' → STUB · named-gap: intermodal.applyModeChoice does NOT
-//      exist. See WIRE-GAP below.
+//    • 'Apply mode'            → intermodal.applyModeChoice
+//                                (server/routers/intermodal.ts:519)
 //  ZERO-FALLBACK (2026-06-09): every economic figure renders live or as an
 //  em-dash; savings/rationale claims are suppressed when either side of the
 //  comparison is missing. RBAC: protectedProcedure. transportMode=rail.
@@ -161,6 +161,7 @@ private struct RailModeOptimizationBody: View {
     @State private var applying = false
     @State private var applyError: String? = nil
     @State private var applied = false
+    @State private var appliedStatus: String? = nil
 
     // MARK: Derived — intermodal all-in (rail line-haul + dray)
 
@@ -309,7 +310,7 @@ private struct RailModeOptimizationBody: View {
                         Image(systemName: "checkmark.seal.fill")
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(Brand.success)
-                        Text("Mode applied · routing committed")
+                        Text(appliedStatus.map { "Mode applied · \($0)" } ?? "Mode applied · routing committed")
                             .font(EType.caption).foregroundStyle(Brand.success)
                     }
                 }
@@ -726,15 +727,9 @@ private struct RailModeOptimizationBody: View {
 
     // MARK: - Apply mode
 
-    // WIRE-GAP: intermodal.applyModeChoice — the dedicated mutation that
-    // commits the chosen routing (insert blockchainAuditTrail row + WS
-    // broadcast) does NOT exist. Wireframe <desc> proposes
-    //   intermodal.applyModeChoice({intermodalShipmentId, chosenMode, quotedCost})
-    //   → updated shipment.
-    // The recordTransfer / advanceSegment seam (intermodal.ts:235/:184) is the
-    // intended commit path. We call the proposed endpoint via the real client;
-    // until it lands the mutation throws and we surface the real error (no
-    // fabricated success).
+    // intermodal.applyModeChoice commits the chosen routing against the real
+    // shipment row, writes the quoted cost when available, and appends a
+    // blockchain audit entry server-side. Errors surface honestly.
     private func applyMode() async {
         guard !applying, !applied, resolvedShipmentId > 0 else { return }
         applying = true; applyError = nil
@@ -743,14 +738,20 @@ private struct RailModeOptimizationBody: View {
             let chosenMode: String
             let quotedCost: Double
         }
-        struct ApplyOut: Decodable { let id: Int? }
+        struct ApplyOut: Decodable {
+            let id: Int?
+            let success: Bool?
+            let status: String?
+            let chosenMode: String?
+        }
         do {
-            let _: ApplyOut = try await EusoTripAPI.shared.mutation(
+            let ack: ApplyOut = try await EusoTripAPI.shared.mutation(
                 "intermodal.applyModeChoice",
                 input: ApplyIn(intermodalShipmentId: resolvedShipmentId,
                                chosenMode: "intermodal",
                                quotedCost: intermodalAllIn ?? 0))
-            applied = true
+            applied = ack.success ?? true
+            appliedStatus = ack.status
         } catch {
             applyError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }

@@ -399,7 +399,7 @@ private struct VesselReeferMonitoringBody: View {
             // side we still show ambient, but stay silent on the verdict.
             let peril = (spread ?? 0) >= 40 && cargoZonePeakF != nil
             VStack(alignment: .leading, spacing: Space.s2) {
-                Text("AMBIENT vs CARGO · reeferTemp.ambient")
+                Text("AMBIENT vs CARGO · live probes")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 HStack(alignment: .top, spacing: Space.s3) {

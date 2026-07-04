@@ -134,7 +134,7 @@ struct MeSettlements: View {
             Text("Can't load settlements")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)

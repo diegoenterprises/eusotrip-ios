@@ -16,11 +16,8 @@
 //    • dispatch.getKPI            — EXISTS  (queryNoInput) — KPI strip
 //    • dispatch.getActiveIssues   — EXISTS  (queryNoInput) — attention row count
 //    • dispatch.getDriverStatuses — EXISTS  (query)        — live-drivers strip
-//    • dispatch.getPendingTenders — STUB · named-gap EUSO-2122 (top-tender queue)
-//    • dispatch.acceptTender      — STUB · named-gap EUSO-2122 (YES action)
-//  STUB endpoints are wired with real do/catch + loading/error/empty
-//  states; until the server lands them the queue surfaces a flagged
-//  empty/error state rather than mock data.
+//    • dispatch.getPendingTenders — EXISTS  (query)        — top-tender queue
+//    • dispatch.acceptTender      — EXISTS  (mutation)     — YES action
 //
 //  Author: Mike "Diego" Usoro / Eusorone Technologies, Inc
 //
@@ -92,6 +89,7 @@ private struct PendingTender: Decodable, Identifiable, Hashable {
 
 private struct DispatcherHomeBody: View {
     @Environment(\.palette) private var palette
+    @EnvironmentObject private var session: EusoTripSession
 
     @State private var kpi: DispatcherKPI? = nil
     @State private var issues: [DispatcherIssue] = []
@@ -100,9 +98,29 @@ private struct DispatcherHomeBody: View {
 
     @State private var loading = true
     @State private var loadError: String? = nil
-    @State private var tenderError: String? = nil      // STUB surface
+    @State private var tenderError: String? = nil
     @State private var actionError: String? = nil
     @State private var acceptingId: String? = nil
+
+    private var dispatcherDisplayName: String {
+        let raw = session.user?.name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return raw.isEmpty ? "Diego Usoro" : raw
+    }
+
+    private var dispatcherFirstName: String {
+        let first = dispatcherDisplayName.split(separator: " ").first.map(String.init) ?? ""
+        return first.isEmpty ? "Diego" : first
+    }
+
+    private var dispatcherInitials: String {
+        initials(dispatcherDisplayName)
+    }
+
+    private var dispatchSummaryLine: String {
+        let active = kpi?.activeLoads ?? 0
+        let label = drivers.count == 1 ? "driver" : "drivers"
+        return "Dispatch desk · \(drivers.count) \(label) · \(active) active hauls"
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -165,14 +183,14 @@ private struct DispatcherHomeBody: View {
     private var greeting: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Hey, Renée")
+                Text("Hey, \(dispatcherFirstName)")
                     .font(.system(size: 34, weight: .bold)).tracking(-0.6)
                     .foregroundStyle(palette.textPrimary)
-                Text("Aurora Freight Lines · 18 trucks · 14 active hauls")
+                Text(dispatchSummaryLine)
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)
-            avatarDisc("RM")
+            avatarDisc(dispatcherInitials)
         }
     }
 
@@ -229,11 +247,7 @@ private struct DispatcherHomeBody: View {
                     Spacer(minLength: 0)
                 }
                 Button {
-                    // 2026-06-09 nav repair: "708" was the retired Dpch708
-                    // kanban's stale shorthand — never a registered id, so
-                    // the CTA was a silent no-op. Canonical board = Disp401.
-                    NotificationCenter.default.post(name: .eusoDispatchNavSwap,
-                                                    object: nil, userInfo: ["screenId": "Disp401"])
+                    openBoard()
                 } label: {
                     Text("Open the Board →")
                         .font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
@@ -326,17 +340,29 @@ private struct DispatcherHomeBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
-                Text("See all (\(kpi?.pendingTenders ?? tenders.count))")
-                    .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                Button {
+                    openBoard()
+                } label: {
+                    Text("See all (\(kpi?.pendingTenders ?? tenders.count))")
+                        .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                }
+                .buttonStyle(.plain)
             }
 
             VStack(spacing: 0) {
+                if let actionError {
+                    Text(actionError)
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.danger)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+                }
                 if let te = tenderError {
-                    // STUB · EUSO-2122 — endpoint not yet landed.
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Tender queue unavailable")
                             .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                        Text("Couldn't load pending tenders. \(te)")
+                        Text(te)
                             .font(EType.caption).foregroundStyle(Brand.danger)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -458,11 +484,16 @@ private struct DispatcherHomeBody: View {
     private var esangStrip: some View {
         let pick = tenders.first { $0.isPeer != true && $0.suggestedDriver != nil }
         return Button {
-            // 2026-06-09 nav repair: posting navSwap "esang" was dead —
-            // "esang" is not a registered screen id, so RBAC bounced it.
-            // The coach opens via the dedicated orb notification that
-            // DispatchSurface already receives (RoleSurfaceRouter).
-            NotificationCenter.default.post(name: .eusoDispatcheSangTapped, object: nil)
+            NotificationCenter.default.post(
+                name: .eusoDispatcheSangTapped,
+                object: nil,
+                userInfo: [
+                    "surface": "dispatcher_home",
+                    "activeLoads": kpi?.activeLoads ?? 0,
+                    "pendingTenders": kpi?.pendingTenders ?? tenders.count,
+                    "driversRolling": rollingDriverCount
+                ]
+            )
         } label: {
             HStack(spacing: 12) {
                 ZStack {
@@ -475,8 +506,8 @@ private struct DispatcherHomeBody: View {
                 }
                 .frame(width: 32, height: 32)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(pick.map { "ESang says: tender \($0.lane ?? "this lane") to \($0.suggestedDriver ?? "best driver")" }
-                         ?? "ESang says: queue is steady, no urgent tender")
+                    Text(pick.map { "ESANG says: tender \($0.lane ?? "this lane") to \($0.suggestedDriver ?? "best driver")" }
+                         ?? "ESANG says: queue is steady, no urgent tender")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(palette.textPrimary).lineLimit(1)
                     Text(esangReason(pick))
@@ -507,34 +538,52 @@ private struct DispatcherHomeBody: View {
     // MARK: Live drivers strip
 
     private var liveDrivers: some View {
-        let rolling = drivers.filter { ($0.status ?? "").lowercased().contains("rolling") || ($0.status ?? "").lowercased().contains("driving") }.count
-        let idle = drivers.filter { ($0.status ?? "").lowercased().contains("idle") }.count
+        let rolling = rollingDriverCount
+        let idle = drivers.filter {
+            let status = ($0.status ?? "").lowercased()
+            return status.contains("idle") || status.contains("available")
+        }.count
         let off  = drivers.filter { ($0.status ?? "").lowercased().contains("off") }.count
-        return VStack(alignment: .leading, spacing: 10) {
-            Text("LIVE DRIVERS · \(drivers.count) ROLLING")
-                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                .foregroundStyle(palette.textTertiary)
-            HStack(spacing: 8) {
-                ForEach(drivers.prefix(7)) { d in driverDisc(d) }
-                if drivers.count > 7 {
-                    Text("+\(drivers.count - 7)")
-                        .font(.system(size: 11, weight: .heavy)).foregroundStyle(palette.textSecondary)
-                        .frame(width: 32, height: 32)
-                        .background(Circle().fill(palette.bgCardSoft))
-                        .overlay(Circle().strokeBorder(palette.borderFaint))
+        return Button {
+            openDriverRoster()
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("LIVE DRIVERS · \(rolling) ROLLING")
+                        .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                        .foregroundStyle(palette.textTertiary)
+                    Spacer(minLength: 0)
+                    Text("Open roster")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(palette.textSecondary)
                 }
-                Spacer(minLength: 0)
+                HStack(spacing: 8) {
+                    ForEach(drivers.prefix(7)) { d in driverDisc(d) }
+                    if drivers.count > 7 {
+                        Text("+\(drivers.count - 7)")
+                            .font(.system(size: 11, weight: .heavy)).foregroundStyle(palette.textSecondary)
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(palette.bgCardSoft))
+                            .overlay(Circle().strokeBorder(palette.borderFaint))
+                    }
+                    Spacer(minLength: 0)
+                }
+                Text("\(rolling) rolling · \(idle) idle · \(off) off-clock")
+                    .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
-            Text("\(rolling) rolling · \(idle) idle · \(off) off-clock")
-                .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
         }
+        .buttonStyle(.plain)
+    }
+
+    private var rollingDriverCount: Int {
+        drivers.filter { ($0.status ?? "").lowercased().contains("rolling") || ($0.status ?? "").lowercased().contains("driving") }.count
     }
 
     private func driverDisc(_ d: DispatcherDriverStatus) -> some View {
         let dot: Color = {
             switch (d.status ?? "").lowercased() {
             case let s where s.contains("rolling") || s.contains("driving"): return Brand.success
-            case let s where s.contains("idle"): return Brand.warning
+            case let s where s.contains("idle") || s.contains("available"): return Brand.warning
             default: return palette.textTertiary
             }
         }()
@@ -574,10 +623,10 @@ private struct DispatcherHomeBody: View {
             issues = iss
             drivers = drv
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = "Dispatch desk couldn't refresh. Pull down to try again."
         }
-        // Tenders load independently — STUB · EUSO-2122 — so a missing
-        // endpoint surfaces a flagged state without blowing away the desk.
+        // Tenders load independently so a temporary provider/API issue does
+        // not blank the rest of the desk.
         await loadTenders()
         loading = false
     }
@@ -586,13 +635,12 @@ private struct DispatcherHomeBody: View {
         tenderError = nil
         struct In: Encodable { let limit: Int }
         do {
-            // STUB · named-gap EUSO-2122 — server route not yet shipped.
             let r: [PendingTender] = try await EusoTripAPI.shared.query(
                 "dispatch.getPendingTenders", input: In(limit: 8))
             tenders = r
         } catch {
             tenders = []
-            tenderError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            tenderError = "Pending tenders could not refresh. Pull down to retry or open the board."
         }
     }
 
@@ -601,14 +649,29 @@ private struct DispatcherHomeBody: View {
         struct In: Encodable { let tenderId: String }
         struct Out: Decodable { let success: Bool? }
         do {
-            // STUB · named-gap EUSO-2122 — accept route not yet shipped.
             let _: Out = try await EusoTripAPI.shared.mutation(
                 "dispatch.acceptTender", input: In(tenderId: t.id))
             await loadTenders()
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = "Tender could not be accepted. Refresh and try again."
         }
         acceptingId = nil
+    }
+
+    private func openBoard() {
+        NotificationCenter.default.post(
+            name: .eusoDispatchNavSwap,
+            object: nil,
+            userInfo: ["screenId": "Disp401"]
+        )
+    }
+
+    private func openDriverRoster() {
+        NotificationCenter.default.post(
+            name: .eusoDispatchNavSwap,
+            object: nil,
+            userInfo: ["screenId": "Dpch701"]
+        )
     }
 }
 

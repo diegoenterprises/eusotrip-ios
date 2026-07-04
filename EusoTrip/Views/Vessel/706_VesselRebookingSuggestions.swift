@@ -207,9 +207,9 @@ private struct VesselRebookingSuggestionsBody: View {
     private var suggestionsList: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("SUGGESTIONS · rebookingSuggestions").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+                Text("SUGGESTIONS · REBOOKING").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("blankSailing.ts:78").font(.system(size: 12, design: .monospaced)).foregroundStyle(palette.textTertiary)
+                Text("live alternatives").font(.system(size: 12, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }.padding(.bottom, 10)
             VStack(spacing: 0) {
                 ForEach(Array(suggestions.enumerated()), id: \.element.id) { idx, r in
@@ -256,9 +256,9 @@ private struct VesselRebookingSuggestionsBody: View {
     private var originalStrip: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("ORIGINAL · originalBooking").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+                Text("ORIGINAL · BOOKING").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("blankSailing.ts:101").font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textTertiary)
+                Text("blank sailing watch").font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             Text("\(originalBooking) · voyage \(blankedVoyage) · cap. pulled").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             Text("same origin/destination pair · trans-Pacific westbound · 730 watch").font(.system(size: 11)).foregroundStyle(palette.textSecondary)

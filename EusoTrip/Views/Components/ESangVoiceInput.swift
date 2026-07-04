@@ -141,7 +141,7 @@ final class eSangVoiceInputController: ObservableObject {
         } catch {
             // Surface the underlying reason (recognizer-unavailable, route-not-ready,
             // etc.) so the user sees why the mic didn't open instead of a generic no-op.
-            status = .error(message: error.localizedDescription)
+            status = .error(message: error.eusoUserCopy)
             cleanup()
         }
     }
@@ -244,7 +244,7 @@ final class eSangVoiceInputController: ObservableObject {
                         self.finish()
                     }
                 } else if let error {
-                    self.status = .error(message: error.localizedDescription)
+                    self.status = .error(message: error.eusoUserCopy)
                     self.cleanup()
                 }
             }

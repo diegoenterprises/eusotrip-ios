@@ -282,7 +282,7 @@ private struct CatalystEDIMessages_390: View {
 
     private func transactionLogSection_390(_ log: EDITransactionLog_390) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("TRANSACTION LOG · transactionLog · partner \(log.partnerName)")
+            Text("TRANSACTION LOG · partner \(log.partnerName)")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
@@ -300,7 +300,7 @@ private struct CatalystEDIMessages_390: View {
                     }
                 }
                 // Footer micro line.
-                Text("parseInbound auto-ingests 204/997 · isa/gs control numbers tracked")
+                Text("Inbound 204/997 auto-ingest · ISA/GS control numbers tracked")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -367,7 +367,7 @@ private struct CatalystEDIMessages_390: View {
 
     private func partnerStrip_390(_ log: EDITransactionLog_390) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("TRADING PARTNERS · partnerSetup")
+            Text("TRADING PARTNERS · setup")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
@@ -422,7 +422,7 @@ private struct CatalystEDIMessages_390: View {
     }
 
     private var ctaCaption_390: some View {
-        Text("generateOutbound · {partnerId,transactionSet,payload} · partnerSetup")
+        Text("OUTBOUND · pick a partner and transaction set")
             .font(.system(size: 10))
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .center)

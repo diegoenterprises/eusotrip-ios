@@ -111,7 +111,7 @@ private struct VesselCustomsStatusUpdateBody: View {
                                    subtitle: "The declaration status ladder appears here once an entry is drafted for a booking.")
                 } else {
                     statusHero
-                    Text("STATUS PROGRESSION · updateCustomsStatus enum")
+                    Text("STATUS PROGRESSION · customs ladder")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     stepperCard
                     terminalAltsCard

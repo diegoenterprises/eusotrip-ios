@@ -14,7 +14,7 @@
 //  COMPLIANCE[current] · ME). Claims is a COMPLIANCE-domain surface, so the compliance slot is inked.
 //
 //  Data / wiring (endpoints confirmed via EUSOTRIP_PLATFORM MCP this fire):
-//    freightClaims.getClaimById (EXISTS frontend/server/routers/freightClaims.ts:246 · router namespace
+//    freightClaims.getClaims / getClaimById (EXISTS frontend/server/routers/freightClaims.ts · router namespace
 //      frontend/server/routers.ts:1846 freightClaims · input {id:string} · returns the single-claim
 //      dossier {claimNumber,type,status,description,amount,evidence:[{id,type,name,url,uploadedAt,
 //      uploadedBy}], …} or null when the incident row is absent — the bespoke empty state renders
@@ -55,6 +55,7 @@ private struct ClaimEvidenceItem_732: Identifiable {
 /// The single-claim dossier. Populated by the screen's loader from getClaimById
 /// (+ getCargoInsuranceCoverage); the view reads only from this.
 private struct ClaimDossier_732 {
+    let id: String                // getClaimById.id / getClaims.claims[].id
     let claimRef: String          // getClaimById.claimNumber
     let containerRef: String      // getClaimById.load context
     let incident: String          // getClaimById.type + port
@@ -81,6 +82,7 @@ private struct ClaimDossier_732 {
         if let r = advisory.range(of: "Jun 5") { advisory[r].foregroundColor = Brand.danger }
         if let r = advisory.range(of: "$13,200") { advisory[r].foregroundColor = Brand.blue }
         return .init(
+            id: "claim_preview",
             claimRef: "VES-260512",
             containerRef: "VES-260512-3399C7E2A1 · 40HC reefer",
             incident: "Cargo damage · Long Beach",
@@ -116,10 +118,14 @@ private func usd_732(_ cents: Int) -> String {
 
 struct VesselCargoClaimScreen: View {
     let theme: Theme.Palette
-    init(theme: Theme.Palette) { self.theme = theme }
+    let claimId: String
+    init(theme: Theme.Palette, claimId: String = "") {
+        self.theme = theme
+        self.claimId = claimId
+    }
     var body: some View {
         Shell(theme: theme) {
-            VesselCargoClaimBody_732()
+            VesselCargoClaimBody_732(claimId: claimId)
         } nav: {
             BottomNav(
                 leading: [NavSlot(label: "Home",      systemImage: "house",            isCurrent: false),
@@ -136,6 +142,7 @@ struct VesselCargoClaimScreen: View {
 
 private struct VesselCargoClaimBody_732: View {
     @Environment(\.palette) private var palette
+    let claimId: String
 
     @State private var loading = true
     @State private var loadError: String? = nil
@@ -235,7 +242,7 @@ private struct VesselCargoClaimBody_732: View {
                     .background(Brand.danger.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
                 }
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("RECOVERY WATERFALL · getClaimById")
+                    Text("RECOVERY WATERFALL · per claim")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                     waterfallBar(claim)
@@ -283,11 +290,11 @@ private struct VesselCargoClaimBody_732: View {
     private func evidenceGauge(_ claim: ClaimDossier_732) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("EVIDENCE STRENGTH · addClaimEvidence")
+                Text("EVIDENCE STRENGTH · CLAIM EVIDENCE")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("freightClaims.ts:437")
+                Text("evidence ledger")
                     .font(.system(size: 12, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -444,6 +451,7 @@ private struct VesselCargoClaimBody_732: View {
             struct EvidenceRow: Decodable { let name: String?; let type: String? }
             struct LoadCtx: Decodable { let loadNumber: String?; let commodity: String? }
             struct Resp: Decodable {
+                let id: String?
                 let claimNumber: String?
                 let type: String?
                 let status: String?
@@ -451,10 +459,29 @@ private struct VesselCargoClaimBody_732: View {
                 let load: LoadCtx?
                 let evidence: [EvidenceRow]?
             }
-            // getClaimById requires {id}; this detail surface is opened for a specific claim.
+            struct ClaimListInput732: Encodable { let limit: Int; let offset: Int }
+            struct ClaimListRow732: Decodable { let id: String? }
+            struct ClaimListResp732: Decodable { let claims: [ClaimListRow732]? }
+
+            let resolvedClaimId: String
+            if claimId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let page: ClaimListResp732 = try await EusoTripAPI.shared.query(
+                    "freightClaims.getClaims",
+                    input: ClaimListInput732(limit: 1, offset: 0)
+                )
+                guard let newest = page.claims?.first?.id, !newest.isEmpty else {
+                    claim = nil
+                    loading = false
+                    return
+                }
+                resolvedClaimId = newest
+            } else {
+                resolvedClaimId = claimId
+            }
+
             let r: Resp? = try await EusoTripAPI.shared.query(
                 "freightClaims.getClaimById",
-                input: ClaimByIdInput732(id: "1"))
+                input: ClaimByIdInput732(id: resolvedClaimId))
 
             guard let r else { claim = nil; loading = false; return }
 
@@ -478,6 +505,7 @@ private struct VesselCargoClaimBody_732: View {
             let container = [r.load?.loadNumber, r.load?.commodity].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
 
             claim = ClaimDossier_732(
+                id: r.id ?? resolvedClaimId,
                 claimRef: r.claimNumber ?? "VES",
                 containerRef: container.isEmpty ? "-" : container,
                 incident: "\((r.type ?? "Cargo").capitalized) claim · \((r.status ?? "reported").capitalized)",

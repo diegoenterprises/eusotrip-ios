@@ -143,6 +143,11 @@ private struct VesselDemurrageDetentionWatchBody: View {
                 } else {
                     kpiStrip
                     watchList
+                    // COUNTRY-DONE (658 money band): D&D authority + free-time +
+                    // currency by discharge country. US active (live accrual above);
+                    // CA/MX standby until vessel.getDemurrageRegime lands (named gap).
+                    TriCountryAuthorityBand(title: "TRI-COUNTRY D&D · AUTHORITY + FREE-TIME + CURRENCY",
+                                            regimes: VesselMoneyCountryDone.demurrageWatch)
                     CTAButton(title: "Export D&D report", leadingIcon: "square.and.arrow.up")
                 }
                 Color.clear.frame(height: 96)
@@ -160,7 +165,7 @@ private struct VesselDemurrageDetentionWatchBody: View {
                 Text("VESSEL OPERATOR · DEMURRAGE WATCH").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Demurrage & detention").font(.system(size: 25, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("getVesselDemurrage · per-container accrual").font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("Demurrage · per-container accrual").font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
@@ -174,7 +179,7 @@ private struct VesselDemurrageDetentionWatchBody: View {
 
     private var watchList: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("CONTAINERS · calculateVesselDemurrage").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("CONTAINERS · demurrage accrual").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             ForEach(watch?.containers ?? []) { c in
                 let r = risk(c)
                 LifecycleCard(accentDanger: r == .breached) {

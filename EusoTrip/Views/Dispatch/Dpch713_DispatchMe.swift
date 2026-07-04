@@ -28,30 +28,43 @@ struct DispatchMeScreen: View {
     @State private var showSignOutConfirm: Bool = false
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                topBar
-                titleBlock
-                iridescentHairline
-                identityHero
-                operationsSection
-                commandSection
-                fleetSection
-                analyticsSection
-                driverPerfSection
-                shipperPerfSection
-                vehiclePerfSection
-                settlementSection
-                commsPerfSection
-                laneRfpSection
-                exceptionsSection
-                toolsSection
-                settingsSection
-                signOutButton
-                Color.clear.frame(height: 96)
+        Shell(theme: theme) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    topBar
+                    titleBlock
+	                    iridescentHairline
+	                    identityHero
+	                    EusoCardIssuePanel(
+	                        title: "EusoCard",
+	                        subtitle: "Dispatch spend card for fleet exceptions and accessorials"
+	                    )
+	                    operationsSection
+                    commandSection
+                    fleetSection
+                    analyticsSection
+                    liveWorkflowsSection
+                    exceptionsSection
+                    toolsSection
+                    settingsSection
+                    signOutButton
+                    Color.clear.frame(height: 96)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
+        } nav: {
+            BottomNav(
+                leading: [
+                    NavSlot(label: "Home", systemImage: "house", isCurrent: false),
+                    NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill", isCurrent: false)
+                ],
+                trailing: [
+                    NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: false),
+                    NavSlot(label: "Me", systemImage: "person.fill", isCurrent: true)
+                ],
+                orbState: .idle
+            )
         }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) {
@@ -144,7 +157,7 @@ struct DispatchMeScreen: View {
                             .minimumScaleFactor(0.85)
                     }
                     if let cid = user?.companyId, !cid.isEmpty {
-                        Text("companyId · \(cid)")
+                        Text("Company ID · \(cid)")
                             .font(EType.mono(.micro)).tracking(0.4)
                             .foregroundStyle(palette.textTertiary)
                             .lineLimit(1)
@@ -198,94 +211,30 @@ struct DispatchMeScreen: View {
         }
     }
 
-    // 2026-06-02 — WAVE 5: surface stranded dispatch management + the
-    // analytics detail octets (740–795) into the Me hub (grouped roll-ups).
-    // Pure lifecycle/kanban cels (Dpch800–811 BH, 820–824 M-04, 531/532)
-    // stay event-reached; Disp400/Disp401 are dup home/kanban (dedup later).
+    // 2026-06-23 — ASC feedback AAtjc4HMGhw4GBFKyy1SVmI:
+    // keep this hub on distinct live workflows. The 740/750/760/770/780
+    // octet variants stay registered for event-context deep links, but the
+    // Me hub no longer presents dozens of parameterized copies as separate
+    // top-level buttons.
     private var commandSection: some View {
         sectionCard(title: "COMMAND & FLEET", icon: "square.grid.2x2") {
-            row(label: "Command center",   icon: "square.grid.2x2",          to: "Dpch714")
-            row(label: "Fleet map",        icon: "map",                      to: "Dpch715")
-            row(label: "Performance",      icon: "chart.line.uptrend.xyaxis", to: "Dpch716")
-            row(label: "Driver roster",    icon: "person.3",                 to: "Dpch404")
-            row(label: "AI dispatch assist", icon: "sparkles",               to: "533")
-            row(label: "Carrier scorecard", icon: "star.circle",            to: "539")
+            row(label: "Command center", detail: "Active loads, exceptions and assignment pressure", icon: "square.grid.2x2", to: "Dpch714")
+            row(label: "Fleet map", detail: "Live vehicle and route visibility", icon: "map", to: "Dpch715")
+            row(label: "Performance", detail: "Dispatcher KPI and fleet operating metrics", icon: "chart.line.uptrend.xyaxis", to: "Dpch716")
+            row(label: "Driver roster", detail: "Roster identity, availability and compliance entry", icon: "person.3", to: "Dpch404")
+            row(label: "AI dispatch assist", detail: "Contextual dispatch actions", icon: "sparkles", to: "533")
+            row(label: "Carrier scorecard", detail: "Carrier scoring and company performance", icon: "star.circle", to: "539")
         }
     }
 
-    private var driverPerfSection: some View {
-        sectionCard(title: "DRIVER PERFORMANCE", icon: "person.3.fill") {
-            row(label: "Review",       icon: "checkmark.circle",                to: "Dpch740")
-            row(label: "Lane",         icon: "road.lanes",                      to: "Dpch741")
-            row(label: "Incident log", icon: "exclamationmark.triangle",        to: "Dpch742")
-            row(label: "Performance",  icon: "gauge.with.dots.needle.67percent", to: "Dpch743")
-            row(label: "HOS",          icon: "clock.badge",                     to: "Dpch744")
-            row(label: "Onboarding",   icon: "person.badge.plus",               to: "Dpch745")
-            row(label: "Compliance",   icon: "checkmark.shield",                to: "Dpch746")
-            row(label: "Quarter",      icon: "calendar",                        to: "Dpch747")
-        }
-    }
-
-    private var shipperPerfSection: some View {
-        sectionCard(title: "SHIPPER PERFORMANCE", icon: "building.2") {
-            row(label: "Review",      icon: "checkmark.circle", to: "Dpch750")
-            row(label: "Pull volume", icon: "chart.bar",        to: "Dpch751")
-            row(label: "Tender win",  icon: "trophy",           to: "Dpch752")
-            row(label: "Payment",     icon: "creditcard",       to: "Dpch753")
-            row(label: "Lane win",    icon: "road.lanes",       to: "Dpch754")
-            row(label: "Health",      icon: "heart.text.square", to: "Dpch755")
-            row(label: "Onboarding",  icon: "person.badge.plus", to: "Dpch756")
-            row(label: "Quarter",     icon: "calendar",         to: "Dpch757")
-        }
-    }
-
-    private var vehiclePerfSection: some View {
-        sectionCard(title: "VEHICLE PERFORMANCE", icon: "truck.box") {
-            row(label: "Review",      icon: "checkmark.circle",                 to: "Dpch760")
-            row(label: "Utilization", icon: "gauge.with.dots.needle.67percent", to: "Dpch761")
-            row(label: "Maintenance", icon: "wrench.adjustable",                to: "Dpch762")
-            row(label: "On-time",     icon: "clock.badge.checkmark",            to: "Dpch763")
-            row(label: "Inspection",  icon: "checklist",                        to: "Dpch764")
-            row(label: "Deadhead",    icon: "arrow.uturn.backward",             to: "Dpch765")
-            row(label: "Onboarding",  icon: "plus.rectangle.on.folder",         to: "Dpch766")
-            row(label: "Quarter",     icon: "calendar",                         to: "Dpch767")
-        }
-    }
-
-    private var settlementSection: some View {
-        sectionCard(title: "SETTLEMENT", icon: "dollarsign.circle") {
-            row(label: "Review",     icon: "checkmark.circle",          to: "Dpch770")
-            row(label: "DSO",        icon: "calendar.badge.clock",      to: "Dpch771")
-            row(label: "QuickPay",   icon: "bolt",                      to: "Dpch772")
-            row(label: "Ledger",     icon: "list.bullet.rectangle.portrait", to: "Dpch773")
-            row(label: "Clean",      icon: "checkmark.seal",            to: "Dpch774")
-            row(label: "Onboarding", icon: "person.badge.plus",         to: "Dpch775")
-            row(label: "Audit",      icon: "doc.text.magnifyingglass",  to: "Dpch776")
-            row(label: "Quarter",    icon: "calendar",                  to: "Dpch777")
-        }
-    }
-
-    private var commsPerfSection: some View {
-        sectionCard(title: "COMMS PERFORMANCE", icon: "bubble.left.and.bubble.right") {
-            row(label: "Review",     icon: "checkmark.circle",        to: "Dpch780")
-            row(label: "Response",   icon: "arrowshape.turn.up.left", to: "Dpch781")
-            row(label: "SLA",        icon: "timer",                   to: "Dpch782")
-            row(label: "Escalation", icon: "exclamationmark.bubble",  to: "Dpch783")
-            row(label: "Closure",    icon: "checkmark.circle.fill",   to: "Dpch784")
-            row(label: "Volume",     icon: "chart.bar",               to: "Dpch785")
-            row(label: "First-time resolve", icon: "checkmark.seal",  to: "Dpch786")
-            row(label: "Quarter",    icon: "calendar",                to: "Dpch787")
-        }
-    }
-
-    private var laneRfpSection: some View {
-        sectionCard(title: "LANE & RFP", icon: "road.lanes") {
-            row(label: "Lane board",     icon: "rectangle.split.3x1",   to: "Dpch790")
-            row(label: "Lane drill",     icon: "magnifyingglass",       to: "Dpch791")
-            row(label: "Haul detail",    icon: "shippingbox",           to: "Dpch792")
-            row(label: "RFP inbox",      icon: "tray.full",             to: "Dpch793")
-            row(label: "Match-up",       icon: "arrow.triangle.merge",  to: "Dpch794")
-            row(label: "Contract write", icon: "pencil.and.outline",    to: "Dpch795")
+    private var liveWorkflowsSection: some View {
+        sectionCard(title: "LIVE WORKFLOWS", icon: "point.3.connected.trianglepath.dotted") {
+            row(label: "Driver performance", detail: "Performance metrics + DQ/HOS context", icon: "gauge.with.dots.needle.67percent", to: "Dpch743")
+            row(label: "Shipper scorecard", detail: "shipperScorecard.getScorecard + account identity", icon: "building.2", to: "Dpch750")
+            row(label: "Vehicle review", detail: "fleet.getFleetStats + fleet.getVehicles", icon: "truck.box", to: "Dpch760")
+            row(label: "Settlement review", detail: "payroll.getSettlementStats", icon: "dollarsign.circle", to: "Dpch770")
+            row(label: "Comms hub", detail: "Open dispatcher communication and escalation surface", icon: "bubble.left.and.bubble.right", to: "Dpch721")
+            row(label: "Lane and RFP board", detail: "Lane board, RFP inbox and contract actions", icon: "road.lanes", to: "Dpch790")
         }
     }
 
@@ -356,7 +305,7 @@ struct DispatchMeScreen: View {
         }
     }
 
-    private func row(label: String, icon: String, to screenId: String) -> some View {
+    private func row(label: String, detail: String? = nil, icon: String, to screenId: String) -> some View {
         Button(action: { swap(to: screenId) }) {
             HStack(spacing: 12) {
                 ZStack {
@@ -365,9 +314,17 @@ struct DispatchMeScreen: View {
                         .font(.system(size: 14, weight: .heavy))
                         .foregroundStyle(.white)
                 }
-                Text(label)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    if let detail {
+                        Text(detail)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(palette.textTertiary)
+                            .lineLimit(2)
+                    }
+                }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .heavy))

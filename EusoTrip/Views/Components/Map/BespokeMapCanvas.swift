@@ -621,6 +621,7 @@ extension BespokeMapCanvas {
             // ── 5 — label pills (CULL + HARD CAP; dedupe by rounded coord) ──
             var labelled = Set<String>()
             var labelCount = 0
+            var hasAuthoredLabels = false
             let labelCull = rect.insetBy(dx: -BespokeMapCanvas.labelCullMargin,
                                          dy: -BespokeMapCanvas.labelCullMargin)
             labels: for layer in layers {
@@ -628,6 +629,7 @@ extension BespokeMapCanvas {
                 case .markers(let ms), .missionPins(let ms):
                     for mk in ms {
                         guard let label = mk.label, !label.isEmpty else { continue }
+                        hasAuthoredLabels = true
                         if labelCount >= BespokeMapCanvas.maxVisibleLabels { break labels }
                         let anchor = viewport.screenPoint(mk.at)
                         labelled.insert(BespokeMapCanvas.coordKey(mk.at))
@@ -638,23 +640,28 @@ extension BespokeMapCanvas {
                 default: break
                 }
             }
-            // Endpoint coordinate fallback (only when unlabelled).
-            for layer in layers {
-                if case .route(let poly, _) = layer, let first = poly.first, let last = poly.last {
-                    if labelCount < BespokeMapCanvas.maxVisibleLabels,
-                       !labelled.contains(BespokeMapCanvas.coordKey(first)) {
-                        let a = viewport.screenPoint(first)
-                        if labelCull.contains(a) {
-                            m.labels.append((a, BespokeMapCanvas.coordText(first)))
-                            labelCount += 1
+            // Endpoint coordinate fallback only when the caller supplied no
+            // authored place labels at all. If pickup/delivery labels exist,
+            // city/state/street must win and raw coordinate pills must not
+            // appear beside a real freight lane.
+            if !hasAuthoredLabels {
+                for layer in layers {
+                    if case .route(let poly, _) = layer, let first = poly.first, let last = poly.last {
+                        if labelCount < BespokeMapCanvas.maxVisibleLabels,
+                           !labelled.contains(BespokeMapCanvas.coordKey(first)) {
+                            let a = viewport.screenPoint(first)
+                            if labelCull.contains(a) {
+                                m.labels.append((a, BespokeMapCanvas.coordText(first)))
+                                labelCount += 1
+                            }
                         }
-                    }
-                    if labelCount < BespokeMapCanvas.maxVisibleLabels,
-                       !labelled.contains(BespokeMapCanvas.coordKey(last)) {
-                        let a = viewport.screenPoint(last)
-                        if labelCull.contains(a) {
-                            m.labels.append((a, BespokeMapCanvas.coordText(last)))
-                            labelCount += 1
+                        if labelCount < BespokeMapCanvas.maxVisibleLabels,
+                           !labelled.contains(BespokeMapCanvas.coordKey(last)) {
+                            let a = viewport.screenPoint(last)
+                            if labelCull.contains(a) {
+                                m.labels.append((a, BespokeMapCanvas.coordText(last)))
+                                labelCount += 1
+                            }
                         }
                     }
                 }

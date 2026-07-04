@@ -468,7 +468,7 @@ struct RailCargoInsurance_606: View {
             HStack {
                 Text("QUOTE LINES").font(.system(size: 9, weight: .heavy)).kerning(1.0).foregroundColor(ink.faint)
                 Spacer()
-                Text("insurance.ts:959").font(.system(size: 11, design: .monospaced)).foregroundColor(ink.sub)
+                Text("policy quote lines").font(.system(size: 11, design: .monospaced)).foregroundColor(ink.sub)
             }.padding(.bottom, 12)
             VStack(spacing: 0) {
                 if vm.c.lines.isEmpty {

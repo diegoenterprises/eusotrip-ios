@@ -146,11 +146,16 @@ final class NewsFeedStore: ObservableObject {
         showingSavedOnly = on
         if on {
             Task {
-                if let saved = try? await api.news.getSavedArticles() {
+                do {
+                    let saved = try await api.news.getSavedArticles()
                     self.savedArticles = saved
                     // Keep savedIds in sync — hydrateSaved wires the
                     // bookmark icons while this view is active.
                     self.savedIds = Set(saved.map(\.id))
+                    self.lastError = nil
+                } catch {
+                    self.lastError = (error as? EusoTripAPIError)?.errorDescription
+                        ?? error.localizedDescription
                 }
             }
         }
@@ -259,11 +264,16 @@ final class NewsFeedStore: ObservableObject {
     }
 
     /// Pull the saved article list so the heart icons reflect the truth
-    /// on screen first-load. Best-effort.
+    /// on screen first-load. Failures surface through `lastError`.
     func hydrateSaved() {
         Task {
-            if let saved = try? await api.news.getSavedArticles() {
+            do {
+                let saved = try await api.news.getSavedArticles()
                 self.savedIds = Set(saved.map(\.id))
+                self.lastError = nil
+            } catch {
+                self.lastError = (error as? EusoTripAPIError)?.errorDescription
+                    ?? error.localizedDescription
             }
         }
     }

@@ -141,7 +141,7 @@ private struct TankerFleetBody_388: View {
 
     private let fineprint: [String] = [
         "Tank telemetry · pressure/vapor per asset · MC-331 cargo-tank limits",
-        "Carrier: Eusotrans LLC · USDOT 3 194 882 · live tankMonitor.* feed",
+        "Carrier: Eusotrans LLC · USDOT 3 194 882 · live tank telemetry feed",
     ]
 
     var body: some View {
@@ -615,7 +615,7 @@ private struct TankerFleetBody_388: View {
             ? "\(terminalName) · \(util!)% utilized · \(readings.count) cargo tanks"
             : "\(terminalName) · \(readings.count) cargo tanks"
         let line2 = "Carrier-monitored cargo-tank telemetry · MC-331 limits"
-        let footnote = "Terminal #\(terminalId) · live tankMonitor.* feed · \(readings.count) tanks"
+        let footnote = "Terminal #\(terminalId) · live tank telemetry feed · \(readings.count) tanks"
 
         data = TankTelemetry_388(
             heroBig: heroBig,

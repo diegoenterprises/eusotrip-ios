@@ -534,7 +534,7 @@ private struct OperatingAuthorityBody: View {
                     Text(look.headline)
                         .font(.system(size: 11, weight: .heavy)).tracking(0.7)
                         .foregroundStyle(look.tint)
-                    Text("Server status: \(status)")
+                    Text("Review status: \(status)")
                         .font(EType.mono(.caption))
                         .foregroundStyle(palette.textTertiary)
                 }

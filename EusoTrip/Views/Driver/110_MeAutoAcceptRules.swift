@@ -44,21 +44,29 @@ final class AutoAcceptRulesStore: ObservableObject {
 
     func load() async {
         phase = .loading
+        lastError = nil
         do {
             let rules = try await api.loadBidding.listAutoAcceptRules()
             phase = .loaded(rules)
         } catch {
-            phase = .error("Couldn't load rules.")
+            let message = friendly(error)
+            lastError = message
+            phase = .error(message)
         }
     }
 
+    @discardableResult
     func create(name: String,
                 maxRate: Double?,
                 maxRatePerMile: Double?,
                 minCatalystRating: Double?,
                 requiredInsuranceMin: Double?,
+                requiredEquipmentTypes: [String]?,
                 requiredHazmat: Bool?,
-                maxTransitDays: Int?) async {
+                maxTransitDays: Int?,
+                originStates: [String]?,
+                destinationStates: [String]?) async -> Bool {
+        lastError = nil
         do {
             _ = try await api.loadBidding.createAutoAcceptRule(
                 name: name,
@@ -66,17 +74,19 @@ final class AutoAcceptRulesStore: ObservableObject {
                 maxRatePerMile: maxRatePerMile,
                 minCatalystRating: minCatalystRating,
                 requiredInsuranceMin: requiredInsuranceMin,
-                requiredEquipmentTypes: nil,
+                requiredEquipmentTypes: requiredEquipmentTypes,
                 requiredHazmat: requiredHazmat,
                 maxTransitDays: maxTransitDays,
                 preferredCatalystIds: nil,
-                originStates: nil,
-                destinationStates: nil
+                originStates: originStates,
+                destinationStates: destinationStates
             )
             lastAck = "Rule created."
             await load()
+            return true
         } catch {
-            lastError = "Couldn't create rule."
+            lastError = friendly(error)
+            return false
         }
     }
 
@@ -84,23 +94,33 @@ final class AutoAcceptRulesStore: ObservableObject {
         working.insert(rule.id)
         defer { working.remove(rule.id) }
         let next = !(rule.isActive ?? false)
+        lastError = nil
         do {
             _ = try await api.loadBidding.toggleAutoAcceptRule(id: rule.id, isActive: next)
             await load()
         } catch {
-            lastError = "Couldn't toggle rule."
+            lastError = friendly(error)
         }
     }
 
     func delete(_ rule: LoadBiddingAPI.AutoAcceptRule) async {
         working.insert(rule.id)
         defer { working.remove(rule.id) }
+        lastError = nil
         do {
             _ = try await api.loadBidding.deleteAutoAcceptRule(id: rule.id)
             await load()
         } catch {
-            lastError = "Couldn't delete rule."
+            lastError = friendly(error)
         }
+    }
+
+    private func friendly(_ error: Error) -> String {
+        if let e = error as? LocalizedError, let description = e.errorDescription, !description.isEmpty {
+            return description
+        }
+        let raw = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        return raw.isEmpty ? "Auto-accept rules are unavailable. Try again." : raw
     }
 }
 
@@ -134,6 +154,14 @@ struct MeAutoAcceptRulesView: View {
         }, message: {
             if let s = store.lastAck { Text(s) }
         })
+        .alert("Auto-accept needs attention", isPresented: Binding(
+            get: { store.lastError != nil },
+            set: { if !$0 { store.lastError = nil } }
+        ), actions: {
+            Button("OK") { store.lastError = nil }
+        }, message: {
+            if let s = store.lastError { Text(s) }
+        })
     }
 
     private var header: some View {
@@ -151,7 +179,7 @@ struct MeAutoAcceptRulesView: View {
                 }
                 Text("Auto-accept rules").font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary).lineLimit(1)
-                Text("When a bid matches ALL criteria, server auto-flips it. Faster deals, fewer push notifications.")
+                Text("When a bid matches ALL criteria, EusoTrip can auto-accept it. Faster deals, fewer push notifications.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true).lineLimit(2)
             }
@@ -357,6 +385,10 @@ private struct CreateRuleSheet: View {
     @State private var requiredInsuranceMin: String = ""
     @State private var requireHazmat: Bool = false
     @State private var maxTransitDays: String = ""
+    @State private var equipmentTypes: String = ""
+    @State private var originStates: String = ""
+    @State private var destinationStates: String = ""
+    @State private var formError: String? = nil
     @State private var creating: Bool = false
 
     var body: some View {
@@ -364,6 +396,9 @@ private struct CreateRuleSheet: View {
             VStack(alignment: .leading, spacing: Space.s4) {
                 hero
                 fieldStack
+                if let formError {
+                    inlineError(formError)
+                }
                 createButton
                 Color.clear.frame(height: 60)
             }
@@ -396,6 +431,9 @@ private struct CreateRuleSheet: View {
             field(label: "Min carrier rating (0-5)", placeholder: "e.g. 4.2", text: $minCatalystRating, keyboard: .decimalPad)
             field(label: "Min insurance ($)", placeholder: "e.g. 1000000", text: $requiredInsuranceMin, keyboard: .decimalPad)
             field(label: "Max transit days", placeholder: "e.g. 3", text: $maxTransitDays, keyboard: .numberPad)
+            field(label: "Equipment types", placeholder: "reefer, dry van, tanker", text: $equipmentTypes, keyboard: .default)
+            field(label: "Origin states / provinces", placeholder: "TX, LA, OK", text: $originStates, keyboard: .default)
+            field(label: "Destination states / provinces", placeholder: "GA, FL, AL", text: $destinationStates, keyboard: .default)
             HStack {
                 Toggle(isOn: $requireHazmat) {
                     HStack(spacing: 6) {
@@ -429,21 +467,83 @@ private struct CreateRuleSheet: View {
         }
     }
 
+    private func inlineError(_ message: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(Brand.warning)
+            Text(message)
+                .font(EType.caption)
+                .foregroundStyle(palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.warning.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private var parsedEquipmentTypes: [String]? {
+        csvTokens(equipmentTypes, uppercased: false)
+    }
+
+    private var parsedOriginStates: [String]? {
+        csvTokens(originStates, uppercased: true)
+    }
+
+    private var parsedDestinationStates: [String]? {
+        csvTokens(destinationStates, uppercased: true)
+    }
+
+    private var hasAtLeastOneCriterion: Bool {
+        Double(maxRate) != nil
+        || Double(maxRatePerMile) != nil
+        || Double(minCatalystRating) != nil
+        || Double(requiredInsuranceMin) != nil
+        || Int(maxTransitDays) != nil
+        || requireHazmat
+        || parsedEquipmentTypes?.isEmpty == false
+        || parsedOriginStates?.isEmpty == false
+        || parsedDestinationStates?.isEmpty == false
+    }
+
+    private func csvTokens(_ raw: String, uppercased: Bool) -> [String]? {
+        let values = raw
+            .split(separator: ",")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .map { uppercased ? $0.uppercased() : $0 }
+        return values.isEmpty ? nil : Array(Set(values)).sorted()
+    }
+
     private var createButton: some View {
         Button {
+            formError = nil
+            guard hasAtLeastOneCriterion else {
+                formError = "Set at least one criterion so this rule cannot auto-accept every bid."
+                return
+            }
             creating = true
             Task {
-                await store.create(
+                let ok = await store.create(
                     name: name.trimmingCharacters(in: .whitespaces),
                     maxRate: Double(maxRate),
                     maxRatePerMile: Double(maxRatePerMile),
                     minCatalystRating: Double(minCatalystRating),
                     requiredInsuranceMin: Double(requiredInsuranceMin),
+                    requiredEquipmentTypes: parsedEquipmentTypes,
                     requiredHazmat: requireHazmat ? true : nil,
-                    maxTransitDays: Int(maxTransitDays)
+                    maxTransitDays: Int(maxTransitDays),
+                    originStates: parsedOriginStates,
+                    destinationStates: parsedDestinationStates
                 )
                 creating = false
-                dismiss()
+                if ok {
+                    dismiss()
+                } else {
+                    formError = store.lastError ?? "Couldn't create rule."
+                }
             }
         } label: {
             HStack(spacing: 8) {
@@ -458,7 +558,7 @@ private struct CreateRuleSheet: View {
             .foregroundStyle(.white).background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(creating || name.trimmingCharacters(in: .whitespaces).isEmpty)
+        .disabled(creating || name.trimmingCharacters(in: .whitespaces).isEmpty || !hasAtLeastOneCriterion)
     }
 }
 

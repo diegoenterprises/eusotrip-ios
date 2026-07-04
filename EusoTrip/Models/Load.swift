@@ -29,6 +29,33 @@ struct LoadLocation: Codable, Hashable {
         [city, state].filter { !$0.isEmpty }.joined(separator: ", ")
     }
 
+    /// Street + city/state + zip for map markers and route cards. Coordinates
+    /// are a last-resort label only when the address block is genuinely absent.
+    var streetCityStateZip: String {
+        let place = [cityState, zipCode].filter { !$0.isEmpty }.joined(separator: " ")
+        return [address, place].filter { !$0.isEmpty }.joined(separator: " - ")
+    }
+
+    var hasDisplayableCoordinate: Bool {
+        lat.isFinite && lng.isFinite
+        && (-90...90).contains(lat)
+        && (-180...180).contains(lng)
+        && !(lat == 0 && lng == 0)
+    }
+
+    var mapDisplayLabel: String {
+        if !streetCityStateZip.isEmpty { return streetCityStateZip }
+        if hasDisplayableCoordinate {
+            return String(format: "%.4f, %.4f", lat, lng)
+        }
+        return ""
+    }
+
+    var optionalMapDisplayLabel: String? {
+        let label = mapDisplayLabel
+        return label.isEmpty ? nil : label
+    }
+
     static let empty = LoadLocation(
         address: "", city: "", state: "", zipCode: "", lat: 0, lng: 0
     )

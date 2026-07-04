@@ -145,7 +145,7 @@ private struct RailDemurrageWatchBody: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("accruing now")
                                 .font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.textSecondary)
-                            Text("\(watch?.cars?.count ?? 0) in-yard cars · getLiveDemurrage")
+                            Text("\(watch?.cars?.count ?? 0) in-yard cars · live demurrage")
                                 .font(EType.caption).foregroundStyle(palette.textTertiary)
                         }
                     }
@@ -192,7 +192,7 @@ private struct RailDemurrageWatchBody: View {
 
     private var watchList: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("IN-YARD CARS · calculateRailDemurrage")
+            Text("IN-YARD CARS · demurrage accrual")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             VStack(spacing: Space.s2) {
                 ForEach(watch?.cars ?? []) { c in carRow(c) }

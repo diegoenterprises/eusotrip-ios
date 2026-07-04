@@ -54,6 +54,7 @@ final class DriverLocationResolver: NSObject, ObservableObject {
     /// stalling on a simulator that never delivers a CoreLocation
     /// callback.
     private let fixTimeout: TimeInterval = 4
+    private var authorizationObserver: NSObjectProtocol?
 
     override init() {
         let m = CLLocationManager()
@@ -62,6 +63,35 @@ final class DriverLocationResolver: NSObject, ObservableObject {
         self.authorizationStatus = m.authorizationStatus
         super.init()
         m.delegate = self
+        authorizationObserver = NotificationCenter.default.addObserver(
+            forName: .eusoWeatherAuthorizationChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshAuthorizationStatus() }
+        }
+    }
+
+    deinit {
+        if let authorizationObserver {
+            NotificationCenter.default.removeObserver(authorizationObserver)
+        }
+    }
+
+    func refreshAuthorizationStatus() {
+        let status = manager.authorizationStatus
+        authorizationStatus = status
+        if status == .denied || status == .restricted {
+            lastCoordinate = nil
+            lastFixAt = nil
+            drainPending(with: nil)
+        }
+    }
+
+    func requestPermissionIfNeeded() {
+        refreshAuthorizationStatus()
+        guard authorizationStatus == .notDetermined else { return }
+        manager.requestWhenInUseAuthorization()
     }
 
     /// Returns the driver's current coordinate, serving the cache
@@ -70,6 +100,7 @@ final class DriverLocationResolver: NSObject, ObservableObject {
     /// times out — callers render their "Enable location" CTA or
     /// silently omit their widget in that case.
     func currentCoordinate() async -> CLLocationCoordinate2D? {
+        refreshAuthorizationStatus()
         // Serve cache while fresh.
         if let c = lastCoordinate,
            let at = lastFixAt,
@@ -83,7 +114,7 @@ final class DriverLocationResolver: NSObject, ObservableObject {
         case .denied, .restricted:
             return nil
         case .notDetermined:
-            manager.requestWhenInUseAuthorization()
+            requestPermissionIfNeeded()
         case .authorizedAlways, .authorizedWhenInUse:
             break
         @unknown default:

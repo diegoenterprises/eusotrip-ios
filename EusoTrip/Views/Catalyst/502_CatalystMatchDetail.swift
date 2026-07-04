@@ -677,7 +677,7 @@ struct CatalystMatchDetail: View {
                         .lineLimit(1)
                 }
             }
-            Text("Per-candidate scoring rubric, agent breakdown and fit-score history will appear here once `catalysts.getMatchCandidates` ships server-side.")
+            Text("Per-candidate scoring rubric, agent breakdown, and fit-score history appears here when match candidates are available.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -237,7 +237,7 @@ private struct BulkUploadShellBody: View {
     private var entityTypeCard: some View {
         if loading { LifecycleCard { Text("Loading supported entity types…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
         else if entityTypes.isEmpty {
-            LifecycleCard { Text("This role has no bulk-upload entity types configured server-side.").font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true) }
+            LifecycleCard { Text("This role has no bulk-upload entity types configured yet.").font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true) }
         } else {
             LifecycleCard {
                 LifecycleSection(label: "ENTITY TYPE", icon: "tag")

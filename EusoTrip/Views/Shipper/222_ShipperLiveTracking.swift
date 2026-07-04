@@ -219,6 +219,8 @@ struct ShipperLiveTracking: View {
     // in place of the address shorthand; tapping the position area flips back.
     // Keyed by `ActiveLoad.id` (the same id `ForEach`/`weatherRisk` use).
     @State private var coordRowIDs: Set<String> = []
+    @State private var borderWaits: BorderWaitsOut? = nil
+    @State private var borderWaitsChecked = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -237,8 +239,14 @@ struct ShipperLiveTracking: View {
                 Color.clear.frame(height: 96)
             }
         }
-        .refreshable { await store.refresh() }
-        .task { store.startPolling() }
+        .refreshable {
+            await store.refresh()
+            await loadBorderWaits()
+        }
+        .task {
+            store.startPolling()
+            await loadBorderWaits()
+        }
         .onDisappear { store.stopPolling() }
         // RealtimeService → any inbound load assignment / reassignment
         // / surface-refresh event triggers an immediate store refresh
@@ -355,11 +363,72 @@ struct ShipperLiveTracking: View {
         case .loaded:
             VStack(alignment: .leading, spacing: 0) {
                 mapHero
+                borderCorridorSection
+                    .padding(.horizontal, Space.s3)
+                    .padding(.top, Space.s4)
                 shipmentsSection
                     .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s4)
             }
         }
+    }
+
+    // MARK: COUNTRY-DONE (222) — live border-wait corridor
+
+    /// Live wire: crossBorder.getBorderWaitTimes (CBP Border Wait Times feed).
+    /// The per-load crossing ETA fuse is a named gap (tracking.getCrossingETA).
+    private struct BorderWaitPort: Decodable {
+        let name: String?
+        let border: String?              // "US-CA" | "US-MX"
+        let currentWaitMinutes: Int?
+    }
+    private struct BorderWaitsOut: Decodable {
+        let ports: [BorderWaitPort]?
+        let systemStatus: String?        // "LIVE" | "UNAVAILABLE"
+        let live: Bool?
+    }
+
+    @ViewBuilder
+    private var borderCorridorSection: some View {
+        if let waits = borderWaits, waits.live == true, let ports = waits.ports, !ports.isEmpty {
+            BorderWaitCorridorBand(theme: palette, nodes: corridorNodes(ports), live: true)
+        } else if borderWaitsChecked {
+            // Honest unavailable state — the tracking board below is unaffected.
+            HStack(spacing: 6) {
+                Circle().fill(palette.textTertiary).frame(width: 5, height: 5)
+                Text("Live border waits unavailable · shipments below still live · pull to refresh")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+            }
+        }
+    }
+
+    private func corridorNodes(_ ports: [BorderWaitPort]) -> [CrossingNode] {
+        var nodes: [CrossingNode] = [
+            .init(label: "US · CBP/ACE", wait: nil, tint: .clear, isDiamond: false)
+        ]
+        if let ca = ports.filter({ $0.border == "US-CA" }).max(by: { ($0.currentWaitMinutes ?? 0) < ($1.currentWaitMinutes ?? 0) }),
+           let w = ca.currentWaitMinutes {
+            nodes.append(.init(label: "\(ca.name ?? "US–CA") · CBSA", wait: "\(w) min",
+                               tint: Color(hex: 0x1473FF), isDiamond: true))
+        }
+        if let mx = ports.filter({ $0.border == "US-MX" }).max(by: { ($0.currentWaitMinutes ?? 0) < ($1.currentWaitMinutes ?? 0) }),
+           let w = mx.currentWaitMinutes {
+            nodes.append(.init(label: "\(mx.name ?? "US–MX") · SAT", wait: "\(w) min",
+                               tint: Color(hex: 0xFF7A00), isDiamond: true))
+        }
+        return nodes
+    }
+
+    private func loadBorderWaits() async {
+        struct In: Encodable { let border: String }
+        do {
+            borderWaits = try await EusoTripAPI.shared.query(
+                "crossBorder.getBorderWaitTimes", input: In(border: "ALL"))
+        } catch {
+            borderWaits = nil   // honest: band collapses to the unavailable line
+        }
+        borderWaitsChecked = true
     }
 
     // MARK: Map hero (HereMapView basemap + chip overlay + KPI strip)

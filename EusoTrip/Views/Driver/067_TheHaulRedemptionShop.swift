@@ -411,7 +411,10 @@ public struct TheHaulRedemptionShopView: View {
 // MARK: - Identifiable conformance for sheet(item:)
 
 extension HaulCheckoutReceipt: Identifiable {
-    public var id: Int { rewardIds.first ?? Int.random(in: 0..<Int.max) }
+    public var id: Int {
+        if let first = rewardIds.first { return first }
+        return abs("\(itemsRedeemed)-\(totalCost)-\(remainingBalance)-\(receipt.map(\.id).joined(separator: ","))".hashValue)
+    }
 }
 
 // MARK: - Previews

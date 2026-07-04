@@ -169,7 +169,7 @@ private struct VesselChainOfCustodyBody: View {
             Text("Chain of Custody")
                 .font(.system(size: 28, weight: .heavy)).kerning(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("getTrail · \(loadId) · live")
+            Text("Custody trail · \(loadId) · live")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
             IridescentHairline()
@@ -183,7 +183,7 @@ private struct VesselChainOfCustodyBody: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("INTEGRITY · getComplianceReport")
+                    Text("INTEGRITY · compliance report")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                     Text(integrityLabel)
@@ -225,7 +225,7 @@ private struct VesselChainOfCustodyBody: View {
 
     private var custodyTrail: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            Text("CUSTODY TRAIL · getTrail")
+            Text("CUSTODY TRAIL · live")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
 

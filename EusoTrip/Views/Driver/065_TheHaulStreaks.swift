@@ -132,7 +132,7 @@ struct TheHaulStreaks: View {
         EusoEmptyState(
             systemImage: "exclamationmark.bubble",
             title: "Streak data unavailable",
-            subtitle: "We couldn't read your streak tracker from the server. Pull to refresh.",
+            subtitle: "We couldn't read your streak tracker. Pull to refresh.",
             comingSoon: false
         )
     }
@@ -153,7 +153,7 @@ struct TheHaulStreaks: View {
             Text("Can't reach the streak tracker")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
@@ -385,7 +385,7 @@ struct TheHaulStreaks: View {
             VStack(alignment: .leading, spacing: Space.s2) {
                 conceptBullet(
                     systemImage: "flame",
-                    text: "Every active day adds to your daily streak. Miss a day, the streak resets, the server reconciles against your last load."
+                    text: "Every active day adds to your daily streak. Miss a day, the streak resets against your last completed load."
                 )
                 conceptBullet(
                     systemImage: "bolt",

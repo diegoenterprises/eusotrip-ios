@@ -207,7 +207,7 @@ struct PickupBolSigning: View {
             }
             bolPdfUrl = url
         } catch {
-            pdfError = error.localizedDescription
+            pdfError = error.eusoUserCopy
         }
     }
 

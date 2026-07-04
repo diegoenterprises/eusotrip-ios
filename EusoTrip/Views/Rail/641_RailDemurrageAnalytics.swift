@@ -321,7 +321,7 @@ private struct RailDemurrageAnalyticsBody: View {
                 }
             }
             .frame(height: 36)
-            Text("8-wk demurrage · $/wk · awaiting weeklyTrend")
+            Text("8-wk demurrage · $/wk · awaiting weekly trend data")
                 .font(EType.mono(.micro))
                 .foregroundStyle(palette.textTertiary)
         }
@@ -443,7 +443,7 @@ private struct RailDemurrageAnalyticsBody: View {
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
-            Text("reportByDwellReason feeds dispute queue · auto-recalc")
+            Text("Dwell-reason report feeds the dispute queue · auto-recalc")
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(palette.textSecondary)
             Text("Carrier BNSF Intermodal · Eusorone (DU) · RAIL-260524-A7140")

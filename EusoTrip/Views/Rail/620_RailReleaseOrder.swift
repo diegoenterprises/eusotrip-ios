@@ -378,7 +378,7 @@ private struct RailReleaseOrderBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("railShipments.ts:209")
+                Text("live holds")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -469,7 +469,7 @@ private struct RailReleaseOrderBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("railShipments.ts:237")
+                Text("release rule")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -591,7 +591,7 @@ private struct RailReleaseOrderBody: View {
             releaseDone = true
             await reload()
         } catch {
-            releaseError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            releaseError = error.eusoUserCopy
         }
         releasing = false
     }

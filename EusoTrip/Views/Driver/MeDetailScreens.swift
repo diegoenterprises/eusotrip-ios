@@ -141,6 +141,19 @@ struct MeDetailContainer: View {
     // Routes that own their entire chrome (header + scroll + refresh).
     // For these the container skips its own `header` + hairline so we
     // don't double-render.
+    //
+    // CONTRACT (ASC "Maybe add back button", build 721): `.eusoSheetX()`
+    // is a pure detent helper since the 2026-04-25 retraction — it paints
+    // NO close X. Because the container's EusoHeader + SheetCloseButton is
+    // skipped for these routes, every route on this list MUST render its
+    // own close affordance:
+    //   • .news     → MeNewsView pins the canonical `.eusoSheetChrome`
+    //                 (BackChevron + role-aware "<Role> Intel" title +
+    //                 SheetCloseButton) above its ScrollView.
+    //   • .earnings → DriverWalletPane's pinned EusoHeader carries the
+    //                 canonical SheetCloseButton in its trailing slot.
+    // Adding a route here WITHOUT its own header X re-creates the
+    // no-close-affordance bug this contract exists to prevent.
     private var ownsOwnChrome: Bool {
         switch route {
         case .news, .earnings: return true
@@ -1758,7 +1771,7 @@ struct MeZeunView: View {
                 Text("\(historyStore.items.count) logged")
                     .font(.system(size: 42, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Pre + post trip logs live from the backend once you've submitted your first inspection.")
+                Text("Pre + post trip logs appear once you've submitted your first inspection.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                 ComplianceInlineChip(tag: .eDvir)
@@ -1857,6 +1870,7 @@ struct MeZeunView: View {
 struct MeEldView: View {
     @Environment(\.palette) var palette
     @StateObject private var store = HOSLiveStore()
+    @StateObject private var eldStore = ELDIntegrationStore()
     @State private var showCertify = false
 
     /// Presents `ELDIntegrationView` as a sheet. Driven by the footer pill /
@@ -1952,6 +1966,15 @@ struct MeEldView: View {
         return String(format: "%dh %02dm", h, m)
     }
 
+    private var hasSyncedHosData: Bool {
+        store.status != nil || store.today != nil || !store.history.isEmpty
+    }
+
+    private var connectedELDProviderName: String? {
+        guard let slug = eldStore.primaryConnectedSlug else { return nil }
+        return eldStore.provider(for: slug)?.name ?? Self.providerLabel(from: slug)
+    }
+
     /// Ordered oldest-first for the chart (server returns newest-first).
     private var cycleByDay: [HOSDailyLog] {
         Array(store.history.reversed())
@@ -2007,8 +2030,14 @@ struct MeEldView: View {
             complianceCard
             eldStatusFooter
         }
-        .task { await store.bootstrap() }
-        .refreshable { await store.refreshAll() }
+        .task {
+            await store.bootstrap()
+            await eldStore.bootstrap()
+        }
+        .refreshable {
+            await store.refreshAll()
+            await eldStore.refresh()
+        }
         .alert("Certify today's log", isPresented: $showCertify) {
             Button("Certify", role: .none) {
                 Task {
@@ -2033,6 +2062,13 @@ struct MeEldView: View {
         }
         .sheet(isPresented: $showingELDIntegration) {
             ELDIntegrationView()
+        }
+        .onChange(of: showingELDIntegration) { _, isPresented in
+            guard !isPresented else { return }
+            Task {
+                await eldStore.refresh()
+                await store.refreshAll()
+            }
         }
     }
 
@@ -2152,7 +2188,9 @@ struct MeEldView: View {
                 }
 
                 if cycleByDay.isEmpty {
-                    Text("Awaiting first sync from ELD")
+                    Text(eldStore.isConnected
+                         ? "Awaiting first sync from \(connectedELDProviderName ?? "ELD")"
+                         : "No ELD connected - connect a provider to sync driver logs")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -2206,14 +2244,24 @@ struct MeEldView: View {
                         .foregroundStyle(palette.textTertiary)
                     Spacer()
                     StatusPill(
-                        text: store.violations.isEmpty ? "Clean" : "\(store.violations.count) issue\(store.violations.count == 1 ? "" : "s")",
-                        kind: store.violations.isEmpty ? .success : .warning
+                        text: hasSyncedHosData
+                            ? (store.violations.isEmpty ? "Clean" : "\(store.violations.count) issue\(store.violations.count == 1 ? "" : "s")")
+                            : "No data",
+                        kind: hasSyncedHosData
+                            ? (store.violations.isEmpty ? .success : .warning)
+                            : .neutral
                     )
                 }
                 Text("\(store.violations.count) violation\(store.violations.count == 1 ? "" : "s")")
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
-                if store.violations.isEmpty {
+                if !hasSyncedHosData {
+                    Text(eldStore.isConnected
+                         ? "EusoTrip is waiting for the first live HOS sync from \(connectedELDProviderName ?? "your ELD provider")."
+                         : "Connect an ELD provider before this card can certify a clean 30-day compliance window.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                } else if store.violations.isEmpty {
                     Text("No HoS exceedance, certification gaps or unassigned segments in the last 30 days.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
@@ -2255,17 +2303,24 @@ struct MeEldView: View {
             showingELDIntegration = true
         } label: {
             HStack(spacing: Space.s2) {
+                let connected = eldStore.isConnected
                 Circle()
-                    .fill(store.status == nil ? palette.tintNeutral : palette.tintSuccess)
+                    .fill(connected ? palette.tintSuccess : palette.tintNeutral)
                     .frame(width: 8, height: 8)
-                Text(store.status == nil ? "ELD · connecting…" : "ELD · live · backed by hos.getStatus")
+                Text(connected
+                     ? "ELD · \(connectedELDProviderName ?? "provider") connected"
+                     : "No ELD connected")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
-                if let fresh = HOSClockService.shared.status, fresh == store.status {
+                if connected, let fresh = HOSClockService.shared.status, fresh == store.status {
                     Text("Last sync \(Self.relativeLabel(for: Date()))")
                         .font(EType.caption.monospacedDigit())
                         .foregroundStyle(palette.textTertiary)
+                } else if !connected {
+                    Text("Connect")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(Brand.warning)
                 }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
@@ -2288,6 +2343,13 @@ struct MeEldView: View {
         if delta < 60 { return "\(delta)s ago" }
         let m = delta / 60
         return "\(m)m ago"
+    }
+
+    private static func providerLabel(from slug: String) -> String {
+        slug
+            .split(separator: "_")
+            .map { $0.capitalized }
+            .joined(separator: " ")
     }
 
     // Per-day bar for the 70-hour cycle recap. Drive portion drawn in the
@@ -4285,12 +4347,12 @@ final class DriverCarrierStore: ObservableObject {
             let userMsg: String = {
                 let desc = error.localizedDescription.lowercased()
                 if desc.contains("forbidden") || desc.contains("403") {
-                    return "Carrier service is gated for your role. The fix is deployed at server commit 522752e9, check the Azure App Service has the latest deploy."
+                    return "Carrier details aren't enabled for your role yet. Ask your fleet admin for carrier access, then pull to refresh."
                 }
                 if desc.contains("unauthorized") || desc.contains("401") {
-                    return "Couldn't reach carrier service, sign-in session expired."
+                    return "Your session expired. Sign in again to see your carrier."
                 }
-                return "Couldn't reach carrier service."
+                return "Couldn't reach your carrier record. Check your connection and try again."
             }()
             state = .error(userMsg)
         }

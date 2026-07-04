@@ -119,10 +119,14 @@ private struct RailShipperHome: View {
                     .padding(.top, Space.s4)
                 // First-load unlock cascade: each top-level section springs
                 // in top-to-bottom (scale 0.92 + blur 5pt + 50 ms stagger)
-                // once per cold launch; settled on re-visit.
-                StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
-                    HomeWeatherWidget()
-                    attentionCard
+	                // once per cold launch; settled on re-visit.
+	                StaggeredEntranceStack(alignment: .leading, spacing: Space.s5) {
+	                    HomeWeatherWidget()
+	                    EusoCardIssuePanel(
+	                        title: "EusoCard",
+	                        subtitle: "Rail shipper spend card for demurrage, accessorials and claims"
+	                    )
+	                    attentionCard
                     ctaRow
                     statStrip
                     activeShipmentsSection

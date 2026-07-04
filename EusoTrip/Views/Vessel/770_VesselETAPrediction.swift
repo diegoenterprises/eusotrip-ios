@@ -274,7 +274,7 @@ private struct VesselETAPredictionBody770: View {
         let drivers = live ? (s.drivers ?? []) : []
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("SEA-STATE ETA DRIVER · predictVesselEta")
+                Text("SEA-STATE ETA DRIVER · live prediction")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

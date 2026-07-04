@@ -494,7 +494,7 @@ struct DriverProfile: View {
             // `{ }` actions. Wired to real registered driver screens via
             // the canonical `.eusoDriverMeNavSwap` notification (observed
             // in 067A_DriverMeHubs / RoleSurfaceRouter):
-            //   • "Runs" → 108 Me · LoadBoard (the driver's run history)
+            //   • "Runs" → 108 legacy alias → Driver Trips / Eusoboards
             //   • "Day-2 brief" → 027 Next Load Brief
             PressableOutlineButton(title: "Runs") { navigateDriver(to: "108") }
             // Primary CTA — uses CTAButton recipe (§B.4: easeOut 0.12

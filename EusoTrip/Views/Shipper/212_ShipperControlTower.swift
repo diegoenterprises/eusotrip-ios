@@ -2,16 +2,14 @@
 //  212_ShipperControlTower.swift
 //  EusoTrip 2027 UI — Shipper · Control Tower (parity-reconciled 2026-04-29)
 //
-//  PARITY AUDIT 2026-04-29 — reconciled to wireframe canon at
-//  /02 Shipper/Code/212_ShipperControlTower.swift. Persona: Diego
-//  Usoro / Eusorone Technologies (companyId 1) per §11. Map hero
-//  uses the real HERE basemap (HereMapView raster overlay) instead
-//  of the wireframe's illustrative SVG sketch — production fidelity
-//  beats canvas fidelity for the flagship visibility surface.
+//  PARITY AUDIT 2026-04-29. Reconciled to wireframe canon at
+//  /02 Shipper/Code/212_ShipperControlTower.swift. The map hero
+//  uses the live HERE renderer and real load pickup positions for
+//  the flagship visibility surface.
 //
 //  Layout (top → bottom):
 //    1. TopBar           ✦ SHIPPER · CONTROL TOWER · LIVE / "{N} EXCEPTIONS · {N} IN TRANSIT" (danger)
-//    2. Title block      Control Tower / "{X} active · {N} MATRIX loads · live HERE basemap"
+//    2. Title block      Control Tower / "{X} active · {N} in transit · all modes"
 //    3. IridescentHairline
 //    4. Map hero (380pt) HereMapView (live HERE tiles) + mode chip overlay + KPI strip overlay
 //    5. Exception peek   Bottom sheet handle + danger wash + 2 exception chips
@@ -24,20 +22,9 @@
 //  `controlTower.recentActivity(limit:30)` (per-mode activity feed).
 //  Mode filter chip selects the BY MODE breakdown without re-fetching.
 //
-//  Backend gaps surfaced (logged in audit log, no fake data):
-//    EUSO-2108 — `controlTower.overview` doesn't ship `onTimeRate` /
-//                `onTimeTrail`. KPI strip ON-TIME cell paints "-"
-//                placeholder until backend exposes the metric.
-//
-//  Doctrine refs: §2 ME nav (handled by ContentView); §3 numbers-first
-//  copy ("12 active · 50 MATRIX loads"); §4.3 single iridescent
-//  hairline; §6 single full-bleed map hero (HERE basemap canon);
-//  §7 breathe density; §11 / §11.2 / §11.4 Diego canon + MATRIX-50;
-//  §17.2 chip + KPI tile width-locked grammar; §22.2 textTertiary
-//  counter color (here red-tinted because exception count drives
-//  attention); §20.4 no dead buttons (mode chip taps post
-//  `eusoShipperControlTowerMode`, exception chips post
-//  `eusoShipperControlTowerException`).
+//  Doctrine refs: ME nav handled by ContentView; numbers-first
+//  production copy; single full-bleed map hero; width-locked chip +
+//  KPI grammar; no dead buttons.
 //
 
 import SwiftUI
@@ -537,10 +524,9 @@ struct ShipperControlTower: View {
                     trail: exceptionCount > 0 ? "detention · late" : nil,
                     trailColor: palette.textSecondary)
             kpiDivider
-            // WEATHER — real `weatherAffected` count from getActivePositions
-            // (Waves 1-3b-server). Fills the admitted ON-TIME gap with a
-            // metric the feeds actually ship. Bespoke WeatherIcons storm
-            // glyph leads the value; honest 0 (neutral) when none/gated.
+            // WEATHER: real `weatherAffected` count from getActivePositions.
+            // Bespoke WeatherIcons storm glyph leads the value; honest 0
+            // (neutral) when none/gated.
             kpiCell(label: "WEATHER",
                     value: "\(store.weatherAffected)",
                     valueStyle: store.weatherAffected > 0 ? .danger : .neutral,
@@ -548,12 +534,11 @@ struct ShipperControlTower: View {
                     trailColor: palette.textSecondary,
                     glyphCode: store.weatherAffected > 0 ? 8000 : nil)
             kpiDivider
-            // EUSO-2108 — backend doesn't ship onTimeRate yet.
-            kpiCell(label: "ON-TIME",
-                    value: "-",
-                    valueStyle: .neutral,
-                    trail: "data pending",
-                    trailColor: palette.textTertiary)
+            kpiCell(label: "PINS",
+                    value: "\(store.positions.count)",
+                    valueStyle: store.positions.isEmpty ? .neutral : .gradient,
+                    trail: "on map",
+                    trailColor: palette.textSecondary)
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, Space.s3)

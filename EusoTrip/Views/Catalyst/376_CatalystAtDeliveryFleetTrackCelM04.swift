@@ -685,7 +685,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
 
     private var telemetrySection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("FLEET-TRACKER ECHO · AT-DELIVERY · loadLifecycle.emitLoadStateChange(at_delivery)")
+            Text("FLEET-TRACKER ECHO · AT-DELIVERY · live load-state signal")
                 .font(.system(size: 8, weight: .heavy)).kerning(0.5).foregroundStyle(palette.textTertiary)
                 .lineLimit(1).minimumScaleFactor(0.6)
             ForEach(telemetryRows) { FleetTrackRowView_376(row: $0) }
@@ -705,7 +705,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
                   trailing: locBacked ? "live" : "—",
                   realBacked: locBacked),
             .init(title: "HOS · \(hosStatusDisplay) · \(hosDisplay) remaining",
-                  detail: "drive clock frozen at arrival · catalysts.getMyDrivers.hoursRemaining",
+                  detail: "drive clock frozen at arrival · live hours remaining per driver",
                   trailing: hosBacked ? hosDisplay : "—",
                   realBacked: hosBacked),
             .init(title: "Active board echo",
@@ -759,7 +759,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
     private var fleetTrackMapCard: some View {
         if let fix = liveTruckFix {
             VStack(alignment: .leading, spacing: 6) {
-                Text("LIVE FLEET-TRACK · gps_tracking · catalysts.getMyDrivers.location")
+                Text("LIVE FLEET-TRACK · GPS · live driver positions")
                     .font(.system(size: 8, weight: .heavy)).kerning(0.5)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1).minimumScaleFactor(0.6)

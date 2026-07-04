@@ -184,13 +184,13 @@ private struct ConvoyComposerBody: View {
                     .foregroundStyle(palette.textPrimary)
             }
             if childVehicles.isEmpty {
-                Text("No child vehicles yet. Heavy-haul moves typically include the primary truck + any split-load secondary trucks. Auto transport composes N car-haulers under one parent shipment.")
+                Text("Add each truck, trailer, car-hauler, lowboy, support unit, or split-load vehicle that must ride under this parent shipment.")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                ForEach(childVehicles) { v in
-                    childVehicleRow(v)
+                ForEach($childVehicles) { $vehicle in
+                    childVehicleRow($vehicle)
                 }
             }
             Button {
@@ -199,6 +199,7 @@ private struct ConvoyComposerBody: View {
                     id: UUID().uuidString,
                     label: next,
                     role: childVehicles.isEmpty ? .primary : .secondary,
+                    equipmentType: .truckTractor,
                     driverHint: ""
                 ))
             } label: {
@@ -217,33 +218,71 @@ private struct ConvoyComposerBody: View {
         }
     }
 
-    private func childVehicleRow(_ v: ChildVehicleRow) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: v.role.systemImage)
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(v.label)
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                Text(v.role.label.uppercased())
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            Spacer(minLength: 0)
-            Button {
-                if let i = childVehicles.firstIndex(where: { $0.id == v.id }) {
-                    childVehicles.remove(at: i)
-                }
-            } label: {
-                Image(systemName: "minus.circle.fill")
+    private func childVehicleRow(_ vehicle: Binding<ChildVehicleRow>) -> some View {
+        let v = vehicle.wrappedValue
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: v.role.systemImage)
                     .font(.system(size: 13, weight: .heavy))
-                    .foregroundStyle(Brand.danger)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(v.label.isEmpty ? "Vehicle" : v.label)
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("\(v.role.label.uppercased()) · \(v.equipmentType.label.uppercased())")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    if let i = childVehicles.firstIndex(where: { $0.id == v.id }) {
+                        childVehicles.remove(at: i)
+                    }
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(Brand.danger)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+
+            TextField("Vehicle / unit label", text: vehicle.label)
+                .font(EType.mono(.caption))
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .foregroundStyle(palette.textPrimary)
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(palette.bgCardSoft)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+
+            HStack(spacing: 8) {
+                Menu {
+                    ForEach(ChildVehicleRole.allCases, id: \.self) { role in
+                        Button(role.label) { vehicle.wrappedValue.role = role }
+                    }
+                } label: {
+                    optionPill(title: v.role.label, icon: v.role.systemImage)
+                }
+
+                Menu {
+                    ForEach(ConvoyEquipmentKind.allCases, id: \.self) { kind in
+                        Button(kind.label) { vehicle.wrappedValue.equipmentType = kind }
+                    }
+                } label: {
+                    optionPill(title: v.equipmentType.label, icon: v.equipmentType.systemImage)
+                }
+            }
+
+            TextField("Driver, carrier, or equipment hint", text: vehicle.driverHint)
+                .font(EType.mono(.caption))
+                .textInputAutocapitalization(.words)
+                .foregroundStyle(palette.textPrimary)
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(palette.bgCardSoft)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
     }
 
     private var escortsCard: some View {
@@ -256,13 +295,13 @@ private struct ConvoyComposerBody: View {
                     .foregroundStyle(palette.textPrimary)
             }
             if escorts.isEmpty {
-                Text("Add escort agreements for OS/OW lanes. Lead car ahead, chase car behind, state-trooper escort on the highest-permit moves (per 49 CFR 393).")
+                Text("Add escort vehicles and required agreements for OS/OW lanes. Lead, chase, state patrol, and bridge pilots attach to the parent shipment.")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                ForEach(escorts) { e in
-                    escortRow(e)
+                ForEach($escorts) { $escort in
+                    escortRow($escort)
                 }
             }
             HStack(spacing: 6) {
@@ -293,33 +332,75 @@ private struct ConvoyComposerBody: View {
         }
     }
 
-    private func escortRow(_ e: EscortRow) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: e.kind.systemImage)
-                .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(LinearGradient.diagonal)
-                .frame(width: 22)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(e.kind.label)
-                    .font(.system(size: 12, weight: .heavy))
-                    .foregroundStyle(palette.textPrimary)
-                Text(e.kind.regulatoryRef.uppercased())
-                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
-                    .foregroundStyle(palette.textTertiary)
-            }
-            Spacer(minLength: 0)
-            Button {
-                if let i = escorts.firstIndex(where: { $0.id == e.id }) {
-                    escorts.remove(at: i)
-                }
-            } label: {
-                Image(systemName: "minus.circle.fill")
+    private func escortRow(_ escort: Binding<EscortRow>) -> some View {
+        let e = escort.wrappedValue
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: e.kind.systemImage)
                     .font(.system(size: 13, weight: .heavy))
-                    .foregroundStyle(Brand.danger)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 22)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(e.kind.label)
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text(e.kind.regulatoryRef.uppercased())
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Spacer(minLength: 0)
+                Menu {
+                    ForEach(EscortKind.allCases, id: \.self) { kind in
+                        Button(kind.label) { escort.wrappedValue.kind = kind }
+                    }
+                } label: {
+                    optionPill(title: e.kind.shortLabel.replacingOccurrences(of: "+ ", with: ""), icon: e.kind.systemImage)
+                }
+                Button {
+                    if let i = escorts.firstIndex(where: { $0.id == e.id }) {
+                        escorts.remove(at: i)
+                    }
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(Brand.danger)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+
+            TextField("Escort company or agency", text: escort.companyName)
+                .font(EType.mono(.caption))
+                .textInputAutocapitalization(.words)
+                .foregroundStyle(palette.textPrimary)
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(palette.bgCardSoft)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+
+            TextField("Escort contact phone", text: escort.contactPhone)
+                .font(EType.mono(.caption))
+                .keyboardType(.phonePad)
+                .foregroundStyle(palette.textPrimary)
+                .padding(.horizontal, 10).padding(.vertical, 8)
+                .background(palette.bgCardSoft)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 8)
+    }
+
+    private func optionPill(title: String, icon: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .heavy))
+            Text(title)
+                .font(.system(size: 10, weight: .heavy))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .foregroundStyle(palette.textPrimary)
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(palette.bgCardSoft)
+        .overlay(Capsule().strokeBorder(palette.borderFaint))
+        .clipShape(Capsule())
     }
 
     private var saveCTA: some View {
@@ -340,9 +421,12 @@ private struct ConvoyComposerBody: View {
         .disabled(!canSave || saving)
     }
 
-    /// True when at least one child vehicle is attached. Heavy-haul + auto
-    /// transport without any child vehicles is a malformed composition.
-    private var canSave: Bool { !childVehicles.isEmpty }
+    private var canSave: Bool {
+        let validVehicles = !childVehicles.isEmpty && childVehicles.allSatisfy {
+            !$0.label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        return validVehicles || !escorts.isEmpty
+    }
 
     private func confirmToast(_ msg: String) -> some View {
         LifecycleCard(accentGradient: true) {
@@ -382,6 +466,7 @@ private struct ConvoyComposerBody: View {
             struct ChildPayload: Encodable {
                 let label: String
                 let role: String
+                let equipmentType: String
                 let driverHint: String?
             }
             struct EscortPayload: Encodable {
@@ -400,11 +485,13 @@ private struct ConvoyComposerBody: View {
         let payload = In(
             parentLoadId: pid,
             childVehicles: childVehicles.map { c in
-                .init(label: c.label, role: c.role.rawValue,
+                .init(label: c.label.trimmingCharacters(in: .whitespacesAndNewlines),
+                      role: c.role.rawValue,
+                      equipmentType: c.equipmentType.rawValue,
                       driverHint: c.driverHint.isEmpty ? nil : c.driverHint)
             },
             escorts: escorts.map { e in
-                .init(kind: e.kind.rawValue,
+                .init(kind: e.kind.apiValue,
                       companyName: e.companyName.isEmpty ? nil : e.companyName,
                       contactPhone: e.contactPhone.isEmpty ? nil : e.contactPhone)
             }
@@ -420,7 +507,7 @@ private struct ConvoyComposerBody: View {
             // Server reachable but rejected the call (RBAC denied, parent
             // load not found, validation failure). Surface the real error
             // so the operator knows what to fix instead of guessing.
-            savedAck = "Convoy not composed · \((error as NSError).localizedDescription)"
+            self.error = "Convoy not composed · \((error as NSError).localizedDescription)"
         }
     }
 }
@@ -431,6 +518,7 @@ private struct ChildVehicleRow: Identifiable, Hashable {
     let id: String
     var label: String
     var role: ChildVehicleRole
+    var equipmentType: ConvoyEquipmentKind
     var driverHint: String
 }
 
@@ -447,6 +535,38 @@ private enum ChildVehicleRole: String, CaseIterable, Hashable {
         switch self {
         case .primary: return "truck.box.fill"
         case .secondary: return "truck.box"
+        }
+    }
+}
+
+private enum ConvoyEquipmentKind: String, CaseIterable, Hashable {
+    case truckTractor = "truck_tractor"
+    case lowboyTrailer = "lowboy_trailer"
+    case carHauler = "car_hauler"
+    case flatbedTrailer = "flatbed_trailer"
+    case pilotVehicle = "pilot_vehicle"
+    case craneSupport = "crane_support"
+    case serviceVehicle = "service_vehicle"
+
+    var label: String {
+        switch self {
+        case .truckTractor: return "Truck tractor"
+        case .lowboyTrailer: return "Lowboy trailer"
+        case .carHauler: return "Car hauler"
+        case .flatbedTrailer: return "Flatbed"
+        case .pilotVehicle: return "Pilot vehicle"
+        case .craneSupport: return "Crane support"
+        case .serviceVehicle: return "Service vehicle"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .truckTractor, .carHauler, .flatbedTrailer: return "truck.box.fill"
+        case .lowboyTrailer: return "rectangle.3.group"
+        case .pilotVehicle: return "car.fill"
+        case .craneSupport: return "wrench.and.screwdriver.fill"
+        case .serviceVehicle: return "cross.case.fill"
         }
     }
 }
@@ -491,6 +611,14 @@ private enum EscortKind: String, CaseIterable, Hashable {
         case .lead, .chase: return "49 CFR 393 · per-state OS/OW"
         case .stateTrooper: return "state highway patrol agreement"
         case .bridgePilot:  return "49 CFR 393.86 · bridge clearance"
+        }
+    }
+    var apiValue: String {
+        switch self {
+        case .lead: return "lead"
+        case .chase: return "chase"
+        case .stateTrooper: return "state_trooper"
+        case .bridgePilot: return "bridge_pilot"
         }
     }
 }

@@ -351,14 +351,37 @@ struct SparkBriefCard: View {
             }
         }
         h = h.trimmingCharacters(in: CharacterSet(charactersIn: "\"“”` \n"))
+        h = Self.timeAlignedHeadline(h, dayPart: dayPartLabel)
         return h.isEmpty ? nil : h
     }
 
-    /// "Morning" / "Afternoon" / "Evening" — derived from the brief's real
-    /// `sampledAt` (or now() when none yet) so the card adapts to the time
-    /// of day instead of reading "Morning" all day (founder #12/#17/#19).
+    /// "Morning" / "Afternoon" / "Evening" from the device clock. The
+    /// sample age remains visible separately; the badge and headline follow
+    /// the user's local reading time, not the server's timezone.
     private var dayPartLabel: String {
-        SparkBriefStore.dayPartLabel(forSampledAt: store.brief?.sampledAt ?? store.sampledAt)
+        SparkBriefStore.dayPartLabel(of: Date())
+    }
+
+    private static func timeAlignedHeadline(_ raw: String, dayPart: String) -> String {
+        var h = raw
+        let desiredGreeting = "Good \(dayPart.lowercased())"
+        for stale in ["Good morning", "Good afternoon", "Good evening"] {
+            if h.range(of: stale, options: [.caseInsensitive, .anchored]) != nil {
+                h.replaceSubrange(h.startIndex..<h.index(h.startIndex, offsetBy: stale.count), with: desiredGreeting)
+                break
+            }
+        }
+        if dayPart != "Evening" {
+            h = h.replacingOccurrences(of: "your end-of-day", with: "your live operations brief", options: .caseInsensitive)
+            h = h.replacingOccurrences(of: "end-of-day", with: "live operations", options: .caseInsensitive)
+            h = h.replacingOccurrences(of: "tonight", with: "today", options: .caseInsensitive)
+            h = h.replacingOccurrences(of: "this evening", with: "today", options: .caseInsensitive)
+        }
+        if dayPart != "Morning" {
+            h = h.replacingOccurrences(of: "overnight", with: "latest", options: .caseInsensitive)
+            h = h.replacingOccurrences(of: "when they open the app at 6 AM", with: "in this operating window", options: .caseInsensitive)
+        }
+        return h
     }
 
     var body: some View {
@@ -542,7 +565,7 @@ struct SparkBriefDetailSheet: View {
                         // Day-part-aware label so the brief reads "Afternoon
                         // Priorities" / "Evening Priorities" when opened later
                         // in the day — never a stale "Morning" all day.
-                        Section(header: "\(SparkBriefStore.dayPartLabel(forSampledAt: brief?.sampledAt)) Priorities",
+                        Section(header: "\(SparkBriefStore.dayPartLabel(of: Date())) Priorities",
                                 items: brief?.morningPriorities)
                     case .dispatcher:
                         Section(header: "Assignments",      items: brief?.assignments)

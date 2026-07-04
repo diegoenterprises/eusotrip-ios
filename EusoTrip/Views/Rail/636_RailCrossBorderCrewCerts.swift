@@ -402,7 +402,7 @@ private struct RailCrossBorderCrewCertsBody: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("X-border crew certs · getCrossBorderCrewCerts :891")
+            Text("X-border crew certs · live records")
             Text("Carrier KCSM/UP · shipper Diego Usoro / Eusorone Technologies")
             Text("Active RAIL-260524-9C20A7E15B · Laredo interchange")
         }

@@ -387,7 +387,7 @@ private struct VesselEquipmentHealthBody: View {
                     EusoEmptyState(
                         icon: Image(systemName: "thermometer.snowflake"),
                         title: "No component telemetry",
-                        subtitle: "Per-component condition (genset · supply-air probe · door gasket) needs the backend to expose box condition flags. Reefer event history will populate here.",
+                        subtitle: "Per-component condition has not posted yet. Reefer event history will populate here as telemetry arrives.",
                         comingSoon: true)
                 }
                 .padding(Space.s4)

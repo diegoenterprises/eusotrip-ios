@@ -353,7 +353,7 @@ private struct RailCrewHOSRosterBody: View {
     // MARK: Crew list
 
     private var crewHeader: some View {
-        Text("ASSIGNED CREW · getRailCrewHOS")
+        Text("ASSIGNED CREW · live HOS")
             .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
     }
 

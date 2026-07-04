@@ -131,7 +131,7 @@ struct BrokerMeScreen: View {
                             .minimumScaleFactor(0.85)
                     }
                     if let cid = user?.companyId, !cid.isEmpty {
-                        Text("companyId · \(cid)")
+                        Text("Company ID · \(cid)")
                             .font(EType.mono(.micro)).tracking(0.4)
                             .foregroundStyle(palette.textTertiary)
                             .lineLimit(1)
@@ -171,8 +171,14 @@ struct BrokerMeScreen: View {
     }
 
     private var walletSection: some View {
-        sectionCard(title: "WALLET", icon: "creditcard") {
-            row(label: "Commission queue", icon: "dollarsign.circle", to: "404")
+        VStack(spacing: Space.s3) {
+            sectionCard(title: "WALLET", icon: "creditcard") {
+                row(label: "Commission queue", icon: "dollarsign.circle", to: "404")
+            }
+            EusoCardIssuePanel(
+                title: "EusoCard",
+                subtitle: "Broker spend card for commissions and freight exceptions"
+            )
         }
     }
 

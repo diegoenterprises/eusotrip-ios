@@ -68,6 +68,11 @@ struct ShipperDetentionExposure: View {
                 heroCard
                 byFacilitySection
                 activeSection
+                // COUNTRY-DONE (wireframe 298B): detention free-time regime by
+                // country. Rows are regime reference constants; the per-load
+                // recompute is a named gap handed to the-oath
+                // (detentionAccessorials.getFreeTimeRegime).
+                FreeTimeRegimeBand(theme: palette)
                 ctaRow
                 footnote
             }
@@ -574,7 +579,7 @@ private struct DisputeChargeSheet: View {
                                 dismiss()
                             } catch {
                                 submitting = false
-                                errorText = "Couldn't file the dispute. \(error.localizedDescription)"
+                                errorText = "Couldn't file the dispute. \(error.eusoUserCopy)"
                             }
                         }
                     } label: {

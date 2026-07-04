@@ -135,6 +135,8 @@ final class EusoWalletPassService {
                 switch api {
                 case .unauthenticated:
                     msg = "Sign in again to mint a wallet credential."
+                case .forbidden(let m):
+                    msg = m
                 case .trpcError(let m): msg = m
                 case .httpStatus(let c, _): msg = "Server error \(c). Try again."
                 default: msg = "Couldn't reach the credential service."
@@ -169,7 +171,7 @@ final class EusoWalletPassService {
             let (bytes, resp) = try await URLSession.shared.data(for: req)
             guard let http = resp as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode) else {
-                return .failure(message: "Wallet pass server returned an error.")
+                return .failure(message: "Wallet pass could not be downloaded.")
             }
             data = bytes
         } catch {

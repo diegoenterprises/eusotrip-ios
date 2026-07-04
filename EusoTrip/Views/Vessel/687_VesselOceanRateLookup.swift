@@ -331,7 +331,7 @@ private struct VesselOceanRateLookupBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("searchRates · \(rates.count) of \(max(rates.count, 6))")
+                Text("Rates · \(rates.count) of \(max(rates.count, 6))")
                     .font(EType.mono(.caption)).foregroundStyle(palette.textSecondary)
             }
             .padding(.bottom, Space.s3)

@@ -119,7 +119,7 @@ private extension ShipperDetailKind {
                          citation: "DISPATCHER LANE · 90D",
                          title: "Lane mix",
                          subhead: "Per-lane mix · 90-day window",
-                         pillCopy: "Per-lane win mix is not yet exposed by the scorecard proc.",
+                         pillCopy: "Per-lane win mix isn't part of the scorecard data yet.",
                          statusPill: "LANE · 90D")
         case .accountHealth:
             return .init(eyebrow: "DISPATCHER · SHIPPER · ACCOUNT-HEALTH",
@@ -133,7 +133,7 @@ private extension ShipperDetailKind {
                          citation: "DISPATCHER STEP-LADDER · 90D",
                          title: "Onboarding step",
                          subhead: "Step ladder · 90-day window",
-                         pillCopy: "Onboarding-step ladder is not yet exposed by the scorecard proc.",
+                         pillCopy: "Onboarding-step ladder isn't part of the scorecard data yet.",
                          statusPill: "ONBOARDING · 90D")
         case .quarter:
             return .init(eyebrow: "DISPATCHER · SHIPPER · QUARTER",

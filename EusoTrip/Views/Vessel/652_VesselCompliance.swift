@@ -332,7 +332,7 @@ private struct VesselComplianceBody: View {
                             .foregroundStyle(LinearGradient.diagonal)
                         Text("Awaiting reefer temp log")
                             .font(.system(size: 14, weight: .heavy)).foregroundStyle(palette.textPrimary)
-                        Text("Probe traces light up here the moment vesselShipments.getReeferTempLog returns real zone readings for this operator's reefer containers. No series is invented in the meantime.")
+                        Text("Probe traces light up here the moment real zone readings arrive for this operator's reefer containers. No series is invented in the meantime.")
                             .font(EType.caption).multilineTextAlignment(.center)
                             .foregroundStyle(palette.textSecondary)
                             .padding(.horizontal, Space.s4)

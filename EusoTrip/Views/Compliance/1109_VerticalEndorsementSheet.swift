@@ -200,7 +200,7 @@ struct VerticalEndorsementSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(pendingHeadline(for: status))
                             .font(EType.bodyStrong).foregroundStyle(theme.textPrimary)
-                        Text("Server status: \(status). This is not a confirmed approval. It will be reviewed.")
+                        Text("Review status: \(status). This is not a confirmed approval. It will be reviewed.")
                             .font(EType.caption).foregroundStyle(theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -312,7 +312,7 @@ struct VerticalEndorsementSheet: View {
                        keyboardType: .numbersAndPunctuation,
                        autocapitalization: .never,
                        error: expiryError)
-            Text("Type, value and expiry are optional. The server records what you provide and flags the rest for review.")
+            Text("Type, value and expiry are optional. EusoTrip records what you provide and flags the rest for review.")
                 .font(EType.caption)
                 .foregroundStyle(theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -379,7 +379,7 @@ struct VerticalEndorsementSheet: View {
         } catch let err as LocalizedError {
             outcome = .failed(message: err.errorDescription ?? "Couldn't attach the endorsement.")
         } catch {
-            outcome = .failed(message: error.localizedDescription)
+            outcome = .failed(message: error.eusoUserCopy)
         }
         sending = false
     }

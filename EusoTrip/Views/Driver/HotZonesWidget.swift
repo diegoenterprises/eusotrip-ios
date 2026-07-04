@@ -63,6 +63,8 @@ final class HotZonesStore: ObservableObject {
     /// How long a cached feed is considered fresh before a background
     /// refresh kicks in on `.onAppear`. Matches the web page's 5-min TTL.
     private let staleAfter: TimeInterval = 300
+    private static let refreshTimeoutNanoseconds: UInt64 = 10_000_000_000
+    private var refreshGeneration = 0
 
     /// True stale-while-revalidate: when there's already cached data,
     /// surface it immediately AND fire a background refresh so the next
@@ -89,13 +91,42 @@ final class HotZonesStore: ObservableObject {
     /// `zones` / `marketPulse`, which is fine because `getRateFeed`
     /// is idempotent.
     func refresh() async {
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        let requestedEquipment = equipmentFilter
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer {
+            if generation == refreshGeneration {
+                isLoading = false
+            }
+        }
 
-        do {
-            let feed = try await EusoTripAPI.shared.hotZones
-                .getRateFeed(equipment: equipmentFilter)
+        let result: Result<HotZonesFeedResult, Error> = await withTaskGroup(
+            of: Result<HotZonesFeedResult, Error>.self
+        ) { group in
+            group.addTask {
+                do {
+                    let feed = try await EusoTripAPI.shared.hotZones
+                        .getRateFeed(equipment: requestedEquipment)
+                    return .success(feed)
+                } catch {
+                    return .failure(error)
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: Self.refreshTimeoutNanoseconds)
+                return .failure(URLError(.timedOut))
+            }
+            let first = await group.next() ?? .failure(URLError(.unknown))
+            group.cancelAll()
+            return first
+        }
+
+        guard generation == refreshGeneration else { return }
+
+        switch result {
+        case .success(let feed):
             // Sort by live ratio (load-to-truck pressure) desc so the
             // tightest markets rise to the top of the widget carousel.
             self.zones = feed.zones.sorted { $0.liveRatio > $1.liveRatio }
@@ -109,7 +140,8 @@ final class HotZonesStore: ObservableObject {
             }
             self.feedSource = feed.feedSource
             self.lastLoadedAt = Date()
-        } catch {
+            self.errorMessage = nil
+        case .failure(let error):
             self.errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? String(describing: error)
         }

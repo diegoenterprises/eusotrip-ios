@@ -8,11 +8,12 @@
 //  Nav anchored to RailEngineerNavController (HOME · SHIPMENTS · [orb] · COMPLIANCE[current] · ME).
 //
 //  Data:
-//    imdg.getCompliance          (EXISTS imdg.ts:13)           → hero status + DG metadata
+//    imdg.getCompliance          (EXISTS imdg.ts:13, input loadId) → hero status + DG metadata
 //    hazmat.determinePlacards    (EXISTS hazmat.ts:121)         → KPI class/UN/PG
 //    hazmat.checkSegregation     (EXISTS hazmat.ts:152)         → segregation check rows
 //    hazmat.getEmergencyContacts (EXISTS hazmat.ts:388)         → CHEMTREC/ERG rows
-//    imdg.setDGDeclarationUrl    (EXISTS imdg.ts:26)            → Generate DG declaration CTA
+//    imdg.setDGDeclarationUrl    (EXISTS imdg.ts:26, mutation)  → Link generated DG declaration URL.
+//      The CTA is gated on a real loadId + document URL; it never writes loadId=0 or an empty URL.
 //
 
 import SwiftUI
@@ -21,9 +22,26 @@ struct RailIMDGHazmatManifestScreen: View {
     let theme: Theme.Palette
     let containerNumber: String
     let railId: String
+    let loadId: Int
+    let dgDeclarationUrl: String?
+
+    init(theme: Theme.Palette, containerNumber: String, railId: String, loadId: Int = 0, dgDeclarationUrl: String? = nil) {
+        self.theme = theme
+        self.containerNumber = containerNumber
+        self.railId = railId
+        self.loadId = loadId
+        self.dgDeclarationUrl = dgDeclarationUrl
+    }
 
     var body: some View {
-        Shell(theme: theme) { RailIMDGHazmatManifestBody(containerNumber: containerNumber, railId: railId) } nav: {
+        Shell(theme: theme) {
+            RailIMDGHazmatManifestBody(
+                containerNumber: containerNumber,
+                railId: railId,
+                loadId: loadId,
+                dgDeclarationUrl: dgDeclarationUrl
+            )
+        } nav: {
             BottomNav(
                 leading: [NavSlot(label: "Home",      systemImage: "house",       isCurrent: false),
                           NavSlot(label: "Shipments", systemImage: "shippingbox", isCurrent: false)],
@@ -38,6 +56,7 @@ struct RailIMDGHazmatManifestScreen: View {
 // MARK: - Data shapes
 
 private struct IMDGCompliance571: Decodable {
+    let loadId: Int?
     let containerNumber: String?
     let unNumber: String?
     let commodityName: String?
@@ -47,16 +66,18 @@ private struct IMDGCompliance571: Decodable {
     let vehicleType: String?
     let route: String?
     let declarationStatus: String?
+    let dgDeclarationFormUrl: String?
 
     private enum CodingKeys: String, CodingKey {
         case containerNumber, unNumber, commodityName, imdgClass, packingGroup
         case volume, vehicleType, route, declarationStatus
-        case loadId, imdgProperShippingName, packingGroupCode, packingGroupDescription
+        case loadId, imdgProperShippingName, packingGroupCode, packingGroupDescription, dgDeclarationFormUrl
     }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         // Server returns database fields; map them to iOS struct fields
+        self.loadId = try c.decodeIfPresent(Int.self, forKey: .loadId)
         self.imdgClass = try c.decodeIfPresent(String.self, forKey: .imdgClass)
         self.packingGroup = try c.decodeIfPresent(String.self, forKey: .packingGroupCode)
         self.commodityName = try c.decodeIfPresent(String.self, forKey: .imdgProperShippingName)
@@ -67,6 +88,7 @@ private struct IMDGCompliance571: Decodable {
         self.volume = try c.decodeIfPresent(String.self, forKey: .volume)
         self.vehicleType = try c.decodeIfPresent(String.self, forKey: .vehicleType)
         self.route = try c.decodeIfPresent(String.self, forKey: .route)
+        self.dgDeclarationFormUrl = try c.decodeIfPresent(String.self, forKey: .dgDeclarationFormUrl)
     }
 }
 
@@ -213,6 +235,8 @@ private struct RailIMDGHazmatManifestBody: View {
     @Environment(\.palette) private var palette
     let containerNumber: String
     let railId: String
+    let loadId: Int
+    let dgDeclarationUrl: String?
 
     @State private var compliance: IMDGCompliance571? = nil
     @State private var placard: HazmatPlacard571? = nil
@@ -220,6 +244,8 @@ private struct RailIMDGHazmatManifestBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var isGenerating = false
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
 
     // MARK: Derived
 
@@ -251,6 +277,7 @@ private struct RailIMDGHazmatManifestBody: View {
                     kpiStrip
                     segregationList
                     ctaPair
+                    actionFeedback
                 }
                 Color.clear.frame(height: 96)
             }
@@ -434,7 +461,7 @@ private struct RailIMDGHazmatManifestBody: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Generate DG declaration", action: { Task { await generateDeclaration() } }, leadingIcon: "doc.fill", isLoading: isGenerating)
+            CTAButton(title: "Link DG declaration", action: { Task { await generateDeclaration() } }, leadingIcon: "doc.fill", isLoading: isGenerating)
             Button {} label: {
                 Text("Emergency")
                     .font(.system(size: 15, weight: .semibold))
@@ -448,25 +475,52 @@ private struct RailIMDGHazmatManifestBody: View {
         }
     }
 
+    @ViewBuilder
+    private var actionFeedback: some View {
+        if let actionError {
+            LifecycleCard(accentDanger: true) {
+                Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if let actionMessage {
+            LifecycleCard {
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Brand.success)
+                    Text(actionMessage).font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
+            }
+        }
+    }
+
     // MARK: - Load / Actions
 
     private func load() async {
         loading = true; loadError = nil
         struct ContainerIn: Encodable { let containerNumber: String }
         struct SegIn: Encodable { let containerNumber: String; let railId: String }
+        struct LoadIn: Encodable { let loadId: Int }
         do {
-            async let comp: IMDGCompliance571 = EusoTripAPI.shared.query(
-                "imdg.getCompliance", input: ContainerIn(containerNumber: containerNumber))
-            async let plac: HazmatPlacard571 = EusoTripAPI.shared.query(
-                "hazmat.determinePlacards", input: ContainerIn(containerNumber: containerNumber))
-            async let segs: [SegregationCheck571] = EusoTripAPI.shared.query(
-                "hazmat.checkSegregation", input: SegIn(containerNumber: containerNumber, railId: railId))
-            async let contacts: [EmergencyContact571] = EusoTripAPI.shared.query(
-                "hazmat.getEmergencyContacts", input: ContainerIn(containerNumber: containerNumber))
-            let (c, p, s, ec) = try await (comp, plac, segs, contacts)
-            self.compliance = c
-            self.placard    = p
-            self.rows = buildRows(segregation: s, contacts: ec)
+            if loadId > 0 {
+                self.compliance = try await EusoTripAPI.shared.query(
+                    "imdg.getCompliance", input: LoadIn(loadId: loadId))
+            } else {
+                self.compliance = nil
+            }
+
+            let trimmedContainer = containerNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmedContainer.isEmpty {
+                self.placard = nil
+                self.rows = []
+            } else {
+                async let plac: HazmatPlacard571 = EusoTripAPI.shared.query(
+                    "hazmat.determinePlacards", input: ContainerIn(containerNumber: trimmedContainer))
+                async let segs: [SegregationCheck571] = EusoTripAPI.shared.query(
+                    "hazmat.checkSegregation", input: SegIn(containerNumber: trimmedContainer, railId: railId))
+                async let contacts: [EmergencyContact571] = EusoTripAPI.shared.query(
+                    "hazmat.getEmergencyContacts", input: ContainerIn(containerNumber: trimmedContainer))
+                let (p, s, ec) = try await (plac, segs, contacts)
+                self.placard = p
+                self.rows = buildRows(segregation: s, contacts: ec)
+            }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -510,13 +564,30 @@ private struct RailIMDGHazmatManifestBody: View {
 
     private func generateDeclaration() async {
         isGenerating = true
+        actionError = nil
+        actionMessage = nil
         struct DeclIn: Encodable { let loadId: Int; let url: String }
         struct DeclOut: Decodable { let success: Bool }
         do {
-            let _: DeclOut = try await EusoTripAPI.shared.query(
+            guard loadId > 0 else {
+                actionError = "Open this manifest from a real load before linking a DG declaration."
+                isGenerating = false
+                return
+            }
+            let url = (dgDeclarationUrl ?? compliance?.dgDeclarationFormUrl ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !url.isEmpty else {
+                actionError = "Attach or generate the DG declaration document before linking it to IMDG compliance."
+                isGenerating = false
+                return
+            }
+            let out: DeclOut = try await EusoTripAPI.shared.mutation(
                 "imdg.setDGDeclarationUrl",
-                input: DeclIn(loadId: 0, url: ""))
-        } catch { /* non-fatal */ }
+                input: DeclIn(loadId: loadId, url: url))
+            actionMessage = out.success ? "DG declaration linked to load \(loadId)." : "DG declaration link did not change."
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? "Couldn't link the DG declaration. Check your connection and try again."
+        }
         isGenerating = false
     }
 }

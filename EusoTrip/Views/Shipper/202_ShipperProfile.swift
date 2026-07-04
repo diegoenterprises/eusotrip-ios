@@ -9,7 +9,7 @@
 //  verified ring + name + gradient company line + VERIFIED/HAZMAT
 //  pills + meta rows), 5-medallion tier ladder with gradient
 //  connectors + progress bar, 3-stat horizontal row, 2x2 credentials
-//  grid (FMCSA / INSURANCE / BBB / PAYMENT), eSang promotion strip.
+//  grid (FMCSA / INSURANCE / BUSINESS / PAYMENT), eSang promotion strip.
 //
 //  Real data preserved: ShipperProfileStore (shippers.getProfile) +
 //  ShipperStatsStore (shippers.getStats). Client-side tier resolution
@@ -25,6 +25,20 @@
 //  invented credentials. Blank fields render honest "—" sentinels;
 //  unverifiable compliance renders "unavailable" — never an asserted
 //  positive (no "$2M GL / $1M cargo", no "BBB A+", no fake EIN/DUNS).
+//
+//  Full-wire pass (2026-07-02): INSURANCE + BUSINESS credential tiles
+//  now bind to the real `compliance.getShipperCompliance` envelope
+//  (generalLiability {status, coverage, expires} + businessVerified /
+//  creditRating / paymentTerms) via the shared `ShipperComplianceStore`
+//  (216_ShipperCompliance.swift → EusoTripAPI.shipperCompliance,
+//  wrappers at EusoTripAPI.swift `ShipperComplianceAPI`). FMCSA tile
+//  taps open a live `fmcsa.lookupByDOT` SAFER detail sheet when a DOT
+//  is on file, or route to 322 Profile Edit (`.eusoShipperNavSwap`)
+//  when it isn't; INSURANCE taps open the company document vault
+//  (`compliance.getShipperDocuments`). Tier unlock copy (progress line,
+//  unlock blurb, eSang sub-line) all derive from the same gating-metric
+//  gap engine, and PAYMENT reads the now-real
+//  `shippers.getStats.avgPaymentTime` settlement aggregate.
 //
 //  Web peer: ShipperProfile.tsx (`/shipper/profile`).
 //  Notification names: eusoShipperProfileEdit, eusoShippereSangOpen.
@@ -45,9 +59,15 @@ struct ShipperProfile: View {
 
     @StateObject private var profileStore = ShipperProfileStore()
     @StateObject private var statsStore   = ShipperStatsStore()
+    // Shared with 216_ShipperCompliance — one fetch hydrates the
+    // `compliance.getShipperCompliance` summary AND the
+    // `compliance.getShipperDocuments` vault list for the tiles + sheet.
+    @StateObject private var complianceStore = ShipperComplianceStore()
 
     @State private var showEditProfile: Bool = false
     @State private var showSignOutConfirm: Bool = false
+    @State private var showFmcsaDetail: Bool = false
+    @State private var showInsuranceDocs: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -77,13 +97,28 @@ struct ShipperProfile: View {
             }
             Button("Cancel", role: .cancel) {}
         }
+        .sheet(isPresented: $showFmcsaDetail) {
+            ShipperFmcsaDetailSheet(
+                dotNumber: (profileStore.state.value ?? nil)?.dotNumber ?? ""
+            )
+            .environment(\.palette, palette)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showInsuranceDocs) {
+            ShipperInsuranceDocsSheet(store: complianceStore)
+                .environment(\.palette, palette)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .screenTileRoot()
     }
 
     private func refreshAll() async {
         async let a: Void = profileStore.refresh()
         async let b: Void = statsStore.refresh()
-        _ = await (a, b)
+        async let c: Void = complianceStore.refresh()
+        _ = await (a, b, c)
     }
 
     // MARK: - TopBar — eyebrow + tier counter + title + Edit pill
@@ -374,14 +409,15 @@ struct ShipperProfile: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
     }
 
-    private var progressLine: String {
-        guard let next = nextTier else { return "MAXED" }
-        let nextLabel = next.label.capitalized
-        // The tier gate requires ALL THREE metrics (loads AND on-time AND
-        // spend) to cross the next threshold — so a high loads count can
-        // sit at Bronze when on-time/spend lag. Showing "72 / 10" reads as
-        // broken math. Instead surface only the GATING metric(s) still
-        // unmet, never the already-satisfied ones.
+    /// Canonical gating-metric gap engine. The tier gate requires ALL
+    /// THREE metrics (loads AND on-time AND spend) to cross the next
+    /// threshold — so a high loads count can sit at Bronze when
+    /// on-time/spend lag. Returns only the metric(s) still UNMET,
+    /// never the already-satisfied ones. Every tier-copy surface
+    /// (progress line, unlock blurb, eSang sub-line) derives from this
+    /// single helper so the screen can never contradict itself with a
+    /// "0 more loads" line while a different metric is the real gate.
+    private func tierGaps(_ next: ShipperTier) -> [String] {
         let t = next.threshold
         let s = statsStore.state.value ?? nil
         let loads   = max(0, s?.totalLoads  ?? 0)
@@ -392,10 +428,24 @@ struct ShipperProfile: View {
         if t.loads  > 0, loads  < t.loads  { gaps.append("\(t.loads - loads) loads") }
         if t.onTime > 0, onTime < t.onTime { gaps.append("\(t.onTime - onTime)% on-time") }
         if t.spend  > 0, spend  < t.spend  { gaps.append("\(dollars(Double(t.spend - spend))) spend") }
+        return gaps
+    }
 
+    /// "Need X · Y" prefix shared by unlockBlurb + esangSubline. Empty
+    /// gaps = every metric met but the tier hasn't rolled over yet
+    /// (server-side aggregation cadence) — stay honest, no fraction.
+    private func tierNeedLine(_ next: ShipperTier) -> String {
+        let gaps = tierGaps(next)
+        return gaps.isEmpty
+            ? "\(next.label.capitalized) ready"
+            : "Need \(gaps.joined(separator: " · "))"
+    }
+
+    private var progressLine: String {
+        guard let next = nextTier else { return "MAXED" }
+        let nextLabel = next.label.capitalized
+        let gaps = tierGaps(next)
         if gaps.isEmpty {
-            // Every metric is met but the tier hasn't rolled over yet
-            // (server-side aggregation cadence) — stay honest, no fraction.
             return "\(currentTier.label.capitalized) · \(nextLabel) ready"
         }
         return "Need \(gaps.joined(separator: " · ")) → \(nextLabel)"
@@ -403,15 +453,14 @@ struct ShipperProfile: View {
 
     private var unlockBlurb: String {
         guard let next = nextTier else { return "Maxed - same-day settlement, 24/7 strategic team" }
-        let s = statsStore.state.value ?? nil
-        let target = next.threshold.loads
-        let count = max(0, s?.totalLoads ?? 0)
-        let remaining = max(0, target - count)
+        // Same gating-metric engine as progressLine — names the unmet
+        // metric(s) instead of the old loads-only "0 more loads" math.
+        let need = tierNeedLine(next)
         switch next {
-        case .silver:   return "\(remaining) more loads → +5% catalyst priority + Net-15 settlement"
-        case .gold:     return "\(remaining) more loads → +10% catalyst priority + Net-7 settlement"
-        case .platinum: return "\(remaining) more loads → 1.4% spot-rate discount + priority Catalyst routing"
-        case .diamond:  return "\(remaining) more loads → 0% factoring + same-day settlement"
+        case .silver:   return "\(need) → +5% catalyst priority + Net-15 settlement"
+        case .gold:     return "\(need) → +10% catalyst priority + Net-7 settlement"
+        case .platinum: return "\(need) → 1.4% spot-rate discount + priority Catalyst routing"
+        case .diamond:  return "\(need) → 0% factoring + same-day settlement"
         case .bronze:   return "Carrier marketplace · standard match"
         }
     }
@@ -657,6 +706,10 @@ struct ShipperProfile: View {
                 }
             }
             .font(.system(size: valueSize, weight: .semibold).monospacedDigit())
+            // Long numerals ($236,744) shrink to fit rather than wrap —
+            // the three tiles keep a single stable baseline.
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
             Text(trail).font(EType.caption).foregroundStyle(trailColor).lineLimit(1)
         }
         .padding(Space.s3)
@@ -675,13 +728,22 @@ struct ShipperProfile: View {
         let label: String
         let detail: String
         let badge: BadgeStyle
-        enum Kind { case fmcsa, insurance, bbb, payment }
+        enum Kind { case fmcsa, insurance, business, payment }
         enum BadgeStyle { case active, verified, reviewed, pending, unavailable }
+    }
+
+    /// Flattened `compliance.getShipperCompliance` summary from the
+    /// shared store (216_ShipperCompliance.swift). nil until the fetch
+    /// lands or when it failed — tiles render honest UNAVAILABLE then.
+    private var complianceSummary: ShipperComplianceAPI.Summary? {
+        if case .loaded(let summary, _) = complianceStore.state { return summary }
+        return nil
     }
 
     private var wireframeCredentials: [WireframeCredential] {
         let p = profileStore.state.value ?? nil
         let s = statsStore.state.value ?? nil
+        let comp = complianceSummary
 
         // FMCSA — real `shippers.getProfile` fields only. ACTIVE only when
         // the proc reports DOT + MC + verified; PENDING when a DOT exists
@@ -700,17 +762,54 @@ struct ShipperProfile: View {
             }
         }()
 
-        // INSURANCE — no insurance fields exist on `shippers.getProfile`
-        // or `shippers.getStats`. We must NOT assert "$2M GL / $1M cargo
-        // VERIFIED" with no source. Render unavailable honestly.
-        let insuranceDetail = "Unavailable"
+        // INSURANCE — real `compliance.getShipperCompliance`
+        // generalLiability {status, coverage, expires}. The server derives
+        // status from `companies.insuranceExpiry`: "active" (>30 days),
+        // "expiring" (≤30 days), "missing" (nothing on file). Only the
+        // proc-reported posture renders — never an asserted positive.
+        let gl = comp?.generalLiability
+        let insuranceBadge: WireframeCredential.BadgeStyle = {
+            switch gl?.status {
+            case "active":   return .active
+            case "expiring": return .pending
+            default:         return .unavailable
+            }
+        }()
+        let insuranceDetail: String = {
+            guard let gl else { return "Unavailable" }
+            switch gl.status {
+            case "active", "expiring":
+                var parts: [String] = []
+                if gl.coverage > 0 { parts.append("GL \(dollars(gl.coverage))") }
+                if !gl.expires.isEmpty { parts.append("exp \(gl.expires)") }
+                return parts.isEmpty ? "On file" : parts.joined(separator: " · ")
+            default:
+                return "Not on file"
+            }
+        }()
 
-        // BBB — no BBB accreditation field on either proc. Drop the
-        // invented "A+ / Accredited 2024 REVIEWED" assertion.
-        let bbbDetail = "Unavailable"
+        // BUSINESS — replaces the sourceless BBB tile. Real
+        // `compliance.getShipperCompliance` businessVerified (derived from
+        // `companies.complianceStatus === 'compliant'`) + creditRating +
+        // paymentTerms from the same proc.
+        let businessBadge: WireframeCredential.BadgeStyle = {
+            guard let comp else { return .unavailable }
+            return comp.businessVerified ? .verified : .pending
+        }()
+        let businessDetail: String = {
+            guard let comp else { return "Unavailable" }
+            var parts: [String] = []
+            if !comp.creditRating.isEmpty { parts.append("Credit \(comp.creditRating)") }
+            if !comp.paymentTerms.isEmpty { parts.append(comp.paymentTerms) }
+            if parts.isEmpty {
+                return comp.businessVerified ? "Verified" : "Verification pending"
+            }
+            return parts.joined(separator: " · ")
+        }()
 
-        // PAYMENT — real `shippers.getStats.avgPaymentTime` (server TODO
-        // returns 0 until populated). No invented "Stripe + Wallet".
+        // PAYMENT — real `shippers.getStats.avgPaymentTime`: AVG days
+        // between load delivery and settlement payout across this
+        // shipper's completed settlements (0 only when no settled loads).
         let avgPay = s?.avgPaymentTime ?? 0
         let paymentBadge: WireframeCredential.BadgeStyle = avgPay > 0 ? .verified : .unavailable
         let paymentDetail: String = {
@@ -720,8 +819,8 @@ struct ShipperProfile: View {
 
         return [
             WireframeCredential(kind: .fmcsa,     label: "FMCSA",     detail: fmcsaDetail,     badge: fmcsaBadge),
-            WireframeCredential(kind: .insurance, label: "INSURANCE", detail: insuranceDetail, badge: .unavailable),
-            WireframeCredential(kind: .bbb,       label: "BBB",       detail: bbbDetail,       badge: .unavailable),
+            WireframeCredential(kind: .insurance, label: "INSURANCE", detail: insuranceDetail, badge: insuranceBadge),
+            WireframeCredential(kind: .business,  label: "BUSINESS",  detail: businessDetail,  badge: businessBadge),
             WireframeCredential(kind: .payment,   label: "PAYMENT",   detail: paymentDetail,   badge: paymentBadge),
         ]
     }
@@ -741,7 +840,49 @@ struct ShipperProfile: View {
         }
     }
 
+    /// FMCSA + INSURANCE tiles are live: FMCSA opens the SAFER detail
+    /// sheet (`fmcsa.lookupByDOT`) when a DOT is on file, or routes to
+    /// 322 Profile Edit to add one; INSURANCE opens the company document
+    /// vault (`compliance.getShipperDocuments`). BUSINESS + PAYMENT stay
+    /// non-tappable — no dead taps, no ack-only buttons.
+    @ViewBuilder
     private func credentialTile(_ c: WireframeCredential) -> some View {
+        switch c.kind {
+        case .fmcsa, .insurance:
+            Button(action: { credentialTap(c.kind) }) {
+                credentialTileBody(c, tappable: true)
+            }
+            .buttonStyle(CredentialTilePressStyle())
+            .accessibilityHint(c.kind == .fmcsa
+                ? "Opens FMCSA SAFER record"
+                : "Opens insurance documents")
+        case .business, .payment:
+            credentialTileBody(c, tappable: false)
+        }
+    }
+
+    private func credentialTap(_ kind: WireframeCredential.Kind) {
+        switch kind {
+        case .fmcsa:
+            let dot = (profileStore.state.value ?? nil)?.dotNumber ?? ""
+            if dot.isEmpty {
+                // No DOT on file → land on the canonical 322 Profile Edit
+                // form (`shippers.updateProfile`) so the shipper can add it.
+                NotificationCenter.default.post(
+                    name: .eusoShipperNavSwap, object: nil,
+                    userInfo: ["screenId": "322"]
+                )
+            } else {
+                showFmcsaDetail = true
+            }
+        case .insurance:
+            showInsuranceDocs = true
+        case .business, .payment:
+            break
+        }
+    }
+
+    private func credentialTileBody(_ c: WireframeCredential, tappable: Bool) -> some View {
         HStack(alignment: .top, spacing: Space.s3) {
             credentialGlyph(c.kind, badge: c.badge)
                 .frame(width: 32, height: 32)
@@ -757,6 +898,12 @@ struct ShipperProfile: View {
                 badgePill(c.badge).padding(.top, 2)
             }
             Spacer(minLength: 0)
+            if tappable {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.top, 2)
+            }
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -764,6 +911,7 @@ struct ShipperProfile: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.lg)
                     .strokeBorder(palette.borderFaint))
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        .contentShape(RoundedRectangle(cornerRadius: Radius.lg))
         .accessibilityElement(children: .combine)
     }
 
@@ -795,17 +943,24 @@ struct ShipperProfile: View {
             Image(systemName: "shield.lefthalf.filled")
                 .font(.system(size: 22, weight: .regular))
                 .foregroundStyle(Brand.info)
-        case .bbb:
-            // Neutral BBB mark — no fabricated "A+" grade (no real source).
+        case .business:
+            // Business verification mark — green only when
+            // `compliance.getShipperCompliance.businessVerified` is true.
+            let verified = badge == .verified
+            let tint = verified ? Brand.success : palette.textTertiary
             ZStack {
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(palette.bgCardSoft)
-                    .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous)
-                                .strokeBorder(palette.borderSoft))
-                    .frame(width: 30, height: 22)
-                Text("BBB")
-                    .font(.system(size: 8, weight: .heavy)).tracking(0.3)
-                    .foregroundStyle(palette.textSecondary)
+                Image(systemName: "building.2.fill")
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(tint.opacity(0.18))
+                Image(systemName: "building.2")
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(tint)
+                if verified {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(Brand.success)
+                        .offset(x: 11, y: 9)
+                }
             }
         case .payment:
             Image(systemName: "creditcard.fill")
@@ -981,15 +1136,14 @@ struct ShipperProfile: View {
 
     private var esangSubline: String {
         guard let next = nextTier else { return "Catalysts compete to bid your loads" }
-        let s = statsStore.state.value ?? nil
-        let count = max(0, s?.totalLoads ?? 0)
-        let target = next.threshold.loads
-        let remaining = max(0, target - count)
+        // Same gating-metric engine as progressLine/unlockBlurb — names
+        // the unmet metric(s) instead of the old loads-only remainder.
+        let need = tierNeedLine(next)
         switch next {
-        case .silver:   return "\(remaining) more loads · +5% catalyst priority · Net-15 settle"
-        case .gold:     return "\(remaining) more loads · +10% catalyst priority · Net-7 settle"
-        case .platinum: return "\(remaining) more loads · −1.4% spot rate · auto-tender to top Catalysts"
-        case .diamond:  return "\(remaining) more loads · 0% factoring · same-day settle"
+        case .silver:   return "\(need) · +5% catalyst priority · Net-15 settle"
+        case .gold:     return "\(need) · +10% catalyst priority · Net-7 settle"
+        case .platinum: return "\(need) · −1.4% spot rate · auto-tender to top Catalysts"
+        case .diamond:  return "\(need) · 0% factoring · same-day settle"
         case .bronze:   return "Standard match · Net-30 settle"
         }
     }
@@ -1031,7 +1185,7 @@ struct ShipperProfile: View {
                 Text("Couldn't load this card")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text(error.localizedDescription)
+                Text(error.eusoUserCopy)
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
@@ -1092,6 +1246,481 @@ private func shipperNavTrailing_202() -> [NavSlot] {
      NavSlot(label: "Me",    systemImage: "person.fill",      isCurrent: true)]
 }
 
+// MARK: - Credential tile press style (§B.4 — .easeOut(0.12) press)
+
+private struct CredentialTilePressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
+}
+
+// MARK: - FMCSA SAFER detail sheet (fmcsa.lookupByDOT)
+//
+// Presented from the FMCSA credential tile when a DOT is on file.
+// Fires the real `fmcsa.lookupByDOT` query (wrapper at
+// EusoTripAPI.swift `FMCSAAPI.lookupByDOT`) and renders the SAFER
+// envelope: legal name, operating status, authority flags, safety
+// rating + crash totals, insurance posture, hazmat authorization.
+// Errors render honestly with a Retry — never a fabricated record.
+
+struct ShipperFmcsaDetailSheet: View {
+    let dotNumber: String
+
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    private enum Phase { case loading, loaded(FMCSACarrierLookup), error(String) }
+    @State private var phase: Phase = .loading
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            sheetHeader
+            switch phase {
+            case .loading:
+                HStack(spacing: Space.s3) {
+                    ProgressView()
+                    Text("Checking FMCSA SAFER for DOT \(dotNumber)…")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, Space.s5)
+            case .error(let msg):
+                errorBlock(msg)
+            case .loaded(let l):
+                ScrollView(showsIndicators: false) {
+                    resultBlock(l)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(palette.bgSheet.ignoresSafeArea())
+        .task { await load() }
+    }
+
+    private func load() async {
+        phase = .loading
+        do {
+            let lookup = try await EusoTripAPI.shared.fmcsa.lookupByDOT(dotNumber)
+            if lookup.verified {
+                phase = .loaded(lookup)
+            } else {
+                phase = .error(lookup.error ?? "No SAFER record found for DOT \(dotNumber).")
+            }
+        } catch {
+            phase = .error(error.localizedDescription)
+        }
+    }
+
+    private var sheetHeader: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("✦ FMCSA · SAFER RECORD")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Text("DOT \(dotNumber)")
+                    .font(EType.h2)
+                    .foregroundStyle(palette.textPrimary)
+            }
+            Spacer()
+            Button(action: { dismiss() }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
+        }
+    }
+
+    private func errorBlock(_ msg: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Brand.danger)
+                Text("Couldn't reach SAFER")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+            }
+            Text(msg)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Button(action: { Task { await load() } }) {
+                Text("Retry")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func resultBlock(_ l: FMCSACarrierLookup) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            if l.isBlocked == true {
+                bannerRow(
+                    systemImage: "hand.raised.fill", tint: Brand.danger,
+                    text: l.blockReason ?? "SAFER reports this carrier is not allowed to operate."
+                )
+            }
+            if let warnings = l.warnings, !warnings.isEmpty {
+                ForEach(warnings, id: \.self) { w in
+                    bannerRow(systemImage: "exclamationmark.triangle", tint: Brand.warning, text: w)
+                }
+            }
+            if let cp = l.companyProfile {
+                section("CARRIER") {
+                    kvRow("Legal name", cp.legalName)
+                    if let dba = cp.dba, !dba.isEmpty { kvRow("DBA", dba) }
+                    kvRow("Fleet", "\(cp.fleetSize) vehicle\(cp.fleetSize == 1 ? "" : "s") · \(cp.driverCount) driver\(cp.driverCount == 1 ? "" : "s")")
+                    kvRow("Address", "\(cp.physicalAddress.city), \(cp.physicalAddress.state) \(cp.physicalAddress.zip)")
+                }
+            }
+            if let a = l.authority {
+                section("AUTHORITY") {
+                    kvRow("Operating status", a.operatingStatus)
+                    kvRow("Common / Contract / Broker",
+                          "\(authorityFlag(a.commonAuthority)) / \(authorityFlag(a.contractAuthority)) / \(authorityFlag(a.brokerAuthority))")
+                }
+            }
+            if let s = l.safety {
+                section("SAFETY") {
+                    kvRow("Rating", s.rating.isEmpty ? "Not rated" : s.rating)
+                    kvRow("Crashes (24 mo)", "\(s.crashTotal) total · \(s.fatalCrash) fatal · \(s.towCrash) tow")
+                    kvRow("Driver OOS rate", String(format: "%.1f%%", s.inspections.driver.rate))
+                    kvRow("Vehicle OOS rate", String(format: "%.1f%%", s.inspections.vehicle.rate))
+                }
+            }
+            if let ins = l.insurance {
+                section("INSURANCE") {
+                    kvRow("BIPD", ins.bipdOnFile ? "On file" : (ins.bipdRequired ? "Required · not on file" : "Not required"))
+                    kvRow("Cargo", ins.cargoOnFile ? "On file" : (ins.cargoRequired ? "Required · not on file" : "Not required"))
+                    kvRow("Bond", ins.bondOnFile ? "On file" : (ins.bondRequired ? "Required · not on file" : "Not required"))
+                }
+            }
+            if let hz = l.hazmat {
+                section("HAZMAT") {
+                    kvRow("Authorized", hz.authorized ? "Yes" : "No")
+                }
+            }
+            if let fetchedAt = l.fetchedAt, l.fromCache == true, !fetchedAt.isEmpty {
+                Text("Verified from cache · fetched \(fetchedAt)")
+                    .font(EType.micro).tracking(0.4)
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.top, 2)
+            }
+            Color.clear.frame(height: Space.s5)
+        }
+    }
+
+    /// FMCSA dictionary flag → readable word ("Y"/"N"/"P").
+    private func authorityFlag(_ raw: String) -> String {
+        switch raw.uppercased() {
+        case "Y": return "Active"
+        case "N": return "None"
+        case "P": return "Pending"
+        default:  return raw.isEmpty ? "—" : raw
+        }
+    }
+
+    private func section(_ label: String, @ViewBuilder rows: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(label)
+                .font(EType.micro).tracking(0.8)
+                .foregroundStyle(palette.textTertiary)
+                .padding(.bottom, 6)
+            VStack(spacing: 0) { rows() }
+                .background(palette.bgCard)
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                            .strokeBorder(palette.borderFaint))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        }
+    }
+
+    private func kvRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+            Text(label)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer(minLength: Space.s2)
+            Text(value.isEmpty ? "—" : value)
+                .font(EType.mono(.caption))
+                .foregroundStyle(palette.textPrimary)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+        }
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, 10)
+    }
+
+    private func bannerRow(systemImage: String, tint: Color, text: String) -> some View {
+        HStack(alignment: .top, spacing: Space.s2) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(tint)
+            Text(text)
+                .font(EType.caption)
+                .foregroundStyle(palette.textPrimary)
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .background(tint.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+}
+
+// MARK: - Insurance document vault sheet (compliance.getShipperDocuments)
+//
+// Presented from the INSURANCE credential tile. Reads the shared
+// `ShipperComplianceStore` (216_ShipperCompliance.swift): the GL
+// summary block comes from `compliance.getShipperCompliance` and the
+// document rows from `compliance.getShipperDocuments`. Rows with a
+// fileUrl open the real document; rows without stay static (no dead
+// taps). Failures surface the store's role-correct detail + Retry.
+
+struct ShipperInsuranceDocsSheet: View {
+    @ObservedObject var store: ShipperComplianceStore
+
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            sheetHeader
+            content
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(palette.bgSheet.ignoresSafeArea())
+        .task {
+            // Parent screen normally hydrates the store; self-heal when
+            // the sheet is the first surface to need it.
+            if case .loading = store.state { await store.refresh() }
+        }
+    }
+
+    private var sheetHeader: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("✦ INSURANCE · DOCUMENTS")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(LinearGradient.primary)
+                Text("Coverage on file")
+                    .font(EType.h2)
+                    .foregroundStyle(palette.textPrimary)
+            }
+            Spacer()
+            Button(action: { dismiss() }) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close")
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch store.state {
+        case .loading:
+            HStack(spacing: Space.s3) {
+                ProgressView()
+                Text("Loading insurance documents…")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, Space.s5)
+        case .failed(_, let detail):
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(spacing: Space.s2) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Brand.danger)
+                    Text("Couldn't load documents")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                }
+                Text(detail)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                Button(action: { Task { await store.refresh() } }) {
+                    Text("Retry")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(LinearGradient.diagonal)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(Brand.danger.opacity(0.4), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        case .loaded(let summary, let documents):
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    glCard(summary.generalLiability)
+                    if documents.isEmpty {
+                        EusoEmptyState(
+                            icon: Image(systemName: "doc.text"),
+                            title: "No documents on file",
+                            subtitle: "Certificates uploaded to your company vault appear here."
+                        )
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, Space.s4)
+                    } else {
+                        VStack(spacing: Space.s2) {
+                            ForEach(documents) { d in
+                                docRow(d)
+                            }
+                        }
+                    }
+                    Color.clear.frame(height: Space.s5)
+                }
+            }
+        }
+    }
+
+    private func glCard(_ gl: ShipperComplianceAPI.GeneralLiability) -> some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            Image(systemName: "shield.lefthalf.filled")
+                .font(.system(size: 22, weight: .regular))
+                .foregroundStyle(Brand.info)
+                .frame(width: 32, height: 32)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("GENERAL LIABILITY")
+                    .font(EType.micro).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Text(glDetail(gl))
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(2)
+                statusPill(gl.status)
+                    .padding(.top, 2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private func glDetail(_ gl: ShipperComplianceAPI.GeneralLiability) -> String {
+        guard gl.status == "active" || gl.status == "expiring" else { return "Not on file" }
+        var parts: [String] = []
+        if gl.coverage > 0 { parts.append("Coverage \(dollars(gl.coverage))") }
+        if !gl.expires.isEmpty { parts.append("expires \(gl.expires)") }
+        return parts.isEmpty ? "On file" : parts.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private func docRow(_ d: ShipperComplianceAPI.Document) -> some View {
+        let url = URL(string: d.fileUrl)
+        if let url, !d.fileUrl.isEmpty, url.scheme?.hasPrefix("http") == true {
+            Button(action: { openURL(url) }) {
+                docRowBody(d, opensFile: true)
+            }
+            .buttonStyle(CredentialTilePressStyle())
+            .accessibilityHint("Opens document")
+        } else {
+            docRowBody(d, opensFile: false)
+        }
+    }
+
+    private func docRowBody(_ d: ShipperComplianceAPI.Document, opensFile: Bool) -> some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            Image(systemName: "doc.text.fill")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(LinearGradient.diagonal)
+                .frame(width: 28, height: 28)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(d.name.isEmpty ? "Untitled document" : d.name)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                Text(docMetaLine(d))
+                    .font(EType.mono(.caption))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                statusPill(d.status)
+                    .padding(.top, 2)
+            }
+            Spacer(minLength: 0)
+            if opensFile {
+                Image(systemName: "arrow.up.right.square")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                    .padding(.top, 2)
+            }
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func docMetaLine(_ d: ShipperComplianceAPI.Document) -> String {
+        var parts: [String] = []
+        if let type = d.type, !type.isEmpty { parts.append(type) }
+        if !d.expiresAt.isEmpty { parts.append("expires \(d.expiresAt)") }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    private func statusPill(_ raw: String) -> some View {
+        let (label, tint): (String, Color) = {
+            switch raw.lowercased() {
+            case "active":   return ("ACTIVE",   Brand.success)
+            case "expiring": return ("EXPIRING", Brand.warning)
+            case "pending":  return ("PENDING",  Brand.warning)
+            case "expired":  return ("EXPIRED",  Brand.danger)
+            case "missing", "": return ("NOT ON FILE", palette.textTertiary)
+            default:         return (raw.uppercased(), palette.textTertiary)
+            }
+        }()
+        return Text(label)
+            .font(EType.micro).tracking(0.5)
+            .foregroundStyle(tint)
+            .padding(.horizontal, 10).padding(.vertical, 3)
+            .background(Capsule().fill(tint.opacity(0.10)))
+    }
+
+    private func dollars(_ v: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .currency
+        f.maximumFractionDigits = 0
+        f.currencyCode = "USD"
+        return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
+    }
+}
+
 // MARK: - Previews
 
 #Preview("202 · Shipper · Profile · Night") {
@@ -1103,5 +1732,29 @@ private func shipperNavTrailing_202() -> [NavSlot] {
 #Preview("202 · Shipper · Profile · Afternoon") {
     ShipperProfileScreen(theme: Theme.light)
         .environmentObject(EusoTripSession())
+        .preferredColorScheme(.light)
+}
+
+#Preview("202 · FMCSA SAFER sheet · Night") {
+    ShipperFmcsaDetailSheet(dotNumber: "1234567")
+        .environment(\.palette, Theme.dark)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("202 · FMCSA SAFER sheet · Afternoon") {
+    ShipperFmcsaDetailSheet(dotNumber: "1234567")
+        .environment(\.palette, Theme.light)
+        .preferredColorScheme(.light)
+}
+
+#Preview("202 · Insurance docs sheet · Night") {
+    ShipperInsuranceDocsSheet(store: ShipperComplianceStore())
+        .environment(\.palette, Theme.dark)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("202 · Insurance docs sheet · Afternoon") {
+    ShipperInsuranceDocsSheet(store: ShipperComplianceStore())
+        .environment(\.palette, Theme.light)
         .preferredColorScheme(.light)
 }

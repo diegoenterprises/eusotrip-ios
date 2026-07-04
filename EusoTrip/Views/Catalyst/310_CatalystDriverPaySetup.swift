@@ -108,7 +108,7 @@ private struct PaySetupBody: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("OWNER-OP SEAM · CLEAN BOOKS")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text("Zero days-to-pay · IRS-clean Schedule C split · same companyId both sides")
+                Text("Zero days-to-pay · IRS-clean Schedule C split · same company both sides")
                     .font(EType.caption).foregroundStyle(palette.textPrimary)
             }
         }

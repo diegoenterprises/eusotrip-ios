@@ -98,7 +98,7 @@ private struct VesselClaimTemplatesBody: View {
                                    subtitle: "getClaimTemplates returned an empty library, nothing to file from yet.")
                 } else {
                     libraryHero
-                    Text("TOP TEMPLATES · getClaimTemplates · BY USAGE")
+                    Text("TOP TEMPLATES · BY USAGE")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     rosterCard
                     Text("REGIONAL OVERLAYS · template.regional")

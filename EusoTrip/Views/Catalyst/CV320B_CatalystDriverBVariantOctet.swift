@@ -45,49 +45,49 @@ private extension CatalystDriverBKind {
                          citation: "§9.1 · COMPOSITE",
                          title: "Axis detail",
                          subheadSuffix: "§9.1 · scorecard composite",
-                         pillCopy: "Catalyst rates driver · same companyId both sides · §9.1 composite from getPerformanceMetrics")
+                         pillCopy: "Catalyst rates driver · same company both sides · §9.1 composite from performance metrics")
         case .profileTier:
             return .init(eyebrow: "CATALYST · DRIVER · TIER",
                          citation: "§13 · TIER",
                          title: "Tier detail",
                          subheadSuffix: "§13 · tier criteria",
-                         pillCopy: "Catalyst rates driver · same companyId both sides · §13 tier criteria")
+                         pillCopy: "Catalyst rates driver · same company both sides · §13 tier criteria")
         case .document:
             return .init(eyebrow: "CATALYST · DRIVER · DOCUMENT",
                          citation: "DOCUMENT",
                          title: "Document detail",
                          subheadSuffix: "driver document file",
-                         pillCopy: "Catalyst archives driver docs · same companyId both sides · pre-employment document file")
+                         pillCopy: "Catalyst archives driver docs · same company both sides · pre-employment document file")
         case .analytic:
             return .init(eyebrow: "CATALYST · DRIVER · ANALYTIC",
                          citation: "§395.8 · LIVE",
                          title: "Analytic detail",
                          subheadSuffix: "§395.8 · ELD record",
-                         pillCopy: "Catalyst tracks driver KPIs · same companyId both sides · §395.8 ELD record")
+                         pillCopy: "Catalyst tracks driver KPIs · same company both sides · §395.8 ELD record")
         case .settlement:
             return .init(eyebrow: "CATALYST · DRIVER · SETTLEMENT",
                          citation: "SETTLEMENT",
                          title: "Settlement detail",
                          subheadSuffix: "settlement line items",
-                         pillCopy: "Catalyst pays driver · same companyId both sides · settlement line items")
+                         pillCopy: "Catalyst pays driver · same company both sides · settlement line items")
         case .onboarding:
             return .init(eyebrow: "CATALYST · DRIVER · STEP DETAIL",
                          citation: "ONBOARDING",
                          title: "Step detail",
                          subheadSuffix: "onboarding step",
-                         pillCopy: "Catalyst onboards driver · same companyId both sides · controlled-substances file")
+                         pillCopy: "Catalyst onboards driver · same company both sides · controlled-substances file")
         case .compliance:
             return .init(eyebrow: "CATALYST · DRIVER · COMPLIANCE ROW",
                          citation: "COMPLIANCE",
                          title: "Compliance row",
                          subheadSuffix: "compliance row",
-                         pillCopy: "Catalyst monitors driver · same companyId both sides · random-testing pool")
+                         pillCopy: "Catalyst monitors driver · same company both sides · random-testing pool")
         case .quarter:
             return .init(eyebrow: "CATALYST · DRIVER · QUARTER DETAIL",
                          citation: "QUARTER",
                          title: "Quarter detail",
                          subheadSuffix: "quarter rollup",
-                         pillCopy: "Catalyst archives driver quarter rollup · same companyId both sides · Schedule C close")
+                         pillCopy: "Catalyst archives driver quarter rollup · same company both sides · Schedule C close")
         }
     }
 }

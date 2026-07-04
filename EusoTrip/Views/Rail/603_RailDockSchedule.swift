@@ -609,7 +609,7 @@ private struct RailDockScheduleBody: View {
                 bookMessage = "Couldn’t book the appointment. The terminal rejected the slot."
             }
         } catch {
-            let msg = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            let msg = error.eusoUserCopy
             bookMessage = "Couldn’t book - \(msg)"
         }
     }

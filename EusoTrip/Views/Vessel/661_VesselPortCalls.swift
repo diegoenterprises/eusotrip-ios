@@ -462,7 +462,7 @@ private struct VesselPortCallsBody: View {
                     // Real next-call ETA from the AIS port-call row — em-dash when none.
                     Text(vm.nextEta == "-" ? "—" : "ETA \(vm.nextEta)")
                         .font(.system(size: 16, weight: .bold)).monospacedDigit().foregroundStyle(palette.textPrimary)
-                    Text("getVesselPortCalls · arrivalTime").font(.system(size: 10)).foregroundStyle(palette.textSecondary)
+                    Text("Port calls · by arrival time").font(.system(size: 10)).foregroundStyle(palette.textSecondary)
                 }
             }
         }

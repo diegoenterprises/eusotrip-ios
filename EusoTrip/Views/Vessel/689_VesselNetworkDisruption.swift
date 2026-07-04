@@ -113,7 +113,7 @@ private struct VesselNetworkDisruptionBody: View {
                 } else if !hasDisruption {
                     EusoEmptyState(systemImage: "checkmark.seal",
                                    title: "No network disruption",
-                                   subtitle: "blankSailing.dashboard reports 0 cancelled sailings on loop EUS-TPEB-07 · WK23 · nothing at risk, nothing to reroute.")
+                                   subtitle: "0 cancelled sailings on loop EUS-TPEB-07 · WK23 · nothing at risk, nothing to reroute.")
                 } else {
                     exposureHero
                     kpiStrip

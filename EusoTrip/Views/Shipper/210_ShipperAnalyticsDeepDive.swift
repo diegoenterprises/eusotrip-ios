@@ -257,7 +257,7 @@ struct ShipperAnalyticsDeepDive: View {
             Text("Analytics")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("Spend · on-time · CO₂ · cohorts byLane · byEquipment · byCatalyst")
+            Text("Spend · on-time · CO₂ · cohorts by lane · equipment · catalyst")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2).minimumScaleFactor(0.85)

@@ -291,7 +291,7 @@ struct MessagesScreen: View {
             loadError = "Please sign in to load messages."
             didFirstLoad = true
         } catch {
-            loadError = "Couldn't refresh messages, \(error.localizedDescription)"
+            loadError = "Couldn't refresh messages. \(error.eusoUserCopy)"
             didFirstLoad = true
         }
     }
@@ -325,7 +325,7 @@ struct MessagesScreen: View {
                 }
                 lastDeletedSnapshot = nil
             }
-            loadError = "Couldn't delete, \(error.localizedDescription)"
+            loadError = "Couldn't delete. \(error.eusoUserCopy)"
         }
     }
 

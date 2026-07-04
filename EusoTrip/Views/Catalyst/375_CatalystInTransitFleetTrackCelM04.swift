@@ -524,7 +524,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
     private func telemetrySection(_ l: ActiveLoadRow_375) -> some View {
         let rows = telemetryRows(l)
         return VStack(alignment: .leading, spacing: 8) {
-            Text("FLEET-TRACKER ECHO · IN-TRANSIT · loadLifecycle.emitLoadStateChange(in_transit)")
+            Text("FLEET-TRACKER ECHO · IN-TRANSIT · live load-state signal")
                 .font(.system(size: 8, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(palette.textTertiary)
                 .lineLimit(1).minimumScaleFactor(0.6)
@@ -576,7 +576,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                 realBacked: locBacked),
             TelemetryRow_375(
                 title: "HOS · \(rollingDriver?.status.lowercased() ?? "driving") · \(rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "-") remaining",
-                detail: "660-min cap math · catalysts.getMyDrivers.hoursRemaining",
+                detail: "660-min cap math · live hours remaining per driver",
                 trailing: rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "-",
                 realBacked: hosBacked),
             TelemetryRow_375(

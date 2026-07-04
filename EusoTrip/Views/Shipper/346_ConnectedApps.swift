@@ -55,6 +55,97 @@ private struct IntegrationProvider: Decodable, Identifiable, Hashable {
     let status: String?
     let capabilities: [String]?
     let requiresCredentials: Bool?
+    let journey: IntegrationProviderJourney?
+
+    enum CodingKeys: String, CodingKey {
+        case id, displayName, vendor, category, description, docsUrl, authType, status
+        case capabilities, requiresCredentials, journey
+    }
+
+    init(
+        id: String,
+        displayName: String,
+        vendor: String?,
+        category: String?,
+        description: String?,
+        docsUrl: String?,
+        authType: String?,
+        status: String?,
+        capabilities: [String]?,
+        requiresCredentials: Bool?,
+        journey: IntegrationProviderJourney?
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.vendor = vendor
+        self.category = category
+        self.description = description
+        self.docsUrl = docsUrl
+        self.authType = authType
+        self.status = status
+        self.capabilities = capabilities
+        self.requiresCredentials = requiresCredentials
+        self.journey = journey
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        displayName = try c.decode(String.self, forKey: .displayName)
+        vendor = try c.decodeIfPresent(String.self, forKey: .vendor)
+        category = try c.decodeIfPresent(String.self, forKey: .category)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        docsUrl = try c.decodeIfPresent(String.self, forKey: .docsUrl)
+        authType = try c.decodeIfPresent(String.self, forKey: .authType)
+        status = try c.decodeIfPresent(String.self, forKey: .status)
+        requiresCredentials = try c.decodeIfPresent(Bool.self, forKey: .requiresCredentials)
+        journey = try c.decodeIfPresent(IntegrationProviderJourney.self, forKey: .journey)
+
+        if let arr = try? c.decodeIfPresent([String].self, forKey: .capabilities) {
+            capabilities = arr
+        } else if let flags = try? c.decodeIfPresent(ProviderCapabilityFlags.self, forKey: .capabilities) {
+            capabilities = flags.enabledLabels
+        } else {
+            capabilities = nil
+        }
+    }
+}
+
+private struct ProviderCapabilityFlags: Decodable, Hashable {
+    let inbound: Bool?
+    let outbound: Bool?
+    let webhooks: Bool?
+    let realtime: Bool?
+    let scheduledSync: Bool?
+    let perUserOAuth: Bool?
+
+    var enabledLabels: [String] {
+        var labels: [String] = []
+        if inbound == true { labels.append("Inbound") }
+        if outbound == true { labels.append("Outbound") }
+        if webhooks == true { labels.append("Webhooks") }
+        if realtime == true { labels.append("Realtime") }
+        if scheduledSync == true { labels.append("Scheduled sync") }
+        if perUserOAuth == true { labels.append("User OAuth") }
+        return labels
+    }
+}
+
+/// RIOS journey profile returned by `userIntegrations.listCatalog`.
+/// It is computed from the same backend registry that powers actual
+/// connect/sync/webhook behavior, so the copy adapts to role, provider,
+/// category, capabilities, and profile adaptation instead of static
+/// marketing text.
+private struct IntegrationProviderJourney: Decodable, Hashable {
+    let persona: String?
+    let adoptionStage: String?
+    let headline: String?
+    let setup: String?
+    let operationalUnlock: String?
+    let crossRoleBenefit: String?
+    let credentialHint: String?
+    let dataFlow: String?
+    let capabilityTags: [String]?
 }
 
 /// `userIntegrations.listConnections` row — one per (user, provider).
@@ -87,6 +178,36 @@ private struct ApiScope: Decodable, Identifiable, Hashable {
     let description: String
 }
 
+private struct IntegrationJourneyImpact: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let outcome: String
+    let icon: String
+    let providerCount: Int
+    let connectedCount: Int
+    let providerNames: [String]
+}
+
+private struct IntegrationAdoptionSignal: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let outcome: String
+    let icon: String
+    let providerCount: Int
+    let connectedCount: Int
+    let providerNames: [String]
+}
+
+private struct IntegrationNetworkBenefit: Identifiable, Hashable {
+    let id: String
+    let recipient: String
+    let benefit: String
+    let icon: String
+    let providerCount: Int
+    let connectedCount: Int
+    let providerNames: [String]
+}
+
 private struct ConnectedAppsBody: View {
     @Environment(\.palette) private var palette
     @EnvironmentObject private var session: EusoTripSession
@@ -94,7 +215,9 @@ private struct ConnectedAppsBody: View {
     // Catalog + connections (the role-based integration system).
     @State private var providers: [IntegrationProvider] = []
     @State private var connections: [IntegrationConnection] = []
+    @State private var liveAdaptation: ProfileAdaptation? = nil
     @State private var usedRegistryFallback = false
+    @State private var catalogUnavailableReason: String? = nil
 
     // API tokens (the developer portal).
     @State private var apiKeys: [ApiKeyRow] = []
@@ -118,11 +241,12 @@ private struct ConnectedAppsBody: View {
     @State private var revokingKey: String? = nil
 
     private var role: String { session.user?.role ?? "" }
+    private var roleLabel: String { session.user?.roleEnum.displayName ?? "Account" }
     private var roleOwnsIntegrations: Bool {
         let r = role.uppercased()
         if r.isEmpty { return false }
         if r == "ADMIN" || r == "SUPER_ADMIN" { return true }
-        return r.contains("SHIPPER") || r.contains("CATALYST") || r.contains("BROKER")
+        return !RoleIntegrationRegistry.providers(for: r).isEmpty
     }
 
     var body: some View {
@@ -147,14 +271,15 @@ private struct ConnectedAppsBody: View {
                 } else if !roleOwnsIntegrations {
                     nonIntegrationRoleCard
                 } else {
+                    integrationJourneySection
                     connectedSection
                     adaptationSection
                     tokensSection
                 }
 
-                Color.clear.frame(height: 96)
+                Color.clear.frame(height: 156)
             }
-            .padding(.horizontal, 14).padding(.top, 56)
+            .padding(.horizontal, 14).padding(.top, 72)
         }
         .task { await load() }
     }
@@ -163,7 +288,7 @@ private struct ConnectedAppsBody: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "rectangle.connected.to.line.below").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · CONNECTED APPS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Text("\(roleLabel.uppercased()) · CONNECTED APPS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Connected apps + API tokens").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
             Text("Connect the integrations that apply to your role, and issue API tokens — all in-app.")
@@ -177,13 +302,146 @@ private struct ConnectedAppsBody: View {
     private var nonIntegrationRoleCard: some View {
         LifecycleCard {
             LifecycleSection(label: "CONNECTED APPS", icon: "rectangle.connected.to.line.below")
-            Text("Account-level API integrations are managed by your shipper, carrier, or broker account. Your current role doesn't own these connections.")
+            Text("This role does not own account-level integrations. Ask an account admin to connect providers or issue API tokens.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     // MARK: - Connected apps / role-based integration catalog
+
+    @ViewBuilder
+    private var integrationJourneySection: some View {
+        let impacts = IntegrationJourneyPlanner.impacts(for: providers, connections: connections)
+        let adoptionSignals = IntegrationJourneyPlanner.adoptionSignals(for: providers, connections: connections)
+        let networkBenefits = IntegrationJourneyPlanner.networkBenefits(for: providers, connections: connections)
+        if !impacts.isEmpty || !adoptionSignals.isEmpty || !networkBenefits.isEmpty {
+            LifecycleCard {
+                LifecycleSection(label: "RIOS ADOPTION MAP", icon: "point.3.connected.trianglepath.dotted")
+
+                Text("\(providers.count) role-mapped providers can shorten onboarding, enrich this account, and improve the counterparties who depend on this role.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !adoptionSignals.isEmpty {
+                    journeySubhead("ONBOARDING ACCELERATORS")
+                    ForEach(adoptionSignals) { signal in
+                        adoptionSignalRow(signal)
+                    }
+                }
+
+                if !networkBenefits.isEmpty {
+                    journeyDivider
+                    journeySubhead("CROSS-ROLE BENEFIT")
+                    ForEach(networkBenefits) { benefit in
+                        networkBenefitRow(benefit)
+                    }
+                }
+
+                if !impacts.isEmpty {
+                    journeyDivider
+                    journeySubhead("WORKFLOW UNLOCKS")
+                    ForEach(impacts) { impact in
+                        journeyImpactRow(impact)
+                    }
+                }
+            }
+        }
+    }
+
+    private func journeySubhead(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 8, weight: .heavy))
+            .tracking(0.7)
+            .foregroundStyle(palette.textTertiary)
+            .padding(.top, 4)
+    }
+
+    private var journeyDivider: some View {
+        Rectangle()
+            .fill(palette.borderFaint)
+            .frame(height: 1)
+            .padding(.vertical, 2)
+    }
+
+    private func adoptionSignalRow(_ signal: IntegrationAdoptionSignal) -> some View {
+        journeyMetricRow(
+            icon: signal.icon,
+            title: signal.title,
+            body: signal.outcome,
+            count: "\(signal.connectedCount)/\(signal.providerCount) connected",
+            providerNames: signal.providerNames,
+            providerCount: signal.providerCount,
+            active: signal.connectedCount > 0)
+    }
+
+    private func networkBenefitRow(_ benefit: IntegrationNetworkBenefit) -> some View {
+        journeyMetricRow(
+            icon: benefit.icon,
+            title: benefit.recipient,
+            body: benefit.benefit,
+            count: "\(benefit.connectedCount)/\(benefit.providerCount) connected",
+            providerNames: benefit.providerNames,
+            providerCount: benefit.providerCount,
+            active: benefit.connectedCount > 0)
+    }
+
+    private func journeyImpactRow(_ impact: IntegrationJourneyImpact) -> some View {
+        journeyMetricRow(
+            icon: impact.icon,
+            title: impact.title,
+            body: impact.outcome,
+            count: "\(impact.connectedCount)/\(impact.providerCount) connected",
+            providerNames: impact.providerNames,
+            providerCount: impact.providerCount,
+            active: impact.connectedCount > 0)
+    }
+
+    private func journeyMetricRow(
+        icon: String,
+        title: String,
+        body: String,
+        count: String,
+        providerNames: [String],
+        providerCount: Int,
+        active: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 18)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(title)
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Spacer(minLength: 8)
+                        Text(count)
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(active ? Brand.success : palette.textTertiary)
+                    }
+                    Text(body)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    providerNameLine(providerNames, total: providerCount)
+                }
+            }
+        }
+        .padding(.vertical, 6)
+    }
+
+    private func providerNameLine(_ names: [String], total: Int) -> some View {
+        let visible = names.prefix(3).map(cleanLabel)
+        let suffix = total > visible.count ? " +\(total - visible.count) more" : ""
+        return Text(visible.joined(separator: " · ") + suffix)
+            .font(EType.mono(.micro))
+            .foregroundStyle(palette.textTertiary)
+            .lineLimit(2)
+    }
 
     @ViewBuilder
     private var connectedSection: some View {
@@ -198,9 +456,15 @@ private struct ConnectedAppsBody: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if usedRegistryFallback {
-                Text("Showing the provider catalog for your role. Connect a provider to begin syncing.")
+                Text("Live catalog is temporarily unavailable. Showing the role map only; retry the catalog before connecting a new provider.")
                     .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
+                if let reason = catalogUnavailableReason, !reason.isEmpty {
+                    Text(reason)
+                        .font(EType.mono(.micro))
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
+                }
             }
 
             if providers.isEmpty {
@@ -238,6 +502,7 @@ private struct ConnectedAppsBody: View {
                     if let desc = p.description, !desc.isEmpty {
                         Text(cleanLabel(desc)).font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(2)
                     }
+                    providerJourneySummary(p)
                     if isConnected {
                         connectedStatusLine(conn)
                     }
@@ -255,6 +520,35 @@ private struct ConnectedAppsBody: View {
             if p.id != providers.last?.id {
                 Rectangle().fill(palette.borderFaint).frame(height: 1)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func providerJourneySummary(_ p: IntegrationProvider) -> some View {
+        if let journey = p.journey {
+            VStack(alignment: .leading, spacing: 4) {
+                if let headline = journey.headline, !headline.isEmpty {
+                    Text(cleanLabel(headline))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let tags = journey.capabilityTags, !tags.isEmpty {
+                    HStack(spacing: 5) {
+                        ForEach(Array(tags.prefix(4)), id: \.self) { tag in
+                            Text(prettyToken(tag).uppercased())
+                                .font(.system(size: 7, weight: .heavy))
+                                .tracking(0.45)
+                                .foregroundStyle(palette.textTertiary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(palette.bgCardSoft)
+                                .clipShape(Capsule())
+                        }
+                    }
+                }
+            }
+            .padding(.top, 2)
         }
     }
 
@@ -287,14 +581,20 @@ private struct ConnectedAppsBody: View {
                     Task { await disconnect(conn) }
                 }
             } else {
-                pillButton(title: isExpanded ? "Cancel" : "Connect", filled: !isExpanded, busy: false) {
-                    if isExpanded {
-                        expandedProvider = nil
-                    } else if (p.requiresCredentials ?? false) {
-                        expandedProvider = p.id
+                if usedRegistryFallback {
+                    pillButton(title: "Retry catalog", filled: false, busy: busy) {
+                        Task { await load() }
+                    }
                     } else {
-                        // Public provider — connect with no credentials.
-                        Task { await connect(p, credentials: nil) }
+                    pillButton(title: isExpanded ? "Cancel" : "Connect", filled: !isExpanded, busy: false) {
+                        if isExpanded {
+                            expandedProvider = nil
+                        } else if (p.requiresCredentials ?? false) {
+                            expandedProvider = p.id
+                        } else {
+                            // Public provider — connect with no credentials.
+                            Task { await connect(p, credentials: nil) }
+                        }
                     }
                 }
             }
@@ -305,27 +605,24 @@ private struct ConnectedAppsBody: View {
     @ViewBuilder
     private func connectForm(_ p: IntegrationProvider, busy: Bool) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Enter the credentials \(cleanLabel(p.displayName)) issued you. They're stored encrypted and never shown again.")
+            Text("Enter the credentials \(cleanLabel(p.displayName)) issued to you. They're stored encrypted and never shown again.")
                 .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            providerJourneyDisclosure(p)
 
             ForEach(credentialFields(for: p), id: \.self) { field in
                 credField(provider: p.id, field: field)
             }
 
-            // Provider reference. The registry/catalog records deep doc
-            // paths (…/api, …/developers, …/api-portal) that frequently 404
-            // because providers don't host docs at those exact constructed
-            // URLs. Rather than ship a link we can't verify resolves, we open
-            // ONLY the provider's root domain (scheme + host) — which reliably
-            // loads — and label it honestly as the provider's site. When no
-            // host can be parsed, we drop the link entirely and show an inline
-            // note so the user is never sent to a 404.
-            if let host = providerHost(from: p.docsUrl), let url = URL(string: "https://\(host)") {
+            // Provider reference. The role catalog stores verified provider
+            // developer surfaces, so preserve the full destination instead of
+            // collapsing deep docs back to a generic root host.
+            if let url = providerDocsURL(from: p.docsUrl) {
                 Link(destination: url) {
                     HStack(spacing: 4) {
                         Image(systemName: "safari").font(.system(size: 9, weight: .semibold))
-                        Text("Open \(host)").font(.system(size: 10, weight: .semibold))
+                        Text("Open \(providerDocsLabel(from: url))").font(.system(size: 10, weight: .semibold))
                     }.foregroundStyle(Brand.blue)
                 }
                 Text("Credentials are issued from your \(cleanLabel(p.displayName)) account — generate an API key there, then paste it above.")
@@ -354,6 +651,42 @@ private struct ConnectedAppsBody: View {
             }
         }
         .padding(.top, 4)
+    }
+
+    @ViewBuilder
+    private func providerJourneyDisclosure(_ p: IntegrationProvider) -> some View {
+        if let journey = p.journey {
+            VStack(alignment: .leading, spacing: 5) {
+                journeyDisclosureRow("UNLOCK", journey.operationalUnlock)
+                journeyDisclosureRow("CROSS-ROLE", journey.crossRoleBenefit)
+                journeyDisclosureRow("CREDENTIAL", journey.credentialHint)
+                journeyDisclosureRow("FLOW", journey.dataFlow)
+            }
+            .padding(9)
+            .background(palette.bgCardSoft)
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                    .strokeBorder(palette.borderFaint, lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    private func journeyDisclosureRow(_ label: String, _ value: String?) -> some View {
+        if let value, !value.isEmpty {
+            HStack(alignment: .top, spacing: 7) {
+                Text(label)
+                    .font(.system(size: 7, weight: .heavy))
+                    .tracking(0.55)
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .frame(width: 64, alignment: .leading)
+                Text(cleanLabel(value))
+                    .font(EType.mono(.micro))
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private func credField(provider: String, field: CredentialField) -> some View {
@@ -387,9 +720,10 @@ private struct ConnectedAppsBody: View {
 
     @ViewBuilder
     private var adaptationSection: some View {
-        let items = session.user?.integrationMenuItems ?? []
-        let caps = session.user?.profileAdaptation?.capabilities ?? []
-        let surfaces = session.user?.profileAdaptation?.roleSurfaces ?? []
+        let adaptation = liveAdaptation ?? session.user?.profileAdaptation
+        let items = adaptation?.menuItems ?? []
+        let caps = adaptation?.capabilities ?? []
+        let surfaces = adaptation?.roleSurfaces ?? []
         if !items.isEmpty || !caps.isEmpty || !surfaces.isEmpty {
             LifecycleCard {
                 LifecycleSection(label: "INTEGRATION UNLOCKS", icon: "puzzlepiece.extension")
@@ -584,18 +918,32 @@ private struct ConnectedAppsBody: View {
     // MARK: - Load + actions
 
     private func load() async {
-        loading = true; loadError = nil
+        loading = true; loadError = nil; catalogUnavailableReason = nil
         let api = EusoTripAPI.shared
 
-        async let cat: [IntegrationProvider] = api.queryNoInput("userIntegrations.listCatalog")
+        async let cat: Result<[IntegrationProvider], Error> = capture {
+            try await api.queryNoInput("userIntegrations.listCatalog")
+        }
         async let cons: [IntegrationConnection] = api.queryNoInput("userIntegrations.listConnections")
         async let keys: [ApiKeyRow] = api.queryNoInput("devPortal.apiKeys.list")
         async let scopeRows: [ApiScope] = api.queryNoInput("devPortal.mcpTools.getScopes")
+        async let adaptationEnvelope = refreshProfileAdaptationEnvelope()
 
-        let catalog = (try? await cat) ?? []
+        let catalogResult = await cat
+        let catalog: [IntegrationProvider]
+        switch catalogResult {
+        case .success(let rows):
+            catalog = rows
+        case .failure(let error):
+            catalog = []
+            catalogUnavailableReason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
         connections = (try? await cons) ?? []
         apiKeys = (try? await keys) ?? []
         scopes = (try? await scopeRows) ?? []
+        if let adaptation = await adaptationEnvelope {
+            liveAdaptation = adaptation
+        }
 
         if catalog.isEmpty && roleOwnsIntegrations {
             // Honest fallback: surface the doc-verified registry catalog for the
@@ -611,7 +959,12 @@ private struct ConnectedAppsBody: View {
                     authType: "credentials",
                     status: nil,
                     capabilities: nil,
-                    requiresCredentials: true)
+                    requiresCredentials: true,
+                    journey: IntegrationJourneyPlanner.fallbackJourney(
+                        providerName: reg.name,
+                        category: reg.category.rawValue,
+                        roleLabel: roleLabel,
+                        requiresCredentials: true))
             }
             usedRegistryFallback = !providers.isEmpty
         } else {
@@ -620,6 +973,14 @@ private struct ConnectedAppsBody: View {
         }
 
         loading = false
+    }
+
+    private func capture<T>(_ operation: @escaping () async throws -> T) async -> Result<T, Error> {
+        do {
+            return .success(try await operation())
+        } catch {
+            return .failure(error)
+        }
     }
 
     private func connect(_ p: IntegrationProvider, credentials: [String: String]?) async {
@@ -636,6 +997,7 @@ private struct ConnectedAppsBody: View {
             // Clear typed credentials from memory once submitted.
             for field in credentialFields(for: p) { credInputs["\(p.id).\(field.key)"] = nil }
             await refreshConnections()
+            await refreshProfileAdaptation()
         } catch let e as EusoTripAPIError {
             actionError = e.errorDescription ?? "Couldn't connect \(cleanLabel(p.displayName))."
         } catch {
@@ -652,6 +1014,7 @@ private struct ConnectedAppsBody: View {
         do {
             let _: Out = try await EusoTripAPI.shared.mutation("userIntegrations.disconnect", input: In(connectionId: conn.id))
             await refreshConnections()
+            await refreshProfileAdaptation()
         } catch let e as EusoTripAPIError {
             actionError = e.errorDescription ?? "Couldn't disconnect."
         } catch {
@@ -668,6 +1031,7 @@ private struct ConnectedAppsBody: View {
         do {
             let _: Out = try await EusoTripAPI.shared.mutation("userIntegrations.sync", input: In(connectionId: conn.id))
             await refreshConnections()
+            await refreshProfileAdaptation()
         } catch let e as EusoTripAPIError {
             actionError = e.errorDescription ?? "Sync failed."
         } catch {
@@ -718,10 +1082,16 @@ private struct ConnectedAppsBody: View {
 
     private func refreshConnections() async {
         connections = (try? await EusoTripAPI.shared.queryNoInput("userIntegrations.listConnections")) ?? connections
-        // Note: the INTEGRATION UNLOCKS card reads the profileAdaptation envelope
-        // folded into auth.me; it re-composes on the next identity refresh
-        // (app relaunch / next auth.me round-trip). Connection state above
-        // updates immediately so connect/disconnect/sync feel live.
+    }
+
+    private func refreshProfileAdaptation() async {
+        if let adaptation = await refreshProfileAdaptationEnvelope() {
+            liveAdaptation = adaptation
+        }
+    }
+
+    private func refreshProfileAdaptationEnvelope() async -> ProfileAdaptation? {
+        try? await EusoTripAPI.shared.queryNoInput("userIntegrations.profileAdaptation")
     }
 
     private func refreshApiKeys() async {
@@ -743,16 +1113,19 @@ private struct ConnectedAppsBody: View {
         return trimmed
     }
 
-    /// Reduce a recorded doc URL to its bare host (no scheme, no path) so we
-    /// only ever link to the provider's root domain — which resolves — instead
-    /// of a constructed deep path (…/api, …/developers) that 404s. Returns nil
-    /// when the value has no parseable host (so the caller shows an inline note
-    /// instead of a dead link). Display-layer only; never invents a host.
-    private func providerHost(from raw: String?) -> String? {
+    /// Parse a verified provider docs URL from the live catalog. Display-layer
+    /// only; never invents a destination when the catalog value is malformed.
+    private func providerDocsURL(from raw: String?) -> URL? {
         guard let raw, !raw.isEmpty else { return nil }
-        guard let comps = URLComponents(string: raw),
-              let host = comps.host, !host.isEmpty else { return nil }
-        return host.lowercased()
+        guard let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              (scheme == "https" || scheme == "http"),
+              url.host != nil else { return nil }
+        return url
+    }
+
+    private func providerDocsLabel(from url: URL) -> String {
+        (url.host ?? url.absoluteString).lowercased()
     }
 
     /// Turn a raw machine token ("FUEL_BUYER", "bulk-liquid") into a readable label.
@@ -779,6 +1152,32 @@ private struct ConnectedAppsBody: View {
             "terminalAuto": "Terminal", "crane": "Crane", "yard": "Yard",
             "dockSched": "Dock Scheduling", "workforce": "Workforce", "warehouse": "Warehouse",
             "customs": "Customs",
+            "rate_market": "Rate Market", "macro_economic": "Macro Economic",
+            "fuel_energy": "Fuel Energy", "agricultural": "Agricultural",
+            "safety_compliance": "Safety Compliance",
+            "payments_factoring": "Payments + Factoring",
+            "carrier_vetting": "Carrier Vetting",
+            "operational_eld": "ELD", "operational_fuel_card": "Fuel Card",
+            "operational_maintenance": "Maintenance",
+            "operational_tolls": "Tolls",
+            "operational_payroll": "Payroll",
+            "terminals_ports_drayage": "Terminals + Drayage",
+            "tms_load_boards": "TMS + Load Boards",
+            "documents_imaging": "Documents + Imaging",
+            "identity_sso": "Identity + SSO",
+            "geo_maps": "Maps + Routing",
+            "observability": "Observability",
+            "rail_class_i": "Class I Rail",
+            "rail_industry_data": "Rail Industry",
+            "rail_locomotive": "Rail Locomotive",
+            "rail_crew": "Rail Crew",
+            "ocean_carrier": "Ocean Carrier",
+            "ocean_visibility": "Ocean Visibility",
+            "ocean_charter": "Ocean Charter",
+            "vessel_telematics": "Vessel Telematics",
+            "vessel_bunker": "Vessel Bunker",
+            "vessel_satcom": "Vessel Satcom",
+            "customs_trade": "Customs + Trade",
         ]
         return map[raw] ?? prettyToken(raw)
     }
@@ -798,19 +1197,39 @@ private struct ConnectedAppsBody: View {
     /// real credentials in-app rather than being told to "use the web."
     private func credentialFields(for p: IntegrationProvider) -> [CredentialField] {
         switch (p.authType ?? "credentials").lowercased() {
-        case "oauth", "oauth2":
+        case "public", "none":
+            return []
+        case "oauth", "oauth1", "oauth2":
             return [
                 .init(key: "clientId", label: "Client ID", placeholder: "Client ID", secure: false),
                 .init(key: "clientSecret", label: "Client secret", placeholder: "Client secret", secure: true),
             ]
-        case "basic":
+        case "basic", "basic_auth":
             return [
                 .init(key: "username", label: "Username", placeholder: "Username", secure: false),
                 .init(key: "password", label: "Password", placeholder: "Password", secure: true),
             ]
-        default:
+        case "bearer_token":
+            return [
+                .init(key: "token", label: "Bearer token", placeholder: "Paste bearer token", secure: true),
+            ]
+        case "mtls":
+            return [
+                .init(key: "clientCertificate", label: "Client certificate", placeholder: "PEM certificate", secure: true),
+                .init(key: "privateKey", label: "Private key", placeholder: "PEM private key", secure: true),
+            ]
+        case "edi":
+            return [
+                .init(key: "partnerId", label: "Partner ID", placeholder: "Trading partner ID", secure: false),
+                .init(key: "ediToken", label: "EDI token", placeholder: "EDI credential token", secure: true),
+            ]
+        case "api_key", "credentials":
             return [
                 .init(key: "apiKey", label: "API key", placeholder: "Paste your API key", secure: true),
+            ]
+        default:
+            return [
+                .init(key: "apiKey", label: "\(prettyToken(p.authType ?? "Provider")) credential", placeholder: "Paste credential", secure: true),
             ]
         }
     }
@@ -821,6 +1240,304 @@ private struct ConnectedAppsBody: View {
         }
         return true
     }
+}
+
+private enum IntegrationJourneyPlanner {
+    private struct Group {
+        let id: String
+        let title: String
+        let outcome: String
+        let icon: String
+        let categories: Set<String>
+    }
+
+    private struct AdoptionGroup {
+        let id: String
+        let title: String
+        let outcome: String
+        let icon: String
+        let categories: Set<String>
+    }
+
+    private struct NetworkGroup {
+        let id: String
+        let recipient: String
+        let benefit: String
+        let icon: String
+        let categories: Set<String>
+    }
+
+    private static let groups: [Group] = [
+        .init(
+            id: "market",
+            title: "Rates, tenders, and counterparties",
+            outcome: "Price lanes, find capacity, and validate partners before a load is committed.",
+            icon: "chart.line.uptrend.xyaxis",
+            categories: keys(["rateData", "loadBoard", "marketIntel", "carrierVetting"])),
+        .init(
+            id: "live-ops",
+            title: "Live operations",
+            outcome: "Keep ETA, assignment, HOS, dispatch, and exception signals aligned with the trip.",
+            icon: "dot.radiowaves.left.and.right",
+            categories: keys(["visibility", "eld", "dispatch", "dashcam"])),
+        .init(
+            id: "route-risk",
+            title: "Route risk and road spend",
+            outcome: "Plan around roads, weather, tolls, fuel, parking, and maintenance conditions.",
+            icon: "map",
+            categories: keys(["nav", "weather", "toll", "fuelCard", "maintenance"])),
+        .init(
+            id: "money",
+            title: "Money movement",
+            outcome: "Tie receivables, payouts, fuel spend, factoring, banking, and coverage to the wallet.",
+            icon: "creditcard",
+            categories: keys(["payments", "banking", "factoring", "insurance"])),
+        .init(
+            id: "documents",
+            title: "Documents and compliance",
+            outcome: "Move BOL, POD, signatures, filings, eligibility, and safety records into the load file.",
+            icon: "doc.text.magnifyingglass",
+            categories: keys(["docs", "compliance", "customs", "identity", "bgScreening", "training"])),
+        .init(
+            id: "backoffice",
+            title: "Back office systems",
+            outcome: "Sync customers, orders, inventory, labor, warehouse, accounting, and TMS records.",
+            icon: "building.2",
+            categories: keys(["tms", "erp", "crm", "warehouse", "workforce"])),
+        .init(
+            id: "rail",
+            title: "Rail execution",
+            outcome: "Coordinate Class I, rail equipment, rail ops, release, crew, and interchange workflows.",
+            icon: "tram",
+            categories: keys(["railClassI", "railIndustry", "railEquip", "railOps"])),
+        .init(
+            id: "port-vessel",
+            title: "Port and vessel execution",
+            outcome: "Coordinate ocean booking, terminal, yard, berth, crane, bunker, vessel, and satellite signals.",
+            icon: "ferry",
+            categories: keys(["oceanBooking", "oceanCarrier", "oceanIntel", "marine", "bunker", "classSociety", "satcom", "satellite", "terminalAuto", "crane", "yard", "dockSched"]))
+    ]
+
+    private static let adoptionGroups: [AdoptionGroup] = [
+        .init(
+            id: "profile-import",
+            title: "Profile and trust packet",
+            outcome: "Pull authority, identity, insurance, safety, compliance, and eligibility records into onboarding instead of re-keying them.",
+            icon: "person.crop.rectangle.stack",
+            categories: keys(["carrierVetting", "compliance", "identity", "insurance", "bgScreening", "training"])),
+        .init(
+            id: "freight-import",
+            title: "Freight setup import",
+            outcome: "Bring customers, orders, SKUs, tenders, appointments, warehouse records, and TMS context into the first working session.",
+            icon: "tray.and.arrow.down",
+            categories: keys(["tms", "erp", "crm", "warehouse", "loadBoard", "oceanBooking", "railClassI", "railIndustry"])),
+        .init(
+            id: "ops-import",
+            title: "Operations data capture",
+            outcome: "Seed live location, HOS, equipment, routing, weather, terminal, and dispatch context before the user has to manually build it.",
+            icon: "waveform.path.ecg",
+            categories: keys(["visibility", "eld", "dispatch", "nav", "weather", "maintenance", "terminalAuto", "yard", "dockSched"])),
+        .init(
+            id: "money-import",
+            title: "Wallet and settlement readiness",
+            outcome: "Attach payment, banking, fuel, factoring, toll, and coverage rails so payout and spend workflows are usable quickly.",
+            icon: "banknote",
+            categories: keys(["payments", "banking", "fuelCard", "factoring", "toll", "insurance"])),
+        .init(
+            id: "docs-import",
+            title: "Document packet readiness",
+            outcome: "Connect BOL, POD, signatures, customs, certificates, permits, and audit evidence before a shipment is under pressure.",
+            icon: "doc.badge.gearshape",
+            categories: keys(["docs", "customs", "compliance", "classSociety"]))
+    ]
+
+    private static let networkGroups: [NetworkGroup] = [
+        .init(
+            id: "shipper-benefit",
+            recipient: "Shippers get cleaner execution",
+            benefit: "Connected ops, ELD, route, weather, docs, and payment providers reduce blind spots after tender.",
+            icon: "shippingbox",
+            categories: keys(["visibility", "eld", "dispatch", "nav", "weather", "docs", "payments", "carrierVetting"])),
+        .init(
+            id: "driver-benefit",
+            recipient: "Drivers get less duplicate entry",
+            benefit: "TMS, documents, wallet, fuel, route, weather, and compliance integrations pre-fill the work a driver would otherwise chase.",
+            icon: "steeringwheel",
+            categories: keys(["tms", "erp", "docs", "payments", "banking", "fuelCard", "nav", "weather", "compliance"])),
+        .init(
+            id: "dispatch-benefit",
+            recipient: "Dispatch gets a real command surface",
+            benefit: "Visibility, ELD, routing, toll, weather, maintenance, and load-board signals improve assignment quality and exception response.",
+            icon: "person.2.wave.2",
+            categories: keys(["visibility", "eld", "dispatch", "nav", "toll", "weather", "maintenance", "loadBoard", "carrierVetting"])),
+        .init(
+            id: "settlement-benefit",
+            recipient: "Settlement moves faster",
+            benefit: "Payments, banking, factoring, fuel, toll, document, POD, and signature providers shorten proof-to-pay cycles.",
+            icon: "checkmark.seal",
+            categories: keys(["payments", "banking", "factoring", "fuelCard", "toll", "docs"])),
+        .init(
+            id: "compliance-benefit",
+            recipient: "Compliance sees fewer gaps",
+            benefit: "Authority, customs, identity, safety, ELD, training, certification, and document connections keep regulated evidence attached to the trip.",
+            icon: "shield.lefthalf.filled",
+            categories: keys(["compliance", "customs", "identity", "bgScreening", "training", "eld", "docs", "classSociety"])),
+        .init(
+            id: "terminal-benefit",
+            recipient: "Terminals and ports get smoother handoffs",
+            benefit: "Terminal, yard, dock, warehouse, ocean, rail, customs, and workforce providers reduce appointment and release friction.",
+            icon: "building.columns",
+            categories: keys(["terminalAuto", "yard", "dockSched", "warehouse", "oceanBooking", "oceanCarrier", "railClassI", "railOps", "customs", "workforce"]))
+    ]
+
+    static func fallbackJourney(
+        providerName: String,
+        category: String,
+        roleLabel: String,
+        requiresCredentials: Bool
+    ) -> IntegrationProviderJourney {
+        let categoryKeys = resolvedCategoryKeys(category)
+        let workflow = groups.first { !$0.categories.isDisjoint(with: categoryKeys) }
+        let network = networkGroups.first { !$0.categories.isDisjoint(with: categoryKeys) }
+        let adoption = adoptionGroups.first { !$0.categories.isDisjoint(with: categoryKeys) }
+        let categoryName = pretty(category)
+        return IntegrationProviderJourney(
+            persona: roleLabel.lowercased(),
+            adoptionStage: adoption != nil ? "onboard" : "operate",
+            headline: "\(providerName) makes \(categoryName) part of the \(roleLabel) workspace.",
+            setup: adoption?.outcome ?? "Connect the provider account that already owns this \(categoryName.lowercased()) data.",
+            operationalUnlock: workflow?.outcome ?? "Adds verified provider data to the user's role-specific dashboard and workflows.",
+            crossRoleBenefit: network?.benefit ?? "Connected provider data improves continuity for the counterparties who depend on this role.",
+            credentialHint: requiresCredentials
+                ? "Use provider-issued credentials dedicated to this RIOS connection; retry the live catalog before connecting if fields differ."
+                : "No secret is required when the live provider catalog marks this as a public feed.",
+            dataFlow: "Registry fallback until the live integration catalog responds.",
+            capabilityTags: [categoryName, "Role mapped", "Retry catalog"])
+    }
+
+    static func impacts(for providers: [IntegrationProvider], connections: [IntegrationConnection]) -> [IntegrationJourneyImpact] {
+        let liveConnections = liveConnectionIds(connections)
+
+        return groups.compactMap { group in
+            let matching = Self.providers(in: providers, matching: group.categories)
+            guard !matching.isEmpty else { return nil }
+            let connectedCount = matching.filter { liveConnections.contains($0.id.lowercased()) }.count
+            return IntegrationJourneyImpact(
+                id: group.id,
+                title: group.title,
+                outcome: group.outcome,
+                icon: group.icon,
+                providerCount: matching.count,
+                connectedCount: connectedCount,
+                providerNames: matching.map(\.displayName))
+        }
+    }
+
+    static func adoptionSignals(for providers: [IntegrationProvider], connections: [IntegrationConnection]) -> [IntegrationAdoptionSignal] {
+        let liveConnections = liveConnectionIds(connections)
+        return adoptionGroups.compactMap { group in
+            let matching = Self.providers(in: providers, matching: group.categories)
+            guard !matching.isEmpty else { return nil }
+            let connectedCount = matching.filter { liveConnections.contains($0.id.lowercased()) }.count
+            return IntegrationAdoptionSignal(
+                id: group.id,
+                title: group.title,
+                outcome: group.outcome,
+                icon: group.icon,
+                providerCount: matching.count,
+                connectedCount: connectedCount,
+                providerNames: matching.map(\.displayName))
+        }
+    }
+
+    static func networkBenefits(for providers: [IntegrationProvider], connections: [IntegrationConnection]) -> [IntegrationNetworkBenefit] {
+        let liveConnections = liveConnectionIds(connections)
+        return networkGroups.compactMap { group in
+            let matching = Self.providers(in: providers, matching: group.categories)
+            guard !matching.isEmpty else { return nil }
+            let connectedCount = matching.filter { liveConnections.contains($0.id.lowercased()) }.count
+            return IntegrationNetworkBenefit(
+                id: group.id,
+                recipient: group.recipient,
+                benefit: group.benefit,
+                icon: group.icon,
+                providerCount: matching.count,
+                connectedCount: connectedCount,
+                providerNames: matching.map(\.displayName))
+        }
+    }
+
+    private static func providers(in providers: [IntegrationProvider], matching categoryKeys: Set<String>) -> [IntegrationProvider] {
+        providers.filter { provider in
+            guard let category = provider.category, !category.isEmpty else { return false }
+            return !resolvedCategoryKeys(category).isDisjoint(with: categoryKeys)
+        }
+    }
+
+    private static func liveConnectionIds(_ connections: [IntegrationConnection]) -> Set<String> {
+        Set(
+            connections
+                .filter { ($0.status ?? "").lowercased() != "disabled" }
+                .map { $0.providerId.lowercased() }
+        )
+    }
+
+    private static func keys(_ values: [String]) -> Set<String> {
+        Set(values.map(key))
+    }
+
+    private static func key(_ value: String) -> String {
+        value.lowercased().filter { $0.isLetter || $0.isNumber }
+    }
+
+    private static func pretty(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
+            .joined(separator: " ")
+    }
+
+    private static func resolvedCategoryKeys(_ value: String) -> Set<String> {
+        let rawKey = key(value)
+        var keys = Set([rawKey])
+        for alias in categoryAliases[rawKey] ?? [] {
+            keys.insert(key(alias))
+        }
+        return keys
+    }
+
+    private static let categoryAliases: [String: [String]] = [
+        key("rate_market"): ["rateData", "marketIntel"],
+        key("macro_economic"): ["marketIntel", "rateData"],
+        key("fuel_energy"): ["fuelCard", "marketIntel"],
+        key("agricultural"): ["marketIntel"],
+        key("safety_compliance"): ["compliance", "carrierVetting", "training", "bgScreening"],
+        key("payments_factoring"): ["payments", "banking", "factoring"],
+        key("operational_eld"): ["eld"],
+        key("operational_fuel_card"): ["fuelCard"],
+        key("operational_maintenance"): ["maintenance"],
+        key("operational_tolls"): ["toll"],
+        key("operational_payroll"): ["payments", "banking"],
+        key("terminals_ports_drayage"): ["terminalAuto", "yard", "dockSched", "warehouse"],
+        key("tms_load_boards"): ["tms", "loadBoard"],
+        key("documents_imaging"): ["docs"],
+        key("identity_sso"): ["identity"],
+        key("geo_maps"): ["nav"],
+        key("observability"): ["visibility"],
+        key("rail_class_i"): ["railClassI"],
+        key("rail_industry_data"): ["railIndustry"],
+        key("rail_locomotive"): ["railOps"],
+        key("rail_crew"): ["railOps", "workforce"],
+        key("ocean_carrier"): ["oceanCarrier", "oceanBooking"],
+        key("ocean_visibility"): ["oceanIntel", "visibility"],
+        key("ocean_charter"): ["oceanBooking", "oceanIntel"],
+        key("vessel_telematics"): ["marine"],
+        key("vessel_bunker"): ["bunker"],
+        key("vessel_satcom"): ["satcom", "satellite"],
+        key("customs_trade"): ["customs"],
+    ]
 }
 
 // MARK: - Scope chips (bespoke wrap layout)

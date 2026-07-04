@@ -221,6 +221,8 @@ struct ShipperSurface: View {
     /// button so you get stuck on the screen").
     @State private var screenStack: [String] = ["200"]
     @State private var showeSang: Bool = false
+    @StateObject private var postLoadDraft = PostLoadDraft()
+    @State private var activePostLoadDraftId: String? = nil
 
     /// Top of the navigation stack — the screen currently rendered.
     private var currentScreenId: String { screenStack.last ?? "200" }
@@ -243,6 +245,11 @@ struct ShipperSurface: View {
     /// auto-searches. Overwritten on every 425 swap (nil when absent)
     /// so a stale grade never leaks into a later bare open.
     @State private var activePortIntelProduct: String? = nil
+    /// Captured from 392→393 search handoff. The registry mounts 393
+    /// with an empty sentinel for preview/recovery, so the live query
+    /// must travel through the Shipper surface state just like loadId
+    /// and Port Intelligence product context do.
+    @State private var activeSearchQuery: String? = nil
     /// Set when an action triggers SFSafariViewController to open a
     /// web continuation (load edit, settlement approve flow, etc.).
     /// Cleared when the sheet dismisses.
@@ -313,6 +320,16 @@ struct ShipperSurface: View {
                 AnyView(PortIntelligenceScreen(theme: p, product: grade))
             }
         }
+        if currentScreenId == "393" {
+            return ProductionScreen(id: "393",
+                                    title: "Shipper · Search Results",
+                                    role: .shipper) { p in
+                AnyView(SearchResultsScreen(theme: p, query: activeSearchQuery ?? ""))
+            }
+        }
+        if let postLoadScreen = postLoadWizardScreen {
+            return postLoadScreen
+        }
         // 200 (Home) is the canonical fallback. RBAC is also enforced
         // here — if for any reason the registry is missing 200 (build
         // mistake), we fall through to a hard error surface rather
@@ -336,7 +353,7 @@ struct ShipperSurface: View {
         // 15 onReceive subscribers, sheets) is split into private
         // ViewModifier types below.
         current.view(palette)
-            .id("shipper-\(currentScreenId)")
+            .id(currentIdentity)
             .transition(.opacity)
             .modifier(ShipperBackOverlay(
                 stackDepth: screenStack.count,
@@ -361,12 +378,15 @@ struct ShipperSurface: View {
                 screenStack: $screenStack,
                 activeLoadId: $activeLoadId,
                 activePortIntelProduct: $activePortIntelProduct,
+                activeSearchQuery: $activeSearchQuery,
+                activePostLoadDraftId: $activePostLoadDraftId,
                 avatarPickerOpen: $avatarPickerOpen,
                 showeSang: $showeSang,
                 webContinuationURL: $webContinuationURL,
                 pushedDetail: $pushedDetail,
                 pushOrTab: pushOrTab,
                 popOne: popOne,
+                resetPostLoadDraft: { postLoadDraft.reset() },
                 handleMeAction: handleShipperMeAction
             ))
             .photosPicker(isPresented: $avatarPickerOpen,
@@ -391,7 +411,13 @@ struct ShipperSurface: View {
                 SafariContinuationView(url: ident.url)
                     .ignoresSafeArea()
             }
-            .sheet(isPresented: $showeSang) {
+            // ASC AOd5xzXVfU6CF6hyijTDwgk (build 712): present as a full-
+            // screen cover, not a page sheet. The page-sheet peek band let
+            // the presenting load screen's scheduleRow labels render behind
+            // the status bar (overlapping text in the upper corners). The
+            // coach sheet ships its own close "xmark", so nothing is lost
+            // by dropping the drag-to-dismiss grabber.
+            .fullScreenCover(isPresented: $showeSang) {
                 ShippereSangCoachSheet()
                     .environment(\.palette, palette)
                     .environmentObject(session)
@@ -409,6 +435,13 @@ struct ShipperSurface: View {
                             dismissSheet: { showeSang = false })
                     }
             }
+    }
+
+    private var currentIdentity: String {
+        if currentScreenId == "393" {
+            return "shipper-393-\(activeSearchQuery ?? "__empty")"
+        }
+        return "shipper-\(currentScreenId)"
     }
 
     /// Routes a `MeAction.fire(key)` from any Shipper screen to its
@@ -566,6 +599,55 @@ struct ShipperSurface: View {
     private func popOne() {
         if screenStack.count > 1 {
             screenStack.removeLast()
+        }
+    }
+
+    private var postLoadWizardScreen: ProductionScreen? {
+        let draft = postLoadDraft
+        let resumeDraftId = activePostLoadDraftId
+        switch currentScreenId {
+        case "250":
+            return ProductionScreen(id: "250", title: "Shipper · Post Load · Lane", role: .shipper) { p in
+                AnyView(PostLoadStep1LaneScreen(theme: p, draft: draft, resumeDraftId: resumeDraftId))
+            }
+        case "251":
+            return ProductionScreen(id: "251", title: "Shipper · Post Load · Equipment", role: .shipper) { p in
+                AnyView(PostLoadStep2EquipmentScreen(theme: p, draft: draft))
+            }
+        case "252":
+            return ProductionScreen(id: "252", title: "Shipper · Post Load · Pricing", role: .shipper) { p in
+                AnyView(PostLoadStep3PricingScreen(theme: p, draft: draft))
+            }
+        case "253":
+            return ProductionScreen(id: "253", title: "Shipper · Post Load · Review", role: .shipper) { p in
+                AnyView(PostLoadStep4ReviewScreen(theme: p, draft: draft))
+            }
+        case "254":
+            return ProductionScreen(id: "254", title: "Shipper · Post Load · Success", role: .shipper) { p in
+                AnyView(PostLoadSuccessScreen(theme: p, draft: draft))
+            }
+        case "255":
+            return ProductionScreen(id: "255", title: "Shipper · Post Load · Multi-Stop", role: .shipper) { p in
+                AnyView(PostLoadMultiStopScreen(theme: p, draft: draft))
+            }
+        case "256":
+            return ProductionScreen(id: "256", title: "Shipper · Post Load · Address", role: .shipper) { p in
+                AnyView(PostLoadAddressPickerScreen(theme: p, draft: draft))
+            }
+        case "257":
+            return ProductionScreen(id: "257", title: "Shipper · Post Load · Hazmat", role: .shipper) { p in
+                AnyView(PostLoadHazmatSubformScreen(theme: p, draft: draft))
+            }
+        case "258":
+            return ProductionScreen(id: "258", title: "Shipper · Post Load · Reefer", role: .shipper) { p in
+                AnyView(PostLoadReeferSubformScreen(theme: p, draft: draft))
+            }
+        case "259":
+            return ProductionScreen(id: "259", title: "Shipper · Post Load · Templates", role: .shipper) { p in
+                AnyView(PostLoadTemplatesScreen(theme: p, draft: draft))
+            }
+        default:
+            return nil
         }
     }
 }
@@ -745,12 +827,15 @@ private struct ShipperNotificationListeners: ViewModifier {
     @Binding var screenStack: [String]
     @Binding var activeLoadId: String?
     @Binding var activePortIntelProduct: String?
+    @Binding var activeSearchQuery: String?
+    @Binding var activePostLoadDraftId: String?
     @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
     @Binding var webContinuationURL: URL?
     @Binding var pushedDetail: RoleDetailPush?
     let pushOrTab: (String) -> Void
     let popOne: () -> Void
+    let resetPostLoadDraft: () -> Void
     let handleMeAction: (String, [AnyHashable: Any]) -> Void
 
     func body(content: Content) -> some View {
@@ -759,11 +844,14 @@ private struct ShipperNotificationListeners: ViewModifier {
                 screenStack: $screenStack,
                 activeLoadId: $activeLoadId,
                 activePortIntelProduct: $activePortIntelProduct,
+                activeSearchQuery: $activeSearchQuery,
+                activePostLoadDraftId: $activePostLoadDraftId,
                 avatarPickerOpen: $avatarPickerOpen,
                 showeSang: $showeSang,
                 pushedDetail: $pushedDetail,
                 pushOrTab: pushOrTab,
-                popOne: popOne
+                popOne: popOne,
+                resetPostLoadDraft: resetPostLoadDraft
             ))
             .modifier(ShipperLoadReceivers(
                 screenStack: $screenStack,
@@ -782,11 +870,18 @@ private struct ShipperNavReceivers: ViewModifier {
     @Binding var screenStack: [String]
     @Binding var activeLoadId: String?
     @Binding var activePortIntelProduct: String?
+    @Binding var activeSearchQuery: String?
+    @Binding var activePostLoadDraftId: String?
     @Binding var avatarPickerOpen: Bool
     @Binding var showeSang: Bool
     @Binding var pushedDetail: RoleDetailPush?
     let pushOrTab: (String) -> Void
     let popOne: () -> Void
+    let resetPostLoadDraft: () -> Void
+
+    private static let postLoadWizardIds: Set<String> = [
+        "250", "251", "252", "253", "254", "255", "256", "257", "258", "259",
+    ]
 
     func body(content: Content) -> some View {
         content
@@ -824,6 +919,29 @@ private struct ShipperNavReceivers: ViewModifier {
                 // never leaks into a later bare open.
                 if id == "425" {
                     activePortIntelProduct = note.userInfo?["product"] as? String
+                }
+                if id == "393" {
+                    let rawQuery = note.userInfo?["query"] as? String
+                    let cleaned = rawQuery?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    activeSearchQuery = (cleaned?.isEmpty == false) ? cleaned : nil
+                } else {
+                    activeSearchQuery = nil
+                }
+                if id == "250" {
+                    let lastScreen = screenStack.last
+                    if let rawDraftId = note.userInfo?["draftId"] as? String,
+                       !rawDraftId.isEmpty {
+                        if activePostLoadDraftId != rawDraftId {
+                            resetPostLoadDraft()
+                        }
+                        activePostLoadDraftId = rawDraftId
+                    } else if (note.userInfo?["freshDraft"] as? Bool) == true
+                        || !(lastScreen.map(Self.postLoadWizardIds.contains) ?? false) {
+                        activePostLoadDraftId = nil
+                        resetPostLoadDraft()
+                    }
+                } else if !Self.postLoadWizardIds.contains(id) {
+                    activePostLoadDraftId = nil
                 }
                 // Any explicit screen swap leaves the generic detail
                 // layer behind — clear it so a stale detail never paints
@@ -1236,7 +1354,10 @@ struct CarrierSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoCarriereSangTapped)) { _ in
                 showeSang = true
             }
-            .sheet(isPresented: $showeSang) {
+            // ASC AOd5xzXVfU6CF6hyijTDwgk parity: same peek-band/status-bar
+            // collision class as the Shipper coach sheet — full-screen cover
+            // across all nine role surfaces (sheet has its own close X).
+            .fullScreenCover(isPresented: $showeSang) {
                 DrivereSangCoachSheet()
                     .environment(\.palette, palette)
                     .environment(\.esangActionHandler) { action in
@@ -1343,7 +1464,7 @@ struct BrokerSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoBrokereSangTapped)) { _ in
                 showeSang = true
             }
-            .sheet(isPresented: $showeSang) {
+            .fullScreenCover(isPresented: $showeSang) {
                 DrivereSangCoachSheet()
                     .environment(\.palette, palette)
                     .environment(\.esangActionHandler) { action in
@@ -1439,7 +1560,7 @@ struct EscortSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoEscorteSangTapped)) { _ in
                 showeSang = true
             }
-            .sheet(isPresented: $showeSang) {
+            .fullScreenCover(isPresented: $showeSang) {
                 DrivereSangCoachSheet()
                     .environment(\.palette, palette)
                     .environment(\.esangActionHandler) { action in
@@ -1536,7 +1657,7 @@ struct TerminalSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoTerminaleSangTapped)) { _ in
                 showeSang = true
             }
-            .sheet(isPresented: $showeSang) {
+            .fullScreenCover(isPresented: $showeSang) {
                 DrivereSangCoachSheet()
                     .environment(\.palette, palette)
                     .environment(\.esangActionHandler) { action in
@@ -1636,7 +1757,7 @@ struct AdminSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoAdmineSangTapped)) { _ in
                 showeSang = true
             }
-            .sheet(isPresented: $showeSang) {
+            .fullScreenCover(isPresented: $showeSang) {
                 DrivereSangCoachSheet()
                     .environment(\.palette, palette)
                     .environment(\.esangActionHandler) { action in
@@ -1677,6 +1798,12 @@ struct DispatchSurface: View {
     // Me. The voided 700-series Drivers/Loads invention is retired;
     // Dpch701 (drivers) + Dpch702 (loads) stay reachable via the Me hub.
     private static let tabRoots: Set<String> = ["Disp400", "Disp401", "Dpch721", "Dpch713"]
+    /// Dispatch leaves with their own visible Back/Cancel affordance. Without
+    /// this set the shared role overlay paints a second chevron above the
+    /// screen, producing the double-back bug reported from TestFlight.
+    private static let screensWithOwnBack: Set<String> = tabRoots.union([
+        "Dpch724", "Dpch725", "Dpch731",
+    ])
 
     private var currentScreenId: String { screenStack.last ?? "Disp400" }
 
@@ -1705,7 +1832,7 @@ struct DispatchSurface: View {
             .modifier(RoleNavBackOverlay(
                 stackDepth: screenStack.count,
                 currentScreenId: currentScreenId,
-                screensWithOwnBack: Self.tabRoots
+                screensWithOwnBack: Self.screensWithOwnBack
             ))
             .environment(\.driverNavHandler, nil)
             .environment(\.shipperNavHandler, nil)
@@ -1725,6 +1852,21 @@ struct DispatchSurface: View {
                 guard RoleAccess.canRender(role: .dispatch, screenId: id) else {
                     screenStack = ["Disp400"]; return
                 }
+                if let driverId = stringPayload(note.userInfo, "driverId") {
+                    BrokerNavContext.latestDriverId = driverId
+                }
+                if let loadId = stringPayload(note.userInfo, "loadId") {
+                    BrokerNavContext.latestLoadId = loadId
+                }
+                if let loadNumber = stringPayload(note.userInfo, "loadNumber") {
+                    BrokerNavContext.latestLoadNumber = loadNumber
+                }
+                if let catalystId = stringPayload(note.userInfo, "catalystId") {
+                    BrokerNavContext.latestCatalystId = catalystId
+                }
+                if let shipperId = stringPayload(note.userInfo, "shipperId") {
+                    BrokerNavContext.latestShipperId = shipperId
+                }
                 pushedDetail = nil
                 withAnimation(.easeInOut(duration: 0.22)) { pushOrTab(id) }
             }
@@ -1738,7 +1880,7 @@ struct DispatchSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoDispatcheSangTapped)) { _ in
                 showeSang = true
             }
-            .sheet(isPresented: $showeSang) {
+            .fullScreenCover(isPresented: $showeSang) {
                 DrivereSangCoachSheet()
                     .environment(\.palette, palette)
                     .environment(\.esangActionHandler) { action in
@@ -1748,6 +1890,15 @@ struct DispatchSurface: View {
                             dismissSheet: { showeSang = false })
                     }
             }
+    }
+
+    private func stringPayload(_ userInfo: [AnyHashable: Any]?, _ key: String) -> String? {
+        guard let raw = userInfo?[key] else { return nil }
+        if let value = raw as? String, !value.isEmpty { return value }
+        if let value = raw as? Int { return String(value) }
+        if let value = raw as? Int64 { return String(value) }
+        if let value = raw as? Double, value.isFinite { return String(Int(value)) }
+        return nil
     }
 }
 
@@ -1836,7 +1987,7 @@ struct ComplianceSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoComplianceeSangTapped)) { _ in
                 showeSang = true
             }
-            .sheet(isPresented: $showeSang) {
+            .fullScreenCover(isPresented: $showeSang) {
                 DrivereSangCoachSheet()
                     .environment(\.palette, palette)
                     .environment(\.esangActionHandler) { action in
@@ -1933,7 +2084,7 @@ struct RailEngineerSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoRaileSangTapped)) { _ in
                 showeSang = true
             }
-            .sheet(isPresented: $showeSang) {
+            .fullScreenCover(isPresented: $showeSang) {
                 DrivereSangCoachSheet()
                     .environment(\.palette, palette)
                     .environment(\.esangActionHandler) { action in
@@ -2036,7 +2187,7 @@ struct VesselOperatorSurface: View {
             .onReceive(NotificationCenter.default.publisher(for: .eusoVesseleSangTapped)) { _ in
                 showeSang = true
             }
-            .sheet(isPresented: $showeSang) {
+            .fullScreenCover(isPresented: $showeSang) {
                 DrivereSangCoachSheet()
                     .environment(\.palette, palette)
                     .environment(\.esangActionHandler) { action in
@@ -2151,11 +2302,11 @@ struct WebContinuationSurface: View {
                 }
 
                 VStack(alignment: .leading, spacing: Space.s2) {
-                    Label("Native iOS surface ships in a later release.",
-                          systemImage: "iphone")
+                    Label("Your \(role.displayName.lowercased()) workspace is ready.",
+                          systemImage: role.iconSystemName)
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
-                    Label("Full role tooling is live on the web today.",
+                    Label("Open the full role workspace on app.eusotrip.com.",
                           systemImage: "safari")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
@@ -2169,6 +2320,12 @@ struct WebContinuationSurface: View {
                 .background(
                     RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .fill(palette.bgCardSoft)
+                )
+                .padding(.horizontal, Space.s4)
+
+                EusoCardIssuePanel(
+                    title: "\(role.displayName) EusoCard",
+                    subtitle: "Virtual card backed by EusoWallet"
                 )
                 .padding(.horizontal, Space.s4)
 

@@ -64,9 +64,9 @@ final class DriverNavController: ObservableObject {
             // to the dashboard.
             currentTab = .home
             lifecycleIndex = 0
-        case "trips":
+        case "trips", "haul":
             currentTab = .trips
-        case "loads", "wallet":
+        case "my loads", "loads", "wallet":
             currentTab = .wallet
         case "me":
             currentTab = .me
@@ -82,8 +82,8 @@ final class DriverNavController: ObservableObject {
     func isActive(_ label: String) -> Bool {
         switch label.lowercased() {
         case "home":             return currentTab == .home
-        case "trips":            return currentTab == .trips
-        case "loads", "wallet":  return currentTab == .wallet
+        case "trips", "haul":    return currentTab == .trips
+        case "my loads", "loads", "wallet":  return currentTab == .wallet
         case "me":               return currentTab == .me
         default:                 return false
         }

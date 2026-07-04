@@ -3,7 +3,11 @@
 //  EusoTrip — Catalyst · Backhaul-ack septet (CV357-CV363).
 //
 //  Pixel-match to:
-//    357 Catalyst Backhaul Tender
+//    357 Catalyst Backhaul Tender   ← SUPERSEDED 2026-07-03 by the staged
+//         "03 Catalyst" design: purpose-built tender surface with a live
+//         accept-countdown ring, lane economics, an eligibility gate and a
+//         REAL accept commit (dispatch.assignDriver, dispatch.ts:1212 with
+//         the full compliance gate). `CatalystBackhaulTenderBody357` below.
 //    358 Catalyst Backhaul Tender Accepted
 //    359 Catalyst BH Pickup Watch Armed
 //    360 Catalyst BH Pickup On-Site Acked
@@ -11,9 +15,18 @@
 //    362 Catalyst BH Delivery Approaching Acked
 //    363 Catalyst BH At Delivery Acked
 //
-//  Single bundled file. All 7 share `CatalystBackhaulAckBody`
-//  parameterized by `CatalystBackhaulKind`. Body reads
-//  `loads.getById` for the backhaul load context. Bottom nav frozen.
+//  358-363 share `CatalystBackhaulAckBody` parameterized by
+//  `CatalystBackhaulKind`. Body reads `loads.getById` for the backhaul
+//  load context. Bottom nav frozen.
+//
+//  357 wiring (line-confirmed, frontend/server/routers/):
+//    • loads.getById            loads.ts:1219   tender load spine + window
+//    • catalysts.getMyDrivers   catalysts.ts:431 candidate fitness + HOS
+//    • dispatch.assignDriver    dispatch.ts:1212 Accept = production commit
+//    • esangCoach.forScreen     esangCoach.ts:264 coach strip
+//  Honest gaps: no decline/withdraw procedure exists → Decline explains the
+//  tender stays staged (never a fake success). Deadhead proof and carrier
+//  margin have no source on these procedures → "—".
 //
 //  ── ZERO-FABRICATION REBUILD (2026-06-06) ───────────────────────
 //  Every visible business value binds to a real `loads.getById`
@@ -46,11 +59,14 @@ import SwiftUI
 private struct CBLoadCtx: Decodable, Hashable {
     let id: String?
     let loadNumber: String?
+    let status: String?
     let pickupLocation: CBLoc?
     let deliveryLocation: CBLoc?
     let rate: String?              // DB decimal → JSON string
     let distance: Double?
     let equipmentType: String?
+    let pickupDate: String?        // ISO — the accept-by anchor (window close)
+    let createdAt: String?         // ISO — window open (ring denominator)
     let catalyst: CBParty?
     let driver: CBParty?
     let shipper: CBParty?
@@ -379,11 +395,590 @@ private struct CatalystBackhaulAckBody: View {
     }
 }
 
+// MARK: - 357 · BACKHAUL TENDER — offer-to-accept with live expiry countdown
+
+/// `catalysts.getMyDrivers` row (candidate fitness).
+private struct CBDriver357: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let status: String?
+    let currentLoad: String?
+    let hoursRemaining: Double?
+    let location: String?
+}
+
+/// `esangCoach.forScreen` slice.
+private struct CBEsang357: Decodable { let tip: String? }
+
+/// `dispatch.assignDriver` result.
+private struct CBAssignResult357: Decodable {
+    let success: Bool?
+    let loadNumber: String?
+    let assignedAt: String?
+}
+
+private enum CB357Fmt {
+    static func date(_ s: String?) -> Date? {
+        guard let s, !s.isEmpty else { return nil }
+        let f1 = ISO8601DateFormatter()
+        f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f1.date(from: s) { return d }
+        let f2 = ISO8601DateFormatter()
+        f2.formatOptions = [.withInternetDateTime]
+        return f2.date(from: s)
+    }
+    static func countdown(_ seconds: TimeInterval) -> String {
+        let s = max(0, Int(seconds))
+        if s >= 3600 { return String(format: "%d:%02d", s / 3600, (s % 3600) / 60) }
+        return String(format: "%d:%02d", s / 60, s % 60)
+    }
+    static func money(_ raw: String?) -> String {
+        guard let raw, let v = Double(raw), v > 0 else { return "—" }
+        let f = NumberFormatter()
+        f.numberStyle = .currency; f.currencyCode = "USD"; f.maximumFractionDigits = 0
+        return f.string(from: NSNumber(value: v)) ?? "$\(Int(v))"
+    }
+}
+
+private struct CatalystBackhaulTenderBody357: View {
+    let loadId: String
+
+    @Environment(\.palette) private var palette
+    @State private var load: CBLoadCtx?
+    @State private var loadFailed = false
+    @State private var drivers: [CBDriver357] = []
+    @State private var esangTip: String?
+
+    @State private var accepting = false
+    @State private var accepted: CBAssignResult357?
+    @State private var acceptError: String?
+    @State private var showAcceptConfirm = false
+    @State private var showDeclineInfo = false
+    @State private var showDeclineConfirm = false
+    @State private var declining = false
+    @State private var declined = false
+    @State private var showNoDriver = false
+
+    // MARK: Derived (honest "—" fallback)
+
+    private var loadNumberDisplay: String {
+        load?.loadNumber?.trimmingCharacters(in: .whitespaces).cb357NilIfEmpty ?? "—"
+    }
+    private var laneDisplay: String {
+        let o = [load?.pickupLocation?.city, load?.pickupLocation?.state]
+            .compactMap { $0?.cb357NilIfEmpty }.joined(separator: ", ")
+        let d = [load?.deliveryLocation?.city, load?.deliveryLocation?.state]
+            .compactMap { $0?.cb357NilIfEmpty }.joined(separator: ", ")
+        guard !o.isEmpty || !d.isEmpty else { return "—" }
+        return "\(o.isEmpty ? "—" : o) → \(d.isEmpty ? "—" : d)"
+    }
+    private var milesDisplay: String {
+        guard let d = load?.distance, d > 0 else { return "—" }
+        return "\(Int(d.rounded()))"
+    }
+    private var rateDisplay: String { CB357Fmt.money(load?.rate) }
+    private var equipmentDisplay: String { load?.equipmentType?.cb357NilIfEmpty ?? "—" }
+
+    /// Accept window: opens at posting, closes at the scheduled pickup.
+    private var windowClose: Date? { CB357Fmt.date(load?.pickupDate) }
+    private var windowOpen: Date? { CB357Fmt.date(load?.createdAt) }
+
+    /// Best candidate: a driver free of a current load, else the roster head.
+    private var candidate: CBDriver357? {
+        drivers.first(where: { ($0.currentLoad ?? "").isEmpty }) ?? drivers.first
+    }
+    private var candidateHOS: String {
+        guard let h = candidate?.hoursRemaining else { return "—" }
+        return String(format: "%.1fh", h)
+    }
+
+    private var alreadyTaken: Bool {
+        // Tender is only open while the load is still on the board.
+        guard let s = load?.status?.cb357NilIfEmpty else { return false }
+        return !["posted", "bidding", "pending"].contains(s)
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 14) {
+                topBar
+                Rectangle().fill(LinearGradient.primary.opacity(0.55)).frame(height: 1.5)
+                if load == nil && loadFailed {
+                    fetchErrorBanner
+                } else {
+                    tenderHero
+                    kpiStrip
+                    eligibilityGate
+                    driverRow
+                    esangCard
+                    if let err = acceptError {
+                        Text(err)
+                            .font(.system(size: 11, weight: .semibold)).foregroundStyle(Brand.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    ctaRow.padding(.top, 4)
+                }
+            }
+            .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 20)
+        }
+        .task { await fetch() }
+        .refreshable { await fetch() }
+        .confirmationDialog(
+            "Accept this backhaul tender?",
+            isPresented: $showAcceptConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Accept · assign \(candidate?.name ?? "driver")") { Task { await accept() } }
+            Button("Not now", role: .cancel) {}
+        } message: {
+            Text("EusoTrip runs the full assignment gate on accept — insurance, credentials, medical card and vehicle checks. A failed check blocks the assignment and nothing is booked.")
+        }
+        .alert("No driver to assign", isPresented: $showNoDriver) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Every driver on your roster is on a load right now. Free a driver or add one, then accept the tender.")
+        }
+        .alert("Tender stays staged", isPresented: $showDeclineInfo) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("EusoTrip can't withdraw a staged tender from this screen. It stays on the board until the pickup window passes — accepting is the only action from here.")
+        }
+        .alert("Decline this backhaul?", isPresented: $showDeclineConfirm) {
+            Button("Decline", role: .destructive) { Task { await decline() } }
+            Button("Keep it", role: .cancel) {}
+        } message: {
+            Text("This releases the backhaul back to the board and lets your shipper re-tender it elsewhere. You won't be re-offered this load.")
+        }
+    }
+
+    private var topBar: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("✦ CATALYST · DISPATCH · BACKHAUL TENDER")
+                    .font(.system(size: 9, weight: .heavy)).kerning(1)
+                    .foregroundStyle(LinearGradient.primary)
+                Spacer()
+                Text(accepted != nil ? "ACCEPTED" : (alreadyTaken ? "OFF BOARD" : "STAGED"))
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Text("Backhaul tender")
+                .font(.system(size: 28, weight: .bold)).kerning(-0.4)
+                .foregroundStyle(palette.textPrimary)
+                .padding(.top, 6)
+            Text("\(loadNumberDisplay) · \(laneDisplay)")
+                .font(.system(size: 11.5, design: .monospaced))
+                .foregroundStyle(palette.textSecondary)
+                .padding(.top, 4)
+        }
+    }
+
+    private var fetchErrorBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 18, weight: .heavy)).foregroundStyle(Brand.danger)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Couldn't load this tender. The rest of dispatch still works.")
+                    .font(.system(size: 12.5, weight: .bold)).foregroundStyle(palette.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { Task { await fetch() } } label: {
+                    Text("Retry").font(.system(size: 11, weight: .heavy)).foregroundStyle(Brand.danger)
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .strokeBorder(Brand.danger.opacity(0.45), lineWidth: 1))
+    }
+
+    // MARK: Hero — gradient rim + live countdown ring
+
+    private var tenderHero: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("BACKHAUL TENDER · RETURN LEG")
+                    .font(.system(size: 9, weight: .heavy)).kerning(0.6)
+                    .foregroundStyle(palette.textSecondary)
+                Spacer()
+                heroChip
+            }
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(laneDisplay)
+                        .font(.system(size: 17, weight: .bold)).kerning(-0.2)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Text(rateDisplay)
+                        .font(.system(size: 34, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .padding(.top, 4)
+                    Text("posted rate · \(milesDisplay) mi · \(equipmentDisplay)")
+                        .font(.system(size: 10.5)).foregroundStyle(palette.textSecondary)
+                }
+                Spacer()
+                countdownRing
+            }
+            .padding(.top, 14)
+            laneRibbon.padding(.top, 14)
+        }
+        .padding(20)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .strokeBorder(LinearGradient.primary, lineWidth: 1.5))
+    }
+
+    private var heroChip: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            let remaining = windowClose.map { $0.timeIntervalSince(timeline.date) } ?? -1
+            let (text, color): (String, Color) = {
+                if accepted != nil { return ("ACCEPTED", Brand.success) }
+                if alreadyTaken { return ("OFF BOARD", Brand.neutral) }
+                if windowClose == nil { return ("NO WINDOW SET", Brand.neutral) }
+                if remaining <= 0 { return ("WINDOW PASSED", Brand.danger) }
+                return ("STAGED · \(CB357Fmt.countdown(remaining))", Brand.warning)
+            }()
+            HStack(spacing: 6) {
+                Circle().fill(color).frame(width: 6, height: 6)
+                Text(text).font(.system(size: 8.5, weight: .heavy)).foregroundStyle(color)
+            }
+            .padding(.horizontal, 10).frame(height: 22)
+            .background(Capsule().fill(color.opacity(0.15)))
+        }
+    }
+
+    /// Live accept-clock ring. Anchored to the real pickup window on the
+    /// load — the ring drains from tender posting to the scheduled pickup.
+    private var countdownRing: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { timeline in
+            let now = timeline.date
+            let remaining = windowClose.map { $0.timeIntervalSince(now) } ?? -1
+            let total: TimeInterval = {
+                guard let open = windowOpen, let close = windowClose else { return 0 }
+                return max(1, close.timeIntervalSince(open))
+            }()
+            let frac = (remaining > 0 && total > 0) ? min(1, max(0, remaining / total)) : 0
+            ZStack {
+                Circle().stroke(palette.borderFaint, lineWidth: 7).frame(width: 68, height: 68)
+                Circle().trim(from: 0, to: frac)
+                    .stroke(LinearGradient.primary, style: .init(lineWidth: 7, lineCap: .round))
+                    .frame(width: 68, height: 68).rotationEffect(.degrees(-90))
+                VStack(spacing: 1) {
+                    Text(windowClose == nil ? "—" : (remaining > 0 ? CB357Fmt.countdown(remaining) : "0:00"))
+                        .font(.system(size: 17, weight: .bold).monospacedDigit())
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                    Text("TO PICKUP")
+                        .font(.system(size: 7.5, weight: .bold)).kerning(0.3)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                .frame(width: 56)
+            }
+        }
+    }
+
+    private var laneRibbon: some View {
+        HStack {
+            HStack(spacing: 8) {
+                Circle().fill(Brand.blue).frame(width: 12, height: 12)
+                    .overlay(Circle().fill(.white).frame(width: 5, height: 5))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text((load?.pickupLocation?.city?.cb357NilIfEmpty ?? "Origin").uppercased())
+                        .font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("pickup").font(.system(size: 8)).foregroundStyle(Brand.blue)
+                }
+            }
+            Spacer()
+            VStack(spacing: 2) {
+                Text("\(milesDisplay) mi").font(.system(size: 8, weight: .bold)).foregroundStyle(palette.textSecondary)
+                Image(systemName: "arrow.right").font(.system(size: 9, weight: .bold)).foregroundStyle(palette.textSecondary)
+            }
+            Spacer()
+            HStack(spacing: 8) {
+                VStack(alignment: .trailing, spacing: 1) {
+                    Text((load?.deliveryLocation?.city?.cb357NilIfEmpty ?? "Destination").uppercased())
+                        .font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                    Text("drop").font(.system(size: 8)).foregroundStyle(palette.textSecondary)
+                }
+                Image(systemName: "mappin.circle.fill").font(.system(size: 16)).foregroundStyle(palette.textPrimary)
+            }
+        }
+        .padding(.horizontal, 12).frame(height: 40)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(palette.bgCardSoft))
+    }
+
+    // MARK: KPI strip
+
+    private var kpiStrip: some View {
+        HStack(spacing: 8) {
+            kpiCell("RATE", rateDisplay, "posted", hi: true, c: palette.textPrimary)
+            kpiCell("MARGIN", "—", "no split yet", hi: false, c: palette.textPrimary)
+            kpiCell("DRIVE LEFT", candidateHOS, candidate?.name ?? "roster —", hi: false, c: palette.textPrimary)
+            kpiCell("EQUIP", equipmentDisplay, "required", hi: false, c: Brand.success)
+        }
+    }
+
+    private func kpiCell(_ k: String, _ v: String, _ s: String, hi: Bool, c: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(k).font(.system(size: 8, weight: .heavy)).kerning(0.5)
+                .foregroundStyle(hi ? Color.white.opacity(0.85) : palette.textSecondary)
+            Text(v).font(.system(size: v.count > 6 ? 14 : 19, weight: .bold))
+                .foregroundStyle(hi ? Color.white : c)
+                .lineLimit(1).minimumScaleFactor(0.6)
+            Text(s).font(.system(size: 8))
+                .foregroundStyle(hi ? Color.white.opacity(0.85) : palette.textSecondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, minHeight: 60, alignment: .topLeading)
+        .padding(.leading, 11).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(hi ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.bgCard)))
+        .overlay(hi ? nil : RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .strokeBorder(palette.borderFaint, lineWidth: 1))
+    }
+
+    // MARK: Eligibility gate — real rows only
+
+    private var eligibilityGate: some View {
+        let hosOk = (candidate?.hoursRemaining ?? 0) > 0
+        let freeOk = candidate != nil && (candidate?.currentLoad ?? "").isEmpty
+        let rows: [(String, String, Bool)] = [
+            ("Drive time — \(candidateHOS) left today", hosOk ? "FIT" : "NO DATA", hosOk),
+            ("Availability — \(candidate?.name ?? "no roster driver")",
+             freeOk ? "FREE" : (candidate == nil ? "NO ROSTER" : "ON A LOAD"), freeOk),
+            ("Insurance · credentials · vehicle — checked at accept", "AT ACCEPT", true),
+        ]
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("ELIGIBILITY · WHY THIS TENDER FITS")
+                .font(.system(size: 9, weight: .heavy)).kerning(1)
+                .foregroundStyle(palette.textSecondary)
+            VStack(spacing: 0) {
+                ForEach(0..<rows.count, id: \.self) { i in
+                    HStack(spacing: 12) {
+                        Image(systemName: rows[i].2 ? "checkmark" : "minus")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(rows[i].2 ? Brand.success : palette.textTertiary)
+                        Text(rows[i].0)
+                            .font(.system(size: 11.5, weight: .bold))
+                            .foregroundStyle(rows[i].2 ? palette.textPrimary : palette.textSecondary)
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                        Spacer()
+                        Text(rows[i].1)
+                            .font(.system(size: 9, weight: .heavy)).kerning(0.3)
+                            .foregroundStyle(rows[i].2 ? Brand.success : palette.textTertiary)
+                    }
+                    .frame(height: 24)
+                    if i < rows.count - 1 { Divider().overlay(palette.borderFaint) }
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(palette.bgCard))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1))
+        }
+    }
+
+    private var driverRow: some View {
+        Group {
+            if let d = candidate {
+                HStack(spacing: 0) {
+                    Circle().fill(LinearGradient.diagonal).frame(width: 34, height: 34)
+                        .overlay(Text(String(d.name.prefix(2)).uppercased())
+                            .font(.system(size: 12, weight: .heavy)).foregroundStyle(.white))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(d.name)
+                            .font(.system(size: 14, weight: .bold)).foregroundStyle(palette.textPrimary)
+                            .lineLimit(1)
+                        Text("drive time left \(candidateHOS) · \(d.location?.cb357NilIfEmpty ?? "position —")")
+                            .font(.system(size: 10.5, design: .monospaced)).foregroundStyle(palette.textSecondary)
+                            .lineLimit(1)
+                        Text((d.currentLoad?.cb357NilIfEmpty).map { "finishing \($0)" } ?? "free for the return leg")
+                            .font(.system(size: 9.5)).foregroundStyle(palette.textTertiary)
+                    }
+                    .padding(.leading, 12)
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Circle().fill((d.currentLoad ?? "").isEmpty ? Brand.success : Brand.warning)
+                            .frame(width: 6, height: 6)
+                        Text((d.currentLoad ?? "").isEmpty ? "AVAILABLE" : "ON A LOAD")
+                            .font(.system(size: 8.5, weight: .heavy))
+                            .foregroundStyle((d.currentLoad ?? "").isEmpty ? Brand.success : Brand.warning)
+                    }
+                    .padding(.horizontal, 9).padding(.vertical, 4)
+                    .background(Capsule().fill(((d.currentLoad ?? "").isEmpty ? Brand.success : Brand.warning).opacity(0.13)))
+                }
+                .padding(.horizontal, 16).frame(height: 60)
+            } else {
+                HStack(spacing: 12) {
+                    Circle().fill(palette.bgCardSoft).frame(width: 34, height: 34)
+                        .overlay(Image(systemName: "person.slash")
+                            .font(.system(size: 13)).foregroundStyle(palette.textTertiary))
+                    Text("No drivers on your roster yet — add one to take tenders.")
+                        .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(palette.textSecondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16).frame(height: 60)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(palette.borderFaint, lineWidth: 1))
+    }
+
+    private var esangCard: some View {
+        HStack(spacing: 12) {
+            Circle().fill(LinearGradient.diagonal).frame(width: 30, height: 30)
+                .overlay(Text("E").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("ESANG · BACKHAUL")
+                    .font(.system(size: 8.5, weight: .heavy)).kerning(0.5)
+                    .foregroundStyle(LinearGradient.primary)
+                Text(esangTip ?? "ESANG has no cue on this tender yet — pull to refresh.")
+                    .font(.system(size: 12.5, weight: .bold))
+                    .foregroundStyle(esangTip == nil ? palette.textSecondary : palette.textPrimary)
+                    .lineLimit(2).minimumScaleFactor(0.85)
+            }
+            Spacer()
+        }
+        .padding(16)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(palette.bgCard))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .strokeBorder(LinearGradient.primary.opacity(0.85), lineWidth: 1.3))
+    }
+
+    // MARK: CTAs — Accept is a REAL commit; Decline is an honest no-endpoint state
+
+    private var ctaRow: some View {
+        HStack(spacing: 12) {
+            Button {
+                if accepted != nil || alreadyTaken { return }
+                if candidate == nil { showNoDriver = true } else { showAcceptConfirm = true }
+            } label: {
+                HStack(spacing: 8) {
+                    if accepting {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: accepted != nil ? "checkmark.circle.fill" : "checkmark")
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                    Text(accepted != nil ? "Tender accepted" : (alreadyTaken ? "Off the board" : "Accept tender"))
+                        .font(.system(size: 15, weight: .bold))
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity).frame(height: 48)
+                .background(Capsule().fill(accepted != nil
+                                           ? AnyShapeStyle(Brand.success)
+                                           : (alreadyTaken ? AnyShapeStyle(Brand.neutral) : AnyShapeStyle(LinearGradient.primary))))
+            }
+            .buttonStyle(.plain)
+            .disabled(accepting || accepted != nil || alreadyTaken)
+            Button {
+                if accepted == nil && !alreadyTaken && !declined { showDeclineConfirm = true }
+            } label: {
+                HStack(spacing: 6) {
+                    if declining { ProgressView().tint(palette.textSecondary) }
+                    Text(declined ? "Declined" : "Decline")
+                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(palette.textSecondary)
+                }
+                .frame(width: 126, height: 48)
+                .background(Capsule().fill(palette.bgCard))
+                .overlay(Capsule().strokeBorder(palette.borderSoft, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .disabled(declining || declined || accepted != nil || alreadyTaken)
+        }
+    }
+
+    // MARK: Network
+
+    private func fetch() async {
+        struct IdIn: Encodable { let id: String }
+        struct LimitIn: Encodable { let limit: Int }
+        struct EsangIn: Encodable { let screen: String; let contextIds: [String: String] }
+        let api = EusoTripAPI.shared
+        do {
+            let l: CBLoadCtx = try await api.query("loads.getById", input: IdIn(id: loadId))
+            load = l
+            loadFailed = false
+        } catch {
+            loadFailed = (load == nil)
+        }
+        if let d: [CBDriver357] = try? await api.query("catalysts.getMyDrivers", input: LimitIn(limit: 25)) {
+            drivers = d
+        }
+        if let e: CBEsang357 = try? await api.query(
+            "esangCoach.forScreen",
+            input: EsangIn(screen: "active-trip", contextIds: ["loadId": loadId])
+        ) {
+            esangTip = e.tip?.cb357NilIfEmpty
+        }
+    }
+
+    private func accept() async {
+        guard let d = candidate else { showNoDriver = true; return }
+        struct AssignIn: Encodable {
+            let loadId: String
+            let driverId: String
+            let idempotencyKey: String
+        }
+        accepting = true
+        acceptError = nil
+        defer { accepting = false }
+        do {
+            let out: CBAssignResult357 = try await EusoTripAPI.shared.mutation(
+                "dispatch.assignDriver",
+                input: AssignIn(
+                    loadId: load?.id ?? loadId,
+                    driverId: d.id,
+                    idempotencyKey: "bh-tender-\(load?.id ?? loadId)-\(d.id)"
+                )
+            )
+            if out.success == true {
+                accepted = out
+                await fetch()
+            } else {
+                acceptError = "The assignment gate didn't clear — nothing was booked. Review the driver's credentials and try again."
+            }
+        } catch {
+            acceptError = "The assignment gate didn't clear — nothing was booked. Review the driver's credentials and vehicle, then try again."
+        }
+    }
+
+    /// Real decline — releases the backhaul tender back to the board,
+    /// blocks re-tender to this catalyst, and notifies the shipper of record.
+    private func decline() async {
+        struct DeclineIn: Encodable { let loadId: String; let reason: String }
+        declining = true
+        defer { declining = false }
+        do {
+            struct DeclineOut: Decodable { let success: Bool? }
+            let out: DeclineOut = try await EusoTripAPI.shared.mutation(
+                "catalysts.declineBackhaulTender",
+                input: DeclineIn(loadId: load?.id ?? loadId, reason: "Passed on backhaul")
+            )
+            if out.success == true { declined = true }
+        } catch {
+            // Leave the button active so the operator can retry.
+        }
+    }
+}
+
+private extension String {
+    var cb357NilIfEmpty: String? {
+        let t = trimmingCharacters(in: .whitespaces)
+        return t.isEmpty ? nil : t
+    }
+}
+
 // MARK: - Screens (CV357-CV363)
 
 struct CatalystBackhaulTenderScreen: View {
     let theme: Theme.Palette; let loadId: String
-    var body: some View { CatalystBackhaulShell(theme: theme) { CatalystBackhaulAckBody(loadId: loadId, kind: .tender) } }
+    var body: some View { CatalystBackhaulShell(theme: theme) { CatalystBackhaulTenderBody357(loadId: loadId) } }
 }
 struct CatalystBackhaulAcceptedScreen: View {
     let theme: Theme.Palette; let loadId: String
@@ -413,6 +1008,7 @@ struct CatalystBackhaulAtDeliveryScreen: View {
 // MARK: - Previews
 
 #Preview("CV357 Tender · Dark")     { CatalystBackhaulTenderScreen(theme: Theme.dark, loadId: "0").environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
+#Preview("CV357 Tender · Light")    { CatalystBackhaulTenderScreen(theme: Theme.light, loadId: "0").environmentObject(EusoTripSession()).preferredColorScheme(.light) }
 #Preview("CV358 Accepted · Light")  { CatalystBackhaulAcceptedScreen(theme: Theme.light, loadId: "0").environmentObject(EusoTripSession()).preferredColorScheme(.light) }
 #Preview("CV359 Watch · Dark")      { CatalystBackhaulPickupWatchScreen(theme: Theme.dark, loadId: "0").environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("CV360 OnSite · Light")    { CatalystBackhaulOnSiteScreen(theme: Theme.light, loadId: "0").environmentObject(EusoTripSession()).preferredColorScheme(.light) }

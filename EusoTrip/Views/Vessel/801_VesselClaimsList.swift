@@ -130,7 +130,7 @@ private struct VesselClaimsListBody: View {
                 } else if rows.isEmpty {
                     EusoEmptyState(systemImage: "shippingbox.and.arrow.backward",
                                    title: "No marine cargo claims",
-                                   subtitle: "freightClaims.getClaims returned an empty ledger, no incidents on file in range. Nothing to recover yet.")
+                                   subtitle: "Claims ledger is empty — no incidents on file in range. Nothing to recover yet.")
                 } else {
                     ledgerCard
                 }

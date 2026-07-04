@@ -1,0 +1,108 @@
+{
+  "$schema": "https://eusotrip.com/schemas/splash-config-1.0.json",
+  "meta": {
+    "name": "EusoTrip Multi-Modal App Splash — DARK",
+    "version": "1.0.0",
+    "appearance": "dark",
+    "generatedOn": "2026-06-22",
+    "description": "3.0s dark-mode animated splash. All four brand beats (Truck -> Rail -> Aerial Vessel -> Flame Logo) are time-compressed (sped up, none dropped) to fit Apple's <=3s animated-splash guideline. Pairs with EusoTrip_Splash_iOS_3s_1080x1920.mp4.",
+    "model": "Seedance 2.0",
+    "renderColorSpace": "BT.709 / sRGB"
+  },
+
+  "asset": {
+    "splashVideo": "EusoTrip_Splash_iOS_3s_1080x1920.mp4",
+    "launchImage": "EusoTrip_LaunchScreen_1080x1920.png",
+    "fullIntroVideo": "EusoTrip_Splash_Master_1080x1920.mp4"
+  },
+
+  "dimensions": {
+    "width": 1080,
+    "height": 1920,
+    "aspectRatio": "9:16",
+    "orientation": "portrait",
+    "note": "Matches the original splash exactly (1080x1920). Use resizeAspectFill on taller 19.5:9 devices to fill edge-to-edge."
+  },
+
+  "encoding": {
+    "container": "mp4",
+    "videoCodec": "h264",
+    "pixelFormat": "yuv420p",
+    "fps": 24,
+    "audio": false,
+    "fastStart": true,
+    "recommendedBitrateMbps": 12,
+    "hdr": false
+  },
+
+  "timing": {
+    "totalMs": 3000,
+    "minimumDisplayMs": 1500,
+    "maximumDisplayMs": 3000,
+    "handoffMs": 3000,
+    "policy": "Play once. Dismiss at totalMs, OR as soon as app data is ready after minimumDisplayMs, whichever is later, but never past maximumDisplayMs."
+  },
+
+  "speedMap": {
+    "note": "Each source shot is 5s/4s of native footage compressed into its on-screen beat. 'speedMultiplier' = how much faster than real-time it plays; 'setptsFactor' is the ffmpeg PTS multiplier used.",
+    "shots": [
+      { "scene": "truck",  "sourceFile": "shots/1_truck.mp4",  "sourceDurationS": 5.042, "compressedDurationS": 0.70, "speedMultiplier": 7.20, "setptsFactor": 0.13884 },
+      { "scene": "rail",   "sourceFile": "shots/2_rail.mp4",   "sourceDurationS": 5.042, "compressedDurationS": 0.70, "speedMultiplier": 7.20, "setptsFactor": 0.13884 },
+      { "scene": "vessel", "sourceFile": "shots/3_vessel.mp4", "sourceDurationS": 5.042, "compressedDurationS": 0.75, "speedMultiplier": 6.72, "setptsFactor": 0.14875 },
+      { "scene": "logo",   "sourceFile": "shots/4_logo.mp4",   "sourceDurationS": 4.042, "compressedDurationS": 1.25, "speedMultiplier": 3.23, "setptsFactor": 0.30926 }
+    ],
+    "crossfadeMs": 130
+  },
+
+  "timeline": {
+    "transition": { "type": "crossfade", "durationMs": 130 },
+    "beats": [
+      { "scene": "truck",  "label": "Road / Truck",             "startMs": 0,    "endMs": 570  },
+      { "scene": "rail",   "label": "Rail / Intermodal",        "startMs": 570,  "endMs": 1140 },
+      { "scene": "vessel", "label": "Ocean / Vessel (aerial)",  "startMs": 1140, "endMs": 1760 },
+      { "scene": "logo",   "label": "Flame logo reveal + hold", "startMs": 1760, "endMs": 3000 }
+    ]
+  },
+
+  "playback": {
+    "autoplay": true,
+    "loop": false,
+    "muted": true,
+    "videoGravity": "resizeAspectFill",
+    "skippable": true,
+    "dismissOnDataReady": true,
+    "backgroundColor": "#0A0A14"
+  },
+
+  "brand": {
+    "gradientStops": ["#2E7BF6", "#1E63F0", "#3A4DE8", "#5A3AE0", "#7B2FD4", "#9E22C8", "#BE1FC4"],
+    "gradientDirection": "topToBottom (azure crown -> magenta base)",
+    "atmosphere": ["#E06AE0", "#E080E0", "#C080C0"],
+    "highlight": "#E6ECFF",
+    "background": "#0A0A14"
+  },
+
+  "logoLockup": {
+    "image": "EusoTrip_LaunchScreen_1080x1920.png",
+    "centerX": 540,
+    "centerY": 960,
+    "approxHeightPx": 1000
+  },
+
+  "safeArea": {
+    "top": 160,
+    "bottom": 1792,
+    "left": 54,
+    "right": 1026,
+    "note": "Hero subjects and the logo stay inside this box, clearing the Dynamic Island (top) and home indicator (bottom)."
+  },
+
+  "implementation": {
+    "ios": {
+      "launchScreen": "Set LaunchScreen.storyboard to a single full-screen UIImageView (contentMode = .scaleAspectFill, pinned to superview edges, NOT safe area) using EusoTrip_LaunchScreen_1080x1920. This is the instant system launch frame.",
+      "splashPlayback": "After launch, present a splash view controller that plays EusoTrip_Splash_iOS_3s_1080x1920.mp4 with AVPlayer + AVPlayerLayer (videoGravity = .resizeAspectFill, isMuted = true). Observe AVPlayerItem.didPlayToEndTime to dismiss.",
+      "handoff": "Dismiss at totalMs (3000) or when data is ready after minimumDisplayMs; keep the static launch image as the first paint to avoid a black flash."
+    },
+    "swiftExample": "guard let url = Bundle.main.url(forResource: \"EusoTrip_Splash_iOS_3s_1080x1920\", withExtension: \"mp4\") else { return }\nlet player = AVPlayer(url: url); player.isMuted = true\nlet layer = AVPlayerLayer(player: player); layer.videoGravity = .resizeAspectFill; layer.frame = view.bounds\nview.layer.addSublayer(layer)\nNotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main) { _ in self.finishSplash() }\nplayer.play()"
+  }
+}

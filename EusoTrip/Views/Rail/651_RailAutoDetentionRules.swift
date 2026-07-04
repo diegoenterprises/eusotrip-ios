@@ -309,7 +309,7 @@ private struct RailAutoDetentionRulesBody: View {
                                 .padding(.horizontal, 16)
                         }
                     }
-                    Text("+ evaluated on every gate event · configureAutoDetention to edit")
+                    Text("+ evaluated on every gate event · edit the rules below")
                         .font(.system(size: 10))
                         .foregroundStyle(palette.textTertiary)
                         .padding(.horizontal, 16)
@@ -417,7 +417,7 @@ private struct RailAutoDetentionRulesBody: View {
     private var configureStrip: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text("CONFIGURE · configureAutoDetention")
+                Text("CONFIGURE · auto-detention rules")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

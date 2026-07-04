@@ -416,7 +416,7 @@ private struct VesselBunkerFSCScheduleBody: View {
                             .font(EType.micro).tracking(0.8)
                             .foregroundStyle(palette.textPrimary)
                     }
-                    Text("The live Singapore VLSFO index feed and stepped bracket table aren't wired to a server procedure yet. The agreement stores only a scalar surcharge type/value.")
+                    Text("The live Singapore VLSFO index feed and stepped bracket table are not live yet. The agreement stores only a scalar surcharge type/value.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                     if let t = terms, let type = t.fuelSurchargeType {

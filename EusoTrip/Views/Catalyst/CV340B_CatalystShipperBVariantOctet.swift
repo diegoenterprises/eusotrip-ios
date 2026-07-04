@@ -72,7 +72,7 @@ private extension CatalystShipperBKind {
                          citation: "§9.5 · LIVE",
                          title: "Axis detail",
                          subhead: "Catalyst · customer composite · §9.5 · LIVE",
-                         pillCopy: "Catalyst rates shipper · same companyId both sides · clean §9.5 shipper books",
+                         pillCopy: "Catalyst rates shipper · same company both sides · clean §9.5 shipper books",
                          rowIdPrefix: "SCORE",
                          statusBadge: "PUBLISHED · LIVE", statusColor: .green)
         case .profileTier:
@@ -80,7 +80,7 @@ private extension CatalystShipperBKind {
                          citation: "§13.5 · LIVE",
                          title: "Tier detail",
                          subhead: "Catalyst · customer tier · §13.5 · LIVE",
-                         pillCopy: "Catalyst rates shipper · same companyId both sides · clean §13.5 tier criteria",
+                         pillCopy: "Catalyst rates shipper · same company both sides · clean §13.5 tier criteria",
                          rowIdPrefix: "TIER",
                          statusBadge: "PUBLISHED · LIVE", statusColor: .green)
         case .document:
@@ -88,7 +88,7 @@ private extension CatalystShipperBKind {
                          citation: "§387.7",
                          title: "Document detail",
                          subhead: "Catalyst · customer document cabinet · §387.7",
-                         pillCopy: "Catalyst archives shipper docs · same companyId both sides · clean §387.7 COI cabinet",
+                         pillCopy: "Catalyst archives shipper docs · same company both sides · clean §387.7 COI cabinet",
                          rowIdPrefix: "DOC",
                          statusBadge: "DOCUMENT CABINET", statusColor: .secondary)
         case .analytic:
@@ -96,7 +96,7 @@ private extension CatalystShipperBKind {
                          citation: "§9.5 · LIVE",
                          title: "Analytic detail",
                          subhead: "Catalyst · payor KPIs · §9.5 · LIVE",
-                         pillCopy: "Catalyst tracks payor KPIs · same companyId · clean tender-win + completion + lane mix",
+                         pillCopy: "Catalyst tracks payor KPIs · same company · clean tender-win + completion + lane mix",
                          rowIdPrefix: "PERF",
                          statusBadge: "PUBLISHED · LIVE", statusColor: .green)
         case .settlement:
@@ -104,7 +104,7 @@ private extension CatalystShipperBKind {
                          citation: "§387 NET-30 PAYOR",
                          title: "Settlement detail",
                          subhead: "Catalyst · payor settlement · §387",
-                         pillCopy: "Catalyst earns from shipper · same companyId both sides · clean payor records",
+                         pillCopy: "Catalyst earns from shipper · same company both sides · clean payor records",
                          rowIdPrefix: "INV",
                          statusBadge: "PAYOR SETTLEMENT", statusColor: .secondary)
         case .onboarding:
@@ -112,7 +112,7 @@ private extension CatalystShipperBKind {
                          citation: "§387",
                          title: "Step detail",
                          subhead: "Catalyst · onboarding ladder · §387",
-                         pillCopy: "Catalyst onboards shipper · same companyId · onboarding ladder",
+                         pillCopy: "Catalyst onboards shipper · same company · onboarding ladder",
                          rowIdPrefix: "STEP",
                          statusBadge: "ONBOARDING LADDER", statusColor: .secondary)
         case .compliance:
@@ -120,7 +120,7 @@ private extension CatalystShipperBKind {
                          citation: "§387 §388",
                          title: "Compliance row",
                          subhead: "Catalyst · payor compliance · §387 §388",
-                         pillCopy: "Catalyst monitors payor · same companyId · §387 (cargo liability) §388 (broker auth)",
+                         pillCopy: "Catalyst monitors payor · same company · §387 (cargo liability) §388 (broker auth)",
                          rowIdPrefix: "COMP",
                          statusBadge: "COMPLIANCE MONITOR", statusColor: .secondary)
         case .quarter:
@@ -128,7 +128,7 @@ private extension CatalystShipperBKind {
                          citation: "QUARTERLY",
                          title: "Quarter detail",
                          subhead: "Catalyst · payor quarterly rollup",
-                         pillCopy: "Catalyst archives payor quarterly rollup · same companyId both sides · §6041 1099-NEC",
+                         pillCopy: "Catalyst archives payor quarterly rollup · same company both sides · §6041 1099-NEC",
                          rowIdPrefix: "PERF",
                          statusBadge: "QUARTERLY ROLLUP", statusColor: .secondary)
         }
@@ -241,7 +241,7 @@ private struct CatalystShipperBBody: View {
                     .overlay(Text(initials).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("companyId \(companyId) · \(role)").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text("Company ID \(companyId) · \(role)").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
             }
@@ -352,7 +352,7 @@ private struct CatalystShipperBBody: View {
         EusoEmptyState(
             systemImage: "doc.text.magnifyingglass",
             title: "No per-invoice settlement",
-            subtitle: "shipperScorecard.getScorecard returns the payor composite and aggregate metrics only. Per-invoice settlement line-items are a backend gap.",
+            subtitle: "Per-invoice settlement lines are not available for this payor yet. Aggregate payor health is still shown above.",
             comingSoon: true
         )
     }

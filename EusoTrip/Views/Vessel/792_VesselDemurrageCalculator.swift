@@ -143,7 +143,7 @@ private struct VesselDemurrageCalculatorBody: View {
     private var inputsCard: some View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text("INPUTS · calculateDetention").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+                Text("INPUTS · detention math").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 HStack(spacing: 0) {
                     field("Arrival",   arrivalDisplay)
                     field("Departure", departureDisplay)

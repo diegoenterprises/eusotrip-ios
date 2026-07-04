@@ -287,10 +287,10 @@ private struct CPSBody: View {
         LifecycleCard {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("WAITING ON · loadLifecycle paid fan-out")
+                    Text("WAITING ON · settlement fan-out")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                         .foregroundStyle(palette.textTertiary)
-                    Text("dispatch.ts:284 invoiced→paid · routes to [catalystId, driverId]")
+                    Text("Settlement fan-out clears once invoicing and payout posts reach the lane.")
                         .font(.system(size: 8.5, design: .monospaced)).tracking(0.2)
                         .foregroundStyle(palette.textSecondary)
                 }

@@ -9,7 +9,9 @@
 //    - transportMode=truck
 //    - origin=lat,lng
 //    - destination=lat,lng
-//    - return=polyline,summary,actions
+//    - return=polyline,summary,actions,tolls
+//    - spans=maxSpeed,functionalClass,truckAttributes (separate param; not a
+//      `return` value)
 //
 //  Auth: `Authorization: Bearer <token>` header (OAuth2 client-credentials
 //  via HEREAuthService). No apikey query string.
@@ -54,41 +56,19 @@ struct HereStops {
 struct HereRoutingOptions {
     /// ISO-8601 (e.g. "2026-04-18T09:00:00-04:00"). Nil = depart now.
     var departureTime: String? = nil
-    /// Fields to include. The richer set is RE-ENABLED on enterprise per
-    /// HERE_ENTERPRISE_AUDIT (2026-06-14) action #3.
+    /// Fields to include in HERE Routing v8 `return`.
     ///
-    /// History: 2026-05-17 the BASIC deployment rejected the extras
-    /// (TestFlight 262: "Invalid return type at 'spans'"), so they were
-    /// dropped to `polyline,summary,actions`. Enterprise accepts them, and
-    /// the symbiotic weather loop REQUIRES them:
-    ///   • `spans`   — per-segment on-road geometry, so weather can be
-    ///                 sampled along the route at the ETA-matched points
-    ///                 (Pillar 3, the route-weather timeline).
-    ///   • `notices` — the forced-pass-through signal ("no avoidance route —
-    ///                 the path crosses the hazard"), the honesty primitive
-    ///                 that distinguishes "rerouted" from "routed through the
-    ///                 storm anyway" (Pillar 1).
-    ///   • `tolls`   — toll-aware lane cost.
+    /// Live verification on 2026-06-21 corrected an earlier false premise:
+    /// `spans` is NOT a return type (`return=...,spans` returns HTTP 400).
+    /// It must be sent as its own query param while `polyline` is present.
+    /// `tolls` is a valid return type and feeds lane economics.
     ///
-    /// Safe to ship: the raw-bracket `percentEncodedQuery` path that crashed
-    /// (EXC_BREAKPOINT, TestFlight 259) was already reverted to the
-    /// `queryItems` path, so a stray field rejection now surfaces as a soft
-    /// `HereMapsError.http` (caller serves last-good route state) — never a
-    /// crash. If the enterprise deployment ever rejects one, trim just that
-    /// field; the `if returnFields.contains("spans")` plumbing below already
-    /// emits the `spans=` columns.
-    ///
-    /// REVERTED 2026-06-17: `notices` is NOT a valid HERE v8 `return` value
-    /// (notices auto-appear in the response when present) — including it makes
-    /// HERE reject the whole `return` param → "no route" (confirmed in prod on
-    /// the server, fixed in PR #94). Back to the known-good three. `spans`
-    /// (route-weather sampling) + `tolls` get re-added here when the weather
-    /// sampler needs them — each CURL-VALIDATED against the enterprise key
-    /// first, per the audit's own rule (the step I skipped).
-    var returnFields: [String] = ["polyline", "summary", "actions"]
-    /// Span columns — kept for future re-enablement; not currently
-    /// used because `spans` was dropped from returnFields.
-    var spanFields: [String] = ["names", "speedLimit", "countryCode", "functionalClass", "truckAttributes"]
+    /// `notices` remains intentionally absent: HERE emits notices when present
+    /// but rejects `notices` as an explicit `return` value.
+    var returnFields: [String] = ["polyline", "summary", "actions", "tolls"]
+    /// Span columns used by route-weather and road-intelligence sampling.
+    /// `speedLimit` is deprecated by HERE; `maxSpeed` is the verified v8 field.
+    var spanFields: [String] = ["maxSpeed", "functionalClass", "truckAttributes"]
     /// Number of alternative routes to compute (0–6). HERE's default is 0.
     var alternatives: Int = 0
     /// Language for action narration ("en-US", "es-MX", etc).
@@ -233,7 +213,7 @@ actor HereRoutingClient {
             URLQueryItem(name: "return",           value: options.returnFields.joined(separator: ",")),
         ]
 
-        if options.returnFields.contains("spans") {
+        if options.returnFields.contains("polyline"), !options.spanFields.isEmpty {
             items.append(URLQueryItem(name: "spans", value: options.spanFields.joined(separator: ",")))
         }
 

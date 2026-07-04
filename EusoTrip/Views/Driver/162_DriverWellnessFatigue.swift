@@ -66,6 +66,9 @@
 //
 
 import SwiftUI
+#if canImport(WatchConnectivity)
+import WatchConnectivity
+#endif
 
 // MARK: - Data shapes (decoded from the REAL driverWellness payloads)
 
@@ -222,9 +225,18 @@ struct DriverWellnessFatigue_162: View {
     /// no service produced a reading → the weather factor is honestly
     /// neutral (0 / "none"), never fabricated.
     @State private var weather: WeatherSnapshot? = nil
+    @State private var pulsePaired = false
+    @State private var pulseInstalled = false
+    @State private var pulseReachable = false
+    @State private var pulseLastReachableAt: Date?
+    @State private var pulseLastMirrorAt: Date?
+    @State private var pulseResyncNote: String? = nil
     /// Set only by the DEBUG preview init so `.task` doesn't overwrite seeded
     /// sample data with a network call. Always false in production.
     @State private var seeded = false
+
+    private let pulseRefresh = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
+    private let pulseReachableStickyWindow: TimeInterval = 15
 
     init() {}
     #if DEBUG
@@ -387,6 +399,7 @@ struct DriverWellnessFatigue_162: View {
                     if let ack = actionAck { banner(ack, tint: Brand.success, icon: "checkmark.seal.fill") }
 
                     fatigueHero
+                    pulseCompanionCard
                     wellnessScoreCard
                     factorCells
                     wellbeingSupport
@@ -399,7 +412,12 @@ struct DriverWellnessFatigue_162: View {
             }
         }
         .background(palette.bgPrimary.ignoresSafeArea())
-        .task { if !seeded { await load() } }
+        .task {
+            refreshPulseState()
+            republishPulseIfPossible(showAck: false)
+            if !seeded { await load() }
+        }
+        .onReceive(pulseRefresh) { _ in refreshPulseState() }
         .sheet(isPresented: $checkInPresented) {
             WellnessCheckInSheet162 { mood, sleepQuality, sleepHours, stress in
                 await submitCheckIn(mood: mood, sleepQuality: sleepQuality,
@@ -580,6 +598,118 @@ struct DriverWellnessFatigue_162: View {
             Spacer(minLength: 0)
         }
         .padding(.top, 2)
+    }
+
+    // MARK: Pulse companion
+
+    private var pulseCompanionCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(alignment: .center, spacing: Space.s3) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient.diagonal)
+                        .frame(width: 42, height: 42)
+                    Image(systemName: "applewatch.watchface")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    eyebrow("EUSOTRIP PULSE")
+                    Text(pulseHeadline)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                }
+                Spacer(minLength: 0)
+                pulseStatusPill
+            }
+
+            Text(pulseWellnessLine)
+                .font(EType.mono(.micro))
+                .tracking(0.3)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: Space.s3) {
+                pulseMetric("MIRROR", pulseLastMirrorAt.map(Self.relative) ?? "-")
+                pulseMetric("BREAK", nextBreakRelative)
+                pulseMetric("RISK", "\(num(effectiveRiskScore))/100")
+            }
+
+            if let pulseResyncNote {
+                Text(pulseResyncNote)
+                    .font(EType.mono(.micro))
+                    .tracking(0.3)
+                    .foregroundStyle(pulseResyncNote.contains("Nothing") ? Brand.warning : Brand.success)
+            }
+
+            Button {
+                republishPulseIfPossible(showAck: true)
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                    Text("Resync Pulse")
+                }
+                .font(EType.bodyStrong)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 42)
+                .background(LinearGradient.diagonal, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(EusoTripAPI.shared.authToken == nil)
+            .opacity(EusoTripAPI.shared.authToken == nil ? 0.6 : 1)
+        }
+        .padding(Space.s5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg, intensity: .standard)
+    }
+
+    @ViewBuilder
+    private var pulseStatusPill: some View {
+        let ok = pulsePaired && pulseInstalled && pulseReachable
+        let tint = ok ? Brand.success : (pulsePaired ? Brand.warning : palette.textTertiary)
+        Text(ok ? "LIVE" : (pulsePaired ? "PAIRED" : "OFF"))
+            .font(.system(size: 9, weight: .heavy))
+            .tracking(0.7)
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(tint.opacity(0.14)))
+    }
+
+    private func pulseMetric(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 8.5, weight: .heavy))
+                .tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            Text(value)
+                .font(EType.mono(.caption))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .padding(.horizontal, Space.s3)
+        .padding(.vertical, Space.s2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCardSoft)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                .strokeBorder(palette.borderFaint.opacity(0.6), lineWidth: 1)
+        )
+    }
+
+    private var pulseHeadline: String {
+        guard pulsePaired else { return "Pair your watch for wrist fatigue cues" }
+        guard pulseInstalled else { return "Install Pulse on your watch" }
+        return pulseReachable ? "Wrist link live for HOS and fatigue cues" : "Paired, queued for next wrist wake"
+    }
+
+    private var pulseWellnessLine: String {
+        if pulsePaired && pulseInstalled {
+            return "Pulse mirrors HOS, break timing, route risk, and check-in prompts from the same wellness data on this screen."
+        }
+        return "Pair EusoTrip Pulse to carry break timing, fatigue cues, and check-in prompts onto the wrist."
     }
 
     // MARK: Wellness-score card (composite + grade + 3 sub-rails)
@@ -804,6 +934,55 @@ struct DriverWellnessFatigue_162: View {
         .padding(Space.s3)
         .background(tint.opacity(0.12))
         .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+    }
+
+    private func refreshPulseState() {
+        #if canImport(WatchConnectivity)
+        if WCSession.isSupported() {
+            let session = WCSession.default
+            pulsePaired = session.isPaired
+            pulseInstalled = session.isWatchAppInstalled
+            if session.isReachable {
+                pulseLastReachableAt = Date()
+                pulseReachable = true
+            } else if let last = pulseLastReachableAt,
+                      Date().timeIntervalSince(last) < pulseReachableStickyWindow {
+                pulseReachable = true
+            } else {
+                pulseReachable = false
+            }
+        }
+        #endif
+
+        if let context = WatchAuthBridge.shared.lastPushedAuthContext,
+           let ts = context["ts"] as? TimeInterval {
+            pulseLastMirrorAt = Date(timeIntervalSince1970: ts)
+        } else if let last = WatchAuthBridge.shared.lastSuccessfulSyncAt {
+            pulseLastMirrorAt = last
+        }
+    }
+
+    private func republishPulseIfPossible(showAck: Bool) {
+        let sent = WatchAuthBridge.shared.republishAuth(
+            fallbackToken: EusoTripAPI.shared.authToken,
+            fallbackUserId: nil,
+            fallbackUserName: nil,
+            fallbackRole: "driver"
+        )
+        refreshPulseState()
+        guard showAck else { return }
+        if sent {
+            pulseLastMirrorAt = Date()
+            pulseResyncNote = "Pulse resynced from this iPhone."
+        } else {
+            pulseResyncNote = "Nothing to sync - sign in first."
+        }
+    }
+
+    private static func relative(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: Date())
     }
 
     // MARK: - Loaders / actions (REAL endpoints — honest do/catch, no try?-collapse)

@@ -70,7 +70,7 @@ struct ShipperAppIntents: View {
         id:                "intent_2026-04-29T13:30:00Z_postload",
         activeLabel:       "ACTIVE · POST LOAD · 1 OF 7 INTENTS",
         headline:          "Hey Siri, \u{201C}post that load again\u{201D}",
-        bindingAndCount:   "PostLoadIntent · loads.create · 5\u{00D7} recent",
+        bindingAndCount:   "Post Load shortcut · 5\u{00D7} recent",
         enrollmentEyebrow: "INTENTS · 7 ENROLLED",
         enrollmentCaption: "7 enrolled · last run 12m ago",
         relativeAgo:       "ran 12m ago",
@@ -87,7 +87,7 @@ struct ShipperAppIntents: View {
             initials:     "PL",
             title:        "Post a load",
             siriPhrase:   "post that load again",
-            binding:      "loads.create",
+            binding:      "Posts a new load",
             enabled:      true
         ),
         Intent(
@@ -95,7 +95,7 @@ struct ShipperAppIntents: View {
             initials:     "ST",
             title:        "Load status",
             siriPhrase:   "what\u{2019}s the stage on the NH\u{2083} load",
-            binding:      "loads.getById · stage 5/8",
+            binding:      "Load stage · 5/8",
             enabled:      true
         ),
         Intent(
@@ -103,7 +103,7 @@ struct ShipperAppIntents: View {
             initials:     "ND",
             title:        "Next delivery",
             siriPhrase:   "what\u{2019}s my next delivery",
-            binding:      "controlTower.recentActivity",
+            binding:      "Control tower · recent activity",
             enabled:      true
         ),
         Intent(
@@ -111,7 +111,7 @@ struct ShipperAppIntents: View {
             initials:     "EX",
             title:        "Open exceptions",
             siriPhrase:   "any exceptions today",
-            binding:      "controlTower.exceptions · 1 open",
+            binding:      "Control tower · 1 open exception",
             enabled:      true
         ),
         Intent(
@@ -119,7 +119,7 @@ struct ShipperAppIntents: View {
             initials:     "BD",
             title:        "Bids for load",
             siriPhrase:   "read me the bids on KC to Omaha",
-            binding:      "shippers.getBidsForLoad",
+            binding:      "Live bids for a load",
             enabled:      false
         ),
         Intent(
@@ -127,7 +127,7 @@ struct ShipperAppIntents: View {
             initials:     "SE",
             title:        "Weekly spend",
             siriPhrase:   "how much did I pay this week",
-            binding:      "settlements.getWeekly",
+            binding:      "Weekly settlement total",
             enabled:      false
         ),
         Intent(
@@ -135,7 +135,7 @@ struct ShipperAppIntents: View {
             initials:     "SC",
             title:        "Top carrier grade",
             siriPhrase:   "how is my top carrier doing",
-            binding:      "shippers.getCatalystPerformance",
+            binding:      "Carrier performance grade",
             enabled:      false
         )
     ]

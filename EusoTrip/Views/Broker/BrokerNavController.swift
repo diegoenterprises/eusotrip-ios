@@ -71,6 +71,7 @@ enum BrokerNavRoute {
 enum BrokerNavContext {
     static var latestCatalystId: String = "0"
     static var latestLoadId: String = "0"
+    static var latestLoadNumber: String = "0"
     static var latestDriverId: String = "0"
     static var latestShipperId: String = "0"
     static var latestVehicleId: String = "0"

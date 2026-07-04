@@ -147,8 +147,8 @@ private struct CatalystYTDBody: View {
                                      : "OWNER-OP SEAM · ASSET QUARTERLY BOOKS")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 Text(kind == .driver
-                     ? "Catalyst rolls up driver · same companyId both sides · Schedule C quarters"
-                     : "Catalyst rolls up asset · same companyId both sides · §168 depreciation quarters")
+                     ? "Catalyst rolls up driver · same company both sides · Schedule C quarters"
+                     : "Catalyst rolls up asset · same company both sides · §168 depreciation quarters")
                     .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary).fixedSize(horizontal: false, vertical: true)
                 Text("YTD 2026 · live metrics carry from the performance feed · per-quarter rollup not yet sourced").font(.caption2).foregroundStyle(palette.textSecondary)
             }

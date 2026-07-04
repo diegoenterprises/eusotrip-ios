@@ -49,49 +49,49 @@ private extension DispatcherCommsKind {
                          citation: "DISPATCHER REVIEW · COMMS THREADS",
                          title: "Comms review",
                          subhead: "Thread inbox · live",
-                         pillCopy: "Live thread count, unread total and last-activity timing from the messaging inbox. Per-axis grading is a backend gap.")
+                         pillCopy: "Live thread count, unread total and last-activity timing from the messaging inbox. Per-axis grading has no live data source yet.")
         case .responseTime:
             return .init(eyebrow: "DISPATCHER · COMMS · RESPONSE-TIME",
                          citation: "DISPATCHER RESPONSE · COMMS THREADS",
                          title: "Response time",
                          subhead: "Thread inbox · last activity",
-                         pillCopy: "Last-activity timing is live from the inbox. Per-class response-time scoring is a backend gap.")
+                         pillCopy: "Last-activity timing is live from the inbox. Per-class response-time scoring has no live data source yet.")
         case .slaCompliance:
             return .init(eyebrow: "DISPATCHER · COMMS · SLA-COMPLIANCE",
                          citation: "DISPATCHER COMPLIANCE · COMMS THREADS",
                          title: "SLA compliance",
                          subhead: "Thread inbox · live",
-                         pillCopy: "SLA-compliance grading is a backend gap — no live source. Thread count is live from the inbox.")
+                         pillCopy: "SLA-compliance grading has no live data source yet. Thread count is live from the inbox.")
         case .escalationFree:
             return .init(eyebrow: "DISPATCHER · COMMS · ESCALATION-FREE",
                          citation: "DISPATCHER ESCALATION · COMMS THREADS",
                          title: "Escalation-free",
                          subhead: "Thread inbox · live",
-                         pillCopy: "Escalation tracking is a backend gap — no live source. Thread count is live from the inbox.")
+                         pillCopy: "Escalation tracking has no live data source yet. Thread count is live from the inbox.")
         case .threadClosure:
             return .init(eyebrow: "DISPATCHER · COMMS · THREAD-CLOSURE",
                          citation: "DISPATCHER CLOSURE · COMMS THREADS",
                          title: "Thread closure",
                          subhead: "Thread inbox · live",
-                         pillCopy: "Closure-rate grading is a backend gap — no live source. Thread count is live from the inbox.")
+                         pillCopy: "Closure-rate grading has no live data source yet. Thread count is live from the inbox.")
         case .threadVolume:
             return .init(eyebrow: "DISPATCHER · COMMS · THREAD-VOLUME",
                          citation: "DISPATCHER VOLUME · COMMS THREADS",
                          title: "Thread volume",
                          subhead: "Thread inbox · live",
-                         pillCopy: "Live thread count and unread total from the inbox. Per-week volume rollups are a backend gap.")
+                         pillCopy: "Live thread count and unread total from the inbox. Per-week volume rollups have no live data source yet.")
         case .firstTouchResolution:
             return .init(eyebrow: "DISPATCHER · COMMS · FIRST-TOUCH-RESOLUTION",
                          citation: "DISPATCHER FTR · COMMS THREADS",
                          title: "First-touch resolution",
                          subhead: "Thread inbox · live",
-                         pillCopy: "First-touch-resolution grading is a backend gap — no live source. Thread count is live from the inbox.")
+                         pillCopy: "First-touch-resolution grading has no live data source yet. Thread count is live from the inbox.")
         case .quarter:
             return .init(eyebrow: "DISPATCHER · COMMS · TRAJECTORY",
                          citation: "DISPATCHER COMMS TRAJECTORY · COMMS THREADS",
                          title: "Quarter trajectory",
                          subhead: "Thread inbox · live",
-                         pillCopy: "Per-quarter trajectory rollups are a backend gap — no live source. Thread count is live from the inbox.")
+                         pillCopy: "Per-quarter trajectory rollups have no live data source yet. Thread count is live from the inbox.")
         }
     }
 }
@@ -279,12 +279,12 @@ private struct DispatcherCommsBody: View {
         // proc supplies it, otherwise name the backend gap plainly.
         let copy: String = {
             switch kind {
-            case .review:              return "\(threadCountText) threads, \(unreadText) unread, last activity \(lastActivityText). Per-axis grading is a backend gap."
+            case .review:              return "\(threadCountText) threads, \(unreadText) unread, last activity \(lastActivityText). Per-axis grading has no live data source yet."
             case .responseTime:        return "Last activity \(lastActivityText). Per-class response-time scoring is a backend gap — no live source yet."
             case .slaCompliance:       return "SLA-compliance grading is a backend gap — no live source. \(threadCountText) threads in the inbox."
             case .escalationFree:      return "Escalation tracking is a backend gap — no live source. \(threadCountText) threads in the inbox."
             case .threadClosure:       return "Closure-rate grading is a backend gap — no live source. \(threadCountText) threads in the inbox."
-            case .threadVolume:        return "\(threadCountText) threads, \(unreadText) unread. Per-week volume rollups are a backend gap."
+            case .threadVolume:        return "\(threadCountText) threads, \(unreadText) unread. Per-week volume rollups have no live data source yet."
             case .firstTouchResolution:return "First-touch-resolution grading is a backend gap — no live source. \(threadCountText) threads in the inbox."
             case .quarter:             return "Per-quarter trajectory rollups are a backend gap — no live source. \(threadCountText) threads in the inbox."
             }

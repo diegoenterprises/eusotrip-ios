@@ -495,7 +495,7 @@ private struct RailLiveTrackingBody: View {
     private var eventsSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("EVENTS · getRailTracking")
+                Text("EVENTS · live tracking")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

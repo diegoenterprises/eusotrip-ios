@@ -87,9 +87,13 @@ private struct RailEngineerAccountBody: View {
                     LifecycleCard { Text("Loading account…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
-                } else {
-                    identityCard
-                    operationsCard
+	                } else {
+	                    identityCard
+	                    EusoCardIssuePanel(
+	                        title: "EusoCard",
+	                        subtitle: "Rail spend card backed by EusoWallet Treasury"
+	                    )
+	                    operationsCard
                     credentialsCard
                     dutyCard
                     preferencesCard
@@ -115,7 +119,7 @@ private struct RailEngineerAccountBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Account").font(.system(size: 26, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("users.me · profile, credentials, duty & preferences")
+            Text("Your account · profile, credentials, duty & preferences")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
@@ -339,7 +343,7 @@ private struct RailEngineerAccountBody: View {
 
     private var credentialsCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("CREDENTIALS · users.getProfile").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("CREDENTIALS · on file").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard {
                 VStack(spacing: Space.s2) {
                     ForEach(credentials) { c in
@@ -359,7 +363,7 @@ private struct RailEngineerAccountBody: View {
         let onDuty = hos?.onDutyHours ?? 6.5
         let limit = hos?.limitHours ?? 12
         return VStack(alignment: .leading, spacing: Space.s2) {
-            Text("DUTY · HOURS OF SERVICE · getCrewHOS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("DUTY · HOURS OF SERVICE · live").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -378,7 +382,7 @@ private struct RailEngineerAccountBody: View {
 
     private var preferencesCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("PREFERENCES · users.updateProfile").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("PREFERENCES · saved to your profile").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard {
                 VStack(spacing: Space.s3) {
                     Toggle(isOn: $notificationsOn) {

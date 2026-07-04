@@ -152,14 +152,15 @@ struct MeCarrierScorecard: View {
     }
 
     private func errorBanner(_ err: Error) -> some View {
-        VStack(spacing: Space.s2) {
+        let copy = scorecardErrorCopy(err)
+        return VStack(spacing: Space.s2) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(palette.textSecondary)
-            Text("Can't load scorecard")
+            Text(copy.title)
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(copy.message)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
@@ -178,6 +179,47 @@ struct MeCarrierScorecard: View {
         .frame(maxWidth: .infinity)
         .padding(Space.s4)
         .eusoCard(radius: Radius.lg)
+    }
+
+    private func scorecardErrorCopy(_ err: Error) -> (title: String, message: String) {
+        switch err {
+        case EusoTripAPIError.unauthenticated:
+            return (
+                "Session check needed",
+                "Sign in again to reload your carrier's CSA scorecard."
+            )
+        case EusoTripAPIError.forbidden(_):
+            return (
+                "CSA access mismatch",
+                "This scorecard is outside your company safety file."
+            )
+        case EusoTripAPIError.decodingFailed(_):
+            return (
+                "Scorecard needs refresh",
+                "FMCSA returned a newer scorecard shape. Pull to retry after the latest app update."
+            )
+        case EusoTripAPIError.trpcError(_):
+            return (
+                "CSA service unavailable",
+                "The live CSA scorecard service could not complete that request. Retry in a moment."
+            )
+        case EusoTripAPIError.httpStatus(let code, _):
+            return (
+                "CSA service unavailable",
+                "The scorecard service returned HTTP \(code). Retry in a moment."
+            )
+        default:
+            if err is DecodingError {
+                return (
+                    "Scorecard needs refresh",
+                    "FMCSA returned a newer scorecard shape. Pull to retry after the latest app update."
+                )
+            }
+            return (
+                "Can't load scorecard",
+                "The live CSA scorecard could not load. Retry in a moment."
+            )
+        }
     }
 
     // MARK: Carrier identity

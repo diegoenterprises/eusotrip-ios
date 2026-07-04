@@ -194,7 +194,7 @@ private struct VesselBidBoardBody: View {
         HStack {
             Text("OPEN LANES · RANKED BY RATE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundColor(.secondary)
             Spacer()
-            Text("loadBidding.ts:117").font(.system(size: 11)).foregroundColor(.secondary).monospaced()
+            Text("live bid board").font(.system(size: 11)).foregroundColor(.secondary).monospaced()
         }
     }
 
@@ -260,7 +260,7 @@ private struct VesselBidBoardBody: View {
                 Text(esangSubtitle).font(.system(size: 11)).foregroundColor(.secondary)
             }
             Spacer()
-            Text("esang.chat").font(.system(size: 11)).foregroundColor(.secondary).monospaced()
+            Text("live").font(.system(size: 11)).foregroundColor(.secondary).monospaced()
         }
         .padding(16)
         .background(RoundedRectangle(cornerRadius: 18).fill(Color(.tertiarySystemGroupedBackground))

@@ -321,7 +321,7 @@ struct ClearinghouseQuerySheet: View {
             // Verbatim server status so the officer always sees the raw
             // truth, never just our interpretation of it.
             HStack(spacing: 6) {
-                Text("SERVER STATUS")
+                Text("REVIEW STATUS")
                     .font(EType.micro).tracking(0.6)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)

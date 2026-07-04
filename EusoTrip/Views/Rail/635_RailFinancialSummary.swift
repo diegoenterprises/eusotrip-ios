@@ -342,7 +342,7 @@ private struct RailFinancialSummaryBody: View {
                 EusoEmptyState(
                     systemImage: "list.bullet.rectangle",
                     title: "Itemized ledger unavailable",
-                    subtitle: "railShipments.getRailFinancialSummary is not yet served. Line-haul settlements, demurrage and accessorial/FSC breakdowns appear here once it lands.",
+                    subtitle: "No rail financial summary is on file for this operator yet. Line-haul settlements, demurrage and accessorial/FSC breakdowns appear here as soon as there is settlement activity to report.",
                     comingSoon: true
                 )
             }

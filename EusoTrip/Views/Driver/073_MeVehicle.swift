@@ -319,7 +319,7 @@ struct MeVehicle: View {
             Text("Can't load vehicle")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
@@ -450,7 +450,7 @@ struct MeVehicle: View {
             case .empty:
                 maintenanceEmpty
             case .error(let e):
-                Text(e.localizedDescription)
+                Text(e.eusoUserCopy)
                     .font(EType.caption)
                     .foregroundStyle(palette.textTertiary)
                     .padding(Space.s3)

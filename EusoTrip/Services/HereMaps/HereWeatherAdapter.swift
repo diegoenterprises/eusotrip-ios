@@ -42,30 +42,30 @@ extension WeatherSnapshot {
         // peril flags (REEFER · FREEZE RISK 0°) on temp-controlled loads.
         guard obs.temperatureFahrenheit != nil || obs.temperature != nil else { return nil }
 
-        // Temperature — HERE ships both scales; prefer the explicit
-        // Fahrenheit field when available (en-US locale), else
-        // convert from Celsius.
+        // Temperature — HereWeatherClient requests `units=imperial`.
+        // The live v3 payload usually places Fahrenheit in `temperature`
+        // and omits `temperatureFahrenheit`, so do not convert the fallback.
         let tempF: Int = {
             if let f = obs.temperatureFahrenheit {
                 return Int(f.rounded())
             }
-            if let c = obs.temperature {
-                return Int((c * 9.0 / 5.0 + 32).rounded())
+            if let f = obs.temperature {
+                return Int(f.rounded())
             }
             return 0
         }()
 
-        // Wind — HERE ships `windSpeedMph` in en-US; fall back to
-        // km/h conversion for non-US locales.
+        // Wind — with `units=imperial`, live v3 reports mph in
+        // `windSpeed` and often omits `windSpeedMph`.
         let windMph: Int = {
             if let mph = obs.windSpeedMph {
                 return Int(mph.rounded())
             }
+            if let mph = obs.windSpeed {
+                return Int(mph.rounded())
+            }
             if let kmh = obs.windSpeedKmh {
                 return Int((kmh * 0.621371).rounded())
-            }
-            if let ms = obs.windSpeed {
-                return Int((ms * 2.23694).rounded())
             }
             return 0
         }()
@@ -132,10 +132,11 @@ extension WeatherSnapshot {
             return .calm
         }()
 
-        // Feels-like ("comfort" in HERE vocabulary) + humidity.
+        // Feels-like ("comfort" in HERE vocabulary) + humidity. Like
+        // temperature, the imperial payload often uses `comfort`.
         let feelsLikeF: Int? = {
             if let f = obs.comfortFahrenheit { return Int(f.rounded()) }
-            if let c = obs.comfort { return Int((c * 9.0 / 5.0 + 32).rounded()) }
+            if let f = obs.comfort { return Int(f.rounded()) }
             return nil
         }()
         let humidityPct: Int? = obs.humidity.map { Int($0.rounded()) }
@@ -156,7 +157,7 @@ extension WeatherSnapshot {
                 else { continue }
                 let tempF: Int? = {
                     if let f = h.temperatureFahrenheit { return Int(f.rounded()) }
-                    if let c = h.temperature { return Int((c * 9.0 / 5.0 + 32).rounded()) }
+                    if let f = h.temperature { return Int(f.rounded()) }
                     return nil
                 }()
                 guard let tempF else { continue }
@@ -165,18 +166,18 @@ extension WeatherSnapshot {
                     tempF: tempF,
                     symbol: Self.dailySymbol(for: h.iconName ?? h.description ?? ""),
                     precipChancePct: h.precipitationProbability.map { Int($0.rounded()) },
-                    windMph: h.windSpeedMph.map { Int($0.rounded()) }
+                    windMph: (h.windSpeedMph ?? h.windSpeed).map { Int($0.rounded()) }
                 ))
             }
             return out
         }()
         let precipChancePct: Int? = hourly.first?.precipChancePct
 
-        // 5-day daily look-ahead. HERE ships weekday labels out of
+        // 6-day daily look-ahead. HERE ships weekday labels out of
         // the box — we keep them when present and synthesize from
         // the ISO date otherwise.
         let daily: [DailyForecast] = {
-            let src = (place.dailyForecasts?.forecasts ?? []).prefix(5)
+            let src = ((place.dailyForecasts?.forecasts ?? []) + (place.extendedDailyForecasts?.forecasts ?? [])).prefix(6)
             var out: [DailyForecast] = []
             let iso = ISO8601DateFormatter()
             let fallback = DateFormatter()
@@ -200,8 +201,10 @@ extension WeatherSnapshot {
                     f.dateFormat = "EEE"
                     return f.string(from: date)
                 }()
-                let hi = Int((d.highTemperatureFahrenheit ?? 0).rounded())
-                let lo = Int((d.lowTemperatureFahrenheit ?? 0).rounded())
+                guard let high = d.highTemperatureFahrenheit ?? d.highTemperature ?? d.temperature else { continue }
+                let low = d.lowTemperatureFahrenheit ?? d.lowTemperature ?? high
+                let hi = Int(high.rounded())
+                let lo = Int(low.rounded())
                 let sym = Self.dailySymbol(for: d.iconName ?? d.description ?? "")
                 out.append(
                     DailyForecast(

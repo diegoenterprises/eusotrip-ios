@@ -72,6 +72,32 @@ private struct UnifiedLoadRow: Decodable, Hashable, Identifiable {
     let destCity: String?
     let destState: String?
     let rate: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = Self.flexString(c, .id) ?? ""
+        loadNumber = try? c.decode(String.self, forKey: .loadNumber)
+        status = try? c.decode(String.self, forKey: .status)
+        driverName = try? c.decode(String.self, forKey: .driverName)
+        pickupCity = try? c.decode(String.self, forKey: .pickupCity)
+        pickupState = try? c.decode(String.self, forKey: .pickupState)
+        destCity = try? c.decode(String.self, forKey: .destCity)
+        destState = try? c.decode(String.self, forKey: .destState)
+        rate = Self.flexString(c, .rate)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, loadNumber, status, driverName, pickupCity, pickupState, destCity, destState, rate
+    }
+
+    private static func flexString(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> String? {
+        if let s = try? c.decode(String.self, forKey: key) { return s }
+        if let i = try? c.decode(Int.self, forKey: key) { return String(i) }
+        if let d = try? c.decode(Double.self, forKey: key) {
+            return d == d.rounded() ? String(Int(d)) : String(d)
+        }
+        return nil
+    }
 }
 
 private struct AvailableDriverRow: Decodable, Hashable, Identifiable {
@@ -81,6 +107,29 @@ private struct AvailableDriverRow: Decodable, Hashable, Identifiable {
     let currentCity: String?
     let currentState: String?
     let hosRemainingMin: Int?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = Self.flexString(c, .id) ?? ""
+        name = try? c.decode(String.self, forKey: .name)
+        status = try? c.decode(String.self, forKey: .status)
+        currentCity = try? c.decode(String.self, forKey: .currentCity)
+        currentState = try? c.decode(String.self, forKey: .currentState)
+        hosRemainingMin = try? c.decode(Int.self, forKey: .hosRemainingMin)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, status, currentCity, currentState, hosRemainingMin
+    }
+
+    private static func flexString(_ c: KeyedDecodingContainer<CodingKeys>, _ key: CodingKeys) -> String? {
+        if let s = try? c.decode(String.self, forKey: key) { return s }
+        if let i = try? c.decode(Int.self, forKey: key) { return String(i) }
+        if let d = try? c.decode(Double.self, forKey: key) {
+            return d == d.rounded() ? String(Int(d)) : String(d)
+        }
+        return nil
+    }
 }
 
 private struct CommandCenterBody: View {
@@ -581,11 +630,23 @@ private struct PerformanceHistoryRow: Decodable, Hashable, Identifiable {
     let onTime: Bool?
 }
 
+private struct PerformanceDashboardFallback: Decodable, Hashable {
+    let activeLoads: Int?
+    let unassigned: Int?
+    let inTransit: Int?
+    let issues: Int?
+    let completedToday: Int?
+    let totalDrivers: Int?
+    let availableDrivers: Int?
+}
+
 private struct PerformanceBody: View {
     @Environment(\.palette) private var palette
     @State private var stats: PerformanceStats?
     @State private var metrics: [PerformanceMetric] = []
     @State private var history: [PerformanceHistoryRow] = []
+    @State private var fallback: PerformanceDashboardFallback?
+    @State private var loadErrors: [String] = []
     @State private var loading: Bool = true
 
     var body: some View {
@@ -595,12 +656,29 @@ private struct PerformanceBody: View {
                 if let s = stats { statsCard(s) }
                 if !metrics.isEmpty { metricsSection }
                 if !history.isEmpty { historySection }
+                if stats == nil && metrics.isEmpty && history.isEmpty, let fallback {
+                    fallbackCard(fallback)
+                }
+                if !loading && stats == nil && metrics.isEmpty && history.isEmpty && fallback == nil {
+                    LifecycleCard(accentDanger: !loadErrors.isEmpty) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Performance data unavailable")
+                                .font(EType.bodyStrong)
+                                .foregroundStyle(loadErrors.isEmpty ? palette.textPrimary : Brand.danger)
+                            Text(loadErrors.first ?? "No dispatch performance rows are available for this company yet.")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
                 if loading {
                     LifecycleCard { Text("Loading performance…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 }
-                Color.clear.frame(height: 96)
+                Color.clear.frame(height: 150)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14)
+            .padding(.top, 58)
         }
         .task { await loadAll() }
         .refreshable { await loadAll() }
@@ -613,6 +691,10 @@ private struct PerformanceBody: View {
                 Text("DISPATCH · PERFORMANCE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("KPIs & history").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            Text("Dispatcher score, completed freight, on-time posture and company activity.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -687,6 +769,53 @@ private struct PerformanceBody: View {
         }
     }
 
+    private func fallbackCard(_ f: PerformanceDashboardFallback) -> some View {
+        LifecycleCard(accentGradient: true) {
+            VStack(alignment: .leading, spacing: 12) {
+                LifecycleSection(label: "LIVE COMPANY PULSE", icon: "waveform.path.ecg")
+                HStack(spacing: 8) {
+                    LifecycleStatTile(label: "COMPLETE", value: "\(f.completedToday ?? 0)", icon: "checkmark.seal.fill")
+                    LifecycleStatTile(label: "ACTIVE", value: "\(f.activeLoads ?? 0)", icon: "shippingbox.fill")
+                    LifecycleStatTile(label: "ON ROAD", value: "\(f.inTransit ?? 0)", icon: "truck.box.fill")
+                }
+                HStack(spacing: 8) {
+                    performanceMini(label: "Unassigned", value: f.unassigned ?? 0, danger: (f.unassigned ?? 0) > 0)
+                    performanceMini(label: "Issues", value: f.issues ?? 0, danger: (f.issues ?? 0) > 0)
+                    performanceMini(label: "Drivers", value: f.totalDrivers ?? 0, subvalue: "\(f.availableDrivers ?? 0) available")
+                }
+                Text("Detailed performance history appears after completed company freight is available. The live dispatch pulse stays visible so this screen never renders blank.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func performanceMini(label: String, value: Int, subvalue: String? = nil, danger: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label.uppercased())
+                .font(.system(size: 8, weight: .heavy))
+                .tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            Text("\(value)")
+                .font(.system(size: 18, weight: .heavy, design: .rounded))
+                .foregroundStyle(danger ? Brand.danger : palette.textPrimary)
+                .monospacedDigit()
+            if let subvalue {
+                Text(subvalue)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(8)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+    }
+
     private func numFmt(_ value: Double) -> String {
         if value.truncatingRemainder(dividingBy: 1) == 0 { return "\(Int(value).formatted(.number))" }
         return String(format: "%.1f", value)
@@ -694,27 +823,37 @@ private struct PerformanceBody: View {
 
     private func loadAll() async {
         loading = true
+        loadErrors = []
+        fallback = nil
         async let s: Void = loadStats()
         async let m: Void = loadMetrics()
         async let h: Void = loadHistory()
         _ = await (s, m, h)
+        if stats == nil && metrics.isEmpty && history.isEmpty {
+            await loadFallback()
+        }
         loading = false
     }
 
     private func loadStats() async {
-        do { stats = try await EusoTripAPI.shared.queryNoInput("dispatchRole.getPerformanceStats") } catch { }
+        do { stats = try await EusoTripAPI.shared.queryNoInput("dispatchRole.getPerformanceStats") }
+        catch { loadErrors.append((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription) }
     }
     private func loadMetrics() async {
         struct In: Encodable { let period: String?; let limit: Int? }
         do {
             metrics = try await EusoTripAPI.shared.query("dispatchRole.getPerformanceMetrics", input: In(period: nil, limit: 10))
-        } catch { }
+        } catch { loadErrors.append((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription) }
     }
     private func loadHistory() async {
         struct In: Encodable { let period: String?; let limit: Int? }
         do {
             history = try await EusoTripAPI.shared.query("dispatchRole.getPerformanceHistory", input: In(period: nil, limit: 30))
-        } catch { }
+        } catch { loadErrors.append((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription) }
+    }
+    private func loadFallback() async {
+        do { fallback = try await EusoTripAPI.shared.queryNoInput("dispatch.getDashboardStats") }
+        catch { loadErrors.append((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription) }
     }
 }
 

@@ -5,7 +5,7 @@
 //  Faithful 1:1 port of the RECONSTRUCTED "809 Vessel Dispute Resolution.svg" (Light + Dark).
 //  RECONSTRUCTED from the post-cadence-line STAMP (gradient stat hero + KPI strip + uniform
 //  chip-less rows — twin of 808/810/811/812) into the OFFER-LADDER archetype: a settlement-GAP
-//  rim-card hero ($15,800 gap + DEADLINE pill), then a vertical node-SPINE offer ladder where each
+//  rim-card hero, then a vertical node-SPINE offer ladder where each
 //  rung is a party-tagged offer card (OURS gradient node / THEIRS amber node / DRAFT ringed node)
 //  carrying date, legal rationale and tabular amount, a midpoint footer, the ESang accept-vs-counter
 //  advisory, and the Counter-offer / Accept CTA pair.
@@ -13,19 +13,10 @@
 //  copied EXACTLY from the registered sibling 757_VesselDetentionLetters.swift — compliance slot inked.
 //
 //  Data / wiring (endpoint MCP-confirmed this fire — frontend/server/routers/freightClaims.ts):
-//    HERO + LADDER: freightClaims.getDisputeResolution EXISTS :783 (protectedProcedure · query)
-//        input {status?,type?,limit,offset} -> {disputes:[{id,disputeNumber,type,status,amount,
-//        filedDate,description,invoiceNumber,carrier,shipper,resolution,resolvedAmount}],total,
-//        summary{active,resolved,totalDisputed,totalRecovered}}. The disputes[] is an empty ledger
-//        today (returns []), and the live row carries NO offers[] array — so the tolerant DTO decode
-//        leaves the design-time seed ladder in place when the live ledger is empty, and overwrites the
-//        hero gap from amount/resolvedAmount when a live dispute is present. Honest: no fabricated rows.
-//    WRITE (counter): STUB · re-runs load(). freightClaims.fileDispute EXISTS :818 but its mutation
-//        contract is {type,invoiceNumber,amount,description,…} — NOT {disputeNumber} — so a one-arg
-//        counter would fail z-validation; the matching counter-offer mutation is the surfaced backend
-//        gap (acceptDisputeOffer / counterDisputeOffer). The CTA re-loads rather than firing a malformed
-//        write or faking success.
-//    WRITE (accept):  STUB · named-gap acceptDisputeOffer — no mutation on disk (surfaced to the-oath).
+//    HERO + LADDER: freightClaims.getDisputeResolution returns disputes plus a live offer ladder
+//        derived from dispute_events. Empty ledgers render an honest empty state.
+//    WRITE (counter): freightClaims.counterDisputeOffer appends a responded event.
+//    WRITE (accept):  freightClaims.acceptDisputeOffer resolves the dispute and updates linked recovery.
 //    RBAC: protectedProcedure (vessel side); carrier counter via catalystProcedure peer.
 //
 //  0 module-level EmptyInput · all file-scoped helpers suffixed 809 to avoid cross-file private
@@ -33,8 +24,7 @@
 //  are hand-rolled from the registered sibling 757's gradient-rim + outline grammar to keep the look.
 //  palette.isDark is private in the design system, so node/rung tints use fixed opacities.
 //
-//  0 stubs in the read path · 0 mock data on load · honest empty/error states — design-time seeds are
-//  overwritten by the live query on .task; the two write verbs are honestly flagged STUB.
+//  0 stubs in the read path · 0 mock data on load · honest empty/error states.
 //
 
 import SwiftUI
@@ -67,21 +57,24 @@ private struct VesselDisputeResolutionBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
 
-    @State private var disputeNumber = "DSP-260525-7C3A09F18B"
-    @State private var subline = "DSP-260525-7C3A09F18B · linked CLM-260524-A38FB12C7E"
-    @State private var gapLabel = "SETTLEMENT GAP · CMA-CGM MARCO POLO 0TPXE"
-    @State private var gapAmount = "$15,800"
-    @State private var gapSub = "claim $34.2k − carrier offer $18.4k"
-    @State private var gapMeta = "round 2 / 4 · adjuster LB · recovered 54% YTD"
-    @State private var gapPct = "46%"
-    @State private var midpointLine = "Midpoint $22.4k · round 4 deadline 05-31 · then mediation"
-    @State private var esangLine = "peer median settles 71% · 3d to deadline · live tick"
-
-    @State private var offers: [Offer809] = [
-        Offer809(party: .ours,   tag: "OURS",   title: "Initial claim · vessel-side", sub: "05-24 · full cargo damage", amount: "$34,200"),
-        Offer809(party: .theirs, tag: "THEIRS", title: "Carrier counter",             sub: "CMA-CGM · $500/pkg cap",   amount: "$18,400"),
-        Offer809(party: .draft,  tag: "DRAFT",  title: "Our counter · drafting",      sub: "survey delta + costs",     amount: "$26,400")
-    ]
+    @State private var selectedDisputeId: String? = nil
+    @State private var claimAmount: Double = 0
+    @State private var latestOfferAmount: Double? = nil
+    @State private var disputeNumber = "—"
+    @State private var statusText = "NO LIVE DISPUTE"
+    @State private var subline = "No dispute selected"
+    @State private var gapLabel = "SETTLEMENT GAP"
+    @State private var gapAmount = "$0"
+    @State private var gapSub = "No live offer ladder"
+    @State private var gapMeta = "0 rounds"
+    @State private var gapPct = "0%"
+    @State private var midpointLine = "No midpoint available"
+    @State private var esangTitle = "No live offer recommendation"
+    @State private var esangLine = "No live dispute to evaluate"
+    @State private var offers: [Offer809] = []
+    @State private var actionBusy = false
+    @State private var actionMessage: String? = nil
+    @State private var actionFailed = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -92,19 +85,34 @@ private struct VesselDisputeResolutionBody: View {
                 Text(subline).font(.system(size: 12)).foregroundStyle(palette.textSecondary)
                 IridescentHairline()
 
+                if let message = actionMessage {
+                    RimCard809 {
+                        Text(message)
+                            .font(EType.caption)
+                            .foregroundStyle(actionFailed ? Brand.danger : palette.textSecondary)
+                    }
+                }
                 if loading {
                     RimCard809 { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
                     RimCard809 { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                } else if offers.isEmpty || selectedDisputeId == nil {
+                    EusoEmptyState(systemImage: "doc.text.magnifyingglass",
+                                   title: "No active dispute ladder",
+                                   subtitle: "Dispute offers appear here after a recovery dispute is filed or a counterparty responds.")
                 } else {
                     gapHero
-                    Text("OFFER LADDER · getDisputeResolution · \(offers.count) ROUNDS")
+                    Text("OFFER LADDER · \(offers.count) ROUNDS")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     ladderCard
                     esangCard
                     HStack(spacing: 8) {
-                        CTAButton(title: "Counter-offer", action: { Task { await counter() } }, trailingIcon: "arrow.uturn.left")
+                        CTAButton(title: actionBusy ? "Working…" : "Counter-offer",
+                                  action: { Task { await counter() } },
+                                  trailingIcon: "arrow.uturn.left")
+                            .disabled(actionBusy)
                         secondaryButton809(title: "Accept") { Task { await accept() } }
+                            .disabled(actionBusy || latestOfferAmount == nil)
                     }
                 }
                 Color.clear.frame(height: 96)
@@ -121,7 +129,7 @@ private struct VesselDisputeResolutionBody: View {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · DISPUTE RESOLUTION").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
-                Text("NEGOTIATING · R2/4").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(Brand.warning)
+                Text(statusText).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(Brand.warning)
             }
             HStack(spacing: 6) {
                 Text("Disputes").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textSecondary)
@@ -170,7 +178,7 @@ private struct VesselDisputeResolutionBody: View {
         HStack(spacing: 12) {
             Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Counter to $26.4k - recovers ~$8k over accepting").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text(esangTitle).font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Text("ESang · \(esangLine)").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)
@@ -204,32 +212,78 @@ private struct VesselDisputeResolutionBody: View {
     // MARK: Data
     private struct OfferDTO809: Decodable { let by: String?; let amount: Double?; let rationale: String?; let at: String? }
     private struct Dispute809: Decodable {
-        let disputeNumber: String?; let amount: Double?; let resolvedAmount: Double?
-        let carrier: String?; let offers: [OfferDTO809]?
+        let id: String?
+        let disputeNumber: String?
+        let type: String?
+        let status: String?
+        let amount: Double?
+        let resolvedAmount: Double?
+        let description: String?
+        let invoiceNumber: String?
+        let carrier: String?
+        let offers: [OfferDTO809]?
     }
     private struct Summary809: Decodable { let totalDisputed: Double?; let totalRecovered: Double? }
     private struct Resolution809: Decodable { let disputes: [Dispute809]?; let summary: Summary809? }
     private struct DisputeInput809: Encodable { let limit: Int; let offset: Int }
+    private struct CounterInput809: Encodable { let disputeId: String; let amount: Double; let message: String? }
+    private struct CounterAck809: Decodable { let id: String?; let status: String?; let amount: Double?; let respondedAt: String? }
+    private struct AcceptInput809: Encodable { let disputeId: String; let acceptedAmount: Double?; let message: String? }
+    private struct AcceptAck809: Decodable { let id: String?; let status: String?; let acceptedAmount: Double?; let acceptedAt: String? }
 
     private func load() async {
         loading = true; loadError = nil
         do {
             let r: Resolution809 = try await EusoTripAPI.shared.query("freightClaims.getDisputeResolution",
                                                                       input: DisputeInput809(limit: 20, offset: 0))
-            if let d = r.disputes?.first, let o = d.offers, !o.isEmpty {
-                disputeNumber = d.disputeNumber ?? disputeNumber
-                offers = o.prefix(3).map { off in
-                    let party: Party809 = (off.by ?? "").lowercased().contains("carrier") ? .theirs
-                        : ((off.amount ?? 0) == 0 ? .draft : .ours)
-                    let tag = party == .theirs ? "THEIRS" : (party == .draft ? "DRAFT" : "OURS")
-                    return Offer809(party: party, tag: tag, title: off.by ?? "-",
-                                    sub: off.rationale ?? "", amount: money(off.amount))
-                }
-                if let claim = d.amount, let counter = d.offers?.last?.amount {
-                    gapAmount = money(claim - counter)
-                    gapPct = claim > 0 ? "\(Int((claim - counter) / claim * 100))%" : gapPct
-                }
+            guard let d = r.disputes?.first else {
+                selectedDisputeId = nil
+                offers = []
+                disputeNumber = "—"
+                statusText = "NO LIVE DISPUTE"
+                subline = "No dispute selected"
+                gapAmount = "$0"
+                gapSub = "No live offer ladder"
+                gapMeta = "0 rounds"
+                gapPct = "0%"
+                midpointLine = "No midpoint available"
+                esangTitle = "No live offer recommendation"
+                esangLine = "No live dispute to evaluate"
+                loading = false
+                return
             }
+
+            selectedDisputeId = d.id
+            disputeNumber = d.disputeNumber ?? d.id ?? "—"
+            statusText = (d.status ?? "filed").uppercased()
+            claimAmount = d.amount ?? 0
+            let liveOffers = d.offers ?? []
+            offers = liveOffers.prefix(6).map { off in
+                let lower = (off.by ?? "").lowercased()
+                let party: Party809 = lower.contains("counter") || lower.contains("carrier") ? .theirs : .ours
+                let tag = party == .theirs ? "THEIRS" : "OURS"
+                return Offer809(party: party, tag: tag, title: off.by ?? "party",
+                                sub: off.rationale ?? "", amount: money(off.amount))
+            }
+            latestOfferAmount = liveOffers.compactMap { $0.amount }.last
+            subline = "\(disputeNumber) · \(d.invoiceNumber ?? "invoice unresolved")"
+            gapLabel = "SETTLEMENT GAP · \(d.type ?? "dispute")"
+            let latest = latestOfferAmount ?? d.resolvedAmount ?? 0
+            let gap = max(0, claimAmount - latest)
+            gapAmount = money(gap)
+            gapSub = latest > 0 ? "claim \(money(claimAmount)) - latest offer \(money(latest))" : "claim \(money(claimAmount)) - no counter amount yet"
+            gapMeta = "round \(max(offers.count, 1)) · \(d.status ?? "filed")"
+            gapPct = claimAmount > 0 ? "\(Int((gap / claimAmount * 100).rounded()))%" : "0%"
+            let midpoint = latest > 0 ? (claimAmount + latest) / 2 : claimAmount
+            midpointLine = latest > 0
+                ? "Midpoint \(money(midpoint)) · latest offer \(money(latest)) · claim \(money(claimAmount))"
+                : "No counter amount yet · claim \(money(claimAmount))"
+            esangTitle = latest > 0
+                ? "Counter to \(money(midpoint)) or accept \(money(latest))"
+                : "Counter from \(money(claimAmount))"
+            esangLine = latest > 0
+                ? "counter midpoint \(money(midpoint)) or accept \(money(latest))"
+                : "wait for counterparty offer or submit a counter from the claim amount"
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -241,13 +295,73 @@ private struct VesselDisputeResolutionBody: View {
         return "$" + Int(v).formatted(.number.grouping(.automatic))
     }
 
-    /// STUB · re-runs load(). freightClaims.fileDispute EXISTS :818 but its z-contract is
-    /// {type,invoiceNumber,amount,description,…} not {disputeNumber}; a counter-offer mutation
-    /// (counterDisputeOffer) is the surfaced backend gap. We re-load rather than fire a malformed write.
-    private func counter() async { await load() }
+    private func counter() async {
+        guard let disputeId = selectedDisputeId else {
+            actionFailed = true
+            actionMessage = "No dispute is selected."
+            return
+        }
+        if actionBusy { return }
+        let latest = latestOfferAmount ?? 0
+        let amount = latest > 0 ? max(latest, (claimAmount + latest) / 2) : claimAmount
+        guard amount > 0 else {
+            actionFailed = true
+            actionMessage = "A counter-offer requires a live claim amount."
+            return
+        }
+        actionBusy = true
+        actionFailed = false
+        actionMessage = nil
+        do {
+            let ack: CounterAck809 = try await EusoTripAPI.shared.mutation(
+                "freightClaims.counterDisputeOffer",
+                input: CounterInput809(
+                    disputeId: disputeId,
+                    amount: amount,
+                    message: "Counter-offer generated from the live dispute midpoint on \(disputeNumber)."
+                )
+            )
+            actionMessage = "Counter-offer \(money(ack.amount ?? amount)) submitted."
+            await load()
+        } catch {
+            actionFailed = true
+            actionMessage = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        actionBusy = false
+    }
 
-    /// STUB · named-gap acceptDisputeOffer — no mutation on disk (surfaced to the-oath). Re-runs load().
-    private func accept() async { await load() }
+    private func accept() async {
+        guard let disputeId = selectedDisputeId else {
+            actionFailed = true
+            actionMessage = "No dispute is selected."
+            return
+        }
+        guard let amount = latestOfferAmount, amount > 0 else {
+            actionFailed = true
+            actionMessage = "There is no latest offer amount to accept."
+            return
+        }
+        if actionBusy { return }
+        actionBusy = true
+        actionFailed = false
+        actionMessage = nil
+        do {
+            let ack: AcceptAck809 = try await EusoTripAPI.shared.mutation(
+                "freightClaims.acceptDisputeOffer",
+                input: AcceptInput809(
+                    disputeId: disputeId,
+                    acceptedAmount: amount,
+                    message: "Accepted from vessel dispute resolution for \(disputeNumber)."
+                )
+            )
+            actionMessage = "Accepted \(money(ack.acceptedAmount ?? amount)) and resolved the dispute."
+            await load()
+        } catch {
+            actionFailed = true
+            actionMessage = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        actionBusy = false
+    }
 }
 
 /// Vertical spine with one node per rung: gradient nodes down a faint rail.

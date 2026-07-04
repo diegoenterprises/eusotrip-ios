@@ -348,7 +348,7 @@ private struct ConvoyBody_400: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        Text("LIVE · \(truckMarkers.count)/3 GPS · convoy.getConvoyPositions")
+                        Text("LIVE · \(truckMarkers.count)/3 GPS · convoy positions")
                             .font(.system(size: 8, weight: .heavy)).tracking(0.5)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 10).padding(.vertical, 5)

@@ -29,14 +29,18 @@
 //
 //  Live + backend gaps (2026-06-14 — `compliance.getFleetCompliance` IS
 //  shipped, compliance.ts:2317):
-//    LIVE     — the FLEET COMPLIANCE SCORE hero + the CARRIER SAFETY 2×2
-//                tile now bind to `compliance.getFleetCompliance`
+//    LIVE     — the COMPLIANCE SCORE hero binds to
+//                `compliance.getShipperCompliance.score` as the canonical
+//                numeral (re-scoped 2026-07-02, ASC builds 712/706: the
+//                unguarded fleet binding painted a fabricated 100/A+ for
+//                zero-vehicle shippers). `compliance.getFleetCompliance`
 //                ({totalVehicles, compliant, expiringSoon, outOfCompliance,
-//                overallScore}, company-scoped). overallScore is the
-//                canonical fleet score for the ring; CARRIER SAFETY shows
-//                "{compliant}/{total}" + "{expiring} expiring". Fail-soft:
-//                nil → honest "—" / "Awaiting fleet data" while loading or
-//                when the fleet is empty (totalVehicles == 0).
+//                overallScore}, company-scoped) refines the hero + paints
+//                the CARRIER SAFETY tile ONLY when totalVehicles > 0;
+//                CARRIER SAFETY shows "{compliant}/{total}" +
+//                "{expiring} expiring". Fail-soft: nil → honest "—" /
+//                "Awaiting fleet data" while loading or when the fleet is
+//                empty (totalVehicles == 0).
 //    EUSO-2118 — the per-catalyst compliance ledger still isn't shipped,
 //                so the CATALYST COMPLIANCE section paints a single honest
 //                placeholder card instead of synthesising rows.
@@ -236,6 +240,9 @@ final class ShipperComplianceStore: ObservableObject {
             case .unauthenticated:
                 lastFailureKind = .auth
                 lastSummaryError = "Your session ended. Sign in again to view compliance."
+            case .forbidden(let msg):
+                lastFailureKind = .access
+                lastSummaryError = msg
             case .trpcError(let msg):
                 // The role gate throws FORBIDDEN "Access denied. Required
                 // role(s): SHIPPER" — re-login won't fix that, so route it
@@ -281,6 +288,10 @@ struct ShipperCompliance: View {
     @Environment(\.palette) private var palette
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // Injected app-wide at EusoTripApp.swift:83 (same pattern as
+    // 303_CarrierDispatchBoard.swift:191) — the .auth failure CTA needs
+    // `session.signOut()` to land the user on the real sign-in surface.
+    @EnvironmentObject private var session: EusoTripSession
     @StateObject private var store = ShipperComplianceStore()
     @State private var category: ComplianceCategory = .all
 
@@ -425,11 +436,20 @@ struct ShipperCompliance: View {
     // MARK: Score hero card (gradient rim · 148pt · big numeral + ring gauge)
 
     private func scoreHeroCard(_ s: ShipperComplianceAPI.Summary) -> some View {
-        // FLEET COMPLIANCE SCORE — `compliance.getFleetCompliance.overallScore`
-        // is the canonical fleet score for this hero (compliance.ts:2333). Bind
-        // to it when the fleet rollup is live; fall back to the shipper-self
-        // summary score only until the fleet rollup lands (nil = loading/error).
-        let heroScore = store.fleet?.overallScore ?? s.score
+        // COMPLIANCE SCORE — re-scoped 2026-07-02 (ASC builds 712/706).
+        // `compliance.getShipperCompliance.score` is the canonical hero
+        // numeral: it reflects the shipper's own compliance posture
+        // (docs / credit / insurance) regardless of fleet size. The fleet
+        // rollup's `overallScore` may refine the hero ONLY when a real
+        // fleet exists (`totalVehicles > 0`) — the prior unguarded
+        // `store.fleet?.overallScore ?? s.score` binding painted the
+        // server's empty-fleet 100/A+ for zero-vehicle shippers, a
+        // fabricated grade. `getFleetCompliance` otherwise feeds solely
+        // the CARRIER SAFETY 2×2 tile (also totalVehicles-gated).
+        let heroScore: Int = {
+            if let f = store.fleet, f.totalVehicles > 0 { return f.overallScore }
+            return s.score
+        }()
         let scoreString = "\(heroScore)"
         let scopeBlurb: String = {
             if s.businessVerified { return "Carrier safety · business verified" }
@@ -450,7 +470,7 @@ struct ShipperCompliance: View {
                 .padding(1.5)
             HStack(alignment: .center, spacing: Space.s4) {
                 VStack(alignment: .leading, spacing: Space.s2) {
-                    Text("FLEET COMPLIANCE SCORE")
+                    Text("COMPLIANCE SCORE")
                         .font(EType.micro)
                         .tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
@@ -1057,7 +1077,20 @@ struct ShipperCompliance: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, Space.s3)
             Button {
-                Task { await store.refresh() }
+                // 2026-07-02 (ASC builds 712/706) — the CTA previously ran
+                // store.refresh() for ALL failure kinds, so the .auth path's
+                // "Sign in" button just re-fired the same UNAUTHORIZED call:
+                // a dead-end. Signing in requires tearing the expired session
+                // down: `session.signOut()` (EusoTripSession.swift:307) clears
+                // the token + cookies + keychain and flips the app phase to
+                // .signedOut, which lands the user on the real sign-in
+                // surface. Every other kind keeps retry semantics.
+                switch kind {
+                case .auth:
+                    Task { await session.signOut() }
+                case .access, .offline, .service:
+                    Task { await store.refresh() }
+                }
             } label: {
                 Text(cta)
                     .font(EType.bodyStrong)
@@ -1221,6 +1254,7 @@ extension Notification.Name {
 #Preview("216 · Shipper Compliance · Dark") {
     ShipperCompliance()
         .environment(\.palette, Theme.dark)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.dark)
         .background(Theme.dark.bgPage)
 }
@@ -1228,6 +1262,7 @@ extension Notification.Name {
 #Preview("216 · Shipper Compliance · Light") {
     ShipperCompliance()
         .environment(\.palette, Theme.light)
+        .environmentObject(EusoTripSession())
         .preferredColorScheme(.light)
         .background(Theme.light.bgPage)
 }

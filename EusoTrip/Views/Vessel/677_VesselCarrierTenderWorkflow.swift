@@ -149,7 +149,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
                 .font(.system(size: 30, weight: .bold)).tracking(-0.5)
                 .foregroundStyle(palette.textPrimary)
                 .padding(.top, Space.s4)
-            Text("createVesselBid · inbox live")
+            Text("Tender inbox · live")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 2)
@@ -165,7 +165,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
         let allIn = detail?.allInRate
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
-                Text("BOOKING REQUEST · getVesselShipmentDetail")
+                Text("BOOKING REQUEST · full detail")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: Space.s2)
@@ -265,7 +265,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
 
     private var sailingOptions: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            Text("SAILING OPTIONS · getVesselSchedules")
+            Text("SAILING OPTIONS · live schedules")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             if voyages.isEmpty {

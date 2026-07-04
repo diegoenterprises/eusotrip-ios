@@ -2250,7 +2250,7 @@ struct ShipperPostLoad: View {
             return "Computing distance + ETA via ESANG…"
         }
         if let err = routingError {
-            return "Routing error: \(err)"
+            return "Route unavailable: \(err)"
         }
         if let meters = routeDistanceMeters, let secs = routeDurationSeconds {
             let miles = Double(meters) / 1609.34
@@ -2338,6 +2338,7 @@ struct ShipperPostLoad: View {
                     if destLng == nil   { destLng   = destResolved.coord.longitude  }
                     self.originStateCode = originResolved.stateCode
                     self.destStateCode   = destResolved.stateCode
+                    self.recomputeRateCompareIfReady()
                 }
                 let resp = try await HereRoutingClient.shared.route(
                     stops: HereStops(origin: originResolved.coord,
@@ -2361,7 +2362,7 @@ struct ShipperPostLoad: View {
                     if totalLength == 0 || totalDuration == 0 {
                         self.routeDistanceMeters  = nil
                         self.routeDurationSeconds = nil
-                        self.routingError = "No truck route between the resolved coordinates. Try a city-level address (e.g. 'Houston, TX') or a different mode."
+                        self.routingError = routeUnavailableMessage
                     } else {
                         self.routeDurationSeconds = totalDuration
                         self.routeDistanceMeters  = totalLength
@@ -2375,11 +2376,30 @@ struct ShipperPostLoad: View {
                 }
             } catch {
                 await MainActor.run {
-                    self.routingError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    self.routingError = humanRouteMessage(for: error)
                     self.isRouting = false
                 }
             }
         }
+    }
+
+    private var routeUnavailableMessage: String {
+        "Try a city-level address or switch to rail/vessel if the lane is not truck-routable."
+    }
+
+    private func humanRouteMessage(for error: Error) -> String {
+        let raw = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        let lower = raw.lowercased()
+        if lower.contains("no truck route") || lower.contains("route between") || lower.contains("routing") {
+            return routeUnavailableMessage
+        }
+        if lower.contains("malformed") || lower.contains("parsing") || lower.contains("invalid") {
+            return "The route provider could not read one of these locations. Pick a city-level suggestion and retry."
+        }
+        if lower.contains("offline") || lower.contains("network") || lower.contains("timed") {
+            return "Route estimate is temporarily unavailable. Check the connection and retry."
+        }
+        return routeUnavailableMessage
     }
 
     // MARK: - ESANG rate vs market meter (rates.compareLaneRate)
@@ -2413,6 +2433,15 @@ struct ShipperPostLoad: View {
         }
     }
 
+    private var rateCompareRequiresDistance: Bool {
+        switch rateUnitWire {
+        case "flat", "usd_total":
+            return true
+        default:
+            return false
+        }
+    }
+
     /// TRUE when the rate field holds a Worldscale percent (vessel
     /// tanker), not a dollar amount. The value the user types is a WS%
     /// and CANNOT be benchmarked without a per-load Worldscale-100 flat.
@@ -2425,10 +2454,16 @@ struct ShipperPostLoad: View {
     /// state→country rule the server applies to mint loads.originCountry.
     private var laneCountryWire: String {
         LoadAnimationContext.countryCode(
-            forState: (originStateCode?.isEmpty == false)
-                ? originStateCode
-                : Self.stateFromLane(origin)
+            forState: originStateForRateCompare
         ).uppercased()
+    }
+
+    private var originStateForRateCompare: String {
+        Self.normalizedStateCode(originStateCode) ?? Self.stateFromLane(origin)
+    }
+
+    private var destStateForRateCompare: String {
+        Self.normalizedStateCode(destStateCode) ?? Self.stateFromLane(destination)
     }
 
     /// Fires `rates.compareLaneRate` when origin state + dest state +
@@ -2436,15 +2471,22 @@ struct ShipperPostLoad: View {
     /// `LaneComparison` envelope the LoadDetailSheet renders next to
     /// the posted rate.
     private func recomputeRateCompareIfReady() {
-        guard let oState = originStateCode, !oState.isEmpty,
-              let dState = destStateCode,   !dState.isEmpty,
-              let meters = routeDistanceMeters, meters > 0,
+        let oState = originStateForRateCompare
+        let dState = destStateForRateCompare
+        guard !oState.isEmpty,
+              !dState.isEmpty,
               let rate = parseDouble(rateText), rate > 0 else {
             rateComparison = nil
             rateCompareError = nil
             return
         }
-        let miles = Double(meters) / 1609.34
+        let distanceMiles = routeDistanceMeters.map { Double($0) / 1609.34 }
+        if rateCompareRequiresDistance, (distanceMiles ?? 0) <= 0 {
+            rateComparison = nil
+            rateCompareError = nil
+            return
+        }
+        let miles = distanceMiles ?? 0
         // For a WS% tanker rate the dollar `rate` field is actually a
         // Worldscale percent — capture it on its own param and pass the
         // per-load Worldscale-100 flat (if the wizard ever captures one)
@@ -2533,8 +2575,9 @@ struct ShipperPostLoad: View {
                         if hazmatClass.isEmpty, let cls = detail.hazardClass {
                             hazmatClass = cls
                         }
-                        if properShippingName.isEmpty, let name = detail.name {
-                            properShippingName = name.uppercased()
+                        if let name = detail.name,
+                           shouldReplaceProperShippingName(with: name) {
+                            properShippingName = name
                         }
                     } else {
                         self.ergMatch = nil
@@ -2556,8 +2599,19 @@ struct ShipperPostLoad: View {
     private func applyERGHit(_ hit: ErgAPI.SearchHit) {
         unNumber = hit.unNumber
         hazmatClass = hit.hazardClass
-        properShippingName = hit.placardName.isEmpty ? hit.name.uppercased() : hit.placardName
+        properShippingName = hit.name.isEmpty ? hit.placardName : hit.name
         showErgSearchSheet = false
+    }
+
+    private func shouldReplaceProperShippingName(with materialName: String) -> Bool {
+        let current = properShippingName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !materialName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        if current.isEmpty { return true }
+        let generic = [
+            "flammable", "flammable liquid", "combustible liquid",
+            "corrosive", "poison", "oxidizer", "miscellaneous"
+        ]
+        return generic.contains(current.lowercased())
     }
 
     /// `erg.search` typeahead — debounced inside the search sheet
@@ -2947,15 +3001,45 @@ struct ShipperPostLoad: View {
         }
     }
 
-    /// Apply a server-recommended trailerKey to the picker. Server
-    /// emits canonical EquipmentChoice rawValues, so a direct lookup
-    /// works; defaults to dryVan if the server returns a key the
-    /// client doesn't know (forward-compat hedge).
+    /// Apply a server-recommended trailerKey to the picker. The app
+    /// accepts legacy server aliases, then only mutates when the key
+    /// resolves to a real EquipmentChoice.
     private func applyRecommendedTrailerKey(_ trailerKey: String) {
-        if let match = EquipmentChoice(rawValue: trailerKey) {
+        let normalized = normalizedRecommendedTrailerKey(trailerKey)
+        if let match = EquipmentChoice(rawValue: normalized) {
             withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
                 equipmentType = match
             }
+        }
+    }
+
+    private func normalizedRecommendedTrailerKey(_ raw: String) -> String {
+        let key = raw
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        switch key {
+        case "tanker_petro", "tanker_petroleum", "petroleum_tanker":
+            return EquipmentChoice.tankerPetro.rawValue
+        case "food_grade_tank", "water_tank", "chemical_tank", "dot_407", "dot407",
+             "mc_307", "mc307", "cargo_tank":
+            return EquipmentChoice.tankerLiquid.rawValue
+        case "hazmat_tanker", "chemical_tanker", "tanker_chemical", "dot_412",
+             "dot412", "mc_312", "mc312":
+            return EquipmentChoice.tankerHazmat.rawValue
+        case "double_drop", "rgn", "removable_gooseneck":
+            return EquipmentChoice.lowboy.rawValue
+        case "hotshot", "gooseneck", "gooseneck_flatbed":
+            return EquipmentChoice.hotShot.rawValue
+        case "bulk_hopper", "grain_hopper", "log_trailer", "livestock", "auto_carrier":
+            return EquipmentChoice.flatbed.rawValue
+        case "vessel_ro_ro", "vessel_roro", "roro", "vessel_ro-ro":
+            return EquipmentChoice.vesselRoRo.rawValue
+        case "iso_tank", "vessel_isotank":
+            return EquipmentChoice.vesselISOTank.rawValue
+        default:
+            return key
         }
     }
 
@@ -3013,13 +3097,90 @@ struct ShipperPostLoad: View {
 
     /// Best-effort state extraction from a free-form address line.
     /// "Houston, TX, United States" → "TX".
-    fileprivate static func stateFromLane(_ raw: String) -> String {
-        let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: ",")
-        guard parts.count >= 2 else { return "" }
-        let candidate = String(parts[1]).trimmingCharacters(in: .whitespaces).prefix(2).uppercased()
-        return String(candidate)
+    private static func normalizedStateCode(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let upper = trimmed.uppercased()
+        if upper.count == 2, upper.range(of: #"^[A-Z]{2}$"#, options: .regularExpression) != nil {
+            return upper
+        }
+        return stateNameToCode[upper]
     }
+
+    fileprivate static func stateFromLane(_ raw: String) -> String {
+        let cleaned = raw
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\n", with: ",")
+        guard !cleaned.isEmpty else { return "" }
+
+        let countryTokens: Set<String> = [
+            "US", "USA", "U.S.", "U.S.A.", "UNITED STATES", "UNITED STATES OF AMERICA",
+            "CA", "CAN", "CANADA",
+            "MX", "MEX", "MEXICO"
+        ]
+
+        let commaParts = cleaned
+            .split(separator: ",")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        for part in commaParts.reversed() {
+            let upper = part.uppercased()
+            if countryTokens.contains(upper) { continue }
+            if let exact = normalizedStateCode(upper) { return exact }
+            let words = upper
+                .split(whereSeparator: { !$0.isLetter })
+                .map(String.init)
+                .filter { !$0.isEmpty }
+            for count in stride(from: min(words.count, 4), through: 1, by: -1) {
+                let phrase = words.suffix(count).joined(separator: " ")
+                if countryTokens.contains(phrase) { continue }
+                if let mapped = stateNameToCode[phrase] { return mapped }
+            }
+            if let last = words.last, let exact = normalizedStateCode(last) { return exact }
+        }
+
+        let words = cleaned.uppercased()
+            .split(whereSeparator: { !$0.isLetter })
+            .map(String.init)
+            .filter { !$0.isEmpty && !countryTokens.contains($0) }
+        for count in stride(from: min(words.count, 4), through: 1, by: -1) {
+            let phrase = words.suffix(count).joined(separator: " ")
+            if let mapped = stateNameToCode[phrase] { return mapped }
+        }
+        if let last = words.last, let exact = normalizedStateCode(last) { return exact }
+        return ""
+    }
+
+    private static let stateNameToCode: [String: String] = [
+        "ALABAMA": "AL", "ALASKA": "AK", "ARIZONA": "AZ", "ARKANSAS": "AR",
+        "CALIFORNIA": "CA", "COLORADO": "CO", "CONNECTICUT": "CT", "DELAWARE": "DE",
+        "DISTRICT OF COLUMBIA": "DC", "WASHINGTON DC": "DC",
+        "FLORIDA": "FL", "GEORGIA": "GA", "HAWAII": "HI", "IDAHO": "ID",
+        "ILLINOIS": "IL", "INDIANA": "IN", "IOWA": "IA", "KANSAS": "KS",
+        "KENTUCKY": "KY", "LOUISIANA": "LA", "MAINE": "ME", "MARYLAND": "MD",
+        "MASSACHUSETTS": "MA", "MICHIGAN": "MI", "MINNESOTA": "MN", "MISSISSIPPI": "MS",
+        "MISSOURI": "MO", "MONTANA": "MT", "NEBRASKA": "NE", "NEVADA": "NV",
+        "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ", "NEW MEXICO": "NM", "NEW YORK": "NY",
+        "NORTH CAROLINA": "NC", "NORTH DAKOTA": "ND", "OHIO": "OH", "OKLAHOMA": "OK",
+        "OREGON": "OR", "PENNSYLVANIA": "PA", "RHODE ISLAND": "RI", "SOUTH CAROLINA": "SC",
+        "SOUTH DAKOTA": "SD", "TENNESSEE": "TN", "TEXAS": "TX", "UTAH": "UT",
+        "VERMONT": "VT", "VIRGINIA": "VA", "WASHINGTON": "WA", "WEST VIRGINIA": "WV",
+        "WISCONSIN": "WI", "WYOMING": "WY",
+        "ALBERTA": "AB", "BRITISH COLUMBIA": "BC", "MANITOBA": "MB", "NEW BRUNSWICK": "NB",
+        "NEWFOUNDLAND AND LABRADOR": "NL", "NOVA SCOTIA": "NS", "ONTARIO": "ON",
+        "PRINCE EDWARD ISLAND": "PE", "QUEBEC": "QC", "SASKATCHEWAN": "SK",
+        "AGUASCALIENTES": "AG", "BAJA CALIFORNIA": "BC", "BAJA CALIFORNIA SUR": "BS",
+        "CAMPECHE": "CM", "CHIAPAS": "CS", "CHIHUAHUA": "CH", "COAHUILA": "CO",
+        "COLIMA": "CL", "DURANGO": "DG", "GUANAJUATO": "GT", "GUERRERO": "GR",
+        "HIDALGO": "HG", "JALISCO": "JA", "MEXICO CITY": "CX", "CIUDAD DE MEXICO": "CX",
+        "MICHOACAN": "MI", "MORELOS": "MO", "NAYARIT": "NA", "NUEVO LEON": "NL",
+        "OAXACA": "OA", "PUEBLA": "PU", "QUERETARO": "QT", "QUINTANA ROO": "QR",
+        "SAN LUIS POTOSI": "SL", "SINALOA": "SI", "SONORA": "SO", "TABASCO": "TB",
+        "TAMAULIPAS": "TM", "TLAXCALA": "TL", "VERACRUZ": "VE", "YUCATAN": "YU",
+        "ZACATECAS": "ZA"
+    ]
 
     /// 49 CFR 177.848 hazmat compliance card. Renders nothing for
     /// non-hazmat loads, a green confirmation pill for compatible
@@ -3389,6 +3550,9 @@ struct ShipperPostLoad: View {
                        || cargoType == .chemicals || cargoType == .gas
                        || equipmentType == .tankerHazmat,
             ergMatched: ergMatch?.found == true,
+            hazmatClassText: hazmatClass,
+            unNumberText: unNumber,
+            commodityName: ergMatch?.name ?? properShippingName,
             reeferLowText: reeferTempLowText,
             reeferHighText: reeferTempHighText,
             preCoolRequired: preCoolRequired,
@@ -4681,7 +4845,7 @@ struct ShipperPostLoad: View {
         }
         // 3. Equipment type drives the spec when no UN entered yet.
         switch equipmentType {
-        case .tankerHazmat:    return "MC-306 · awaiting UN"
+        case .tankerHazmat:    return "DOT-407 · awaiting UN"
         case .tankerPetro:     return "MC-306 · petroleum"
         case .tankerLiquid:    return "MC-307 · food-grade liner"
         case .tankerGas:       return "MC-331 · gas / cryo"
@@ -5245,8 +5409,8 @@ struct ShipperPostLoad: View {
                 Text("Add posted rate to see ESANG market position")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
-            } else if originStateCode == nil || destStateCode == nil {
-                Text("Resolving lane states for market compare…")
+            } else if originStateForRateCompare.isEmpty || destStateForRateCompare.isEmpty {
+                Text(isRouting ? "Resolving lane states for market compare…" : "Add origin and destination state codes to compare this lane.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             } else if let routeErr = routingError {
@@ -5254,11 +5418,13 @@ struct ShipperPostLoad: View {
                 // doesn't see a stuck "computing distance" state on
                 // step 3 with no path to recover. Mirrors the route
                 // meta strip on step 1.
-                Text("Route error: \(routeErr) - go back to step 1 to retry")
+                Text(rateCompareRequiresDistance
+                     ? "Route error: \(routeErr) - go back to step 1 to retry"
+                     : "Route ETA unavailable. ESANG is using the typed lane states for this market compare.")
                     .font(EType.caption)
-                    .foregroundStyle(Brand.danger)
+                    .foregroundStyle(rateCompareRequiresDistance ? Brand.danger : palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-            } else if (routeDistanceMeters ?? 0) <= 0 {
+            } else if rateCompareRequiresDistance && (routeDistanceMeters ?? 0) <= 0 {
                 Text("Distance computing - meter populates after route resolves")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
@@ -5822,6 +5988,10 @@ struct ShipperPostLoad: View {
             reviewRow(label: "Destination", value: nonEmpty(destination))
             Divider().overlay(palette.borderFaint)
             reviewRow(label: "Distance",    value: distanceReviewText)
+            if let warning = routeReviewWarningText {
+                Divider().overlay(palette.borderFaint)
+                routeReviewWarning(message: warning)
+            }
             Divider().overlay(palette.borderFaint)
             reviewRow(label: "Pickup",      value: hasPickupDate ? formatDate(pickupDate) : "Catalyst proposes")
             Divider().overlay(palette.borderFaint)
@@ -6007,7 +6177,7 @@ struct ShipperPostLoad: View {
 
     private var distanceReviewText: String {
         guard let m = routeDistanceMeters, m > 0 else {
-            if let err = routingError { return "error: \(err)" }
+            if routingError != nil { return "Route unavailable" }
             return "-"
         }
         return String(format: "%.0f mi", Double(m) / 1609.34)
@@ -6017,8 +6187,31 @@ struct ShipperPostLoad: View {
         if let eta = computedDeliveryETA {
             return deliveryETAFormatter.string(from: eta)
         }
+        if routingError != nil { return "Pending route" }
         if hasPickupDate { return "-" }
         return "Catalyst proposes"
+    }
+
+    private var routeReviewWarningText: String? {
+        guard let routingError else { return nil }
+        return routingError
+    }
+
+    private func routeReviewWarning(message: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Brand.warning)
+                .padding(.top, 2)
+            Text(message)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s3)
+        .background(Brand.warning.opacity(0.08))
     }
 
     private var reeferTempRangeText: String {
@@ -6519,8 +6712,9 @@ struct ShipperPostLoad: View {
         // the notes block. Catalyst + dispatch parse this until the
         // server `shippers.create` input carries transport_mode
         // natively (migration 0307 + tRPC input extension).
-        lines.append("Mode: \(transportMode.displayName) [\(transportMode.rawValue)] · rate-unit=\(transportMode.nativeRateUnit)")
-        lines.append("Equipment: \(equipmentType.label) [\(equipmentType.rawValue)] · vertical=\(equipmentType.vertical)")
+        lines.append("Mode: \(transportMode.displayName)")
+        lines.append("Rate basis: \(transportMode.nativeRateUnit)")
+        lines.append("Equipment: \(equipmentType.label)")
         if !weightText.isEmpty {
             lines.append("Quantity: \(weightText) \(weightUnit.rawValue) (\(weightUnit.longLabel))")
         }
@@ -6616,6 +6810,7 @@ struct ShipperPostLoad: View {
         rateComparison = nil
         routeDistanceMeters = nil
         routeDurationSeconds = nil
+        routingError = nil
         // Catalyst requirements — reset every mode's gate to default so
         // the next post doesn't carry a prior load's eligibility set.
         catalystMinSafetyScore = 80

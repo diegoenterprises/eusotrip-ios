@@ -148,7 +148,7 @@ private func driverMeHubNav() -> BottomNav {
     BottomNav(
         leading: [
             NavSlot(label: "Home",   systemImage: "house.fill",        isCurrent: false),
-            NavSlot(label: "Trips",  systemImage: "shippingbox.fill",  isCurrent: false),
+            NavSlot(label: "Trips",  systemImage: "road.lanes",        isCurrent: false),
         ],
         trailing: [
             NavSlot(label: "My Loads", systemImage: "shippingbox.fill",  isCurrent: false),
@@ -175,6 +175,7 @@ extension Notification.Name {
 
 enum DriverMeCellAction {
     case screen(String)
+    case fire(String)
     case signOut
 }
 
@@ -273,7 +274,7 @@ enum DriverMeHubCatalog {
     static let operations: [DriverMeSection] = [
         DriverMeSection(title: "BIDDING", icon: "hand.raised", cells: [
             DriverMeCell(icon: "hand.raised.fill",      label: "My bids",             action: .screen("107")),
-            DriverMeCell(icon: "shippingbox",           label: "Eusoboards",          action: .screen("108")),
+            DriverMeCell(icon: "shippingbox",           label: "Eusoboards",          action: .fire("driver.loadboard.open")),
             DriverMeCell(icon: "bolt.circle",           label: "Auto-accept rules",   action: .screen("110")),
         ]),
         DriverMeSection(title: "SCHEDULING", icon: "calendar", cells: [
@@ -537,11 +538,11 @@ private struct DriverMeHomeBody: View {
             }
         }
         let dataURL = "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
-        struct In: Encodable { let imageData: String }
-        struct Out: Decodable { let success: Bool?; let url: String? }
+        struct In: Encodable { let avatarUrl: String }
+        struct Out: Decodable { let success: Bool?; let avatarUrl: String? }
         do {
             let _: Out = try await EusoTripAPI.shared.mutation(
-                "profile.updateAvatar", input: In(imageData: dataURL)
+                "profile.updateAvatar", input: In(avatarUrl: dataURL)
             )
             await profile.refreshFromServer()
             avatarAck = "Profile photo updated"
@@ -704,6 +705,8 @@ private struct DriverMeHubBody: View {
                 name: .eusoDriverMeNavSwap, object: nil,
                 userInfo: ["screenId": id]
             )
+        case .fire(let key):
+            MeAction.fire(key)
         case .signOut:
             NotificationCenter.default.post(
                 name: .eusoDriverMeNavSwap, object: nil,
@@ -823,6 +826,7 @@ struct DriverMeSurface: View {
     let palette: Theme.Palette
 
     @EnvironmentObject var session: EusoTripSession
+    @Environment(\.driverNavHandler) private var driverNavHandler
     @State private var screenStack: [String] = ["067hub"]
 
     /// Captured from `.eusoDriverMeNavSwap` userInfo when a leaf needs a
@@ -919,6 +923,15 @@ struct DriverMeSurface: View {
             .onReceive(NotificationCenter.default.publisher(
                 for: .eusoDriverMeNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
+                if id == "108" {
+                    // 108 is a legacy Driver-Me deep link. The single
+                    // production Eusoboards surface now lives in the
+                    // Driver Trips tab, so route old pushes there instead
+                    // of showing a second loadboard rendition.
+                    screenStack = ["067hub"]
+                    driverNavHandler?("Trips")
+                    return
+                }
                 if id == "_logout" {
                     // Sign-out is owned by the session layer; surface
                     // the request via the existing logout post so any

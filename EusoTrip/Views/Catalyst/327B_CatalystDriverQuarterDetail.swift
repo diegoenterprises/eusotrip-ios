@@ -237,7 +237,7 @@ private struct CatalystDriverQuarterDetailBody: View {
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.5)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Catalyst archives Q1 driver rollup · same companyId both sides · clean Schedule C closed quarter")
+                Text("Catalyst archives Q1 driver rollup · same company both sides · clean Schedule C closed quarter")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -315,7 +315,7 @@ struct LifecycleScaffold<Body: View>: View {
                 Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11, weight: .heavy)).foregroundStyle(Brand.danger)
                 Text("COULDN'T LOAD").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(Brand.danger)
             }
-            Text(err.localizedDescription).font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text(err.eusoUserCopy).font(EType.caption).foregroundStyle(palette.textSecondary)
             Button { Task { await snap.refresh() } } label: {
                 Text("Retry").font(.system(size: 11, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(.white).padding(.horizontal, 14).padding(.vertical, 8)
@@ -580,6 +580,31 @@ struct LifecycleMapCard: View {
         return parts.joined(separator: ", ")
     }
 
+    /// User-facing map labels. Prefer street + city/state so route maps read
+    /// like freight lanes, not coordinate plots. Facility-only is allowed when
+    /// the server has not returned a street address yet.
+    private func mapDisplayLabel(
+        facilityName: String?,
+        address: String?,
+        city: String?,
+        state: String?,
+        fallback: String
+    ) -> String {
+        let place = [city, state]
+            .compactMap { value -> String? in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+            .joined(separator: ", ")
+        if let address, !address.isEmpty {
+            return [address, place].filter { !$0.isEmpty }.joined(separator: " - ")
+        }
+        if let facilityName, !facilityName.isEmpty {
+            return [facilityName, place].filter { !$0.isEmpty }.joined(separator: " - ")
+        }
+        return place.isEmpty ? fallback : place
+    }
+
     /// The live HERE vector map for this lifecycle stage: typed pickup /
     /// delivery / truck pins on the OMV basemap, a route connector when both
     /// endpoints are known, and shipper situational add-ons (weather +
@@ -603,9 +628,28 @@ struct LifecycleMapCard: View {
             ? routePolyline
             : straightPts
 
+        let pickupLabel = live.pickup.map {
+            mapDisplayLabel(
+                facilityName: $0.facilityName,
+                address: $0.address,
+                city: $0.city,
+                state: $0.state,
+                fallback: "Pickup"
+            )
+        } ?? "Pickup"
+        let deliveryLabel = live.delivery.map {
+            mapDisplayLabel(
+                facilityName: $0.facilityName,
+                address: $0.address,
+                city: $0.city,
+                state: $0.state,
+                fallback: "Delivery"
+            )
+        } ?? "Delivery"
+
         var markers: [HereMarker] = []
-        if let p = pins.pickup   { markers.append(HereMarker(at: p, kind: .pickup,   label: "Pickup")) }
-        if let d = pins.delivery { markers.append(HereMarker(at: d, kind: .delivery, label: "Delivery")) }
+        if let p = pins.pickup   { markers.append(HereMarker(at: p, kind: .pickup,   label: pickupLabel)) }
+        if let d = pins.delivery { markers.append(HereMarker(at: d, kind: .delivery, label: deliveryLabel)) }
         if let t = pins.truck    { markers.append(HereMarker(at: t, kind: .truck,    label: "Truck")) }
 
         var baseLayers: [HereMapLayer] = []

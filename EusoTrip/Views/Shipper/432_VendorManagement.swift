@@ -19,6 +19,23 @@ private struct VendorRow: Decodable, Identifiable, Hashable {
     let contractStatus: String?
     let spendYtd: Double?
     let lastInvoiceISO: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        category = (try? c.decodeIfPresent(String.self, forKey: .category))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .type))
+        contractStatus = (try? c.decodeIfPresent(String.self, forKey: .contractStatus))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .status))
+        spendYtd = try? c.decodeIfPresent(Double.self, forKey: .spendYtd)
+        lastInvoiceISO = (try? c.decodeIfPresent(String.self, forKey: .lastInvoiceISO))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .createdAt))
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, category, type, contractStatus, status, spendYtd, lastInvoiceISO, createdAt
+    }
 }
 
 private struct VendorBody: View {
@@ -53,7 +70,7 @@ private struct VendorBody: View {
     private var content: some View {
         if loading { LifecycleCard { Text("Loading vendors…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
         else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
-        else if rows.isEmpty { EusoEmptyState(systemImage: "building.columns", title: "No vendors", subtitle: "Add vendors via web or `vendorManagement.create`.") }
+        else if rows.isEmpty { EusoEmptyState(systemImage: "building.columns", title: "No vendors", subtitle: "Invite carriers, service partners, and compliance providers from Contacts or Connected Apps.") }
         else {
             ForEach(rows) { v in
                 LifecycleCard {
@@ -70,24 +87,22 @@ private struct VendorBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            // Founder feedback #16: the server may return {rows:[…]}, a bare
-            // […], or an empty/error object — decode tolerantly so a shape
-            // mismatch shows an honest empty state, never a raw DecodingError.
+            // Founder feedback #16: the server may return {vendors:[…]},
+            // {rows:[…]}, a bare […], or an empty/error object. Decode the
+            // live contract first so a shape change never leaks raw internals.
             let env: VendorListEnvelope = try await EusoTripAPI.shared.queryNoInput("vendors.list")
             rows = env.rows
             loadError = nil
         } catch {
-            // Honest empty — the vendor directory is still coming online.
             rows = []
-            loadError = nil
+            loadError = "Vendor directory could not load. Please try again."
         }
         loading = false
     }
 }
 
-/// Tolerant wrapper for `vendors.list` — accepts `{rows:[…]}`, a bare `[…]`,
-/// or an empty object, so a server shape change never leaks a raw decode
-/// error to the user (founder feedback #16).
+/// Tolerant wrapper for `vendors.list` — accepts `{vendors:[…]}`,
+/// `{rows:[…]}`, a bare `[…]`, or an empty object.
 private struct VendorListEnvelope: Decodable {
     let rows: [VendorRow]
     init(from decoder: Decoder) throws {
@@ -95,9 +110,11 @@ private struct VendorListEnvelope: Decodable {
             rows = arr; return
         }
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        rows = (try? c.decode([VendorRow].self, forKey: .rows)) ?? []
+        rows = (try? c.decode([VendorRow].self, forKey: .vendors))
+            ?? (try? c.decode([VendorRow].self, forKey: .rows))
+            ?? []
     }
-    enum CodingKeys: String, CodingKey { case rows }
+    enum CodingKeys: String, CodingKey { case vendors, rows }
 }
 
 #Preview("432 · Vendors · Night") { VendorManagementScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }

@@ -28,6 +28,7 @@ enum EusoTripAPIError: Error, LocalizedError {
     case httpStatus(Int, String)
     case decodingFailed(String)
     case unauthenticated
+    case forbidden(String)
     case trpcError(String)
     case empty
     /// The device is offline and the mutation was an enqueue-eligible,
@@ -45,6 +46,7 @@ enum EusoTripAPIError: Error, LocalizedError {
         case .httpStatus(let c, let b): return "HTTP \(c): \(b)"
         case .decodingFailed(let s):    return "Decoding failed: \(s)"
         case .unauthenticated:          return "Authentication required."
+        case .forbidden(let m):         return m
         case .trpcError(let m):         return m
         case .empty:                    return "Empty response."
         case .queuedForOfflineReplay:   return "You're offline — this will sync when you reconnect."
@@ -122,6 +124,60 @@ enum EusoTripAPIError: Error, LocalizedError {
         case "biddingDurationHours": return "bidding window"
         default:                    return "load details"
         }
+    }
+}
+
+// MARK: - User-facing error copy
+
+extension Error {
+    /// Honest error grammar for visible UI: what failed in user terms,
+    /// what still works, and the next action. Never surfaces transport
+    /// dumps (URLs, HTTP bodies, DecodingError paths) to the user.
+    var eusoUserCopy: String {
+        if let api = self as? EusoTripAPIError {
+            switch api {
+            case .queuedForOfflineReplay:
+                return "You're offline — this is saved and will sync when you reconnect."
+            case .unauthenticated:
+                return "Your session expired. Sign in again to continue."
+            case .forbidden(let message), .trpcError(let message):
+                return EusoTripAPIError.humanize(message)
+            case .decodingFailed:
+                return "EusoTrip sent data this version of the app can't read yet. Pull to refresh, and update the app if it keeps happening."
+            case .httpStatus(let code, _):
+                if code == 404 { return "That record isn't available right now. Pull to refresh." }
+                if code == 429 { return "Too many requests in a row. Wait a few seconds and try again." }
+                if code >= 500 { return "EusoTrip couldn't complete that request. Nothing was changed — try again in a moment." }
+                return "That request didn't go through. Nothing was changed — try again."
+            case .notConfigured, .badURL, .empty:
+                return "EusoTrip couldn't load this screen's data. Check your connection and try again."
+            }
+        }
+        if let urlError = self as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:
+                return "You're offline. Anything already loaded stays available — reconnect and pull to refresh."
+            case .timedOut:
+                return "The connection timed out. Check your signal and try again."
+            case .cancelled:
+                return "That request was interrupted. Try again."
+            default:
+                return "EusoTrip couldn't be reached. Check your connection and try again."
+            }
+        }
+        if self is DecodingError {
+            return "EusoTrip sent data this version of the app can't read yet. Pull to refresh, and update the app if it keeps happening."
+        }
+        if self is CancellationError {
+            return "That request was interrupted. Try again."
+        }
+        // App-authored errors carry deliberate user copy; surface it.
+        if let localized = self as? LocalizedError,
+           let description = localized.errorDescription,
+           !description.isEmpty {
+            return description
+        }
+        return "That didn't go through. Nothing was changed — try again in a moment."
     }
 }
 
@@ -1475,23 +1531,32 @@ final class EusoTripAPI: ObservableObject {
 
         // tRPC can return 200 with an error envelope, or 4xx with an error envelope.
         // Decode the envelope FIRST (before the bare 401/403 check) so we can
-        // promote UNAUTHORIZED errors to `.unauthenticated` using the real
-        // code/httpStatus, while still surfacing the server's human-readable
-        // message for every other trpc error (rate limits, validation, etc.).
+        // keep 401 and 403 distinct. 401 routes the app to re-auth; 403 keeps
+        // the server's role/mode/gate message visible so users do not get a
+        // fake "session expired" remedy for a permission or compliance block.
         if let err = try? decoder.decode(TRPCErrorEnvelope.self, from: respData) {
             let inner = err.error.json
             let httpStatus = inner.data?.httpStatus ?? http.statusCode
             let code = inner.data?.code ?? ""
-            if httpStatus == 401 || httpStatus == 403 || code == "UNAUTHORIZED" || code == "FORBIDDEN" {
+            if httpStatus == 401 || code == "UNAUTHORIZED" {
                 throw EusoTripAPIError.unauthenticated
+            }
+            if httpStatus == 403 || code == "FORBIDDEN" {
+                throw EusoTripAPIError.forbidden(
+                    EusoTripAPIError.humanize(inner.message ?? "You do not have access to this action.")
+                )
             }
             throw EusoTripAPIError.trpcError(
                 EusoTripAPIError.humanize(inner.message ?? "Request failed")
             )
         }
 
-        if http.statusCode == 401 || http.statusCode == 403 {
+        if http.statusCode == 401 {
             throw EusoTripAPIError.unauthenticated
+        }
+        if http.statusCode == 403 {
+            let body = String(data: respData, encoding: .utf8) ?? "Forbidden"
+            throw EusoTripAPIError.forbidden(EusoTripAPIError.humanize(body))
         }
 
         guard 200..<300 ~= http.statusCode else {
@@ -3787,16 +3852,80 @@ struct WalletAPI {
         let publishableKey: String
     }
 
-    struct StripeAttachedPaymentMethod: Decodable {
-        let paymentMethodId: String
-        let brand: String         // "visa" / "mastercard" / etc.
-        let last4: String
-        let expMonth: Int
-        let expYear: Int
-    }
+	    struct StripeAttachedPaymentMethod: Decodable {
+	        let paymentMethodId: String
+	        let brand: String         // "visa" / "mastercard" / etc.
+	        let last4: String
+	        let expMonth: Int
+	        let expYear: Int
+	    }
 
-    /// `wallet.createStripeSetupIntent` — POST mutation. Backend creates a
-    /// SetupIntent against the driver's Stripe Customer using
+	    // MARK: EusoCard / Stripe Treasury + Issuing
+
+	    struct EusoCardStatus: Decodable, Hashable {
+	        let qualifying: Bool
+	        let role: String
+	        let setupState: String
+	        let canCreate: Bool
+	        let missingRequirements: [String]
+	        let syncError: String?
+	        let treasury: Treasury?
+	        let card: Card?
+
+	        struct Treasury: Decodable, Hashable {
+	            let financialAccountId: String?
+	            let status: String?
+	            let contextId: String?
+	            let availableCents: Int?
+	            let inboundPendingCents: Int?
+	            let outboundPendingCents: Int?
+	            let financialAddressId: String?
+	            let financialAddressStatus: String?
+	            let bankLast4: String?
+	            let bankName: String?
+	            let lastSyncedAt: String?
+	        }
+
+	        struct Card: Decodable, Hashable {
+	            let cardholderId: String?
+	            let cardId: String?
+	            let status: String?
+	            let brand: String?
+	            let last4: String?
+	            let type: String?
+	            let applePayEligible: Bool?
+	            let googlePayEligible: Bool?
+	        }
+	    }
+
+	    /// `wallet.getEusoCardStatus` — query, no input. Returns the signed-in
+	    /// user's Stripe Treasury + Issuing state with only safe masked fields.
+	    func getEusoCardStatus() async throws -> EusoCardStatus {
+	        try await api.queryNoInput("wallet.getEusoCardStatus")
+	    }
+
+	    /// `wallet.createEusoCard` — creates the real Stripe Treasury
+	    /// FinancialAccount / FinancialAddress plus virtual Issuing card. Server
+	    /// enforces qualifying role, real profile address, idempotency, audit,
+	    /// and never returns raw card or bank account credentials.
+	    func createEusoCard(authorizedUserTermsAccepted: Bool = true) async throws -> EusoCardStatus {
+	        struct Input: Encodable {
+	            let cardType: String
+	            let authorizedUserTermsAccepted: Bool
+	            let idempotencyKey: String
+	        }
+	        return try await api.mutation(
+	            "wallet.createEusoCard",
+	            input: Input(
+	                cardType: "virtual",
+	                authorizedUserTermsAccepted: authorizedUserTermsAccepted,
+	                idempotencyKey: UUID().uuidString
+	            )
+	        )
+	    }
+
+	    /// `wallet.createStripeSetupIntent` — POST mutation. Backend creates a
+	    /// SetupIntent against the driver's Stripe Customer using
     /// STRIPE_SECRET_KEY and returns only the `client_secret` plus the
     /// environment-matched publishable key for iOS to use with
     /// StripePaymentSheet (native) or the hosted Checkout session (Safari
@@ -4891,6 +5020,17 @@ struct DriversAPI {
         try await api.queryNoInput("drivers.getPendingLoads")
     }
 
+    func getAssignments(status: String? = nil, limit: Int = 30) async throws -> [LoadSummary] {
+        struct Input: Encodable {
+            let status: String?
+            let limit: Int
+        }
+        return try await api.query(
+            "drivers.getAssignments",
+            input: Input(status: status, limit: limit)
+        )
+    }
+
     // MARK: - Active tender (iOS 052 Ratecon Tender)
 
     /// Tender endpoint (origin / destination) as projected by
@@ -5590,7 +5730,8 @@ struct NewsAPI {
 
     /// `news.getSavedArticles` — user's bookmark list.
     func getSavedArticles() async throws -> [NewsArticle] {
-        try await api.queryNoInput("news.getSavedArticles")
+        let response: NewsArticleListResponse = try await api.queryNoInput("news.getSavedArticles")
+        return response.articles
     }
 
     /// `news.translateArticle` — Gemini 3.5 (ESANG) article translation.
@@ -5622,6 +5763,24 @@ struct NewsAPI {
                 articleId: articleId
             )
         )
+    }
+}
+
+private struct NewsArticleListResponse: Decodable {
+    let articles: [NewsArticle]
+
+    init(from decoder: Decoder) throws {
+        let single = try decoder.singleValueContainer()
+        if let articles = try? single.decode([NewsArticle].self) {
+            self.articles = articles
+            return
+        }
+        let keyed = try decoder.container(keyedBy: CodingKeys.self)
+        self.articles = try keyed.decode([NewsArticle].self, forKey: .articles)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case articles
     }
 }
 
@@ -5705,15 +5864,18 @@ struct HereMapsAPI {
 
     // MARK: Weather hazard reroute (the symbiotic-weather loop)
     //
-    // Server pulls active Severe/Extreme NWS hazard polygons near the
-    // corridor (already ingested in hz_weather_alerts.geometry), turns them
-    // into HERE avoid[areas], and routes the truck AROUND them — returning the
-    // REAL baseline-vs-avoided miles + the detour polyline. Honest:
+    // Server pulls live severe-weather alerts sampled along the corridor,
+    // turns reroutable alert cells into HERE avoid[areas], and routes the
+    // truck AROUND them — returning the REAL baseline-vs-avoided miles +
+    // the detour polyline when HERE can produce one. Honest:
     // hazardCount 0 → no reroute (baseline). Truck only; rail/vessel advise.
     struct WeatherHazard: Decodable, Hashable {
         let event: String?
         let severity: String?
         let headline: String?
+        let lat: Double?
+        let lng: Double?
+        let reroutable: Bool?
     }
     struct WeatherRerouteResult: Decodable, Hashable {
         let rerouted: Bool
@@ -5723,6 +5885,11 @@ struct HereMapsAPI {
         let avoidedMiles: Int?
         let milesAdded: Int
         let polyline: String?
+        let routeSampleCount: Int?
+        let spanCount: Int?
+        let tollCount: Int?
+        let avoidAreaCount: Int?
+        let routeError: String?
     }
     /// Standard 5-axle tractor-trailer so the HERE route honors truck
     /// height/weight restrictions. Callers can override per the real load.
@@ -5764,11 +5931,28 @@ struct HereMapsAPI {
         let lat: Double?
         let lng: Double?
         let category: String?
+        let categoryId: String?
         let distanceMeters: Int?
+        let address: String?
     }
-    func discoverNearby(query: String, at: LatLng, radiusMeters: Int? = nil) async throws -> [Place] {
-        struct In: Encodable { let query: String; let at: LatLng; let radiusMeters: Int? }
-        return try await api.query("hereMaps.discoverNearby", input: In(query: query, at: at, radiusMeters: radiusMeters))
+    func discoverNearby(
+        query: String,
+        at: LatLng,
+        radiusMeters: Int? = nil,
+        categoryIds: [String]? = nil,
+        limit: Int? = nil
+    ) async throws -> [Place] {
+        struct In: Encodable {
+            let query: String
+            let at: LatLng
+            let radiusMeters: Int?
+            let categoryIds: [String]?
+            let limit: Int?
+        }
+        return try await api.query(
+            "hereMaps.discoverNearby",
+            input: In(query: query, at: at, radiusMeters: radiusMeters, categoryIds: categoryIds, limit: limit)
+        )
     }
 
     // MARK: Autosuggest (address fields)
@@ -5777,6 +5961,9 @@ struct HereMapsAPI {
         let title: String
         let lat: Double?
         let lng: Double?
+        let city: String?
+        let state: String?
+        let resultType: String?
     }
     func autosuggest(query: String, anchor: LatLng, country: String? = nil, limit: Int? = nil) async throws -> [Suggestion] {
         struct In: Encodable { let query: String; let anchor: LatLng; let country: String?; let limit: Int? }
@@ -6092,6 +6279,17 @@ struct MessagingAPI {
         )
     }
 
+    /// POST /api/trpc/messages.getOrCreateLoadConversation.
+    /// Resolves a persisted load into the canonical job conversation so load
+    /// detail CTAs open a real thread instead of guessing a participant DM.
+    func getOrCreateLoadConversation(loadId: String) async throws -> MessagingLoadConversationResult {
+        struct Input: Encodable { let loadId: String }
+        return try await api.mutation(
+            "messages.getOrCreateLoadConversation",
+            input: Input(loadId: loadId)
+        )
+    }
+
     /// POST /api/trpc/messages.deleteConversation — soft-delete for caller.
     @discardableResult
     func deleteConversation(conversationId: String) async throws -> MessagingActionResult {
@@ -6296,6 +6494,14 @@ struct MessagingCreateResult: Decodable {
     let id: String
     let createdAt: String?
     let existing: Bool?
+}
+
+struct MessagingLoadConversationResult: Decodable {
+    let id: String
+    let existing: Bool?
+    let loadId: String?
+    let loadNumber: String?
+    let participants: [Int]?
 }
 
 struct MessagingActionResult: Decodable {
@@ -7279,52 +7485,34 @@ struct WalletExtrasAPI {
         )
     }
 
-    // MARK: Earnings summary (canonical `earnings.getSummary` + YTD)
-    //
-    // Backend doesn't expose a single `wallet.getEarningsSummary` — the
-    // matching driver data is spread across `earnings.getSummary(period)`
-    // (weekly gross, pending, loads) and `earnings.getYTDSummary` (year-
-    // to-date gross). We aggregate both and project into
-    // `WalletEarningsSummary` so the UI layer stays unchanged.
+    // MARK: Earnings summary (canonical `wallet.getEarningsSummary`)
 
-    struct EarningsSummaryWire: Decodable {
-        let totalEarnings: Double?
-        let loadsCompleted: Int?
-        let paid: Double?
-        let pending: Double?
-        let avgPerMile: Double?
+    struct WalletEarningsSummaryWire: Decodable {
+        let weekGross: Double
+        let weekNet: Double
+        let monthGross: Double
+        let monthNet: Double
+        let ytdGross: Double
+        let ytdNet: Double
+        let loadsThisWeek: Int
+        let milesThisWeek: Double
+        let currency: String
+        let updatedAt: String
     }
-
-    struct EarningsYTDWire: Decodable {
-        let totalEarnings: Double?
-        let projectedAnnual: Double?
-    }
-
-    struct EarningsSummaryInput: Encodable { let period: String }
 
     func getEarningsSummary() async throws -> WalletEarningsSummary {
-        async let weekly: EarningsSummaryWire = api.query(
-            "earnings.getSummary",
-            input: EarningsSummaryInput(period: "week")
-        )
-        async let monthly: EarningsSummaryWire = api.query(
-            "earnings.getSummary",
-            input: EarningsSummaryInput(period: "month")
-        )
-        async let ytd: EarningsYTDWire = api.queryNoInput("earnings.getYTDSummary")
-
-        let (w, m, y) = try await (weekly, monthly, ytd)
+        let summary: WalletEarningsSummaryWire = try await api.queryNoInput("wallet.getEarningsSummary")
         return WalletEarningsSummary(
-            thisWeekGross: w.totalEarnings ?? 0,
-            thisMonthGross: m.totalEarnings ?? 0,
-            ytdGross: y.totalEarnings ?? 0,
-            pending: w.pending ?? 0,
-            settledLoadsCount: w.loadsCompleted ?? 0,
-            avgRatePerMile: w.avgPerMile,
+            thisWeekGross: summary.weekGross,
+            thisMonthGross: summary.monthGross,
+            ytdGross: summary.ytdGross,
+            pending: 0,
+            settledLoadsCount: summary.loadsThisWeek,
+            avgRatePerMile: summary.milesThisWeek > 0 ? summary.weekGross / summary.milesThisWeek : nil,
             deadheadPct: nil,
             detentionDollars: nil,
-            projectedAnnual: y.projectedAnnual,
-            currency: "USD"
+            projectedAnnual: nil,
+            currency: summary.currency
         )
     }
 }
@@ -7640,6 +7828,80 @@ struct GamificationAPI {
         try await api.mutation(
             "gamification.cancelMission",
             input: MissionIdInput(missionId: missionId)
+        )
+    }
+
+    // MARK: HERE outcome intake
+
+    struct HereOutcomeCorridor: Encodable, Hashable {
+        let corridor: String
+        let kilometres: Double
+    }
+
+    struct HereEngagementOutcome: Encodable, Hashable {
+        let sourceId: String
+        let kind: String
+        let title: String?
+        let xp: Int?
+        let points: Int?
+        let reason: String?
+    }
+
+    struct HereOutcomeInput: Encodable {
+        let newStates: [String]?
+        let newMetros: [String]?
+        let corridors: [HereOutcomeCorridor]?
+        let poiVisitsByCategory: [String: Int]?
+        let evSessions: Int?
+        let evDelivery: Bool?
+        let adZoneKm: Double?
+        let isaClean: Bool?
+        let safetyScore: Double?
+        let routeDeviationPct: Double?
+        let geofenceArrivalOnTime: Bool?
+        let engagement: HereEngagementOutcome?
+    }
+
+    struct HereOutcomeResponse: Decodable {
+        let success: Bool
+        let acceptedAt: String?
+        let statsRecorded: Bool?
+        let badgesAwarded: [String]?
+        let engagementCredited: Bool?
+        let eventsFired: Int?
+    }
+
+    @discardableResult
+    func recordHereDeliveryOutcome(
+        newStates: [String]? = nil,
+        newMetros: [String]? = nil,
+        corridors: [HereOutcomeCorridor]? = nil,
+        poiVisitsByCategory: [String: Int]? = nil,
+        evSessions: Int? = nil,
+        evDelivery: Bool? = nil,
+        adZoneKm: Double? = nil,
+        isaClean: Bool? = nil,
+        safetyScore: Double? = nil,
+        routeDeviationPct: Double? = nil,
+        geofenceArrivalOnTime: Bool? = nil,
+        engagement: HereEngagementOutcome? = nil
+    ) async throws -> HereOutcomeResponse {
+        try await api.mutation(
+            "gamification.recordHereDeliveryOutcome",
+            input: HereOutcomeInput(
+                newStates: newStates,
+                newMetros: newMetros,
+                corridors: corridors,
+                poiVisitsByCategory: poiVisitsByCategory,
+                evSessions: evSessions,
+                evDelivery: evDelivery,
+                adZoneKm: adZoneKm,
+                isaClean: isaClean,
+                safetyScore: safetyScore,
+                routeDeviationPct: routeDeviationPct,
+                geofenceArrivalOnTime: geofenceArrivalOnTime,
+                engagement: engagement
+            )
         )
     }
 
@@ -8004,9 +8266,16 @@ struct FleetCanonicalAPI {
             input: GetVehiclesInput(status: status, limit: limit)
         )
         return rows.map { w in
-            FleetVehicleRow(
-                id: String(w.id ?? Int.random(in: 1...Int.max)),
-                unitNumber: w.unitNumber ?? "UNIT-\(w.id ?? 0)",
+            let stableIdSeed = [w.unitNumber, w.plate, w.make, w.model, w.status]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "|")
+            let fallbackId = stableIdSeed.isEmpty
+                ? "vehicle-unkeyed"
+                : "vehicle-\(abs(stableIdSeed.hashValue))"
+            return FleetVehicleRow(
+                id: w.id.map(String.init) ?? fallbackId,
+                unitNumber: w.unitNumber ?? w.plate ?? w.id.map { "Vehicle #\($0)" } ?? "Unassigned unit",
                 kind: (w.type ?? "tractor").lowercased(),
                 make: w.make,
                 model: w.model,
@@ -8774,9 +9043,8 @@ struct ProfileAPI {
 //
 // Weekly settlement history lives on `earnings.getWeeklySummaries({ weeks })`
 // — a bare array of per-week gross + miles + loads rows. The iOS
-// EusoWallet weekly-chart section reads from here, which is the only
-// place the backend exposes a weekly time series today (wallet.ts has
-// no `getWeeklyHistory` procedure — verified via MCP search_code).
+// EusoWallet's older weekly-chart section reads from here; the wallet
+// router also exposes `wallet.getWeeklyHistory` for wallet-ledger views.
 //
 // We also expose `getSummary(period)` and `getYTDSummary` so the
 // EarningsStore can aggregate the hero-card side tiles without adding
@@ -9699,18 +9967,21 @@ struct SafetyAPI {
     // MARK: Input envelopes
 
     struct DriverIdInput: Encodable {
-        let driverId: String
+        let driverId: String?
     }
 
     // MARK: Procedures
 
-    /// Fetch the driver's score detail. `driverId` comes from the
-    /// signed-in session — callers resolve it off
-    /// `EusoTripSession.user?.id` (canonical for every Me· screen).
-    func getDriverScoreDetail(driverId: String) async throws -> DriverScoreDetail {
-        try await api.query(
+    /// Fetch the driver's score detail. For the signed-in driver Me surface,
+    /// omit `driverId` and let the protected backend resolve the driver row
+    /// from the authenticated user. Pass a concrete driver-row id only for
+    /// dispatcher/catalyst drilldowns that are intentionally viewing someone
+    /// else inside the same company boundary.
+    func getDriverScoreDetail(driverId: String? = nil) async throws -> DriverScoreDetail {
+        let trimmed = driverId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await api.query(
             "safety.getDriverScoreDetail",
-            input: DriverIdInput(driverId: driverId)
+            input: DriverIdInput(driverId: trimmed?.isEmpty == false ? trimmed : nil)
         )
     }
 
@@ -11030,6 +11301,63 @@ struct FMCSACarrierLookup: Decodable, Hashable {
 struct CsaScoresAPI {
     let api: EusoTripAPI
 
+    private struct AnyJSONValue: Decodable {
+        init(from decoder: Decoder) throws {
+            if var array = try? decoder.unkeyedContainer() {
+                while !array.isAtEnd {
+                    _ = try? array.decode(AnyJSONValue.self)
+                }
+                return
+            }
+            if let object = try? decoder.container(keyedBy: DynamicCodingKey.self) {
+                for key in object.allKeys {
+                    _ = try? object.decode(AnyJSONValue.self, forKey: key)
+                }
+                return
+            }
+            let single = try decoder.singleValueContainer()
+            if single.decodeNil() { return }
+            if (try? single.decode(Bool.self)) != nil { return }
+            if (try? single.decode(Double.self)) != nil { return }
+            _ = try? single.decode(String.self)
+        }
+    }
+
+    private struct DynamicCodingKey: CodingKey {
+        let stringValue: String
+        let intValue: Int?
+        init?(stringValue: String) {
+            self.stringValue = stringValue
+            self.intValue = nil
+        }
+        init?(intValue: Int) {
+            self.stringValue = "\(intValue)"
+            self.intValue = intValue
+        }
+    }
+
+    private static func decodeInt<T: CodingKey>(
+        _ c: KeyedDecodingContainer<T>,
+        _ key: T
+    ) -> Int {
+        if let value = try? c.decode(Int.self, forKey: key) { return value }
+        if let value = try? c.decode(Double.self, forKey: key) { return Int(value) }
+        if let value = try? c.decode(String.self, forKey: key), let int = Int(value) { return int }
+        if let values = try? c.decode([AnyJSONValue].self, forKey: key) { return values.count }
+        return 0
+    }
+
+    private static func decodeOptionalInt<T: CodingKey>(
+        _ c: KeyedDecodingContainer<T>,
+        _ key: T
+    ) -> Int? {
+        if let value = try? c.decode(Int.self, forKey: key) { return value }
+        if let value = try? c.decode(Double.self, forKey: key) { return Int(value) }
+        if let value = try? c.decode(String.self, forKey: key), let int = Int(value) { return int }
+        if let values = try? c.decode([AnyJSONValue].self, forKey: key) { return values.count }
+        return nil
+    }
+
     struct DataQsChallengeInput: Encodable {
         let violationId: String
         /// Server enum: "incorrect_data" | "not_responsible" |
@@ -11133,6 +11461,20 @@ struct CsaScoresAPI {
         let towAways: Int
         let hazmatReleases: Int
         let recent: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case total, fatalities, injuries, towAways, hazmatReleases, recent
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            total = CsaScoresAPI.decodeInt(c, .total)
+            fatalities = CsaScoresAPI.decodeInt(c, .fatalities)
+            injuries = CsaScoresAPI.decodeInt(c, .injuries)
+            towAways = CsaScoresAPI.decodeInt(c, .towAways)
+            hazmatReleases = CsaScoresAPI.decodeInt(c, .hazmatReleases)
+            recent = CsaScoresAPI.decodeOptionalInt(c, .recent)
+        }
     }
 
     /// FMCSA inspections 24-month summary. Same nil rule as crashes.
@@ -11143,6 +11485,20 @@ struct CsaScoresAPI {
         let vehicleOos: Int
         let hazmatOos: Int
         let recent: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case total, violations, driverOos, vehicleOos, hazmatOos, recent
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            total = CsaScoresAPI.decodeInt(c, .total)
+            violations = CsaScoresAPI.decodeInt(c, .violations)
+            driverOos = CsaScoresAPI.decodeInt(c, .driverOos)
+            vehicleOos = CsaScoresAPI.decodeInt(c, .vehicleOos)
+            hazmatOos = CsaScoresAPI.decodeInt(c, .hazmatOos)
+            recent = CsaScoresAPI.decodeOptionalInt(c, .recent)
+        }
     }
 
     struct CsaOverview: Decodable, Equatable {
@@ -14211,6 +14567,7 @@ struct ContactsAPI {
         let address: Address?
         let favorite: Bool
         let lastContact: String?
+        let canDelete: Bool?
     }
 
     // MARK: - Summary
@@ -14294,6 +14651,49 @@ struct ContactsAPI {
             "contacts.addInteraction",
             input: Input(contactId: contactId, type: kind, notes: notes)
         )
+    }
+
+    struct CreateContactResult: Decodable, Equatable {
+        let id: String
+        let type: String?
+        let name: String?
+        let company: String?
+        let email: String?
+        let phone: String?
+        let canDelete: Bool?
+    }
+
+    /// `contacts.create` — add a contact-book row owned by the current user.
+    func create(
+        type: String,
+        name: String,
+        company: String?,
+        email: String?,
+        phone: String?
+    ) async throws -> CreateContactResult {
+        struct Input: Encodable {
+            let type: String
+            let name: String
+            let company: String?
+            let email: String?
+            let phone: String?
+        }
+        return try await api.mutation(
+            "contacts.create",
+            input: Input(type: type, name: name, company: company, email: email, phone: phone)
+        )
+    }
+
+    struct DeleteContactResult: Decodable, Equatable {
+        let success: Bool?
+        let id: String?
+        let deletedAt: String?
+    }
+
+    /// `contacts.delete` — remove a contact-book row owned by the current user.
+    func delete(id: String) async throws -> DeleteContactResult {
+        struct Input: Encodable { let id: String }
+        return try await api.mutation("contacts.delete", input: Input(id: id))
     }
 }
 
@@ -15171,6 +15571,30 @@ struct SpectraMatchAPI {
 struct ShipperAPI {
     unowned let api: EusoTripAPI
 
+    private static func decodeDouble<K: CodingKey>(
+        _ c: KeyedDecodingContainer<K>,
+        _ key: K,
+        default defaultValue: Double = 0
+    ) -> Double {
+        if let d = try? c.decode(Double.self, forKey: key) { return d }
+        if let i = try? c.decode(Int.self, forKey: key) { return Double(i) }
+        if let s = try? c.decode(String.self, forKey: key),
+           let d = Double(s) { return d }
+        return defaultValue
+    }
+
+    private static func decodeInt<K: CodingKey>(
+        _ c: KeyedDecodingContainer<K>,
+        _ key: K,
+        default defaultValue: Int = 0
+    ) -> Int {
+        if let i = try? c.decode(Int.self, forKey: key) { return i }
+        if let d = try? c.decode(Double.self, forKey: key) { return Int(d) }
+        if let s = try? c.decode(String.self, forKey: key),
+           let d = Double(s) { return Int(d) }
+        return defaultValue
+    }
+
     /// Dashboard KPI envelope. Mirrors `shippers.getDashboardStats`
     /// (frontend/server/routers/shippers.ts:77).
     ///
@@ -15518,13 +15942,24 @@ struct ShipperAPI {
         let loads: Int
 
         var id: String { month }
+
+        private enum CodingKeys: String, CodingKey { case month, loads }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.month = (try? c.decode(String.self, forKey: .month)) ?? ""
+            self.loads = ShipperAPI.decodeInt(c, .loads)
+        }
     }
 
     /// Shipper aggregate stats envelope. Mirrors verbatim
-    /// `shippers.getStats` at `frontend/server/routers/shippers.ts:605`.
-    /// `avgRatePerMile` and `avgPaymentTime` are server-side TODOs (the
-    /// backend currently returns 0 for both); the client honors that
-    /// honestly with em-dash sentinels rather than fake projections.
+    /// `shippers.getStats` at `frontend/server/routers/shippers.ts`.
+    /// `avgRatePerMile` is a server-side TODO (backend returns 0);
+    /// `avgPaymentTime` is REAL as of 2026-07-02 — AVG days between
+    /// load delivery and settlement payout across the shipper's
+    /// completed settlements (0 only when no settled loads exist).
+    /// The client renders 0 honestly as an em-dash/"Unavailable"
+    /// sentinel rather than a fake projection.
     struct Stats: Decodable, Hashable {
         let totalLoads: Int
         let totalSpend: Int
@@ -15535,6 +15970,25 @@ struct ShipperAPI {
         let onTimeRate: Int
         let monthlyVolume: [ProfileMonthlyVolume]
         let maxMonthlyLoads: Int
+
+        private enum CodingKeys: String, CodingKey {
+            case totalLoads, totalSpend, avgRatePerMile, onTimeDeliveryRate
+            case preferredCatalysts, avgPaymentTime, onTimeRate, monthlyVolume
+            case maxMonthlyLoads
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.totalLoads = ShipperAPI.decodeInt(c, .totalLoads)
+            self.totalSpend = ShipperAPI.decodeInt(c, .totalSpend)
+            self.avgRatePerMile = ShipperAPI.decodeDouble(c, .avgRatePerMile)
+            self.onTimeDeliveryRate = ShipperAPI.decodeInt(c, .onTimeDeliveryRate)
+            self.preferredCatalysts = ShipperAPI.decodeInt(c, .preferredCatalysts)
+            self.avgPaymentTime = ShipperAPI.decodeDouble(c, .avgPaymentTime)
+            self.onTimeRate = ShipperAPI.decodeInt(c, .onTimeRate)
+            self.monthlyVolume = (try? c.decode([ProfileMonthlyVolume].self, forKey: .monthlyVolume)) ?? []
+            self.maxMonthlyLoads = ShipperAPI.decodeInt(c, .maxMonthlyLoads)
+        }
     }
 
     func getStats() async throws -> Stats {
@@ -16176,6 +16630,19 @@ struct ShipperAPI {
             let totalSpend: Double
             let avgPerLoad: Double
             var id: String { "\(origin)->\(destination)" }
+
+            private enum CodingKeys: String, CodingKey {
+                case origin, destination, loadCount, totalSpend, avgPerLoad
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                self.origin = (try? c.decode(String.self, forKey: .origin)) ?? ""
+                self.destination = (try? c.decode(String.self, forKey: .destination)) ?? ""
+                self.loadCount = ShipperAPI.decodeInt(c, .loadCount)
+                self.totalSpend = ShipperAPI.decodeDouble(c, .totalSpend)
+                self.avgPerLoad = ShipperAPI.decodeDouble(c, .avgPerLoad)
+            }
         }
 
         struct EquipmentCohort: Decodable, Hashable, Identifiable {
@@ -16185,6 +16652,18 @@ struct ShipperAPI {
             /// Server-computed share of total spend, 0–100.
             let share: Int
             var id: String { equipment }
+
+            private enum CodingKeys: String, CodingKey {
+                case equipment, loadCount, totalSpend, share
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                self.equipment = (try? c.decode(String.self, forKey: .equipment)) ?? ""
+                self.loadCount = ShipperAPI.decodeInt(c, .loadCount)
+                self.totalSpend = ShipperAPI.decodeDouble(c, .totalSpend)
+                self.share = ShipperAPI.decodeInt(c, .share)
+            }
         }
 
         struct CatalystSpend: Decodable, Hashable, Identifiable {
@@ -16193,6 +16672,18 @@ struct ShipperAPI {
             let loadCount: Int
             let totalSpend: Double
             var id: String { catalystId }
+
+            private enum CodingKeys: String, CodingKey {
+                case catalystId, name, loadCount, totalSpend
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                self.catalystId = (try? c.decode(String.self, forKey: .catalystId)) ?? ""
+                self.name = (try? c.decode(String.self, forKey: .name)) ?? ""
+                self.loadCount = ShipperAPI.decodeInt(c, .loadCount)
+                self.totalSpend = ShipperAPI.decodeDouble(c, .totalSpend)
+            }
         }
 
         // Default-empty cohort arrays so a server still returning the
@@ -16202,11 +16693,11 @@ struct ShipperAPI {
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self.period       = try c.decode(String.self, forKey: .period)
-            self.totalSpend   = try c.decode(Double.self, forKey: .totalSpend)
-            self.loadCount    = try c.decode(Int.self,    forKey: .loadCount)
-            self.avgPerLoad   = try c.decode(Double.self, forKey: .avgPerLoad)
-            self.avgPerMile   = try c.decode(Double.self, forKey: .avgPerMile)
-            self.vsMarketRate = try c.decode(Double.self, forKey: .vsMarketRate)
+            self.totalSpend   = ShipperAPI.decodeDouble(c, .totalSpend)
+            self.loadCount    = ShipperAPI.decodeInt(c, .loadCount)
+            self.avgPerLoad   = ShipperAPI.decodeDouble(c, .avgPerLoad)
+            self.avgPerMile   = ShipperAPI.decodeDouble(c, .avgPerMile)
+            self.vsMarketRate = ShipperAPI.decodeDouble(c, .vsMarketRate)
             self.byLane       = (try? c.decode([LaneCohort].self,      forKey: .byLane))      ?? []
             self.byEquipment  = (try? c.decode([EquipmentCohort].self, forKey: .byEquipment)) ?? []
             self.byCatalyst   = (try? c.decode([CatalystSpend].self,   forKey: .byCatalyst))  ?? []
@@ -16235,6 +16726,20 @@ struct ShipperAPI {
         let totalSpend: Double
 
         var id: String { catalystId }
+
+        private enum CodingKeys: String, CodingKey {
+            case catalystId, name, totalLoads, delivered, onTimeRate, totalSpend
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.catalystId = (try? c.decode(String.self, forKey: .catalystId)) ?? ""
+            self.name = (try? c.decode(String.self, forKey: .name)) ?? ""
+            self.totalLoads = ShipperAPI.decodeInt(c, .totalLoads)
+            self.delivered = ShipperAPI.decodeInt(c, .delivered)
+            self.onTimeRate = ShipperAPI.decodeInt(c, .onTimeRate)
+            self.totalSpend = ShipperAPI.decodeDouble(c, .totalSpend)
+        }
     }
 
     struct GetCatalystPerformanceInput: Encodable {
@@ -16325,6 +16830,19 @@ struct ShipperAPI {
         let totalSpend: Double
 
         var id: String { catalystId }
+
+        private enum CodingKeys: String, CodingKey {
+            case catalystId, name, dotNumber, loadsCompleted, totalSpend
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.catalystId = (try? c.decode(String.self, forKey: .catalystId)) ?? ""
+            self.name = (try? c.decode(String.self, forKey: .name)) ?? ""
+            self.dotNumber = (try? c.decode(String.self, forKey: .dotNumber)) ?? ""
+            self.loadsCompleted = ShipperAPI.decodeInt(c, .loadsCompleted)
+            self.totalSpend = ShipperAPI.decodeDouble(c, .totalSpend)
+        }
     }
 
     /// Server response for `addFavoriteCatalyst`. The backend treats
@@ -19879,6 +20397,120 @@ struct UsersAPI {
     /// can stand on this ack alone for non-critical preferences.
     func updateNotificationPreferences(_ patch: Patch) async throws -> UpdateAck {
         try await api.mutation("users.updateNotificationPreferences", input: patch)
+    }
+
+    // MARK: Account data export + migration (Shipper 349)
+
+    /// `users.requestDataExport` — query, no input. Server runs the real
+    /// GDPR Article 15 pipeline (all entity sections incl. settlements +
+    /// contacts, signed HMAC manifest, export-ready email) and returns the
+    /// authed download URL (`/api/users/me/data-export.json`). `url` is
+    /// non-nil on success; the null-url "queued" branch only survives for
+    /// older servers.
+    struct ExportPackage: Decodable {
+        let url: String?
+        let filename: String?
+        let format: String?
+        let sizeBytes: Int?
+        let entityCounts: [String: Int]?
+    }
+    func requestDataExport() async throws -> ExportPackage {
+        try await api.queryNoInput("users.requestDataExport")
+    }
+
+    /// Signed manifest parsed out of a downloaded export archive. Field
+    /// names mirror `exportData.manifest` emitted by
+    /// server/services/compliance/data-lifecycle.ts.
+    struct ExportManifest: Codable {
+        let schemaVersion: Int
+        let exportedAt: String
+        let sourceUserId: Int
+        let sourceCompanyId: Int?
+        let sourceEmail: String?
+        let entityCounts: [String: Int]?
+        let contentSha256: String
+        let signature: String?
+    }
+
+    struct ImportRequestAck: Decodable {
+        let importId: String
+        let status: String
+        let sourceUserId: Int
+        let sourceEmail: String?
+    }
+
+    /// `users.requestDataImport` — mutation. Sends the manifest + HMAC
+    /// signature from a picked archive; the server re-verifies the signature
+    /// and parks a pending-approval record with the source-account owner.
+    func requestDataImport(manifest: ExportManifest, signature: String) async throws -> ImportRequestAck {
+        struct ManifestBody: Encodable {
+            let schemaVersion: Int
+            let exportedAt: String
+            let sourceUserId: Int
+            let sourceCompanyId: Int?
+            let sourceEmail: String?
+            let entityCounts: [String: Int]?
+            let contentSha256: String
+        }
+        struct In: Encodable {
+            let manifest: ManifestBody
+            let signature: String
+        }
+        let body = ManifestBody(
+            schemaVersion: manifest.schemaVersion,
+            exportedAt: manifest.exportedAt,
+            sourceUserId: manifest.sourceUserId,
+            sourceCompanyId: manifest.sourceCompanyId,
+            sourceEmail: manifest.sourceEmail,
+            entityCounts: manifest.entityCounts,
+            contentSha256: manifest.contentSha256
+        )
+        return try await api.mutation("users.requestDataImport", input: In(manifest: body, signature: signature))
+    }
+
+    /// One row of `users.pendingDataImports`. `incoming` rows carry
+    /// `targetUserId` (another account wants this account's data — the
+    /// current user approves/rejects); `outgoing` rows carry `sourceUserId`
+    /// (the current user filed the request from an archive).
+    struct ImportTransferRow: Decodable, Identifiable {
+        let importId: String
+        let status: String
+        let requestedAt: String?
+        let targetUserId: Int?
+        let targetEmail: String?
+        let sourceUserId: Int?
+        let sourceEmail: String?
+        let decidedAt: String?
+        let executed: Executed?
+        struct Executed: Decodable {
+            let contactsMoved: Int?
+            let documentsMoved: Int?
+        }
+        var id: String { importId }
+    }
+    struct ImportTransferList: Decodable {
+        let incoming: [ImportTransferRow]
+        let outgoing: [ImportTransferRow]
+    }
+    func pendingDataImports() async throws -> ImportTransferList {
+        try await api.queryNoInput("users.pendingDataImports")
+    }
+
+    struct ImportDecisionAck: Decodable {
+        let success: Bool
+        let contactsMoved: Int?
+        let documentsMoved: Int?
+    }
+    /// `users.approveDataImport` — source-owner only. Server re-keys
+    /// contacts + documents to the target account in one transaction.
+    func approveDataImport(importId: String) async throws -> ImportDecisionAck {
+        struct In: Encodable { let importId: String }
+        return try await api.mutation("users.approveDataImport", input: In(importId: importId))
+    }
+    /// `users.rejectDataImport` — source-owner only. Nothing moves.
+    func rejectDataImport(importId: String) async throws -> ImportDecisionAck {
+        struct In: Encodable { let importId: String }
+        return try await api.mutation("users.rejectDataImport", input: In(importId: importId))
     }
 }
 
@@ -24695,12 +25327,11 @@ extension HotZonesAPI {
 //            carrier cannot bind freight.
 //   GATE 2 - Montgomery v. Caribe carrier-vetting (runCarrierVettingGate):
 //            insurance / authority / safety floors.
-// Both throw a tRPC FORBIDDEN with a human reason. The client's `perform()`
-// promotes FORBIDDEN -> `.unauthenticated` ("Authentication required."),
-// which would MISLEAD on a vetting block - so `acceptOffer` below translates
-// that into `TruckPostingGateError` carrying the honest gate message the
-// board surfaces. Every other proc bubbles the server's own human message
-// through `EusoTripAPIError`.
+// Both throw a tRPC FORBIDDEN with a human reason. The shared `perform()`
+// keeps 401 and 403 distinct, and `acceptOffer` below still translates gate
+// failures into `TruckPostingGateError` so the board carries the honest gate
+// message on every branch. Every other proc bubbles the server's own human
+// message through `EusoTripAPIError`.
 
 /// Surfaced when the server BLOCKS a one-tap accept at one of the two
 /// verification gates (identity-at-booking or carrier-vetting). Carries the
@@ -24954,10 +25585,9 @@ struct TruckPostingAPI {
 
     /// `truckPosting.acceptOffer` - ONE-TAP accept. The server runs BOTH
     /// verification gates (identity-at-booking + Montgomery carrier-vetting)
-    /// before booking. A gate BLOCK arrives as a FORBIDDEN, which the client
-    /// promotes to `.unauthenticated`; we translate that here into
-    /// `TruckPostingGateError` so the board can surface the honest gate reason
-    /// instead of a generic "Authentication required." Other failures bubble
+    /// before booking. A gate BLOCK arrives as a FORBIDDEN; we translate that
+    /// here into `TruckPostingGateError` so the board can surface the honest
+    /// gate reason instead of a generic auth remedy. Other failures bubble
     /// their server message verbatim.
     func acceptOffer(
         offerId: Int,
@@ -24976,11 +25606,11 @@ struct TruckPostingAPI {
         } catch let e as EusoTripAPIError {
             switch e {
             case .unauthenticated:
-                // Could be a true auth lapse OR a gate FORBIDDEN - both land
-                // here. Surface honestly as a verification block; the human
-                // re-auths or fixes vetting, then retries.
                 throw TruckPostingGateError.blocked(
-                    message: "This load couldn't be accepted: a verification gate blocked it. Confirm your identity is verified and your carrier authority / insurance meet the load's requirements, then try again.")
+                    message: "Your session ended before the offer could be accepted. Sign in again, then retry the acceptance.")
+            case .forbidden(let message):
+                throw TruckPostingGateError.blocked(
+                    message: "This load couldn't be accepted: \(message)")
             case .trpcError(let m):
                 // Server gates that surface as a non-promoted tRPC error keep
                 // their verbatim human reason.

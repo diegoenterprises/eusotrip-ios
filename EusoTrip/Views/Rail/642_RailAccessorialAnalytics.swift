@@ -367,7 +367,7 @@ private struct RailAccessorialAnalyticsBody: View {
     private var tariffCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("TARIFF · getFeeSchedule")
+                Text("TARIFF · fee schedule")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

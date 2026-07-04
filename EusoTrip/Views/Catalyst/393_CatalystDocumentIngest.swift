@@ -308,7 +308,7 @@ private struct DocumentIngestBody_393: View {
     // MARK: Provenance footnote
 
     private var provenanceFootnote_393: some View {
-        Text("documentManagement.getDocuments · live")
+        Text("DOCUMENT FEED · live")
             .font(.system(size: 10, design: .monospaced))
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .center)

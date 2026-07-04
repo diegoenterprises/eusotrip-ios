@@ -1,17 +1,16 @@
 //
 //  533_DispatcherAIDispatchAssist.swift
-//  EusoTrip — Dispatcher · AI Dispatch Assist.
+//  EusoTrip — Dispatcher · Dispatch Autopilot.
 //
 //  Verbatim SwiftUI port of:
 //    `04 Dispatcher/Dark-SVG/533 Dispatcher AI Dispatch Assist.svg`
 //
-//  THE AI DISPATCH BOARD — ESANG ranks every unassigned load against the
+//  THE DISPATCH AUTOPILOT BOARD — ESANG ranks every unassigned load against the
 //  available driver pool (HOS clock, lane fit, equipment match, deadhead)
 //  and presents the dispatcher a single decisive surface: a confidence
 //  hero, a RECOMMENDED / AUTO-MATCH / NEEDS-REVIEW triplet, the ranked TOP
 //  RECOMMENDATIONS rows, and a one-pass BULK apply for the HOS-safe
-//  auto-matches. Persona §196 Renée Marquette / Aurora Freight Lines.
-//  Reached from the Board (401) as the AI-assist surface.
+//  auto-matches. Reached from the Board (401) as the Autopilot surface.
 //
 //  Reads ONE real server endpoint — no stubs, no mock data:
 //    aiDispatchAssist.getBoardRecommendations   (added in the §44 fire —
@@ -153,19 +152,16 @@ private struct DispatcherAIDispatchAssistBody: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .firstTextBaseline) {
-                Text("✦ DISPATCHER · AI ASSIST")
+                Text("✦ DISPATCHER · AUTOPILOT")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)
-                Text("AURORA · \(summary.loadsToAssign) OPEN")
+                Text("\(summary.loadsToAssign) OPEN")
                     .font(EType.mono(.micro)).tracking(1.0)
                     .foregroundStyle(palette.textSecondary)
             }
             HStack(alignment: .center, spacing: Space.s3) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                Text("AI dispatch assist")
+                Text("Dispatch Autopilot")
                     .font(EType.h1).tracking(-0.4)
                     .foregroundStyle(palette.textPrimary)
                 Spacer(minLength: Space.s2)
@@ -276,7 +272,7 @@ private struct DispatcherAIDispatchAssistBody: View {
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
-                Text("aiDispatchAssist.ts:17")
+                Text("\(recs.count) ranked")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -328,7 +324,7 @@ private struct DispatcherAIDispatchAssistBody: View {
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
-                Text("aiDispatchAssist.ts:88")
+                Text("\(bulk.autoCount) ready")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -401,7 +397,7 @@ private struct DispatcherAIDispatchAssistBody: View {
 
     private func errorState(_ err: String) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("Couldn’t load AI recommendations").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+            Text("Couldn't load Autopilot recommendations").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
             Text(err).font(EType.caption).foregroundStyle(Brand.danger)
             Button { Task { await load() } } label: {
                 Text("Retry").font(EType.caption.weight(.heavy))
@@ -431,7 +427,7 @@ private struct DispatcherAIDispatchAssistBody: View {
             recs = r.recommendations
             bulk = r.bulk
         } catch {
-            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            actionError = "Recommendations could not refresh. Retry from this screen or open the dispatch board."
         }
         loading = false
     }
@@ -459,8 +455,7 @@ private struct DispatcherAIDispatchAssistBody: View {
                 )
                 applied += 1
             } catch {
-                let msg = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
-                failures.append("\(r.loadNumber ?? "Load \(r.loadId)"): \(msg)")
+                failures.append(r.loadNumber ?? "Load \(r.loadId)")
             }
         }
 
@@ -468,7 +463,7 @@ private struct DispatcherAIDispatchAssistBody: View {
         if failures.isEmpty {
             applyNote = "Applied \(applied) auto-match\(applied == 1 ? "" : "es")."
         } else {
-            applyNote = "Applied \(applied); \(failures.count) blocked by compliance · \(failures.prefix(2).joined(separator: " · "))"
+            applyNote = "Applied \(applied); \(failures.count) held for manual review · \(failures.prefix(2).joined(separator: " · "))"
         }
         await load()   // refresh the board after the writes
     }

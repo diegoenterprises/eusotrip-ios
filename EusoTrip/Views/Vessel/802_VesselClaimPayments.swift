@@ -20,14 +20,9 @@
 //        claimId,claimNumber,amount,status,method,scheduledDate,paidDate,reference}],total,
 //        totalPaid,totalPending}) feeds hero (totalPaid), the pending CTA value (totalPending),
 //        the method breakdown + the timeline.
-//        NOTE the procedure returns empty arrays today (web stub, freightClaims.ts:737-753) —
-//        flagged to the-oath to back it with a real query over the payments table.
 //    "Release pending" -> freightClaims.processClaimPayment (EXISTS freightClaims.ts:756 · {claimId,
-//        amount,method:(ach|check|wire|deduct_from_settlement|credit),reference?,notes?} ->
-//        {success,paymentId,status:processing}). Needs a per-claim id + amount + method to fire,
-//        which the screen-level summary does not carry — flagged STUB here (re-runs load()) until a
-//        selected-payment detail context is threaded; the mutation itself is real on disk.
-//    "Export" -> STUB · named-gap freightClaims.exportPaymentStatement (propose {period,format} -> {url}).
+//        amount,method:(ach|check|wire|deduct_from_settlement|credit),reference?,notes?}).
+//    "Export" -> freightClaims.generateClaimReport(format:csv), copied for system share/paste.
 //
 //  ZERO-FALLBACK (2026-06-09 · B17 fix): NO seeded financial rows anywhere. The method breakdown,
 //  the split bar AND the remittance timeline all COMPUTE from r.payments on every load — when the
@@ -39,6 +34,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 private struct PayBarSeg802 { let frac: Double; let color: Color }
 
@@ -93,6 +89,7 @@ private struct VesselClaimPaymentsBody: View {
     @State private var segments: [PayBarSeg802] = []
     @State private var methods: [MethodRow802] = []
     @State private var remits: [RemitRow802] = []
+    @State private var payments: [ClaimPayment802] = []
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -262,6 +259,7 @@ private struct VesselClaimPaymentsBody: View {
         do {
             let r: ClaimPaymentsResp802 = try await EusoTripAPI.shared.query(
                 "freightClaims.getClaimPayments", input: ClaimPaymentsInput802(limit: 20, offset: 0))
+            payments     = r.payments
             recovered    = usd802(r.totalPaid)
             pending      = usd802(r.totalPending)
             pendingValue = r.totalPending
@@ -350,12 +348,72 @@ private struct VesselClaimPaymentsBody: View {
         }
     }
 
-    /// freightClaims.processClaimPayment EXISTS (freightClaims.ts:756) but requires a per-claim
-    /// {claimId,amount,method}; the screen summary carries no selected payment context yet, so this
-    /// is honestly flagged STUB (re-runs load()) until a payment-detail selection is threaded.
-    private func releasePending() async { await load() }
-    /// STUB · named-gap freightClaims.exportPaymentStatement — propose {period,format:csv|pdf} -> {url}.
-    private func exportStatement() async { await load() }
+    private var nextPendingPayment: ClaimPayment802? {
+        payments.first { payment in
+            (payment.status ?? "").lowercased() == "pending" &&
+            !(payment.claimId ?? "").isEmpty &&
+            (payment.amount ?? 0) > 0
+        }
+    }
+
+    private var reportClaimId: String? {
+        payments.first { !($0.claimId ?? "").isEmpty }?.claimId
+    }
+
+    private func releaseMethod(_ method: String?) -> String {
+        let value = (method ?? "").lowercased()
+        return ["ach", "check", "wire", "deduct_from_settlement", "credit"].contains(value) ? value : "ach"
+    }
+
+    private func releasePending() async {
+        guard let payment = nextPendingPayment,
+              let claimId = payment.claimId,
+              let amount = payment.amount
+        else {
+            await load()
+            return
+        }
+        do {
+            let _: ProcessClaimPaymentResp802 = try await EusoTripAPI.shared.mutation(
+                "freightClaims.processClaimPayment",
+                input: ProcessClaimPaymentInput802(
+                    claimId: claimId,
+                    amount: amount,
+                    method: releaseMethod(payment.method),
+                    reference: payment.reference,
+                    notes: "Vessel claim payment release"
+                )
+            )
+            await load()
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func exportStatement() async {
+        guard let claimId = reportClaimId else {
+            await load()
+            return
+        }
+        do {
+            let report: ClaimReportResp802 = try await EusoTripAPI.shared.mutation(
+                "freightClaims.generateClaimReport",
+                input: ClaimReportInput802(
+                    claimId: claimId,
+                    format: "csv",
+                    includeEvidence: true,
+                    includeTimeline: true,
+                    includeFinancials: true,
+                    purpose: "internal"
+                )
+            )
+            if let content = report.content, !content.isEmpty {
+                UIPasteboard.general.string = content
+            }
+        } catch {
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
 
     private func usd802(_ v: Double) -> String {
         let f = NumberFormatter()
@@ -369,8 +427,45 @@ private struct VesselClaimPaymentsBody: View {
 // MARK: - Wire types (private to this file — no module-level EmptyInput)
 
 private struct ClaimPaymentsInput802: Encodable { let limit: Int; let offset: Int }
-private struct ClaimPayment802: Decodable { let claimNumber: String?; let amount: Double?; let status: String?; let method: String? }
+private struct ClaimPayment802: Decodable {
+    let id: String?
+    let claimId: String?
+    let claimNumber: String?
+    let amount: Double?
+    let status: String?
+    let method: String?
+    let reference: String?
+}
 private struct ClaimPaymentsResp802: Decodable { let payments: [ClaimPayment802]; let total: Int; let totalPaid: Double; let totalPending: Double }
+
+private struct ProcessClaimPaymentInput802: Encodable {
+    let claimId: String
+    let amount: Double
+    let method: String
+    let reference: String?
+    let notes: String?
+}
+
+private struct ProcessClaimPaymentResp802: Decodable {
+    let success: Bool
+    let paymentId: String?
+    let status: String?
+}
+
+private struct ClaimReportInput802: Encodable {
+    let claimId: String
+    let format: String
+    let includeEvidence: Bool
+    let includeTimeline: Bool
+    let includeFinancials: Bool
+    let purpose: String
+}
+
+private struct ClaimReportResp802: Decodable {
+    let success: Bool
+    let filename: String?
+    let content: String?
+}
 
 // MARK: - File-scoped bespoke helpers (preserve the canonical wireframe look)
 

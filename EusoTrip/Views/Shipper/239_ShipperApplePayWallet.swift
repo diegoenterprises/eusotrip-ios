@@ -288,28 +288,34 @@ struct ShipperApplePayWallet: View {
     @MainActor
     private func loadAll() async {
         snapshotPhase = .loading
-        async let snapshot = (try? await EusoTripAPI.shared.wallet.shipperPassesSnapshot())
-            ?? WalletAPI.ShipperPassesSnapshot(active: nil, passes: [])
-        async let methods = (try? await EusoTripAPI.shared.wallet.listPaymentMethods()) ?? []
-        let snap = await snapshot
-        let mts = await methods
+        do {
+            async let snapshotTask: WalletAPI.ShipperPassesSnapshot = EusoTripAPI.shared.wallet.shipperPassesSnapshot()
+            async let methodsTask: [WalletAPI.PaymentMethodRow] = EusoTripAPI.shared.wallet.listPaymentMethods()
+            let snap = try await snapshotTask
+            let mts = try await methodsTask
 
-        passes = snap.passes.map { row in
-            WalletPass(
-                // Sanitized human reference for the row's mono id line —
-                // never the raw "MATRIX-50 ROW 1" seed cohort tag.
-                id: Self.passReference(row),
-                loadId: row.loadId,
-                tilePrefix: Self.cleanWalletLabel(row.tilePrefix),
-                lane: row.lane,
-                spec: Self.cleanWalletLabel(row.spec),
-                installedNote: row.installedNote,
-                status: WalletPassStatus.fromServer(row.status)
-            )
+            passes = snap.passes.map { row in
+                WalletPass(
+                    // Sanitized human reference for the row's mono id line —
+                    // never the raw "MATRIX-50 ROW 1" seed cohort tag.
+                    id: Self.passReference(row),
+                    loadId: row.loadId,
+                    tilePrefix: Self.cleanWalletLabel(row.tilePrefix),
+                    lane: row.lane,
+                    spec: Self.cleanWalletLabel(row.spec),
+                    installedNote: row.installedNote,
+                    status: WalletPassStatus.fromServer(row.status)
+                )
+            }
+            activePass = snap.active.map(Self.heroFromRow)
+            paymentMethods = mts.map(Self.methodFromRow)
+            snapshotPhase = (snap.active == nil && snap.passes.isEmpty) ? .empty : .loaded
+        } catch {
+            passes = []
+            activePass = nil
+            paymentMethods = []
+            snapshotPhase = .error((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
         }
-        activePass = snap.active.map(Self.heroFromRow)
-        paymentMethods = mts.map(Self.methodFromRow)
-        snapshotPhase = (snap.active == nil && snap.passes.isEmpty) ? .empty : .loaded
     }
 
     /// Strip dev/seed batch tags + bracket/key=value tokens out of any
@@ -836,7 +842,7 @@ struct ShipperApplePayWallet: View {
         switch result {
         case .presented:
             passBannerKind = .success
-            passBannerText = "Pass added to Apple Wallet"
+            passBannerText = "Apple Wallet is open with the signed pass"
         case .signingUnavailable(let qrPayload, let shortCode):
             passBannerKind = .info
             passBannerText = "Apple Wallet signing is offline — present this in-app pass: scan the QR or enter code \(shortCode) at the gate."

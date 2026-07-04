@@ -104,6 +104,11 @@ private struct TenderQueueBody: View {
                                     .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 4)
                             }
                     }
+                    // COUNTRY-DONE (403): live queue grouped by origin country.
+                    // Counts computed from the real pending-tender rows; the
+                    // per-corridor customs-readiness proc is a named gap
+                    // (dispatch.getTendersByOriginCountry).
+                    originSplitBand
                 }
                 Color.clear.frame(height: 96)
             }
@@ -127,6 +132,37 @@ private struct TenderQueueBody: View {
                 Text("Enter your counter rate")
             }
         }
+    }
+
+    // MARK: - COUNTRY-DONE origin split (403) — computed from the live queue
+
+    /// detectLoadCountry mirror: state/province abbreviation → US | CA | MX.
+    private func originCountry(_ state: String?) -> CBRegion.Code {
+        guard let s = state?.uppercased(), !s.isEmpty else { return .US }
+        let ca: Set<String> = ["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT"]
+        let mx: Set<String> = ["AGU", "BCN", "BCS", "CAM", "CHP", "CHH", "CMX", "COA", "COL", "DF", "DUR",
+                               "GUA", "GRO", "HID", "JAL", "MEX", "MIC", "MOR", "NAY", "NLE", "OAX", "PUE",
+                               "QUE", "ROO", "SLP", "SIN", "SON", "TAB", "TAM", "TLA", "VER", "YUC", "ZAC"]
+        if ca.contains(s) { return .CA }
+        if mx.contains(s) { return .MX }
+        return .US
+    }
+
+    private var originSplitBand: some View {
+        let byOrigin = Dictionary(grouping: tenders) { originCountry($0.pickupState) }
+        let crossBorder = tenders.filter { originCountry($0.pickupState) != originCountry($0.destState) }.count
+        return DispatcherTenderOriginSplitBand(
+            regions: [
+                CBRegion(code: .US, accentHex: "1473FF", count: byOrigin[.US]?.count ?? 0,
+                         customs: "ACE", hosLabel: nil, certLabel: nil),
+                CBRegion(code: .CA, accentHex: "00C48C", count: byOrigin[.CA]?.count ?? 0,
+                         customs: "ACI", hosLabel: nil, certLabel: nil),
+                CBRegion(code: .MX, accentHex: "FF7A00", count: byOrigin[.MX]?.count ?? 0,
+                         customs: "CARTA PORTE", hosLabel: nil, certLabel: nil),
+            ],
+            crossBorderCount: crossBorder,
+            onViewAll: { sort = .lane }   // real local effect: re-sort the queue by lane/origin
+        )
     }
 
     private var header: some View {
@@ -483,6 +519,15 @@ private struct CommsHubBody: View {
         }
     }
 
+    /// COUNTRY-DONE (405): the cross-border ops channel, when the org has one,
+    /// renders as a bespoke tri-authority row (US CBP · CA CBSA · MX SAT-Aduanas).
+    /// Availability is keyed to data presence — nothing renders until the
+    /// channel exists (channel seeding is a named gap on communicationHub).
+    private var crossBorderChannel: CommsChannel? {
+        channels.first { ($0.name ?? "").localizedCaseInsensitiveContains("cross-border")
+                      || ($0.name ?? "").localizedCaseInsensitiveContains("crossborder") }
+    }
+
     private var channelsSection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("CHANNELS · \(channels.count)").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
@@ -492,7 +537,15 @@ private struct CommsHubBody: View {
             } else if visible.isEmpty {
                 Text("No \(unreadOnly ? "unread " : "")channels.").font(EType.caption).foregroundStyle(palette.textTertiary)
             } else {
-                ForEach(visible) { c in channelCard(c) }
+                if let cb = crossBorderChannel {
+                    DispatcherCrossBorderOpsChannelRow(
+                        channelName: cb.name ?? "#cross-border-ops",
+                        authoritiesLine: "US CBP · CA CBSA · MX SAT-Aduanas",
+                        unread: cb.unreadCount,
+                        onOpen: { unreadOnly = false }   // real local effect: show every channel + DM
+                    )
+                }
+                ForEach(visible.filter { $0.id != crossBorderChannel?.id }) { c in channelCard(c) }
             }
         }
     }

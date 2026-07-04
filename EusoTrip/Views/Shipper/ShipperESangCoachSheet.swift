@@ -84,6 +84,7 @@ struct ShippereSangCoachSheet: View {
     private let chips: [(String, String)] = [
         ("Active bids",     "Which of my posted loads has the most bids right now?"),
         ("Carrier vet",     "Which carriers should I avoid based on recent on-time and DOT scores?"),
+        ("Market intel",    "Open market intelligence and summarize live commodity and lane-rate signals."),
         ("Settlement",      "What's in my settlement queue this week?"),
         ("Spend YTD",       "How much have I spent on freight year-to-date?"),
         ("Post a load",     "Help me post a load, walk me through the form."),
@@ -98,7 +99,10 @@ struct ShippereSangCoachSheet: View {
             composer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(palette.bgPage)
+        // Full-bleed page background. Presented as a `.fullScreenCover`
+        // (ASC AOd5xzXVfU6CF6hyijTDwgk) — without the safe-area ignore the
+        // status-bar band showed the presenting screen's labels through.
+        .background(palette.bgPage.ignoresSafeArea())
         .contentShape(Rectangle())
         .onTapGesture { composerFocused = false }
         // Wire the voice pipeline's final transcript back into the
@@ -146,25 +150,18 @@ struct ShippereSangCoachSheet: View {
 
     // MARK: Header
 
-    /// Shared ESANG chat header. This is a SHEET — there is no back
-    /// nav, so `onBack` is nil and the trailing `overflow` slot holds a
-    /// close "xmark" that calls `onClose()`/`dismiss()` exactly as the
-    /// old bespoke header did. The `accessory` carries a small online
-    /// status badge next to the title.
+    /// Shared ESANG chat header. This is a full-screen cover — there is
+    /// no back nav, so `onBack` is nil and the trailing `overflow` slot
+    /// holds a close "xmark" that calls `onClose()`/`dismiss()` exactly
+    /// as the old bespoke header did. No `accessory`: the `statusText`
+    /// line ("ONLINE · COPILOT") already carries presence, so the old
+    /// duplicate "ONLINE" capsule was redundant (ASC build-712 sweep).
     private var header: some View {
         ChatHeaderESang(
             breadcrumb: "SHIPPER · ESANG COACH",
             statusText: sending ? "THINKING…" : "ONLINE · COPILOT",
             online: true,
             onBack: nil,
-            accessory: {
-                Text("ONLINE")
-                    .font(.system(size: 8, weight: .heavy)).tracking(0.5)
-                    .foregroundStyle(Brand.success)
-                    .padding(.horizontal, 5).padding(.vertical, 2)
-                    .background(Brand.success.opacity(0.15))
-                    .clipShape(Capsule())
-            },
             overflow: {
                 Button {
                     if let onClose { onClose() } else { dismiss() }
@@ -289,6 +286,14 @@ struct ShippereSangCoachSheet: View {
         // Snapshot the env dispatcher at call time so the async
         // follow-up isn't reading a stale @Environment value.
         let dispatcher = autopilot
+        let localNavAction = eSangAutopilot.localNavIntent(for: text)
+        if let action = localNavAction,
+           let label = navigationFallbackLabel(for: action) {
+            messages.append(Msg(role: .esang, text: "Opening \(label)."))
+            sending = false
+            dispatchActions([action], dispatcher: dispatcher)
+            return
+        }
         Task {
             do {
                 let resp = try await EusoTripAPI.shared.esang.chat(
@@ -302,26 +307,77 @@ struct ShippereSangCoachSheet: View {
                 // typed intents the autopilot dispatcher executes (navigate
                 // to a screen, open a load, refresh, execute a CTA, …).
                 let (cleaned, actions) = eSangAutopilot.parse(resp.message)
+                let dispatchable = actions.isEmpty ? localNavAction.map { [$0] } ?? [] : actions
                 await MainActor.run {
                     if !cleaned.isEmpty {
                         messages.append(Msg(role: .esang, text: cleaned))
+                    } else if let label = navigationFallbackLabel(for: localNavAction) {
+                        messages.append(Msg(role: .esang, text: "Opening \(label)."))
                     }
                     sending = false
-                    // Stagger so a navigate-then-execute sequence animates
-                    // naturally instead of stepping on itself.
-                    for (idx, action) in actions.enumerated() {
-                        let delay = Double(idx) * 0.20
-                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                            dispatcher?(action)
+                    dispatchActions(dispatchable, dispatcher: dispatcher)
+                }
+            } catch {
+                do {
+                    let grounded = try await ShipmentAgentService.shared.ask(text)
+                    let (cleaned, actions) = eSangAutopilot.parse(grounded.answer)
+                    let dispatchable = actions.isEmpty ? localNavAction.map { [$0] } ?? [] : actions
+                    await MainActor.run {
+                        if !cleaned.isEmpty {
+                            messages.append(Msg(role: .esang, text: cleaned))
+                        } else if let label = navigationFallbackLabel(for: localNavAction) {
+                            messages.append(Msg(role: .esang, text: "Opening \(label)."))
+                        }
+                        sending = false
+                        dispatchActions(dispatchable, dispatcher: dispatcher)
+                    }
+                } catch {
+                    await MainActor.run {
+                        if let action = localNavAction,
+                           let label = navigationFallbackLabel(for: action) {
+                            messages.append(Msg(role: .esang, text: "I could not reach live intelligence, but I can still open \(label)."))
+                            sending = false
+                            dispatchActions([action], dispatcher: dispatcher)
+                        } else {
+                            sendError = "ESANG could not connect to live intelligence. Try again."
+                            sending = false
                         }
                     }
                 }
-            } catch {
-                await MainActor.run {
-                    sendError = "ESANG couldn't reach the server. Try again."
-                    sending = false
-                }
             }
+        }
+    }
+
+    private func dispatchActions(_ actions: [eSangAction],
+                                 dispatcher: ((eSangAction) -> Void)?) {
+        // Stagger so a navigate-then-execute sequence animates naturally
+        // instead of stepping on itself.
+        for (idx, action) in actions.enumerated() {
+            let delay = Double(idx) * 0.20
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                dispatcher?(action)
+            }
+        }
+    }
+
+    private func navigationFallbackLabel(for action: eSangAction?) -> String? {
+        guard let action else { return nil }
+        switch action {
+        case .navigatePath(let path):
+            let p = path.lowercased()
+            if p.contains("load") && (p.contains("create") || p.contains("new") || p.contains("post")) { return "Post a Load" }
+            if p.contains("market") { return "Market Intelligence" }
+            if p.contains("loads") { return "Loads" }
+            if p.contains("wallet") { return "EusoWallet" }
+            if p.contains("carrier") { return "Carrier Directory" }
+            if p.contains("compliance") { return "Compliance" }
+            if p.contains("message") { return "Messages" }
+            return "that screen"
+        case .back:
+            return "the previous screen"
+        case .openChat, .closeChat, .refresh, .selectLoad, .navigate,
+             .execute, .autopilot, .undoAll, .tapAt:
+            return nil
         }
     }
 
@@ -474,4 +530,22 @@ enum ShippereSangGreeting {
         let bank = variants[part] ?? variants[.day]!
         return bank[Int.random(in: 0..<bank.count)]
     }
+}
+
+// MARK: - Previews
+
+#Preview("ShippereSangCoachSheet · Dark") {
+    ShippereSangCoachSheet()
+        .frame(width: 390, height: 844)
+        .environment(\.palette, Theme.dark)
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.dark)
+}
+
+#Preview("ShippereSangCoachSheet · Light") {
+    ShippereSangCoachSheet()
+        .frame(width: 390, height: 844)
+        .environment(\.palette, Theme.light)
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.light)
 }

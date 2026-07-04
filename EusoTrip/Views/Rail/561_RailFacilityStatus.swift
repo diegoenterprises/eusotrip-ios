@@ -213,7 +213,7 @@ private struct RailFacilityStatusBody: View {
     private var detailRows: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("FACILITY DETAIL · getFacilityStatus")
+                Text("FACILITY DETAIL · live status")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -222,7 +222,7 @@ private struct RailFacilityStatusBody: View {
                     detailRow(
                         glyph: "arrow.up.to.line", tintColor: Brand.info,
                         title: "Outbound lift capacity",
-                        sub: "crane availability · classIRailroadService",
+                        sub: "crane availability · Class I railroad service",
                         value: status?.liftCapacityPct.map { "\(Int($0))%" } ?? "-",
                         badge: nil, badgeColor: nil
                     )
@@ -289,7 +289,7 @@ private struct RailFacilityStatusBody: View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("YARD HEADER · getRailYards")
+                    Text("YARD HEADER · yard directory")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
                     Spacer()

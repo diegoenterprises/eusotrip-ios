@@ -132,6 +132,10 @@ final class RateSheetStore: ObservableObject {
     @Published var isSplitLoad: Bool = false
     @Published var isReject: Bool = false
     @Published var travelSurchargeMiles: Double = 0
+    @Published var criteriaRegion: String = ""
+    @Published var criteriaProduct: String = ""
+    @Published var criteriaTrailer: String = ""
+    @Published var criteriaSheetName: String = ""
 
     // EIA diesel auto-populate (FSC). nil until first fetch lands.
     @Published private(set) var diesel: RateSheetAPI.CurrentDiesel?
@@ -143,6 +147,11 @@ final class RateSheetStore: ObservableObject {
     // Active sheet selection (when nil, calculator uses defaults).
     @Published var selectedSheetId: Int? = nil
     @Published private(set) var selectedSheet: RateSheetAPI.RateSheetDetail?
+    @Published private(set) var smartDefaults: RateSheetAPI.SmartTiers?
+    @Published private(set) var draftTiers: [RateSheetAPI.RateTier]?
+    @Published private(set) var draftSurcharges: RateSheetAPI.Surcharges?
+    @Published private(set) var criteriaSaving: Bool = false
+    @Published var criteriaAck: String?
 
     // Sheets pane data
     @Published private(set) var sheets: [RateSheetAPI.RateSheetSummary] = []
@@ -166,6 +175,7 @@ final class RateSheetStore: ObservableObject {
         // Auto-populate diesel via EIA on first appear so the FSC math
         // reflects this week's PADD baseline.
         await refreshDiesel()
+        await refreshCriteriaDefaults(recalculate: false)
         await recalc()
         await refreshSheets()
     }
@@ -188,8 +198,8 @@ final class RateSheetStore: ObservableObject {
                     isReject: isReject,
                     travelSurchargeMiles: travelSurchargeMiles,
                     currentDieselPrice: diesel?.price,
-                    rateTiers: selectedSheet?.rateTiers,
-                    surcharges: selectedSheet?.surcharges
+                    rateTiers: selectedSheet?.rateTiers ?? draftTiers,
+                    surcharges: selectedSheet?.surcharges ?? draftSurcharges
                 )
                 let calc = try await api.rateSheet.calculateRate(input)
                 if Task.isCancelled { return }
@@ -211,6 +221,91 @@ final class RateSheetStore: ObservableObject {
             // Quiet — `latest` will still compute against the server's
             // own default baseline.
         }
+    }
+
+    func refreshCriteriaDefaults(recalculate: Bool = true) async {
+        do {
+            let smart = try await api.rateSheet.getSmartDefaultTiers(
+                region: criteriaRegion.nilIfBlank,
+                product: criteriaProduct.nilIfBlank,
+                trailerType: criteriaTrailer.nilIfBlank
+            )
+            smartDefaults = smart
+            draftTiers = smart.tiers
+            draftSurcharges = smart.surcharges
+            criteriaAck = nil
+            lastError = nil
+            if recalculate { await recalc() }
+        } catch {
+            lastError = "Couldn't load criteria defaults."
+        }
+    }
+
+    func saveCriteriaSheet(issuedBy: String) async {
+        criteriaSaving = true
+        defer { criteriaSaving = false }
+        do {
+            if draftTiers == nil || draftSurcharges == nil {
+                await refreshCriteriaDefaults(recalculate: false)
+            }
+            let tiers = draftTiers ?? []
+            let surcharges = draftSurcharges ?? RateSheetAPI.Surcharges()
+            let name = criteriaSheetName.nilIfBlank
+                ?? selectedSheet?.name
+                ?? generatedCriteriaName()
+            let today = Self.dateOnly(Date())
+            if let selected = selectedSheet {
+                _ = try await api.rateSheet.update(.init(
+                    id: selected.id,
+                    name: name,
+                    region: criteriaRegion.nilIfBlank,
+                    productType: criteriaProduct.nilIfBlank,
+                    trailerType: criteriaTrailer.nilIfBlank,
+                    rateUnit: selected.rateUnit ?? "per_barrel",
+                    effectiveDate: selected.effectiveDate ?? today,
+                    expirationDate: selected.expirationDate,
+                    agreementId: selected.agreementId,
+                    rateTiers: tiers,
+                    surcharges: surcharges,
+                    notes: selected.notes
+                ))
+                criteriaAck = "Saved \(name)."
+                await selectSheet(selected.id)
+            } else {
+                let ack = try await api.rateSheet.create(.init(
+                    name: name,
+                    effectiveDate: today,
+                    issuedBy: issuedBy,
+                    rateTiers: tiers,
+                    surcharges: surcharges,
+                    fuelSurchargeIncluded: surcharges.fscEnabled,
+                    notes: "Created from Rate Sheets criteria editor",
+                    region: criteriaRegion.nilIfBlank,
+                    productType: criteriaProduct.nilIfBlank,
+                    trailerType: criteriaTrailer.nilIfBlank,
+                    rateUnit: "per_barrel"
+                ))
+                criteriaAck = "Saved \(ack.name ?? name)."
+                await refreshSheets()
+                await selectSheet(ack.id)
+            }
+        } catch {
+            lastError = "Couldn't save rate sheet criteria."
+        }
+    }
+
+    private func generatedCriteriaName() -> String {
+        let bits = [criteriaRegion.nilIfBlank, criteriaProduct.nilIfBlank, criteriaTrailer.nilIfBlank]
+            .compactMap { $0 }
+        return bits.isEmpty ? "Schedule A" : "Schedule A - \(bits.joined(separator: " / "))"
+    }
+
+    private static func dateOnly(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 
     // MARK: Sheets pane
@@ -294,7 +389,7 @@ struct MeRateSheet: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Space.s4)
-        .padding(.top, Space.s3)
+        .padding(.top, 56)
         .task { await store.bootstrap() }
         .refreshable {
             switch store.pane {
@@ -333,7 +428,7 @@ struct MeRateSheet: View {
     private func handleFilePick(_ result: Result<[URL], Error>) {
         switch result {
         case .failure(let err):
-            uploadError = err.localizedDescription
+            uploadError = err.eusoUserCopy
         case .success(let urls):
             guard let url = urls.first else { return }
             Task { await uploadRateSheet(at: url) }
@@ -531,6 +626,7 @@ struct MeRateSheet: View {
                 if let diesel = store.diesel {
                     dieselChip(diesel)
                 }
+                criteriaCard
                 inputsCard
                 if let calc = store.latest {
                     heroPay(calc)
@@ -547,7 +643,7 @@ struct MeRateSheet: View {
                 if let sheet = store.selectedSheet {
                     activeSheetCard(sheet)
                 }
-                Color.clear.frame(height: Space.s8)
+                Color.clear.frame(height: 172)
             }
         }
     }
@@ -571,6 +667,143 @@ struct MeRateSheet: View {
         .background(palette.bgCardSoft)
         .overlay(Capsule().stroke(palette.borderFaint))
         .clipShape(Capsule())
+    }
+
+    private var criteriaCard: some View {
+        ActiveCard {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack(alignment: .firstTextBaseline) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("CRITERIA")
+                            .font(EType.micro)
+                            .tracking(0.8)
+                            .foregroundStyle(palette.textTertiary)
+                        Text(store.selectedSheet?.name ?? "Custom Schedule A")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    if let ack = store.criteriaAck {
+                        Text(ack)
+                            .font(EType.micro.weight(.heavy))
+                            .tracking(0.4)
+                            .foregroundStyle(Brand.success)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                }
+
+                TextField("Sheet name", text: $store.criteriaSheetName)
+                    .textFieldStyle(.plain)
+                    .font(EType.body)
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, Space.s3)
+                    .padding(.vertical, 10)
+                    .background(palette.bgCardSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.sm).strokeBorder(palette.borderFaint.opacity(0.6)))
+
+                HStack(spacing: Space.s2) {
+                    criteriaMenu(
+                        label: "Region",
+                        value: store.criteriaRegion.nilIfBlank ?? "Any",
+                        options: store.smartDefaults?.availableRegions.map { ($0.key, $0.label) } ?? []
+                    ) { key in
+                        store.criteriaRegion = key
+                        Task { await store.refreshCriteriaDefaults() }
+                    }
+                    criteriaMenu(
+                        label: "Product",
+                        value: store.criteriaProduct.nilIfBlank ?? "Any",
+                        options: store.smartDefaults?.availableProducts.map { ($0.name, $0.name) } ?? []
+                    ) { key in
+                        store.criteriaProduct = key
+                        Task { await store.refreshCriteriaDefaults() }
+                    }
+                    criteriaMenu(
+                        label: "Trailer",
+                        value: store.criteriaTrailer.nilIfBlank ?? "Any",
+                        options: store.smartDefaults?.availableTrailers.map { ($0.key, $0.key.replacingOccurrences(of: "_", with: " ").capitalized) } ?? []
+                    ) { key in
+                        store.criteriaTrailer = key
+                        Task { await store.refreshCriteriaDefaults() }
+                    }
+                }
+
+                HStack(spacing: Space.s2) {
+                    if let tiers = store.draftTiers, !tiers.isEmpty {
+                        Text("\(tiers.count) tier\(tiers.count == 1 ? "" : "s")")
+                            .font(EType.caption.weight(.semibold))
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    if let fsc = store.draftSurcharges?.fscEnabled {
+                        Text(fsc ? "FSC on" : "FSC off")
+                            .font(EType.caption.weight(.semibold))
+                            .foregroundStyle(fsc ? Brand.success : palette.textTertiary)
+                    }
+                    Spacer()
+                    Button {
+                        Task {
+                            await store.saveCriteriaSheet(issuedBy: session.user?.name ?? "EusoTrip account")
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if store.criteriaSaving {
+                                ProgressView().controlSize(.mini).tint(.white)
+                            } else {
+                                Image(systemName: "tray.and.arrow.down.fill")
+                            }
+                            Text(store.selectedSheet == nil ? "Save" : "Update")
+                        }
+                        .font(EType.caption.weight(.heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, Space.s3)
+                        .padding(.vertical, 8)
+                        .background(LinearGradient.diagonal, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(store.criteriaSaving)
+                }
+            }
+        }
+    }
+
+    private func criteriaMenu(
+        label: String,
+        value: String,
+        options: [(String, String)],
+        onSelect: @escaping (String) -> Void
+    ) -> some View {
+        Menu {
+            Button("Any \(label.lowercased())") { onSelect("") }
+            ForEach(options, id: \.0) { option in
+                Button(option.1) { onSelect(option.0) }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(label.uppercased())
+                    .font(.system(size: 8, weight: .heavy))
+                    .tracking(0.5)
+                    .foregroundStyle(palette.textTertiary)
+                HStack(spacing: 4) {
+                    Text(value)
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 8, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            .padding(.horizontal, Space.s2)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(palette.bgCardSoft)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.sm).strokeBorder(palette.borderFaint.opacity(0.6)))
+        }
     }
 
     private var inputsCard: some View {

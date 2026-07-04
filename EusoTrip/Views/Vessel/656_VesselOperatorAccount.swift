@@ -89,9 +89,13 @@ private struct VesselOperatorAccountBody: View {
                     LifecycleCard { Text("Loading account…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
-                } else {
-                    identityCard
-                    operationsCard
+	                } else {
+	                    identityCard
+	                    EusoCardIssuePanel(
+	                        title: "EusoCard",
+	                        subtitle: "Vessel spend card backed by EusoWallet Treasury"
+	                    )
+	                    operationsCard
                     certificatesCard
                     watchCard
                     preferencesCard
@@ -117,7 +121,7 @@ private struct VesselOperatorAccountBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Account").font(.system(size: 26, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("users.me · profile, certificates, watch & preferences")
+            Text("Your account · profile, certificates, watch & preferences")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
@@ -318,7 +322,7 @@ private struct VesselOperatorAccountBody: View {
 
     private var certificatesCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("CERTIFICATES · getVesselCrew").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("CERTIFICATES · on file").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard {
                 VStack(spacing: Space.s2) {
                     ForEach(certificates) { c in
@@ -359,7 +363,7 @@ private struct VesselOperatorAccountBody: View {
 
     private var preferencesCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("PREFERENCES · users.updateProfile").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("PREFERENCES · saved to your profile").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard {
                 VStack(spacing: Space.s3) {
                     Toggle(isOn: $notificationsOn) {

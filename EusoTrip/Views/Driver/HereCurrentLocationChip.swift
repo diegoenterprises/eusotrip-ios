@@ -31,15 +31,47 @@ import CoreLocation
 
 @MainActor
 final class HereCurrentLocationStore: ObservableObject {
-    @Published private(set) var line: String = ""
+    enum Phase: Equatable {
+        case idle
+        case resolving
+        case resolved(String)
+        case needsLocation
+        case unavailable
+    }
+
+    @Published private(set) var phase: Phase = .idle
 
     private var lastFetchAt: CLLocationCoordinate2D?
 
     /// Refresh when the chip appears or when the host's current fix
     /// has moved enough to justify a re-resolve.
     func refresh() async {
+        DriverLocationResolver.shared.refreshAuthorizationStatus()
+        switch DriverLocationResolver.shared.authorizationStatus {
+        case .notDetermined, .denied, .restricted:
+            phase = .needsLocation
+            return
+        case .authorizedAlways, .authorizedWhenInUse:
+            break
+        @unknown default:
+            phase = .unavailable
+            return
+        }
+
+        if case .resolved = phase {
+            // Keep the current label visible while we refresh in place.
+        } else {
+            phase = .resolving
+        }
+
         guard let coord = await DriverLocationResolver.shared.currentCoordinate() else {
-            line = ""
+            DriverLocationResolver.shared.refreshAuthorizationStatus()
+            switch DriverLocationResolver.shared.authorizationStatus {
+            case .notDetermined, .denied, .restricted:
+                phase = .needsLocation
+            default:
+                phase = .unavailable
+            }
             return
         }
         if let prev = lastFetchAt, distance(prev, coord) < 800 {
@@ -52,15 +84,20 @@ final class HereCurrentLocationStore: ObservableObject {
                 limit: 1
             )
             guard let first = items.first else {
-                line = ""
+                phase = .unavailable
                 return
             }
             lastFetchAt = coord
-            line = format(first)
+            let resolved = format(first).trimmingCharacters(in: .whitespacesAndNewlines)
+            phase = resolved.isEmpty ? .unavailable : .resolved(resolved)
         } catch {
-            // Quiet fail — chip hides until the next refresh succeeds.
-            line = ""
+            phase = .unavailable
         }
+    }
+
+    func requestLocationAccess() {
+        WeatherService.shared.requestPermissionIfNeeded()
+        DriverLocationResolver.shared.requestPermissionIfNeeded()
     }
 
     private func format(_ item: HereGeocodeItem) -> String {
@@ -94,34 +131,76 @@ struct HereCurrentLocationChip: View {
 
     var body: some View {
         Group {
-            if store.line.isEmpty {
-                EmptyView()
-            } else {
-                HStack(spacing: 6) {
-                    Image(systemName: "location.fill")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(LinearGradient.diagonal)
-                    Text(store.line)
-                        .font(EType.micro).tracking(0.3)
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                    Spacer(minLength: 0)
-                    Text("EUSOTRIP")
-                        .font(EType.micro).tracking(0.6)
-                        .foregroundStyle(palette.textTertiary)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(palette.bgCardSoft)
-                .overlay(
-                    Capsule()
-                        .strokeBorder(palette.borderFaint)
+            switch store.phase {
+            case .idle, .resolving:
+                passivePill(
+                    icon: "location.magnifyingglass",
+                    title: "Resolving live road context",
+                    tail: "HERE"
                 )
-                .clipShape(Capsule())
+            case .resolved(let line):
+                passivePill(
+                    icon: "location.fill",
+                    title: line,
+                    tail: "EUSOTRIP"
+                )
+            case .needsLocation:
+                Button {
+                    store.requestLocationAccess()
+                    Task {
+                        try? await Task.sleep(nanoseconds: 1_200_000_000)
+                        await store.refresh()
+                    }
+                } label: {
+                    passivePill(
+                        icon: "location.circle",
+                        title: "Enable location for live road context",
+                        tail: "ALLOW"
+                    )
+                }
+                .buttonStyle(.plain)
+            case .unavailable:
+                Button {
+                    Task { await store.refresh() }
+                } label: {
+                    passivePill(
+                        icon: "arrow.clockwise",
+                        title: "Live road context unavailable",
+                        tail: "RETRY"
+                    )
+                }
+                .buttonStyle(.plain)
             }
         }
         .task { await store.refresh() }
+        .onReceive(NotificationCenter.default.publisher(for: .eusoWeatherAuthorizationChanged)) { _ in
+            Task { await store.refresh() }
+        }
+    }
+
+    private func passivePill(icon: String, title: String, tail: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text(title)
+                .font(EType.micro).tracking(0.3)
+                .foregroundStyle(palette.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            Spacer(minLength: 0)
+            Text(tail)
+                .font(EType.micro).tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(palette.bgCardSoft)
+        .overlay(
+            Capsule()
+                .strokeBorder(palette.borderFaint)
+        )
+        .clipShape(Capsule())
     }
 }
 

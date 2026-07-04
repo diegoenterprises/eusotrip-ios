@@ -388,7 +388,7 @@ private struct RailDetentionHistoryBody: View {
         // wired-pending until a typed accessor lands.
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .top) {
-                Text("ACCESSORIAL ANALYTICS · getAccessorialAnalytics")
+                Text("ACCESSORIAL ANALYTICS · rolling window")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 8)

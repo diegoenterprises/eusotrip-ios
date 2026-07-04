@@ -81,6 +81,9 @@ struct HomeWeatherWidget: View {
                     Task { await refresh() }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoWeatherAuthorizationChanged)) { _ in
+                Task { await refresh(force: true) }
+            }
     }
 
     // A small stable key so the cross-fade animates between states
@@ -127,6 +130,7 @@ struct HomeWeatherWidget: View {
         // Show the skeleton only on the FIRST load (or an explicit retry).
         // A live/foreground refresh updates the card in place so it never
         // flashes back to a skeleton under the user.
+        let previousPhase = phase
         if force || !hasLoadedOnce { phase = .loading }
         // Bound the FIRST load so a stalled upstream chain can't leave the
         // skeleton spinning for minutes; once we have data the live refresh
@@ -147,7 +151,14 @@ struct HomeWeatherWidget: View {
         default:
             // A transient miss AFTER we already had data keeps the last-good
             // card on screen; only show "unavailable" if we never had data.
-            if !hasLoadedOnce { phase = .unavailable }
+            if hasLoadedOnce, case .data = previousPhase {
+                phase = previousPhase
+            } else if let cached = WeatherService.cachedSnapshot {
+                phase = .data(cached)
+                hasLoadedOnce = true
+            } else {
+                phase = .unavailable
+            }
         }
     }
 
@@ -172,6 +183,7 @@ struct HomeWeatherWidget: View {
         let status = WeatherService.shared.authorizationStatus
         if status == .notDetermined {
             WeatherService.shared.requestPermissionIfNeeded()
+            DriverLocationResolver.shared.requestPermissionIfNeeded()
             Task {
                 // Give CoreLocation a beat to deliver the first fix after
                 // the user grants, then re-fetch into the data state.

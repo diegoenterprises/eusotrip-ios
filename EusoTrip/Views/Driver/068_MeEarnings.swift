@@ -215,7 +215,7 @@ struct MeEarnings068: View {
         case .error(let err):
             InlineRetryBanner(
                 title: "Couldn't load earnings",
-                message: err.localizedDescription,
+                message: err.eusoUserCopy,
                 retry: { Task { await store.refresh() } }
             )
         case .empty:
@@ -376,7 +376,7 @@ struct MeEarnings068: View {
         case .error(let err):
             InlineRetryBanner(
                 title: "Chart unavailable",
-                message: err.localizedDescription,
+                message: err.eusoUserCopy,
                 retry: { Task { await store.refresh() } }
             )
         case .empty:
@@ -473,7 +473,7 @@ struct MeEarnings068: View {
             case .error(let err):
                 InlineRetryBanner(
                     title: "Loads unavailable",
-                    message: err.localizedDescription,
+                    message: err.eusoUserCopy,
                     retry: { Task { await store.refresh() } }
                 )
             case .empty:
@@ -528,7 +528,7 @@ struct MeEarnings068: View {
         case .error(let err):
             InlineRetryBanner(
                 title: "YTD unavailable",
-                message: err.localizedDescription,
+                message: err.eusoUserCopy,
                 retry: { Task { await store.refresh() } }
             )
         case .empty:

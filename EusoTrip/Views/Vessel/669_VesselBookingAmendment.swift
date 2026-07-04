@@ -157,7 +157,7 @@ private struct VesselBookingAmendmentBody: View {
                 Text("VES · CONF").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             Text("Amend booking").font(.system(size: 28, weight: .bold)).tracking(-0.4).foregroundStyle(palette.textPrimary)
-            Text("amendmentHistory · CNSHA → USLGB · ONE").font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("Amendment history · CNSHA → USLGB · ONE").font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 
@@ -216,7 +216,7 @@ private struct VesselBookingAmendmentBody: View {
             HStack {
                 Text("AMENDMENT LEDGER").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("bookingAmendment.ts:92").font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textTertiary)
+                Text("change history").font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             ForEach(rows) { ledgerRow($0) }
         }

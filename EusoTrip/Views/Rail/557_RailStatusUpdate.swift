@@ -82,7 +82,7 @@ private struct RailStatusUpdateBody: View {
 
     private var statusMachineCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("STATUS MACHINE · railShipments status").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("STATUS LADDER · shipment status").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("car_ordered · car_placed · loaded · departed").font(EType.caption).foregroundStyle(palette.textTertiary)
@@ -96,7 +96,7 @@ private struct RailStatusUpdateBody: View {
 
     private var advanceToSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("ADVANCE TO · updateRailShipmentStatus(status)").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("ADVANCE TO · next shipment status").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             ForEach(options) { opt in
                 Button { selected = opt.value } label: {
                     HStack(spacing: 14) {

@@ -84,42 +84,42 @@ private extension CatalystVehicleBKind {
             return .init(eyebrow: "CATALYST · VEHICLE · SCORECARD AXIS",
                          citation: "§9.4 · COMPOSITE",
                          title: "Axis detail",
-                         pillCopy: "Catalyst rates this asset on the §9.4 vehicle-composite axis · same companyId both sides.")
+                         pillCopy: "Catalyst rates this asset on the §9.4 vehicle-composite axis · same company both sides.")
         case .profileTier:
             return .init(eyebrow: "CATALYST · VEHICLE · TIER",
                          citation: "§13.4 · TIER",
                          title: "Tier detail",
-                         pillCopy: "Catalyst tier criteria (§13.4) apply to this asset · same companyId both sides.")
+                         pillCopy: "Catalyst tier criteria (§13.4) apply to this asset · same company both sides.")
         case .document:
             return .init(eyebrow: "CATALYST · VEHICLE · DOCUMENT",
                          citation: "§107.601 · HAZMAT REG",
                          title: "Document detail",
-                         pillCopy: "Catalyst archives this asset's §107.601 hazmat-registration document · same companyId both sides.")
+                         pillCopy: "Catalyst archives this asset's §107.601 hazmat-registration document · same company both sides.")
         case .analytic:
             return .init(eyebrow: "CATALYST · VEHICLE · ANALYTIC",
                          citation: "§9.4 · MPG INDEX",
                          title: "Analytic detail",
-                         pillCopy: "Catalyst tracks this asset's §9.4 mpg-index KPI · same companyId both sides.")
+                         pillCopy: "Catalyst tracks this asset's §9.4 mpg-index KPI · same company both sides.")
         case .settlement:
             return .init(eyebrow: "CATALYST · VEHICLE · SETTLEMENT",
                          citation: "§168(k) · DEPRECIATION",
                          title: "Settlement detail",
-                         pillCopy: "Catalyst earns on this asset under §168(k) clean depreciation books · same companyId both sides.")
+                         pillCopy: "Catalyst earns on this asset under §168(k) clean depreciation books · same company both sides.")
         case .onboarding:
             return .init(eyebrow: "CATALYST · ASSET · STEP DETAIL",
                          citation: "§396.17 · PERIODIC INSP",
                          title: "Step detail",
-                         pillCopy: "Catalyst onboards this asset against the §396.17 periodic-inspection step · same companyId both sides.")
+                         pillCopy: "Catalyst onboards this asset against the §396.17 periodic-inspection step · same company both sides.")
         case .compliance:
             return .init(eyebrow: "CATALYST · VEHICLE · COMPLIANCE ROW",
                          citation: "§397 · HAZMAT TRANSPORT",
                          title: "Compliance row",
-                         pillCopy: "Catalyst monitors this asset's §397 hazmat-transport compliance row · same companyId both sides.")
+                         pillCopy: "Catalyst monitors this asset's §397 hazmat-transport compliance row · same company both sides.")
         case .quarter:
             return .init(eyebrow: "CATALYST · VEHICLE · QUARTER DETAIL",
                          citation: "§168 · QUARTER ROLLUP",
                          title: "Quarter detail",
-                         pillCopy: "Catalyst archives the §168 depreciation quarter rollup for this asset · same companyId both sides.")
+                         pillCopy: "Catalyst archives the §168 depreciation quarter rollup for this asset · same company both sides.")
         }
     }
 }

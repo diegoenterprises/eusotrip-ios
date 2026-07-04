@@ -260,7 +260,7 @@ private struct RailDocumentIngestBody: View {
                     .font(.system(size: 22, weight: .bold))
                     .kerning(-0.3)
                     .foregroundColor(palette.textPrimary)
-                Text("extractDocumentData · parse ok")
+                Text("Extraction · parse ok")
                     .font(.system(size: 11).monospaced())
                     .kerning(0.4)
                     .foregroundColor(palette.textSecondary)
@@ -355,7 +355,7 @@ private struct RailDocumentIngestBody: View {
     private var extractedFieldsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("EXTRACTED FIELDS · classifyDocument")
+                Text("EXTRACTED FIELDS · auto-classified")
                     .font(.system(size: 9, weight: .black))
                     .kerning(0.6)
                     .foregroundColor(palette.textTertiary)
