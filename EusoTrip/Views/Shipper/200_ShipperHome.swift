@@ -35,6 +35,7 @@ import SwiftUI
 
 struct ShipperHome: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = ShipperDashboardStore()
@@ -265,7 +266,7 @@ struct ShipperHome: View {
                     await refreshAll()
                 }
             } else if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url)
+                openURL(url)
             }
         } label: {
             HStack(alignment: .center, spacing: Space.s3) {

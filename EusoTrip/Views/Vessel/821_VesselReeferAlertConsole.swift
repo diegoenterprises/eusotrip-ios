@@ -104,6 +104,7 @@ private struct VesselReeferAlertConsoleBody821: View {
     @State private var acking = false
     @State private var ackDone = false
     @State private var ackError: String? = nil
+    @State private var showByUnit = false
 
     // FSMA setpoint the client-side deviation typing reads against (matches getStats default band).
     private let setpointF = 34.0
@@ -171,6 +172,10 @@ private struct VesselReeferAlertConsoleBody821: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showByUnit) {
+            VesselReeferByUnitSheet821(alerts: alerts, setpointF: setpointF)
+                .environment(\.palette, palette)
+        }
     }
 
     // MARK: Eyebrow
@@ -492,7 +497,7 @@ private struct VesselReeferAlertConsoleBody821: View {
                           action: { Task { await acknowledge() } },
                           isLoading: acking)
                     .frame(maxWidth: .infinity)
-                Button(action: {}) {
+                Button(action: { showByUnit = true }) {
                     Text("By unit")
                         .font(EType.title).foregroundStyle(palette.textPrimary)
                         .frame(maxWidth: .infinity, minHeight: 52)
@@ -569,6 +574,75 @@ private struct VesselReeferAlertConsoleBody821: View {
             ackError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         acking = false
+    }
+}
+
+private struct VesselReeferByUnitSheet821: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    let alerts: [ReeferAlert821]
+    let setpointF: Double
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    LifecycleCard(accentGradient: true) {
+                        LifecycleSection(label: "BY UNIT", icon: "shippingbox")
+                        LifecycleRow(label: "Open units", value: String(alerts.filter { ($0.acknowledged ?? false) == false }.count))
+                        LifecycleRow(label: "Setpoint", value: String(format: "%.0f°F", setpointF))
+                    }
+
+                    LifecycleCard {
+                        LifecycleSection(label: "REEFER ALERTS", icon: "thermometer.snowflake")
+                        if alerts.isEmpty {
+                            Text("No reefer alerts in the live feed.")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        } else {
+                            ForEach(alerts) { alert in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(alert.zone?.uppercased() ?? "UNIT")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(palette.textPrimary)
+                                    Text(unitLine(alert))
+                                        .font(EType.caption)
+                                        .foregroundStyle(palette.textSecondary)
+                                    Text(alert.acknowledged == true ? "ACKNOWLEDGED" : severity(alert).uppercased())
+                                        .font(EType.mono(.caption))
+                                        .foregroundStyle(alert.acknowledged == true ? Brand.success : Brand.warning)
+                                }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                    }
+                }
+                .padding(Space.s4)
+            }
+            .navigationTitle("By unit")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func unitLine(_ alert: ReeferAlert821) -> String {
+        var parts: [String] = []
+        if let temp = alert.tempF {
+            parts.append(String(format: "%.1f°F", temp))
+            parts.append(String(format: "%+.1f°F vs setpoint", temp - setpointF))
+        }
+        if let message = alert.message, !message.isEmpty { parts.append(message) }
+        if let created = alert.createdAt, !created.isEmpty { parts.append(created) }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
+    }
+
+    private func severity(_ alert: ReeferAlert821) -> String {
+        alert.severity?.isEmpty == false ? alert.severity! : "open"
     }
 }
 

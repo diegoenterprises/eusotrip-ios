@@ -97,6 +97,7 @@ private struct ITBody: View {
     let onHosClock: () -> Void
 
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: EusoTripSession
 
     @State private var load: ITLoadCtx?
@@ -298,7 +299,7 @@ private struct ITBody: View {
     }
     private func openRoute() {
         guard let url = destinationMapURL else { return }
-        UIApplication.shared.open(url)
+        openURL(url)
     }
 
     // MARK: reads

@@ -540,6 +540,7 @@ struct MeDvirView: View {
 
 struct MeAvailabilityView: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @State private var dutyOn = true
     @State private var homeTime = false
     @State private var selectedDay: Int = 1 // Mon-focus; loops 0..6 (Sun..Sat)
@@ -925,7 +926,7 @@ struct MeAvailabilityView: View {
                                 ? URL(string: resp.url)
                                 : base.flatMap { URL(string: resp.url, relativeTo: $0)?.absoluteURL }
                             if let u = absolute {
-                                await UIApplication.shared.open(u)
+                                openURL(u)
                             }
                             #endif
                             MeAction.fire("availability.export-ics")
@@ -4361,6 +4362,7 @@ final class DriverCarrierStore: ObservableObject {
 
 struct MeCarrierView: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @StateObject private var carrierStore = DriverCarrierStore()
     /// In-app attach-to-carrier composer. Replaces the prior
     /// `MeAction.fire("carrier.attach-request")` dead-tap with a
@@ -4443,9 +4445,7 @@ struct MeCarrierView: View {
         if let phone = c.phone, !phone.isEmpty {
             let digits = phone.filter { "+0123456789".contains($0) }
             if let url = URL(string: "tel:\(digits)") {
-                #if canImport(UIKit)
-                UIApplication.shared.open(url)
-                #endif
+                openURL(url)
                 return
             }
         }
@@ -4453,17 +4453,13 @@ struct MeCarrierView: View {
             let subj = "Driver request · \(c.name ?? "carrier")"
             let encoded = subj.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
             if let url = URL(string: "mailto:\(email)?subject=\(encoded)") {
-                #if canImport(UIKit)
-                UIApplication.shared.open(url)
-                #endif
+                openURL(url)
                 return
             }
         }
         // No phone + no email on file — fall through to support.
         if let url = URL(string: "mailto:support@eusotrip.com?subject=Reach%20my%20dispatcher%20at%20\((c.name ?? "carrier").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
-            #if canImport(UIKit)
-            UIApplication.shared.open(url)
-            #endif
+            openURL(url)
         }
     }
 
@@ -4522,16 +4518,12 @@ struct MeCarrierView: View {
                     .foregroundStyle(palette.textTertiary)
                 contactRow(icon: "phone.fill", value: c.phone) {
                     if let p = c.phone, let url = URL(string: "tel:\(p.filter { "+0123456789".contains($0) })") {
-                        #if canImport(UIKit)
-                        UIApplication.shared.open(url)
-                        #endif
+                        openURL(url)
                     }
                 }
                 contactRow(icon: "envelope.fill", value: c.email) {
                     if let e = c.email, let url = URL(string: "mailto:\(e)") {
-                        #if canImport(UIKit)
-                        UIApplication.shared.open(url)
-                        #endif
+                        openURL(url)
                     }
                 }
                 contactRow(icon: "globe", value: c.website) {
@@ -4658,6 +4650,7 @@ private extension String {
 /// dead-tap with a real action (email composer opens system Mail).
 private struct AttachToCarrierComposer: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
     @State private var carrierName: String = ""
     @State private var dotNumber: String = ""
@@ -4710,9 +4703,7 @@ private struct AttachToCarrierComposer: View {
         let body = lines.joined(separator: "\n").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let subj = "Attach-to-carrier request".addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         if let url = URL(string: "mailto:support@eusotrip.com?subject=\(subj)&body=\(body)") {
-            #if canImport(UIKit)
-            UIApplication.shared.open(url)
-            #endif
+            openURL(url)
         }
         dismiss()
     }

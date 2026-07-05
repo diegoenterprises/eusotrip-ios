@@ -122,7 +122,7 @@ struct PretripDVIR: View {
             // Save-and-exit chip. Calls the `lifecycleExit` env closure that
             // ContentView wires to `trip.reset()`, returning the driver to
             // the idle Home dashboard. The button used to be an empty
-            // `Button { }` placeholder (left over from the mock pass), which
+            // dead placeholder tap (left over from the mock pass), which
             // made the DVIR screen un-exitable until the user tapped Submit.
             Button {
                 exit?()

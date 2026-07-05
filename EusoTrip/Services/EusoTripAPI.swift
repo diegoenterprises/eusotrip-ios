@@ -14235,6 +14235,42 @@ struct FreightClaimsAPI {
             )
         )
     }
+
+    /// Attach an evidence record to a filed claim. Mirrors
+    /// `freightClaims.addClaimEvidence` (frontend/server/routers/freightClaims.ts:772).
+    struct EvidenceRecord: Decodable {
+        let id: String
+        let claimId: String?
+        let type: String?
+        let name: String?
+        let uploadedAt: String?
+    }
+
+    func addClaimEvidence(
+        claimId: String,
+        type: String,
+        name: String,
+        description: String? = nil,
+        url: String? = nil
+    ) async throws -> EvidenceRecord {
+        struct Input: Encodable {
+            let claimId: String
+            let type: String
+            let name: String
+            let description: String?
+            let url: String?
+        }
+        return try await api.mutation(
+            "freightClaims.addClaimEvidence",
+            input: Input(
+                claimId: claimId,
+                type: type,
+                name: name,
+                description: description,
+                url: url
+            )
+        )
+    }
 }
 
 // MARK: - trackingRouter geofences (map-layer fence grammar · 2026-06-10)

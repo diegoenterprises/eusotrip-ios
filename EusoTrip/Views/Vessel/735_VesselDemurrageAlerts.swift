@@ -21,16 +21,19 @@
 //      consumption drives the LFD arc gauge. Called via queryNoInput (the procedure has no .input(),
 //      same shape sibling 001 uses for the demurrage domain). Empty ledger → honest empty state, never
 //      a fabricated row or a frozen number.
-//    CTA "Book pickup appt" -> vesselDrayage.bookAppointment — STUB · named-gap (no backing mutation on
-//      the API client today; eModal/Voyage-Control parity), re-runs load() honestly rather than faking.
-//    CTA "Dispute" -> demurrage dispute write — STUB · named-gap (re-runs load()).
+//    CTA "Book pickup appt" -> vesselDrayage.bookAppointment (EXISTS server/routers/vesselDrayage.ts)
+//      persists a terminal appointment for the selected live vessel_demurrage row, writes the audit row
+//      and fan-outs the terminal appointment websocket event.
+//    CTA "Dispute" -> vesselDrayage.disputeDemurrageCharge (EXISTS server/routers/vesselDrayage.ts)
+//      marks the vessel_demurrage row disputed, opens the shared dispute thread and audits/fan-outs it.
 //
 //  All file-scoped helpers are suffixed 735 (DDState735 / WatchBox735 / DemurrageWatchModel735 /
 //  LFDGauge735) so they never collide with another screen's private symbols. palette.card / orbState
-//  .alert / StatusPill(tone:) / EusoTripAPI.mutate from the canonical port do not resolve in-module —
-//  re-bound to palette.bgCard / .idle / StatusPill(kind:) / a STUB no-op respectively.
+//  .alert / StatusPill(tone:) from the canonical port do not resolve in-module — re-bound to
+//  palette.bgCard / .idle / StatusPill(kind:) respectively.
 //
 
+import Foundation
 import SwiftUI
 
 private enum DDState735 { case atRisk, accruing, free
@@ -39,7 +42,7 @@ private enum DDState735 { case atRisk, accruing, free
 }
 
 private struct WatchBox735: Identifiable {
-    let id = UUID(); let cid: String; let where_: String; let value: String; let state: DDState735
+    let id: String; let chargeId: Int?; let cid: String; let where_: String; let value: String; let state: DDState735
 }
 
 @MainActor private final class DemurrageWatchModel735: ObservableObject {
@@ -57,6 +60,10 @@ private struct WatchBox735: Identifiable {
     @Published var freeCount = 0
     @Published var totalCount = 0
     @Published var boxes: [WatchBox735] = []
+    @Published var primaryChargeId: Int? = nil
+    @Published var actionMessage: String? = nil
+    @Published var actionError: String? = nil
+    @Published var actionInFlight = false
 
     private var tickTask: Task<Void, Never>? = nil
 
@@ -70,7 +77,10 @@ private struct WatchBox735: Identifiable {
         let projected7dCharges: Double?
     }
     private struct Record735: Decodable {
+        let id: Int?
+        let shipmentId: Int?
         let containerId: Int?
+        let portId: Int?
         let chargeType: String?
         let freeTimeDays: Int?
         let chargeableDays: Int?
@@ -82,6 +92,28 @@ private struct WatchBox735: Identifiable {
         let summary: Summary735?
         let critical: [Record735]?
         let warning: [Record735]?
+    }
+    private struct BookAppointmentIn735: Encodable {
+        let demurrageId: Int
+        let scheduledAt: String
+        let notes: String
+    }
+    private struct BookAppointmentOut735: Decodable {
+        let success: Bool
+        let appointmentId: String?
+        let confirmationNumber: String?
+        let terminalName: String?
+        let scheduledAt: String?
+    }
+    private struct DisputeIn735: Encodable {
+        let demurrageId: Int
+        let reason: String
+    }
+    private struct DisputeOut735: Decodable {
+        let success: Bool
+        let disputeId: String?
+        let status: String?
+        let demurrageStatus: String?
     }
 
     func load() async {
@@ -112,6 +144,7 @@ private struct WatchBox735: Identifiable {
         let crit = o.critical ?? []
         let warn = o.warning ?? []
         let worst = crit.max { (Double($0.totalCharge ?? "0") ?? 0) < (Double($1.totalCharge ?? "0") ?? 0) }
+        primaryChargeId = worst?.id ?? crit.first?.id ?? warn.first?.id
         if let w = worst, let free = w.freeTimeDays, free > 0 {
             let used = Double(w.chargeableDays ?? 0) + Double(w.freeTimeDays ?? 0)
             lfdFractionUsed = min(1, max(0, used / Double(free)))
@@ -130,13 +163,17 @@ private struct WatchBox735: Identifiable {
             return "Container #\(r.containerId.map(String.init) ?? "-") · \(kind)\(days > 0 ? " +\(days)d" : "")"
         }
         let critBoxes: [WatchBox735] = crit.map { r in
-            WatchBox735(cid: r.chargeType?.capitalized ?? "Demurrage",
+            WatchBox735(id: r.id.map { "vd_\($0)" } ?? UUID().uuidString,
+                        chargeId: r.id,
+                        cid: r.chargeType?.capitalized ?? "Demurrage",
                         where_: portFor(r),
                         value: r.ratePerDay.flatMap { Double($0) }.map { "$\(Int($0))/day" } ?? formatCharge(r.totalCharge),
                         state: .atRisk)
         }
         let warnBoxes: [WatchBox735] = warn.map { r in
-            WatchBox735(cid: r.chargeType?.capitalized ?? "Demurrage",
+            WatchBox735(id: r.id.map { "vd_\($0)" } ?? UUID().uuidString,
+                        chargeId: r.id,
+                        cid: r.chargeType?.capitalized ?? "Demurrage",
                         where_: portFor(r),
                         value: formatCharge(r.totalCharge),
                         state: .accruing)
@@ -166,6 +203,64 @@ private struct WatchBox735: Identifiable {
     }
 
     func stop() { tickTask?.cancel(); tickTask = nil }
+
+    func bookPickupAppointment() async {
+        guard !actionInFlight else { return }
+        guard let demurrageId = primaryChargeId else {
+            actionMessage = nil
+            actionError = "No live demurrage charge is available for pickup booking."
+            return
+        }
+        actionInFlight = true
+        actionMessage = nil
+        actionError = nil
+        defer { actionInFlight = false }
+        do {
+            let formatter = ISO8601DateFormatter()
+            let scheduledAt = formatter.string(from: Date().addingTimeInterval(6 * 60 * 60))
+            let out: BookAppointmentOut735 = try await EusoTripAPI.shared.mutation(
+                "vesselDrayage.bookAppointment",
+                input: BookAppointmentIn735(
+                    demurrageId: demurrageId,
+                    scheduledAt: scheduledAt,
+                    notes: "Booked from Vessel Demurrage Watch"
+                )
+            )
+            actionMessage = out.confirmationNumber.map {
+                "Pickup appointment \($0) booked\(out.terminalName.map { " at \($0)" } ?? "")."
+            } ?? (out.success ? "Pickup appointment booked." : "Pickup appointment submitted.")
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func disputePrimaryCharge() async {
+        guard !actionInFlight else { return }
+        guard let demurrageId = primaryChargeId else {
+            actionMessage = nil
+            actionError = "No live demurrage charge is available to dispute."
+            return
+        }
+        actionInFlight = true
+        actionMessage = nil
+        actionError = nil
+        defer { actionInFlight = false }
+        do {
+            let out: DisputeOut735 = try await EusoTripAPI.shared.mutation(
+                "vesselDrayage.disputeDemurrageCharge",
+                input: DisputeIn735(
+                    demurrageId: demurrageId,
+                    reason: "Opened from Vessel Demurrage Watch for the primary at-risk container."
+                )
+            )
+            actionMessage = out.disputeId.map { "Dispute \($0) opened · \(out.demurrageStatus ?? out.status ?? "open")." }
+                ?? (out.success ? "Demurrage dispute opened." : "Demurrage dispute submitted.")
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
 }
 
 struct VesselDemurrageAlertsScreen: View {
@@ -206,18 +301,25 @@ private struct VesselDemurrageAlertsBody735: View {
                                    subtitle: "demurrageAlerts.dashboard returned no at-risk containers. Nothing is inside its per-diem window, no exposure to watch.")
                 } else {
                     heroCard
+                    actionStatus
                     Text("CONTAINER WATCH · FREE TIME vs PER-DIEM")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     watchCard
                     esangRow
                     HStack(spacing: 12) {
-                        CTAButton(title: "Book pickup appt", action: { Task { await model.load() } }, trailingIcon: "calendar.badge.clock")
-                        Button { Task { await model.load() } } label: {
-                            Text("Dispute").font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
+                        CTAButton(title: model.actionInFlight ? "Working..." : "Book pickup appt",
+                                  action: { Task { await model.bookPickupAppointment() } },
+                                  trailingIcon: "calendar.badge.clock")
+                        .disabled(model.actionInFlight)
+                        Button { Task { await model.disputePrimaryCharge() } } label: {
+                            Text(model.actionInFlight ? "Working..." : "Dispute")
+                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
                                 .frame(maxWidth: 144, minHeight: 52)
                                 .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard)
                                     .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).stroke(palette.borderFaint, lineWidth: 1)))
                         }
+                        .buttonStyle(.plain)
+                        .disabled(model.actionInFlight)
                     }
                 }
                 Color.clear.frame(height: 96)
@@ -227,6 +329,20 @@ private struct VesselDemurrageAlertsBody735: View {
         .task { await model.load() }
         .refreshable { await model.load() }
         .onDisappear { model.stop() }
+    }
+
+    private var actionStatus: some View {
+        Group {
+            if let err = model.actionError {
+                LifecycleCard(accentDanger: true) {
+                    Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                }
+            } else if let message = model.actionMessage {
+                LifecycleCard {
+                    Text(message).font(EType.caption).foregroundStyle(Brand.success)
+                }
+            }
+        }
     }
 
     private var header: some View {

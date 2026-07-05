@@ -11,16 +11,12 @@
 //  the same wrapper 757_VesselDetentionLetters ships.
 //
 //  Data / wiring (endpoint MCP-CONFIRMED this fire via EUSOTRIP_PLATFORM):
-//    HERO + TIMELINE: freightClaims.getDisputeMediation EXISTS frontend/server/routers/freightClaims.ts:855
+//    HERO + TIMELINE: freightClaims.getDisputeMediation
 //        protectedProcedure · input {disputeId:string} · returns {disputeId,mediationStatus,
 //        mediator{id,name,firm}|null,sessions[{id,date,notes,outcome}],proposedResolutions[{id,proposedBy,
-//        amount,terms,status}],timeline[{date,event,details}]}. In this build the procedure returns
-//        empty arrays / null mediator (no rows yet) — so the timeline overwrites the design-time seeds
-//        ONLY when getDisputeMediation returns a non-empty timeline; otherwise the seeds are kept as the
-//        honest "not_started" projection rather than fabricating server rows.
-//    WRITE: STUB · named-gap — scheduleMediationSession / submitMediationBrief have no mutation on disk
-//        (no proposed {disputeId,...} writers in freightClaims.ts); both CTAs re-run load() and are
-//        honestly flagged STUB (surfaced to the-oath) rather than faked.
+//        amount,terms,status}],timeline[{date,event,details}]} from the real disputes + dispute_events rows.
+//    WRITE: freightClaims.submitMediationBrief + freightClaims.scheduleMediationSession append durable
+//        dispute_events rows and advance the dispute into the escalated mediation lane.
 //    RBAC: protectedProcedure.
 //
 //  In-module substitutions (the canonical port's RimCard / SecondaryButton / Brand.violet / StatusPill
@@ -29,7 +25,7 @@
 //  StatusPill(text:kind:.info). No module-level EmptyInput — MediationInput810 is per-file.
 //
 //  0 stubs in render · 0 mock data on a live timeline · honest empty projection — values render from
-//  real state; design-time seeds are overwritten by the query on .task whenever the server has rows.
+//  real dispute state discovered from freightClaims.getDisputeResolution.
 //
 
 import SwiftUI
@@ -67,23 +63,21 @@ private struct VesselDisputeMediationBody810: View {
     @State private var loading = true
     @State private var loadError: String? = nil
 
-    @State private var disputeId = "DSP-260525-7C3A09F18B"
-    @State private var subline = "MED-260527-9F2C41A0 · DSP-260525-7C3A09F18B"
-    @State private var mediatorName = "A. Renton FCIArb"
-    @State private var mediatorFirm = "Society of Maritime Arbitrators · panel of 3"
-    @State private var mediatorMeta = "SMA-NY rules · NY office + Zoom"
-    @State private var sessionsLine = "0 / 3 sessions held · counsel green-lit ±$2k"
-    @State private var awardPill = "AWARD 07-02"
-    @State private var daysToAward = "35d"
-    @State private var proposedLine = "Proposed: vessel $26.4k · CMA-CGM $18.4k · midpoint $22.4k"
-    @State private var esangLine = "1 exhibit pending · award holds 07-02 if on time"
+    @State private var hasDispute = false
+    @State private var disputeId = ""
+    @State private var subline = "No mediation dispute selected"
+    @State private var mediatorName = "Mediator pending"
+    @State private var mediatorFirm = "Panel assignment pending"
+    @State private var mediatorMeta = "MEDIATION"
+    @State private var sessionsLine = "0 sessions recorded"
+    @State private var awardPill = "NOT STARTED"
+    @State private var daysToAward = "—"
+    @State private var proposedLine = "No proposed resolution recorded"
+    @State private var esangLine = "Open a dispute or schedule a session to start mediation."
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
 
-    @State private var events: [MedEvent810] = [
-        MedEvent810(date: "05-27", title: "Mediator assigned", sub: "SMA NY assigned panel of 3",       tag: "DONE",     state: .done),
-        MedEvent810(date: "06-05", title: "Vessel brief due",  sub: "Mediation brief · 9 exhibits", tag: "ACTIVE",   state: .active),
-        MedEvent810(date: "06-12", title: "Session 1 · panel", sub: "NY office + Zoom · all parties",    tag: "SCHED",    state: .scheduled),
-        MedEvent810(date: "07-02", title: "Award expected",    sub: "binding · SMA-NY rules",            tag: "EXPECTED", state: .future)
-    ]
+    @State private var events: [MedEvent810] = []
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -98,7 +92,12 @@ private struct VesselDisputeMediationBody810: View {
                     RimCard810 { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
                     RimCard810 { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                } else if !hasDispute {
+                    EusoEmptyState(systemImage: "scale.3d",
+                                   title: "No mediation dispute ready",
+                                   subtitle: "Filed or escalated freight disputes appear here when your account is a party.")
                 } else {
+                    actionBanners
                     mediatorHero
                     Text("MEDIATION TIMELINE · \(events.count) EVENTS")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
@@ -117,13 +116,34 @@ private struct VesselDisputeMediationBody810: View {
         .refreshable { await load() }
     }
 
+    @ViewBuilder private var actionBanners: some View {
+        if let actionMessage {
+            RimCard810 {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Brand.success)
+                    Text(actionMessage).font(EType.caption).foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        if let actionError {
+            RimCard810 {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.danger)
+                    Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · DISPUTE MEDIATION").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
-                Text("SMA NY · PANEL 3").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(accentViolet810)
+                Text(mediatorMeta).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(accentViolet810)
             }
             HStack(spacing: 6) {
                 Text("Disputes").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textSecondary)
@@ -181,7 +201,7 @@ private struct VesselDisputeMediationBody810: View {
         HStack(spacing: 12) {
             Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Submit the brief by 06-05 - 9 of 10 exhibits packed").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text("Next mediation action").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textPrimary)
                 Text("ESang · \(esangLine)").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 0)
@@ -223,36 +243,127 @@ private struct VesselDisputeMediationBody810: View {
 
     // MARK: Data
     private struct Timeline810: Decodable { let date: String?; let event: String?; let details: String? }
+    private struct Mediator810: Decodable { let id: String?; let name: String?; let firm: String? }
+    private struct Session810: Decodable { let id: String?; let date: String?; let notes: String?; let outcome: String? }
+    private struct ProposedResolution810: Decodable { let id: String?; let proposedBy: String?; let amount: Double?; let terms: String?; let status: String? }
     private struct Mediation810: Decodable {
-        let mediationStatus: String?; let timeline: [Timeline810]?
+        let mediationStatus: String?
+        let mediator: Mediator810?
+        let sessions: [Session810]?
+        let proposedResolutions: [ProposedResolution810]?
+        let timeline: [Timeline810]?
     }
     private struct MediationInput810: Encodable { let disputeId: String }
+    private struct DisputeResolutionInput810: Encodable { let limit: Int; let offset: Int }
+    private struct DisputeRow810: Decodable {
+        let id: String
+        let disputeNumber: String?
+        let type: String?
+        let status: String?
+        let amount: Double?
+        let filedDate: String?
+        let description: String?
+    }
+    private struct DisputeResolution810: Decodable { let disputes: [DisputeRow810]? }
+    private struct BriefInput810: Encodable { let disputeId: String; let exhibitCount: Int }
+    private struct ScheduleInput810: Encodable { let disputeId: String; let scheduledAt: String; let notes: String }
+    private struct ActionOut810: Decodable { let success: Bool?; let status: String?; let submittedAt: String?; let scheduledAt: String? }
 
     private func load() async {
         loading = true; loadError = nil
         do {
+            let list: DisputeResolution810 = try await EusoTripAPI.shared.query(
+                "freightClaims.getDisputeResolution",
+                input: DisputeResolutionInput810(limit: 1, offset: 0)
+            )
+            guard let dispute = list.disputes?.first else {
+                hasDispute = false
+                disputeId = ""
+                events = []
+                loading = false
+                return
+            }
+            hasDispute = true
+            disputeId = dispute.id
+            subline = [dispute.disputeNumber, dispute.type?.uppercased(), dispute.amount.map { currency($0) }]
+                .compactMap { $0 }
+                .joined(separator: " · ")
+            proposedLine = dispute.amount.map { "Amount in dispute: \(currency($0))" } ?? "No proposed resolution recorded"
+
             let m: Mediation810 = try await EusoTripAPI.shared.query("freightClaims.getDisputeMediation",
                                                                      input: MediationInput810(disputeId: disputeId))
-            if let t = m.timeline, !t.isEmpty {
-                events = t.prefix(4).enumerated().map { idx, e in
-                    let state: EventState810 = idx == 0 ? .done : (idx == 1 ? .active : (idx == 2 ? .scheduled : .future))
-                    let tag = ["DONE", "ACTIVE", "SCHED", "EXPECTED"][min(idx, 3)]
-                    return MedEvent810(date: shortDate(e.date), title: e.event ?? "-", sub: e.details ?? "", tag: tag, state: state)
-                }
+            mediatorName = m.mediator?.name ?? "Mediator pending"
+            mediatorFirm = m.mediator?.firm ?? "Panel assignment pending"
+            mediatorMeta = (m.mediationStatus ?? dispute.status ?? "mediation").uppercased()
+            let sessionCount = m.sessions?.count ?? 0
+            sessionsLine = "\(sessionCount) session\(sessionCount == 1 ? "" : "s") recorded · \(m.mediationStatus ?? "not_started")"
+            awardPill = (m.mediationStatus ?? dispute.status ?? "not started").uppercased()
+            daysToAward = "—"
+            if let proposals = m.proposedResolutions, !proposals.isEmpty {
+                proposedLine = proposals.compactMap { proposal in
+                    guard let amount = proposal.amount else { return nil }
+                    return "\(proposal.proposedBy ?? "party") \(currency(amount))"
+                }.joined(separator: " · ")
             }
-            // Empty timeline ("not_started") keeps the design-time projection — no fabricated rows.
+            let timeline = m.timeline ?? []
+            let lastIndex = timeline.indices.last ?? 0
+            events = timeline.enumerated().map { idx, e in
+                let state: EventState810 = idx == lastIndex ? .active : .done
+                let tag = idx == lastIndex ? "ACTIVE" : "DONE"
+                return MedEvent810(date: shortDate(e.date), title: e.event ?? "Dispute event", sub: e.details ?? "", tag: tag, state: state)
+            }
+            let hasBrief = timeline.contains { ($0.event ?? "").lowercased().contains("brief") }
+            let hasSession = sessionCount > 0
+            esangLine = hasBrief
+                ? (hasSession ? "Brief and session are recorded on the dispute thread." : "Brief is recorded; schedule the first session.")
+                : "Submit the mediation brief from the live dispute packet."
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
     }
 
-    private func submitBrief() async { /* submitMediationBrief — STUB · named-gap (no mutation on disk; surfaced to the-oath). */ await load() }
-    private func schedule() async    { /* scheduleMediationSession — STUB · named-gap. */ await load() }
+    private func submitBrief() async {
+        guard hasDispute, !disputeId.isEmpty else { return }
+        actionMessage = nil; actionError = nil
+        do {
+            let out: ActionOut810 = try await EusoTripAPI.shared.mutation(
+                "freightClaims.submitMediationBrief",
+                input: BriefInput810(disputeId: disputeId, exhibitCount: events.count)
+            )
+            actionMessage = "Brief submitted · \(out.status ?? "recorded")"
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func schedule() async {
+        guard hasDispute, !disputeId.isEmpty else { return }
+        actionMessage = nil; actionError = nil
+        do {
+            let scheduledAt = ISO8601DateFormatter().string(from: Calendar.current.date(byAdding: .day, value: 7, to: Date()) ?? Date())
+            let out: ActionOut810 = try await EusoTripAPI.shared.mutation(
+                "freightClaims.scheduleMediationSession",
+                input: ScheduleInput810(disputeId: disputeId, scheduledAt: scheduledAt, notes: "Mediation session requested from vessel operator screen.")
+            )
+            actionMessage = "Session scheduled · \(shortDate(out.scheduledAt ?? scheduledAt))"
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
 
     private func shortDate(_ iso: String?) -> String {
         guard let iso, iso.count >= 10 else { return iso ?? "" }
         return String(iso.dropFirst(5).prefix(5))
+    }
+
+    private func currency(_ amount: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .currency
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: amount)) ?? "$\(Int(amount))"
     }
 }
 

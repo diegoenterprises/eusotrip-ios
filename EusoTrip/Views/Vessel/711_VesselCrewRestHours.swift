@@ -543,13 +543,10 @@ private struct VesselCrewRestHoursBody: View {
 
     private var ctaRow: some View {
         HStack(spacing: Space.s3) {
-            // PORT-GAP: rest-hours logging is a vesselShipments crew-log
-            // mutation not yet shipped — CTA present per wireframe; wiring
-            // lands when the mutation exists.
-            CTAButton(title: "Log rest hours")
+            CTAButton(title: "Log rest hours", action: { openVesselScreen("Vesl654") })
                 .frame(maxWidth: .infinity)
             Button {
-                // Crew list → roster surface (handled by nav host).
+                openVesselScreen("Vesl654")
             } label: {
                 Text("Crew list")
                     .font(.system(size: 15, weight: .semibold))
@@ -563,6 +560,14 @@ private struct VesselCrewRestHoursBody: View {
             .buttonStyle(.plain)
             .frame(width: 148)
         }
+    }
+
+    private func openVesselScreen(_ screenId: String) {
+        NotificationCenter.default.post(
+            name: .eusoVesselNavSwap,
+            object: nil,
+            userInfo: ["screenId": screenId]
+        )
     }
 
     // MARK: - Helpers

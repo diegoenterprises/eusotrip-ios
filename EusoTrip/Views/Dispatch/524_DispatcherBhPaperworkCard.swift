@@ -60,6 +60,7 @@ private struct BH524Body: View {
     let loadId: String
 
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @Environment(\.dispatchNavHandler) private var navHandler
 
     @State private var load: LoadsAPI.LoadDetail?
@@ -440,7 +441,7 @@ private struct BH524Body: View {
                 actionAck = "Packet bundle prepared — \(n) document\(n == 1 ? "" : "s") in the download."
                 if let path = out.downloadUrl,
                    let url = URL(string: path, relativeTo: EusoTripAPI.shared.baseURL)?.absoluteURL {
-                    await UIApplication.shared.open(url)
+                    openURL(url)
                 }
             } else {
                 actionError = "The bundle didn't prepare. Every filed document stays in the vault — try again."

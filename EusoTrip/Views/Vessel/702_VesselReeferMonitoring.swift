@@ -133,6 +133,7 @@ private struct VesselReeferMonitoringBody: View {
     @State private var acking = false
     @State private var ackDone = false
     @State private var ackError: String? = nil
+    @State private var showTempLog = false
 
     // Derived counters off the live reefer fleet --------------------------
 
@@ -218,6 +219,10 @@ private struct VesselReeferMonitoringBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showTempLog) {
+            VesselReeferTempLogSheet702(zones: zones, alerts: alerts, fsma: fsma)
+                .environment(\.palette, palette)
+        }
     }
 
     // MARK: - Eyebrow (✦ VESSEL · REEFER WATCH ............ MAERSK · USLGB)
@@ -643,7 +648,7 @@ private struct VesselReeferMonitoringBody: View {
                           action: { Task { await acknowledge() } },
                           isLoading: acking)
                     .frame(maxWidth: .infinity)
-                Button(action: {}) {
+                Button(action: { showTempLog = true }) {
                     Text("Temp log")
                         .font(EType.title)
                         .foregroundStyle(palette.textPrimary)
@@ -727,6 +732,85 @@ private struct VesselReeferMonitoringBody: View {
             ackError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         acking = false
+    }
+}
+
+private struct VesselReeferTempLogSheet702: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    let zones: [String: ReeferZoneReading702]
+    let alerts: [ReeferAlert702]
+    let fsma: FSMAStatus702?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    LifecycleCard(accentGradient: true) {
+                        LifecycleSection(label: "FSMA TEMP LOG", icon: "thermometer.snowflake")
+                        LifecycleRow(label: "Compliant", value: fsma?.compliant.map { $0 ? "Yes" : "No" } ?? "—")
+                        LifecycleRow(label: "Open excursions", value: String(fsma?.openExcursions ?? fsma?.excursionCount ?? alerts.filter { ($0.acknowledged ?? false) == false }.count))
+                    }
+
+                    LifecycleCard {
+                        LifecycleSection(label: "LIVE ZONES", icon: "shippingbox")
+                        if zones.isEmpty {
+                            Text("No reefer zone readings loaded.")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        } else {
+                            ForEach(zones.keys.sorted(), id: \.self) { zone in
+                                if let row = zones[zone] {
+                                    LifecycleRow(label: zone.uppercased(), value: zoneValue(row))
+                                }
+                            }
+                        }
+                    }
+
+                    LifecycleCard {
+                        LifecycleSection(label: "ALERTS", icon: "exclamationmark.triangle")
+                        if alerts.isEmpty {
+                            Text("No reefer alerts on this load.")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        } else {
+                            ForEach(alerts) { alert in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(alert.zone?.uppercased() ?? "ZONE")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(palette.textPrimary)
+                                    Text(alert.message ?? "—")
+                                        .font(EType.caption)
+                                        .foregroundStyle(palette.textSecondary)
+                                    Text(alert.acknowledged == true ? "ACKNOWLEDGED" : "OPEN")
+                                        .font(EType.mono(.caption))
+                                        .foregroundStyle(alert.acknowledged == true ? Brand.success : Brand.warning)
+                                }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                    }
+                }
+                .padding(Space.s4)
+            }
+            .navigationTitle("Temp log")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func zoneValue(_ row: ReeferZoneReading702) -> String {
+        var parts: [String] = []
+        if let f = row.tempF { parts.append(String(format: "%.1f°F", f)) }
+        else if let c = row.tempC { parts.append(String(format: "%.1f°C", c)) }
+        if let status = row.status, !status.isEmpty { parts.append(status.uppercased()) }
+        if let recorded = row.recordedAt, !recorded.isEmpty { parts.append(recorded) }
+        return parts.isEmpty ? "—" : parts.joined(separator: " · ")
     }
 }
 

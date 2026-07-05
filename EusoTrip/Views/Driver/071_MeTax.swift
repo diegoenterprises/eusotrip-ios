@@ -61,7 +61,7 @@ struct MeTax: View {
     /// prior tax year).
     @State private var selectedYear: Int = Calendar.current.component(.year, from: Date())
     /// In-app PDF presentation for the 1099-NEC. Replaces the prior
-    /// `UIApplication.shared.open(url)` Safari punt so the driver
+    /// raw Safari punt so the driver
     /// stays inside the EusoTrip app and can save the doc straight
     /// into Files / AirDrop / Mail via EusoPDFViewer's share sheet.
     @State private var tax1099Presentation: EusoPDFPresentation? = nil

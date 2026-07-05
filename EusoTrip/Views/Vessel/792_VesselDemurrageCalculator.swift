@@ -11,20 +11,21 @@
 //  the same Shell + BottomNav wrapper the registered vessel siblings 664/680/757 ship. COMPLIANCE is
 //  inked because demurrage/detention is a D&D-compliance surface.
 //
-//  Data / wiring (endpoint confirmed via EUSOTRIP_PLATFORM MCP this fire):
-//    detentionAccessorials.calculateDetention (EXISTS frontend/server/routers/detentionAccessorials.ts:363 ·
+//  Data / wiring:
+//    detentionAccessorials.getDemurrageTracking resolves the current company-scoped demurrage claims
+//      and supplies the live source claim/container/load/timing context for this calculator.
+//    detentionAccessorials.calculateDetention (EXISTS frontend/server/routers/detentionAccessorials.ts ·
 //      query · input {arrivalTime, departureTime?, freeTimeMinutes=120, cargoType="general", customRatePerHour?}
 //      -> {totalMinutes, freeTimeMinutes, billableMinutes, billableHours, totalCharge,
 //          tierBreakdown:[{tier,hours,rate,subtotal}], cargoType, arrivalTime, departureTime}).
-//      DETENTION_TIERS escalation rates by tier. Seeds the headline (totalCharge), the EST. TOTAL tile,
-//      the BILLABLE tile, the subline, and every ladder row (tierBreakdown). departureTime omitted ->
-//      server uses now(). protectedProcedure · transportMode=vessel · USLGB · USD.
+//      DETENTION_TIERS escalation rates by tier. Seeds the headline, EST. TOTAL tile, BILLABLE tile,
+//      subline, and every ladder row. departureTime omitted -> server uses now().
+//    detentionAccessorials.createClaim bills the selected real source claim into detention_claims with
+//      tenant ownership checks, audit trail, and company realtime fan-out.
 //    "Recalculate" re-runs the query with the current inputs.
-//    "Bill it"     -> STUB · named-gap detentionAccessorials.createClaim (propose: mutation inserting a
-//      detention_claims row + blockchainAuditTrail entry + broadcast WS_EVENTS.detentionCreated). No
-//      backing mutation today, so it is honestly flagged STUB and just re-runs load() — never faked.
+//    "Bill it" promotes the selected live claim to the billing ledger instead of reloading.
 //
-//  0 mock data on load · honest empty/error states — every value renders from the decoded response.
+//  0 mock data on load · honest empty/error states — every value renders from decoded response rows.
 //  KpiTile792 / LadderTier792 / SecondaryButton792 / ESangRow792 / EmptyInput792 are file-scoped
 //  bespoke helpers (the canonical port's KpiTile/Money/DurFmt/SecondaryButton/ESangRow are not shared
 //  app symbols), built from the same grammar the registered siblings use to preserve the wireframe look.
@@ -65,24 +66,25 @@ private struct VesselDemurrageCalculatorBody: View {
     @Environment(\.palette) private var palette
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var selectedClaim: DemurrageContainer792? = nil
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var actionInFlight = false
 
-    // Inputs (bound to the calculateDetention query). Display strings mirror the SVG.
-    private let arrivalDisplay   = "05-29 08:10"
-    private let departureDisplay = "now · live"
-    private let freeTimeDisplay  = "120 min"
-    private let cargoDisplay     = "reefer · tiered"
-    // Wire values bound to the query.
-    private let arrivalISO       = "2026-05-29T08:10:00Z"
-    private let freeTimeMinutes  = 120
-    private let cargoType        = "reefer"
-
-    // Seeded only as placeholders; replaced by the decoded response in load().
     @State private var total    = "$0"
     @State private var subline  = "computing billable time over free time…"
     @State private var freeUsed = "120m"
     @State private var billable = "0.0h"
     @State private var estTotal = "$0"
     @State private var tiers: [LadderTier792] = []
+
+    private var arrivalDisplay: String { displayDate792(selectedClaim?.arrivalDate) }
+    private var departureDisplay: String { selectedClaim?.lastFreeDay.map(displayDate792) ?? "now · live" }
+    private var activeFreeTimeMinutes: Int { selectedClaim?.freeTimeMinutes ?? 120 }
+    private var freeTimeDisplay: String { "\(activeFreeTimeMinutes) min" }
+    private var cargoType: String { selectedClaim?.cargoType?.lowercased() ?? "general" }
+    private var cargoDisplay: String { "\(cargoType) · tiered" }
+    private var containerLabel: String { selectedClaim?.containerNumber ?? "LIVE CLAIM" }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -96,10 +98,14 @@ private struct VesselDemurrageCalculatorBody: View {
                     LifecycleCard { Text("Computing…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
+                } else if selectedClaim == nil {
+                    EusoEmptyState(systemImage: "shippingbox.and.arrow.backward",
+                                   title: "No billable demurrage claim",
+                                   subtitle: "getDemurrageTracking returned no company-owned demurrage row with a live load and arrival time. Billing opens when a real claim exists.")
                 } else {
                     inputsCard
                     HStack(spacing: 8) {
-                        KpiTile792(caption: "FREE USED",  value: freeUsed, footnote: "of 120m",  highlighted: false)
+                        KpiTile792(caption: "FREE USED",  value: freeUsed, footnote: "of \(activeFreeTimeMinutes)m",  highlighted: false)
                         KpiTile792(caption: "BILLABLE",   value: billable, footnote: "over free", highlighted: false)
                         KpiTile792(caption: "EST. TOTAL", value: estTotal, footnote: "per box",   highlighted: true)
                     }
@@ -113,10 +119,19 @@ private struct VesselDemurrageCalculatorBody: View {
                     }
                     HStack(spacing: 8) {
                         CTAButton(title: "Recalculate", action: { Task { await load() } }, trailingIcon: "arrow.clockwise")
-                        SecondaryButton792(title: "Bill it") { Task { await billIt() } }
+                        SecondaryButton792(title: actionInFlight ? "Billing…" : "Bill it") { Task { await billIt() } }
                     }
-                    ESangRow792(title: "ESang: drayage out today caps this at Tier 2",
-                                subtitle: "waiting to 06-02 adds Tier 3 escalation at the top rate")
+                    if let error = actionError {
+                        LifecycleCard(accentDanger: true) {
+                            Text(error).font(EType.caption).foregroundStyle(Brand.danger)
+                        }
+                    } else if let message = actionMessage {
+                        LifecycleCard {
+                            Text(message).font(EType.caption).foregroundStyle(Brand.success)
+                        }
+                    }
+                    ESangRow792(title: "ESang: \(containerLabel) can move into billing at \(estTotal)",
+                                subtitle: "source claim \(selectedClaim?.id ?? 0) · load \(selectedClaim?.loadId ?? 0) · audit trail writes on Bill it")
                 }
                 Color.clear.frame(height: 96)
             }
@@ -132,7 +147,7 @@ private struct VesselDemurrageCalculatorBody: View {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · DEMURRAGE CALC").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
-                Text("MSCU 7741203").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
+                Text(containerLabel).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: 6) {
                 Text("Compliance").font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textSecondary)
@@ -209,13 +224,36 @@ private struct VesselDemurrageCalculatorBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            // Arrival ISO bound to the booking's gate-in; departure omitted -> server uses now().
+            let tracking: DemurrageTrackingResp792 = try await EusoTripAPI.shared.query(
+                "detentionAccessorials.getDemurrageTracking",
+                input: DemurrageTrackingInput792(limit: 25))
+            let row = (tracking.containers ?? []).first { c in
+                guard (c.loadId ?? 0) > 0, (c.arrivalDate ?? "").isEmpty == false else { return false }
+                let status = (c.status ?? "").lowercased()
+                return !["disputed", "denied", "voided", "invoiced", "paid", "reimbursed"].contains(status)
+            }
+            guard let row, let arrival = row.arrivalDate else {
+                selectedClaim = nil
+                tiers = []
+                total = "$0"
+                estTotal = "$0"
+                billable = "0.0h"
+                freeUsed = "0m"
+                subline = "no live demurrage claim to calculate"
+                loading = false
+                return
+            }
+            selectedClaim = row
             let r: CalcDetentionResp792 = try await EusoTripAPI.shared.query(
                 "detentionAccessorials.calculateDetention",
-                input: CalcDetentionInput792(arrivalTime: arrivalISO, freeTimeMinutes: freeTimeMinutes, cargoType: cargoType))
+                input: CalcDetentionInput792(arrivalTime: arrival,
+                                             departureTime: row.lastFreeDay,
+                                             freeTimeMinutes: row.freeTimeMinutes ?? 120,
+                                             cargoType: row.cargoType ?? "general"))
             total    = usd792(r.totalCharge ?? 0)
             estTotal = usd792(r.totalCharge ?? 0)
             billable = String(format: "%.1fh", r.billableHours ?? 0)
+            freeUsed = hm792(min(r.totalMinutes ?? 0, row.freeTimeMinutes ?? 120))
             subline  = "billable \(hm792(r.billableMinutes ?? 0)) over free time · \(r.tierBreakdown.count) tiers · USD"
             let tones = [Brand.success, Brand.warning, Brand.danger]
             let bands = ["0–24h", "24–48h", "48h+"]
@@ -236,16 +274,89 @@ private struct VesselDemurrageCalculatorBody: View {
     }
 
     private func billIt() async {
-        // STUB · named-gap detentionAccessorials.createClaim — surfaced to the web team.
-        // No backing mutation today, so we honestly re-run the calc rather than fake a write.
-        await load()
+        guard !actionInFlight else { return }
+        actionMessage = nil; actionError = nil
+        guard let claim = selectedClaim, let arrival = claim.arrivalDate else {
+            actionError = "Open a live demurrage claim before billing."
+            return
+        }
+        actionInFlight = true
+        do {
+            let result: CreateClaimResp792 = try await EusoTripAPI.shared.mutation(
+                "detentionAccessorials.createClaim",
+                input: CreateClaimInput792(sourceClaimId: claim.id,
+                                           claimType: "demurrage",
+                                           facilityName: claim.facilityName,
+                                           containerNumber: claim.containerNumber,
+                                           description: "Demurrage billed from vessel calculator for \(claim.containerNumber ?? "container")",
+                                           arrivalTime: arrival,
+                                           departureTime: claim.lastFreeDay,
+                                           freeTimeMinutes: claim.freeTimeMinutes ?? 120,
+                                           status: "approved"))
+            if result.success == true {
+                let finalized = result.alreadyFinalized == true ? "already finalized" : "ready for billing"
+                actionMessage = "Claim \(result.claimId ?? claim.id) \(finalized) · \(usd792(result.totalAmount ?? 0))."
+                await load()
+            } else {
+                actionError = "Billing did not confirm. Reopen the claim and try again."
+            }
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        actionInFlight = false
     }
 }
 
-// MARK: - Data shapes (mirror detentionAccessorials.calculateDetention projection)
+// MARK: - Data shapes (mirror detentionAccessorials.getDemurrageTracking/createClaim/calculateDetention)
+
+private struct DemurrageTrackingInput792: Encodable { let limit: Int }
+
+private struct DemurrageContainer792: Decodable, Identifiable {
+    let id: Int
+    let loadId: Int?
+    let containerNumber: String?
+    let facilityName: String?
+    let arrivalDate: String?
+    let lastFreeDay: String?
+    let freeTimeMinutes: Int?
+    let totalDwellMinutes: Int?
+    let billableMinutes: Int?
+    let perDiemRate: Double?
+    let totalCharge: Double?
+    let status: String?
+    let shipperName: String?
+    let cargoType: String?
+}
+
+private struct DemurrageTrackingResp792: Decodable {
+    let containers: [DemurrageContainer792]?
+}
+
+private struct CreateClaimInput792: Encodable {
+    let sourceClaimId: Int
+    let claimType: String
+    let facilityName: String?
+    let containerNumber: String?
+    let description: String
+    let arrivalTime: String
+    let departureTime: String?
+    let freeTimeMinutes: Int
+    let status: String
+}
+
+private struct CreateClaimResp792: Decodable {
+    let success: Bool?
+    let claimId: Int?
+    let loadId: Int?
+    let status: String?
+    let alreadyFinalized: Bool?
+    let totalAmount: Double?
+    let billableMinutes: Int?
+}
 
 private struct CalcDetentionInput792: Encodable {
     let arrivalTime: String
+    let departureTime: String?
     let freeTimeMinutes: Int
     let cargoType: String
 }
@@ -282,6 +393,18 @@ private func hm792(_ minutes: Int) -> String {
     if h > 0 && m > 0 { return "\(h)h \(m)m" }
     if h > 0 { return "\(h)h" }
     return "\(m)m"
+}
+
+private func displayDate792(_ raw: String?) -> String {
+    guard let raw, raw.isEmpty == false else { return "—" }
+    let compact = raw.replacingOccurrences(of: "T", with: " ")
+        .replacingOccurrences(of: "Z", with: "")
+    if compact.count >= 16 {
+        let monthDayStart = compact.index(compact.startIndex, offsetBy: min(5, compact.count))
+        let monthDayEnd = compact.index(compact.startIndex, offsetBy: min(16, compact.count))
+        return String(compact[monthDayStart..<monthDayEnd])
+    }
+    return compact
 }
 
 // MARK: - File-scoped bespoke helpers (preserve the canonical wireframe look)

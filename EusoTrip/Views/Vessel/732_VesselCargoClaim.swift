@@ -20,10 +20,10 @@
 //      uploadedBy}], …} or null when the incident row is absent — the bespoke empty state renders
 //      honestly, no fabricated dossier). Recovery legs derive from getClaimById.amount +
 //      freightClaims.getCargoInsuranceCoverage (EXISTS :1124); evidence gauge reads getClaimById.evidence.
-//    "File claim"   -> freightClaims.fileClaim       (EXISTS :332) — STUB on this read-only detail surface
-//      (the live write path is the file/edit composer; here we re-run load()).
-//    "Add evidence" -> freightClaims.addClaimEvidence (EXISTS :437) — STUB here (write path is the upload
-//      composer; re-run load()).
+//    "File claim"   -> freightClaims.updateClaimStatus(status:filed) (EXISTS) — advances the current
+//      live dossier without creating a duplicate incident from a detail screen.
+//    "Add evidence" -> freightClaims.addClaimEvidence (EXISTS) — persists metadata evidence into the
+//      freight_claim audit ledger and reloads getClaimById so the gauge reflects server truth.
 //
 //  0 mock data on load · honest empty/error/loading states — every value renders from `ClaimDossier_732`
 //  populated by the loader from getClaimById; the seed dossier lives ONLY in #Preview. RecoveryRimCard732 /
@@ -147,6 +147,14 @@ private struct VesselCargoClaimBody_732: View {
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var claim: ClaimDossier_732? = nil
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var actionInFlight = false
+    @State private var showEvidenceSheet = false
+    @State private var evidenceType = "bol"
+    @State private var evidenceName = "Notice of claim"
+    @State private var evidenceDescription = ""
+    @State private var evidenceURL = ""
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -163,6 +171,7 @@ private struct VesselCargoClaimBody_732: View {
                     evidenceGauge(claim)
                     liabilityBasis(claim)
                     esangAdvisory(claim)
+                    actionStatus
                     ctaRow
                 } else {
                     EusoEmptyState(systemImage: "shippingbox.and.arrow.backward",
@@ -176,6 +185,7 @@ private struct VesselCargoClaimBody_732: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showEvidenceSheet) { evidenceSheet }
     }
 
     // MARK: Header
@@ -389,22 +399,96 @@ private struct VesselCargoClaimBody_732: View {
         .evidenceCardSurface732(palette)
     }
 
-    // MARK: CTA pair (writes flagged STUB — re-run load())
+    // MARK: CTA pair
 
     private var ctaRow: some View {
         HStack(spacing: 8) {
             Button { Task { await fileClaim() } } label: {
-                Text("File claim").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
+                Text(actionInFlight ? "Working..." : "File claim").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient.primary, in: Capsule())
             }
-            Button { Task { await addEvidence() } } label: {
+            .buttonStyle(.plain)
+            .disabled(actionInFlight || claim == nil)
+            Button { prepareEvidenceSheet() } label: {
                 Text("Add evidence").font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCardSoft, in: Capsule())
                     .overlay(Capsule().stroke(palette.borderSoft, lineWidth: 1))
             }
+            .buttonStyle(.plain)
+            .disabled(actionInFlight || claim == nil)
+        }
+    }
+
+    private var actionStatus: some View {
+        Group {
+            if let err = actionError {
+                LifecycleCard(accentDanger: true) {
+                    Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                }
+            } else if let message = actionMessage {
+                LifecycleCard {
+                    Text(message).font(EType.caption).foregroundStyle(Brand.success)
+                }
+            }
+        }
+    }
+
+    private var evidenceSheet: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Add evidence")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Text("Save real claim evidence metadata to the claim ledger. Add a hosted URL when the document is already available, or describe the evidence source so the audit trail is not empty.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(palette.textSecondary)
+
+                Picker("Type", selection: $evidenceType) {
+                    Text("B/L").tag("bol")
+                    Text("Inspection").tag("inspection_report")
+                    Text("Temp log").tag("temperature_log")
+                    Text("Photo").tag("photo")
+                    Text("Other").tag("other")
+                }
+                .pickerStyle(.menu)
+
+                sheetField("Name", text: $evidenceName, hint: "Notice of claim")
+                sheetField("Description", text: $evidenceDescription, hint: "Submitted via carrier claim portal")
+                sheetField("Hosted URL", text: $evidenceURL, hint: "https://...")
+
+                HStack(spacing: 8) {
+                    Button("Cancel") { showEvidenceSheet = false }
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                        .background(palette.bgCardSoft, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    CTAButton(title: actionInFlight ? "Saving..." : "Save evidence",
+                              action: { Task { await addEvidence() } },
+                              trailingIcon: "paperclip")
+                    .disabled(actionInFlight)
+                }
+            }
+            .padding(20)
+        }
+        .background(palette.bgPrimary.ignoresSafeArea())
+        .presentationDetents([.medium, .large])
+    }
+
+    private func sheetField(_ label: String, text: Binding<String>, hint: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                .foregroundStyle(palette.textTertiary)
+            TextField(hint, text: text)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.sentences)
+                .font(.system(size: 14, weight: .semibold))
+                .padding(12)
+                .background(palette.bgCardSoft, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).stroke(palette.borderFaint, lineWidth: 1))
         }
     }
 
@@ -532,15 +616,63 @@ private struct VesselCargoClaimBody_732: View {
     }
 
     private func fileClaim() async {
-        /* freightClaims.fileClaim (EXISTS :332) — STUB on this read-only detail surface; the live write
-           path is the file/edit composer. Re-run load() so the dossier reflects server truth. */
-        await load()
+        guard let claim else { return }
+        actionInFlight = true
+        actionError = nil
+        actionMessage = nil
+        defer { actionInFlight = false }
+        struct In: Encodable { let id: String; let status: String; let notes: String }
+        struct Out: Decodable { let success: Bool?; let newStatus: String?; let updatedAt: String? }
+        do {
+            let out: Out = try await EusoTripAPI.shared.mutation(
+                "freightClaims.updateClaimStatus",
+                input: In(id: claim.id, status: "filed", notes: "Filed from Vessel Cargo Claim dossier.")
+            )
+            actionMessage = "Claim \(claim.claimRef) filed · \(out.newStatus ?? "filed")."
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func prepareEvidenceSheet() {
+        evidenceName = claim?.missingItem?.name ?? "Claim evidence"
+        evidenceDescription = ""
+        evidenceURL = ""
+        showEvidenceSheet = true
     }
 
     private func addEvidence() async {
-        /* freightClaims.addClaimEvidence (EXISTS :437) — STUB here; the live write path is the upload
-           composer. Re-run load() so the evidence gauge reflects server truth. */
-        await load()
+        guard let claim else { return }
+        let name = evidenceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let description = evidenceDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        let url = evidenceURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            actionError = "Evidence name is required."
+            return
+        }
+        guard !description.isEmpty || !url.isEmpty else {
+            actionError = "Add a hosted URL or describe the evidence source before saving."
+            return
+        }
+        actionInFlight = true
+        actionError = nil
+        actionMessage = nil
+        defer { actionInFlight = false }
+        do {
+            let record = try await EusoTripAPI.shared.freightClaims.addClaimEvidence(
+                claimId: claim.id,
+                type: evidenceType,
+                name: name,
+                description: description.isEmpty ? nil : description,
+                url: url.isEmpty ? nil : url
+            )
+            actionMessage = "Evidence \(record.id) saved to \(claim.claimRef)."
+            showEvidenceSheet = false
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
     }
 }
 

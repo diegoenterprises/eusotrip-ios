@@ -21,11 +21,10 @@
 //      of the enum keys — "haul" is the freight/load context; loadId goes in contextIds, NOT a top-level
 //      field. Returns {mode, tip, linkRoute, confidence, generatedAt}; the advisory text is `tip` (not
 //      `line`). Corrected from the canonical port's invalid {screen,loadId}→{line} wiring.)
-//    CTA "Export cost sheet" -> reports cost CSV export — STUB · named-gap (no client-callable export
-//      procedure confirmed for vessel bookings; re-runs load()).
-//    CTA "Dispute line"      -> vesselCost.disputeLine — STUB · named-gap (no mutation exists; the API
-//      client exposes only query/queryNoInput, so the canonical .mutate call would not compile — surfaced
-//      to the-oath with proposed {bookingId, lineId, reason, claimAmount} shape; re-runs load()).
+//    CTA "Export cost sheet" -> vesselCost.exportCostSheet (EXISTS · exports the same real
+//      detention_claims/accessorial rows as CSV and opens a native share artifact).
+//    CTA "Dispute line"      -> vesselCost.disputeLine (EXISTS · marks the selected real charge row
+//      disputed and writes an audit row).
 //
 //  ZERO-FALLBACK (2026-06-09 · B22 fix): the seeded ledger ("Ocean line-haul $0.56/nm · 5,720 nm",
 //  drayage rows, "−6.0% VS BENCHMARK", hardcoded VES- booking ref) and the dead-end
@@ -38,6 +37,7 @@
 //  shows a real esangCoach tip. ChargeLine674 is a file-scoped row model.
 //
 import SwiftUI
+import Foundation
 
 struct VesselCostBreakdownScreen: View {
     let theme: Theme.Palette
@@ -61,8 +61,18 @@ struct VesselCostBreakdownScreen: View {
 }
 
 private struct ChargeLine674: Identifiable {
-    let id = UUID(); let title: String; let detail: String
+    let id: String
+    let expenseId: Int?
+    let title: String
+    let detail: String
     let amount: Double; let share: Double; let color: Color; let usesGradient: Bool
+}
+
+private struct ExportDoc674: Identifiable {
+    let id = UUID()
+    let url: URL
+    let filename: String
+    let rowCount: Int
 }
 
 private struct VesselCostBreakdownBody: View {
@@ -78,6 +88,13 @@ private struct VesselCostBreakdownBody: View {
     @State private var bookingRef: String? = nil
     @State private var lines: [ChargeLine674] = []
     @State private var esangLine: String? = nil
+    @State private var actionBanner: String? = nil
+    @State private var actionError: String? = nil
+    @State private var busyAction: String? = nil
+    @State private var showDisputeSheet = false
+    @State private var selectedLineId: String = ""
+    @State private var disputeReason: String = ""
+    @State private var exportDoc: ExportDoc674? = nil
 
     private var allInTotal: Double { lines.reduce(0) { $0 + $1.amount } }
 
@@ -100,13 +117,14 @@ private struct VesselCostBreakdownBody: View {
                                    subtitle: "getLoadExpenses returned no expense rows for \(bookingRef ?? "this booking") yet — the ledger renders live rows only.")
                 } else {
                     heroCard
+                    actionStatus
                     Text("CHARGE COMPOSITION · OCEAN TARIFF + SURCHARGES")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     compositionCard
                     totalBand
                     if esangLine != nil { esangRow }
                     HStack(spacing: 12) {
-                        CTAButton(title: "Export cost sheet",
+                        CTAButton(title: busyAction == "export" ? "Exporting..." : "Export cost sheet",
                                   action: { Task { await exportSheet() } },
                                   trailingIcon: "square.and.arrow.up")
                         disputeButton
@@ -118,6 +136,8 @@ private struct VesselCostBreakdownBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showDisputeSheet) { disputeSheet }
+        .sheet(item: $exportDoc) { doc in exportSheetView(doc) }
     }
 
     private var header: some View {
@@ -235,11 +255,96 @@ private struct VesselCostBreakdownBody: View {
     /// Outline secondary CTA — the canonical port's `SecondaryButton` is not a shared app symbol,
     /// so we hand-roll the same outline grammar the registered siblings (757/680) use.
     private var disputeButton: some View {
-        Button { Task { await disputeLine() } } label: {
-            Text("Dispute line").font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
+        Button {
+            selectedLineId = selectedLineId.isEmpty ? (lines.first?.id ?? "") : selectedLineId
+            showDisputeSheet = true
+        } label: {
+            Text(busyAction == "dispute" ? "Filing..." : "Dispute line").font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
                 .frame(maxWidth: 144, minHeight: 52)
                 .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard)
                     .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).stroke(palette.borderFaint, lineWidth: 1)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var actionStatus: some View {
+        Group {
+            if let actionError {
+                LifecycleCard(accentDanger: true) {
+                    Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+                }
+            } else if let actionBanner {
+                LifecycleCard {
+                    Text(actionBanner).font(EType.caption).foregroundStyle(Brand.success)
+                }
+            }
+        }
+    }
+
+    private var disputeSheet: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Dispute charge line").font(.system(size: 22, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text(bookingRef ?? "Current booking").font(.system(size: 12, design: .monospaced)).foregroundStyle(palette.textSecondary)
+
+                Picker("Charge line", selection: $selectedLineId) {
+                    ForEach(lines.filter { $0.expenseId != nil }) { line in
+                        Text("\(line.title) · $\(Int(line.amount))").tag(line.id)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("REASON").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+                    TextEditor(text: $disputeReason)
+                        .font(.system(size: 14))
+                        .frame(minHeight: 120)
+                        .padding(8)
+                        .background(palette.bgCard)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                }
+
+                HStack(spacing: 8) {
+                    outlineButton674("Cancel") { showDisputeSheet = false }
+                    CTAButton(title: busyAction == "dispute" ? "Filing..." : "File dispute",
+                              action: { Task { await disputeLine() } },
+                              trailingIcon: "exclamationmark.bubble")
+                }
+            }
+            .padding(Space.s5)
+        }
+        .background(palette.bgPrimary)
+        .presentationDetents([.medium, .large])
+    }
+
+    private func exportSheetView(_ doc: ExportDoc674) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Cost sheet ready").font(.system(size: 22, weight: .bold)).foregroundStyle(palette.textPrimary)
+            Text("\(doc.filename) · \(doc.rowCount) row\(doc.rowCount == 1 ? "" : "s")")
+                .font(.system(size: 13)).foregroundStyle(palette.textSecondary)
+            ShareLink(item: doc.url) {
+                Label("Share CSV", systemImage: "square.and.arrow.up")
+                    .font(.system(size: 15, weight: .bold))
+                    .frame(maxWidth: .infinity, minHeight: 52)
+            }
+            .buttonStyle(.borderedProminent)
+            outlineButton674("Done") { exportDoc = nil }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .background(palette.bgPrimary)
+        .presentationDetents([.medium])
+    }
+
+    private func outlineButton674(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(palette.textPrimary)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
         }
         .buttonStyle(.plain)
     }
@@ -278,7 +383,9 @@ private struct VesselCostBreakdownBody: View {
             if !rows.isEmpty, total > 0 {
                 let chips: [Color] = [Brand.info, Brand.warning, Brand.info, Brand.escort, Brand.vessel]
                 lines = rows.enumerated().map { i, e in
-                    ChargeLine674(title: (e.type ?? "Charge").capitalized,
+                    ChargeLine674(id: e.id.map { String($0) } ?? "row-\(i)",
+                                  expenseId: e.id,
+                                  title: (e.type ?? "Charge").capitalized,
                                   detail: e.type ?? "",
                                   amount: e.amount ?? 0,
                                   share: (e.amount ?? 0) / total,
@@ -288,6 +395,7 @@ private struct VesselCostBreakdownBody: View {
             } else {
                 lines = []
             }
+            selectedLineId = lines.first?.id ?? ""
             // 3. Fused advisory (real tip or hidden row). screen MUST be an enum key —
             //    "haul" is the freight/load context; the REAL loadId rides in contextIds.
             struct CoachIn674: Encodable { let screen: String; let contextIds: [String: String] }
@@ -306,13 +414,65 @@ private struct VesselCostBreakdownBody: View {
         loading = false
     }
 
-    /// Export cost sheet — STUB · named-gap (no client-callable vessel cost-export procedure confirmed). Re-runs load().
-    private func exportSheet() async { await load() }
+    private func exportSheet() async {
+        actionError = nil
+        actionBanner = nil
+        guard let loadId = resolvedShipmentId else {
+            actionError = "No booking is available for export."
+            return
+        }
+        busyAction = "export"
+        do {
+            struct ExportIn674: Encodable { let loadId: Int }
+            struct ExportOut674: Decodable { let filename: String; let rowCount: Int; let csv: String }
+            let out: ExportOut674 = try await EusoTripAPI.shared.mutation(
+                "vesselCost.exportCostSheet",
+                input: ExportIn674(loadId: loadId)
+            )
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(out.filename)
+            guard let data = out.csv.data(using: .utf8) else { throw CocoaError(.fileWriteUnknown) }
+            try data.write(to: url, options: [.atomic])
+            exportDoc = ExportDoc674(url: url, filename: out.filename, rowCount: out.rowCount)
+            actionBanner = "Cost sheet export ready."
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        busyAction = nil
+    }
 
-    /// Dispute line — STUB · named-gap. The API client exposes only query/queryNoInput (no `mutate`),
-    /// and vesselCost.disputeLine does not exist; surfaced to the-oath with the proposed
-    /// {bookingId, lineId, reason, claimAmount} shape. Re-runs load().
-    private func disputeLine() async { await load() }
+    private func disputeLine() async {
+        actionError = nil
+        actionBanner = nil
+        guard let loadId = resolvedShipmentId else {
+            actionError = "No booking is available for dispute."
+            return
+        }
+        guard let line = lines.first(where: { $0.id == selectedLineId }), let lineId = line.expenseId else {
+            actionError = "Select a charge line."
+            return
+        }
+        let reason = disputeReason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard reason.count >= 10 else {
+            actionError = "Add a dispute reason with at least 10 characters."
+            return
+        }
+        busyAction = "dispute"
+        do {
+            struct DisputeIn674: Encodable { let loadId: Int; let lineId: Int; let reason: String; let claimAmount: Double? }
+            struct DisputeOut674: Decodable { let success: Bool; let status: String? }
+            let out: DisputeOut674 = try await EusoTripAPI.shared.mutation(
+                "vesselCost.disputeLine",
+                input: DisputeIn674(loadId: loadId, lineId: lineId, reason: reason, claimAmount: line.amount)
+            )
+            actionBanner = out.success ? "Charge line marked \(out.status ?? "disputed")." : "Dispute submitted."
+            showDisputeSheet = false
+            disputeReason = ""
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        busyAction = nil
+    }
 }
 
 #Preview("674 · Vessel Cost Breakdown · Night") { VesselCostBreakdownScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }

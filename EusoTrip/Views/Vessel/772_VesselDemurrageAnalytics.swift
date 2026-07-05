@@ -25,10 +25,8 @@
 //    Monthly + by-charge-type aggregation is computed CLIENT-SIDE from the decoded rows
 //    (no fabricated arrays). When the table is empty the bespoke empty state renders honestly.
 //
-//    "Open dispute queue" / "Export" — STUB · named-gap: no server demurrage-analytics
-//    aggregation or dispute-queue mutation today. Propose getVesselDemurrageAnalytics({months})
-//    -> {monthly:[{month, baselineUsd, avoidableUsd, days}], byCause:[{cause, usd, pct}],
-//    totalUsd, avoidableUsd}. Both verbs re-run load() rather than fake a write.
+//    "Open dispute queue" opens a live queue from the decoded rows; per-row Dispute calls
+//    vesselShipments.disputeVesselDemurrage. Export calls vesselShipments.exportVesselDemurrageAnalytics.
 //
 //  CRITICAL PITFALLS fixed vs the canonical Code/ port:
 //    (1) CTAButton — canonical used a trailing-closure `CTAButton(title:){}`; here `action:`
@@ -63,6 +61,8 @@ struct VesselDemurrageAnalyticsScreen: View {
 
 private struct FinancialSummary772: Decodable { let demurrage: [DemurrageRow772] }
 private struct DemurrageRow772: Decodable {
+    let id: Int?
+    let shipmentId: Int?
     let chargeType: String?
     let chargeableDays: Int?
     let ratePerDay: String?
@@ -79,6 +79,10 @@ private struct DemurrageRow772: Decodable {
 private struct MonthBucket772: Identifiable { let id = UUID(); let label: String; let baseline: Double; let avoidable: Double; var total: Double { baseline + avoidable } }
 private struct CauseBucket772: Identifiable { let id = UUID(); let label: String; let usd: Double; let color: Color }
 private struct EmptyInput772: Encodable {}
+private struct ExportInput772: Encodable { let format: String }
+private struct ExportOut772: Decodable { let format: String?; let rowCount: Int?; let data: String?; let exportedAt: String? }
+private struct DisputeInput772: Encodable { let shipmentId: Int; let demurrageId: Int?; let reason: String }
+private struct ActionOut772: Decodable { let success: Bool?; let disputed: Int? }
 
 // MARK: - Body
 
@@ -87,11 +91,18 @@ private struct VesselDemurrageAnalyticsBody: View {
     @State private var rows: [DemurrageRow772] = []
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var showDisputeQueue = false
+    @State private var disputeInFlight: Int? = nil
 
     private var months: [MonthBucket772] { Self.bucketByMonth(rows) }
     private var causes: [CauseBucket772] { Self.bucketByCause(rows) }
     private var total: Double { rows.reduce(0) { $0 + $1.amount } }
     private var avoidable: Double { rows.filter { $0.isAvoidable }.reduce(0) { $0 + $1.amount } }
+    private var contestableRows: [DemurrageRow772] {
+        rows.filter { ["accruing", "invoiced"].contains(($0.status ?? "").lowercased()) && $0.shipmentId != nil }
+    }
 
     // Honest derived labels (2026-06-09 · C1 cluster fix) — every identity/tariff
     // string below computes from the decoded rows; em-dash when absent. No hardcoded
@@ -122,6 +133,7 @@ private struct VesselDemurrageAnalyticsBody: View {
                                    title: "No demurrage to analyze",
                                    subtitle: "getVesselFinancialSummary returned no demurrage charges. Nothing has accrued in range, no trend to chart, nothing to dispute.")
                 } else {
+                    actionBanners
                     summaryBand
                     trendCard
                     causeCard
@@ -138,6 +150,58 @@ private struct VesselDemurrageAnalyticsBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showDisputeQueue) { disputeQueueSheet }
+    }
+
+    @ViewBuilder private var actionBanners: some View {
+        if let actionMessage {
+            ActiveCard {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Brand.success)
+                    Text(actionMessage).font(EType.caption).foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        if let actionError {
+            ActiveCard {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.danger)
+                    Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private var disputeQueueSheet: some View {
+        NavigationStack {
+            List {
+                if contestableRows.isEmpty {
+                    Text("No accruing or invoiced demurrage charges are contestable.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(contestableRows.indices, id: \.self) { idx in
+                        let row = contestableRows[idx]
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text((row.chargeType ?? "Demurrage").capitalized).font(.headline)
+                                Text("Shipment \(row.shipmentId.map(String.init) ?? "—") · \(row.status ?? "—") · \(row.chargeableDays ?? 0)d").font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(money(row.amount)).font(.subheadline.weight(.bold)).monospacedDigit()
+                            Button(disputeInFlight == row.id ? "Filing…" : "Dispute") {
+                                Task { await dispute(row) }
+                            }
+                            .disabled(disputeInFlight != nil)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Dispute Queue")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { showDisputeQueue = false } } }
+        }
     }
 
     private var header: some View {
@@ -236,7 +300,7 @@ private struct VesselDemurrageAnalyticsBody: View {
 
     private var totalDays: Int { rows.reduce(0) { $0 + ($1.chargeableDays ?? 0) } }
 
-    // MARK: - Aggregation (client-side over the real rows; flagged STUB in manifest)
+    // MARK: - Aggregation (client-side over the real rows)
 
     private static func monthKey(_ iso: String?) -> (order: Int, label: String)? {
         guard let s = iso, let d = ISO8601DateFormatter().date(from: s) ?? ISO8601DateFormatter().date(from: (s) + "T00:00:00Z") else { return nil }
@@ -305,9 +369,54 @@ private struct VesselDemurrageAnalyticsBody: View {
         loading = false
     }
 
-    // Write verbs honestly flagged STUB · named-gap (no backing mutation today) — re-run load().
-    private func openDisputeQueue() async { /* getVesselDemurrageAnalytics dispute-queue — STUB · named-gap. */ await load() }
-    private func exportSummary() async { /* renderDemurrageAnalyticsPdf — STUB · named-gap. */ await load() }
+    private func openDisputeQueue() async {
+        actionMessage = nil; actionError = nil
+        guard !contestableRows.isEmpty else {
+            actionError = "No accruing or invoiced demurrage charges are contestable."
+            return
+        }
+        showDisputeQueue = true
+    }
+
+    private func dispute(_ row: DemurrageRow772) async {
+        guard let shipmentId = row.shipmentId else {
+            actionError = "This charge has no shipment id to dispute."
+            return
+        }
+        actionMessage = nil; actionError = nil; disputeInFlight = row.id
+        defer { disputeInFlight = nil }
+        do {
+            let out: ActionOut772 = try await EusoTripAPI.shared.mutation(
+                "vesselShipments.disputeVesselDemurrage",
+                input: DisputeInput772(shipmentId: shipmentId,
+                                       demurrageId: row.id,
+                                       reason: "Disputed from vessel demurrage analytics.")
+            )
+            actionMessage = "Filed \(out.disputed ?? 1) demurrage dispute\(out.disputed == 1 ? "" : "s")."
+            showDisputeQueue = false
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func exportSummary() async {
+        actionMessage = nil; actionError = nil
+        do {
+            let out: ExportOut772 = try await EusoTripAPI.shared.mutation(
+                "vesselShipments.exportVesselDemurrageAnalytics",
+                input: ExportInput772(format: "csv")
+            )
+            actionMessage = "Export ready · \(out.rowCount ?? 0) rows · \(out.exportedAt.map(shortDateTime) ?? "recorded")"
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func shortDateTime(_ iso: String) -> String {
+        guard iso.count >= 16 else { return iso }
+        return String(iso.prefix(16)).replacingOccurrences(of: "T", with: " ")
+    }
 }
 
 // MARK: - Stacked column chart (baseline + avoidable; computed from buckets)

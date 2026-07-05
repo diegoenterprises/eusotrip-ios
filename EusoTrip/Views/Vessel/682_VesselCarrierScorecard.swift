@@ -500,7 +500,7 @@ private struct VesselCarrierScorecardBody: View {
         let bookings = scorecard?.metrics?.completionRate?.total
             ?? scorecard?.metrics?.onTimeDelivery?.totalDeliveries ?? 0
         return HStack(spacing: Space.s3) {
-            CTAButton(title: "View \(bookings) bookings")
+            CTAButton(title: "View \(bookings) bookings", action: { openVesselScreen("Vesl651") })
                 .frame(maxWidth: .infinity)
             Button { Task { await compareCarriers() } } label: {
                 Text(comparing ? "Comparing" : "Compare")
@@ -516,6 +516,14 @@ private struct VesselCarrierScorecardBody: View {
             .buttonStyle(.plain)
             .disabled(comparing)
         }
+    }
+
+    private func openVesselScreen(_ screenId: String) {
+        NotificationCenter.default.post(
+            name: .eusoVesselNavSwap,
+            object: nil,
+            userInfo: ["screenId": screenId]
+        )
     }
 
     @ViewBuilder private var comparePanel: some View {

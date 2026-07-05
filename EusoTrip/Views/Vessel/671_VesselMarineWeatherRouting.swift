@@ -781,7 +781,15 @@ private struct VesselMarineWeatherRoutingBody: View {
     // MARK: - CTA
 
     private var cta: some View {
-        CTAButton(title: "View weather routing")
+        CTAButton(title: "View weather routing", action: { openVesselScreen("Vesl660") })
+    }
+
+    private func openVesselScreen(_ screenId: String) {
+        NotificationCenter.default.post(
+            name: .eusoVesselNavSwap,
+            object: nil,
+            userInfo: ["screenId": screenId]
+        )
     }
 
     // MARK: - Load

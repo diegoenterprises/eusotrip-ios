@@ -26,6 +26,7 @@ private struct NotifDetail: Decodable, Hashable {
 
 private struct NotifDetailBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let notificationId: String
     @State private var detail: NotifDetail? = nil
     @State private var loading = true
@@ -72,7 +73,7 @@ private struct NotifDetailBody: View {
                 if link.allSatisfy(\.isNumber) {
                     NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": link])
                 } else if let u = URL(string: link) {
-                    UIApplication.shared.open(u)
+                    openURL(u)
                 }
             } label: {
                 Text("Open").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)

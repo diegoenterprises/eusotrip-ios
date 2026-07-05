@@ -113,6 +113,7 @@ final class ShipperAtDockStore: ObservableObject {
 
 struct ShipperAtDock: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @StateObject private var store: ShipperAtDockStore
 
     /// `loadId` is supplied by the caller (load-row tap / deep link). No
@@ -832,7 +833,7 @@ struct ShipperAtDock: View {
         // No facility-phone column on the at-dock projection yet; the
         // dialer opens to a blank facility number when one is missing
         // rather than fabricating a contact.
-        if let url = URL(string: "tel://") { UIApplication.shared.open(url) }
+        if let url = URL(string: "tel://") { openURL(url) }
     }
 
     private func personaDisc(_ initials: String, diameter: CGFloat, font: CGFloat) -> some View {

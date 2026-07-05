@@ -149,6 +149,7 @@ private final class VoiceCaptureController: ObservableObject {
 
 private struct VoiceListeningBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @StateObject private var ctrl = VoiceCaptureController()
     @State private var pulse: Bool = false
@@ -287,7 +288,7 @@ private struct VoiceListeningBody: View {
             Button {
                 if ctrl.phase == .permissionDenied {
                     if let url = URL(string: UIApplication.openSettingsURLString) {
-                        UIApplication.shared.open(url)
+                        openURL(url)
                     }
                 } else {
                     ctrl.startIfPermitted()

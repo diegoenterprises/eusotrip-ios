@@ -448,10 +448,10 @@ private struct VesselPortStateControlBody: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "File rectification record") { /* opens rectification filing flow */ }
+            CTAButton(title: "File rectification record", action: { openVesselScreen("Vesl654") })
                 .frame(maxWidth: .infinity)
             Button {
-                /* opens statutory certificate ledger */
+                openVesselScreen("Vesl654")
             } label: {
                 Text("All certs")
                     .font(.system(size: 14, weight: .semibold))
@@ -463,6 +463,14 @@ private struct VesselPortStateControlBody: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .buttonStyle(.plain)
         }
+    }
+
+    private func openVesselScreen(_ screenId: String) {
+        NotificationCenter.default.post(
+            name: .eusoVesselNavSwap,
+            object: nil,
+            userInfo: ["screenId": screenId]
+        )
     }
 
     // MARK: - Helpers

@@ -131,7 +131,7 @@ private struct CatalystEusoTicketRenderer: View {
     @State private var dispatchError: String? = nil
     @State private var dispatchedURL: String? = nil
     /// In-app PDF presentation for the dispatched EusoTicket PDF.
-    /// Replaces the prior `UIApplication.shared.open(url)` Safari
+    /// Replaces the prior raw Safari
     /// punt with a native EusoPDFViewer sheet so the catalyst stays
     /// in the EusoTrip app.
     @State private var pdfPresentation: EusoPDFPresentation? = nil

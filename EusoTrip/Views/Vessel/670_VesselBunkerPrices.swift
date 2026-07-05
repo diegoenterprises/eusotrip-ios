@@ -10,27 +10,22 @@
 //  757_VesselDetentionLetters. Role: VESSEL_OPERATOR (per canonical header).
 //
 //  Data / wiring (endpoints confirmed via EUSOTRIP_PLATFORM MCP this fire):
-//    • fuel.getTrends  (EXISTS · frontend/server/routers/fuel.ts:342 · input {period?,fuelType?,days?}? ·
-//        returns [{date:String, price:Number}] from getPriceTrends → eia.history.slice(-days). This is
-//        the REAL fuel-price index history that drives the trend chart's primary line + the headline
-//        figure + week/week delta. Registered at routers.ts:1859 `fuel: fuelRouter`.)
-//    • fuel.getPrices  (EXISTS · fuel.ts:237 · input {location?,radius} · returns
-//        {national, regions:[{name,avgPrice,change}]} from getRegionalPrices → EIA regional breakdown.
-//        Drives the honest by-region price table.)
-//    NAMED GAPS (surfaced to the-oath — confirmed absent this fire, rendered honestly, never faked):
-//    • vesselBunker.getPrices  → STUB (no router `vesselBunker` exists; the marine VLSFO/MGO-per-MT
-//        spot feed is the proposed gap {ports[],grades[],weeks[]} mirroring fuel.getTrends' shape).
-//    • CTA "Set BAF alert" → STUB · vesselBunker.setAlert {grade,port,threshold} (no backing mutation;
-//        the generic client exposes no `mutate` — flagged STUB, re-runs load()).
-//    • CTA "Export"        → STUB · reports.exportCostSheet (confirmed absent — no router/proc).
+//    • vesselBunker.getPrices  (EXISTS · frontend/server/routers/vesselBunker.ts · input
+//        {ports[],grades[],weeks} · returns current USD/MT bunker rows plus price history from the
+//        live OilPriceMarine provider when configured, falling back only to persisted
+//        vessel_bunker_records).
+//    • CTA "Set BAF alert" → vesselBunker.setAlert {grade,port,threshold,direction}; persists a
+//        user/company-scoped alert row through audit_logs.
+//    • CTA "Export"        → vesselBunker.exportPrices; returns a CSV body written to a temporary
+//        file and offered through the native share sheet.
 //
 //  0 mock data on load · honest empty/error states — the chart + table render only from real
-//  fuel.getTrends / fuel.getPrices state; if both return nothing the bespoke empty state shows.
-//  Seed values live ONLY in #Preview (injected via VesselBunkerPricesBody(previewSeed:)). The two
-//  write verbs are honestly flagged STUB rather than faked. Helper types are file-scoped + suffixed
-//  670 to avoid cross-file private collisions.
+//  vesselBunker state; if the provider and persisted bunker records are empty the bespoke empty
+//  state shows. Seed values live ONLY in #Preview (injected via VesselBunkerPricesBody(previewSeed:)).
+//  Helper types are file-scoped + suffixed 670 to avoid cross-file private collisions.
 //
 import SwiftUI
+import Foundation
 
 struct VesselBunkerPricesScreen: View {
     let theme: Theme.Palette
@@ -53,11 +48,18 @@ struct VesselBunkerPricesScreen: View {
 // MARK: - Models (file-scoped, 670-suffixed)
 
 private struct RegionPrice670: Identifiable {
-    let id = UUID()
+    let id: String
     let name: String
     let code: String
     let price: Double
     let delta: Double
+}
+
+private struct ExportDoc670: Identifiable {
+    let id = UUID()
+    let url: URL
+    let filename: String
+    let rowCount: Int
 }
 
 /// Seed bundle — injected ONLY from #Preview so on-device load starts honest/empty.
@@ -75,15 +77,26 @@ private struct VesselBunkerPricesBody: View {
 
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var actionBanner: String? = nil
+    @State private var actionError: String? = nil
+    @State private var busyAction: String? = nil
+    @State private var showAlertSheet = false
+    @State private var exportDoc: ExportDoc670? = nil
 
-    // Real fuel-index history (drives the chart). Empty until fuel.getTrends returns.
+    // Real bunker-index history (drives the chart). Empty until vesselBunker returns history.
     @State private var series: [Double] = []
     @State private var regions: [RegionPrice670] = []
     @State private var esangLine = ""
-    @State private var unitLabel = "USD / GAL"      // fuel.getTrends is per-gallon (EIA) — labelled honestly.
+    @State private var unitLabel = "USD/MT"
+    @State private var primaryPort = "SGSIN"
+    @State private var primaryGrade = "vlsfo"
+    @State private var alertGrade = "vlsfo"
+    @State private var alertPort = "SGSIN"
+    @State private var alertThreshold = ""
+    @State private var alertDirection = "above"
 
     private var hasData: Bool { series.count >= 2 || !regions.isEmpty }
-    private var latest: Double { series.last ?? 0 }
+    private var latest: Double { series.last ?? regions.first?.price ?? 0 }
     private var weekDelta: Double {
         guard series.count >= 2 else { return 0 }
         let prev = series[series.count - 2]
@@ -106,8 +119,9 @@ private struct VesselBunkerPricesBody: View {
                                    subtitle: "No marine bunker price history is available for this lane yet. Pull to refresh once the VLSFO or MGO feed posts data.")
                 } else {
                     heroCard
+                    actionStatus
                     if series.count >= 2 {
-                        Text("FUEL INDEX TREND · EIA DIESEL · LAST \(series.count) PTS")
+                        Text("BUNKER INDEX TREND · \(primaryGrade.uppercased()) · LAST \(series.count) PTS")
                             .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                         BunkerTrendChart670(series: series).frame(height: 172)
                             .padding(16)
@@ -128,6 +142,8 @@ private struct VesselBunkerPricesBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showAlertSheet) { alertSheet }
+        .sheet(item: $exportDoc) { doc in exportSheet(doc) }
     }
 
     private var header: some View {
@@ -150,10 +166,10 @@ private struct VesselBunkerPricesBody: View {
         LifecycleCard {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("EIA DIESEL · NATIONAL").font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
+                    Text("\(primaryGrade.uppercased()) · \(primaryPort)").font(.system(size: 9, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text(String(format: "$%.2f", latest)).font(.system(size: 34, weight: .bold)).foregroundStyle(LinearGradient.diagonal).monospacedDigit()
-                        Text("/gal").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textTertiary)
+                        Text("/MT").font(.system(size: 12, weight: .bold)).foregroundStyle(palette.textTertiary)
                     }
                     Text(String(format: "%+.1f%% pt/pt", weekDelta))
                         .font(.system(size: 11, weight: .bold))
@@ -227,11 +243,15 @@ private struct VesselBunkerPricesBody: View {
 
     private var ctaRow: some View {
         HStack(spacing: 12) {
-            // STUB · vesselBunker.setAlert — no backing mutation (generic client has no `mutate`).
-            CTAButton(title: "Set BAF alert", action: { Task { await setAlert() } }, trailingIcon: "bell.badge")
-            // STUB · reports.exportCostSheet — confirmed absent this fire.
+            CTAButton(title: busyAction == "alert" ? "Saving..." : "Set BAF alert",
+                      action: {
+                          alertPort = primaryPort
+                          alertGrade = primaryGrade
+                          showAlertSheet = true
+                      },
+                      trailingIcon: "bell.badge")
             Button { Task { await exportSeries() } } label: {
-                Text("Export")
+                Text(busyAction == "export" ? "Exporting..." : "Export")
                     .font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: 144, minHeight: 52)
                     .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
@@ -242,6 +262,101 @@ private struct VesselBunkerPricesBody: View {
         }
     }
 
+    private var actionStatus: some View {
+        Group {
+            if let actionError {
+                LifecycleCard(accentDanger: true) {
+                    Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+                }
+            } else if let actionBanner {
+                LifecycleCard {
+                    Text(actionBanner).font(EType.caption).foregroundStyle(Brand.success)
+                }
+            }
+        }
+    }
+
+    private var alertSheet: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("BAF alert").font(.system(size: 22, weight: .bold)).foregroundStyle(palette.textPrimary)
+                Text("Persist an alert against the live bunker index. ESang can use this threshold when reviewing BAF exposure.")
+                    .font(.system(size: 12)).foregroundStyle(palette.textSecondary)
+
+                Picker("Grade", selection: $alertGrade) {
+                    ForEach(["vlsfo", "mgo", "hfo", "lng"], id: \.self) { grade in
+                        Text(grade.uppercased()).tag(grade)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Picker("Direction", selection: $alertDirection) {
+                    Text("Above").tag("above")
+                    Text("Below").tag("below")
+                }
+                .pickerStyle(.segmented)
+
+                sheetField("Port", text: $alertPort, hint: "SGSIN")
+                sheetField("Threshold USD/MT", text: $alertThreshold, hint: "725")
+
+                HStack(spacing: 8) {
+                    outlineButton670("Cancel") { showAlertSheet = false }
+                    CTAButton(title: busyAction == "alert" ? "Saving..." : "Save alert",
+                              action: { Task { await setAlert() } },
+                              trailingIcon: "checkmark")
+                }
+            }
+            .padding(Space.s5)
+        }
+        .background(palette.bgPrimary)
+        .presentationDetents([.medium, .large])
+    }
+
+    private func exportSheet(_ doc: ExportDoc670) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Bunker export ready").font(.system(size: 22, weight: .bold)).foregroundStyle(palette.textPrimary)
+            Text("\(doc.filename) · \(doc.rowCount) row\(doc.rowCount == 1 ? "" : "s")")
+                .font(.system(size: 13)).foregroundStyle(palette.textSecondary)
+            ShareLink(item: doc.url) {
+                Label("Share CSV", systemImage: "square.and.arrow.up")
+                    .font(.system(size: 15, weight: .bold))
+                    .frame(maxWidth: .infinity, minHeight: 52)
+            }
+            .buttonStyle(.borderedProminent)
+            outlineButton670("Done") { exportDoc = nil }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s5)
+        .background(palette.bgPrimary)
+        .presentationDetents([.medium])
+    }
+
+    private func sheetField(_ label: String, text: Binding<String>, hint: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label.uppercased()).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+            TextField(hint, text: text)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .font(.system(size: 14, weight: .semibold))
+                .padding(12)
+                .background(palette.bgCard)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+        }
+    }
+
+    private func outlineButton670(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(palette.textPrimary)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Data
 
     private func load() async {
@@ -250,6 +365,9 @@ private struct VesselBunkerPricesBody: View {
             series = seed.series
             regions = seed.regions
             esangLine = seed.esangLine
+            primaryPort = "SGSIN"
+            primaryGrade = "vlsfo"
+            unitLabel = "USD/MT"
             loading = false
             loadError = nil
             return
@@ -257,32 +375,52 @@ private struct VesselBunkerPricesBody: View {
 
         loading = true; loadError = nil
         do {
-            // REAL · fuel.getTrends → [{date,price}] EIA fuel-price history (drives the chart line).
-            struct TrendsIn: Encodable { let days: Int }
-            struct TrendPoint: Decodable { let date: String?; let price: Double? }
-            let pts: [TrendPoint] = try await EusoTripAPI.shared.query("fuel.getTrends", input: TrendsIn(days: 30))
-            let vals = pts.compactMap { $0.price }.filter { $0 > 0 }
-            if vals.count >= 2 { series = vals } else { series = [] }
+            struct BunkerQuery: Encodable { let ports: [String]; let grades: [String]; let weeks: Int }
+            struct PriceRow: Decodable {
+                let port: String?
+                let portName: String?
+                let grade: String?
+                let price: Double?
+                let changePercent24h: Double?
+            }
+            struct HistoryRow: Decodable { let date: String?; let price: Double? }
+            struct PricesOut: Decodable {
+                let unit: String?
+                let primaryPort: String?
+                let primaryGrade: String?
+                let prices: [PriceRow]?
+                let history: [HistoryRow]?
+            }
 
-            // REAL · fuel.getPrices → {regions:[{name,avgPrice,change}]} EIA regional breakdown.
-            struct PricesIn: Encodable { let radius: Int }
-            struct Region: Decodable { let name: String?; let avgPrice: Double?; let change: Double? }
-            struct PricesOut: Decodable { let national: Double?; let regions: [Region]? }
-            if let res: PricesOut = try? await EusoTripAPI.shared.query("fuel.getPrices", input: PricesIn(radius: 25)),
-               let rs = res.regions {
-                regions = rs.compactMap { r in
-                    guard let n = r.name, let p = r.avgPrice else { return nil }
-                    let code = String(n.prefix(5)).uppercased()
-                    return RegionPrice670(name: n, code: code, price: p, delta: r.change ?? 0)
-                }
-            } else {
-                regions = []
+            let res: PricesOut = try await EusoTripAPI.shared.query(
+                "vesselBunker.getPrices",
+                input: BunkerQuery(ports: [primaryPort], grades: ["vlsfo", "mgo"], weeks: 8)
+            )
+
+            unitLabel = res.unit ?? "USD/MT"
+            primaryPort = res.primaryPort ?? primaryPort
+            primaryGrade = res.primaryGrade ?? primaryGrade
+            let vals = (res.history ?? []).compactMap { $0.price }.filter { $0 > 0 }
+            series = vals.count >= 2 ? vals : []
+
+            regions = (res.prices ?? []).compactMap { row in
+                guard let price = row.price, price > 0 else { return nil }
+                let port = row.port ?? primaryPort
+                let grade = (row.grade ?? primaryGrade).uppercased()
+                let name = [row.portName ?? port, grade].joined(separator: " · ")
+                return RegionPrice670(
+                    id: "\(port)-\(grade)",
+                    name: name,
+                    code: port,
+                    price: price,
+                    delta: row.changePercent24h ?? 0
+                )
             }
 
             // ESang line is derived honestly from the real series (no fabricated booking figures).
-            if series.count >= 2 {
+            if series.count >= 2 || !regions.isEmpty {
                 let dir = weekDelta >= 0 ? "rising" : "easing"
-                esangLine = String(format: "Index %@ %+.1f%% pt/pt - review BAF cover", dir, weekDelta)
+                esangLine = String(format: "%@ index %@ %+.1f%% - review BAF cover", primaryGrade.uppercased(), dir, weekDelta)
             } else {
                 esangLine = ""
             }
@@ -292,12 +430,57 @@ private struct VesselBunkerPricesBody: View {
         loading = false
     }
 
-    /// STUB · vesselBunker.setAlert — no backing mutation (the generic client exposes only `query`,
-    /// and no `vesselBunker` router exists). Surfaced to the-oath; re-runs load() for honesty.
-    private func setAlert() async { await load() }
+    private func setAlert() async {
+        actionError = nil
+        actionBanner = nil
+        guard let threshold = Double(alertThreshold.trimmingCharacters(in: .whitespacesAndNewlines)), threshold > 0 else {
+            actionError = "Enter a positive USD/MT threshold."
+            return
+        }
+        let port = alertPort.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !port.isEmpty else {
+            actionError = "Port is required."
+            return
+        }
+        busyAction = "alert"
+        do {
+            struct AlertIn: Encodable { let grade: String; let port: String; let threshold: Double; let direction: String }
+            struct AlertOut: Decodable { let success: Bool; let id: Int? }
+            let out: AlertOut = try await EusoTripAPI.shared.mutation(
+                "vesselBunker.setAlert",
+                input: AlertIn(grade: alertGrade, port: port.uppercased(), threshold: threshold, direction: alertDirection)
+            )
+            actionBanner = out.id.map { "BAF alert #\($0) saved." } ?? (out.success ? "BAF alert saved." : "BAF alert submitted.")
+            showAlertSheet = false
+            alertThreshold = ""
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        busyAction = nil
+    }
 
-    /// STUB · reports.exportCostSheet — confirmed absent this fire. Re-runs load().
-    private func exportSeries() async { await load() }
+    private func exportSeries() async {
+        actionError = nil
+        actionBanner = nil
+        busyAction = "export"
+        do {
+            struct ExportIn: Encodable { let ports: [String]; let grades: [String]; let weeks: Int }
+            struct ExportOut: Decodable { let filename: String; let rowCount: Int; let csv: String }
+            let out: ExportOut = try await EusoTripAPI.shared.mutation(
+                "vesselBunker.exportPrices",
+                input: ExportIn(ports: [primaryPort], grades: ["vlsfo", "mgo"], weeks: 8)
+            )
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(out.filename)
+            guard let data = out.csv.data(using: .utf8) else { throw CocoaError(.fileWriteUnknown) }
+            try data.write(to: url, options: [.atomic])
+            exportDoc = ExportDoc670(url: url, filename: out.filename, rowCount: out.rowCount)
+            actionBanner = "Export ready: \(out.filename)."
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        busyAction = nil
+    }
 }
 
 // MARK: - Trend chart (Path-drawn, no chart lib) — preserves the SVG line + area + gridline + dot look.
@@ -363,9 +546,9 @@ private struct BunkerTrendChart670: View {
 private let previewSeed670 = PreviewSeed670(
     series: [3.42, 3.48, 3.51, 3.55, 3.58, 3.62, 3.66, 3.71],
     regions: [
-        .init(name: "Gulf Coast", code: "PADD3", price: 3.49, delta: -0.6),
-        .init(name: "Midwest",    code: "PADD2", price: 3.62, delta:  1.4),
-        .init(name: "West Coast", code: "PADD5", price: 4.18, delta:  2.1),
+        .init(id: "preview-gulf", name: "Gulf Coast", code: "PADD3", price: 3.49, delta: -0.6),
+        .init(id: "preview-midwest", name: "Midwest", code: "PADD2", price: 3.62, delta:  1.4),
+        .init(id: "preview-west", name: "West Coast", code: "PADD5", price: 4.18, delta:  2.1),
     ],
     esangLine: "Index rising +1.4% pt/pt - review BAF cover")
 

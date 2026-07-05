@@ -22,6 +22,7 @@ struct ReeferTempExcursionScreen: View {
 
 private struct ReeferBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let live: ShipperAPI.LifecycleSnapshot
     let loadId: String
 
@@ -302,7 +303,7 @@ private struct ReeferBody: View {
             }.buttonStyle(.plain)
             Button {
                 if let p = live.driver?.phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") {
-                    UIApplication.shared.open(url)
+                    openURL(url)
                 }
             } label: {
                 Image(systemName: "phone.fill").font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)

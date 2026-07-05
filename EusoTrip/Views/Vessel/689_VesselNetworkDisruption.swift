@@ -228,7 +228,10 @@ private struct VesselNetworkDisruptionBody: View {
 
     private var ctaRow: some View {
         HStack(spacing: 8) {
-            CTAButton(title: "View rebooking", action: { /* blankSailing.rebookingSuggestions — STUB · needs per-booking shipmentId context. */ }, trailingIcon: "arrow.triangle.branch")
+            CTAButton(
+                title: "View rebooking",
+                action: { openVesselScreen("Vesl706") },
+                trailingIcon: "arrow.triangle.branch")
             Button(action: { Task { await report() } }) {
                 Text("Report")
                     .font(.system(size: 15, weight: .bold))
@@ -239,6 +242,14 @@ private struct VesselNetworkDisruptionBody: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private func openVesselScreen(_ screenId: String) {
+        NotificationCenter.default.post(
+            name: .eusoVesselNavSwap,
+            object: nil,
+            userInfo: ["screenId": screenId]
+        )
     }
 
     // MARK: - load (live tick from blankSailing.dashboard)

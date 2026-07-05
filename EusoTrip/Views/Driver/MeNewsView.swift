@@ -37,7 +37,7 @@ struct MeNewsView: View {
     @EnvironmentObject private var session: EusoTripSession
     @StateObject private var store = NewsFeedStore()
     /// Selected article pushed to an in-app reader sheet. Replaces the
-    /// old `UIApplication.shared.open()` hand-off to Safari so drivers
+    /// old raw hand-off to Safari so drivers
     /// never leave the EusoTrip shell when they tap a headline.
     @State private var readerArticle: NewsArticle?
 
@@ -773,7 +773,7 @@ struct NewsCarouselWidget: View {
     @State private var rotationTimer: Timer?
     @State private var showFullSheet: Bool = false
     /// Article pushed into the in-app reader when a carousel card is
-    /// tapped. Previously the tap handed off to `UIApplication.shared.open`
+    /// tapped. Previously the tap handed off to Safari
     /// which kicked the driver into Safari. Per user direction
     /// (2026-04-21) the reader is now a full-screen cover rendered inside
     /// EusoTrip's shell with a back chevron.

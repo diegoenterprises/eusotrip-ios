@@ -112,7 +112,7 @@ private struct BulkUploadShellBody: View {
     @State private var loading = true
     @State private var fileImporterPresented = false
     /// In-app share-sheet state for the "Download template CSV" tap.
-    /// Replaces the previous `UIApplication.shared.open(url)` Safari
+    /// Replaces the previous raw Safari
     /// punt with an authed-fetch + UIActivityViewController flow so
     /// the user can save into Files / AirDrop / Mail without leaving
     /// the app. Identifiable wrapper around the temp URL so SwiftUI

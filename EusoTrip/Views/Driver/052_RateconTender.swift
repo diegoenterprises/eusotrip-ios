@@ -548,7 +548,7 @@ struct RateconTender: View {
     }
 
     private var counterButton: some View {
-        // 100th firing · ledger-hygiene sweep — was no-op `Button { }`
+        // 100th firing · ledger-hygiene sweep — was a dead tap
         // with a hardcoded "$1,480" label. Now derives from the real
         // load's rate (+~5%) when present.
         Button(action: counterTapped) {

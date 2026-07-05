@@ -34,12 +34,10 @@
 //        hero right-cluster + ESang next-best-action. When db is null or no
 //        active detentions, the server returns an empty ledger — the bespoke
 //        empty state renders honestly, no fabricated rows.
-//    "Schedule return" -> yardManagement.checkOutTrailer
-//      (EXISTS yardManagement.ts:804) — STUB here · no mutation wired in this
-//      read-only screen yet (re-runs load() to refresh); the write verb is
-//      honestly flagged, not faked.
-//    "Dispute" -> detentionDispute.create — STUB · named-gap (no backing
-//      mutation exists yet; surfaced to the-oath).
+//    "Schedule return" -> yardManagement.checkOutTrailer (EXISTS) closes a
+//      checked-in yard appointment and, when loadId is present, closes the active detention record.
+//    "Dispute" -> detentionAccessorials.disputeDetention (EXISTS) for claim-backed rows;
+//      geofence-only detention rows show an honest unavailable message until a claim exists.
 //
 //  RimCard784 grammar is inlined via ActiveCard (shared gradient-rim hero);
 //  the file-scoped helpers (secondaryButton784, EmptyInput784) suffix the
@@ -74,6 +72,8 @@ struct VesselDetentionTrackingScreen: View {
 
 private struct DetentionRecord784: Decodable, Identifiable {
     let id: String
+    let detentionRecordId: Int?
+    let claimId: Int?
     let trailerNumber: String?
     let carrierName: String?
     let loadId: String?
@@ -97,6 +97,27 @@ private struct DetentionResponse784: Decodable {
     let summary: DetentionSummary784?
 }
 private struct OnlyActiveQuery784: Encodable { let onlyActive: Bool }
+private struct CheckoutInput784: Encodable {
+    let locationId: String
+    let trailerNumber: String
+    let loadId: String?
+    let notes: String?
+}
+private struct CheckoutResult784: Decodable {
+    let success: Bool?
+    let checkOutId: String?
+    let dwellTimeMinutes: Int?
+}
+private struct DisputeInput784: Encodable {
+    let claimId: Int
+    let reason: String
+}
+private struct DisputeResult784: Decodable {
+    let success: Bool?
+    let claimId: Int?
+    let status: String?
+    let message: String?
+}
 
 private struct VesselDetentionTrackingBody: View {
     let onlyActive: Bool
@@ -104,6 +125,9 @@ private struct VesselDetentionTrackingBody: View {
     @State private var data: DetentionResponse784? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var actionInFlight = false
 
     private let slate = Color(hex: 0x607D8B)
     private let warnText = Color(hex: 0xC2410C)
@@ -144,9 +168,18 @@ private struct VesselDetentionTrackingBody: View {
                     accrualList
                     esangCard
                     HStack(spacing: 8) {
-                        CTAButton(title: "Schedule return", action: { Task { await scheduleReturn() } }, trailingIcon: "arrow.uturn.left")
+                        CTAButton(title: actionInFlight ? "Working…" : "Schedule return", action: { Task { await scheduleReturn() } }, trailingIcon: "arrow.uturn.left")
                         secondaryButton784(title: "Dispute") { Task { await dispute() } }
                             .frame(width: 130)
+                    }
+                    if let error = actionError {
+                        LifecycleCard(accentDanger: true) {
+                            Text(error).font(EType.caption).foregroundStyle(Brand.danger)
+                        }
+                    } else if let message = actionMessage {
+                        LifecycleCard {
+                            Text(message).font(EType.caption).foregroundStyle(Brand.success)
+                        }
                     }
                 }
                 Color.clear.frame(height: 96)
@@ -398,14 +431,61 @@ private struct VesselDetentionTrackingBody: View {
         loading = false
     }
 
-    /// "Schedule return" -> yardManagement.checkOutTrailer — STUB · named-gap.
-    /// Read-only screen today; re-runs load() to refresh accrual after a return
-    /// is scheduled elsewhere. The write verb is honestly flagged, not faked.
-    private func scheduleReturn() async { await load() }
+    private func scheduleReturn() async {
+        guard !actionInFlight else { return }
+        actionMessage = nil; actionError = nil
+        guard let target = topRecord, let trailer = target.trailerNumber, trailer.isEmpty == false else {
+            actionError = "No active trailer row is available to return."
+            return
+        }
+        actionInFlight = true
+        do {
+            let result: CheckoutResult784 = try await EusoTripAPI.shared.mutation(
+                "yardManagement.checkOutTrailer",
+                input: CheckoutInput784(locationId: "vessel-detention",
+                                        trailerNumber: trailer,
+                                        loadId: target.loadId,
+                                        notes: "Scheduled return from Vessel Detention Tracking"))
+            if result.success == true {
+                actionMessage = "Return recorded \(result.checkOutId ?? "") · dwell \(hours(Double(result.dwellTimeMinutes ?? 0) / 60))."
+                await load()
+            } else {
+                actionError = "Return did not confirm. Reopen the trailer row and try again."
+            }
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        actionInFlight = false
+    }
 
-    /// "Dispute" -> detentionDispute.create — STUB · named-gap (no backing
-    /// mutation exists yet; surfaced to the-oath).
-    private func dispute() async { await load() }
+    private func dispute() async {
+        guard !actionInFlight else { return }
+        actionMessage = nil; actionError = nil
+        guard let target = topRecord else {
+            actionError = "No detention row is available to dispute."
+            return
+        }
+        guard let claimId = target.claimId else {
+            actionError = "This is a geofence-only detention row. A billable claim must exist before a dispute can be filed."
+            return
+        }
+        actionInFlight = true
+        do {
+            let result: DisputeResult784 = try await EusoTripAPI.shared.mutation(
+                "detentionAccessorials.disputeDetention",
+                input: DisputeInput784(claimId: claimId,
+                                       reason: "Operator disputes vessel detention charge from tracking screen pending appointment, gate, and free-time evidence review."))
+            if result.success == true {
+                actionMessage = result.message ?? "Dispute filed for claim \(result.claimId ?? claimId)."
+                await load()
+            } else {
+                actionError = "Dispute did not confirm. Reopen the charge and try again."
+            }
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        actionInFlight = false
+    }
 }
 
 #Preview("784 · Vessel Detention Tracking · Night") { VesselDetentionTrackingScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }

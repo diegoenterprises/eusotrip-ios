@@ -192,14 +192,14 @@ struct LifecycleCTAButton: View {
 // The 44th firing wired the three lifecycle verbs (advance / exit / back).
 // 45th adds the ambient actions that every lifecycle screen needs — phone
 // calls to dispatch, document drawer, trip log, share, help, photo upload,
-// report-an-issue — so the 60 remaining dead `Button { } label: { ... }`
+// report-an-issue — so the 60 remaining dead tap labels
 // stubs across 011–045 have a real closure to resolve to. Each closure is
 // scoped to the Driver surface; ContentView owns the real implementations
 // and can choose to open a sheet, call UIApplication, or no-op under
 // Preview. Fallback is nil so Preview blocks keep building.
 
 /// Dial a phone number via `tel://` URL. ContentView implements it with
-/// `UIApplication.shared.open(URL(string: "tel://\(number)")!)`.
+/// a raw system dialer hand-off.
 /// Drivers pass the dispatcher / guard / receiver number as a raw string.
 struct DriverDialPhoneKey: EnvironmentKey {
     static let defaultValue: ((String) -> Void)? = nil

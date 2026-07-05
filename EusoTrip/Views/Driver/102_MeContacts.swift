@@ -31,6 +31,7 @@ import SwiftUI
 
 struct MeContacts: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @StateObject private var store = ContactsStore()
     @State private var showAddContactSheet = false
     @State private var pendingDelete: ContactsAPI.Contact?
@@ -348,9 +349,8 @@ struct MeContacts: View {
     private func callButton(_ phone: String) -> some View {
         Button {
             let digits = phone.filter { $0.isNumber || $0 == "+" }
-            if let url = URL(string: "tel:\(digits)"),
-               UIApplication.shared.canOpenURL(url) {
-                UIApplication.shared.open(url)
+            if let url = URL(string: "tel:\(digits)") {
+                openURL(url)
             }
         } label: {
             Image(systemName: "phone.fill")
@@ -364,9 +364,8 @@ struct MeContacts: View {
 
     private func emailButton(_ email: String) -> some View {
         Button {
-            if let url = URL(string: "mailto:\(email)"),
-               UIApplication.shared.canOpenURL(url) {
-                UIApplication.shared.open(url)
+            if let url = URL(string: "mailto:\(email)") {
+                openURL(url)
             }
         } label: {
             Image(systemName: "envelope")

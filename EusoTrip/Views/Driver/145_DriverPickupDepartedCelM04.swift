@@ -101,6 +101,7 @@ private struct PDBody: View {
     let onHosClock: () -> Void
 
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: EusoTripSession
 
     @State private var load: PDLoadCtx?
@@ -331,7 +332,7 @@ private struct PDBody: View {
     }
     private func openRoute() {
         guard let url = destinationMapURL else { return }
-        UIApplication.shared.open(url)
+        openURL(url)
     }
 
     // MARK: reads

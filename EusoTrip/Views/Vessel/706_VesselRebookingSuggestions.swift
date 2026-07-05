@@ -20,11 +20,9 @@
 //      pair and ranks them — so the list IS the rebooking recommendation set. Empty list when no
 //      scheduled voyage matches the O/D pair (or when ports aren't set) — the bespoke empty state
 //      renders honestly, no fabricated voyages.
-//    "Book suggested voyage" -> bookRebooking — STUB · named-gap (read-only today:
-//      rebookingSuggestions returns candidate voyages only; a mutation that creates the replacement
-//      vessel booking against the selected voyage, releases the blanked allocation, and broadcasts the
-//      booking change is the surfaced backend gap). Re-runs load() rather than faking a write.
-//    "Watch" -> watchVoyage — STUB · named-gap.
+//    "Book suggested voyage" -> blankSailing.bookRebooking updates the booking to the selected voyage,
+//      persists a vessel_shipment_events row, and audits the change.
+//    "Watch" -> blankSailing.watchVoyage persists a watch event on the booking.
 //
 //  0 mock data on load · honest empty/error states. RimCard706 / ESangRow706 / secondaryButton706 are
 //  file-scoped bespoke helpers (the canonical port's plain Capsule CTAs + inline cards are not shared
@@ -42,6 +40,7 @@ private enum RebookDelayTier706 { case tight, moderate, wide
 private struct RebookSuggestion706: Identifiable {
     let id = UUID()
     let rank: Int
+    let voyageId: Int?
     let voyage: String
     let etdSub: String
     let delayPill: String
@@ -51,10 +50,10 @@ private struct RebookSuggestion706: Identifiable {
 
 struct VesselRebookingSuggestionsScreen: View {
     let theme: Theme.Palette
-    /// Blanked booking context (SVG canon: VES-260518-7C3A09F18B · voyage 0FE3W). The
-    /// rebookingSuggestions query keys off the original shipment's id to find same-O/D voyages.
-    var shipmentId: Int = 1
-    init(theme: Theme.Palette, shipmentId: Int = 1) { self.theme = theme; self.shipmentId = shipmentId }
+    /// Blanked booking context. The rebookingSuggestions query keys off the original
+    /// shipment id to find same-O/D voyages.
+    var shipmentId: Int = 0
+    init(theme: Theme.Palette, shipmentId: Int = 0) { self.theme = theme; self.shipmentId = shipmentId }
 
     var body: some View {
         Shell(theme: theme) {
@@ -83,9 +82,12 @@ private struct VesselRebookingSuggestionsBody: View {
     @State private var bestAdded = "-"
     @State private var bestVoyage = "no matching voyage"
     @State private var bestEtd = "-"
-    @State private var blankedVoyage = "0FE3W"
-    @State private var originalBooking = "VES-260518-7C3A09F18B"
+    @State private var blankedVoyage = "—"
+    @State private var originalBooking = "—"
     @State private var emptyMessage: String? = nil
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var actionInFlight = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -102,6 +104,7 @@ private struct VesselRebookingSuggestionsBody: View {
                                    title: "No rebooking suggestions",
                                    subtitle: emptyMessage ?? "No scheduled voyage matches this booking's origin/destination pair. rebookingSuggestions returned an empty set, nothing to re-book onto yet.")
                 } else {
+                    actionBanners
                     exposureHero
                     kpiStrip
                     suggestionsList
@@ -120,6 +123,27 @@ private struct VesselRebookingSuggestionsBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+    }
+
+    @ViewBuilder private var actionBanners: some View {
+        if let actionMessage {
+            LifecycleCard {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Brand.success)
+                    Text(actionMessage).font(EType.caption).foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        if let actionError {
+            LifecycleCard(accentDanger: true) {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.danger)
+                    Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
     }
 
     // MARK: - Header
@@ -147,7 +171,7 @@ private struct VesselRebookingSuggestionsBody: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     pillChip("blanked")
-                    pillChip("trans-Pacific")
+                    pillChip("same O/D")
                     Spacer()
                 }
                 HStack(alignment: .bottom) {
@@ -160,7 +184,7 @@ private struct VesselRebookingSuggestionsBody: View {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text("BLANKED").font(.system(size: 10, weight: .heavy)).foregroundStyle(palette.textSecondary)
                         Text(blankedVoyage).font(.system(size: 22, weight: .bold)).monospacedDigit().foregroundStyle(palette.textPrimary)
-                        Text("cap. pulled").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                        Text("blank sailing").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
                     }
                 }
             }
@@ -260,8 +284,8 @@ private struct VesselRebookingSuggestionsBody: View {
                 Spacer()
                 Text("blank sailing watch").font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
-            Text("\(originalBooking) · voyage \(blankedVoyage) · cap. pulled").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
-            Text("same origin/destination pair · trans-Pacific westbound · 730 watch").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+            Text("\(originalBooking) · voyage \(blankedVoyage)").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+            Text("same origin/destination pair · scheduled voyage alternatives").font(.system(size: 11)).foregroundStyle(palette.textSecondary)
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(
@@ -293,9 +317,18 @@ private struct VesselRebookingSuggestionsBody: View {
     }
 
     // MARK: - Load + write verbs
+    private struct RebookingInput706: Encodable { let shipmentId: Int; let voyageId: Int }
+    private struct RebookingOut706: Decodable { let success: Bool?; let voyageNumber: String?; let status: String? }
 
     private func load() async {
         loading = true; loadError = nil
+        guard shipmentId > 0 else {
+            suggestions = []
+            hasSuggestions = false
+            emptyMessage = "Open rebooking from a real vessel booking to see alternatives."
+            loading = false
+            return
+        }
         struct In706: Encodable { let shipmentId: Int }
         struct OriginalBooking706: Decodable { let id: Int?; let bookingNumber: String?; let voyageNumber: String? }
         struct Suggestion706: Decodable {
@@ -323,6 +356,7 @@ private struct VesselRebookingSuggestionsBody: View {
                     let tier: RebookDelayTier706 = added <= 2 ? .tight : (added <= 5 ? .moderate : .wide)
                     return RebookSuggestion706(
                         rank: rank,
+                        voyageId: s.voyageId,
                         voyage: "#\(rank) \(s.voyageNumber ?? "voyage \(s.voyageId ?? 0)")",
                         etdSub: "ETD \(shortDate(s.scheduledDeparture)) · same O/D",
                         delayPill: "+\(added)d",
@@ -357,8 +391,47 @@ private struct VesselRebookingSuggestionsBody: View {
         return f.string(from: date)
     }
 
-    private func book() async { /* bookRebooking — STUB · named-gap (surfaced to the-oath). */ await load() }
-    private func watch() async { /* watchVoyage — STUB · named-gap. */ await load() }
+    private func book() async {
+        guard !actionInFlight else { return }
+        guard let first = suggestions.first, let voyageId = first.voyageId else {
+            actionMessage = nil
+            actionError = "No suggested voyage is available to book."
+            return
+        }
+        actionMessage = nil; actionError = nil; actionInFlight = true
+        defer { actionInFlight = false }
+        do {
+            let out: RebookingOut706 = try await EusoTripAPI.shared.mutation(
+                "blankSailing.bookRebooking",
+                input: RebookingInput706(shipmentId: shipmentId, voyageId: voyageId)
+            )
+            actionMessage = "Rebooked onto \(out.voyageNumber ?? first.voyage) · \(out.status ?? "confirmed")"
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func watch() async {
+        guard !actionInFlight else { return }
+        guard let first = suggestions.first, let voyageId = first.voyageId else {
+            actionMessage = nil
+            actionError = "No suggested voyage is available to watch."
+            return
+        }
+        actionMessage = nil; actionError = nil; actionInFlight = true
+        defer { actionInFlight = false }
+        do {
+            let out: RebookingOut706 = try await EusoTripAPI.shared.mutation(
+                "blankSailing.watchVoyage",
+                input: RebookingInput706(shipmentId: shipmentId, voyageId: voyageId)
+            )
+            actionMessage = "Watching \(out.voyageNumber ?? first.voyage) for rebooking changes."
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
 }
 
 // MARK: - File-scoped bespoke helpers (preserve the canonical wireframe look)

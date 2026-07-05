@@ -794,6 +794,7 @@ struct HomeWidgetGrid: View {
 
 struct DriverHome: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var profile: DriverProfileStore
     @StateObject private var vm = DriverHomeViewModel()
     /// Sheet→push detail layer (push-nav mandate, 2026-06-09 / audit
@@ -1389,7 +1390,7 @@ struct DriverHome: View {
                     await vm.load()
                 }
             } else if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url)
+                openURL(url)
             }
         } label: {
             HStack(alignment: .center, spacing: Space.s3) {

@@ -28,11 +28,11 @@
 //      null we render the honest "enter weights / no limit on record" state —
 //      no invented 40HC defaults.
 //
-//  HONEST WIRE-GAP (named-gap §738):
-//    · There is no VGM-filing mutation (`submitVgmDeclaration`) server-side.
-//      The Submit VGM CTA computes the declaration from operator-entered
-//      weights and surfaces the named gap explicitly rather than pretending
-//      the box was declared.
+//  VGM filing:
+//    · vesselShipments.submitVgmDeclaration records the declaration as an
+//      auditable vessel event + container tracking row. The container table has
+//      tare/payload columns but no VGM column, so the filing ledger is the
+//      shipment event stream.
 //
 //  RBAC: vesselProcedure. NO mock rows — the ledger is built from live
 //  container rows with real loading / empty / error states.
@@ -75,6 +75,7 @@ private struct VGMContainer738: Decodable {
     let tareWeightKg: Int?
     let maxPayloadKg: Int?
     let ownerCompany: String?
+    let assignedShipmentId: Int?
 }
 
 private struct VGMPositionsResponse738: Decodable {
@@ -105,6 +106,12 @@ private enum WeighingMethod: Int, CaseIterable, Identifiable {
         switch self {
         case .method1: return "method 1"
         case .method2: return "method 2"
+        }
+    }
+    var apiValue: String {
+        switch self {
+        case .method1: return "method1"
+        case .method2: return "method2"
         }
     }
     var contextLabel: String {
@@ -423,7 +430,7 @@ private struct VesselVGMDeclarationBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("submitVgmDeclaration")
+                Text("VGM event ledger")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -775,18 +782,72 @@ private struct VesselVGMDeclarationBody: View {
         loading = false
     }
 
-    // MARK: - Submit VGM (named-gap · submitVgmDeclaration)
+    // MARK: - Submit VGM
 
     private func submitVGM() async {
-        guard declarationComplete, let vgm = computedVGM else { return }
+        guard declarationComplete,
+              let vgm = computedVGM,
+              let container = headerContainer,
+              let number = container.containerNumber,
+              number.isEmpty == false else { return }
         submitting = true; submitNote = nil; submitError = nil
-        // HONEST WIRE-GAP: there is no `submitVgmDeclaration` mutation
-        // server-side (named-gap §738). We DO NOT fake a "submitted" success;
-        // we surface the computed declaration and the gap explicitly so the
-        // operator knows the box was NOT yet filed.
         defer { submitting = false }
-        submitNote = "VGM computed (\(vgm.formatted(.number.grouping(.automatic))) kg · \(method.shortLabel)). "
-            + "Filing endpoint submitVgmDeclaration is not yet wired; the declaration has not been transmitted."
+        struct VGMIn: Encodable {
+            let shipmentId: Int?
+            let containerId: Int?
+            let containerNumber: String?
+            let vgmKg: Int
+            let tareKg: Int?
+            let cargoKg: Int?
+            let method: String
+            let signatoryName: String?
+            let notes: String?
+        }
+        struct VGMOut: Decodable {
+            let success: Bool
+            let eventId: Int?
+            let shipmentId: Int?
+            let containerId: Int?
+            let containerNumber: String?
+            let vgmKg: Int?
+            let method: String?
+            let submittedAt: String?
+        }
+        do {
+            let out: VGMOut = try await EusoTripAPI.shared.mutation(
+                "vesselShipments.submitVgmDeclaration",
+                input: VGMIn(
+                    shipmentId: container.assignedShipmentId,
+                    containerId: container.id,
+                    containerNumber: number,
+                    vgmKg: vgm,
+                    tareKg: computedTare,
+                    cargoKg: computedCargo,
+                    method: method.apiValue,
+                    signatoryName: session.user?.name,
+                    notes: "SOLAS VI/2 VGM submitted from Vessel VGM Declaration"
+                )
+            )
+            guard out.success else {
+                submitError = "VGM was not accepted by the server."
+                return
+            }
+            let filedKg = out.vgmKg ?? vgm
+            rows = rows.map { row in
+                guard row.id == number else { return row }
+                return VGMLedgerRow(
+                    id: row.id,
+                    containerNumber: row.containerNumber,
+                    status: .submitted,
+                    vgmKg: filedKg,
+                    method: method,
+                    cutoffNote: out.eventId.map { "VGM event #\($0)" } ?? "VGM submitted"
+                )
+            }
+            submitNote = "VGM submitted for \(formatContainer(out.containerNumber ?? number)) · \(filedKg.formatted(.number.grouping(.automatic))) kg · \(method.shortLabel)."
+        } catch {
+            submitError = error.eusoUserCopy
+        }
     }
 }
 

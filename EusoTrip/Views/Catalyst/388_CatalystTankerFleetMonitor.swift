@@ -122,6 +122,7 @@ private struct TankerFleetBody_388: View {
     /// Relative "synced …" label off the freshest live reading's
     /// `lastGaugedAt`. Empty until a real reading lands (no fabricated time).
     @State private var syncedLabel: String = ""
+    @State private var showPressureTrend = false
 
     // ── Static identity / copy (verbatim from Code spec + SVG) ──
     private let eyebrow      = "CATALYST · TANKER FLEET"
@@ -165,7 +166,7 @@ private struct TankerFleetBody_388: View {
                         }
                     }
                     HStack(spacing: Space.s2) {
-                        CTAButton(title: primaryCTA, action: {})
+                        CTAButton(title: primaryCTA, action: { showPressureTrend = true })
                         secondaryButton_388(secondaryCTA)
                     }
                     provenanceFootnote_388
@@ -180,6 +181,10 @@ private struct TankerFleetBody_388: View {
         .refreshable { await loadAll() }
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
+        }
+        .sheet(isPresented: $showPressureTrend) {
+            TankPressureTrendSheet_388(data: data, syncedLabel: syncedLabel)
+                .environment(\.palette, palette)
         }
     }
 
@@ -435,17 +440,25 @@ private struct TankerFleetBody_388: View {
     // MARK: - Secondary CTA (outline — mirrors SVG #1C2128 / hairline)
 
     private func secondaryButton_388(_ label: String) -> some View {
-        Text(label)
-            .font(.system(size: 14, weight: .bold))
-            .foregroundStyle(palette.textPrimary)
-            .frame(maxWidth: .infinity)
-            .frame(height: 48)
-            .background(palette.bgCard)
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(palette.borderSoft, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        Button {
+            Task {
+                await loadAll()
+                showPressureTrend = true
+            }
+        } label: {
+            Text(label)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(palette.textPrimary)
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(palette.bgCard)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(palette.borderSoft, lineWidth: 1)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Provenance footnote
@@ -706,6 +719,68 @@ private struct TankerFleetBody_388: View {
         let hrs = mins / 60
         if hrs < 24 { return "synced \(hrs)h ago" }
         return "synced \(hrs / 24)d ago"
+    }
+}
+
+private struct TankPressureTrendSheet_388: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    let data: TankTelemetry_388
+    let syncedLabel: String
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    LifecycleCard(accentGradient: true) {
+                        LifecycleSection(label: "PRESSURE TREND", icon: "gauge.with.dots.needle.bottom.50percent")
+                        LifecycleRow(label: "Active pressure", value: data.heroBig)
+                        LifecycleRow(label: "Envelope", value: data.heroBigUnit)
+                        LifecycleRow(label: "Status", value: data.heroRight)
+                        LifecycleRow(label: "Synced", value: syncedLabel.isEmpty ? "—" : syncedLabel)
+                    }
+
+                    LifecycleCard {
+                        LifecycleSection(label: "LIVE TANK ROWS", icon: "drop.triangle")
+                        if data.rows.isEmpty {
+                            Text("No live tank rows loaded.")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        } else {
+                            ForEach(data.rows) { row in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(row.title)
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(palette.textPrimary)
+                                    Text(row.detail)
+                                        .font(EType.caption)
+                                        .foregroundStyle(palette.textSecondary)
+                                    Text(row.badge)
+                                        .font(EType.mono(.caption))
+                                        .foregroundStyle(row.badgeKind == .positive ? Brand.success : palette.textTertiary)
+                                }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                    }
+
+                    if !data.footnote.isEmpty {
+                        Text(data.footnote)
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                }
+                .padding(Space.s4)
+            }
+            .navigationTitle("Pressure trend")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

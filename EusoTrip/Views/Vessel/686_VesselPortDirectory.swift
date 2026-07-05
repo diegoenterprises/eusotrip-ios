@@ -436,11 +436,11 @@ private struct VesselPortDirectoryBody: View {
     // MARK: - Search CTA
 
     private var searchCTA: some View {
-        CTAButton(title: "Search port directory") {
+        CTAButton(title: "Search port directory", action: {
             // Inline search is wired via the searchText filter on getPorts;
             // the CTA re-runs the directory query with the current term.
             Task { await load() }
-        }
+        })
     }
 
     // MARK: - Loading skeleton
