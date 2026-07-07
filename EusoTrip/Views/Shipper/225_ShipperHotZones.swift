@@ -941,8 +941,11 @@ struct ShipperHotZones: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(palette.bgCard)
         .overlay(
+            // On-brand EusoTrip gradient outline (blue→magenta). The demand
+            // tier still reads through the colored "N.N× demand" headline and
+            // the state badge — the ring is now brand-consistent across tiles.
             RoundedRectangle(cornerRadius: Radius.lg)
-                .strokeBorder(demandColor.opacity(0.45), lineWidth: 1)
+                .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
         .accessibilityElement(children: .combine)
@@ -1228,7 +1231,7 @@ struct ShipperHotZones: View {
         .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg)
-                .strokeBorder(Brand.info.opacity(0.45), lineWidth: 1)
+                .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
     }

@@ -430,12 +430,13 @@ struct HourlyRibbon: View {
             }
             }
             .contentShape(Rectangle())
-            .gesture(
-                // Founder 2026-06-19: a 0-distance scrub STOLE the home-screen
-                // ScrollView's drag — you couldn't scroll past the weather
-                // widget. Require a 12pt move AND a HORIZONTAL intent: a
-                // vertical/quick pan falls through to the parent scroll, only a
-                // deliberate sideways drag scrubs the hourly ribbon.
+            // simultaneousGesture (not .gesture): a plain child DragGesture
+            // still CAPTURES the touch from the home ScrollView once it passes
+            // its minimum distance — the vertical-intent `return` below can't
+            // hand the drag back, so scrolling died over the widget. Running it
+            // simultaneously lets the ScrollView keep vertical pans while a
+            // deliberate horizontal drag still scrubs the hourly ribbon.
+            .simultaneousGesture(
                 DragGesture(minimumDistance: 12)
                     .onChanged { v in
                         guard abs(v.translation.width) >= abs(v.translation.height) else { return }

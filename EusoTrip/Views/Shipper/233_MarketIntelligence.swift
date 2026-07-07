@@ -365,7 +365,7 @@ struct MarketIntelligenceBody: View {
     /// Default browse tiles stay compact. Only the tapped/flipped row expands
     /// to the detail height, so customization does not trade a usable grid for
     /// large invisible gutters.
-    private let frontTileHeight: CGFloat = 174
+    private let frontTileHeight: CGFloat = 192
     private let detailTileHeight: CGFloat = 296
 
     // marketPricing.getCommodities (canonical web feed)
@@ -1086,8 +1086,10 @@ struct MarketIntelligenceBody: View {
                 .fill(palette.bgCard)
         )
         .overlay(
+            // On-brand EusoTrip gradient outline (blue→magenta) instead of the
+            // flat faint hairline, so the commodity tiles read as branded cards.
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
+                .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
         )
         // Hard clip: front content can never bleed past the tile into a neighbour.
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
