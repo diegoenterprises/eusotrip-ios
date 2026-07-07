@@ -13,6 +13,8 @@
 //    - ReeferComplianceRouter      (FSMA, FDA, temp logs)
 //    - LivestockComplianceRouter   (USDA, 28-hr law)
 //    - HeavyHaulComplianceRouter   (OS/OW, escorts, route survey)
+//    - EldComplianceRouter         (HOS, 49 CFR 395)
+//    - VesselLandfallComplianceRouter (NOA, customs clearance)
 //    - CrossBorderComplianceRouter (ACE / CARM / SAT)
 //
 //  Routing dispatch: `ComplianceRouterRegistry.routers(for: vertical,
@@ -92,6 +94,8 @@ public enum ComplianceRouterRegistry {
         ReeferComplianceRouter.self,
         LivestockComplianceRouter.self,
         HeavyHaulComplianceRouter.self,
+        EldComplianceRouter.self,
+        VesselLandfallComplianceRouter.self,
         CrossBorderComplianceRouter.self,
     ]
 

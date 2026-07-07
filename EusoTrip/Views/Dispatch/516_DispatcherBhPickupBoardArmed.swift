@@ -22,6 +22,7 @@
 //
 
 import SwiftUI
+import Combine
 
 // MARK: - Screen
 
@@ -55,6 +56,8 @@ private struct BH516Body: View {
     @State private var load: LoadsAPI.LoadDetail?
     @State private var loadFailed = false
     @State private var driverRow: BH516DriverRow?
+    @State private var dvirRollup: BH516DvirRollup?
+    @State private var pingStatus: BH516AutoPing?
     @State private var trackInFlight = false
     @State private var nudgeInFlight = false
     @State private var actionAck: String?
@@ -140,7 +143,7 @@ private struct BH516Body: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 6) {
                     BH516Chip(text: watchChipText, tint: Brand.info)
-                    BH516Chip(text: "AUTO-PING —", tint: Brand.neutral)
+                    BH516Chip(text: pingStatus?.active == true ? "AUTO-PING ARMED" : "AUTO-PING —", tint: pingStatus?.active == true ? Brand.info : Brand.neutral)
                 }
             }
             Text(countdownText)
@@ -164,13 +167,13 @@ private struct BH516Body: View {
                      sub: windowOpenText == "—" ? "no pickup appointment on record" : "pickup window opens",
                      tint: nil)
             BH516Kpi(label: "DVIR",
-                     value: "—",
-                     sub: "pre-trip not shared to this board",
-                     tint: Brand.warning)
+                     value: dvirText,
+                     sub: dvirSub,
+                     tint: dvirRollup?.sectionsAcked == dvirRollup?.sectionsTotal ? Brand.success : Brand.warning)
             BH516Kpi(label: "PING",
-                     value: "—",
-                     sub: "no auto-ping on record",
-                     tint: nil)
+                     value: pingText,
+                     sub: pingSub,
+                     tint: pingStatus?.active == true ? Brand.info : nil)
         }
     }
 
@@ -182,16 +185,16 @@ private struct BH516Body: View {
                 HStack {
                     Text("14-point inspection").font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
                     Spacer()
-                    Text("— / 14").font(EType.mono(.caption)).foregroundStyle(palette.textSecondary)
+                    Text("\(dvirRollup?.sectionsAcked ?? 0) / 14").font(EType.mono(.caption)).foregroundStyle(palette.textSecondary)
                 }
                 HStack(spacing: 4) {
-                    ForEach(0..<14, id: \.self) { _ in
+                    ForEach(0..<14, id: \.self) { i in
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
-                            .fill(palette.tintNeutral)
+                            .fill(i < (dvirRollup?.sectionsAcked ?? 0) ? Brand.success : palette.tintNeutral)
                             .frame(height: 10)
                     }
                 }
-                Text("Inspection progress posts from the driver's cab — none has been received for this load.")
+                Text(dvirRollup == nil ? "Inspection progress posts from the driver's cab — none has been received for this load." : "Inspection progress posts from the driver's cab — \(dvirRollup?.sectionsAcked == 14 ? "passed" : "advancing").")
                     .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
             }
         }
@@ -309,6 +312,27 @@ private struct BH516Body: View {
         return f.string(from: p)
     }
 
+    private var dvirText: String {
+        guard let r = dvirRollup else { return "—" }
+        return "\(r.sectionsAcked)/\(r.sectionsTotal)"
+    }
+
+    private var dvirSub: String {
+        guard let r = dvirRollup else { return "pre-trip not shared to this board" }
+        if r.sectionsAcked == r.sectionsTotal { return "inspection passed" }
+        return "inspection advancing"
+    }
+
+    private var pingText: String {
+        guard let p = pingStatus else { return "—" }
+        return p.active ? "ARMED" : "—"
+    }
+
+    private var pingSub: String {
+        guard let p = pingStatus else { return "no auto-ping on record" }
+        return p.active ? "scheduled for \(p.nextPingTime ?? "-")" : "auto-ping not active"
+    }
+
     private var driverSub: String {
         if let n = load?.driver?.name {
             if let d = load?.driver?.dotNumber { return "\(n) · USDOT \(d)" }
@@ -350,7 +374,25 @@ private struct BH516Body: View {
             loadFailed = false
         } catch { loadFailed = load == nil }
         await fetchDriverRow()
+        await fetchDvirRollup()
+        await fetchPingStatus()
         now = Date()
+    }
+
+    private func fetchDvirRollup() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            dvirRollup = try await EusoTripAPI.shared.query("dispatch.getLoadDvirRollup", input: In(loadId: numericId))
+        } catch { dvirRollup = nil }
+    }
+
+    private func fetchPingStatus() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            pingStatus = try await EusoTripAPI.shared.query("dispatch.getAutoPingStatus", input: In(loadId: numericId))
+        } catch { pingStatus = nil }
     }
 
     private func fetchDriverRow() async {
@@ -468,6 +510,18 @@ private struct BH516WatchRow: View {
 }
 
 // MARK: - File-local helpers
+
+private struct BH516DvirRollup: Decodable {
+    let dvirId: Int?
+    let status: String?
+    let sectionsAcked: Int
+    let sectionsTotal: Int
+}
+
+private struct BH516AutoPing: Decodable {
+    let active: Bool
+    let nextPingTime: String?
+}
 
 private struct BH516DriverRow: Decodable {
     let id: String?

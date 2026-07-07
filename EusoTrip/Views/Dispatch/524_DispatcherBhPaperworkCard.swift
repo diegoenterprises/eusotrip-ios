@@ -69,6 +69,7 @@ private struct BH524Body: View {
     @State private var vaultSynced: Bool?
     @State private var loadFailed = false
     @State private var driverRow: BH524DriverRow?
+    @State private var margin: BH524Margin?
     @State private var requestInFlight = false
     @State private var downloadInFlight = false
     @State private var actionAck: String?
@@ -238,8 +239,8 @@ private struct BH524Body: View {
                                valueTint: firstMissingLabel != nil ? Brand.warning : Brand.success)
                 Divider().overlay(palette.borderFaint)
                 BH524DetailRow(title: "Accessorials",
-                               value: "not on this load record",
-                               valueTint: nil)
+                               value: accessorialText,
+                               valueTint: (margin?.accessorialTotal ?? 0) > 0 ? Brand.warning : nil)
                 Divider().overlay(palette.borderFaint)
                 BH524DetailRow(title: "Compliance vault",
                                value: vaultSynced == true ? "synced" : (vaultSynced == false ? "not reachable" : "—"),
@@ -329,6 +330,11 @@ private struct BH524Body: View {
         return "\(load?.loadNumber ?? "this load") · \(readyCount) of \(tiles.count) documents ready"
     }
 
+    private var accessorialText: String {
+        guard let m = margin?.accessorialTotal, m > 0 else { return "not on this load record" }
+        return String(format: "$%.0f recorded", m)
+    }
+
     private var missingLine: String {
         guard docsLoaded else { return "—" }
         if let missing = firstMissingLabel {
@@ -353,6 +359,7 @@ private struct BH524Body: View {
         await fetchDocs()
         await fetchVault()
         await fetchDriverRow()
+        await fetchMargin()
     }
 
     private func fetchDocs() async {
@@ -389,6 +396,14 @@ private struct BH524Body: View {
             driverRow = rows.first(where: { $0.load != nil && $0.load == ln })
                 ?? rows.first(where: { dn != nil && $0.name == dn })
         } catch { driverRow = nil }
+    }
+
+    private func fetchMargin() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            margin = try await EusoTripAPI.shared.query("dispatch.getLoadMargin", input: In(loadId: numericId))
+        } catch { margin = nil }
     }
 
     private func requestMissing() async {
@@ -522,6 +537,10 @@ private struct BH524DriverRow: Decodable {
     let status: String?
     let load: String?
     let hoursRemaining: Double?
+}
+
+private struct BH524Margin: Decodable {
+    let accessorialTotal: Double?
 }
 
 // MARK: - Previews

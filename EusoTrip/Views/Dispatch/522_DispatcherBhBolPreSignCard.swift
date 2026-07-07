@@ -68,6 +68,8 @@ private struct BH522Body: View {
     @State private var showGlassSheet = false
     @State private var signerName = ""
     @State private var signerEmail = ""
+    @State private var sealRollup: BH522SealRollup?
+    @State private var reeferStats: BH522ReeferStats?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -205,9 +207,9 @@ private struct BH522Body: View {
                      sub: expiresText == "—" ? "arms when a request sends" : "request lifetime",
                      tint: nil)
             BH522Kpi(label: "SEAL",
-                     value: "—",
-                     sub: "seal checks not shared to this board",
-                     tint: nil)
+                     value: sealText,
+                     sub: sealSub,
+                     tint: sealTint)
         }
     }
 
@@ -238,11 +240,11 @@ private struct BH522Body: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Reefer temp trace")
                         .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("No temperature trace is linked to this document packet for this load.")
+                    Text(reeferStats != nil ? "Trace linked: \(reeferStats?.avgTemp != nil ? String(format: "%.1f°F avg", reeferStats!.avgTemp!) : "active") · \(reeferStats?.readingCount ?? 0) points" : "No temperature trace is linked to this document packet for this load.")
                         .font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
                 }
                 Spacer()
-                BH522Chip(text: "NOT LINKED", tint: Brand.neutral)
+                BH522Chip(text: reeferStats != nil ? "LINKED" : "NOT LINKED", tint: reeferStats != nil ? Brand.success : Brand.neutral)
             }
         }
     }
@@ -372,6 +374,23 @@ private struct BH522Body: View {
             : "send the request to arm this pad for the receiver"
     }
 
+    private var sealText: String {
+        guard let s = sealRollup else { return "—" }
+        if let intact = s.allSealsIntact { return intact ? "INTACT" : "BROKEN" }
+        return "—"
+    }
+
+    private var sealSub: String {
+        guard let s = sealRollup else { return "seal checks not shared to this board" }
+        if s.allSealsIntact == nil { return "no seal status on record" }
+        return "\(s.sealNumbers.count) seals verified"
+    }
+
+    private var sealTint: Color? {
+        guard let s = sealRollup, let intact = s.allSealsIntact else { return nil }
+        return intact ? Brand.success : Brand.danger
+    }
+
     private var sealFooter: String { "Seal checks not shared to this board" }
 
     private var sentFooter: String {
@@ -408,6 +427,8 @@ private struct BH522Body: View {
         } catch { loadFailed = load == nil }
         await fetchBol()
         await fetchSignatureStatus()
+        await fetchSealRollup()
+        await fetchReeferStats()
     }
 
     private func fetchBol() async {
@@ -429,6 +450,22 @@ private struct BH522Body: View {
         do {
             signatureStatus = try await EusoTripAPI.shared.query("documentManagement.getSignatureStatus", input: In(requestId: requestId))
         } catch { /* keeps the last known request state */ }
+    }
+
+    private func fetchSealRollup() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            sealRollup = try await EusoTripAPI.shared.query("dispatch.getSealRollup", input: In(loadId: numericId))
+        } catch { sealRollup = nil }
+    }
+
+    private func fetchReeferStats() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            reeferStats = try await EusoTripAPI.shared.query("reeferTemp.getStats", input: In(loadId: numericId))
+        } catch { reeferStats = nil }
     }
 
     private func draftBol() async {
@@ -652,6 +689,19 @@ private struct BH522SignatureStatus: Decodable {
     let completedAt: String?
     let signers: [Signer]?
     let progress: Progress?
+}
+
+private struct BH522SealRollup: Decodable {
+    let loadId: Int?
+    let allSealsIntact: Bool?
+    let sealNumbers: [String]
+}
+
+private struct BH522ReeferStats: Decodable {
+    let avgTemp: Double?
+    let minTemp: Double?
+    let maxTemp: Double?
+    let readingCount: Int?
 }
 
 private func bh522Humanize(_ raw: String?) -> String {

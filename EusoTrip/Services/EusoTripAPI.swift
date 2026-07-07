@@ -1244,6 +1244,24 @@ final class EusoTripAPI: ObservableObject {
     // MARK: Low-level tRPC invocation
 
     /// GET /api/trpc/<path>?input=<url-encoded-JSON>
+    // MARK: - Vessel Landfall (canonical)
+    //
+    // `vesselShipments.getLandfallRegime` — MCP-verified 2026-07-06.
+    // Returns the arrival/customs/free-time regime for a country.
+
+    public struct LandfallRegimeResponse: Decodable {
+        public let country: String
+        public let arrivalInstrument: String
+        public let releaseInstrument: String
+        public let freeTimeBasis: String
+        public let currency: String
+    }
+
+    public func getLandfallRegime(country: String) async throws -> LandfallRegimeResponse {
+        struct In: Encodable { let country: String }
+        return try await query("vesselShipments.getLandfallRegime", input: In(country: country))
+    }
+
     func query<Output: Decodable, Input: Encodable>(
         _ path: String,
         input: Input

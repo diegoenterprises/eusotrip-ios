@@ -57,6 +57,7 @@ private struct BH525Body: View {
     @State private var detentionTotal: Double?
     @State private var podOnFile: Bool?
     @State private var auditCount: Int?
+    @State private var margin: BH525Margin?
     @State private var loadFailed = false
     @State private var statusInFlight = false
     @State private var actionAck: String?
@@ -151,8 +152,8 @@ private struct BH525Body: View {
             Divider().overlay(palette.borderFaint)
             VStack(spacing: 0) {
                 BH525LedgerRow(title: "Carrier linehaul",
-                               value: "—",
-                               sub: "not on this load record",
+                               value: linehaulText,
+                               sub: margin?.carrierLinehaul == nil ? "not on this load record" : "paid to carrier",
                                tint: nil)
                 Divider().overlay(palette.borderFaint)
                 BH525LedgerRow(title: "Lumper reimbursement",
@@ -166,8 +167,8 @@ private struct BH525Body: View {
                                tint: (detentionTotal ?? 0) > 0 ? Brand.warning : Brand.success)
                 Divider().overlay(palette.borderStrong)
                 BH525LedgerRow(title: "Brokerage margin",
-                               value: "—",
-                               sub: "not on this load record",
+                               value: marginText,
+                               sub: marginSub,
                                tint: nil)
             }
         }
@@ -188,8 +189,8 @@ private struct BH525Body: View {
                      sub: cycleText == "—" ? "needs posted + delivered dates" : "post to delivery",
                      tint: nil)
             BH525Kpi(label: "MARGIN",
-                     value: "—",
-                     sub: "not on this load record",
+                     value: marginText,
+                     sub: marginSub,
                      tint: nil)
             BH525Kpi(label: "TERMS",
                      value: "NET-30",
@@ -285,6 +286,21 @@ private struct BH525Body: View {
         }
     }
 
+    private var linehaulText: String {
+        guard let l = margin?.carrierLinehaul else { return "—" }
+        return String(format: "$%.0f", l)
+    }
+
+    private var marginText: String {
+        guard let m = margin?.margin else { return "—" }
+        return String(format: "$%.0f", m)
+    }
+
+    private var marginSub: String {
+        guard let pct = margin?.marginPct else { return "not on this load record" }
+        return String(format: "%.1f%% brokerage margin", pct)
+    }
+
     private var detentionText: String {
         guard let d = detentionTotal else { return "$0" }
         return String(format: "$%.0f", d)
@@ -328,6 +344,7 @@ private struct BH525Body: View {
         await fetchDetention()
         await fetchPod()
         await fetchAudit()
+        await fetchMargin()
     }
 
     private func fetchDetention() async {
@@ -362,6 +379,14 @@ private struct BH525Body: View {
                 input: In(page: 1, pageSize: 1))
             auditCount = out.total
         } catch { auditCount = nil }
+    }
+
+    private func fetchMargin() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            margin = try await EusoTripAPI.shared.query("dispatch.getLoadMargin", input: In(loadId: numericId))
+        } catch { margin = nil }
     }
 
     private func flipStatus(to status: String) async {
@@ -505,6 +530,13 @@ private func bh525ISODate(_ s: String?) -> Date? {
     f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     if let d = f1.date(from: s) { return d }
     return ISO8601DateFormatter().date(from: s)
+}
+
+private struct BH525Margin: Decodable {
+    let grossRate: Double?
+    let carrierLinehaul: Double?
+    let margin: Double?
+    let marginPct: Double?
 }
 
 // MARK: - Previews

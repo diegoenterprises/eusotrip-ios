@@ -3937,9 +3937,7 @@ struct DriverMessagesSheet: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(palette.textPrimary)
                         .frame(width: 32, height: 32)
-                        .background(
-                            LinearGradient.diagonal.opacity(0.22)
-                        )
+                        .background { LinearGradient.diagonal.opacity(0.22) }
                         .overlay(
                             RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
                                 .strokeBorder(LinearGradient.diagonal, lineWidth: 1)

@@ -22,6 +22,7 @@
 //
 
 import SwiftUI
+import Combine
 
 // MARK: - Screen
 
@@ -61,6 +62,11 @@ private struct BH521Body: View {
     @State private var actionAck: String?
     @State private var actionError: String?
     @State private var now = Date()
+    @State private var palletCount: Int? = nil
+    @State private var loadingRate: Double? = nil
+    @State private var forkliftId: String? = nil
+    @State private var spotId: String? = nil
+    @State private var dockDepartDate: Date? = nil
 
     private let clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
@@ -148,18 +154,18 @@ private struct BH521Body: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline, spacing: 3) {
-                        Text("—").font(.system(size: 34, weight: .heavy).monospacedDigit()).foregroundStyle(palette.textPrimary)
+                        Text(palletCount.map { "\($0)" } ?? "—").font(.system(size: 34, weight: .heavy).monospacedDigit()).foregroundStyle(palette.textPrimary)
                         Text(palletDenominatorText)
                             .font(.system(size: 16, weight: .heavy).monospacedDigit()).foregroundStyle(palette.textTertiary)
                     }
-                    Text("PALLETS LOADED · live counts post from the dock; none received")
+                    Text(palletCount == nil ? "PALLETS LOADED · live counts post from the dock; none received" : "PALLETS LOADED · current count from the facility feed")
                         .font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
                     Text("DEPART").font(.system(size: 8, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                    Text("—").font(.system(size: 20, weight: .heavy).monospacedDigit()).foregroundStyle(palette.textPrimary)
-                    Text("no dock appointment on file").font(.caption2).foregroundStyle(palette.textTertiary)
+                    Text(departCountdownText).font(.system(size: 20, weight: .heavy).monospacedDigit()).foregroundStyle(palette.textPrimary)
+                    Text(dockDepartDate == nil ? "no dock appointment on file" : "scheduled release").font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCardSoft))
@@ -182,8 +188,8 @@ private struct BH521Body: View {
                      sub: dwellText == "—" ? "no gate-in recorded" : "at this dock",
                      tint: nil)
             BH521Kpi(label: "ETA CLEAR",
-                     value: "—",
-                     sub: "dock schedule not linked to this load",
+                     value: departCountdownText,
+                     sub: dockDepartDate == nil ? "dock schedule not linked to this load" : "until scheduled release",
                      tint: nil)
             BH521Kpi(label: "HOS LEFT",
                      value: hosText,
@@ -198,12 +204,12 @@ private struct BH521Body: View {
         LifecycleCard {
             VStack(spacing: 0) {
                 BH521DetailRow(title: "Spot position",
-                               value: "not posted",
-                               sub: "spot assignments post from the facility")
+                               value: spotId ?? "not posted",
+                               sub: spotId == nil ? "spot assignments post from the facility" : "assigned loading bay")
                 Divider().overlay(palette.borderFaint)
                 BH521DetailRow(title: "Forklift / loader",
-                               value: "not posted",
-                               sub: "loader activity posts from the facility")
+                               value: forkliftId ?? "not posted",
+                               sub: forkliftId == nil ? "loader activity posts from the facility" : "assigned facility asset")
                 Divider().overlay(palette.borderFaint)
                 BH521DetailRow(title: "Est. complete",
                                value: isDockedStage ? "in progress" : "—",
@@ -280,6 +286,13 @@ private struct BH521Body: View {
         return "WATCH —"
     }
 
+    private var departCountdownText: String {
+        guard let d = dockDepartDate else { return "—" }
+        let diff = Int(d.timeIntervalSince(now))
+        guard diff > 0 else { return "LATE" }
+        return String(format: "%d:%02d", diff / 60, diff % 60)
+    }
+
     private var dwellText: String {
         guard let rec = activeDetention else { return "—" }
         if rec.exitAt == nil, let enter = bh521ISODate(rec.enterAt) {
@@ -336,7 +349,13 @@ private struct BH521Body: View {
         struct In: Encodable { let loadId: Int }
         guard let numeric = Int((load?.id ?? loadId).replacingOccurrences(of: "load_", with: "")) else { return }
         do {
-            tracking = try await EusoTripAPI.shared.query("location.tracking.getLoadTracking", input: In(loadId: numeric))
+            let res: BH521Tracking = try await EusoTripAPI.shared.query("location.tracking.getLoadTracking", input: In(loadId: numeric))
+            tracking = res
+            palletCount = res.palletCount
+            loadingRate = res.loadingRate
+            forkliftId = res.forkliftId
+            spotId = res.spotId
+            dockDepartDate = bh521ISODate(res.dockDepartDate)
         } catch { tracking = nil }
     }
 
@@ -510,6 +529,11 @@ private struct BH521Tracking: Decodable {
     let loadId: Int?
     let status: String?
     let detention: [Detention]?
+    let palletCount: Int?
+    let loadingRate: Double?
+    let forkliftId: String?
+    let spotId: String?
+    let dockDepartDate: String?
 }
 
 private struct BH521DriverRow: Decodable {

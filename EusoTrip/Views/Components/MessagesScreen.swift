@@ -77,7 +77,7 @@ struct MessagesScreen: View {
                                     // No-slide pop (founder 2026-06-18): strip
                                     // the default horizontal back-slide.
                                     if !path.isEmpty {
-                                        withTransaction(Transaction(animation: nil)) { path.removeLast() }
+                                        _ = withTransaction(Transaction(animation: nil)) { path.removeLast() }
                                     }
                                 } label: {
                                     HStack(spacing: 4) {
@@ -210,7 +210,7 @@ struct MessagesScreen: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 36, height: 36)
-                    .background(LinearGradient.diagonal.opacity(0.22))
+                    .background { LinearGradient.diagonal.opacity(0.22) }
                     .overlay(
                         RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
                             .strokeBorder(LinearGradient.diagonal, lineWidth: 1)
@@ -309,7 +309,7 @@ struct MessagesScreen: View {
         // If the deleted thread is open in the stack, pop it.
         if let topId = path.last?.id, topId == thread.id {
             // No-slide pop (founder 2026-06-18).
-            withTransaction(Transaction(animation: nil)) { path.removeLast() }
+            _ = withTransaction(Transaction(animation: nil)) { path.removeLast() }
         }
         do {
             _ = try await EusoTripAPI.shared.messaging.deleteConversation(

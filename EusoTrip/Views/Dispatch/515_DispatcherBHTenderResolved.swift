@@ -57,6 +57,8 @@ private struct BH515Body: View {
     @State private var load: LoadsAPI.LoadDetail?
     @State private var loadFailed = false
     @State private var driverRow: BH515DriverRow?
+    @State private var margin: BH515Margin?
+    @State private var dvirRollup: BH515DvirRollup?
     @State private var actionInFlight = false
     @State private var actionAck: String?
     @State private var actionError: String?
@@ -165,17 +167,17 @@ private struct BH515Body: View {
     private var kpiTriple: some View {
         HStack(spacing: Space.s2) {
             BH515Kpi(label: "MARGIN",
-                     value: "—",
-                     sub: "not on this load record",
+                     value: marginText,
+                     sub: marginSub,
                      tint: nil)
             BH515Kpi(label: "WINDOW",
                      value: windowRemainingText,
                      sub: windowRemainingText == "—" ? "no acceptance timer on record" : "until the tender window closes",
                      tint: windowRemainingText == "—" ? nil : palette.textPrimary)
             BH515Kpi(label: "DVIR",
-                     value: "—",
-                     sub: "pre-trip not shared to this board",
-                     tint: Brand.warning)
+                     value: dvirText,
+                     sub: dvirSub,
+                     tint: dvirRollup?.sectionsAcked == dvirRollup?.sectionsTotal ? Brand.success : Brand.warning)
         }
     }
 
@@ -212,7 +214,7 @@ private struct BH515Body: View {
     private var moneyBand: some View {
         LifecycleCard {
             HStack {
-                Text("Gross \(load?.rateDisplay ?? "—") · margin — · NET-30")
+                Text("Gross \(load?.rateDisplay ?? "—") · margin \(marginText) · NET-30")
                     .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
                 Spacer()
                 BH515Chip(text: load?.rate != nil ? "LOCKED" : "—",
@@ -298,6 +300,27 @@ private struct BH515Body: View {
         return String(format: "%d:%02d", secs / 60, secs % 60)
     }
 
+    private var marginText: String {
+        guard let m = margin?.margin else { return "—" }
+        return String(format: "$%.0f", m)
+    }
+
+    private var marginSub: String {
+        guard let pct = margin?.marginPct else { return "not on this load record" }
+        return String(format: "%.1f%% brokerage margin", pct)
+    }
+
+    private var dvirText: String {
+        guard let r = dvirRollup else { return "—" }
+        return "\(r.sectionsAcked)/\(r.sectionsTotal)"
+    }
+
+    private var dvirSub: String {
+        guard let r = dvirRollup else { return "pre-trip not shared to this board" }
+        if r.sectionsAcked == r.sectionsTotal { return "inspection passed" }
+        return "inspection advancing"
+    }
+
     private var driverGateSub: String {
         if let n = load?.driver?.name {
             if let d = load?.driver?.dotNumber { return "\(n) · USDOT \(d)" }
@@ -327,6 +350,8 @@ private struct BH515Body: View {
             loadFailed = false
         } catch { loadFailed = load == nil }
         await fetchDriverRow()
+        await fetchMargin()
+        await fetchDvirRollup()
     }
 
     private func fetchDriverRow() async {
@@ -338,6 +363,22 @@ private struct BH515Body: View {
             driverRow = rows.first(where: { $0.load != nil && $0.load == ln })
                 ?? rows.first(where: { dn != nil && $0.name == dn })
         } catch { driverRow = nil }
+    }
+
+    private func fetchMargin() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            margin = try await EusoTripAPI.shared.query("dispatch.getLoadMargin", input: In(loadId: numericId))
+        } catch { margin = nil }
+    }
+
+    private func fetchDvirRollup() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            dvirRollup = try await EusoTripAPI.shared.query("dispatch.getLoadDvirRollup", input: In(loadId: numericId))
+        } catch { dvirRollup = nil }
     }
 
     private func trackToPickup() async {
@@ -483,9 +524,9 @@ private struct BH515TenderSheet: View {
                         LifecycleCard {
                             row("Load", l.loadNumber)
                             row("Stage", bh515Humanize(l.status))
-                            row("Lane", l.laneDisplay ?? "—")
-                            row("Distance", l.distanceDisplay ?? "—")
-                            row("Rate", l.rateDisplay ?? "—")
+                            row("Lane", l.laneDisplay)
+                            row("Distance", l.distanceDisplay)
+                            row("Rate", l.rateDisplay)
                             row("Equipment", l.equipmentType.map(bh515Humanize) ?? "—")
                             row("Pickup", bh515LocalDateTime(l.pickupDate) ?? "—")
                             row("Delivery", bh515LocalDateTime(l.deliveryDate) ?? "—")
@@ -518,6 +559,20 @@ private struct BH515TenderSheet: View {
 }
 
 // MARK: - File-local helpers
+
+private struct BH515Margin: Decodable {
+    let grossRate: Double?
+    let carrierLinehaul: Double?
+    let margin: Double?
+    let marginPct: Double?
+}
+
+private struct BH515DvirRollup: Decodable {
+    let dvirId: Int?
+    let status: String?
+    let sectionsAcked: Int
+    let sectionsTotal: Int
+}
 
 private struct BH515DriverRow: Decodable {
     let id: String?

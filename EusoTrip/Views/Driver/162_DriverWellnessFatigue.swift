@@ -66,6 +66,7 @@
 //
 
 import SwiftUI
+import Combine
 #if canImport(WatchConnectivity)
 import WatchConnectivity
 #endif

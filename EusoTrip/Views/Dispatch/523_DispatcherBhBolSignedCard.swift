@@ -61,6 +61,9 @@ private struct BH523Body: View {
     @State private var loadFailed = false
     @State private var showDocSheet = false
     @State private var docDetail: BH523Doc?
+    @State private var signatureStatus: BH523SignatureStatus?
+    @State private var sealRollup: BH523SealRollup?
+    @State private var reeferStats: BH523ReeferStats?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -202,8 +205,8 @@ private struct BH523Body: View {
                      sub: signedTimeText == "—" ? "no signed copy on file" : "copy filed",
                      tint: nil)
             BH523Kpi(label: "PARTIES",
-                     value: "—",
-                     sub: "signer roster isn't listable by load on this board",
+                     value: signersText,
+                     sub: signersText == "—" ? "signer roster not shared" : "have signed",
                      tint: nil)
             BH523Kpi(label: "POD",
                      value: podDoc != nil ? "on file" : (docsLoaded ? "missing" : "—"),
@@ -217,11 +220,11 @@ private struct BH523Body: View {
     private var executionRecord: some View {
         LifecycleCard {
             VStack(spacing: 0) {
-                BH523RecordRow(title: "Signer", value: "not recorded on this board")
+                BH523RecordRow(title: "Signer", value: signatureStatus?.signers?.first?.name ?? "not recorded on this board")
                 Divider().overlay(palette.borderFaint)
                 BH523RecordRow(title: "Signed at", value: signedTimestampFull)
                 Divider().overlay(palette.borderFaint)
-                BH523RecordRow(title: "Hash", value: "not exposed to this board")
+                BH523RecordRow(title: "Hash", value: signatureStatus?.signatureHash?.prefix(12).lowercased() ?? "not exposed to this board")
                 Divider().overlay(palette.borderFaint)
                 BH523RecordRow(title: "Audit", value: auditValue)
             }
@@ -240,7 +243,7 @@ private struct BH523Body: View {
                     Text(podDoc != nil ? "POD on file" : "POD not yet filed")
                         .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
                     Text(podDoc != nil
-                         ? "exceptions aren't reported on this record · no temperature trace attached"
+                         ? "exceptions aren't reported on this record\(reeferStats != nil ? " · temp trace linked" : " · no temperature trace attached")"
                          : "the delivery receipt attaches to this packet when it's captured")
                         .font(EType.mono(.micro)).foregroundStyle(palette.textSecondary)
                 }
@@ -331,6 +334,11 @@ private struct BH523Body: View {
         return f.string(from: d)
     }
 
+    private var signersText: String {
+        guard let p = signatureStatus?.progress else { return "—" }
+        return "\(p.signed ?? 0)/\(p.total ?? 0)"
+    }
+
     private var signedTimestampFull: String {
         guard let iso = signedDoc?.uploadedAt, let d = bh523ISODate(iso) else { return "no signed copy on file" }
         let f = DateFormatter(); f.dateFormat = "MMM d · HH:mm"
@@ -362,6 +370,9 @@ private struct BH523Body: View {
             loadFailed = false
         } catch { loadFailed = load == nil }
         await fetchDocs()
+        await fetchSignatureStatus()
+        await fetchSealRollup()
+        await fetchReeferStats()
         await fetchAudit()
     }
 
@@ -378,6 +389,31 @@ private struct BH523Body: View {
             podDoc = docs.first(where: { $0.type == "pod" || $0.type == "delivery_receipt" })
             docsLoaded = true
         } catch { docsLoaded = false }
+    }
+
+    private func fetchSignatureStatus() async {
+        guard let docId = (signedDoc ?? bolDoc)?.id else { return }
+        struct In: Encodable { let documentId: String }
+        do {
+            // New endpoint to find request by documentId
+            signatureStatus = try await EusoTripAPI.shared.query("documentManagement.getSignatureByDocument", input: In(documentId: docId))
+        } catch { /* keeps the last known request state */ }
+    }
+
+    private func fetchSealRollup() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            sealRollup = try await EusoTripAPI.shared.query("dispatch.getSealRollup", input: In(loadId: numericId))
+        } catch { sealRollup = nil }
+    }
+
+    private func fetchReeferStats() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            reeferStats = try await EusoTripAPI.shared.query("reeferTemp.getStats", input: In(loadId: numericId))
+        } catch { reeferStats = nil }
     }
 
     private func fetchAudit() async {
@@ -513,6 +549,26 @@ private struct BH523Doc: Decodable {
     let status: String?
     let url: String?
     let uploadedAt: String?
+}
+
+private struct BH523SignatureStatus: Decodable {
+    struct Signer: Decodable { let name: String?; let email: String?; let status: String?; let signedAt: String? }
+    struct Progress: Decodable { let total: Int?; let signed: Int?; let pending: Int?; let percent: Int? }
+    let id: String?
+    let status: String?
+    let createdAt: String?
+    let signers: [Signer]?
+    let progress: Progress?
+    let signatureHash: String?
+}
+
+private struct BH523SealRollup: Decodable {
+    let allSealsIntact: Bool?
+    let sealNumbers: [String]
+}
+
+private struct BH523ReeferStats: Decodable {
+    let readingCount: Int?
 }
 
 private func bh523ISODate(_ s: String?) -> Date? {

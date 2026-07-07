@@ -21,16 +21,10 @@
 //        zero charge lines on file there is nothing real to audit, so the
 //        Bill CTA surfaces the honest no-charge-lines state instead of posting
 //        a fabricated $0 invoice.
-//  VERIFIED ABSENT (honest state, never fabricated):
-//    railMechanical.openWorkOrder / closeWorkOrder / billRepair — no repair
-//    charge rows exist, so the amount hero reads "estimate (unbilled)" per the
-//    design contract and the ledger renders empty rather than a live-fake
-//    total. AAR Field Manual job codes + Rule 1-119 handling + Rule 95
-//    responsibility resolve only when charge rows exist.
+//
 //
 
 import SwiftUI
-
 struct RailRepairWorkOrderScreen: View {
     let theme: Theme.Palette
 
@@ -102,7 +96,11 @@ private struct RailRepairWorkOrderBody: View {
     @State private var woMessage: String? = nil
     @State private var loading = true
     @State private var regime = 0
-    @State private var showBillNotice = false
+    @State private var showBillSheet = false
+    @State private var laborHours = ""
+    @State private var laborCost = ""
+    @State private var partsCost = ""
+    @State private var isBilling = false
     @State private var showDisputeNotice = false
 
     private let regimes: [(String, String)] = [("US · 48H", "USD"), ("CA · 48H", "CAD"), ("MX · 24H", "MXN")]
@@ -152,10 +150,39 @@ private struct RailRepairWorkOrderBody: View {
         }
         .task { await reload() }
         .refreshable { await reload() }
-        .alert("Nothing to bill", isPresented: $showBillNotice) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("No labor or material charge lines are on file for this defect, so there is no repair amount to bill. The defect record and inspection detail below remain available — record charges through your mechanical desk, then bill from the ledger.")
+        .sheet(isPresented: $showBillSheet) {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                Text("Bill Repair").font(EType.h2).foregroundStyle(palette.textPrimary)
+                Text("Enter labor and material costs to close this work order.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                
+                TextField("Labor Hours", text: $laborHours)
+                    .keyboardType(.decimalPad)
+                    .font(.system(size: 14, weight: .bold))
+                    .padding(Space.s3).background(palette.bgCardSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                
+                TextField("Labor Cost", text: $laborCost)
+                    .keyboardType(.decimalPad)
+                    .font(.system(size: 14, weight: .bold))
+                    .padding(Space.s3).background(palette.bgCardSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                
+                TextField("Parts Cost", text: $partsCost)
+                    .keyboardType(.decimalPad)
+                    .font(.system(size: 14, weight: .bold))
+                    .padding(Space.s3).background(palette.bgCardSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                
+                CTAButton(title: isBilling ? "Billing…" : "Bill Repair", action: { Task { await billRepair() } })
+                    .disabled(laborHours.isEmpty && laborCost.isEmpty && partsCost.isEmpty || isBilling)
+                Spacer()
+            }
+            .padding(20).presentationDetents([.height(360)]).presentationDragIndicator(.visible)
+            .background(palette.bgPage)
         }
         .alert("Nothing to dispute", isPresented: $showDisputeNotice) {
             Button("OK", role: .cancel) {}
@@ -366,7 +393,7 @@ private struct RailRepairWorkOrderBody: View {
                 .frame(maxWidth: .infinity)
                 .disabled(openingWO)
             } else {
-                CTAButton(title: "Bill repair", action: { showBillNotice = true })
+                CTAButton(title: "Bill repair", action: { showBillSheet = true })
                     .frame(maxWidth: .infinity)
             }
             Button(action: { showDisputeNotice = true }) {
@@ -416,6 +443,38 @@ private struct RailRepairWorkOrderBody: View {
             }
         } catch {
             woMessage = "The work order didn't open. Check your connection and try again."
+        }
+    }
+
+    private func billRepair() async {
+        guard let wo = workOrders.first(where: { ($0.status ?? "") != "closed" }) else { return }
+        guard !isBilling else { return }
+        isBilling = true; defer { isBilling = false }
+        struct In: Encodable {
+            let workOrderId: Int
+            let laborHours: Double?
+            let laborCost: Double?
+            let partsCost: Double?
+        }
+        struct Out: Decodable { let success: Bool }
+        let idVal = Int(wo.id.replacingOccurrences(of: "wo_", with: "")) ?? 0
+        guard idVal > 0 else { return }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "railMechanical.closeWorkOrder",
+                input: In(
+                    workOrderId: idVal,
+                    laborHours: Double(laborHours),
+                    laborCost: Double(laborCost),
+                    partsCost: Double(partsCost)
+                )
+            )
+            showBillSheet = false
+            laborHours = ""; laborCost = ""; partsCost = ""
+            woMessage = "Repair billed successfully."
+            await reload()
+        } catch {
+            woMessage = "Billing failed. Check your connection."
         }
     }
 

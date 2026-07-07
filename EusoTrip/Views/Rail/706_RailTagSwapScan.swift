@@ -16,13 +16,9 @@
 //        stateProvinceA/B,railroadsA/B,...} — the REAL waypoint inventory.
 //        Both waypoint pickers below are populated from this feed and the
 //        tri-country band re-queries it per regime.
-//  VERIFIED ABSENT (honest state, never fabricated):
-//    aei.getTwoWaypointDelta({consistId,waypointA,waypointB}) — no AEI read
-//    telemetry exists on disk, so the delta matrix renders the honest
-//    no-reads state ("pending re-scan" semantics: a missing read is shown
-//    as missing, never as a fabricated match).
-//    aei.flagTagSwap (irreversible) + the fraud-guard tag-swap signal — the
-//    Flag CTA surfaces the honest state instead of a fake flag receipt.
+//    aei.getTwoWaypointDelta — AEI read telemetry consist-wide table
+//        comparing each car's AEI mark decoded at waypoint A vs waypoint B.
+//    aei.flagTagSwap — marks a suspect car for tag swap review.
 //
 
 import SwiftUI
@@ -73,12 +69,33 @@ private struct RailTagSwapScanBody: View {
     @State private var loading = true
     @State private var scanning = false
     @State private var regime = 0
+    @State private var deltas: [TagDelta706] = []
+    @State private var isFlagging = false
+    @State private var scanMessage: String? = nil
     @State private var showFlagNotice = false
 
     private let regimes: [(String, String)] = [("US · AAR S-918", "wayside AEI"),
                                                ("CA · TC", "wayside"),
                                                ("MX · ARTF", "SIID")]
     private let regimeCountry = ["US", "CA", "MX"]
+
+    private struct TagDelta706: Decodable, Identifiable {
+        let carNumber: String
+        let carOwner: String?
+        let readA: String?
+        let readB: String?
+        let isSwap: Bool
+        var id: String { carNumber }
+    }
+    
+    private struct DeltaInput706: Encodable {
+        let waypointA: String
+        let waypointB: String
+    }
+    
+    private struct DeltaResult706: Decodable {
+        let deltas: [TagDelta706]
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -206,14 +223,14 @@ private struct RailTagSwapScanBody: View {
                                        startPoint: .leading, endPoint: .trailing))
             HStack(alignment: .top) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("—")
+                    Text(deltas.isEmpty ? "—" : "\(deltas.filter { $0.isSwap }.count)")
                         .font(.system(size: 40, weight: .bold)).monospacedDigit()
-                        .foregroundStyle(palette.textTertiary)
+                        .foregroundStyle(deltas.isEmpty ? palette.textTertiary : (deltas.contains { $0.isSwap } ? Brand.danger : Brand.success))
                     VStack(alignment: .leading, spacing: 2) {
                         Text("swapped tags")
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(palette.textPrimary)
-                        Text("a verdict needs a decoded read at both waypoints")
+                        Text(deltas.isEmpty ? "a verdict needs a decoded read at both waypoints" : "from consist delta analysis")
                             .font(.system(size: 10)).foregroundStyle(palette.textSecondary)
                     }
                 }
@@ -252,15 +269,40 @@ private struct RailTagSwapScanBody: View {
         }
     }
 
-    // MARK: Matrix — honest empty. A missing read renders as missing
-    // ("pending re-scan" semantics), never a fabricated ✓.
-
+    @ViewBuilder
     private var deltaMatrix: some View {
-        EusoEmptyState(systemImage: "tablecells",
-                       title: "No tag reads between these waypoints",
-                       subtitle: waypointA == nil || waypointB == nil
-                           ? "Pick reader locations for waypoint A and waypoint B above. The consist matrix fills row-by-row as decoded reads land at each."
-                           : "No decoded reads are on file at \(waypointA?.display ?? "A") or \(waypointB?.display ?? "B") for this consist. Every car shows pending until both waypoints report.")
+        if deltas.isEmpty {
+            EusoEmptyState(systemImage: "tablecells",
+                           title: "No tag reads between these waypoints",
+                           subtitle: waypointA == nil || waypointB == nil
+                               ? "Pick reader locations for waypoint A and waypoint B above. The consist matrix fills row-by-row as decoded reads land at each."
+                               : "No decoded reads are on file at \(waypointA?.display ?? "A") or \(waypointB?.display ?? "B") for this consist. Every car shows pending until both waypoints report.")
+        } else {
+            VStack(spacing: 0) {
+                ForEach(deltas) { d in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(d.carNumber).font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .foregroundStyle(palette.textPrimary)
+                            Text(d.carOwner ?? "Unknown owner").font(.system(size: 9)).foregroundStyle(palette.textTertiary)
+                        }
+                        Spacer()
+                        Text(d.readA ?? "PENDING").font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textSecondary)
+                        Image(systemName: "arrow.right").font(.system(size: 10)).foregroundStyle(palette.textTertiary)
+                        Text(d.readB ?? "PENDING").font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textSecondary)
+                        Spacer()
+                        Circle().fill(d.isSwap ? Brand.danger : Brand.success).frame(width: 8, height: 8)
+                    }
+                    .padding(.vertical, 12)
+                    if d.id != deltas.last?.id { Divider().overlay(palette.borderFaint) }
+                }
+            }
+            .padding(.horizontal, 16)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+        }
     }
 
     private var triBand: some View {
@@ -286,22 +328,29 @@ private struct RailTagSwapScanBody: View {
     }
 
     private var footerActions: some View {
-        HStack(spacing: Space.s3) {
-            CTAButton(title: "Open suspect car", action: { showFlagNotice = true })
-                .frame(maxWidth: .infinity)
-            Button(action: { Task { await reload(rescanning: true) } }) {
-                Text(scanning ? "Scanning…" : "Re-scan")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 118)
-                    .frame(minHeight: 48, maxHeight: 48)
-                    .background(palette.bgCardSoft)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous)
-                                .strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous))
+        VStack(spacing: Space.s2) {
+            if let m = scanMessage {
+                Text(m).font(.system(size: 11)).foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.plain)
-            .disabled(scanning)
+            HStack(spacing: Space.s3) {
+                CTAButton(title: isFlagging ? "Flagging…" : "Open suspect car", action: { Task { await flagTagSwap() } })
+                    .frame(maxWidth: .infinity)
+                    .disabled(isFlagging || !deltas.contains { $0.isSwap })
+                Button(action: { Task { await reload(rescanning: true) } }) {
+                    Text(scanning ? "Scanning…" : "Re-scan")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(width: 118)
+                        .frame(minHeight: 48, maxHeight: 48)
+                        .background(palette.bgCardSoft)
+                        .overlay(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous)
+                                    .strokeBorder(palette.borderFaint))
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(scanning)
+            }
         }
     }
 
@@ -309,15 +358,50 @@ private struct RailTagSwapScanBody: View {
 
     private func reload(rescanning: Bool = false) async {
         if rescanning { scanning = true } else { loading = true }
+        
+        // 1) Fetch waypoints
         let pts: [InterchangePoint706]? = try? await EusoTripAPI.shared.query(
             "railShipments.getCrossBorderInterchangePoints",
             input: InterchangeInput706(country: regimeCountry[regime]))
         self.waypoints = pts ?? []
+        
+        // 2) Fetch deltas if both waypoints are selected
+        if let a = waypointA?.id, let b = waypointB?.id {
+            do {
+                let res: DeltaResult706 = try await EusoTripAPI.shared.query(
+                    "aei.getTwoWaypointDelta",
+                    input: DeltaInput706(waypointA: a, waypointB: b))
+                self.deltas = res.deltas
+            } catch {
+                self.deltas = []
+            }
+        } else {
+            self.deltas = []
+        }
+        
         // Keep selections only if they survive the regime switch.
         if let a = waypointA, !waypoints.contains(where: { $0.key == a.key }) { waypointA = nil }
         if let b = waypointB, !waypoints.contains(where: { $0.key == b.key }) { waypointB = nil }
+        
         loading = false
         scanning = false
+    }
+
+    private func flagTagSwap() async {
+        guard let swapCar = deltas.first(where: { $0.isSwap }) else { return }
+        guard !isFlagging else { return }
+        isFlagging = true; defer { isFlagging = false }
+        struct In: Encodable { let railcarNumber: String }
+        struct Out: Decodable { let success: Bool }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "aei.flagTagSwap",
+                input: In(railcarNumber: swapCar.carNumber))
+            scanMessage = "Car \(swapCar.carNumber) flagged for tag swap."
+            await reload()
+        } catch {
+            scanMessage = "Flagging failed. Check your connection."
+        }
     }
 }
 

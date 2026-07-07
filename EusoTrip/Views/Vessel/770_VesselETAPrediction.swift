@@ -117,7 +117,7 @@ private struct VesselEtaPrediction770: Decodable {
 /// (wave / swell → .wave · gust / wind → .wind). `impactMin` is the signed minute
 /// contribution to the ETA delta.
 private struct SeaStateDriver770: Decodable, Identifiable {
-    var id: String { "\(kind)-\(label)" }
+    var id: String { "\(kind)-\(label ?? "")" }
     let kind: String          // wave | swell | gust | wind
     let label: String?
     let value: Double?

@@ -261,7 +261,7 @@ private struct PostLoadStep1Body: View {
                         .foregroundStyle(palette.textPrimary)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(LinearGradient.diagonal.opacity(0.10))
+                .background { LinearGradient.diagonal.opacity(0.10) }
                 .clipShape(Capsule())
             }
 

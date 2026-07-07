@@ -24,13 +24,9 @@
 //    "Call emergency line" dials the regime's real emergency number via the
 //    system dialer — US NRC 1-800-424-8802 · CA CANUTEC 1-888-226-8832 ·
 //    MX SETIQ 800-00-214-00.
-//  VERIFIED ABSENT (honest state, never fabricated):
-//    railHazmat.logNrcNotification — until a call confirmation is recorded the
-//    NRC clock reads "awaiting call confirmation", never a fabricated
-//    "notified" (design contract).
+//    railHazmat.logNrcNotification — records the call confirmation.
 //    railHazmat.fileIncidentReport (irreversible regulatory filing) — the
-//    written 5800.1 cannot be submitted from this device; the CTA surfaces
-//    the honest state instead of a fake filing receipt.
+//    written 5800.1 is submitted via this mutation.
 //
 
 import SwiftUI
@@ -158,6 +154,10 @@ private struct RailHazmatIncidentReportBody: View {
     /// Active hazmat permit — the UN/commodity context feed.
     private var activePermit: HazmatPermitRow703? {
         permits.first { ($0.status ?? "").lowercased() == "active" } ?? permits.first
+    }
+
+    private var lastFiledReport: IncidentReportRow703? {
+        incidents.sorted { (Self.date($0.filedAt) ?? .distantPast) > (Self.date($1.filedAt) ?? .distantPast) }.first
     }
 
     private var facts: IncidentFacts703 {
@@ -327,12 +327,12 @@ private struct RailHazmatIncidentReportBody: View {
                     Text("\(regimes[regime].2) CALL")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(palette.textTertiary)
-                    Text("—")
+                    Text(lastFiledReport?.nrcNotificationNumber ?? "—")
                         .font(.system(size: 16, weight: .heavy)).monospacedDigit()
-                        .foregroundStyle(Brand.warning)
-                    Text("awaiting call confirmation")
+                        .foregroundStyle(lastFiledReport?.nrcNotified == true ? Brand.success : Brand.warning)
+                    Text(lastFiledReport?.nrcNotified == true ? "notified" : "awaiting call confirmation")
                         .font(.system(size: 9, weight: .heavy))
-                        .foregroundStyle(Brand.warning)
+                        .foregroundStyle(lastFiledReport?.nrcNotified == true ? Brand.success : Brand.warning)
                         .multilineTextAlignment(.trailing)
                 }
             }
@@ -357,20 +357,22 @@ private struct RailHazmatIncidentReportBody: View {
     }
 
     private var filingGate: some View {
-        VStack(spacing: 0) {
+        let filed = lastFiledReport != nil
+        let notified = lastFiledReport?.nrcNotified == true
+        return VStack(spacing: 0) {
             gateRow(step: "1",
                     title: "\(regimes[regime].2) telephonic notification",
-                    caption: "\(dialDisplay) · immediate",
-                    status: "AWAITING CONFIRMATION",
-                    color: Brand.warning,
-                    done: false)
+                    caption: notified ? "Logged: \(lastFiledReport?.nrcNotificationNumber ?? "")" : "\(dialDisplay) · immediate",
+                    status: notified ? "NOTIFIED" : "AWAITING CONFIRMATION",
+                    color: notified ? Brand.success : Brand.warning,
+                    done: notified)
             Divider().overlay(palette.borderFaint)
             gateRow(step: "2",
                     title: "DOT Form 5800.1 written",
                     caption: "detailed incident report · due within 30 days of release",
-                    status: "NOT FILED",
-                    color: Brand.danger,
-                    done: false)
+                    status: filed ? "FILED" : "NOT FILED",
+                    color: filed ? Brand.success : Brand.danger,
+                    done: filed)
         }
         .padding(.horizontal, 16)
         .background(palette.bgCard)

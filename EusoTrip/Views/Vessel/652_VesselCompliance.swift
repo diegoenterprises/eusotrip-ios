@@ -73,8 +73,20 @@ private struct VesselComplianceBody: View {
         case inspections = "Inspections"
         case certificates = "Certificates"
         case coldChain = "Cold Chain"
+        case landfall = "Landfall"
     }
     @State private var activeTab: Tab = .inspections
+    @State private var landfallCountry = "US"
+    @State private var landfallRegime: EusoTripAPI.LandfallRegimeResponse? = nil
+    @State private var loadingLandfall = false
+
+    private var landfallRegimes: [LandfallRegime] {
+        return [
+            .init(code: "US", port: "US · LONG BEACH", portShort: "US·LGB", regimeLine: landfallRegime?.country == "US" ? landfallRegime!.arrivalInstrument : "USCG eNOA · USD", flag: .us, active: landfallCountry == "US"),
+            .init(code: "CA", port: "CA · VANCOUVER",  portShort: "CA·VAN", regimeLine: landfallRegime?.country == "CA" ? landfallRegime!.arrivalInstrument : "TC PAIR · CAD",   flag: .ca, active: landfallCountry == "CA"),
+            .init(code: "MX", port: "MX · MANZANILLO", portShort: "MX·ZLO", regimeLine: landfallRegime?.country == "MX" ? landfallRegime!.arrivalInstrument : "SEMAR · MXN",     flag: .mx, active: landfallCountry == "MX"),
+        ]
+    }
 
     private var passedCount:   Int { inspections.filter { ($0.status ?? "").lowercased() == "passed" || ($0.deficiencies ?? 0) == 0 }.count }
     private var failedCount:   Int { inspections.count - passedCount }
@@ -112,6 +124,7 @@ private struct VesselComplianceBody: View {
                     case .inspections:  inspectionsContent
                     case .certificates: certificatesContent
                     case .coldChain:    coldChainContent
+                    case .landfall:     landfallContent
                     }
                 }
                 Color.clear.frame(height: 96)
@@ -299,18 +312,7 @@ private struct VesselComplianceBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
-    // MARK: - Cold chain (FSMA reefer temp log — LIVE rows only)
-    //
-    // FSMA Sanitary Transportation rule: reefer cargo must hold below the
-    // 40°F excursion ceiling. The chart plots ONLY the real probe rows the
-    // `vesselShipments.getReeferTempLog` proc returns, grouped by zone.
-    // 2026-06-10 de-fabrication (Wave A2): the 13-sample hardcoded
-    // front/center/rear arrays are gone. The client decode is wired
-    // end-to-end; until the proc ships (or while it returns zero rows)
-    // the tab renders an explicit seam card — never a fabricated trace.
-    // No live commanded-setpoint source exists on this surface, so the
-    // SET rail is honestly omitted (setpointF: nil), and the labels read
-    // in °C (vessel-operator register).
+    // MARK: - Cold chain
 
     /// FSMA Sanitary-Transportation excursion ceiling (°F). Regulatory
     /// constant, not per-tenant data.
@@ -358,8 +360,6 @@ private struct VesselComplianceBody: View {
     }
 
     /// Group the LIVE log rows by zone → TempZone traces, chronological.
-    /// Unknown zone names fold into extra center-position traces so a
-    /// proc that ships hold ids (not front/center/rear) still plots.
     private var reeferZones: [TempZone] {
         guard !reeferLog.isEmpty else { return [] }
         let iso = ISO8601DateFormatter()
@@ -393,6 +393,47 @@ private struct VesselComplianceBody: View {
         return zones
     }
 
+    // MARK: - Landfall
+
+    @ViewBuilder
+    private var landfallContent: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            LandfallRegimeRail(
+                eyebrow: "LANDFALL REGIME · DESTINATION PORT",
+                trailingEyebrow: "STATUS",
+                regimes: landfallRegimes,
+                variant: .selectorCaption,
+                captionLines: [
+                    .init(text: landfallRegime?.arrivalInstrument ?? "Awaiting regime instrument", tone: .primary),
+                    .init(text: landfallRegime?.releaseInstrument ?? "Awaiting release instrument", tone: .secondary),
+                    .init(text: landfallRegime?.freeTimeBasis ?? "Awaiting free-time basis", tone: .secondary)
+                ],
+                onSelect: { code in
+                    landfallCountry = code
+                    Task { await fetchLandfallRegime() }
+                }
+            )
+            .padding(Space.s4)
+            .background(palette.bgCard)
+            .overlay(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous).strokeBorder(palette.borderFaint))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
+            
+            if loadingLandfall {
+                ProgressView().frame(maxWidth: .infinity).padding()
+            }
+        }
+    }
+
+    private func fetchLandfallRegime() async {
+        loadingLandfall = true
+        do {
+            landfallRegime = try await EusoTripAPI.shared.getLandfallRegime(country: landfallCountry)
+        } catch {
+            landfallRegime = nil
+        }
+        loadingLandfall = false
+    }
+
     // MARK: - Load
 
     private func load() async {
@@ -411,10 +452,7 @@ private struct VesselComplianceBody: View {
         }
         loading = false
 
-        // Cold chain — best-effort: the proc is the named WIRE seam
-        // (`vesselShipments.getReeferTempLog`). Decode path is live; a
-        // missing proc / empty result leaves `reeferLog` empty and the
-        // tab shows the honest seam card. Never fabricated traces.
+        // Cold chain
         do {
             let rows: [ReeferLogRow652] = try await EusoTripAPI.shared.query(
                 "vesselShipments.getReeferTempLog", input: ListIn(limit: 200))
@@ -423,6 +461,8 @@ private struct VesselComplianceBody: View {
             self.reeferLog = []
         }
         reeferLogLoaded = true
+
+        await fetchLandfallRegime()
     }
 }
 

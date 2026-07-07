@@ -294,6 +294,8 @@ private struct ReviewBody: View {
         case .manifestUsAce:                  return "Manifest (US ACE)"
         case .rppCaCarm:                      return "RPP (CA CARM)"
         case .importExportLicense:            return "Import/Export License"
+        case .vesselNoa:                      return "Notice of Arrival (33 CFR 160)"
+        case .customsRelease:                 return "Customs Release"
         }
     }
 

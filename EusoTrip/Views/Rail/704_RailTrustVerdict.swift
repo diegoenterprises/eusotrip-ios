@@ -106,6 +106,10 @@ private struct SignalMeta704 {
             return .init(title: "Origin or destination missing", source: "Lane sanity", weight: 10, critical: false)
         case "USER_REPORT":
             return .init(title: "Reported by a carrier or driver", source: "Community report", weight: 20, critical: true)
+        case "SCAC_MARK_VARIANT":
+            return .init(title: "SCAC mark variant detected", source: "Carrier integrity", weight: 25, critical: true)
+        case "UNSIGNED_WAYBILL_417":
+            return .init(title: "Unsigned EDI 417 waybill", source: "Documentation", weight: 15, critical: false)
         case "NOT_SCORED":
             return .init(title: "Listing predates trust scoring", source: "Scoring coverage", weight: nil, critical: false)
         default:

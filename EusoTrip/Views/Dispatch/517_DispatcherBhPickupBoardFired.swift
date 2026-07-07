@@ -23,6 +23,7 @@
 //
 
 import SwiftUI
+import Combine
 
 // MARK: - Screen
 
@@ -58,6 +59,8 @@ private struct BH517Body: View {
     @State private var bolOnFile: Bool?
     @State private var loadFailed = false
     @State private var driverRow: BH517DriverRow?
+    @State private var dvirRollup: BH517DvirRollup?
+    @State private var sealRollup: BH517SealRollup?
     @State private var dockInFlight = false
     @State private var actionAck: String?
     @State private var actionError: String?
@@ -176,9 +179,9 @@ private struct BH517Body: View {
                      sub: elapsedText == "—" ? "no gate timestamp on record" : "at the pickup gate",
                      tint: nil)
             BH517Kpi(label: "DVIR",
-                     value: "—",
-                     sub: "pre-trip not shared to this board",
-                     tint: Brand.warning)
+                     value: dvirText,
+                     sub: dvirSub,
+                     tint: dvirRollup?.sectionsAcked == dvirRollup?.sectionsTotal ? Brand.success : Brand.warning)
             BH517Kpi(label: "ETA",
                      value: etaText,
                      sub: etaText == "—" ? "no delivery prediction yet" : "to the receiver",
@@ -323,8 +326,26 @@ private struct BH517Body: View {
         var parts: [String] = []
         if let n = load?.driver?.name { parts.append("\(n) on-site") }
         parts.append(bolOnFile == true ? "BOL on file" : "BOL not yet posted")
+        if let s = sealRollup {
+            if let intact = s.allSealsIntact {
+                parts.append(intact ? "Seals intact" : "Seals broken")
+            } else if !s.sealNumbers.isEmpty {
+                parts.append("\(s.sealNumbers.count) seals applied")
+            }
+        }
         if let eq = load?.equipmentType { parts.append(bh517Humanize(eq)) }
         return parts.joined(separator: " · ")
+    }
+
+    private var dvirText: String {
+        guard let r = dvirRollup else { return "—" }
+        return "\(r.sectionsAcked)/\(r.sectionsTotal)"
+    }
+
+    private var dvirSub: String {
+        guard let r = dvirRollup else { return "pre-trip not shared to this board" }
+        if r.sectionsAcked == r.sectionsTotal { return "inspection passed" }
+        return "inspection advancing"
     }
 
     private var bolChipText: String {
@@ -410,6 +431,8 @@ private struct BH517Body: View {
         await fetchTracking()
         await fetchBolPresence()
         await fetchDriverRow()
+        await fetchDvirRollup()
+        await fetchSealRollup()
         now = Date()
     }
 
@@ -442,6 +465,22 @@ private struct BH517Body: View {
             driverRow = rows.first(where: { $0.load != nil && $0.load == ln })
                 ?? rows.first(where: { dn != nil && $0.name == dn })
         } catch { driverRow = nil }
+    }
+
+    private func fetchDvirRollup() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            dvirRollup = try await EusoTripAPI.shared.query("dispatch.getLoadDvirRollup", input: In(loadId: numericId))
+        } catch { dvirRollup = nil }
+    }
+
+    private func fetchSealRollup() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            sealRollup = try await EusoTripAPI.shared.query("dispatch.getSealRollup", input: In(loadId: numericId))
+        } catch { sealRollup = nil }
     }
 
     private func openDockCoord() async {
@@ -599,6 +638,19 @@ private struct BH517Tracking: Decodable {
     let position: Position?
     let route: Route?
     let eta: Eta?
+}
+
+private struct BH517DvirRollup: Decodable {
+    let dvirId: Int?
+    let status: String?
+    let sectionsAcked: Int
+    let sectionsTotal: Int
+}
+
+private struct BH517SealRollup: Decodable {
+    let loadId: Int?
+    let allSealsIntact: Bool?
+    let sealNumbers: [String]
 }
 
 private struct BH517DriverRow: Decodable {

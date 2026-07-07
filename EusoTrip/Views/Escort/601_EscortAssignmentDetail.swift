@@ -781,7 +781,7 @@ struct EscortAssignmentDetail: View {
                             .foregroundStyle(.white)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(LinearGradient.diagonal.opacity(alreadyConfirmed ? 0.55 : 1.0))
+                    .background { LinearGradient.diagonal.opacity(alreadyConfirmed ? 0.55 : 1.0) }
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)

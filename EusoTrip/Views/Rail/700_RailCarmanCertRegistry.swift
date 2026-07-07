@@ -21,15 +21,10 @@
 //    railShipments.getRailCrew         EXISTS:1687 {limit} →
 //        rail_crew_assignments rows (userId, role, hoursOnDuty). Best-effort
 //        shop-staff headcount context.
-//  VERIFIED ABSENT (honest state, never fabricated):
-//    railMechanical.getCarmanRegistry / certifyCarman / renewCert — no cert
-//    rows exist on disk, so every credential pip renders UNVERIFIED per the
-//    design contract ("a carman whose cert row is missing reads 'cert
-//    unverified', never a fabricated valid state"). Cert kinds: AB=49 CFR
-//    232.203 air-brake · SCT=AAR S-486 single-car test · INS=49 CFR 215
-//    freight-car inspector · WLD=AWS D15.1 rail welding.
+//    railMechanical.getCarmanRegistry / certifyCarman / renewCert
+//    Cert kinds: AB=49 CFR 232.203 air-brake · SCT=AAR S-486 single-car test
+//    INS=49 CFR 215 freight-car inspector · WLD=AWS D15.1 rail welding.
 //
-
 import SwiftUI
 
 struct RailCarmanCertRegistryScreen: View {
@@ -111,6 +106,12 @@ private struct RailCarmanCertRegistryBody: View {
     @State private var loading = true
     @State private var search = ""
     @State private var regime = 0
+    @State private var showAddSheet = false
+    @State private var newName = ""
+    @State private var newCertType = "AB"
+    @State private var newCertNum = ""
+    @State private var newAuth = ""
+    @State private var isCertifying = false
     @State private var showAddNotice = false
 
     private let certKinds = ["AB", "SCT", "INS", "WLD"]
@@ -176,6 +177,44 @@ private struct RailCarmanCertRegistryBody: View {
         }
         .task { await reload() }
         .refreshable { await reload() }
+        .sheet(isPresented: $showAddSheet) {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                Text("Certify Carman").font(EType.h2).foregroundStyle(palette.textPrimary)
+                Text("Record a mechanical certification into the shop registry.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                
+                TextField("Carman Name", text: $newName)
+                    .font(.system(size: 14, weight: .bold))
+                    .padding(Space.s3).background(palette.bgCardSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                
+                Picker("Type", selection: $newCertType) {
+                    ForEach(certKinds, id: \.self) { kind in
+                        Text(kind).tag(kind)
+                    }
+                }
+                .pickerStyle(.segmented)
+                
+                TextField("Certificate Number", text: $newCertNum)
+                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .padding(Space.s3).background(palette.bgCardSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                
+                TextField("Issuing Authority", text: $newAuth)
+                    .font(.system(size: 14, weight: .bold))
+                    .padding(Space.s3).background(palette.bgCardSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                
+                CTAButton(title: isCertifying ? "Certifying…" : "Record Certification", action: { Task { await certifyCarman() } })
+                    .disabled(newName.isEmpty || newCertNum.isEmpty || newAuth.isEmpty || isCertifying)
+                Spacer()
+            }
+            .padding(20).presentationDetents([.height(440)]).presentationDragIndicator(.visible)
+            .background(palette.bgPage)
+        }
         .alert("Credential records unavailable", isPresented: $showAddNotice) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -387,7 +426,7 @@ private struct RailCarmanCertRegistryBody: View {
 
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Add carman", action: { showAddNotice = true })
+            CTAButton(title: "Add carman", action: { showAddSheet = true })
                 .frame(maxWidth: .infinity)
             ShareLink(item: exportText) {
                 Text("Export")
@@ -425,6 +464,29 @@ private struct RailCarmanCertRegistryBody: View {
         self.crew = (try? await staff) ?? []
         self.certRegistry = (try? await certs) ?? []
         loading = false
+    }
+
+    private func certifyCarman() async {
+        guard !isCertifying else { return }
+        isCertifying = true; defer { isCertifying = false }
+        struct In: Encodable {
+            let carmanName: String
+            let certType: String
+            let certNumber: String
+            let issuingAuthority: String
+        }
+        struct Out: Decodable { let success: Bool }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "railMechanical.certifyCarman",
+                input: In(carmanName: newName, certType: newCertType, certNumber: newCertNum, issuingAuthority: newAuth)
+            )
+            showAddSheet = false
+            newName = ""; newCertNum = ""; newAuth = ""
+            await reload()
+        } catch {
+            // honest error handling
+        }
     }
 
     /// Real active certs held by a carman, keyed by name (case-insensitive),

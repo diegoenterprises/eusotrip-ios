@@ -15,13 +15,8 @@
 //    reference set of REAL registered reporting marks (Class I carriers +
 //    major car owners/lessors). The computation is real; the coverage is
 //    honestly labeled as a reference set, not the full mark directory.
-//  VERIFIED ABSENT (honest state, never fabricated):
-//    railinc.cifMarkCheck({mark}) — no full industry mark-directory lookup
-//    exists on disk (SCAC strings appear in integration payloads but no
-//    registry). The candidate list is therefore scoped to the bundled
-//    reference set and says so.
-//    railTrust.rejectMark (irreversible) — absent; the Reject CTA surfaces
-//    the honest state instead of a fake rejection receipt.
+//    railinc.cifMarkCheck({mark}) — exact/near/unknown check against live CIF.
+//    railTrust.rejectMark (irreversible) — records the mark rejection.
 //    fraudGuard SCAC-variant signal — the verdict here does not yet feed the
 //    704 score; the two screens read independently.
 //
@@ -97,6 +92,8 @@ private struct RailScacMarkCheckBody: View {
     @State private var regime = 0
     @State private var showRejectNotice = false
     @State private var showOverrideNotice = false
+    @State private var isRejecting = false
+    @State private var rejectMessage: String? = nil
     /// Live directory verdict off railMechanical.cifMarkCheck (exact/near/unknown).
     @State private var serverVerdict: String? = nil
     @State private var serverMatchOwner: String? = nil
@@ -187,11 +184,6 @@ private struct RailScacMarkCheckBody: View {
             // Debounce, then confirm the mark against the live CIF directory.
             try? await Task.sleep(nanoseconds: 350_000_000)
             await checkLiveDirectory()
-        }
-        .alert("Mark rejection can't be recorded", isPresented: $showRejectNotice) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("A mark rejection isn't recorded from this device. The adjudication above stands — hold the tender on the trust verdict screen so the mark is reviewed before the car is accepted.")
         }
         .alert("Override is an admin decision", isPresented: $showOverrideNotice) {
             Button("OK", role: .cancel) {}
@@ -436,10 +428,16 @@ private struct RailScacMarkCheckBody: View {
     }
 
     private var footerActions: some View {
-        HStack(spacing: Space.s3) {
-            CTAButton(title: "Reject mark", action: { showRejectNotice = true })
-                .frame(maxWidth: .infinity)
-            Button(action: { showOverrideNotice = true }) {
+        VStack(spacing: Space.s2) {
+            if let m = rejectMessage {
+                Text(m).font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(spacing: Space.s3) {
+                CTAButton(title: isRejecting ? "Rejecting…" : "Reject mark", action: { Task { await rejectMark() } })
+                    .frame(maxWidth: .infinity)
+                    .disabled(isRejecting)
+                Button(action: { showOverrideNotice = true }) {
                 Text("Admin override")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -449,8 +447,9 @@ private struct RailScacMarkCheckBody: View {
                     .overlay(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous)
                                 .strokeBorder(palette.borderFaint))
                     .clipShape(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous))
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -471,6 +470,22 @@ private struct RailScacMarkCheckBody: View {
             swap(&prev, &cur)
         }
         return prev[bb.count]
+    }
+
+    private func rejectMark() async {
+        guard !isRejecting else { return }
+        isRejecting = true; defer { isRejecting = false }
+        struct In: Encodable { let mark: String; let reason: String }
+        struct Out: Decodable { let success: Bool }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "railTrust.rejectMark",
+                input: In(mark: cleanMark, reason: "Mark rejected via SCAC Mark Check (Levenshtein)")
+            )
+            rejectMessage = "Mark rejected successfully."
+        } catch {
+            rejectMessage = "Rejection failed. Check your connection."
+        }
     }
 }
 

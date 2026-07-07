@@ -22,6 +22,7 @@
 //
 
 import SwiftUI
+import Combine
 
 // MARK: - Screen
 
@@ -56,6 +57,7 @@ private struct BH518Body: View {
     @State private var tracking: BH518Tracking?
     @State private var loadFailed = false
     @State private var driverRow: BH518DriverRow?
+    @State private var sealRollup: BH518SealRollup?
     @State private var hailInFlight = false
     @State private var actionAck: String?
     @State private var actionError: String?
@@ -198,9 +200,9 @@ private struct BH518Body: View {
                      sub: driveLeftText == "—" ? "no delivery prediction yet" : "to delivery",
                      tint: driveLeftText == "—" ? nil : Brand.info)
             BH518Kpi(label: "SEAL",
-                     value: "—",
-                     sub: "seal checks not shared to this board",
-                     tint: nil)
+                     value: sealText,
+                     sub: sealSub,
+                     tint: sealTint)
         }
     }
 
@@ -347,6 +349,23 @@ private struct BH518Body: View {
         return bh518HoursMinutes(m)
     }
 
+    private var sealText: String {
+        guard let s = sealRollup else { return "—" }
+        if let intact = s.allSealsIntact { return intact ? "INTACT" : "BROKEN" }
+        return "—"
+    }
+
+    private var sealSub: String {
+        guard let s = sealRollup else { return "seal checks not shared to this board" }
+        if s.allSealsIntact == nil { return "no seal status on record" }
+        return "\(s.sealNumbers.count) seals verified"
+    }
+
+    private var sealTint: Color? {
+        guard let s = sealRollup, let intact = s.allSealsIntact else { return nil }
+        return intact ? Brand.success : Brand.danger
+    }
+
     private var driverInitials: String {
         if let i = load?.driver?.initials, !i.isEmpty { return i }
         if let n = load?.driver?.name {
@@ -409,6 +428,7 @@ private struct BH518Body: View {
         } catch { loadFailed = load == nil }
         await fetchTracking()
         await fetchDriverRow()
+        await fetchSealRollup()
         now = Date()
     }
 
@@ -429,6 +449,14 @@ private struct BH518Body: View {
             driverRow = rows.first(where: { $0.load != nil && $0.load == ln })
                 ?? rows.first(where: { dn != nil && $0.name == dn })
         } catch { driverRow = nil }
+    }
+
+    private func fetchSealRollup() async {
+        struct In: Encodable { let loadId: String }
+        let numericId = loadId.replacingOccurrences(of: "load_", with: "")
+        do {
+            sealRollup = try await EusoTripAPI.shared.query("dispatch.getSealRollup", input: In(loadId: numericId))
+        } catch { sealRollup = nil }
     }
 
     private func hailDriver() async {
@@ -646,6 +674,12 @@ private struct BH518DriverRow: Decodable {
 private func bh518Humanize(_ raw: String?) -> String {
     guard let raw, !raw.isEmpty else { return "—" }
     return raw.replacingOccurrences(of: "_", with: " ").capitalized
+}
+
+private struct BH518SealRollup: Decodable {
+    let loadId: Int?
+    let allSealsIntact: Bool?
+    let sealNumbers: [String]
 }
 
 private func bh518HoursMinutes(_ minutes: Int) -> String {

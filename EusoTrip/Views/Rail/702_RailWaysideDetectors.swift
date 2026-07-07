@@ -16,13 +16,6 @@
 //        reads persist as rail_inspections rows of type "wayside_detector"
 //        per the design contract — this screen filters to that type and
 //        renders ONLY what is on file.
-//  VERIFIED ABSENT (honest state, never fabricated):
-//    railMechanical.getWaysideDetectorReads({trainId}) — no live detector
-//    telemetry {site,milepost,reading,limit} exists on disk. Numeric readings
-//    and limits render only when parseable from the real inspection notes;
-//    a row without a numeric read shows its verdict without a fabricated bar.
-//    flagDetectorAlarm({readId}) — the bad-order handoff mutation is absent,
-//    so the Flag CTA surfaces the honest state instead of a fake success.
 //
 
 import SwiftUI
@@ -107,7 +100,8 @@ private struct RailWaysideDetectorsBody: View {
     @State private var waysideReads: [WaysideReadRow702] = []
     @State private var loading = true
     @State private var regime = 0
-    @State private var showFlagNotice = false
+    @State private var isFlagging = false
+    @State private var flagMessage: String? = nil
 
     private let regimes: [(String, String)] = [("US · AAR", "S-918 / FRA"),
                                                ("CA · TC", "Wayside Std"),
@@ -201,13 +195,6 @@ private struct RailWaysideDetectorsBody: View {
         }
         .task { await reload() }
         .refreshable { await reload() }
-        .alert("Bad-order handoff unavailable", isPresented: $showFlagNotice) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(alarms.isEmpty
-                 ? "There is no alarmed read to flag — every detector read on file is within limits."
-                 : "A bad-order can't be opened from this device for this read. The alarmed read stays visible below — route the car to the shop through your mechanical desk.")
-        }
     }
 
     private var eyebrowRow: some View {
@@ -384,10 +371,16 @@ private struct RailWaysideDetectorsBody: View {
     }
 
     private var footerActions: some View {
-        HStack(spacing: Space.s3) {
-            CTAButton(title: "Flag bad-order", action: { showFlagNotice = true })
-                .frame(maxWidth: .infinity)
-            Button(action: { Task { await reload() } }) {
+        VStack(spacing: Space.s2) {
+            if let m = flagMessage {
+                Text(m).font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            HStack(spacing: Space.s3) {
+                CTAButton(title: isFlagging ? "Flagging…" : "Flag bad-order", action: { Task { await flagDetector() } })
+                    .frame(maxWidth: .infinity)
+                    .disabled(isFlagging || alarms.isEmpty)
+                Button(action: { Task { await reload() } }) {
                 Text("Refresh feed")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -397,8 +390,9 @@ private struct RailWaysideDetectorsBody: View {
                     .overlay(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous)
                                 .strokeBorder(palette.borderFaint))
                     .clipShape(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous))
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -413,6 +407,28 @@ private struct RailWaysideDetectorsBody: View {
         self.rows = (await inspResult) ?? []
         self.waysideReads = (await waysideResult) ?? []
         loading = false
+    }
+
+    private func flagDetector() async {
+        guard let w = worstAlarm else { return }
+        guard !isFlagging else { return }
+        isFlagging = true; defer { isFlagging = false }
+        let idVal = Int(w.key.replacingOccurrences(of: "wsr_", with: "")) ?? 0
+        guard idVal > 0 else {
+            flagMessage = "Can't flag synthetic inspection row."
+            return
+        }
+        struct In: Encodable { let readId: Int; let alarm: Bool }
+        struct Out: Decodable { let success: Bool }
+        do {
+            let _: Out = try await EusoTripAPI.shared.mutation(
+                "railMechanical.flagDetectorAlarm",
+                input: In(readId: idVal, alarm: true))
+            flagMessage = "Alarm flagged successfully."
+            await reload()
+        } catch {
+            flagMessage = "Flagging failed. Check your connection."
+        }
     }
 
     /// Detector class from the recorded type/notes: WILD (impact), HBD

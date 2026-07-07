@@ -245,7 +245,7 @@ private struct PSBody: View {
                 }
                 .frame(maxWidth: .infinity, minHeight: 48)
                 .foregroundStyle(.white)
-                .background(LinearGradient.diagonal.opacity(primaryEnabled ? 1 : 0.4))
+                .background { LinearGradient.diagonal.opacity(primaryEnabled ? 1 : 0.4) }
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)

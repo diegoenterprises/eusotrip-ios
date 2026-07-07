@@ -23,6 +23,7 @@
 //
 
 import SwiftUI
+import Combine
 
 // MARK: - Screen
 
@@ -64,6 +65,8 @@ private struct BH520Body: View {
     @State private var exposure: BH520Exposure?
     @State private var showExposureSheet = false
     @State private var now = Date()
+    @State private var gatePin: String? = nil
+    @State private var queuePosition: Int? = nil
 
     private let clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
@@ -220,8 +223,8 @@ private struct BH520Body: View {
                      sub: hosText == "—" ? "not on the live driver board" : "drive window",
                      tint: nil)
             BH520Kpi(label: "DOCK QUEUE",
-                     value: "—",
-                     sub: "queue not shared to this board",
+                     value: queuePosition.map { "\($0)" } ?? "—",
+                     sub: queuePosition == nil ? "queue not shared to this board" : "trucks in line",
                      tint: nil)
             BH520Kpi(label: "APPOINTMENT",
                      value: appointmentStateText,
@@ -241,10 +244,10 @@ private struct BH520Body: View {
                                    ?? "arms on the receiver geofence",
                               trail: activeDetention != nil ? "done" : "pending")
                 Divider().overlay(palette.borderFaint)
-                BH520CheckRow(state: .pending,
+                BH520CheckRow(state: gatePin != nil ? .done : .pending,
                               title: "Gate-in acknowledgment",
-                              sub: "gate acknowledgments aren't shared to this board for this facility",
-                              trail: "—")
+                              sub: gatePin.map { "assigned gate PIN: \($0)" } ?? "gate acknowledgments aren't shared to this board for this facility",
+                              trail: gatePin != nil ? "done" : "—")
                 Divider().overlay(palette.borderFaint)
                 BH520CheckRow(state: isUnloadingStage ? .active : .pending,
                               title: "Dock assigned",
@@ -421,7 +424,10 @@ private struct BH520Body: View {
         struct In: Encodable { let loadId: Int }
         guard let numeric = Int((load?.id ?? loadId).replacingOccurrences(of: "load_", with: "")) else { return }
         do {
-            tracking = try await EusoTripAPI.shared.query("location.tracking.getLoadTracking", input: In(loadId: numeric))
+            let res: BH520Tracking = try await EusoTripAPI.shared.query("location.tracking.getLoadTracking", input: In(loadId: numeric))
+            tracking = res
+            gatePin = res.gatePin
+            queuePosition = res.queuePosition
         } catch { tracking = nil }
     }
 
@@ -637,6 +643,8 @@ private struct BH520Tracking: Decodable {
     let geofences: [Geofence]?
     let detention: [Detention]?
     let eta: Eta?
+    let gatePin: String?
+    let queuePosition: Int?
 }
 
 private struct BH520Exposure: Decodable {
