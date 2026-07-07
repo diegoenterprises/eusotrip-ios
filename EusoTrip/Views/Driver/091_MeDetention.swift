@@ -442,7 +442,7 @@ struct MeDetention: View {
             } else {
                 HStack(alignment: .top, spacing: 6) {
                     WeatherIcons.utility(.alert, size: 13, tint: palette.textTertiary)
-                    Text("Historical weather evidence available with the enterprise feed. Max gust, minimum visibility and peak condition for this dwell auto-attach as a cited dispute exhibit once the Tomorrow.io history tier is licensed.")
+                    Text("Historical weather evidence available with the enterprise feed. Max gust, minimum visibility and peak condition for this dwell auto-attach as a cited dispute exhibit with the enterprise historical weather feed.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 }

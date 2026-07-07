@@ -142,7 +142,7 @@ private struct WeatherImpact162 {
     /// honest "no live weather" state rather than a fabricated "clear").
     let hasData: Bool
 
-    /// Tomorrow.io winter-precip family (snow + freezing rain / ice pellets).
+    /// Apple WeatherKit winter-precip family (snow + freezing rain / ice pellets).
     private static let winterCodes: Set<Int> = [
         5000, 5001, 5100, 5101,             // snow / flurries / heavy snow
         6000, 6001, 6200, 6201,             // freezing drizzle / rain
@@ -220,7 +220,7 @@ struct DriverWellnessFatigue_162: View {
     @State private var checkInPresented = false
     /// Live current-location snapshot — the SAME source Driver Home uses
     /// (WeatherService.shared.fetchCurrent → server weather.byLatLon /
-    /// WeatherKit chain, no Tomorrow.io key in the bundle). Drives the
+    /// WeatherKit chain, no Apple WeatherKit key in the bundle). Drives the
     /// REAL fatigue weather factor (factors.weatherImpact is dormant on
     /// the server payload — §3). Stays nil when CoreLocation is denied or
     /// no service produced a reading → the weather factor is honestly
@@ -1199,7 +1199,7 @@ private extension WeatherSnapshot {
     static let sampleAdverse = WeatherSnapshot(
         city: "Cheyenne, WY", tempF: 28, windMph: 18, visibilityMi: 1,
         condition: "Freezing rain", symbol: "cloud.sleet.fill",
-        weatherCode: 6001, dataSource: .tomorrowIO,
+        weatherCode: 6001, dataSource: .appleWeather,
         nextAlert: nil, accent: .warn)
 }
 

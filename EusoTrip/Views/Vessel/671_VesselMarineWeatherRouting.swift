@@ -558,7 +558,7 @@ private struct VesselMarineWeatherRoutingBody: View {
                     title: "No routable voyage",
                     subtitle: "This booking has no origin/destination ports on file, so route weather can't be computed. Assign a loading + discharge port and per-leg sea-state populates here.")
             } else if feedUnavailable {
-                // Tomorrow.io marine feed not configured (available:false) —
+                // Apple WeatherKit marine feed not configured (available:false) —
                 // server returned null. Honest empty that lights up on key.
                 marineEmptyPane(
                     glyph: .wave,

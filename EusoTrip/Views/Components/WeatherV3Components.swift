@@ -96,7 +96,7 @@ enum WeatherV3 {
 /// lights a sun halo; storm darkens the stage and densifies the cloud.
 /// Not a flat gradient.
 struct SkyStageHero: View {
-    /// Tomorrow.io weatherCode — drives the mood (aurora width / halo /
+    /// Apple WeatherKit weatherCode — drives the mood (aurora width / halo /
     /// cloud density / stage tint). 0 (unknown) renders the neutral mood.
     let weatherCode: Int
     /// Collapsed state uses a slightly smaller composition (matches the
@@ -236,7 +236,7 @@ struct SkyStageHero: View {
     }
 }
 
-/// The stage mood resolved from a Tomorrow.io weatherCode — clear widens
+/// The stage mood resolved from a Apple WeatherKit weatherCode — clear widens
 /// the aurora and lights a sun halo; storm darkens the stage tint and
 /// densifies the cloud. Strictly derived from the live code; an unknown
 /// code (0) renders the neutral default.

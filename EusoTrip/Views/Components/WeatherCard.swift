@@ -834,7 +834,7 @@ struct WeatherCard: View {
     }
 
     /// A day chip's weatherCode — uses the day's own code if the upstream
-    /// supplied one (Tomorrow.io path), else infers from its SF symbol.
+    /// supplied one (Apple WeatherKit path), else infers from its SF symbol.
     private func dayCode(_ day: WeatherSnapshot.DailyForecast) -> Int {
         WeatherIcons.code(forSymbol: day.symbol)
     }
@@ -843,7 +843,7 @@ struct WeatherCard: View {
 
     /// "Conditions · Apple Weather · Partly cloudy · updated Nm ago".
     /// Built from `snapshot.attributionLine` so it names the REAL data
-    /// source (Tomorrow.io only when Tomorrow.io produced the data) and
+    /// source (Apple WeatherKit only when Apple WeatherKit produced the data) and
     /// omits condition/updated clauses when their data is absent.
     private var sourceLine: some View {
         // Adaptive — this line sits directly on the page (no card), so
@@ -1568,7 +1568,7 @@ private struct SeededRNG {
 
 // MARK: - Previews
 
-/// The Austin example from the v2 HTML, end to end — Tomorrow.io source,
+/// The Austin example from the v2 HTML, end to end — Apple WeatherKit source,
 /// weatherCode 1101, a flood-watch alert, the 8h band with a 4 PM storm
 /// peak, and the LD-260615 lane-impact segment + ESang suggestion.
 private func austinPreviewSnapshot() -> WeatherSnapshot {
@@ -1603,7 +1603,7 @@ private func austinPreviewSnapshot() -> WeatherSnapshot {
         }
     )
     snap.weatherCode = 1101
-    snap.dataSource = .tomorrowIO
+    snap.dataSource = .appleWeather
     snap.uvIndex = 7
     snap.observedAt = Date().addingTimeInterval(-120)
     snap.alert = .init(title: "Flood watch", severity: .severe, until: Date().addingTimeInterval(6 * 3600))
@@ -1658,7 +1658,7 @@ private func austinPreviewSnapshot() -> WeatherSnapshot {
                 feelsLikeF: 99, humidityPct: 12
             )
             s.weatherCode = 1000
-            s.dataSource = .tomorrowIO
+            s.dataSource = .appleWeather
             return s
         }(),
         style: .compact

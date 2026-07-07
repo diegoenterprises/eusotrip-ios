@@ -35,20 +35,20 @@ struct WeatherSnapshot: Hashable, Codable {
     /// `weatherCode` instead.
     let symbol: String
 
-    // ── Tomorrow.io v2 backbone ─────────────────────────────────────
+    // ── Apple WeatherKit v2 backbone ─────────────────────────────────────
     //
-    // The Tomorrow.io `weatherCode` (the exact field — NOT the
+    // The Apple WeatherKit `weatherCode` (the exact field — NOT the
     // Day/Night/FullDay variants) is the single source of truth for the
     // custom glyph set in `WeatherIcons.swift`. Defaults to 0 ("Unknown")
     // so the legacy WeatherKit / NWS / Open-Meteo compose paths — which
-    // pre-date the Tomorrow.io wiring and only know SF Symbols — still
+    // pre-date the Apple WeatherKit wiring and only know SF Symbols — still
     // build and render their `#i-cloud` fallback honestly. The mapper
     // also infers a best-effort code from the SF symbol so those paths
     // light a real glyph rather than the unknown cloud.
     var weatherCode: Int = 0
 
     /// Where this snapshot came from — drives the attribution line
-    /// ("Conditions · Tomorrow.io" only when Tomorrow.io actually
+    /// ("Conditions · Apple WeatherKit" only when Apple WeatherKit actually
     /// produced the data; never fabricated onto a fallback).
     var dataSource: DataSource = .unknown
 
@@ -63,7 +63,7 @@ struct WeatherSnapshot: Hashable, Codable {
     var alert: ActiveAlert? = nil
 
     /// Per-load ETA-risk segments for the LANE IMPACT panel — populated
-    /// by `weather.laneImpact` (Tomorrow.io `/v4/route`, time-aware).
+    /// by `weather.laneImpact` (Apple WeatherKit `/v4/route`, time-aware).
     /// Nil/empty → the panel collapses (between loads, Enterprise route
     /// tier absent, or the call returned no data). Never seeded.
     var laneImpact: [LaneImpactSegment]? = nil
@@ -110,7 +110,7 @@ struct WeatherSnapshot: Hashable, Codable {
         let precipChancePct: Int?
         /// mph, nil when not supplied.
         let windMph: Int?
-        /// Tomorrow.io weatherCode for the hour — drives the v2 custom
+        /// Apple WeatherKit weatherCode for the hour — drives the v2 custom
         /// glyph in the 8-hour strip. Defaults to 0; the WeatherIcons
         /// mapper infers from `symbol` when this is unset so the legacy
         /// paths still render a real glyph.
@@ -322,14 +322,14 @@ struct WeatherSnapshot: Hashable, Codable {
         }
     }
 
-    // MARK: - Tomorrow.io v2 supporting types
+    // MARK: - Apple WeatherKit v2 supporting types
 
-    /// Which upstream produced this snapshot. Only `.tomorrowIO` earns
-    /// the "Conditions · Tomorrow.io" attribution; the rest keep their
+    /// Which upstream produced this snapshot. Only `.appleWeather` earns
+    /// the "Conditions · Apple WeatherKit" attribution; the rest keep their
     /// own honest provenance so the source line never lies about where
     /// a number came from.
     enum DataSource: String, Hashable, Codable {
-        case tomorrowIO   // server weather.byLatLon (Tomorrow.io-backed)
+        case appleWeather   // server weather.byLatLon (Apple WeatherKit-backed)
         case weatherKit   // Apple WeatherKit
         case nws          // api.weather.gov
         case openMeteo    // open-meteo.com
@@ -337,11 +337,11 @@ struct WeatherSnapshot: Hashable, Codable {
         case unknown
 
         /// The attribution string shown on the expanded card's source
-        /// line. Tomorrow.io is the v2 backbone; every other provider
-        /// is named truthfully rather than mislabeled as Tomorrow.io.
+        /// line. Apple WeatherKit is the v2 backbone; every other provider
+        /// is named truthfully rather than mislabeled as Apple WeatherKit.
         var attribution: String {
             switch self {
-            case .tomorrowIO: return "Tomorrow.io"
+            case .appleWeather: return "Apple Weather"
             case .weatherKit: return "Apple Weather"
             case .nws:        return "NWS"
             case .openMeteo:  return "Open-Meteo"
@@ -385,7 +385,7 @@ struct WeatherSnapshot: Hashable, Codable {
         }
     }
 
-    /// Coarse ETA-risk tier for a lane segment. Tomorrow.io `/v4/route`
+    /// Coarse ETA-risk tier for a lane segment. Apple WeatherKit `/v4/route`
     /// worst-case → tier server-side; the client only renders it.
     ///
     /// §3 contract vocabulary is `none|watch|elevated|severe`. The legacy
@@ -438,7 +438,7 @@ struct WeatherSnapshot: Hashable, Codable {
     /// Tri-modal worst-case fields (truck PRECIP/CROSSWIND/VISIBILITY ·
     /// rail YARD VIS/CROSSWIND/STREAMFLOW · vessel SIG WAVE/GUST @ BERTH/
     /// VISIBILITY). `value` is the formatted live reading or "—" when the
-    /// Tomorrow.io field was absent — never fabricated.
+    /// Apple WeatherKit field was absent — never fabricated.
     struct Driver: Hashable, Codable, Identifiable {
         /// "CROSSWIND" / "SIG WAVE" / "STREAMFLOW".
         let field: String
@@ -597,7 +597,7 @@ struct WeatherSnapshot: Hashable, Codable {
         alerts.max(by: { $0.severity.rank < $1.severity.rank })
     }
 
-    // ── Tomorrow.io v2 display helpers ──────────────────────────────
+    // ── Apple WeatherKit v2 display helpers ──────────────────────────────
 
     /// "UV 7" or "—".
     var uvDisplay: String {
@@ -700,7 +700,7 @@ struct WeatherSnapshot: Hashable, Codable {
     var peakHourIndex: Int? {
         guard !hourly.isEmpty else { return nil }
         func hazard(_ h: HourlyForecast) -> Int {
-            // Severity bucket from the Tomorrow.io code family (or 0).
+            // Severity bucket from the Apple WeatherKit code family (or 0).
             let code = h.weatherCode
             let bucket: Int
             switch code {

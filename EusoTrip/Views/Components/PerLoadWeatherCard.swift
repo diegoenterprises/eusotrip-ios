@@ -425,7 +425,7 @@ struct PerLoadWeatherCard: View {
 
     /// The peak hour for the ribbon's danger column — derived from the
     /// bridged series exactly like `WeatherSnapshot.peakHourIndex` (worst
-    /// Tomorrow.io code family, ties broken by precip). Nil when nothing
+    /// Apple WeatherKit code family, ties broken by precip). Nil when nothing
     /// rises above benign → no danger column drawn (honest).
     private func bridgedPeakIndex(_ series: [WeatherSnapshot.HourlyForecast]) -> Int? {
         guard !series.isEmpty else { return nil }

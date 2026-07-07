@@ -132,7 +132,7 @@ private struct IntermodalTracking565: Decodable {
     // nextRampEta / rampDwell carry the FLOOD-ADJUSTED values when a real
     // streamflow event sits at the next ramp; else the scheduled values
     // untouched. floodImpact is the honest envelope — every grading field is a
-    // real Tomorrow.io value or honest null and is enterprise-gated
+    // real Apple WeatherKit value or honest null and is enterprise-gated
     // (available:false today). We render NO delta unless available == true.
     let nextRampEta: String?      // ISO, flood-adjusted (server top-level)
     let rampDwell: Double?        // hours, flood-adjusted (server top-level)
@@ -235,7 +235,7 @@ private struct RailContainerTimelineBody: View {
         floodFlag?.facilityName ?? intermodal?.nextRampName ?? "Next ramp"
     }
 
-    /// Severity word (real Tomorrow.io grade) → tint + label. No grade present
+    /// Severity word (real Apple WeatherKit grade) → tint + label. No grade present
     /// but an active event → honest "streamflow" with the info tint.
     private var floodSeverity: String? { floodFlag?.floodSeverity?.lowercased() }
     private var floodTint: Color {
@@ -563,7 +563,7 @@ private struct RailContainerTimelineBody: View {
                 WeatherIcons.utility(.alert, size: 16, tint: floodTint)
             }
 
-            // ── headline (real Tomorrow.io event title; honest fallback) ──
+            // ── headline (real Apple WeatherKit event title; honest fallback) ──
             Text(floodFlag?.floodHeadline ?? "Rising streamflow at the next ramp/crossing")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(palette.textSecondary)

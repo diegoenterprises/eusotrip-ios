@@ -206,9 +206,16 @@ final class WeatherService: NSObject, ObservableObject {
         // we fall through to on-device WeatherKit → NWS → Open-Meteo — NEVER
         // a fabricated reading.
         let placemark = try? await reverseGeocode(location)
-        if let server = await fetchServerWeather(location: location, placemark: placemark) {
-            return server
-        }
+        // ── PRIMARY: on-device Apple WeatherKit ──
+        // This is the SAME source the iPhone Weather app reads, so the home
+        // card matches it — current temp, condition, and today's REAL high/low.
+        // The server (weather.byLatLon) was primary before, but its payload
+        // drifted from Apple Weather: the current reading ran several degrees
+        // hot and the daily strip returned an inverted/degenerate high==low
+        // (e.g. "H 75 / L 75" while current showed 97) — which is exactly the
+        // "why doesn't our weather match WeatherKit" report. On ANY WeatherKit
+        // throw we fall back to the server → NWS (US ground truth) → Open-Meteo,
+        // so a location without the WeatherKit capability still gets a card.
         do {
             let weather = try await weatherService.weather(for: location)
             return Self.compose(weather: weather, placemark: placemark)
@@ -216,7 +223,7 @@ final class WeatherService: NSObject, ObservableObject {
             // Surface the FULL error in every build (not just DEBUG) so a
             // misconfigured signing / entitlement / portal-capability
             // failure is visible in production crash logs / Xcode
-            // console — not silently masked by the NWS fallback.
+            // console — not silently masked by the fallback.
             // WeatherKit-specific failure modes we've seen:
             //   • Code 2: missing entitlement on the bundle ID
             //   • Code 3: app not signed by a team that owns the bundle
@@ -225,7 +232,12 @@ final class WeatherService: NSObject, ObservableObject {
             //              capability in the dev portal — code can't fix)
             //   • Code 7: signing issue, framework not embedded
             let ns = error as NSError
-            print("[WeatherService] WeatherKit fetch failed — domain=\(ns.domain) code=\(ns.code) desc=\(ns.localizedDescription) info=\(ns.userInfo)")
+            print("[WeatherService] on-device WeatherKit failed — domain=\(ns.domain) code=\(ns.code) desc=\(ns.localizedDescription) info=\(ns.userInfo); falling back to server → NWS → Open-Meteo")
+            // Server (WeatherKit/Apple WeatherKit-backed) reliably carries the daily
+            // strip; then US ground truth, then keyless last resort.
+            if let server = await fetchServerWeather(location: location, placemark: placemark) {
+                return server
+            }
             let placemark = try? await reverseGeocode(location)
             // For US locations, prefer NWS (api.weather.gov). NWS pulls
             // from real ground stations + radar — accurate ground truth.
@@ -375,7 +387,7 @@ final class WeatherService: NSObject, ObservableObject {
         }
 
         // Require a real current temperature + condition. Without these
-        // the server had no Tomorrow.io data (key absent / upstream
+        // the server had no Apple WeatherKit data (key absent / upstream
         // failure) and we MUST fall back rather than render an empty
         // shell that looks live.
         guard let cur = server.current,
@@ -398,7 +410,7 @@ final class WeatherService: NSObject, ObservableObject {
             return iso.date(from: s) ?? isoPlain.date(from: s)
         }
 
-        let condition = cur.condition ?? Self.tomorrowCondition(for: code)
+        let condition = cur.condition ?? Self.conditionForCode(for: code)
 
         // City — prefer the reverse-geocoded placemark (matches the rest
         // of the pipeline), else the server's, else honest fallback.
@@ -419,7 +431,7 @@ final class WeatherService: NSObject, ObservableObject {
             return WeatherSnapshot.HourlyForecast(
                 date: date,
                 tempF: Int(cToF(t).rounded()),
-                symbol: Self.tomorrowSymbol(for: hourCode),
+                symbol: Self.symbolForCode(for: hourCode),
                 precipChancePct: h.precipPct.map { Int($0.rounded()) },
                 windMph: h.windKph.map { Int(kphToMph($0).rounded()) },
                 weatherCode: hourCode
@@ -469,8 +481,8 @@ final class WeatherService: NSObject, ObservableObject {
                 weekdayLabel: label,
                 highF: Int(cToF(hi).rounded()),
                 lowF: Int(cToF(lo).rounded()),
-                symbol: Self.tomorrowSymbol(for: dayCode),
-                condition: d.condition ?? Self.tomorrowCondition(for: dayCode),
+                symbol: Self.symbolForCode(for: dayCode),
+                condition: d.condition ?? Self.conditionForCode(for: dayCode),
                 precipChance: d.precipPct.map { $0 / 100.0 }
             )
         }
@@ -508,7 +520,7 @@ final class WeatherService: NSObject, ObservableObject {
             windMph: windMph,
             visibilityMi: visMi,
             condition: condition,
-            symbol: Self.tomorrowSymbol(for: code),
+            symbol: Self.symbolForCode(for: code),
             nextAlert: nextAlert,
             accent: accent,
             daily: daily,
@@ -540,7 +552,7 @@ final class WeatherService: NSObject, ObservableObject {
     }
 
     // Wire types for the tRPC `weather.laneImpact` proc — per-load ETA
-    // risk from Tomorrow.io /v4/route (time-aware). Optional throughout
+    // risk from Apple WeatherKit /v4/route (time-aware). Optional throughout
     // so a partial/honest payload decodes; nil/empty → the panel hides.
     private struct ServerLaneImpact: Decodable {
         let available: Bool?
@@ -657,7 +669,7 @@ final class WeatherService: NSObject, ObservableObject {
 
             // §3 drivers[] — the mode metric tiles. Each row needs both a
             // field key and a value; honest "—" values stay (the server
-            // already passes the em-dash when Tomorrow.io omitted the
+            // already passes the em-dash when Apple WeatherKit omitted the
             // field), but a row with no field is dropped.
             let drivers: [WeatherSnapshot.Driver] = (s.drivers ?? []).compactMap { d in
                 guard let field = d.field?.trimmingCharacters(in: .whitespaces),
@@ -699,9 +711,9 @@ final class WeatherService: NSObject, ObservableObject {
         return mapped.isEmpty ? nil : mapped
     }
 
-    /// Tomorrow.io weatherCode → human phrase (mirrors the wiring map's
+    /// Apple WeatherKit weatherCode → human phrase (mirrors the wiring map's
     /// "label" column). Used when the server omits a condition string.
-    private static func tomorrowCondition(for code: Int) -> String {
+    private static func conditionForCode(for code: Int) -> String {
         switch code {
         case 1000: return "Clear"
         case 1100: return "Mostly clear"
@@ -730,10 +742,10 @@ final class WeatherService: NSObject, ObservableObject {
         }
     }
 
-    /// Tomorrow.io weatherCode → SF Symbol (kept for the legacy compact
+    /// Apple WeatherKit weatherCode → SF Symbol (kept for the legacy compact
     /// path + accessibility; the v2 surface draws WeatherIcons off the
     /// code directly).
-    private static func tomorrowSymbol(for code: Int) -> String {
+    private static func symbolForCode(for code: Int) -> String {
         switch code {
         case 1000:                         return "sun.max.fill"
         case 1100, 1101:                   return "cloud.sun.fill"
@@ -751,7 +763,7 @@ final class WeatherService: NSObject, ObservableObject {
     }
 
     /// Server WeatherKit/OpenWeather fallback paths may not carry a
-    /// Tomorrow.io numeric weatherCode. Derive the closest glyph code
+    /// Apple WeatherKit numeric weatherCode. Derive the closest glyph code
     /// from the live provider condition/icon so the client keeps the
     /// payload instead of discarding a valid Apple Weather response.
     private static func serverWeatherCode(condition: String?, icon: String?) -> Int {
@@ -775,7 +787,7 @@ final class WeatherService: NSObject, ObservableObject {
         return 0
     }
 
-    /// Parse a "yyyy-MM-dd" day string (Tomorrow.io daily timestamps can
+    /// Parse a "yyyy-MM-dd" day string (Apple WeatherKit daily timestamps can
     /// arrive date-only) to local midnight.
     private static func dayOnly(_ s: String?) -> Date? {
         guard let s else { return nil }
@@ -976,7 +988,7 @@ final class WeatherService: NSObject, ObservableObject {
             hourly: hourly,
             alerts: alerts
         )
-        // v2: name the real provider (NWS, NOT Tomorrow.io) + infer a
+        // v2: name the real provider (NWS, NOT Apple WeatherKit) + infer a
         // weatherCode from the symbol so the custom glyph still lights.
         snap.dataSource = .nws
         snap.weatherCode = WeatherIcons.code(forSymbol: symbol)

@@ -117,7 +117,7 @@ private struct ForecastBody: View {
     /// signal? The server appends a weather point (e.g. a §3 LaneImpact
     /// headline) only on elevated/severe lane risk, so a match is a real
     /// weather decision input — never fabricated. Conservative vocabulary
-    /// drawn from the §3 driver fields + Tomorrow.io condition families so
+    /// drawn from the §3 driver fields + Apple WeatherKit condition families so
     /// the rate/bid/trend signals never get mis-tagged.
     static func isWeatherSignal(_ raw: String) -> Bool {
         let s = raw.lowercased()

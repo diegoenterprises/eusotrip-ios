@@ -47,14 +47,14 @@ struct HomeWeatherWidget: View {
     @State private var hasLoadedOnce = false
 
     /// Live auto-refresh cadence. Current conditions don't change
-    /// second-to-second and the upstream sources (Tomorrow.io / WeatherKit
+    /// second-to-second and the upstream sources (Apple WeatherKit / WeatherKit
     /// / NWS) are rate-limited, so a 10-minute live tick — plus an instant
     /// refresh whenever the app returns to the foreground — is the right
     /// "real-time" behavior for a home weather surface.
     private let refreshInterval: UInt64 = 600 * 1_000_000_000
 
     /// Hard ceiling on the FIRST load (no cache). If the upstream chain
-    /// (location + Tomorrow.io + WeatherKit/NWS/Open-Meteo fallbacks)
+    /// (location + Apple WeatherKit + WeatherKit/NWS/Open-Meteo fallbacks)
     /// stalls, the widget resolves to an honest state instead of sitting on
     /// the skeleton — no multi-minute lingering loads.
     private let firstLoadCeiling: UInt64 = 9 * 1_000_000_000

@@ -14,7 +14,7 @@
 //    weather.getRouteConditions(EXISTS weather.ts:392)  → {available?,origin,destination,
 //        overallRisk, segments:[{from,to,risk,condition,weatherCode,windGust,visibility,
 //        precipitationIntensity,floods[],overallRisk}], advisories:[{eventType,severity,
-//        headline,expiresAt}]}  — Tomorrow.io-sourced; per-segment weather is enterprise-
+//        headline,expiresAt}]}  — Apple WeatherKit-sourced; per-segment weather is enterprise-
 //        gated (available:false / nil today), so the screen renders an HONEST empty corridor.
 //        Input: {origin:{city,state}, destination:{city,state}} — derived from the first
 //        REAL impacted load's "City, ST" endpoints; never invented.
@@ -64,7 +64,7 @@ private struct ImpactedLoad578: Decodable, Identifiable {
 }
 
 /// `weather.getRouteConditions` — the corridor envelope. The server is now
-/// Tomorrow.io-sourced; every weather field is enterprise-gated, so all the
+/// Apple WeatherKit-sourced; every weather field is enterprise-gated, so all the
 /// new keys are OPTIONAL and stay nil today (we render the honest empty
 /// state). `available` is the gate flag (absent on the legacy alert-only
 /// path → treated as `nil`, which the screen reads as "feed not configured").
@@ -103,7 +103,7 @@ private struct RouteAdvisory578: Decodable, Identifiable {
     var id: String { (headline ?? eventType ?? "advisory") + (expiresAt ?? "") }
 }
 
-/// A corridor segment with the new Tomorrow.io per-segment weather. EVERY
+/// A corridor segment with the new Apple WeatherKit per-segment weather. EVERY
 /// field is optional → `Decodable` synthesizes cleanly and the row collapses
 /// to its honest endpoints when the enterprise feed is dark. (ForEach keys on
 /// the enumerated offset, so no `Identifiable`/synthetic id is needed.)
@@ -112,7 +112,7 @@ private struct RouteSegment578: Decodable {
     let to: String?
     let risk: String?                   // per-segment riskTier ladder
     let condition: String?
-    // Tomorrow.io per-segment metrics (gated; nil until the key lands).
+    // Apple WeatherKit per-segment metrics (gated; nil until the key lands).
     let weatherCode: Int?
     let windGust: Double?               // mph
     let visibility: Double?             // mi
@@ -491,7 +491,7 @@ private struct RailRouteWeatherBody: View {
         .padding(.horizontal, 14).padding(.vertical, 12)
     }
 
-    /// One corridor leg: condition glyph (Tomorrow.io weatherCode) + the
+    /// One corridor leg: condition glyph (Apple WeatherKit weatherCode) + the
     /// endpoints + a riskTier dot, with the gated metrics (gust · vis ·
     /// precip) shown only when present.
     private func segmentRow(_ seg: RouteSegment578) -> some View {
@@ -506,7 +506,7 @@ private struct RailRouteWeatherBody: View {
             }
         }()
         return HStack(alignment: .top, spacing: 12) {
-            // Tomorrow.io condition glyph (honest unknown-cloud at code 0).
+            // Apple WeatherKit condition glyph (honest unknown-cloud at code 0).
             WeatherIcons.symbolView(for: seg.weatherCode ?? 0, size: 28)
                 .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 5) {
