@@ -779,7 +779,7 @@ struct MarketIntelligenceBody: View {
 
     @ViewBuilder
     private func quoteStat(_ label: String, _ value: String?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
@@ -787,6 +787,7 @@ struct MarketIntelligenceBody: View {
                 .font(.system(size: 13, weight: .heavy)).monospacedDigit()
                 .foregroundStyle(value == nil ? palette.textTertiary : palette.textPrimary)
                 .lineLimit(1).minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1052,6 +1053,7 @@ struct MarketIntelligenceBody: View {
                 .font(.system(size: 22, weight: .heavy, design: .rounded)).monospacedDigit()
                 .foregroundStyle(palette.textPrimary)
                 .lineLimit(1).minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 4) {
                 Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
                     .font(.system(size: 9, weight: .heavy))

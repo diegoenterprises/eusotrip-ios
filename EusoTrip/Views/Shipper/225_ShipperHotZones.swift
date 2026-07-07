@@ -664,7 +664,7 @@ struct ShipperHotZones: View {
                          valueStyle: ValueStyle,
                          trail: String,
                          trailColor: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
@@ -678,6 +678,9 @@ struct ShipperHotZones: View {
                     }
                 }
                 .font(.system(size: 22, weight: .bold).monospacedDigit())
+                // Guarantee the number's full glyph height so a heavy/gradient
+                // digit is never top-shaved by a tight text frame.
+                .fixedSize(horizontal: false, vertical: true)
                 Text(trail)
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(trailColor)
@@ -876,6 +879,7 @@ struct ShipperHotZones: View {
                 Text(multiplier)
                     .font(.system(size: 22, weight: .bold).monospacedDigit())
                     .foregroundStyle(demandColor)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("demand")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.4)
