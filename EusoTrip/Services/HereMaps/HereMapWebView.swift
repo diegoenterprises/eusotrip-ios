@@ -367,6 +367,10 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         <script src="https://js.api.here.com/v3/3.1/mapsjs-service.js"></script>
         <script src="https://js.api.here.com/v3/3.1/mapsjs-ui.js"></script>
         <script src="https://js.api.here.com/v3/3.1/mapsjs-data.js"></script>
+        <!-- HARP engine module (3.1). REQUIRED for OMV vector tiles to render
+             their full style INCLUDING place LABELS (state / city / street).
+             Without HARP the default engine drew geometry but no text. -->
+        <script src="https://js.api.here.com/v3/3.1/mapsjs-harp.js"></script>
         </head><body><div id="map"></div><script>
         (function(){
           function log(m){ try{ window.webkit.messageHandlers.hzLog.postMessage(String(m)); }catch(e){} }
@@ -406,9 +410,25 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             var base = buildBase(dark);
             if(!base){ document.getElementById("map").innerHTML='<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#fff;opacity:.5;font:11px -apple-system">basemap unavailable</div>'; return; }
 
-            map = new H.Map(document.getElementById("map"), base, {
-              center:{lat:\(centerLat),lng:\(centerLng)}, zoom:\(zoom), pixelRatio: window.devicePixelRatio||1
-            });
+            // HARP is the ONLY 3.1 engine that renders OMV vector labels
+            // (state / city / street). The OMV provider + H.map.render.Style
+            // stack already renders geometry, so it is HARP-compatible; we just
+            // had no engine selected, so text never drew. Double-guarded: only
+            // request HARP when the module loaded, AND if HARP map creation
+            // throws, retry with the default engine so maps NEVER go blank.
+            var baseOpts = { center:{lat:\(centerLat),lng:\(centerLng)}, zoom:\(zoom), pixelRatio: window.devicePixelRatio||1 };
+            var el = document.getElementById("map");
+            if (H.Map.EngineType && H.Map.EngineType.HARP) {
+              try {
+                var harpOpts = { center: baseOpts.center, zoom: baseOpts.zoom, pixelRatio: baseOpts.pixelRatio, engineType: H.Map.EngineType.HARP };
+                map = new H.Map(el, base, harpOpts);
+              } catch(eh) {
+                log("harp engine failed, default fallback: "+eh);
+                map = new H.Map(el, base, baseOpts);
+              }
+            } else {
+              map = new H.Map(el, base, baseOpts);
+            }
             window.addEventListener("resize", function(){ map.getViewPort().resize(); });
             behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
             \(dragFlags)
