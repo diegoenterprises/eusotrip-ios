@@ -319,6 +319,15 @@ struct HotZonesHeatMapView: View {
                 center: mapCenter,
                 zoom: 5,
                 baseLayers: [
+                    // Geothermal demand heat layer — HERE H.data.heatmap DEFAULT
+                    // ramp (red = hot metros → blue = cold), weighted by each
+                    // zone's live load-to-truck ratio. Renders UNDER the pins on
+                    // the SAME canonical HERE JS renderer already in production,
+                    // so there's no extra engine and no WebView-auth regression
+                    // risk — it just re-lights the real geothermal map.
+                    .heatmap(points: zones.map { z in
+                        HereLatLng(z.center.lat, z.center.lng, weight: z.liveRatio)
+                    }),
                     .markers(zones.map { z in
                         HereMarker(
                             at: .init(z.center.lat, z.center.lng),
