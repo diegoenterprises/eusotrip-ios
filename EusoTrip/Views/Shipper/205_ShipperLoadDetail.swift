@@ -1323,6 +1323,13 @@ struct ShipperLoadDetail: View {
             let decoded = HereRoutingClient.polyline(for: section)
             routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
         } catch {
+            // Make the straight-line fallback DIAGNOSABLE. HERE Routing v8 uses
+            // the OAuth2 Bearer credential (HERE access key id/secret via
+            // HEREAuthService) — a DIFFERENT credential from the JS apiKey that
+            // renders the map tiles. So the basemap can draw while the route
+            // 401/403s and collapses to a straight pickup→delivery line. This
+            // was previously swallowed silently; surface the real reason.
+            print("[LoadDetail] HERE route fetch failed → straight fallback — \((error as? HereMapsError)?.errorDescription ?? String(describing: error))")
             routePolyline = []
         }
     }
