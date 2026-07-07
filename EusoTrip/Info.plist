@@ -65,6 +65,11 @@
 		<string>audio</string>
 		<string>fetch</string>
 		<string>processing</string>
+		<!-- Push-to-Talk (EusoTrip Pulse). Required by the PushToTalk
+		     framework so the system can wake the app in the background on a
+		     `pushtotalk` APNs push to open the convoy channel speaker. Pairs
+		     with the com.apple.developer.push-to-talk entitlement. -->
+		<string>push-to-talk</string>
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>

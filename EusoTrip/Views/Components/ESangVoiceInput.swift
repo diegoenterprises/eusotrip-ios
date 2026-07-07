@@ -195,18 +195,11 @@ final class eSangVoiceInputController: ObservableObject {
         // keeps the low-latency capture path; duck + Bluetooth let a paired headset mic
         // drive the session.
         let session = AVAudioSession.sharedInstance()
-        let options: AVAudioSession.CategoryOptions
-        if #available(iOS 18.2, *) {
-            options = [.duckOthers, .allowBluetoothHFP]
-        } else {
-            // iOS 17.0–18.1: `allowBluetoothHFP` is unavailable and the old
-            // `allowBluetooth` symbol is deprecated-by-rename in the SDK.
-            // Its rawValue (bit 2) is ABI-stable and identical to the renamed
-            // option, so build the same HFP option set without referencing the
-            // deprecated symbol — keeps Bluetooth HFP input live for PTT/ESANG
-            // on the iOS 17 deployment floor.
-            options = [.duckOthers, AVAudioSession.CategoryOptions(rawValue: 1 << 2)]
-        }
+        // `allowBluetoothHFP` is available on the iOS 17 deployment floor
+        // (the same option the PTT radio session uses in PTChannelManager),
+        // so route Bluetooth Hands-Free input without the deprecated
+        // `allowBluetooth` symbol.
+        let options: AVAudioSession.CategoryOptions = [.duckOthers, .allowBluetoothHFP]
         try session.setCategory(.playAndRecord, mode: .measurement, options: options)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
 

@@ -9,6 +9,18 @@
 	<key>com.apple.developer.weatherkit</key>
 	<true/>
 	<!--
+	  Push-to-Talk (EusoTrip Pulse convoy walkie-talkie). This is a
+	  RESTRICTED entitlement Apple grants by application; it is now
+	  approved for this App ID. With it present, `PTChannelManager`
+	  vends a live channel manager (isAvailable → true) and the
+	  chain-group radio lights up. The App ID's provisioning profile
+	  MUST include this capability — let Xcode automatic signing
+	  regenerate the profile, or add it in the developer portal, before
+	  a device/TestFlight build.
+	-->
+	<key>com.apple.developer.push-to-talk</key>
+	<true/>
+	<!--
 	  Shared container for iOS ↔ Pulse Watch App. Used for shared
 	  UserDefaults and file storage alongside WCSession, so HOS,
 	  load, and auth state stay in sync across the two bundles.
