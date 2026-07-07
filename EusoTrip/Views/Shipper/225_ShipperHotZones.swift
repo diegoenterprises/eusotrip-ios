@@ -823,11 +823,14 @@ struct ShipperHotZones: View {
         // haptic, exactly as before.
         let isFlipped = flippedZones.contains(z.id)
         return FlipTile(isFlipped: isFlipped) {
-            // FRONT — live demand headline + interactive sparkline.
-            hotTileBody(z, demandColor: demandColor, pulse: pulse, pulseColor: pulseColor)
-        } back: {
-            // BACK — the inspiring in-place drill-down.
+            // FRONT (founder 2026-07-07): promoted the rich drill-down —
+            // loads / trucks / rate / equipment / "why hot" + the "Find loads
+            // in {state}" CTA — to the front so the actionable detail leads.
             hotTileBack(z, demandColor: demandColor)
+        } back: {
+            // BACK — the simpler demand-headline + interactive pulse hero is
+            // now the flip-to face.
+            hotTileBody(z, demandColor: demandColor, pulse: pulse, pulseColor: pulseColor)
         }
         // Lock BOTH faces to one frame so the un-tapped hero front reads
         // IDENTICAL in size to the flipped detail back (founder build 740).
