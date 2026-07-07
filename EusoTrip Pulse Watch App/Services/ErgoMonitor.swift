@@ -54,11 +54,11 @@ final class ErgoMonitor: ObservableObject {
     func begin() {
         guard HKHealthStore.isHealthDataAvailable() else { return }
         let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
-        healthStore.requestAuthorization(toShare: nil, read: [hrType]) { _, _ in
-            // Hop back onto the MainActor with a fresh weak capture so
-            // strict-concurrency doesn't see `self` as a captured var
-            // escaping the outer @Sendable callback.
-            Task { @MainActor [weak self] in
+        healthStore.requestAuthorization(toShare: nil, read: [hrType]) { [weak self] _, _ in
+            // `[weak self]` lives on the outer @Sendable callback so the
+            // capture ownership is consistent and self isn't retained across
+            // the HealthKit authorization callback; the MainActor hop inherits it.
+            Task { @MainActor in
                 self?.startHRStreaming()
             }
         }
@@ -83,15 +83,15 @@ final class ErgoMonitor: ObservableObject {
             predicate: nil,
             anchor: nil,
             limit: HKObjectQueryNoLimit
-        ) { _, samples, _, _, _ in
+        ) { [weak self] _, samples, _, _, _ in
             let quantitySamples = (samples as? [HKQuantitySample]) ?? []
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 self?.handleHR(samples: quantitySamples)
             }
         }
-        query.updateHandler = { _, samples, _, _, _ in
+        query.updateHandler = { [weak self] _, samples, _, _, _ in
             let quantitySamples = (samples as? [HKQuantitySample]) ?? []
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 self?.handleHR(samples: quantitySamples)
             }
         }

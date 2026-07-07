@@ -18,38 +18,42 @@ extension Color {
     // hairline read pink on-wrist while the phone app read blue→purple.
     // Anchoring to the phone's hex values keeps the two surfaces feeling
     // like one product.
-    static let esangBlue      = Color(red: 0.08, green: 0.45, blue: 1.00)
-    static let esangMagenta   = Color(red: 0.75, green: 0.00, blue: 1.00)
-    static let esangGreen     = Color(red: 0.15, green: 0.80, blue: 0.45)
-    static let esangAmber     = Color(red: 1.00, green: 0.72, blue: 0.25)
-    static let esangDanger    = Color(red: 1.00, green: 0.40, blue: 0.38)
-    static let esangListening = Color(red: 1.00, green: 0.38, blue: 0.42)
-    static let esangHazmat    = Color(red: 0.98, green: 0.70, blue: 0.10)
+    // `nonisolated` so these Sendable design tokens can be read from any
+    // context (the watch target compiles with default MainActor isolation;
+    // without this, referencing a token from a @Sendable/nonisolated closure
+    // warns "main actor-isolated static property … from a nonisolated context").
+    nonisolated static let esangBlue      = Color(red: 0.08, green: 0.45, blue: 1.00)
+    nonisolated static let esangMagenta   = Color(red: 0.75, green: 0.00, blue: 1.00)
+    nonisolated static let esangGreen     = Color(red: 0.15, green: 0.80, blue: 0.45)
+    nonisolated static let esangAmber     = Color(red: 1.00, green: 0.72, blue: 0.25)
+    nonisolated static let esangDanger    = Color(red: 1.00, green: 0.40, blue: 0.38)
+    nonisolated static let esangListening = Color(red: 1.00, green: 0.38, blue: 0.42)
+    nonisolated static let esangHazmat    = Color(red: 0.98, green: 0.70, blue: 0.10)
 
     // Neutrals
-    static let esangBg        = Color.black
-    static let esangCard      = Color(white: 0.10)
-    static let esangBorder    = Color(white: 0.20)
-    static let esangText      = Color.white
-    static let esangTextDim   = Color(white: 0.72)
+    nonisolated static let esangBg        = Color.black
+    nonisolated static let esangCard      = Color(white: 0.10)
+    nonisolated static let esangBorder    = Color(white: 0.20)
+    nonisolated static let esangText      = Color.white
+    nonisolated static let esangTextDim   = Color(white: 0.72)
 }
 
 extension LinearGradient {
-    static var esangPrimary: LinearGradient {
+    nonisolated static var esangPrimary: LinearGradient {
         LinearGradient(
             colors: [.esangBlue, .esangMagenta],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
     }
-    static var esangDanger: LinearGradient {
+    nonisolated static var esangDanger: LinearGradient {
         LinearGradient(
             colors: [.esangDanger, .esangMagenta],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
     }
-    static var esangSuccess: LinearGradient {
+    nonisolated static var esangSuccess: LinearGradient {
         LinearGradient(
             colors: [.esangGreen, .esangBlue],
             startPoint: .topLeading,

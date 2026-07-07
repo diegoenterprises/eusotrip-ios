@@ -63,8 +63,8 @@ final class DrivingSessionManager: NSObject, ObservableObject {
             HKQuantityType.quantityType(forIdentifier: .heartRate)!,
             HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
         ]
-        healthStore.requestAuthorization(toShare: nil, read: types) { _, _ in
-            Task { @MainActor [weak self] in
+        healthStore.requestAuthorization(toShare: nil, read: types) { [weak self] _, _ in
+            Task { @MainActor in
                 self?.buildAndStartSession()
             }
         }
