@@ -950,11 +950,17 @@ struct MarketIntelligenceBody: View {
                 ForEach(visible) { row in
                     let isFlipped = flippedSymbols.contains(row.symbol)
                     FlipTile(isFlipped: isFlipped) {
-                        commodityCard(row)
-                    } back: {
+                        // FRONT (founder 2026-07-07): the rich commodity detail
+                        // leads — matching the Hot Zones tile swap. Tapping flips
+                        // to the compact sparkline + price hero.
                         commodityCardBack(row)
+                    } back: {
+                        commodityCard(row)
                     }
-                    .frame(height: isFlipped ? detailTileHeight : frontTileHeight)
+                    // Heights swap with the faces: the rich detail (now the
+                    // default/front) gets detailTileHeight; the compact hero
+                    // (now the flip-to) gets frontTileHeight.
+                    .frame(height: isFlipped ? frontTileHeight : detailTileHeight)
                     .animation(.spring(response: 0.42, dampingFraction: 0.84), value: isFlipped)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     .contentShape(Rectangle())
@@ -1207,8 +1213,11 @@ struct MarketIntelligenceBody: View {
                 .fill(palette.bgCard)
         )
         .overlay(
+            // On-brand EusoTrip gradient outline — matches the compact face so
+            // both flip sides read as branded cards (the trend up/down still
+            // reads through the colored change % and sparkline).
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(trendColor.opacity(0.55), lineWidth: 1)
+                .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
         )
         // Hard clip: back content can never bleed past the tile into a neighbour.
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
