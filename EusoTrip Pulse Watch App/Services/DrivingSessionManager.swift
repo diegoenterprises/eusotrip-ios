@@ -64,8 +64,12 @@ final class DrivingSessionManager: NSObject, ObservableObject {
             HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
         ]
         healthStore.requestAuthorization(toShare: nil, read: types) { [weak self] _, _ in
+            // Bind the weak capture to a local `self` (let) before the concurrent
+            // Task so it captures an immutable value — Swift 6 rejects capturing
+            // the weak `var self` directly in concurrently-executing code.
+            guard let self else { return }
             Task { @MainActor in
-                self?.buildAndStartSession()
+                self.buildAndStartSession()
             }
         }
     }
