@@ -14766,6 +14766,147 @@ struct TrackingGeofencesAPI {
             * sin(dLng / 2) * sin(dLng / 2)
         return r * 2 * atan2(sqrt(a), sqrt(1 - a))
     }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // L13-4 — identified fence resolution + event producer.
+    //
+    // The §3c ring path (`fences(near:)`) deliberately drops the row id (it
+    // only needs center+radius to draw). Closing the geofence loop needs the
+    // NUMERIC server id so the client can POST `location.telemetry.geofenceEvent`
+    // (whose input is `geofenceId: z.number()`), which drives the server-side
+    // ON-SITE / departed status flips. `IdentifiedGeofenceRow` decodes the id
+    // tolerantly (server may serialize it as a JSON number or string) and is a
+    // separate struct so the existing ring decode stays untouched.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// One `tracking.getGeofences` row that KEEPS the numeric id + shape type.
+    struct IdentifiedGeofenceRow: Decodable {
+        let id: Int?
+        let name: String?
+        let type: String?
+        let center: GeofenceCenter?
+        let radius: Double?
+        let active: Bool?
+
+        enum CodingKeys: String, CodingKey { case id, name, type, center, radius, active }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            if let i = try? c.decode(Int.self, forKey: .id) { id = i }
+            else if let s = try? c.decode(String.self, forKey: .id), let i = Int(s) { id = i }
+            else { id = nil }
+            name = try? c.decode(String.self, forKey: .name)
+            type = try? c.decode(String.self, forKey: .type)
+            center = try? c.decode(GeofenceCenter.self, forKey: .center)
+            radius = try? c.decode(Double.self, forKey: .radius)
+            active = try? c.decode(Bool.self, forKey: .active)
+        }
+    }
+
+    /// A server fence row resolved against a facility coordinate, WITH its
+    /// numeric id + shape type — the payload `postGeofenceEvent` needs.
+    struct IdentifiedFence: Hashable {
+        let id: Int
+        let center: HereLatLng
+        let radiusMeters: Double
+        let name: String?
+        let type: String?
+    }
+
+    /// Raw id-preserving read of `tracking.getGeofences`.
+    func identifiedList() async throws -> [IdentifiedGeofenceRow] {
+        try await api.queryNoInput("tracking.getGeofences")
+    }
+
+    /// Resolves the nearest active circular fence row (with id) covering each
+    /// facility coordinate, in ONE read. Same coverage rule as `fences(near:)`
+    /// (center within max(radius, 1500m) of the target). Any failure → [].
+    func identifiedFences(near points: [(lat: Double, lng: Double)]) async -> [IdentifiedFence] {
+        guard !points.isEmpty else { return [] }
+        guard let rows = try? await identifiedList(), !rows.isEmpty else { return [] }
+
+        let usable: [IdentifiedFence] = rows.compactMap { row in
+            guard row.active != false,
+                  let id = row.id,
+                  let c = row.center,
+                  let cLat = c.lat, let cLng = c.lng,
+                  cLat.isFinite, cLng.isFinite,
+                  !(cLat == 0 && cLng == 0),
+                  let r = row.radius, r.isFinite, r > 0
+            else { return nil }
+            return IdentifiedFence(id: id, center: HereLatLng(cLat, cLng),
+                                   radiusMeters: r, name: row.name, type: row.type)
+        }
+        guard !usable.isEmpty else { return [] }
+
+        var out: [IdentifiedFence] = []
+        for p in points {
+            guard p.lat.isFinite, p.lng.isFinite, !(p.lat == 0 && p.lng == 0) else { continue }
+            var best: (fence: IdentifiedFence, meters: Double)? = nil
+            for f in usable {
+                let d = Self.haversineMeters(p.lat, p.lng, f.center.lat, f.center.lng)
+                guard d <= Swift.max(f.radiusMeters, 1_500) else { continue }
+                if best == nil || d < best!.meters { best = (f, d) }
+            }
+            if let hit = best?.fence, !out.contains(hit) { out.append(hit) }
+        }
+        return out
+    }
+
+    /// POST one geofence transition to `location.telemetry.geofenceEvent` →
+    /// server `processGeofenceEvent` → ON-SITE / departed load-status flip +
+    /// detention clock + WS fan-out. Fire-and-forget from the producer's view;
+    /// the server return is void so we decode a permissive ack.
+    func postGeofenceEvent(
+        geofenceId: Int, action: String, lat: Double, lng: Double,
+        timestamp: String, loadId: Int?, geofenceType: String?, facilityName: String?
+    ) async throws {
+        struct LatLng: Encodable { let lat: Double; let lng: Double }
+        struct Input: Encodable {
+            let geofenceId: Int
+            let action: String
+            let location: LatLng
+            let timestamp: String
+            let loadId: Int?
+            let geofenceType: String?
+            let facilityName: String?
+        }
+        struct GeofenceEventAck: Decodable { init(from decoder: Decoder) throws {} }
+        let _: GeofenceEventAck = try await api.mutation(
+            "location.telemetry.geofenceEvent",
+            input: Input(geofenceId: geofenceId, action: action,
+                         location: LatLng(lat: lat, lng: lng), timestamp: timestamp,
+                         loadId: loadId, geofenceType: geofenceType, facilityName: facilityName)
+        )
+    }
+
+    /// Ensure the PICKUP_FACILITY / DELIVERY_FACILITY fences exist server-side
+    /// for a load via `location.geofences.createForLoad` (ownership-gated to a
+    /// party of the load). Returns the created fence count. Called only when a
+    /// resolve found no existing rows — so the geofence loop can still close on
+    /// loads that were dispatched before facility fences were seeded.
+    @discardableResult
+    func createFencesForLoad(
+        loadId: Int, pickupLat: Double, pickupLng: Double, pickupFacilityName: String?,
+        deliveryLat: Double, deliveryLng: Double, deliveryFacilityName: String?
+    ) async throws -> Int {
+        struct Input: Encodable {
+            let loadId: Int
+            let pickupLat: Double
+            let pickupLng: Double
+            let pickupFacilityName: String?
+            let deliveryLat: Double
+            let deliveryLng: Double
+            let deliveryFacilityName: String?
+        }
+        struct CreateAck: Decodable { let count: Int? }
+        let ack: CreateAck = try await api.mutation(
+            "location.geofences.createForLoad",
+            input: Input(loadId: loadId, pickupLat: pickupLat, pickupLng: pickupLng,
+                         pickupFacilityName: pickupFacilityName, deliveryLat: deliveryLat,
+                         deliveryLng: deliveryLng, deliveryFacilityName: deliveryFacilityName)
+        )
+        return ack.count ?? 0
+    }
 }
 
 // MARK: - appointmentsRouter (101 Me · Appointments)
