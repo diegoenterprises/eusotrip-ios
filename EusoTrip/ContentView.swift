@@ -1733,6 +1733,7 @@ enum ScreenRegistry {
         list.append(.init(id: "608", title: "Escort · Vehicle Check", role: .escort) { p in AnyView(EscortVehicleCheckScreen(theme: p, assignmentId: "0")) })  // ES-06 pre-trip equipment gate; resolves the active assignment when id is "0"
         list.append(.init(id: "606", title: "Escort · Route Survey", role: .escort) { p in AnyView(EscortRouteSurveyScreen(theme: p, assignmentId: "0")) })  // ES-03 pre-move hazard log; resolves the active assignment when id is "0"
         list.append(.init(id: "609", title: "Escort · Jurisdiction Handoff", role: .escort) { p in AnyView(EscortJurisdictionHandoffScreen(theme: p, assignmentId: "0")) })  // ES-05 state-line LEO handoff; resolves the active assignment when id is "0"
+        list.append(.init(id: "610", title: "Escort · Cert Reciprocity", role: .escort) { p in AnyView(EscortCertReciprocityScreen(theme: p)) })  // ES-08 iOS peer of the live web cert-reciprocity page (spine already live)
 
         // 2026-05-01 — lifted Terminal 700-702 + Admin 800-803 OUT
         // of the previous `#if DEBUG` block. Both role tracks have

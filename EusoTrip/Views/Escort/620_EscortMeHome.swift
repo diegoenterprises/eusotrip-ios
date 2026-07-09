@@ -161,6 +161,7 @@ struct EscortMeHomeScreen: View {
             row(label: "Vehicle check",     icon: "checklist",              to: "608")
             row(label: "Jurisdiction handoff", icon: "shield.lefthalf.filled", to: "609")
             row(label: "Settlement detail", icon: "banknote",               to: "605")
+            row(label: "Cert reciprocity",  icon: "checkmark.seal",         to: "610")
         }
     }
 
