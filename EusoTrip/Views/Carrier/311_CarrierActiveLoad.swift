@@ -23,6 +23,7 @@ struct CarrierActiveLoadScreen: View {
 
 private struct ActiveLoadBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let loadId: String
     @StateObject private var snap = ShipperLifecycleSnapshotStore()
 
@@ -53,7 +54,7 @@ private struct ActiveLoadBody: View {
         switch snap.state {
         case .loading: LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
         case .empty: EusoEmptyState(systemImage: "doc.text", title: "Load not found", subtitle: "Pull to refresh.")
-        case .error(let err): LifecycleCard(accentDanger: true) { Text((err as? EusoTripAPIError)?.errorDescription ?? err.localizedDescription).font(EType.caption).foregroundStyle(Brand.danger) }
+        case .error(let err): LifecycleCard(accentDanger: true) { Text(err.eusoUserCopy).font(EType.caption).foregroundStyle(Brand.danger) }
         case .loaded(let opt):
             if let live = opt {
                 LifecycleCard(accentGradient: true) {
@@ -146,7 +147,7 @@ private struct ActiveLoadBody: View {
     private func actionRow(_ live: ShipperAPI.LifecycleSnapshot) -> some View {
         HStack(spacing: 10) {
             Button {
-                if let p = live.driver?.phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") { UIApplication.shared.open(url) }
+                if let p = live.driver?.phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") { openURL(url) }
             } label: {
                 Text("Call driver").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, 12)

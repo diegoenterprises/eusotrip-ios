@@ -408,28 +408,40 @@ private struct RailCrossBorderDGRegsBody: View {
 
     // MARK: - CTA pair (DG checklist · Placard guide)
 
+    private var dgChecklistLines: [String] {
+        regimes.flatMap { code, reg in
+            var lines = [
+                "\(code): \(reg.regulationName ?? "-")",
+                "Authority: \(reg.authority ?? "-")"
+            ]
+            for rule in (reg.keyRules ?? []).prefix(2) {
+                lines.append("Rule: \(rule)")
+            }
+            return lines
+        }
+    }
+
+    private var placardGuideLines: [String] {
+        regimes.map { code, reg in
+            "\(code): \(reg.placardDifferences ?? reg.crossBorderNotes ?? "No live placard exception returned")"
+        }
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
-            Button(action: {}) {
-                Text("DG checklist")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-            }
-            .background(LinearGradient.primary)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            .buttonStyle(.plain)
-
-            Button(action: {}) {
-                Text("Placard guide")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-            }
-            .background(Color(hex: 0x232932))
-            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "DG checklist",
+                sheetTitle: "Cross-border DG checklist",
+                lines: dgChecklistLines,
+                fillWidth: true,
+                systemImage: "checklist.checked"
+            )
+            RailSecondaryActionButton(
+                title: "Placard guide",
+                sheetTitle: "Placard guide",
+                lines: placardGuideLines,
+                systemImage: "diamond.lefthalf.filled"
+            )
         }
     }
 

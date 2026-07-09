@@ -150,7 +150,7 @@ private struct ShipperEusoTicketHaulReceiptBody: View {
         return EusoTicketParty(
             name: name,
             monogram: monogram(for: name),
-            meta: companyId.isEmpty ? "EusoTrip shipper" : "Eusorone Technologies · companyId \(companyId)",
+            meta: companyId.isEmpty ? "EusoTrip shipper" : "Eusorone Technologies · Company ID \(companyId)",
             avatarStyle: .gradient
         )
     }
@@ -158,7 +158,7 @@ private struct ShipperEusoTicketHaulReceiptBody: View {
     private var carrierParty: EusoTicketParty {
         if let cp = commercial?.counterparty {
             let name = cp.companyName ?? cp.userName ?? "Carrier"
-            let meta = cp.companyId.map { "companyId \($0) · \(cp.role)" } ?? cp.role
+            let meta = cp.companyId.map { "Company ID \($0) · \(cp.role)" } ?? cp.role
             return EusoTicketParty(name: name, monogram: monogram(for: name), meta: meta, avatarStyle: .dark)
         }
         return EusoTicketParty(name: "Pending carrier", monogram: "-", meta: "no driver assigned", avatarStyle: .dark)

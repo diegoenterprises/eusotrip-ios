@@ -1127,7 +1127,7 @@ private struct EscortWetIceBand: Decodable {
     let available: Bool
     /// Server-projected condition label (e.g. "Wet · light rain", "Ice risk").
     let conditionLabel: String?
-    /// Tomorrow.io weatherCode driving the band tint, when present.
+    /// Apple WeatherKit weatherCode driving the band tint, when present.
     let weatherCode: Int?
     /// Optional sub-line (e.g. surface temp / precip detail).
     let detailLine: String?

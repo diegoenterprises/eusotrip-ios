@@ -480,16 +480,48 @@ private struct VesselContainerLeaseBody: View {
         return "\(unit) \u{00B7} \(type) renews \(exp) \u{00B7} \(days) days"
     }
 
+    private func exportLeaseLedger() {
+        let unitLines = units.map { u in
+            [
+                u.unitNumber ?? "Unit",
+                u.status ?? "—",
+                unitSubtitle(u)
+            ].joined(separator: " · ")
+        }.joined(separator: "\n")
+        let riskLines = atRisk.map(detentionWatchLine).joined(separator: "\n")
+        let certLines = certs.map(certWatchLine).joined(separator: "\n")
+        let lines = [
+            "EusoTrip container lease ledger",
+            "Booking: \(bookingId)",
+            "Active units: \(activeUnits)",
+            "In service: \(inServicePct)%",
+            "Detention exposure: \(String(format: "$%.2f", detentionExposure))",
+            "Renewals due: \(renewalCount)",
+            "",
+            "Units:",
+            unitLines.isEmpty ? "—" : unitLines,
+            "",
+            "Free-time watch:",
+            riskLines.isEmpty ? "—" : riskLines,
+            "",
+            "Cert watch:",
+            certLines.isEmpty ? "—" : certLines
+        ].joined(separator: "\n")
+        #if canImport(UIKit)
+        UIPasteboard.general.string = lines
+        #endif
+    }
+
     // MARK: - Action row
 
     private var actionRow: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Calculate per-diem") {
+            CTAButton(title: "Calculate per-diem", action: {
                 // Recompute accrual client-side from rate × days (read-only). No mutation.
                 Task { await load() }
-            }
+            })
             Button {
-                // Export streams the ledger (read landing, no mutation).
+                exportLeaseLedger()
             } label: {
                 Text("Export")
                     .font(EType.bodyStrong)

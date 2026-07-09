@@ -12,7 +12,7 @@
 //    §398 DRIVER     at-delivery arrival · IN-TRANSIT→DELIVERY (ring rolled
 //                    there) · drivers.updateLoadStatus(status:"at_delivery")
 //    §399 CATALYST   fleet-track (THIS FILE · DELIVERY 2/4) · NO ring
-//                    transition · CEL fleet-tracker reflects the assigned
+//                    transition · carrier fleet-tracker reflects the assigned
 //                    driver arrived at the consignee.
 //
 //  WIRING MANIFEST (MCP-confirmed against frontend/server/routers/catalysts.ts
@@ -57,10 +57,10 @@
 //        comes from the recommended/most-recent bid — there is NO hardcoded
 //        "Carolina Express Logistics"/"CEL" persona anywhere on this surface.
 //
-//  NO MUTATION THIS FIRE. §399 is a READ-ONLY echo; the load status HOLDS at
-//  `at_delivery` (written at §398). The action-ribbon buttons are read-only
-//  navigation intents — there is no backing mutation on this surface, so
-//  they are flagged STUB (navigation hooks, not writes).
+//  NO STATUS MUTATION THIS FIRE. §399 is a READ-ONLY echo; the load status
+//  HOLDS at `at_delivery` (written at §398). Its actions still open real
+//  native surfaces: CatalystLoadDetailScreen and the persisted load thread
+//  from messages.getOrCreateLoadConversation.
 //
 //  Powered by ESANG AI™.
 //
@@ -294,6 +294,8 @@ struct FleetTrackerArrivedCard_376: View {
     fileprivate let driver: CatalystDriver376
     /// Consignee city/state from the live delivery location, or "—".
     let consignee: String
+    /// Winning/assigned carrier display from catalysts.getBidsForLoad.
+    let carrierName: String
     @Environment(\.palette) private var palette
 
     private var driverName: String {
@@ -328,7 +330,7 @@ struct FleetTrackerArrivedCard_376: View {
             Circle().fill(Theme376.gradientDiag).frame(width: 30, height: 30)
                 .overlay(Text(initials).font(.system(size: 10, weight: .heavy)).foregroundColor(.white))
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(driverName) · CEL fleet")
+                Text("\(driverName) · \(carrierName)")
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
@@ -389,6 +391,8 @@ struct ShipperOfRecordCard_376: View {
     let shipperName: String
     /// Shipper monogram derived from the name, or "—".
     let shipperMonogram: String
+    /// Shipper party metadata from loads.getById.
+    let metaLine: String
     @Environment(\.palette) private var palette
 
     var body: some View {
@@ -400,8 +404,9 @@ struct ShipperOfRecordCard_376: View {
                     .font(.system(size: 10, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
-                Text("M-04 AT-DELIVERY echo")
+                Text(metaLine)
                     .font(.system(size: 8, design: .monospaced)).foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
             }
             Spacer()
         }
@@ -411,37 +416,34 @@ struct ShipperOfRecordCard_376: View {
     }
 }
 
-// MARK: - ActionRibbon (read-only navigation intents · STUB — no backing mutation)
+// MARK: - ActionRibbon (native load detail + persisted load thread)
 
 struct ActionRibbonAtDeliveryFleetTrackCatalyst_376: View {
-    /// Load id carried into the ESANG dispatch chat, or empty.
-    let loadId: String
+    let openingConversation: Bool
+    let openLoad: () -> Void
+    let openConversation: () -> Void
     @Environment(\.palette) private var palette
 
     var body: some View {
         HStack(spacing: 8) {
             Button {
-                // STUB · read-only navigation intent — open live map surface.
-                NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
+                openLoad()
             } label: {
-                Text("OPEN LIVE MAP").font(.system(size: 9, weight: .heavy)).kerning(0.5)
+                Text("VIEW LOAD").font(.system(size: 9, weight: .heavy)).kerning(0.5)
                     .foregroundColor(.white).frame(width: 156, height: 36)
                     .background(RoundedRectangle(cornerRadius: 10).fill(Theme376.gradient))
             }
             .buttonStyle(.plain)
 
             Button {
-                // STUB · read-only navigation intent — open ESANG message thread.
-                NotificationCenter.default.post(
-                    name: .esangOpenMeDetail,
-                    object: "messages",
-                    userInfo: loadId.isEmpty ? [:] : ["loadId": loadId])
+                openConversation()
             } label: {
-                Text("MESSAGE DRIVER").font(.system(size: 9, weight: .heavy)).kerning(0.5)
+                Text(openingConversation ? "OPENING" : "MESSAGE DRIVER").font(.system(size: 9, weight: .heavy)).kerning(0.5)
                     .foregroundStyle(Theme376.gradient).frame(width: 132, height: 36)
                     .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Brand.blue.opacity(0.55), lineWidth: 1))
             }
             .buttonStyle(.plain)
+            .disabled(openingConversation)
         }
     }
 }
@@ -459,6 +461,11 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
     @State private var bids: [BidRow376] = []
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var actionBusy = false
+    @State private var showLoadDetail = false
+    @State private var activeThread: InboxThread? = nil
     /// True when the M-04 row was found on catalysts.getActiveLoads. Because
     /// the server filter excludes 'at_delivery', this is expected to be FALSE
     /// once the load arrives — we surface that honestly rather than fabricate.
@@ -554,11 +561,27 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
         let dst = (activeRow?.destination ?? "").trimmingCharacters(in: .whitespaces)
         return (dst.isEmpty || dst == "Unknown") ? "—" : dst
     }
-    /// Shipper-of-record name — there is no party object on the active-board
-    /// or fleet rows, and LoadsAPI.LoadDetail carries only shipperId (numeric),
-    /// not a name/initials. With no name source, render "—" honestly.
-    private var shipperNameDisplay: String { "—" }
-    private var shipperMonogram: String { "—" }
+    /// Shipper-of-record name from the resolved party object on loads.getById.
+    private var shipperNameDisplay: String {
+        nonEmpty(detail?.shipper?.companyName)
+            ?? nonEmpty(detail?.shipper?.name)
+            ?? detail?.shipperId.map { "Shipper #\($0)" }
+            ?? "—"
+    }
+    private var shipperMonogram: String {
+        nonEmpty(detail?.shipper?.initials)
+            ?? monogram376(shipperNameDisplay)
+    }
+    private var shipperMetaLine: String {
+        guard let detail else { return "loads.getById party sync pending" }
+        let party = detail.shipper
+        let companyId = (party?.companyId ?? detail.shipperId).map { "companyId \($0)" }
+        let mc = nonEmpty(party?.mcNumber).map { "MC \($0)" }
+        let dot = nonEmpty(party?.dotNumber).map { "DOT \($0)" }
+        let email = nonEmpty(party?.email)
+        let parts = [companyId, mc, dot, email].compactMap { $0 }
+        return parts.isEmpty ? "No shipper party metadata on this load" : parts.joined(separator: " · ")
+    }
 
     /// HOS remaining for the arrived driver ("7:03"), or "-".
     private var hosDisplay: String {
@@ -597,7 +620,11 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
                     LifecycleStripEight_376(stage: stage)
 
                     if let d = driver {
-                        FleetTrackerArrivedCard_376(driver: d, consignee: consigneeDisplay)
+                        FleetTrackerArrivedCard_376(
+                            driver: d,
+                            consignee: consigneeDisplay,
+                            carrierName: winningCarrierName == "—" ? "assigned carrier" : winningCarrierName
+                        )
                     } else {
                         fleetEmptyRow
                     }
@@ -608,9 +635,18 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
 
                     routeProgressCapsule
 
-                    ShipperOfRecordCard_376(shipperName: shipperNameDisplay, shipperMonogram: shipperMonogram)
+                    ShipperOfRecordCard_376(
+                        shipperName: shipperNameDisplay,
+                        shipperMonogram: shipperMonogram,
+                        metaLine: shipperMetaLine
+                    )
 
-                    ActionRibbonAtDeliveryFleetTrackCatalyst_376(loadId: resolvedLoadId)
+                    ActionRibbonAtDeliveryFleetTrackCatalyst_376(
+                        openingConversation: actionBusy,
+                        openLoad: { showLoadDetail = true },
+                        openConversation: { Task { await openLoadConversation() } }
+                    )
+                    actionFeedback
                 } else {
                     emptyState
                 }
@@ -623,6 +659,15 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
         .task { await fetch() }
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await fetch() }
+        }
+        .sheet(isPresented: $showLoadDetail) {
+            if !resolvedLoadId.isEmpty {
+                CatalystLoadDetailScreen(theme: palette, loadId: resolvedLoadId)
+            }
+        }
+        .sheet(item: $activeThread) { thread in
+            DriverConversationView(thread: thread)
+                .environment(\.palette, palette)
         }
     }
 
@@ -643,7 +688,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
 
     private var hero: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("At delivery · CEL fleet arrived · \(consigneeDisplay)")
+            Text("At delivery · \(winningCarrierName == "—" ? "carrier fleet" : winningCarrierName) arrived · \(consigneeDisplay)")
                 .font(.system(size: 20, weight: .bold)).kerning(-0.6)
                 .foregroundStyle(palette.textPrimary)
                 .lineLimit(2).minimumScaleFactor(0.7)
@@ -685,7 +730,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
 
     private var telemetrySection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("FLEET-TRACKER ECHO · AT-DELIVERY · loadLifecycle.emitLoadStateChange(at_delivery)")
+            Text("FLEET-TRACKER ECHO · AT-DELIVERY · live load-state signal")
                 .font(.system(size: 8, weight: .heavy)).kerning(0.5).foregroundStyle(palette.textTertiary)
                 .lineLimit(1).minimumScaleFactor(0.6)
             ForEach(telemetryRows) { FleetTrackRowView_376(row: $0) }
@@ -705,7 +750,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
                   trailing: locBacked ? "live" : "—",
                   realBacked: locBacked),
             .init(title: "HOS · \(hosStatusDisplay) · \(hosDisplay) remaining",
-                  detail: "drive clock frozen at arrival · catalysts.getMyDrivers.hoursRemaining",
+                  detail: "drive clock frozen at arrival · live hours remaining per driver",
                   trailing: hosBacked ? hosDisplay : "—",
                   realBacked: hosBacked),
             .init(title: "Active board echo",
@@ -759,7 +804,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
     private var fleetTrackMapCard: some View {
         if let fix = liveTruckFix {
             VStack(alignment: .leading, spacing: 6) {
-                Text("LIVE FLEET-TRACK · gps_tracking · catalysts.getMyDrivers.location")
+                Text("LIVE FLEET-TRACK · GPS · live driver positions")
                     .font(.system(size: 8, weight: .heavy)).kerning(0.5)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1).minimumScaleFactor(0.6)
@@ -770,10 +815,14 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
                         .markers([
                             .init(at: .init(fix.lat, fix.lng),
                                   kind: .truck,
-                                  label: mapMarkerLabel)
+                                  label: mapMarkerLabel,
+                                  id: resolvedLoadId.isEmpty ? nil : resolvedLoadId)
                         ])
                     ],
-                    addOns: .shipperTracking
+                    addOns: .shipperTracking,
+                    onSelectMarker: { _ in
+                        Task { await openLoadConversation() }
+                    }
                 )
                 .frame(height: 200)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -842,6 +891,31 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
+    @ViewBuilder
+    private var actionFeedback: some View {
+        if let msg = actionError ?? actionMessage {
+            HStack(spacing: 8) {
+                Image(systemName: actionError == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(actionError == nil ? Brand.success : Brand.danger)
+                Text(msg)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(actionError == nil ? palette.textSecondary : Brand.danger)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background((actionError == nil ? Brand.success : Brand.danger).opacity(0.10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder((actionError == nil ? Brand.success : Brand.danger).opacity(0.35), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+    }
+
     // MARK: - Network
 
     /// The load id used for loads.getById / getBidsForLoad / the chat hook.
@@ -849,6 +923,53 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
     private var resolvedLoadId: String {
         if !loadId.isEmpty, loadId != "0" { return loadId }
         return activeRow?.id ?? ""
+    }
+
+    private func nonEmpty(_ raw: String?) -> String? {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func monogram376(_ name: String) -> String {
+        let initials = name
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .prefix(2)
+            .compactMap { $0.first }
+        let value = String(initials).uppercased()
+        return value.isEmpty || value == "—" ? "—" : value
+    }
+
+    private func surfaceMessage(_ error: Error) -> String {
+        (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+    }
+
+    private func openLoadConversation() async {
+        let lid = resolvedLoadId
+        guard !lid.isEmpty else {
+            actionError = "No at-delivery load is available for messaging."
+            return
+        }
+        guard !actionBusy else { return }
+        actionBusy = true
+        actionError = nil
+        actionMessage = nil
+        defer { actionBusy = false }
+        do {
+            let conversation = try await EusoTripAPI.shared.messaging.getOrCreateLoadConversation(loadId: lid)
+            activeThread = InboxThread(
+                id: conversation.id,
+                glyph: "shippingbox",
+                title: conversation.loadNumber.map { "Load \($0)" } ?? loadNumberDisplay,
+                subtitle: "At-delivery load thread",
+                preview: "Driver, shipper, and catalyst conversation",
+                time: "Now",
+                unread: 0,
+                allowsTransfer: false
+            )
+            actionMessage = conversation.existing == true ? "Opened load conversation." : "Created load conversation."
+        } catch {
+            actionError = surfaceMessage(error)
+        }
     }
 
     /// Reads the REAL procedures (no stubs / no fabrication):
@@ -866,6 +987,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
     private func fetch() async {
         loading = true
         loadError = nil
+        actionError = nil
         defer { loading = false }
 
         // Preview seed path — no live session bound; paint the canonical
@@ -875,6 +997,7 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
             self.activeRow = previewSeedActive
             self.bids = previewSeedBids
             self.onActiveBoard = previewSeedActive != nil
+            self.detail = nil
             return
         }
 
@@ -922,9 +1045,22 @@ struct CatalystAtDeliveryFleetTrackCelM04View: View {
         // Full load detail + winning carrier — only when a real id resolves.
         let lid = resolvedLoadId
         if !lid.isEmpty {
-            self.detail = (try? await api.loads.getDetail(id: lid)) ?? nil
-            self.bids = (try? await api.query(
-                "catalysts.getBidsForLoad", input: LoadIdInput376(loadId: lid))) ?? []
+            do {
+                self.detail = try await api.loads.getDetail(id: lid)
+                anyReached = true
+            } catch {
+                self.detail = nil
+                actionError = "Load detail sync failed: \(surfaceMessage(error))"
+            }
+
+            do {
+                self.bids = try await api.query(
+                    "catalysts.getBidsForLoad", input: LoadIdInput376(loadId: lid))
+                anyReached = true
+            } catch {
+                self.bids = []
+                actionError = "Carrier award sync failed: \(surfaceMessage(error))"
+            }
         }
 
         // Only surface an error if EVERY read failed (so a partial live read

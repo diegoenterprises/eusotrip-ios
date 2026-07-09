@@ -8,20 +8,15 @@
 //  drift bar series, and a per-voyage carbon-contribution ledger. Read-only
 //  surface (no write). RBAC vesselProcedure · transportMode=vessel · IMO DCS.
 //
-//  WIRING — every data source named in the wireframe <desc>:
-//    · sustainability.getFleetCarbon  (hero attained/required AER + quarterly
-//      drift bars)                                  — NOT on Swift API → PORT-GAP
-//    · co2Calculator.calculateVesselShipment (per-voyage gCO2/t·nm ledger rows,
-//      vesselProcedure-gated)                        — NOT on Swift API → PORT-GAP
-//    · sustainability.exportCarbonReport (Export CTA) — NOT on Swift API → PORT-GAP
-//    · CII A–E letter-grade banding `getCII` — declared a STUB in the canonical
-//      <desc>; grade + band boundaries computed client-side from the real
-//      attained/required AER returned by getFleetCarbon (deterministic, not
-//      fabricated). When no live AER loads, the band renders an empty state.
+//  WIRING:
+//    · vesselShipments.getVesselShipments     — anchors the ledger to real vessel bookings.
+//    · vesselShipments.getVesselShipmentDetail — resolves live origin/destination port labels.
+//    · co2Calculator.calculateVesselShipment  — computes per-booking CII attained AER + rating.
+//    · Export CTA                             — writes a CSV from those live rows and opens ShareLink.
+//    · SEEMP plan CTA                         — opens a data-derived compliance plan from the same CII evidence.
 //
 //  All calls go through EusoTripAPI.shared with real @State loading/error/empty
-//  + do/catch. No mock data. Endpoints absent from the Swift surface surface a
-//  real error/empty state and a PORT-GAP marker.
+//  + do/catch. No mock data, no synthetic success, no hardcoded voyage rows.
 //
 
 import SwiftUI
@@ -47,16 +42,17 @@ struct VesselEmissionsCIIScreen: View {
 // <desc>. Every field is optional so a partial/absent payload degrades to a
 // real empty state rather than crashing.
 
-/// `sustainability.getFleetCarbon` envelope — attained/required AER for the
-/// hero + the rolling quarterly attained-AER drift series.
-private struct FleetCarbon681: Decodable {
+/// Locally derived fleet card from real vessel booking CII calculations.
+private struct FleetCarbon681 {
     let vesselId: String?
     let attainedAER: Double?            // gCO₂/t·nm — hero "ATTAINED AER · 2024"
     let requiredAER: Double?            // gCO₂/t·nm — hero "REQUIRED"
+    let grade: String?
     let year: Int?
+    let sourceCount: Int
     let quarters: [QuarterAER]?         // attained AER by quarter (drift bars)
 
-    struct QuarterAER: Decodable, Identifiable {
+    struct QuarterAER: Identifiable {
         let quarter: String?            // "Q1" … "Q4"
         let attainedAER: Double?
         let grade: String?              // "A"…"E" (band color for the bar)
@@ -66,16 +62,68 @@ private struct FleetCarbon681: Decodable {
 
 /// One per-voyage carbon-contribution ledger row from
 /// `co2Calculator.calculateVesselShipment`.
-private struct VoyageCarbon681: Decodable, Identifiable {
+private struct VoyageCarbon681: Identifiable {
     let id: String
     let voyageId: String?               // "VES-260523"
     let origin: String?                 // "CNSHA"
     let destination: String?            // "USLGB"
+    let createdAt: String?
     let distanceNm: Double?             // 11,240nm
-    let teu: Int?                       // TEU 8,420
+    let teu: Double?                    // TEU 8,420
     let note: String?                   // "ballast leg" / "slow-steam"
     let attainedAER: Double?            // 15.1 gCO₂/t·nm
     let grade: String?                  // "A"…"E"
+}
+
+private struct VesselShipmentList681: Decodable {
+    let shipments: [VesselShipmentRow681]?
+}
+
+private struct VesselShipmentRow681: Decodable {
+    let id: Int?
+    let bookingNumber: String?
+    let voyageNumber: String?
+    let serviceRoute: String?
+    let numberOfContainers: Int?
+    let containerSize: String?
+    let status: String?
+    let originPortId: Int?
+    let destinationPortId: Int?
+    let createdAt: String?
+}
+
+private struct VesselShipmentDetail681: Decodable {
+    let id: Int?
+    let bookingNumber: String?
+    let voyageNumber: String?
+    let serviceRoute: String?
+    let numberOfContainers: Int?
+    let containerSize: String?
+    let status: String?
+    let createdAt: String?
+    let originPort: Port681?
+    let destinationPort: Port681?
+}
+
+private struct Port681: Decodable {
+    let name: String?
+    let unlocode: String?
+    let city: String?
+    let state: String?
+    let country: String?
+}
+
+private struct VesselCIICalc681: Decodable {
+    let distanceNm: Double?
+    let fuelConsumedTonnes: Double?
+    let fuelType: String?
+    let co2Tonnes: Double?
+    let co2PerTeu: Double?
+    let teuCount: Double?
+    let ciiAttained: Double?
+    let ciiRating: String?
+    let dataAvailable: Bool?
+    let reason: String?
 }
 
 // MARK: - CII grade model (client-side band — wireframe <desc> STUB `getCII`)
@@ -121,10 +169,11 @@ private struct VesselEmissionsCIIBody: View {
     @State private var voyages: [VoyageCarbon681] = []
     @State private var loading = true
     @State private var loadError: String? = nil
-
-    // PORT-GAP banner — endpoints named in the wireframe <desc> that are not on
-    // the Swift EusoTripAPI surface yet. Surfaced honestly rather than mocked.
-    @State private var portGapNote: String? = nil
+    @State private var exporting = false
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var exportURL: URL? = nil
+    @State private var showSEEMPPlan = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -135,11 +184,6 @@ private struct VesselEmissionsCIIBody: View {
                 } else if let err = loadError {
                     LifecycleCard(accentDanger: true) {
                         Text(err).font(EType.caption).foregroundStyle(Brand.danger)
-                    }
-                    if let note = portGapNote {
-                        LifecycleCard(accentWarning: true) {
-                            Text(note).font(EType.caption).foregroundStyle(Brand.warning)
-                        }
                     }
                 } else if let f = fleet {
                     heroCard(f)
@@ -153,16 +197,20 @@ private struct VesselEmissionsCIIBody: View {
                     ciiGaugeSection(f)
                     voyageLedgerSection
                     ctaRow
+                    actionFeedback
+                } else if !voyages.isEmpty {
+                    EusoEmptyState(
+                        systemImage: "leaf",
+                        title: "CII pending",
+                        subtitle: "Your vessel bookings loaded, but the calculator does not have enough fuel, port-coordinate, and TEU data to produce an attained AER yet.")
+                    voyageLedgerSection
+                    ctaRow
+                    actionFeedback
                 } else {
                     EusoEmptyState(
                         systemImage: "leaf",
                         title: "No carbon data",
-                        subtitle: "Attained / required AER and the per-voyage carbon ledger will appear here once the vessel's IMO DCS figures sync.")
-                    if let note = portGapNote {
-                        LifecycleCard(accentWarning: true) {
-                            Text(note).font(EType.caption).foregroundStyle(Brand.warning)
-                        }
-                    }
+                        subtitle: "Attained AER and per-voyage carbon rows appear once a vessel booking exists with enough port, TEU, and fuel data for CII.")
                 }
                 Color.clear.frame(height: 96)
             }
@@ -170,6 +218,7 @@ private struct VesselEmissionsCIIBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showSEEMPPlan) { seempPlanSheet }
     }
 
     // MARK: - Header (eyebrow + title + DCS meta)
@@ -186,7 +235,7 @@ private struct VesselEmissionsCIIBody: View {
                         .foregroundStyle(LinearGradient.primary)
                 }
                 Spacer()
-                Text("VES-260523 · DCS")
+                Text("LIVE CII · DCS")
                     .font(EType.mono(.micro)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -217,7 +266,7 @@ private struct VesselEmissionsCIIBody: View {
     private func heroCard(_ f: FleetCarbon681) -> some View {
         let attained = f.attainedAER
         let required = f.requiredAER
-        let grade = computedGrade(attained: attained, required: required)
+        let grade = CIIGrade.from(f.grade) ?? computedGrade(attained: attained, required: required)
         // Delta vs required, as a percentage — wireframe shows "+4.4%".
         let deltaPct: Double? = {
             guard let a = attained, let r = required, r != 0 else { return nil }
@@ -250,7 +299,7 @@ private struct VesselEmissionsCIIBody: View {
                 }
                 // Attained AER block
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("ATTAINED AER · \(f.year.map { String($0) } ?? "2024")")
+                    Text("ATTAINED AER · \(f.year.map { String($0) } ?? "—")")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(Color(hex: 0x6E7681))
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -298,7 +347,7 @@ private struct VesselEmissionsCIIBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(Color(hex: 0x6E7681))
                 Spacer()
-                Text("d1–d4 boundaries")
+                    Text("\(f.sourceCount) live row\(f.sourceCount == 1 ? "" : "s")")
                     .font(.system(size: 11)).foregroundStyle(Color(hex: 0xAAB2BB))
             }
             VStack(alignment: .leading, spacing: 0) {
@@ -360,11 +409,12 @@ private struct VesselEmissionsCIIBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(Color(hex: 0x6E7681))
                 Spacer()
-                Text("rolling 12-mo → band D")
+                Text(f.quarters?.isEmpty == false ? "live buckets" : "awaiting DCS")
                     .font(.system(size: 9)).foregroundStyle(Color(hex: 0x6E7681))
             }
             if let quarters = f.quarters, !quarters.isEmpty {
                 let maxAER = quarters.compactMap { $0.attainedAER }.max() ?? 1
+                let summary = quarterSummary(quarters)
                 HStack(alignment: .top, spacing: Space.s5) {
                     HStack(alignment: .bottom, spacing: 8) {
                         ForEach(quarters) { q in
@@ -382,9 +432,9 @@ private struct VesselEmissionsCIIBody: View {
                     }
                     Rectangle().fill(Color.white.opacity(0.08)).frame(width: 1, height: 28)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("attained slipping +1.4 over")
+                        Text(summary.primary)
                             .font(.system(size: 11)).foregroundStyle(Color(hex: 0xAAB2BB))
-                        Text("4 quarters · trim speed to hold C")
+                        Text(summary.secondary)
                             .font(.system(size: 11)).foregroundStyle(Color(hex: 0xAAB2BB))
                     }
                 }
@@ -452,7 +502,7 @@ private struct VesselEmissionsCIIBody: View {
             if let id = v.voyageId { parts.append(id) }
             if let nm = v.distanceNm { parts.append(String(format: "%@nm", nmString(nm))) }
             if let teu = v.teu { parts.append("TEU \(teuString(teu))") }
-            else if let note = v.note { parts.append(note) }
+            if let note = v.note { parts.append(note) }
             return parts.joined(separator: " · ")
         }()
         return HStack(spacing: Space.s3) {
@@ -493,9 +543,11 @@ private struct VesselEmissionsCIIBody: View {
         let f = NumberFormatter(); f.numberStyle = .decimal; f.maximumFractionDigits = 0
         return f.string(from: NSNumber(value: nm)) ?? String(format: "%.0f", nm)
     }
-    private func teuString(_ teu: Int) -> String {
-        let f = NumberFormatter(); f.numberStyle = .decimal
-        return f.string(from: NSNumber(value: teu)) ?? "\(teu)"
+    private func teuString(_ teu: Double) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.maximumFractionDigits = teu.rounded() == teu ? 0 : 1
+        return f.string(from: NSNumber(value: teu)) ?? String(format: "%.1f", teu)
     }
 
     // MARK: - CTA row (Export carbon report · SEEMP plan)
@@ -505,7 +557,7 @@ private struct VesselEmissionsCIIBody: View {
             Button {
                 Task { await exportReport() }
             } label: {
-                Text("Export carbon report")
+                Text(exporting ? "Preparing…" : "Export carbon report")
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
@@ -513,8 +565,9 @@ private struct VesselEmissionsCIIBody: View {
             .background(LinearGradient.primary)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .buttonStyle(.plain)
+            .disabled(exporting)
 
-            Button { } label: {
+            Button { showSEEMPPlan = true } label: {
                 Text("SEEMP plan")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -527,48 +580,391 @@ private struct VesselEmissionsCIIBody: View {
         }
     }
 
+    @ViewBuilder
+    private var actionFeedback: some View {
+        if let actionError {
+            LifecycleCard(accentDanger: true) {
+                Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if let actionMessage {
+            LifecycleCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(actionMessage).font(EType.caption).foregroundStyle(Brand.success)
+                    if let exportURL {
+                        ShareLink(item: exportURL) {
+                            Label("Share carbon report", systemImage: "square.and.arrow.up")
+                                .font(EType.caption.weight(.semibold))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var seempPlanSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    LifecycleCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("SEEMP evidence")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(palette.textPrimary)
+                            Text(seempEvidenceLine)
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                    LifecycleCard {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Action plan")
+                                .font(.system(size: 14, weight: .bold))
+                                .foregroundStyle(palette.textPrimary)
+                            ForEach(seempActions, id: \.self) { item in
+                                HStack(alignment: .top, spacing: 10) {
+                                    Image(systemName: "checkmark.seal.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(Brand.success)
+                                    Text(item)
+                                        .font(EType.caption)
+                                        .foregroundStyle(palette.textSecondary)
+                                }
+                            }
+                        }
+                    }
+                    ShareLink(item: seempPacketText) {
+                        Label("Share SEEMP plan", systemImage: "square.and.arrow.up")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(LinearGradient.primary)
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(16)
+            }
+            .navigationTitle("SEEMP plan")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { showSEEMPPlan = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
     // MARK: - Load
 
     private func load() async {
-        loading = true; loadError = nil; portGapNote = nil
-        struct VesselInput: Encodable { let vesselId: String?; let year: Int? }
-        struct VoyageInput: Encodable { let limit: Int }
+        loading = true
+        loadError = nil
+        actionMessage = nil
+        actionError = nil
+        exportURL = nil
+        defer { loading = false }
+
+        struct ListInput: Encodable { let limit: Int; let offset: Int }
+        struct DetailInput: Encodable { let id: Int }
+        struct CalcInput: Encodable { let shipmentId: Int }
+
         do {
-            // PORT-GAP: sustainability.getFleetCarbon not on EusoTripAPI Swift
-            // surface — needs backend wire (vessel attained/required AER +
-            // quarterly drift series). Wired to the canonical tRPC path so it
-            // lights up the moment the Swift API exposes it.
-            async let fleetCall: FleetCarbon681 = EusoTripAPI.shared.query(
-                "sustainability.getFleetCarbon",
-                input: VesselInput(vesselId: nil, year: nil))
-            // PORT-GAP: co2Calculator.calculateVesselShipment is vesselProcedure-
-            // gated and not exposed on the Swift Co2CalculatorAPI — needs backend
-            // wire for the per-voyage gCO₂/t·nm ledger rows.
-            async let voyageCall: [VoyageCarbon681] = EusoTripAPI.shared.query(
-                "co2Calculator.calculateVesselShipment",
-                input: VoyageInput(limit: 20))
-            let (f, vs) = try await (fleetCall, voyageCall)
-            self.fleet = f
-            self.voyages = vs
+            let list: VesselShipmentList681 = try await EusoTripAPI.shared.query(
+                "vesselShipments.getVesselShipments",
+                input: ListInput(limit: 8, offset: 0))
+            guard let rows = list.shipments, !rows.isEmpty else {
+                fleet = nil
+                voyages = []
+                return
+            }
+
+            var built: [VoyageCarbon681] = []
+            for row in rows {
+                guard let id = row.id else { continue }
+                let detail: VesselShipmentDetail681? = try? await EusoTripAPI.shared.query(
+                    "vesselShipments.getVesselShipmentDetail",
+                    input: DetailInput(id: id))
+                let calc: VesselCIICalc681 = try await EusoTripAPI.shared.query(
+                    "co2Calculator.calculateVesselShipment",
+                    input: CalcInput(shipmentId: id))
+                built.append(voyageCarbonRow(from: row, detail: detail, calc: calc))
+            }
+
+            voyages = built
+            fleet = buildFleet(from: built)
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
-            portGapNote = "PORT-GAP: sustainability.getFleetCarbon + co2Calculator.calculateVesselShipment are named in the wireframe but not on the Swift EusoTripAPI surface yet — backend wire required. CII A–E grade is computed client-side (getCII is a declared stub)."
+            fleet = nil
+            voyages = []
         }
-        loading = false
     }
 
     private func exportReport() async {
-        // PORT-GAP: sustainability.exportCarbonReport not on EusoTripAPI Swift
-        // surface — needs backend wire. CTA is live but reports the gap honestly
-        // instead of faking a success.
-        struct ExportInput: Encodable { let vesselId: String? }
-        struct ExportOut: Decodable { let url: String? }
+        exporting = true
+        actionMessage = nil
+        actionError = nil
+        exportURL = nil
+        defer { exporting = false }
+
+        guard !voyages.isEmpty else {
+            actionError = "No vessel CII rows are loaded yet."
+            return
+        }
+
         do {
-            let _: ExportOut = try await EusoTripAPI.shared.mutation(
-                "sustainability.exportCarbonReport",
-                input: ExportInput(vesselId: fleet?.vesselId))
+            let filename = "vessel-cii-report-\(Int(Date().timeIntervalSince1970)).csv"
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+            try ciiCSV().data(using: .utf8)?.write(to: url, options: .atomic)
+            exportURL = url
+            actionMessage = "Carbon CII report ready: \(filename)."
         } catch {
-            portGapNote = "PORT-GAP: sustainability.exportCarbonReport not on the Swift EusoTripAPI surface — export needs a backend wire."
+            actionError = error.localizedDescription
+        }
+    }
+
+    private func voyageCarbonRow(
+        from row: VesselShipmentRow681,
+        detail: VesselShipmentDetail681?,
+        calc: VesselCIICalc681
+    ) -> VoyageCarbon681 {
+        let booking = firstNonEmpty(detail?.bookingNumber, row.bookingNumber)
+        let voyage = firstNonEmpty(detail?.voyageNumber, row.voyageNumber, booking)
+        let route = firstNonEmpty(detail?.serviceRoute, row.serviceRoute)
+        let origin = portLabel(detail?.originPort)
+            ?? routeEndpoint(route, index: 0)
+            ?? row.originPortId.map { "Port \($0)" }
+        let destination = portLabel(detail?.destinationPort)
+            ?? routeEndpoint(route, index: 1)
+            ?? row.destinationPortId.map { "Port \($0)" }
+        let status = firstNonEmpty(detail?.status, row.status).map(statusLabel)
+        let pendingReason = calc.dataAvailable == false ? calc.reason : nil
+        let fuelNote: String? = {
+            guard let fuel = positive(calc.fuelConsumedTonnes) else { return nil }
+            let fuelType = calc.fuelType?.uppercased() ?? "FUEL"
+            return String(format: "%.1f t %@", fuel, fuelType)
+        }()
+        let note = firstNonEmpty(pendingReason, fuelNote, status)
+
+        return VoyageCarbon681(
+            id: row.id.map(String.init) ?? detail?.id.map(String.init) ?? booking ?? UUID().uuidString,
+            voyageId: voyage,
+            origin: origin,
+            destination: destination,
+            createdAt: firstNonEmpty(detail?.createdAt, row.createdAt),
+            distanceNm: positive(calc.distanceNm),
+            teu: positive(calc.teuCount),
+            note: note,
+            attainedAER: positive(calc.ciiAttained),
+            grade: firstNonEmpty(calc.ciiRating)
+        )
+    }
+
+    private func buildFleet(from rows: [VoyageCarbon681]) -> FleetCarbon681? {
+        let valid = rows.filter { $0.attainedAER != nil || CIIGrade.from($0.grade) != nil }
+        guard let latest = valid.first else { return nil }
+        return FleetCarbon681(
+            vesselId: latest.voyageId,
+            attainedAER: latest.attainedAER,
+            requiredAER: nil,
+            grade: latest.grade,
+            year: year(from: latest.createdAt) ?? Calendar.current.component(.year, from: Date()),
+            sourceCount: valid.count,
+            quarters: quarterRows(from: valid)
+        )
+    }
+
+    private func quarterRows(from rows: [VoyageCarbon681]) -> [FleetCarbon681.QuarterAER]? {
+        var buckets: [String: [VoyageCarbon681]] = [:]
+        for row in rows where row.attainedAER != nil {
+            buckets[quarterKey(from: row.createdAt) ?? "Current", default: []].append(row)
+        }
+        guard !buckets.isEmpty else { return nil }
+        return buckets.keys.sorted().map { key in
+            let members = buckets[key] ?? []
+            let values = members.compactMap(\.attainedAER)
+            let avg = values.isEmpty ? nil : values.reduce(0, +) / Double(values.count)
+            return FleetCarbon681.QuarterAER(
+                quarter: key,
+                attainedAER: avg,
+                grade: worstGrade(in: members)
+            )
+        }
+    }
+
+    private func quarterSummary(_ quarters: [FleetCarbon681.QuarterAER]) -> (primary: String, secondary: String) {
+        let values = quarters.compactMap(\.attainedAER)
+        guard let latest = values.last else {
+            return ("No attained AER values in DCS bucket", "\(quarters.count) live bucket\(quarters.count == 1 ? "" : "s")")
+        }
+        if values.count >= 2, let first = values.first {
+            let delta = latest - first
+            let direction = delta > 0 ? "up" : (delta < 0 ? "down" : "flat")
+            return (
+                String(format: "attained AER %@ %.1f", direction, abs(delta)),
+                "\(quarters.count) live bucket\(quarters.count == 1 ? "" : "s") · based on vessel calculator rows"
+            )
+        }
+        return (
+            String(format: "latest attained AER %.1f", latest),
+            "additional DCS periods will build the trend"
+        )
+    }
+
+    private var seempEvidenceLine: String {
+        guard let fleet else {
+            return "No attained AER is available yet. Close the missing fuel, TEU, and port-coordinate fields before locking a SEEMP corrective-action packet."
+        }
+        let grade = CIIGrade.from(fleet.grade)?.rawValue ?? "pending"
+        let attained = fleet.attainedAER.map { String(format: "%.1f gCO₂/t·nm", $0) } ?? "attained AER pending"
+        return "\(grade) · \(attained) · \(fleet.sourceCount) calculator row\(fleet.sourceCount == 1 ? "" : "s")"
+    }
+
+    private var seempActions: [String] {
+        let grade = CIIGrade.from(fleet?.grade)
+        switch grade {
+        case .a?, .b?:
+            return [
+                "Keep fuel, distance, TEU, and port-coordinate telemetry complete for every voyage so the current CII rating remains auditable.",
+                "Maintain hull, propeller, and engine-efficiency evidence in the vessel compliance vault before annual IMO DCS submission.",
+                "Review lower-carbon bunker options only where procurement and voyage constraints support the switch."
+            ]
+        case .c?:
+            return [
+                "Place C-band voyages on watch and review slow-steaming windows, weather routing, and berth-window buffers before departure.",
+                "Close missing fuel and TEU records within the booking record so future attained-AER drift is not hidden by data gaps.",
+                "Prepare corrective-action evidence now so the plan can be escalated quickly if the vessel slips into D or E."
+            ]
+        case .d?, .e?:
+            return [
+                "Open the corrective-action register for every D/E voyage and attach voyage, fuel, weather-routing, and port-delay evidence.",
+                "Evaluate speed-power optimization, hull cleaning, propeller inspection, and fuel-switch candidates against the affected routes.",
+                "Route the plan for compliance review before annual IMO DCS submission; do not mark the vessel as recovered until fresh CII calculations confirm it."
+            ]
+        case nil:
+            return [
+                "Complete missing fuel, port-coordinate, and TEU fields so CII can be calculated from real booking data.",
+                "Verify the vessel DCS or CII provider integration before presenting a grade to operations.",
+                "Keep SEEMP corrective actions in draft until attained AER is available."
+            ]
+        }
+    }
+
+    private var seempPacketText: String {
+        var lines: [String] = [
+            "EusoTrip SEEMP Plan",
+            seempEvidenceLine,
+            "",
+            "Action plan:"
+        ]
+        lines.append(contentsOf: seempActions.map { "- \($0)" })
+        if !voyages.isEmpty {
+            lines.append("")
+            lines.append("Source voyages:")
+            lines.append(contentsOf: voyages.map { row in
+                let lane = "\(row.origin ?? "—") to \(row.destination ?? "—")"
+                let aer = row.attainedAER.map { String(format: "%.1f gCO₂/t·nm", $0) } ?? "AER pending"
+                let grade = CIIGrade.from(row.grade)?.rawValue ?? "grade pending"
+                return "- \(row.voyageId ?? row.id): \(lane), \(aer), \(grade)"
+            })
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func ciiCSV() -> String {
+        var lines = ["Voyage,Origin,Destination,Created,Distance NM,TEU,Attained AER,Grade,Note"]
+        for row in voyages {
+            lines.append([
+                csv(row.voyageId),
+                csv(row.origin),
+                csv(row.destination),
+                csv(row.createdAt),
+                row.distanceNm.map { String(format: "%.1f", $0) } ?? "",
+                row.teu.map { String(format: "%.1f", $0) } ?? "",
+                row.attainedAER.map { String(format: "%.3f", $0) } ?? "",
+                csv(row.grade),
+                csv(row.note)
+            ].joined(separator: ","))
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    private func csv(_ value: String?) -> String {
+        let raw = value ?? ""
+        if raw.contains(",") || raw.contains("\"") || raw.contains("\n") {
+            return "\"\(raw.replacingOccurrences(of: "\"", with: "\"\""))\""
+        }
+        return raw
+    }
+
+    private func firstNonEmpty(_ values: String?...) -> String? {
+        values.compactMap { value in
+            let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed?.isEmpty == false ? trimmed : nil
+        }.first
+    }
+
+    private func positive(_ value: Double?) -> Double? {
+        guard let value, value > 0 else { return nil }
+        return value
+    }
+
+    private func portLabel(_ port: Port681?) -> String? {
+        guard let port else { return nil }
+        if let code = firstNonEmpty(port.unlocode) { return code }
+        if let city = firstNonEmpty(port.city) {
+            let suffix = [port.state, port.country].compactMap { firstNonEmpty($0) }.joined(separator: ", ")
+            return suffix.isEmpty ? city : "\(city), \(suffix)"
+        }
+        return firstNonEmpty(port.name)
+    }
+
+    private func routeEndpoint(_ route: String?, index: Int) -> String? {
+        guard let route = firstNonEmpty(route) else { return nil }
+        let separators = ["→", "->", " to ", "-"]
+        for separator in separators where route.contains(separator) {
+            let parts = route.components(separatedBy: separator)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+            guard parts.indices.contains(index) else { return nil }
+            return parts[index]
+        }
+        return nil
+    }
+
+    private func statusLabel(_ raw: String) -> String {
+        raw.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    private func quarterKey(from iso: String?) -> String? {
+        guard let iso, iso.count >= 7 else { return nil }
+        let year = String(iso.prefix(4))
+        let monthText = String(iso.dropFirst(5).prefix(2))
+        guard let month = Int(monthText), (1...12).contains(month) else { return nil }
+        return "\(year) Q\((month - 1) / 3 + 1)"
+    }
+
+    private func year(from iso: String?) -> Int? {
+        guard let iso, iso.count >= 4 else { return nil }
+        return Int(String(iso.prefix(4)))
+    }
+
+    private func worstGrade(in rows: [VoyageCarbon681]) -> String? {
+        rows.compactMap { row -> (String, Int)? in
+            guard let grade = CIIGrade.from(row.grade) else { return nil }
+            return (grade.rawValue, gradeIndex(grade))
+        }
+        .max { $0.1 < $1.1 }?
+        .0
+    }
+
+    private func gradeIndex(_ grade: CIIGrade) -> Int {
+        switch grade {
+        case .a: return 0
+        case .b: return 1
+        case .c: return 2
+        case .d: return 3
+        case .e: return 4
         }
     }
 

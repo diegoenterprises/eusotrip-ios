@@ -206,13 +206,20 @@ private struct VesselCustomsEntryFilingBody: View {
                                    title: "No draft 7501 on file",
                                    subtitle: "Declarations composed in the booking flow appear here for review and CBP filing. Nothing fabricated, nothing to file yet.")
                 } else {
+                    // COUNTRY-DONE (814): entry instrument by import country.
+                    // US active (CBP 7501 live below); CA/MX standby until
+                    // vessel.getEntryRegime lands (named gap).
+                    CountrySegment(chips: [
+                        .init(code: "US · CBP", instrument: "7501 · HTSUS", active: true),
+                        .init(code: "CA · CBSA", instrument: "B3 · CARM", active: false),
+                        .init(code: "MX · SAT", instrument: "PEDIMENTO A1", active: false)])
                     valueHero
                     Text("DECLARATION").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     fieldCard(declarationFields)
                     Text("VALUATION + BROKER").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     fieldCard(valuationFields)
                     if fileDone {
-                        Text("Entry filed with CBP · filedDate set server-side.").font(EType.caption).foregroundStyle(Brand.success)
+                        Text("Entry filed with CBP · filed date saved by EusoTrip.").font(EType.caption).foregroundStyle(Brand.success)
                     }
                     if !canFile {
                         Text((entry?.status ?? "draft").lowercased() == "draft"
@@ -220,6 +227,11 @@ private struct VesselCustomsEntryFilingBody: View {
                              : "This entry is \(statusLabel) — only a draft can be filed.")
                             .font(EType.caption).foregroundStyle(palette.textTertiary)
                     }
+                    TriCountryAuthorityBand(title: "TRI-COUNTRY ENTRY · DUTY + TAX REGIME", regimes: [
+                        .init(code: "US", authority: "CBP · 7501 · HTSUS", detail: "2.8% ad val · MPF/HMF · USD", consequence: nil, state: .active),
+                        .init(code: "CA", authority: "CBSA · B3 · CARM", detail: "duty + 5% GST · CAD", consequence: nil, state: .standby),
+                        .init(code: "MX", authority: "SAT · Pedimento A1", detail: "IGI + 16% IVA + DTA · MXN", consequence: nil, state: .standby)])
+                    AeoMutualRecognitionStrip()
                     HStack(spacing: 8) {
                         CTAButton(title: "File entry with CBP", action: { Task { await fileEntry() } }, trailingIcon: "paperplane", isLoading: submitting)
                             .disabled(!canFile)
@@ -255,7 +267,7 @@ private struct VesselCustomsEntryFilingBody: View {
         RimCard814 {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("DECLARED VALUE · getCustomsEntries").font(.system(size: 9, weight: .heavy)).tracking(0.9).foregroundStyle(palette.textTertiary)
+                    Text("DECLARED VALUE · entry filings").font(.system(size: 9, weight: .heavy)).tracking(0.9).foregroundStyle(palette.textTertiary)
                     Spacer()
                     StatusPill(text: statusLabel, kind: statusKind)
                 }

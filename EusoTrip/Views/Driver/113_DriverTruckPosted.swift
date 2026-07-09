@@ -151,12 +151,44 @@ struct TruckInboundOffer: Identifiable, Decodable, Equatable {
     var isHazmat: Bool { (hazmatClass?.isEmpty == false) }
 }
 
+/// A real fleet unit the signed-in driver may claim for posting. Returned by
+/// `truckPosting.getPostableVehicles`; every row is same-company, active, and
+/// either unassigned or already assigned to this driver.
+struct PostableTruck: Identifiable, Decodable, Equatable {
+    let id: Int
+    let unitNumber: String
+    let equipmentLabel: String
+    let vehicleType: String?
+    let status: String?
+    let vin: String?
+    let licensePlate: String?
+    let currentDriverId: Int?
+    let isAssignedToMe: Bool
+    let canClaim: Bool
+    let blockedReason: String?
+
+    var statusLabel: String {
+        if isAssignedToMe { return "Assigned to you" }
+        if let reason = blockedReason, !reason.isEmpty { return reason }
+        if let s = status, !s.isEmpty {
+            return s.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+        return "Ready to post"
+    }
+}
+
+struct PostableTruckResponse: Decodable, Equatable {
+    let vehicles: [PostableTruck]
+    let total: Int
+    let assignedDriverId: Int?
+}
+
 // MARK: - ViewModel
 
 @MainActor
 final class TruckPostingViewModel: ObservableObject {
 
-    enum Phase: Equatable { case loading, notPosted, posted, error(String) }
+    enum Phase: Equatable { case loading, needsVehicle, notPosted, posted, error(String) }
 
     @Published var phase: Phase = .loading
     @Published var offers: [TruckInboundOffer] = []
@@ -165,15 +197,23 @@ final class TruckPostingViewModel: ObservableObject {
     @Published var bookedLoadId: Int? = nil
     @Published var postingInFlight: Bool = false
     @Published var actionError: String? = nil
+    @Published var postableVehicles: [PostableTruck] = []
+    @Published var claimingVehicleId: Int? = nil
 
     // Resolved posting context (from the assigned vehicle + live fix).
     @Published var vehicleId: Int? = nil
     @Published var equipmentLabel: String = "—"
     @Published var unitLabel: String = "—"
+    @Published var vehicleStatus: String = ""
     @Published var originLine: String = "—"
     @Published var coordinate: CLLocationCoordinate2D? = nil
     private var originCity: String? = nil
     private var originState: String? = nil
+
+    /// The merged `vehicle.getAssigned` assignment discriminator from the
+    /// last resolve — lets `load()` show a PRECISE empty reason ("no driver
+    /// profile" vs "no truck assigned") instead of one generic string.
+    private var assignmentStatus: VehicleAPI.AssignmentStatus = .noVehicleAssigned
 
     /// Live market pulse for the posted-state header (load-to-truck ratio).
     @Published var marketRatio: Double? = nil
@@ -190,8 +230,31 @@ final class TruckPostingViewModel: ObservableObject {
         await resolveOrigin()
 
         guard let vid = vehicleId else {
-            // No assigned vehicle → can't post. Honest, first-class state.
-            phase = .error("No truck assigned to your profile yet. Once dispatch assigns your unit you can post it here.")
+            // No assigned vehicle. First offer the claim path (a driver can
+            // claim an active, unassigned unit right here); only when nothing
+            // is claimable fall back to the PRECISE reason from the merged
+            // `vehicle.getAssigned` status discriminator (build-752):
+            //   • no_driver           → the caller has no `drivers` row yet
+            //     (onboarding incomplete) — dispatch has to create it.
+            //   • no_vehicle_assigned → driver profile exists, just no truck
+            //     bound to it — dispatch assigns the unit.
+            await refreshPostableVehicles()
+            if postableVehicles.contains(where: { $0.canClaim }) {
+                phase = .needsVehicle
+            } else {
+                switch assignmentStatus {
+                case .noDriver:
+                    phase = .error("No driver profile yet. Contact dispatch to finish your driver setup, then you can post your truck here.")
+                case .noVehicleAssigned, .vehicleFound:
+                    // .vehicleFound is unreachable here (vid would be set); fold it
+                    // into the no-truck copy defensively.
+                    phase = .error("Your driver profile exists, but no truck is assigned to you yet. Once dispatch assigns your unit you can post it here.")
+                }
+            }
+            return
+        }
+        if ["maintenance", "out_of_service"].contains(vehicleStatus.lowercased()) {
+            phase = .error("Your assigned truck is \(vehicleStatus.replacingOccurrences(of: "_", with: " ")). Fleet must clear it before it can be posted.")
             return
         }
 
@@ -207,12 +270,17 @@ final class TruckPostingViewModel: ObservableObject {
     }
 
     /// Read the driver's assigned truck → vehicleId + equipment + unit.
+    /// Also captures the merged `assignmentStatus` discriminator so the
+    /// empty state can name the PRECISE reason (no driver row vs no truck).
     private func resolveVehicle() async {
         do {
             let v = try await api.vehicle.getAssigned()
+            assignmentStatus = v.assignmentStatus
             guard !v.isUnassigned else { vehicleId = nil; return }
-            vehicleId = Int(v.id)
+            guard let resolvedId = Int(v.id) else { vehicleId = nil; return }
+            vehicleId = resolvedId
             unitLabel = v.unitNumber.isEmpty ? "—" : "Unit \(v.unitNumber)"
+            vehicleStatus = v.status
             // The server reads vehicleType off the row for matching; we
             // surface the human truck description as the equipment line.
             let ymm = [String(v.year), v.make, v.model]
@@ -221,6 +289,51 @@ final class TruckPostingViewModel: ObservableObject {
             equipmentLabel = ymm.isEmpty ? "Your assigned truck" : ymm
         } catch {
             vehicleId = nil
+            vehicleStatus = ""
+        }
+    }
+
+    private func applyVehicle(_ truck: PostableTruck) {
+        vehicleId = truck.id
+        unitLabel = truck.unitNumber.isEmpty ? "—" : "Unit \(truck.unitNumber)"
+        equipmentLabel = truck.equipmentLabel.isEmpty ? "Your assigned truck" : truck.equipmentLabel
+        vehicleStatus = truck.status ?? "available"
+    }
+
+    func refreshPostableVehicles() async {
+        struct In: Encodable { let limit: Int }
+        do {
+            let response: PostableTruckResponse = try await api.query(
+                "truckPosting.getPostableVehicles",
+                input: In(limit: 20)
+            )
+            postableVehicles = response.vehicles
+        } catch {
+            postableVehicles = []
+            actionError = "Couldn't load fleet units. \(humanError(error))"
+        }
+    }
+
+    func claimVehicle(_ truck: PostableTruck) async {
+        guard truck.canClaim else {
+            actionError = truck.blockedReason ?? "This truck cannot be posted right now."
+            return
+        }
+        struct In: Encodable { let vehicleId: Int }
+        struct Out: Decodable { let success: Bool; let vehicleId: Int; let driverId: Int?; let idempotent: Bool? }
+        claimingVehicleId = truck.id
+        actionError = nil
+        defer { claimingVehicleId = nil }
+        do {
+            let _: Out = try await api.mutation(
+                "truckPosting.claimVehicleForPosting",
+                input: In(vehicleId: truck.id)
+            )
+            applyVehicle(truck)
+            phase = .notPosted
+        } catch {
+            actionError = "Couldn't assign this truck. \(humanError(error))"
+            await refreshPostableVehicles()
         }
     }
 
@@ -408,6 +521,8 @@ struct DriverTruckPosted: View {
                 switch vm.phase {
                 case .loading:
                     loadingState
+                case .needsVehicle:
+                    vehicleSelector
                 case .notPosted:
                     postHero
                 case .posted:
@@ -429,6 +544,101 @@ struct DriverTruckPosted: View {
             else { await vm.load() }
         }
         .overlay(alignment: .top) { errorToast }
+    }
+
+    // MARK: ───────────────────────── State 0 · SELECT UNIT ───────────────
+
+    /// No assigned truck is no longer a dead end. The screen shows real
+    /// same-company fleet units the driver can claim, then continues into the
+    /// posting form against the selected vehicle.
+    private var vehicleSelector: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                Text("ASSIGN A UNIT")
+                    .font(EType.micro).tracking(0.8)
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("Choose the truck to post")
+                    .font(.system(size: 26, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                Text("These are active fleet units your driver profile can claim right now. Assigned or blocked units stay out of the action path.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Space.s5)
+            .eusoCard()
+
+            ForEach(vm.postableVehicles) { truck in
+                postableVehicleRow(truck)
+            }
+
+            Button {
+                Task { await vm.load() }
+            } label: {
+                HStack(spacing: Space.s2) {
+                    Text("Refresh fleet")
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12, weight: .heavy))
+                }
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(palette.bgCard, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func postableVehicleRow(_ truck: PostableTruck) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(alignment: .top, spacing: Space.s3) {
+                TruckGlyph()
+                    .stroke(LinearGradient.diagonal, lineWidth: 2)
+                    .frame(width: 42, height: 24)
+                    .padding(10)
+                    .background(palette.bgCardSoft, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(truck.unitNumber)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(truck.equipmentLabel)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(2)
+                    Text(truck.statusLabel)
+                        .font(EType.micro)
+                        .foregroundStyle(truck.canClaim ? Brand.success : Brand.warning)
+                }
+                Spacer(minLength: 0)
+            }
+
+            Button {
+                Task { await vm.claimVehicle(truck) }
+            } label: {
+                HStack(spacing: Space.s2) {
+                    if vm.claimingVehicleId == truck.id {
+                        ProgressView().tint(.white).controlSize(.small)
+                        Text("Assigning…")
+                    } else {
+                        Text(truck.isAssignedToMe ? "Use this truck" : "Assign to me")
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 12, weight: .heavy))
+                    }
+                }
+                .font(EType.bodyStrong)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .opacity(truck.canClaim ? 1 : 0.5)
+            }
+            .buttonStyle(.plain)
+            .disabled(!truck.canClaim || vm.claimingVehicleId != nil)
+        }
+        .padding(Space.s4)
+        .eusoCard()
     }
 
     // MARK: ───────────────────────── State A · POST HERO ─────────────────

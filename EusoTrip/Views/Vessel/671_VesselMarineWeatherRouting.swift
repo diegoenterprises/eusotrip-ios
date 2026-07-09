@@ -319,7 +319,7 @@ private struct VesselMarineWeatherRoutingBody: View {
     private var marineConditions: some View {
         if let c = marine?.current, marineHasAnyValue(c) {
             VStack(alignment: .leading, spacing: Space.s2) {
-                Text("MARINE CONDITIONS · getMarineWeather(midpoint)")
+                Text("MARINE CONDITIONS · mid-voyage")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(Color(hex: 0x6E7681))
                 HStack(spacing: 8) {
@@ -423,7 +423,7 @@ private struct VesselMarineWeatherRoutingBody: View {
         let chips = berthingChips
         if !chips.isEmpty {
             VStack(alignment: .leading, spacing: Space.s2) {
-                Text("BERTHING SAFETY · getPortWeather(portId)")
+                Text("BERTHING SAFETY · port weather")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(Color(hex: 0x6E7681))
                 VStack(spacing: Space.s2) {
@@ -576,7 +576,7 @@ private struct VesselMarineWeatherRoutingBody: View {
 
     private var voyageLegs: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("VOYAGE LEGS · getRouteWeather(waypoints)")
+            Text("VOYAGE LEGS · route weather")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(Color(hex: 0x6E7681))
 
@@ -606,7 +606,7 @@ private struct VesselMarineWeatherRoutingBody: View {
                     title: "No routable voyage",
                     subtitle: "This booking has no origin/destination ports on file, so route weather can't be computed. Assign a loading + discharge port and per-leg sea-state populates here.")
             } else if feedUnavailable {
-                // HONEST enterprise-gate state: the DTN marine feed key isn't
+                // HONEST enterprise-gate state: the marine feed key isn't
                 // configured for this tenant (the server genuinely returns
                 // null) — this is a real data-coverage state, NOT a failure to
                 // paper over, and NOT fabricated. The real route geometry is
@@ -833,7 +833,15 @@ private struct VesselMarineWeatherRoutingBody: View {
     // MARK: - CTA
 
     private var cta: some View {
-        CTAButton(title: "View weather routing")
+        CTAButton(title: "View weather routing", action: { openVesselScreen("Vesl660") })
+    }
+
+    private func openVesselScreen(_ screenId: String) {
+        NotificationCenter.default.post(
+            name: .eusoVesselNavSwap,
+            object: nil,
+            userInfo: ["screenId": screenId]
+        )
     }
 
     // MARK: - Load

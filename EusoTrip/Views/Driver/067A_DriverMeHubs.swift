@@ -93,7 +93,13 @@ struct DriverMeComplianceHubScreen: View {
         Shell(theme: theme) {
             DriverMeHubBody(title: "Compliance & Safety",
                             subtitle: "HOS · ELD · Violations · Safety · DQ",
-                            sections: DriverMeHubCatalog.compliance)
+                            sections: DriverMeHubCatalog.compliance,
+                            // The compliance hub is the "engine that lets a
+                            // driver drive compliant" — surface the REAL ELD
+                            // connection state above the HOS/ELD rows so the
+                            // driver sees an honest connected/disconnected
+                            // status (and a Connect CTA) before they drill in.
+                            showsELDStatus: true)
         } nav: { driverMeHubNav() }
     }
 }
@@ -148,7 +154,7 @@ private func driverMeHubNav() -> BottomNav {
     BottomNav(
         leading: [
             NavSlot(label: "Home",   systemImage: "house.fill",        isCurrent: false),
-            NavSlot(label: "Trips",  systemImage: "shippingbox.fill",  isCurrent: false),
+            NavSlot(label: "Trips",  systemImage: "road.lanes",        isCurrent: false),
         ],
         trailing: [
             NavSlot(label: "My Loads", systemImage: "shippingbox.fill",  isCurrent: false),
@@ -175,6 +181,7 @@ extension Notification.Name {
 
 enum DriverMeCellAction {
     case screen(String)
+    case fire(String)
     case signOut
 }
 
@@ -273,7 +280,7 @@ enum DriverMeHubCatalog {
     static let operations: [DriverMeSection] = [
         DriverMeSection(title: "BIDDING", icon: "hand.raised", cells: [
             DriverMeCell(icon: "hand.raised.fill",      label: "My bids",             action: .screen("107")),
-            DriverMeCell(icon: "shippingbox",           label: "Eusoboards",          action: .screen("108")),
+            DriverMeCell(icon: "shippingbox",           label: "Eusoboards",          action: .fire("driver.loadboard.open")),
             DriverMeCell(icon: "bolt.circle",           label: "Auto-accept rules",   action: .screen("110")),
         ]),
         DriverMeSection(title: "SCHEDULING", icon: "calendar", cells: [
@@ -537,11 +544,11 @@ private struct DriverMeHomeBody: View {
             }
         }
         let dataURL = "data:image/jpeg;base64,\(jpeg.base64EncodedString())"
-        struct In: Encodable { let imageData: String }
-        struct Out: Decodable { let success: Bool?; let url: String? }
+        struct In: Encodable { let avatarUrl: String }
+        struct Out: Decodable { let success: Bool?; let avatarUrl: String? }
         do {
             let _: Out = try await EusoTripAPI.shared.mutation(
-                "profile.updateAvatar", input: In(imageData: dataURL)
+                "profile.updateAvatar", input: In(avatarUrl: dataURL)
             )
             await profile.refreshFromServer()
             avatarAck = "Profile photo updated"
@@ -635,6 +642,10 @@ private struct DriverMeHubBody: View {
     let title: String
     let subtitle: String
     let sections: [DriverMeSection]
+    /// When true, renders the honest ELD-connection status card above the
+    /// catalog sections (compliance hub only). Reads the real
+    /// `ELDIntegrationStore` — never a fabricated "connected".
+    var showsELDStatus: Bool = false
 
     @Environment(\.palette) private var palette
 
@@ -642,6 +653,9 @@ private struct DriverMeHubBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                if showsELDStatus {
+                    ELDComplianceStatusCard()
+                }
                 ForEach(sections.indices, id: \.self) { i in
                     let section = sections[i]
                     cellGroup(title: section.title, icon: section.icon, cells: section.cells)
@@ -704,11 +718,138 @@ private struct DriverMeHubBody: View {
                 name: .eusoDriverMeNavSwap, object: nil,
                 userInfo: ["screenId": id]
             )
+        case .fire(let key):
+            MeAction.fire(key)
         case .signOut:
             NotificationCenter.default.post(
                 name: .eusoDriverMeNavSwap, object: nil,
                 userInfo: ["screenId": "_logout"]
             )
+        }
+    }
+}
+
+// MARK: - ELD compliance status card (compliance hub header)
+
+/// Honest ELD-connection status for the Compliance & Safety hub. This is
+/// the "engine that lets a driver drive compliant" — so it must tell the
+/// truth: it reads the REAL connection state off `ELDIntegrationStore`
+/// (server `eld.getConnectionStatus`) and renders either a connected
+/// state (named provider, §395 vendor-sourced) or an honest
+/// "No ELD connected" state with a real Connect CTA that drills into the
+/// existing 074E ELD-connect screen. It NEVER fabricates "connected".
+private struct ELDComplianceStatusCard: View {
+    @Environment(\.palette) private var palette
+    @StateObject private var eld = ELDIntegrationStore()
+
+    var body: some View {
+        LifecycleCard(accentWarning: !eld.isLoading && !eld.isConnected,
+                      accentGradient: eld.isConnected) {
+            VStack(alignment: .leading, spacing: 10) {
+                LifecycleSection(label: "ELECTRONIC LOGGING DEVICE", icon: "antenna.radiowaves.left.and.right")
+                if eld.isLoading && eld.connection == nil {
+                    loadingRow
+                } else if eld.isConnected {
+                    connectedRow
+                } else {
+                    disconnectedRow
+                }
+            }
+        }
+        .task { await eld.bootstrap() }
+    }
+
+    private var loadingRow: some View {
+        HStack(spacing: 8) {
+            ProgressView().scaleEffect(0.7)
+            Text("Checking ELD connection…")
+                .font(EType.caption)
+                .foregroundStyle(palette.textTertiary)
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 4)
+    }
+
+    /// Real connected state — names the live vendor so the §395 claim is
+    /// verifiable, not asserted.
+    private var connectedRow: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle().fill(palette.tintSuccess).frame(width: 36, height: 36)
+                Image(systemName: "checkmark.seal.fill")
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .font(.system(size: 16, weight: .semibold))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(connectedTitle)
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("Duty-status clocks, logs and violations are vendor-sourced. 49 CFR §395 compliant.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            StatusPill(text: "Connected", kind: .success)
+        }
+    }
+
+    private var connectedTitle: String {
+        if let slug = eld.primaryConnectedSlug,
+           let provider = eld.provider(for: slug) {
+            return "\(provider.name) connected"
+        }
+        return "ELD connected"
+    }
+
+    /// Honest disconnected state — accurate copy + a working Connect CTA
+    /// that opens the canonical 074E ELD-connect screen.
+    private var disconnectedRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().fill(Brand.warning.opacity(0.14)).frame(width: 36, height: 36)
+                    Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                        .foregroundStyle(Brand.warning)
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("No ELD connected")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("HOS is self-reported until you link a device. Connect your ELD so logs are vendor-sourced for roadside inspections.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                StatusPill(text: "Not connected", kind: .neutral)
+            }
+            Button {
+                // Drill into the existing 074E ELD-connect screen through the
+                // canonical Me-hub nav swap — same path every compliance leaf
+                // uses, so back-nav unwinds cleanly to this hub.
+                NotificationCenter.default.post(
+                    name: .eusoDriverMeNavSwap, object: nil,
+                    userInfo: ["screenId": "074E"]
+                )
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "antenna.radiowaves.left.and.right")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Connect ELD device")
+                        .font(EType.body).fontWeight(.semibold)
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12).padding(.vertical, 11)
+                .frame(maxWidth: .infinity)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
         }
     }
 }
@@ -823,6 +964,7 @@ struct DriverMeSurface: View {
     let palette: Theme.Palette
 
     @EnvironmentObject var session: EusoTripSession
+    @Environment(\.driverNavHandler) private var driverNavHandler
     @State private var screenStack: [String] = ["067hub"]
 
     /// Captured from `.eusoDriverMeNavSwap` userInfo when a leaf needs a
@@ -919,6 +1061,15 @@ struct DriverMeSurface: View {
             .onReceive(NotificationCenter.default.publisher(
                 for: .eusoDriverMeNavSwap)) { note in
                 guard let id = note.userInfo?["screenId"] as? String else { return }
+                if id == "108" {
+                    // 108 is a legacy Driver-Me deep link. The single
+                    // production Eusoboards surface now lives in the
+                    // Driver Trips tab, so route old pushes there instead
+                    // of showing a second loadboard rendition.
+                    screenStack = ["067hub"]
+                    driverNavHandler?("Trips")
+                    return
+                }
                 if id == "_logout" {
                     // Sign-out is owned by the session layer; surface
                     // the request via the existing logout post so any

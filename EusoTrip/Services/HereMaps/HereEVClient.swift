@@ -5,6 +5,7 @@
 //  Endpoint:
 //      GET https://browse.search.hereapi.com/v1/browse
 //      with categories=700-7600-0322 (EV Charging Station)
+//      with show=ev for connector + power metadata
 //
 //  HERE's EV Products exposes charging stations through both a
 //  dedicated `/ev/stations` feed and the Browse Places API keyed by
@@ -21,7 +22,7 @@
 //
 //  Optional:
 //      limit=<N>
-//      in=circle:<lat>,<lng>;r=<meters>     (alternative to `at`)
+//      in=circle:<lat>,<lng>;r=<meters>
 //
 //  Auth: Bearer via HereBearerFetch.
 //
@@ -49,9 +50,11 @@ struct HereBrowseItem: Decodable, Identifiable, Hashable {
     let contacts: [HereBrowseContact]?
     let openingHours: [HereBrowseOpeningHours]?
     let chains: [HereBrowseChain]?
-    /// Present for EV stations — HERE ships a `chargingStation`
-    /// extension on qualifying POIs with connectors + power info.
-    let chargingStation: HereBrowseChargingStation?
+    /// Present for EV stations when `show=ev` is requested.
+    /// HERE Browse returns this under `extended.evStation`.
+    let extended: HereBrowseExtended?
+
+    var chargingStation: HereBrowseChargingStation? { extended?.evStation }
 }
 
 struct HereBrowseAddress: Decodable, Hashable {
@@ -93,9 +96,24 @@ struct HereBrowseChain: Decodable, Hashable {
 
 // MARK: - EV charging extension
 
+struct HereBrowseExtended: Decodable, Hashable {
+    let evStation: HereBrowseChargingStation?
+}
+
 struct HereBrowseChargingStation: Decodable, Hashable {
     let connectors: [HereChargingConnector]?
-    let totalNumberOfConnectors: Int?
+    private let totalNumberOfConnectorsRaw: Int?
+
+    var totalNumberOfConnectors: Int? {
+        if let totalNumberOfConnectorsRaw { return totalNumberOfConnectorsRaw }
+        let counts = connectors?.compactMap(\.numberOfConnectors) ?? []
+        return counts.isEmpty ? nil : counts.reduce(0, +)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case connectors
+        case totalNumberOfConnectorsRaw = "totalNumberOfConnectors"
+    }
 }
 
 struct HereChargingConnector: Decodable, Hashable {
@@ -106,15 +124,21 @@ struct HereChargingConnector: Decodable, Hashable {
     let maxPowerLevel: Double?
     let voltsRange: String?
     let ampsRange: String?
-    let numberOfConnectors: Int?
+    let chargingPoint: HereChargingPoint?
     let chargeMode: String?
     let fee: Bool?
     let paymentMethods: [String]?
+
+    var numberOfConnectors: Int? { chargingPoint?.numberOfConnectors }
 }
 
 struct HereChargingConnectorType: Decodable, Hashable {
     let id: String?
     let name: String?
+}
+
+struct HereChargingPoint: Decodable, Hashable {
+    let numberOfConnectors: Int?
 }
 
 // MARK: - Client
@@ -134,12 +158,15 @@ final class HereEVClient {
 
     func chargingStations(
         near center: CLLocationCoordinate2D,
-        limit: Int = 30
+        limit: Int = 30,
+        radiusMeters: Int = 25_000
     ) async throws -> [HereBrowseItem] {
         var comps = URLComponents(string: "https://browse.search.hereapi.com/v1/browse")!
         comps.queryItems = [
             URLQueryItem(name: "at", value: "\(center.latitude),\(center.longitude)"),
+            URLQueryItem(name: "in", value: "circle:\(center.latitude),\(center.longitude);r=\(radiusMeters)"),
             URLQueryItem(name: "categories", value: Self.categoryIdEVCharging),
+            URLQueryItem(name: "show", value: "ev"),
             URLQueryItem(name: "limit", value: String(limit)),
         ]
         guard let url = comps.url else { throw HereMapsError.badURL }

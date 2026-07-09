@@ -399,7 +399,7 @@ private struct RailCrossBorderComplianceCheckBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("getCrossBorderCheckHistory · STUB")
+                Text("auto-refreshes after each run")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -496,13 +496,34 @@ private struct RailCrossBorderComplianceCheckBody: View {
 
     // MARK: Actions
 
+    private var regulationReviewLines: [String] {
+        var lines = [
+            "Consist: \(consistId)",
+            "Interchange: \(compliance?.interchangePoint ?? interchangePointId)",
+            "Direction: \(compliance?.direction ?? direction)",
+            "Verdict: \((compliance?.overallCompliant ?? false) ? "pass" : "review")",
+            "Passed: \(hitCount)",
+            "Pending: \(pendingCount)",
+            "Blockers: \(blockerCount)"
+        ]
+        for item in items.prefix(6) {
+            lines.append("\(item.requirement): \(item.status) - \(item.regulation)")
+        }
+        return lines
+    }
+
     private var actionsRow: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Re-run check",
                       action: { Task { await reload() } },
                       leadingIcon: "clock.arrow.circlepath",
                       isLoading: loading)
-            CTAButton(title: "View regs", leadingIcon: "book.closed")
+            RailSecondaryActionButton(
+                title: "View regs",
+                sheetTitle: "Cross-border regulation review",
+                lines: regulationReviewLines,
+                systemImage: "book.closed"
+            )
                 .frame(maxWidth: 132)
         }
     }

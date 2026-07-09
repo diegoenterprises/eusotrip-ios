@@ -245,7 +245,7 @@ struct TheHaulBadges: View {
             EusoEmptyState(
                 systemImage: "exclamationmark.triangle",
                 title: "Couldn't load badges",
-                subtitle: e.localizedDescription
+                subtitle: e.eusoUserCopy
             )
             .padding(.top, Space.s4)
         case .loaded(let items):

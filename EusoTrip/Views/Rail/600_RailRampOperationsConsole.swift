@@ -112,6 +112,16 @@ private struct RailRampOperationsConsoleBody: View {
     @State private var assigning = false
     @State private var assignNote: String? = nil
 
+    // Carload-native rail track occupancy for the ramp's yard (additive,
+    // isolated — never gates or breaks the truck-side moves console below).
+    // Sourced from railShipments.getRailYards → getYardTrackOccupancy.
+    @State private var railYard: RailYardRow? = nil
+    @State private var occupancy: YardTrackOccupancy? = nil
+    @State private var occLoading = false
+    /// Occupancy-read failure with a resolved yard — renders the retryable
+    /// error state, distinct from the true "No tracks configured" empty.
+    @State private var railOccError: String? = nil
+
     // Eyebrow ref-stamp — single-country US ramp console reference (verbatim).
     private let refCode = "RAIL-260528-CA17FB02D9"
 
@@ -180,6 +190,7 @@ private struct RailRampOperationsConsoleBody: View {
                     } else {
                         capacityHero
                         liveMovesSection
+                        railTrackSection
                         capacityGuardSection
                         ctaRow
                     }
@@ -498,6 +509,281 @@ private struct RailRampOperationsConsoleBody: View {
         return "-"
     }
 
+    // MARK: - Rail track occupancy (carload-native · railShipments)
+
+    /// Real per-track carload layout for the ramp's rail yard. Shows a
+    /// progress placeholder while the occupancy read is in flight — the
+    /// "No tracks configured" claim only renders after a SUCCESSFUL read
+    /// (data / honest-empty / retryable error, never a false empty flash).
+    /// Every occupant chip shows ONLY real slim fields (carNumber · carType ·
+    /// status). Utilization is "—" when unknown.
+    @ViewBuilder
+    private var railTrackSection: some View {
+        if railYard != nil || occLoading {
+            let occ = occupancy
+            let tracks = occ?.tracks ?? []
+            VStack(alignment: .leading, spacing: Space.s3) {
+                HStack {
+                    Text(railYard.map { "YARD TRACKS · \(occ?.yardName ?? $0.name)" } ?? "YARD TRACKS")
+                        .font(.system(size: 9, weight: .heavy)).tracking(0.8)
+                        .foregroundStyle(Color(hex: 0x4DA3FF))
+                        .lineLimit(1)
+                    Spacer()
+                    if occLoading {
+                        ProgressView().scaleEffect(0.6).tint(palette.textTertiary)
+                    } else {
+                        Text("carload · live")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                }
+                Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    if occLoading && occ == nil {
+                        // In-flight with no board yet — progress placeholder.
+                        // The section must never claim "No tracks configured"
+                        // while the read is still resolving.
+                        HStack(spacing: Space.s2) {
+                            ProgressView().tint(palette.textSecondary)
+                            Text("Loading track occupancy…")
+                                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, Space.s2)
+                    } else if let occErr = railOccError {
+                        railOccErrorView(occErr)
+                    } else {
+                        // Real yard totals (tracks / car cap / utilization).
+                        HStack(spacing: Space.s5) {
+                            railStat(value: railTracksLabel, label: "tracks")
+                            railStat(value: railCapLabel, label: "car cap")
+                            railStat(value: railUtilLabel, label: "utilization")
+                            Spacer(minLength: 0)
+                        }
+
+                        if tracks.isEmpty {
+                            Text("No tracks configured for this yard.")
+                                .font(EType.caption).foregroundStyle(palette.textSecondary)
+                        } else {
+                            railTileGrid(tracks)
+                            railLegend
+                            railOccupiedList(tracks)
+                        }
+
+                        if let un = occ?.unassigned, !un.isEmpty {
+                            railUnassignedLane(un)
+                        }
+                    }
+                }
+                .padding(Space.s4)
+                .background(palette.bgCard)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(palette.borderFaint))
+            }
+        }
+    }
+
+    /// A failed occupancy read renders THIS, never the "No tracks configured"
+    /// empty state — that claim is only honest when the read succeeded.
+    private func railOccErrorView(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "wifi.exclamationmark")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Brand.danger)
+                Text(message)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Button {
+                Task { await loadRailOccupancy() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("Retry")
+                        .font(.system(size: 11, weight: .bold)).tracking(0.3)
+                }
+                .foregroundStyle(Brand.danger)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Capsule().fill(Brand.danger.opacity(0.14)))
+                .overlay(Capsule().strokeBorder(Brand.danger.opacity(0.35)))
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Space.s2)
+    }
+
+    private func railStat(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.system(size: 16, weight: .bold)).monospacedDigit()
+                .foregroundStyle(palette.textPrimary)
+            Text(label)
+                .font(.system(size: 9)).tracking(0.3)
+                .foregroundStyle(palette.textTertiary)
+        }
+    }
+
+    private var railTracksLabel: String {
+        if let t = occupancy?.totalTracks, t > 0 { return "\(t)" }
+        if let t = railYard?.totalTracks, t > 0 { return "\(t)" }
+        return "—"
+    }
+    private var railCapLabel: String {
+        if let c = occupancy?.capacity, c > 0 { return "\(c)" }
+        if let c = railYard?.capacity, c > 0 { return "\(c)" }
+        return "—"
+    }
+    /// Honest "—" when capacity is unknown (server emits null utilizationPct).
+    private var railUtilLabel: String {
+        guard let pct = occupancy?.utilizationPct else { return "—" }
+        if pct == pct.rounded() { return "\(Int(pct))%" }
+        return String(format: "%.1f%%", pct)
+    }
+
+    /// Compact track-tile grid — one tile per track (1..N), colored
+    /// occupied/open. Adaptive so it packs to the console width.
+    private func railTileGrid(_ tracks: [YardTrack]) -> some View {
+        let ordered = tracks.sorted { $0.trackNumber < $1.trackNumber }
+        let cols = [GridItem(.adaptive(minimum: 28), spacing: 6)]
+        return LazyVGrid(columns: cols, spacing: 6) {
+            ForEach(ordered) { t in
+                let occ = t.carCount > 0
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(occ ? Brand.blue.opacity(0.9) : Color.white.opacity(0.14))
+                    Text("\(t.trackNumber)")
+                        .font(.system(size: 9, weight: .bold)).monospacedDigit()
+                        .foregroundStyle(occ ? Color.white : palette.textTertiary)
+                }
+                .frame(height: 24)
+            }
+        }
+    }
+
+    private var railLegend: some View {
+        HStack(spacing: Space.s4) {
+            legendSwatch(color: Brand.blue.opacity(0.85), label: "Occupied")
+            legendSwatch(color: Color.white.opacity(0.18), label: "Open")
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func legendSwatch(color: Color, label: String) -> some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .fill(color).frame(width: 12, height: 12)
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    /// Occupied tracks with their spotted cars.
+    @ViewBuilder
+    private func railOccupiedList(_ tracks: [YardTrack]) -> some View {
+        let occupied = tracks.filter { $0.carCount > 0 }.sorted { $0.trackNumber < $1.trackNumber }
+        if occupied.isEmpty {
+            Text("No cars spotted on any track.")
+                .font(EType.caption).foregroundStyle(palette.textTertiary)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(occupied.enumerated()), id: \.element.id) { idx, t in
+                    railTrackRow(t)
+                    if idx < occupied.count - 1 {
+                        Rectangle().fill(palette.borderFaint).frame(height: 1)
+                            .padding(.vertical, Space.s1)
+                    }
+                }
+            }
+        }
+    }
+
+    private func railTrackRow(_ t: YardTrack) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                Text("Track \(t.trackNumber)")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 8)
+                Text("\(t.carCount) car\(t.carCount == 1 ? "" : "s")")
+                    .font(.system(size: 10, weight: .bold)).tracking(0.3)
+                    .foregroundStyle(Brand.blue)
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(Capsule().fill(Brand.blue.opacity(0.18)))
+            }
+            FlowLayout(spacing: 6) {
+                ForEach(t.cars) { railCarChip($0) }
+            }
+        }
+        .padding(.vertical, Space.s2)
+    }
+
+    private func railUnassignedLane(_ cars: [YardCar]) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("UNASSIGNED · \(cars.count)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(Brand.warning)
+                Spacer()
+                Text("no track number")
+                    .font(.system(size: 9))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Rectangle().fill(palette.borderFaint).frame(height: 1)
+            FlowLayout(spacing: 6) {
+                ForEach(cars) { railCarChip($0) }
+            }
+        }
+        .padding(Space.s3)
+        .background(Brand.warning.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .strokeBorder(Brand.warning.opacity(0.30)))
+    }
+
+    /// One occupant car chip — ONLY real slim fields (carNumber · carType ·
+    /// status). Missing carNumber → em-dash, never fabricated.
+    private func railCarChip(_ car: YardCar) -> some View {
+        HStack(spacing: 5) {
+            Text(car.carNumber?.isEmpty == false ? car.carNumber! : "—")
+                .font(EType.mono(.micro)).tracking(0.2)
+                .foregroundStyle(palette.textPrimary)
+            if let t = car.carType, !t.isEmpty {
+                Text(t)
+                    .font(.system(size: 9))
+                    .foregroundStyle(palette.textSecondary)
+            }
+            if let s = car.status, !s.isEmpty {
+                Text(s)
+                    .font(.system(size: 8.5, weight: .bold)).tracking(0.3)
+                    .foregroundStyle(railCarStatusColor(s))
+                    .padding(.horizontal, 5).padding(.vertical, 1.5)
+                    .background(Capsule().fill(railCarStatusColor(s).opacity(0.18)))
+            }
+        }
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        // Palette-aware chip fill (matches 628's occupant chips) — a hardcoded
+        // dark fill under theme-aware text is illegible in Light mode.
+        .background(palette.bgCardSoft)
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(palette.borderFaint))
+    }
+
+    private func railCarStatusColor(_ s: String) -> Color {
+        switch s.lowercased() {
+        case "loaded", "in_transit", "assigned": return Brand.blue
+        case "available":                          return Brand.success
+        case "in_repair", "out_of_service":        return Brand.danger
+        case "stored":                             return Brand.warning
+        default:                                    return palette.textSecondary
+        }
+    }
+
     // MARK: - Capacity guard tile shelf
 
     private var capacityGuardSection: some View {
@@ -623,6 +909,38 @@ private struct RailRampOperationsConsoleBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+        // Fill the carload track section after the console renders — a rail
+        // read failure NEVER errors the truck moves board.
+        await loadRailOccupancy()
+    }
+
+    /// Resolve the ramp's rail yard (prefer an intermodal-ramp yard) and load
+    /// its real carload track occupancy. Fully guarded: a failure with no
+    /// resolved yard leaves the rail section hidden; a failure AFTER the yard
+    /// resolved renders the retryable error state (never the false "No tracks
+    /// configured" claim). The truck-side console is never gated either way.
+    private func loadRailOccupancy() async {
+        occLoading = true
+        railOccError = nil
+        do {
+            let yards = try await EusoTripAPI.shared.railShipments.getRailYards()
+            let yard = yards.first { ($0.yardType ?? "").lowercased().contains("intermodal") }
+                ?? yards.first
+            self.railYard = yard
+            if let id = yard?.id {
+                self.occupancy = try await EusoTripAPI.shared.railShipments.getYardTrackOccupancy(yardId: id)
+            } else {
+                self.occupancy = nil
+            }
+        } catch {
+            self.occupancy = nil
+            if railYard != nil {
+                self.railOccError = "Couldn't load track occupancy."
+            }
+            // No yard resolved → section stays hidden (additive — a rail read
+            // failure never errors the truck moves board).
+        }
+        occLoading = false
     }
 
     // MARK: - Assign next move (mutation)

@@ -144,6 +144,19 @@ private struct WalletHomeBody: View {
         return balance?.available ?? 0
     }
 
+    /// First-run detection: `eusoWallet.getSnapshot` SUCCEEDED but every
+    /// cents field is 0/nil — an unfunded wallet, not a failed fetch. The
+    /// hero's honest em-dashes are correct, but without this flag they are
+    /// indistinguishable from an error, so the body renders a one-line
+    /// first-run caption under the hero. Real failures still surface the
+    /// error card (snap stays nil and `loadError` is set).
+    private var isFirstRunWallet: Bool {
+        guard let s = snap else { return false }
+        return (s.availableCents ?? 0) == 0
+            && (s.pendingCents ?? 0) == 0
+            && (s.reservedCents ?? 0) == 0
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s5) {
@@ -157,16 +170,21 @@ private struct WalletHomeBody: View {
                         reservedCents: s.reservedCents,
                         currency: s.currency ?? "USD"
                     )
+                    if isFirstRunWallet { firstRunCaption }
                 } else if loading {
                     heroSkeleton
                 } else if let err = loadError {
                     errorCard(err)
                 }
 
-                // ── HERO CASH-OUT CTA ──
-                cashOutAction
+	                // ── HERO CASH-OUT CTA ──
+	                cashOutAction
+	                EusoCardIssuePanel(
+	                    title: "EusoCard",
+	                    subtitle: "Virtual card for escrow, accessorials and freight spend"
+	                )
 
-                // ── ESCROW HOLDS (itemized) ──
+	                // ── ESCROW HOLDS (itemized) ──
                 if !holds.isEmpty {
                     holdsCard
                 }
@@ -237,6 +255,23 @@ private struct WalletHomeBody: View {
                 Spacer(minLength: 0)
             }
         }
+    }
+
+    /// One-line first-run caption under the balance hero — palette tokens
+    /// so it reads in both modes. Only shown when the snapshot RPC
+    /// succeeded with an all-zero/nil wallet (`isFirstRunWallet`), so an
+    /// unfunded wallet is never mistaken for a failed fetch.
+    private var firstRunCaption: some View {
+        HStack(spacing: 8) {
+            WalletGlyph(kind: .spark, size: 13, tint: AnyShapeStyle(LinearGradient.diagonal), lineWidth: 1.5)
+            Text("No wallet activity yet — balances appear after your first funded load")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Space.s4).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.md, intensity: .whisper)
     }
 
     // MARK: Escrow holds — itemized bespoke vault tiles

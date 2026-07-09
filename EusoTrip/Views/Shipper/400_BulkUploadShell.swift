@@ -112,7 +112,7 @@ private struct BulkUploadShellBody: View {
     @State private var loading = true
     @State private var fileImporterPresented = false
     /// In-app share-sheet state for the "Download template CSV" tap.
-    /// Replaces the previous `UIApplication.shared.open(url)` Safari
+    /// Replaces the previous raw Safari
     /// punt with an authed-fetch + UIActivityViewController flow so
     /// the user can save into Files / AirDrop / Mail without leaving
     /// the app. Identifiable wrapper around the temp URL so SwiftUI
@@ -237,7 +237,7 @@ private struct BulkUploadShellBody: View {
     private var entityTypeCard: some View {
         if loading { LifecycleCard { Text("Loading supported entity types…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
         else if entityTypes.isEmpty {
-            LifecycleCard { Text("This role has no bulk-upload entity types configured server-side.").font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true) }
+            LifecycleCard { Text("This role has no bulk-upload entity types configured yet.").font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true) }
         } else {
             LifecycleCard {
                 LifecycleSection(label: "ENTITY TYPE", icon: "tag")

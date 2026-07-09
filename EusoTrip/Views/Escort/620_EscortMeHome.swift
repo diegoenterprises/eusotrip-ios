@@ -29,6 +29,10 @@ struct EscortMeHomeScreen: View {
                 titleBlock
                 iridescentHairline
                 identityHero
+                EusoCardIssuePanel(
+                    title: "Escort EusoCard",
+                    subtitle: "Virtual card for escort earnings and field spend"
+                )
                 operationsSection
                 supportSection
                 signOutButton
@@ -128,7 +132,7 @@ struct EscortMeHomeScreen: View {
                             .minimumScaleFactor(0.85)
                     }
                     if let cid = user?.companyId, !cid.isEmpty {
-                        Text("companyId · \(cid)")
+                        Text("Company ID · \(cid)")
                             .font(EType.mono(.micro)).tracking(0.4)
                             .foregroundStyle(palette.textTertiary)
                             .lineLimit(1)
@@ -151,6 +155,14 @@ struct EscortMeHomeScreen: View {
         sectionCard(title: "OPERATIONS", icon: "shield.lefthalf.filled") {
             row(label: "Assignment detail", icon: "shield.lefthalf.filled", to: "601")
             row(label: "Corridor map",      icon: "map",                    to: "602")
+            row(label: "Route survey",      icon: "list.bullet.clipboard",  to: "606")
+            row(label: "Convoy comms",      icon: "dot.radiowaves.left.and.right", to: "603")
+            row(label: "Height pole",       icon: "arrow.up.and.down",      to: "604")
+            row(label: "Vehicle check",     icon: "checklist",              to: "608")
+            row(label: "Jurisdiction handoff", icon: "shield.lefthalf.filled", to: "609")
+            row(label: "Permit & requirements", icon: "doc.badge.gearshape",   to: "607")
+            row(label: "Settlement detail", icon: "banknote",               to: "605")
+            row(label: "Cert reciprocity",  icon: "checkmark.seal",         to: "610")
         }
     }
 

@@ -446,17 +446,25 @@ private struct RailRampScheduleBody: View {
                       action: { Task { await scheduleSlot() } },
                       leadingIcon: "plus",
                       isLoading: isScheduling)
-            Button {} label: {
-                Text("Gate log")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Gate log",
+                sheetTitle: "Ramp gate log",
+                lines: gateLogLines,
+                systemImage: "rectangle.stack.badge.person.crop"
+            )
         }
+    }
+
+    private var gateLogLines: [String] {
+        var lines = [
+            "\(totalToday) train window\(totalToday == 1 ? "" : "s") · inbound \(inboundCount) · outbound \(outboundCount)",
+            "On-time \(onTimePct) · missed \(missedCount) · last gate \(lastGateLabel)",
+            adherenceLabel
+        ]
+        lines.append(contentsOf: (gateLog?.entries ?? []).prefix(6).map { entry in
+            "\(entry.id) · \(entry.status ?? "gate event") · \(entry.loadNumber ?? "load pending") · \(entry.updatedAt ?? "time pending")"
+        })
+        return lines
     }
 
     // MARK: - Load / Actions

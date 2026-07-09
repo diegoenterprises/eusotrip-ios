@@ -172,7 +172,7 @@ private struct BiddingBody: View {
         case .error(let err):
             LifecycleCard(accentDanger: true) {
                 LifecycleSection(label: "FEED ERROR", icon: "exclamationmark.triangle.fill")
-                Text((err as? EusoTripAPIError)?.errorDescription ?? err.localizedDescription)
+                Text(err.eusoUserCopy)
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
             }
         }

@@ -47,6 +47,7 @@ struct HomeWeatherWidget: View {
 
     @Environment(\.palette) private var palette
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
 
     private enum Phase {
         case loading
@@ -64,14 +65,14 @@ struct HomeWeatherWidget: View {
     @State private var hasLoadedOnce = false
 
     /// Live auto-refresh cadence. Current conditions don't change
-    /// second-to-second and the upstream sources (Tomorrow.io / WeatherKit
+    /// second-to-second and the upstream sources (Apple WeatherKit / WeatherKit
     /// / NWS) are rate-limited, so a 10-minute live tick — plus an instant
     /// refresh whenever the app returns to the foreground — is the right
     /// "real-time" behavior for a home weather surface.
     private let refreshInterval: UInt64 = 600 * 1_000_000_000
 
     /// Hard ceiling on the FIRST load (no cache). If the upstream chain
-    /// (location + Tomorrow.io + WeatherKit/NWS/Open-Meteo fallbacks)
+    /// (location + Apple WeatherKit + WeatherKit/NWS/Open-Meteo fallbacks)
     /// stalls, the widget resolves to an honest state instead of sitting on
     /// the skeleton — no multi-minute lingering loads.
     private let firstLoadCeiling: UInt64 = 9 * 1_000_000_000
@@ -98,6 +99,9 @@ struct HomeWeatherWidget: View {
                 if newPhase == .active {
                     Task { await refresh() }
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .eusoWeatherAuthorizationChanged)) { _ in
+                Task { await refresh(force: true) }
             }
     }
 
@@ -218,6 +222,7 @@ struct HomeWeatherWidget: View {
         let status = WeatherService.shared.authorizationStatus
         if status == .notDetermined {
             WeatherService.shared.requestPermissionIfNeeded()
+            DriverLocationResolver.shared.requestPermissionIfNeeded()
             Task {
                 // Give CoreLocation a beat to deliver the first fix after
                 // the user grants, then re-fetch into the data state.
@@ -225,7 +230,7 @@ struct HomeWeatherWidget: View {
                 await refresh(force: true)
             }
         } else if let url = URL(string: UIApplication.openSettingsURLString) {
-            UIApplication.shared.open(url)
+            openURL(url)
         }
     }
 }

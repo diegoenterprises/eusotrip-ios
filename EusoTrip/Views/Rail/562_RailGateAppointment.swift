@@ -65,6 +65,7 @@ private struct CreateResult562: Decodable {
 
 private struct RailGateAppointmentBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var session: EusoTripSession
     let facilityId: String
     let shipmentId: String
@@ -274,7 +275,7 @@ private struct RailGateAppointmentBody: View {
                 Text("CONF-XXXXXX issued on confirm")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
-                Text("GP-XXXXXX · gatePass valid 4h from slot")
+                Text("GP-XXXXXX · gate pass valid 4h from slot")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
                     .padding(.top, 4)
@@ -315,7 +316,7 @@ private struct RailGateAppointmentBody: View {
                 leadingIcon: "checkmark",
                 isLoading: submitting || selectedTime == nil
             )
-            CTAButton(title: "Cancel")
+            CTAButton(title: "Cancel", action: { dismiss() })
         }
     }
 

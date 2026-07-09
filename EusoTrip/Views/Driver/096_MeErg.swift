@@ -42,6 +42,7 @@ import SwiftUI
 
 struct MeErg: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @StateObject private var store = ErgStore()
 
     @State private var detailPresented: String?
@@ -209,9 +210,7 @@ struct MeErg: View {
     private func callNumber(_ phone: String) {
         let digits = phone.filter { $0.isNumber || $0 == "+" }
         guard !digits.isEmpty, let url = URL(string: "tel:\(digits)") else { return }
-        if UIApplication.shared.canOpenURL(url) {
-            UIApplication.shared.open(url)
-        }
+        openURL(url)
     }
 
     // MARK: Results

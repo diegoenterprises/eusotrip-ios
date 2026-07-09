@@ -61,7 +61,7 @@ struct MeTax: View {
     /// prior tax year).
     @State private var selectedYear: Int = Calendar.current.component(.year, from: Date())
     /// In-app PDF presentation for the 1099-NEC. Replaces the prior
-    /// `UIApplication.shared.open(url)` Safari punt so the driver
+    /// raw Safari punt so the driver
     /// stays inside the EusoTrip app and can save the doc straight
     /// into Files / AirDrop / Mail via EusoPDFViewer's share sheet.
     @State private var tax1099Presentation: EusoPDFPresentation? = nil
@@ -389,7 +389,7 @@ struct MeTax: View {
                 .font(EType.micro)
                 .tracking(1.3)
                 .foregroundStyle(palette.textTertiary)
-            Text("Estimated tax and quarterly figures are server-computed from your paid settlements using the current self-employed tax rate. They're guidance, not advice, consult your accountant before filing. The 1099-NEC becomes available on or after Jan 31 once Eusorone generates your record.")
+            Text("Estimated tax and quarterly figures are calculated from your paid settlements using the current self-employed tax rate. They're guidance, not advice, consult your accountant before filing. The 1099-NEC becomes available on or after Jan 31 once Eusorone generates your record.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -412,7 +412,7 @@ struct MeTax: View {
             Text("Couldn't load tax summary")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)

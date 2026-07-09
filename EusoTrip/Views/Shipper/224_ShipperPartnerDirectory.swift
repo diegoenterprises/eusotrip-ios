@@ -796,7 +796,7 @@ struct ShipperPartnerDirectory: View {
             Text("PARTNERSHIP INDEX")
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            Text("index = onTime · 0.4 + completion · 0.3 + log₁₀(loads+1)/log₁₀(50) · 0.2 + spend · 0.1")
+            Text("index = on-time · 0.4 + completion · 0.3 + log₁₀(loads+1)/log₁₀(50) · 0.2 + spend · 0.1")
                 .font(EType.mono(.caption))
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(1)

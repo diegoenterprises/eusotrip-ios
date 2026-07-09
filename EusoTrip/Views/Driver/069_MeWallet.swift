@@ -118,6 +118,10 @@ struct MeWallet: View {
                 header
                 heroBalance              // §1
                 quickActions             // §2
+                EusoCardIssuePanel(
+                    title: "EusoCard",
+                    subtitle: "Virtual spend card for fuel, tolls and settlement cash"
+                )
                 weeklyChart              // §3
                 upcomingPayouts          // §4
                 activityFeed             // §5

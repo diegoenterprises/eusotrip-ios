@@ -112,7 +112,7 @@ public struct VoiceDialectPicker: View {
             // Audible confirmation — speak the preview in the new dialect.
             await ESangTTSPlayer.shared.preview(dialect)
         } catch {
-            errorMessage = "Couldn't save dialect. \(error.localizedDescription)"
+            errorMessage = "Couldn't save dialect. \(error.eusoUserCopy)"
         }
         savingDialect = nil
     }

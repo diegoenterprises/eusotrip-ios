@@ -1,6 +1,6 @@
 //
 //  108_MeLoadBoard.swift
-//  EusoTrip 2027 UI — brick 108 (driver · loadboard browse + bid)
+//  EusoTrip 2027 UI — brick 108 (driver · legacy Eusoboards alias)
 //
 //  The discovery surface drivers were missing — broker-/shipper-
 //  posted loads filtered by lane, equipment, hazmat, and rate. Each
@@ -10,8 +10,9 @@
 //
 //  Founder anchor 2026-04-28: "put bids in driver as well as they
 //  bid on loads." 107 MeMyBids inboxes already-placed bids; 108
-//  MeLoadBoard is the entry point — without this, MyBids stays
-//  empty.
+//  The live entry point is now the Driver Trips tab; this registry id
+//  remains as a compatibility alias so older deep links route to that
+//  canonical board instead of exposing a second rendition.
 //
 //  Wires:
 //    • `loadBoard.search(originState:destState:equipmentType:hazmat:
@@ -95,8 +96,8 @@ struct MeLoadBoardView: View {
     /// Eusoboards. Founder bug 2026-05-07: tapping a load
     /// previously fired `MeAction.fire("driver.load.detail")` which
     /// the global handler routed to `.wallet` (My Loads) — wrong
-    /// destination. Driver Me LoadBoard IS Eusoboards (the public
-    /// market); tapping a load should open that load inside this
+    /// destination. The Driver Trips tab IS Eusoboards (the public
+    /// market); tapping a load should open that load inside the board
     /// context, not yank the user to a different tab.
     @State private var selectedRow: SelectedEusoboardsRow? = nil
 
@@ -526,10 +527,18 @@ struct MeLoadBoardView: View {
 
 struct MeLoadBoardScreen: View {
     let theme: Theme.Palette
+    @Environment(\.driverNavHandler) private var driverNavHandler
 
     var body: some View {
         Shell(theme: theme) {
-            MeLoadBoardView()
+            DriverTripsPane()
+                .onAppear {
+                    // Compatibility path for legacy registry/deep links.
+                    // The single production Eusoboards board is the Driver
+                    // Trips tab; keep this wrapper rendering that same pane
+                    // so users never see two competing loadboards.
+                    driverNavHandler?("Trips")
+                }
         } nav: {
             BottomNav(
                 leading: driverNavLeading_108(),
@@ -542,22 +551,24 @@ struct MeLoadBoardScreen: View {
 
 private func driverNavLeading_108() -> [NavSlot] {
     [NavSlot(label: "Home", systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Haul", systemImage: "trophy", isCurrent: false)]
+     NavSlot(label: "Trips", systemImage: "truck.box", isCurrent: true)]
 }
 private func driverNavTrailing_108() -> [NavSlot] {
-    [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),
-     NavSlot(label: "Me",     systemImage: "person",      isCurrent: true)]
+    [NavSlot(label: "Loads", systemImage: "shippingbox.fill", isCurrent: false),
+     NavSlot(label: "Me",    systemImage: "person",           isCurrent: false)]
 }
 
 // MARK: - Previews
 
-#Preview("108 · Me · LoadBoard · Night") {
+#Preview("108 · Eusoboards Alias · Night") {
     MeLoadBoardScreen(theme: Theme.dark)
+        .environmentObject(DriverTripController())
         .preferredColorScheme(.dark)
 }
 
-#Preview("108 · Me · LoadBoard · Afternoon") {
+#Preview("108 · Eusoboards Alias · Afternoon") {
     MeLoadBoardScreen(theme: Theme.light)
+        .environmentObject(DriverTripController())
         .preferredColorScheme(.light)
 }
 

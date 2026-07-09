@@ -37,10 +37,10 @@
 //    never a hand-drawn route. The puck id is the member userId → tap routes
 //    to that member.
 //
-//  Still WIRE-flagged (no coord dependency; not part of the map build):
-//    • rear-gap alert            → convoy.getConvoyAlerts      (convoy.ts:601)
-//    • "Optimize spacing" CTA    → convoy.optimizeConvoyRoute  (convoy.ts:325)
-//    • "Pause convoy" CTA        → convoy.updateConvoyStatus   (convoy.ts:218)
+//  Action wiring:
+//    • rear-gap alert            → convoy.getConvoyAlerts
+//    • "Optimize spacing" CTA    → convoy.predictOptimalSpacing
+//    • "Pause convoy" CTA        → convoy.updateConvoyStatus
 //  The fuel-save / draft-time figures have NO DB column (no coordinate
 //  source) — they stay representative labels, clearly NOT coordinate data.
 //  RBAC write gate catalystProcedure (_core/trpc.ts:150). transportMode=truck; US lane.
@@ -140,14 +140,6 @@ private let convoySeed_400 = ConvoyVM_400(
     alertSub: "Auto-optimize recovers the −11% draft savings"
 )
 
-// MARK: - Notifications
-
-extension Notification.Name {
-    static let eusoCatalystConvoyOptimize_400 = Notification.Name("eusoCatalystConvoyOptimize")
-    static let eusoCatalystConvoyPause_400    = Notification.Name("eusoCatalystConvoyPause")
-    static let eusoCatalystConvoyAlert_400    = Notification.Name("eusoCatalystConvoyAlert")
-}
-
 // MARK: - Wire models (exact convoy.getActiveConvoys / getConvoyPositions shapes)
 
 /// Mirrors a `convoy.getActiveConvoys` row (convoy.ts:711-721). Carries the
@@ -189,6 +181,32 @@ private struct ConvoyPositions_400: Decodable, Hashable {
 
 private struct ConvoyLimitInput_400: Encodable { let limit: Int }
 private struct ConvoyIdInput_400: Encodable { let convoyId: Int }
+private struct ConvoyAlert_400: Decodable, Identifiable, Hashable {
+    let id: String
+    let type: String?
+    let severity: String?
+    let message: String
+    let timestamp: String?
+}
+private struct SpacingInput_400: Encodable {
+    let convoyId: Int
+    let currentSpeed: Double?
+}
+private struct SpacingOut_400: Decodable {
+    let recommendedLeadDistance: Int?
+    let recommendedRearDistance: Int?
+    let recommendedMaxSpeed: Int?
+    let confidence: Int?
+    let model: String?
+    let warnings: [String]?
+}
+private struct ConvoyStatusInput_400: Encodable {
+    let convoyId: Int
+    let status: String
+}
+private struct ConvoyStatusOut_400: Decodable {
+    let success: Bool?
+}
 
 // MARK: - Body
 
@@ -204,6 +222,11 @@ private struct ConvoyBody_400: View {
     @State private var activeConvoy: ActiveConvoyRow_400? = nil
     @State private var positions: [ConvoyPosition_400] = []
     @State private var mapLoading: Bool = true
+    @State private var alerts: [ConvoyAlert_400] = []
+    @State private var showAlerts = false
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var actionBusy = false
 
     /// Preview-only injection — when set, the body paints the seeded live map
     /// without a network session (mirrors §375's previewSeed pattern).
@@ -263,6 +286,7 @@ private struct ConvoyBody_400: View {
                 rosterSection
                 alertRow
                 ctaPair
+                actionFeedback
             }
             .padding(.horizontal, Space.s5)
             .padding(.top, Space.s3)
@@ -272,6 +296,7 @@ private struct ConvoyBody_400: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await reload() }
         }
+        .sheet(isPresented: $showAlerts) { alertSheet }
     }
 
     // MARK: TopBar
@@ -322,12 +347,7 @@ private struct ConvoyBody_400: View {
                     baseLayers: convoyMapLayers,
                     addOns: .shipperTracking,
                     showTicker: false,
-                    onSelectMarker: { userId in
-                        // Tap a member puck → open that member's dispatch detail.
-                        NotificationCenter.default.post(
-                            name: .eusoCatalystConvoyAlert_400, object: nil,
-                            userInfo: ["source": "400_CatalystConvoyPlatooning", "memberUserId": userId])
-                    }
+                    onSelectMarker: { userId in selectMember(userId) }
                 )
                 .clipShape(RoundedRectangle(cornerRadius: Radius.xl - 1.5, style: .continuous))
                 .padding(1.5)
@@ -348,7 +368,7 @@ private struct ConvoyBody_400: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        Text("LIVE · \(truckMarkers.count)/3 GPS · convoy.getConvoyPositions")
+                        Text("LIVE · \(truckMarkers.count)/3 GPS · convoy positions")
                             .font(.system(size: 8, weight: .heavy)).tracking(0.5)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 10).padding(.vertical, 5)
@@ -503,9 +523,7 @@ private struct ConvoyBody_400: View {
 
     private var alertRow: some View {
         Button {
-            // WIRE: convoy.getConvoyAlerts (convoy.ts:601) — open the rear-gap alert detail
-            NotificationCenter.default.post(name: .eusoCatalystConvoyAlert_400, object: nil,
-                userInfo: ["source": "400_CatalystConvoyPlatooning"])
+            Task { await openAlerts() }
         } label: {
             HStack(spacing: Space.s3) {
                 ZStack {
@@ -535,19 +553,16 @@ private struct ConvoyBody_400: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             Button {
-                // WIRE: convoy.optimizeConvoyRoute (convoy.ts:325) + convoy.predictOptimalSpacing (convoy.ts:493)
-                NotificationCenter.default.post(name: .eusoCatalystConvoyOptimize_400, object: nil,
-                    userInfo: ["source": "400_CatalystConvoyPlatooning"])
+                Task { await optimizeSpacing() }
             } label: {
                 Text("Optimize spacing").font(EType.bodyStrong).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
+            .disabled(actionBusy)
             Button {
-                // WIRE: convoy.updateConvoyStatus (convoy.ts:218) — status → paused
-                NotificationCenter.default.post(name: .eusoCatalystConvoyPause_400, object: nil,
-                    userInfo: ["source": "400_CatalystConvoyPlatooning"])
+                Task { await pauseConvoy() }
             } label: {
                 Text("Pause convoy").font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
@@ -556,7 +571,160 @@ private struct ConvoyBody_400: View {
                     .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
             }
             .buttonStyle(.plain)
+            .disabled(actionBusy)
         }
+    }
+
+    @ViewBuilder
+    private var actionFeedback: some View {
+        if let actionError {
+            Text(actionError)
+                .font(EType.caption)
+                .foregroundStyle(Brand.danger)
+                .padding(Space.s3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Brand.danger.opacity(0.10))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Brand.danger.opacity(0.35)))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        } else if let actionMessage {
+            Text(actionMessage)
+                .font(EType.caption)
+                .foregroundStyle(Brand.success)
+                .padding(Space.s3)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Brand.success.opacity(0.10))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Brand.success.opacity(0.35)))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        }
+    }
+
+    private var alertSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    if alerts.isEmpty {
+                        EusoEmptyState(
+                            systemImage: "checkmark.shield",
+                            title: "No convoy alerts",
+                            subtitle: "The live convoy alert engine did not return a separation, speed, or GPS-staleness alert for this convoy.")
+                    } else {
+                        ForEach(alerts) { alert in
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text((alert.severity ?? "info").uppercased())
+                                    .font(EType.micro)
+                                    .foregroundStyle(alertColor(alert.severity))
+                                Text(alert.message)
+                                    .font(EType.caption)
+                                    .foregroundStyle(palette.textPrimary)
+                                if let ts = alert.timestamp {
+                                    Text(ts)
+                                        .font(EType.mono(.caption))
+                                        .foregroundStyle(palette.textTertiary)
+                                }
+                            }
+                            .padding(Space.s3)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(palette.bgCard)
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                        }
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("Convoy alerts")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { showAlerts = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func alertColor(_ severity: String?) -> Color {
+        switch severity?.lowercased() {
+        case "critical": return Brand.danger
+        case "warning": return Brand.warning
+        default: return palette.textTertiary
+        }
+    }
+
+    private func selectMember(_ userId: String) {
+        actionError = nil
+        actionMessage = "Selected convoy member \(userId). Live member detail is keyed by the truck puck's real userId."
+    }
+
+    private func openAlerts() async {
+        actionMessage = nil
+        actionError = nil
+        guard let convoyId = activeConvoy?.id else {
+            actionError = "No active convoy is loaded yet."
+            return
+        }
+        do {
+            alerts = try await EusoTripAPI.shared.query(
+                "convoy.getConvoyAlerts",
+                input: ConvoyIdInput_400(convoyId: convoyId))
+            showAlerts = true
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func optimizeSpacing() async {
+        actionBusy = true
+        actionMessage = nil
+        actionError = nil
+        defer { actionBusy = false }
+        guard let convoyId = activeConvoy?.id else {
+            actionError = "No active convoy is loaded yet."
+            return
+        }
+        do {
+            let out: SpacingOut_400 = try await EusoTripAPI.shared.query(
+                "convoy.predictOptimalSpacing",
+                input: SpacingInput_400(convoyId: convoyId, currentSpeed: averageSpeedMph()))
+            let lead = out.recommendedLeadDistance.map { "\($0)m lead" } ?? "lead spacing pending"
+            let rear = out.recommendedRearDistance.map { "\($0)m rear" } ?? "rear spacing pending"
+            let speed = out.recommendedMaxSpeed.map { "\($0) mph max" } ?? "speed pending"
+            let confidence = out.confidence.map { "\($0)% confidence" } ?? "confidence pending"
+            let warning = out.warnings?.first.map { " · \($0)" } ?? ""
+            actionMessage = "Spacing guidance: \(lead), \(rear), \(speed) · \(confidence)\(warning)"
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func pauseConvoy() async {
+        actionBusy = true
+        actionMessage = nil
+        actionError = nil
+        defer { actionBusy = false }
+        guard let convoyId = activeConvoy?.id else {
+            actionError = "No active convoy is loaded yet."
+            return
+        }
+        do {
+            let out: ConvoyStatusOut_400 = try await EusoTripAPI.shared.mutation(
+                "convoy.updateConvoyStatus",
+                input: ConvoyStatusInput_400(convoyId: convoyId, status: "paused"))
+            if out.success == false {
+                actionError = "Convoy pause did not persist."
+                return
+            }
+            actionMessage = "Convoy paused and broadcast through the convoy status service."
+            await reload()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func averageSpeedMph() -> Double? {
+        let speeds = positions.compactMap { $0.speed }.filter { $0 > 0 }
+        guard !speeds.isEmpty else { return nil }
+        return speeds.reduce(0, +) / Double(speeds.count)
     }
 
     // MARK: Network

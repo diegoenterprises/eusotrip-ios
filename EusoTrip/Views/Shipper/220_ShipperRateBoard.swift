@@ -129,6 +129,18 @@ private enum DeltaTone {
     }
 }
 
+// MARK: - Live FX (crossBorder.getExchangeRates)
+
+private struct FxRatesOut: Decodable {
+    struct Rates: Decodable {
+        let CAD: Double?
+        let MXN: Double?
+    }
+    let base: String?
+    let rates: Rates?
+    let source: String?    // "live" | "cached" | "fallback"
+}
+
 // MARK: - Screen root
 
 struct ShipperRateBoard: View {
@@ -139,6 +151,8 @@ struct ShipperRateBoard: View {
     @State private var dest: String = "GA"
     @State private var equipment: String = "dry_van"
     @State private var period: String = "month"
+    @State private var fx: FxRatesOut? = nil
+    @State private var fxChecked = false
 
     private static let equipments: [(String, String)] = [
         ("dry_van", "Dry van"), ("reefer", "Reefer"),
@@ -171,6 +185,15 @@ struct ShipperRateBoard: View {
                     .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s2)
 
+                // COUNTRY-DONE (220): rate basis by corridor. FX lines are wired
+                // to the live exchange-rate feed; the per-corridor spot/contract
+                // basis proc is a named gap (rates.getCorridorBasis).
+                sectionLabel("RATE BASIS · BY CORRIDOR")
+                    .padding(.top, Space.s5)
+                RateBasisByCorridorBand(theme: palette, rows: corridorBasisRows)
+                    .padding(.horizontal, Space.s3)
+                    .padding(.top, Space.s2)
+
                 sectionLabel("PULL CUSTOM RATE")
                     .padding(.top, Space.s5)
                 inputCard
@@ -186,6 +209,7 @@ struct ShipperRateBoard: View {
         .task {
             await store.refreshFeatured()
             await store.calculate(origin: origin, destination: dest, equipment: equipment, period: period)
+            await loadFx()
         }
         // RealtimeService → market rate signals shift with new
         // matches/assignments; refresh featured rate cards live.
@@ -195,6 +219,37 @@ struct ShipperRateBoard: View {
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
             Task { await store.refreshFeatured() }
         }
+    }
+
+    // MARK: COUNTRY-DONE corridor basis (live FX · crossBorder.getExchangeRates)
+
+    private var corridorBasisRows: [CorridorBasisRow] {
+        let cadLive = fx?.source == "live" || fx?.source == "cached"
+        let cad = fx?.rates?.CAD
+        let mxn = fx?.rates?.MXN
+        let cadBasis: String = {
+            guard let cad else { return "CAD · FX unavailable · NSC tariff" }
+            return "CAD · FX \(String(format: "%.3f", cad))\(cadLive ? "" : " indicative") · NSC tariff"
+        }()
+        let mxnBasis: String = {
+            guard let mxn else { return "MXN · FX unavailable · +IGI/IVA · SAT" }
+            return "MXN · FX \(String(format: "%.2f", mxn))\(cadLive ? "" : " indicative") · +IGI/IVA · SAT"
+        }()
+        return [
+            .init(corridor: "US dom",  basis: "USD · DOE diesel FSC", tint: Color(hex: 0x1473FF), trailing: nil),
+            .init(corridor: "US ↔ CA", basis: cadBasis,               tint: Color(hex: 0x1473FF), trailing: nil),
+            .init(corridor: "US → MX", basis: mxnBasis,               tint: Color(hex: 0xFF7A00), trailing: nil),
+        ]
+    }
+
+    private func loadFx() async {
+        struct In: Encodable { let base: String }
+        do {
+            fx = try await EusoTripAPI.shared.query("crossBorder.getExchangeRates", input: In(base: "USD"))
+        } catch {
+            fx = nil   // honest: rows read "FX unavailable"
+        }
+        fxChecked = true
     }
 
     // MARK: TopBar

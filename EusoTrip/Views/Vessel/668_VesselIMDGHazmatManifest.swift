@@ -335,7 +335,7 @@ private struct VesselIMDGHazmatManifestBody: View {
     private func declarationsCard(_ r: IMDGComplianceRecord) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("DECLARATIONS · IMDG · getCompliance")
+                Text("DECLARATIONS · IMDG · compliance check")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

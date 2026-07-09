@@ -399,7 +399,15 @@ final class EsangSession: ObservableObject {
         WKInterfaceDevice.current().play(.start)
         let dictated = await DictationBroker.shared.requestText()
         guard let text = dictated else {
-            state = .idle
+            // Distinguish a driver-initiated cancel (silent, back to
+            // idle) from a broken input path (LOUD error card so the
+            // dead-button symptom can never present as "orb ignored
+            // me"). The sheet records the failure on the broker.
+            if let failure = DictationBroker.shared.takeFailure() {
+                setError(failure, kind: .micHardware)
+            } else {
+                state = .idle
+            }
             return
         }
         await submitTranscribedText(text, auth: auth, connectivity: connectivity)
@@ -784,4 +792,14 @@ final class EsangSession: ObservableObject {
         utterance.rate = AVSpeechUtteranceDefaultSpeechRate
         synth.speak(utterance)
     }
+}
+
+// Convenience singleton accessor so out-of-scene entry points (App
+// Intents / Siri) can route their turn through the SAME session the
+// orb UI observes — history, suggestions, and the spoken reply all
+// land on the live surface instead of an orphan throwaway session.
+// Mirrors the `AuthStore.shared` weak-static pattern; assigned by
+// EusoTripWatchApp at launch.
+extension EsangSession {
+    nonisolated(unsafe) static weak var shared: EsangSession?
 }

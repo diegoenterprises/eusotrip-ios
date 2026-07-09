@@ -143,6 +143,22 @@ public enum VesselOverlay: String, CaseIterable, Codable, Hashable, Sendable {
     case pickupAvailable         = "VESSEL.PICKUP_AVAILABLE"   // for drayage leg 2
 }
 
+/// ELD / HOS compliance overlay (49 CFR 395 · SOR/2005-313 · NOM-087-SCT).
+public enum EldOverlay: String, CaseIterable, Codable, Hashable, Sendable {
+    case eldConnected       = "ELD.CONNECTED"
+    case logsCertified      = "ELD.LOGS_CERTIFIED"
+    case breakRequired      = "ELD.BREAK_REQUIRED"
+    case violationActive    = "ELD.VIOLATION_ACTIVE"
+}
+
+/// Vessel Landfall overlay.
+public enum VesselLandfallOverlay: String, CaseIterable, Codable, Hashable, Sendable {
+    case noticeOfArrival    = "VESSEL.NOTICE_OF_ARRIVAL"    // 24h/96h NOA
+    case customsReleased    = "VESSEL.CUSTOMS_RELEASED"
+    case healthCleared      = "VESSEL.HEALTH_CLEARED"
+    case securityCleared    = "VESSEL.SECURITY_CLEARED"
+}
+
 /// Tanker delivery-side discharge overlay (49 CFR 177 / API RP 1004 /
 /// closed-loop discharge). These are the DELIVERY analog of the pickup
 /// bricks 028→032: once a tanker rig is backed in at the receiver, the
@@ -188,6 +204,8 @@ public struct CompositeLoadState: Codable, Hashable, Sendable {
     public let rail: Set<RailOverlay>
     public let vessel: Set<VesselOverlay>
     public let tankerDelivery: Set<TankerDeliveryOverlay>
+    public let eld: Set<EldOverlay>
+    public let vesselLandfall: Set<VesselLandfallOverlay>
 
     public init(
         base: LoadState,
@@ -199,7 +217,9 @@ public struct CompositeLoadState: Codable, Hashable, Sendable {
         avHandoff: Set<AvHandoffOverlay> = [],
         rail: Set<RailOverlay> = [],
         vessel: Set<VesselOverlay> = [],
-        tankerDelivery: Set<TankerDeliveryOverlay> = []
+        tankerDelivery: Set<TankerDeliveryOverlay> = [],
+        eld: Set<EldOverlay> = [],
+        vesselLandfall: Set<VesselLandfallOverlay> = []
     ) {
         self.base = base
         self.hazmat = hazmat
@@ -211,6 +231,8 @@ public struct CompositeLoadState: Codable, Hashable, Sendable {
         self.rail = rail
         self.vessel = vessel
         self.tankerDelivery = tankerDelivery
+        self.eld = eld
+        self.vesselLandfall = vesselLandfall
     }
 
     /// Required overlay sets for a given (vertical, mode, crossBorder) tuple.
@@ -221,7 +243,7 @@ public struct CompositeLoadState: Codable, Hashable, Sendable {
         isAvDispatch: Bool
     ) -> (hazmat: Bool, reefer: Bool, livestock: Bool, heavyHaul: Bool,
           crossBorder: Bool, avHandoff: Bool, rail: Bool, vessel: Bool,
-          tankerDelivery: Bool) {
+          tankerDelivery: Bool, eld: Bool, vesselLandfall: Bool) {
         let overlay = vertical.complianceOverlay
         return (
             hazmat:         overlay == .hazmat || overlay == .tanker,
@@ -234,7 +256,9 @@ public struct CompositeLoadState: Codable, Hashable, Sendable {
             vessel:         mode == .vessel,
             // Tanker discharge bricks 040→044 only run for tanker loads
             // on the truck (and tanker-equivalent) delivery leg.
-            tankerDelivery: overlay == .tanker
+            tankerDelivery: overlay == .tanker,
+            eld:            mode == .truck,
+            vesselLandfall: mode == .vessel
         )
     }
 }

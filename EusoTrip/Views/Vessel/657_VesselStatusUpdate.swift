@@ -100,7 +100,7 @@ private struct VesselStatusUpdateBody: View {
 
     private var statusMachineCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("STATUS MACHINE · vesselShipments status").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("STATUS LADDER · booking status").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("loaded_on_vessel · departed").font(EType.caption).foregroundStyle(palette.textTertiary)
@@ -114,7 +114,7 @@ private struct VesselStatusUpdateBody: View {
 
     private var advanceToSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("ADVANCE TO · updateVesselShipmentStatus(status)").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("ADVANCE TO · next booking status").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             ForEach(options) { opt in
                 Button { selected = opt.value } label: {
                     HStack(spacing: 14) {

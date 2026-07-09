@@ -3,8 +3,8 @@
 //  EusoTrip — Rail Engineer · Cross-Border Crew Certs.
 //
 //  Cross-border crew certification requirements by country (US FRA / MX SCT /
-//  CA Transport Canada / NOM bilingual), current-vs-expiring-vs-missing
-//  readiness. Single-country catalog inside one brick. Distinct from
+//  CA Transport Canada / NOM bilingual), live requirement readiness by
+//  country. Single-country catalog inside one brick. Distinct from
 //  595 Crew Certifications (general per-member certs).
 //
 //  tRPC anchors (REAL · railShipments.ts):
@@ -59,6 +59,7 @@ private struct RailCrossBorderCrewCertsBody: View {
     @State private var certs: [RailCrewCert] = []
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var showingCrewCatalog = false
 
     // Country order matches the SVG matrix rows: US · MX · CA.
     private let countries: [String] = ["US", "MX", "CA"]
@@ -90,6 +91,7 @@ private struct RailCrossBorderCrewCertsBody: View {
                     requirementsCard
                     tileRow
                     buttonRow
+                    crewCatalogPanel
                     footer
                 }
                 Color.clear.frame(height: 8)
@@ -158,34 +160,33 @@ private struct RailCrossBorderCrewCertsBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("9 of 11")
+                Text("\(certs.count)")
                     .font(.system(size: 34, weight: .semibold)).tracking(-0.3)
                     .foregroundStyle(LinearGradient.diagonal)
                     .monospacedDigit()
-                Text("certs current")
+                Text("requirements loaded")
                     .font(.system(size: 13, weight: .medium)).tracking(0.4)
                     .foregroundStyle(palette.textSecondary)
                 Spacer()
-                Text("ACTION")
+                Text(countryCount == countries.count ? "LIVE" : "SYNC")
                     .font(.system(size: 20, weight: .semibold, design: .monospaced)).tracking(0.2)
-                    .foregroundStyle(Brand.warning)
+                    .foregroundStyle(countryCount == countries.count ? Brand.success : Brand.warning)
             }
             .padding(.top, 10)
-            // Progress bar — 302/368 ≈ 0.82 fill (9 of 11)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.08))
                     Capsule().fill(LinearGradient.diagonal)
-                        .frame(width: geo.size.width * (302.0 / 368.0))
+                        .frame(width: geo.size.width * CGFloat(countryCount) / CGFloat(max(countries.count, 1)))
                 }
             }
             .frame(height: 6)
             .padding(.top, 14)
-            Text("9 of 11 cross-border crew certs current · 2 expiring")
+            Text("\(certs.count) cross-border crew requirements loaded across \(countryCount) countr\(countryCount == 1 ? "y" : "ies")")
                 .font(.system(size: 11, weight: .medium)).tracking(0.2)
                 .foregroundStyle(palette.textPrimary)
                 .padding(.top, 14)
-            Text("MX operating cert + bilingual rule pending for Laredo interchange")
+            Text("Crew-by-crew filing status is not on file yet; renewal packet uses live country rules.")
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, 6)
@@ -228,15 +229,15 @@ private struct RailCrossBorderCrewCertsBody: View {
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, Space.s4)
-            Text("File MX SCT renewal + NOM cert pre-Laredo")
+            Text(recommendationHeadline)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(palette.textPrimary)
                 .padding(.top, 6)
-            Text("Carrier: KCSM / UP · shipper Diego Usoro · Eusorone Technologies")
+            Text("Source: live US / MX / CA cross-border crew requirements catalog")
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 6)
-            Text("Active RAIL-260524-9C20A7E15B · Laredo interchange crew")
+            Text("Action: share packet with the compliance owner; crew filing status is pending record intake.")
                 .font(EType.mono(.micro)).tracking(0.3)
                 .foregroundStyle(palette.textTertiary)
                 .padding(.top, 6)
@@ -248,79 +249,32 @@ private struct RailCrossBorderCrewCertsBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    // A row for the by-country matrix — one cert requirement with a
-    // verbatim readiness state. The four SVG-canon states (US current /
-    // MX expiring / CA current / MX NOM missing) are mapped onto the live
-    // requirements catalog by issuing-country + cert family. Where the
-    // server provides no per-engineer holding state, the row falls back to
-    // the catalog's reciprocity/validity copy (a real value, not fabricated).
+    // A row for the by-country matrix — one live cert requirement. The
+    // backend currently returns requirement templates, not per-engineer
+    // holding state, so rows show required catalog status instead of
+    // fabricated current / expiring / missing labels.
     private struct MatrixRow: Identifiable {
         let id: String
         let title: String
         let subtitle: String
-        let status: CertStatus
+        let country: String
     }
-    private enum CertStatus { case current, expiring, missing }
 
-    // Derive the four canonical matrix rows from the live catalog. We pin
-    // the cert family per row (FRA engineer · SCT operating · TC cert ·
-    // NOM bilingual) and read the real description/regulation from the
-    // matching server record when present.
     private var matrixRows: [MatrixRow] {
-        func cert(country: String, contains: String) -> RailCrewCert? {
-            certs.first { $0.country == country && $0.certType.lowercased().contains(contains.lowercased()) }
-        }
-        var rows: [MatrixRow] = []
-
-        // US · FRA 49 CFR 240 engineer — current
-        if let c = cert(country: "US", contains: "engineer") {
-            rows.append(MatrixRow(
+        countries.flatMap { country in
+            certs.filter { $0.country == country }.map { c in
+                MatrixRow(
                 id: c.id,
-                title: "US · FRA 49 CFR 240 engineer",
-                subtitle: "Certified · expires 2027-03",
-                status: .current))
+                title: "\(country) · \(cleanCertType(c.certType))",
+                subtitle: certSubtitle(c),
+                country: country
+                )
+            }
         }
-        // MX · SCT operating license — expiring
-        if let c = cert(country: "MX", contains: "operator") ?? cert(country: "MX", contains: "operating") {
-            rows.append(MatrixRow(
-                id: c.id,
-                title: "MX · SCT operating license",
-                subtitle: "Renewal due · expires 2026-06",
-                status: .expiring))
-        }
-        // CA · Transport Canada cert — current
-        if let c = cert(country: "CA", contains: "locomotive") ?? cert(country: "CA", contains: "operating") {
-            rows.append(MatrixRow(
-                id: c.id,
-                title: "CA · Transport Canada cert",
-                subtitle: "Certified · expires 2026-11",
-                status: .current))
-        }
-        // MX · bilingual ops (NOM) — missing (NOM hazmat/bilingual rule)
-        if let c = cert(country: "MX", contains: "hazmat") ?? cert(country: "MX", contains: "nom") {
-            rows.append(MatrixRow(
-                id: c.id,
-                title: "MX · bilingual ops (NOM)",
-                subtitle: "Not on file · required at Laredo",
-                status: .missing))
-        } else {
-            rows.append(MatrixRow(
-                id: "MX·NOM·bilingual",
-                title: "MX · bilingual ops (NOM)",
-                subtitle: "Not on file · required at Laredo",
-                status: .missing))
-        }
-        return rows
     }
 
     private func requirementRow(_ row: MatrixRow) -> some View {
-        let color: Color
-        let label: String
-        switch row.status {
-        case .current:  color = Brand.success; label = "current"
-        case .expiring: color = Brand.warning; label = "expiring"
-        case .missing:  color = Brand.danger;  label = "missing"
-        }
+        let color = countryAccent(row.country)
         return HStack(alignment: .top, spacing: Space.s2) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(row.title)
@@ -331,7 +285,7 @@ private struct RailCrossBorderCrewCertsBody: View {
                     .foregroundStyle(palette.textSecondary)
             }
             Spacer(minLength: 4)
-            Text(label)
+            Text("required")
                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .foregroundStyle(color)
                 .padding(.horizontal, 12).padding(.vertical, 4)
@@ -343,9 +297,9 @@ private struct RailCrossBorderCrewCertsBody: View {
 
     private var tileRow: some View {
         HStack(spacing: Space.s2) {
-            statTile(label: "CURRENT",  value: "9", unit: "certs")
-            statTile(label: "EXPIRING", value: "1", unit: "under 30d")
-            statTile(label: "MISSING",  value: "1", unit: "required")
+            statTile(label: "US", value: "\(certCount("US"))", unit: "rules")
+            statTile(label: "MX", value: "\(certCount("MX"))", unit: "rules")
+            statTile(label: "CA", value: "\(certCount("CA"))", unit: "rules")
         }
     }
 
@@ -374,17 +328,16 @@ private struct RailCrossBorderCrewCertsBody: View {
 
     private var buttonRow: some View {
         HStack(spacing: Space.s2) {
-            Button { } label: {
-                Text("File renewal")
+            ShareLink(item: renewalPacketText) {
+                Text("Renewal packet")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48, maxHeight: 48)
                     .background(LinearGradient.primary)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
             }
-            .buttonStyle(.plain)
 
-            Button { } label: {
+            Button { showingCrewCatalog.toggle() } label: {
                 Text("Crew certs")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
@@ -398,13 +351,112 @@ private struct RailCrossBorderCrewCertsBody: View {
         }
     }
 
+    @ViewBuilder private var crewCatalogPanel: some View {
+        if showingCrewCatalog {
+            LifecycleCard {
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    LifecycleSection(label: "LIVE CREW CERT CATALOG", icon: "person.text.rectangle.fill")
+                    if certs.isEmpty {
+                        Text("No cross-border crew requirements returned.")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    } else {
+                        ForEach(Array(matrixRows.prefix(8).enumerated()), id: \.element.id) { idx, row in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(row.title)
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundStyle(palette.textPrimary)
+                                Text(row.subtitle)
+                                    .font(EType.mono(.micro))
+                                    .foregroundStyle(palette.textSecondary)
+                                    .lineLimit(2)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            if idx < min(matrixRows.count, 8) - 1 {
+                                Divider().overlay(palette.borderFaint)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var recommendationHeadline: String {
+        let mx = certCount("MX")
+        if mx > 0 { return "Export MX / NOM renewal packet from \(mx) live requirement\(mx == 1 ? "" : "s")" }
+        if certs.isEmpty { return "Reload cross-border crew requirements before filing" }
+        return "Export cross-border crew renewal packet"
+    }
+
+    private var renewalPacketText: String {
+        var lines: [String] = [
+            "EusoTrip Rail Cross-Border Crew Renewal Packet",
+            "Generated: \(Date().formatted(date: .abbreviated, time: .shortened))",
+            "Source: live cross-border crew requirements catalog",
+            "",
+            "Summary",
+            "- US requirements: \(certCount("US"))",
+            "- MX requirements: \(certCount("MX"))",
+            "- CA requirements: \(certCount("CA"))",
+            "",
+            "Renewal candidates",
+        ]
+        let candidates = certs.filter {
+            $0.country == "MX"
+            || $0.certType.localizedCaseInsensitiveContains("nom")
+            || $0.certType.localizedCaseInsensitiveContains("sct")
+            || ($0.regulation ?? "").localizedCaseInsensitiveContains("nom")
+        }
+        let packetRows = candidates.isEmpty ? certs : candidates
+        if packetRows.isEmpty {
+            lines.append("- No live requirement rows were returned.")
+        } else {
+            for cert in packetRows {
+                lines.append("- \(cert.country) \(cleanCertType(cert.certType)): \(certSubtitle(cert))")
+            }
+        }
+        lines.append("")
+        lines.append("Note: crew-by-crew renewal filing status is pending record intake.")
+        return lines.joined(separator: "\n")
+    }
+
+    private func certCount(_ country: String) -> Int {
+        certs.filter { $0.country == country }.count
+    }
+
+    private func cleanCertType(_ certType: String) -> String {
+        certType
+            .replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .capitalized
+    }
+
+    private func certSubtitle(_ cert: RailCrewCert) -> String {
+        var parts: [String] = []
+        if let authority = cert.issuingAuthority, !authority.isEmpty { parts.append(authority) }
+        if let regulation = cert.regulation, !regulation.isEmpty { parts.append(regulation) }
+        if let years = cert.validityYears { parts.append("\(years)y validity") }
+        if let requiredFor = cert.requiredFor, !requiredFor.isEmpty { parts.append(requiredFor) }
+        return parts.isEmpty ? (cert.description ?? "Cross-border requirement") : parts.joined(separator: " · ")
+    }
+
+    private func countryAccent(_ country: String) -> Color {
+        switch country {
+        case "US": return Brand.blue
+        case "MX": return Brand.warning
+        case "CA": return Brand.success
+        default: return palette.textSecondary
+        }
+    }
+
     // MARK: - Footer  (SVG translate(20,756) · mono metadata)
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("X-border crew certs · getCrossBorderCrewCerts :891")
-            Text("Carrier KCSM/UP · shipper Diego Usoro / Eusorone Technologies")
-            Text("Active RAIL-260524-9C20A7E15B · Laredo interchange")
+            Text("X-border crew certs · live records")
+            Text("\(certs.count) requirement rows · \(countryCount) countries")
+            Text("Crew filing status appears when expiry records are loaded")
         }
         .font(EType.mono(.micro)).tracking(0.3)
         .foregroundStyle(palette.textTertiary)
@@ -422,10 +474,9 @@ private struct RailCrossBorderCrewCertsBody: View {
             // PORT-GAP: railShipments.getCrossBorderCrewCerts returns the
             //   cross-border crew-cert REQUIREMENTS catalog only — there is
             //   no per-engineer holding endpoint, so the current/expiring/
-            //   missing state + expiry dates ("expires 2027-03", "Not on
-            //   file") shown in the matrix are not server-modeled. The
-            //   readiness counts (9 of 11 · 1 expiring · 1 missing) likewise
-            //   have no backing endpoint.
+            //   missing state + expiry dates are not server-modeled. This
+            //   screen therefore renders live requirement counts and a
+            //   shareable renewal packet instead of fabricated holding state.
             async let us:  [RailCrewCert] = EusoTripAPI.shared.query(
                 "railShipments.getCrossBorderCrewCerts", input: CountryIn(country: "US"))
             async let mx:  [RailCrewCert] = EusoTripAPI.shared.query(

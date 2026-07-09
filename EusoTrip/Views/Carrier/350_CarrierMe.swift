@@ -21,6 +21,14 @@ struct CarrierMeScreen: View {
     @Environment(\.palette) private var palette
     @State private var showSignOutConfirm: Bool = false
 
+    /// Which hub cards are expanded. Consolidation (fix pack L15-11): the Me tab
+    /// used to render 6 always-open sections = ~52 rows in one flat scroll. Now
+    /// it presents 6 bespoke collapsible hubs (canonical H1–H7 taxonomy) whose
+    /// bodies open on tap, so the default view is a clean stack of hub headers.
+    /// Account starts expanded; the rest collapse. Every destination is
+    /// preserved — nothing was orphaned to "workspace".
+    @State private var expandedHubs: Set<String> = ["account"]
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
@@ -28,12 +36,16 @@ struct CarrierMeScreen: View {
                 titleBlock
                 iridescentHairline
                 identityHero
-                accountSection
-                operationsSection
-                fleetSection
-                financialsSection
-                complianceSection
-                settingsSection
+                EusoCardIssuePanel(
+                    title: "EusoCard",
+                    subtitle: "Carrier spend card backed by EusoWallet Treasury"
+                )
+                accountHub
+                complianceHub
+                moneyHub
+                fleetHub
+                operationsHub
+                settingsHub
                 signOutButton
                 Color.clear.frame(height: 96)
             }
@@ -131,7 +143,7 @@ struct CarrierMeScreen: View {
                             .minimumScaleFactor(0.85)
                     }
                     if let cid = user?.companyId, !cid.isEmpty {
-                        Text("companyId · \(cid)")
+                        Text("Company ID · \(cid)")
                             .font(EType.mono(.micro)).tracking(0.4)
                             .foregroundStyle(palette.textTertiary)
                             .lineLimit(1)
@@ -148,62 +160,47 @@ struct CarrierMeScreen: View {
         return initials.isEmpty ? "?" : String(initials.prefix(2))
     }
 
-    // MARK: - Sections (LifecycleCard chrome — visual parity with 320)
+    // MARK: - Hubs (bespoke collapsible cards — canonical H1–H7 taxonomy)
     //
-    // CarrierSurface pool = .carrier + .catalyst, .carrier wins on
-    // collisions. Each id below was verified against ContentView.swift
-    // registrations on 2026-05-07. Shipper-only ids and fictional ids
-    // removed.
+    // CarrierSurface pool = .carrier + .catalyst, .carrier wins on collisions.
+    // Each id below was verified against ContentView.swift registrations.
+    // Rows were regrouped to the L15-11 taxonomy: fleet-safety CSA / IFTA /
+    // DataQ moved from FLEET → Compliance & Docs where they belong; every
+    // destination from the old 6 sections is preserved.
 
-    private var accountSection: some View {
-        sectionCard(title: "ACCOUNT", icon: "person.crop.square") {
-            row(label: "Profile",            icon: "person",                 to: "302C") // .catalyst (own profile; de-shadowed from 302 collision)
+    // H1 · Account & Identity
+    private var accountHub: some View {
+        hubCard(id: "account", icon: "person.crop.circle.fill",
+                title: "Account & Identity",
+                summary: "Profile · Authority · MC/DOT", rowCount: 2) {
+            row(label: "Profile",            icon: "person",                 to: "302C") // .catalyst (own profile)
             row(label: "Authority · MC/DOT", icon: "shield.lefthalf.filled", to: "317")  // .carrier wins
         }
     }
 
-    private var operationsSection: some View {
-        sectionCard(title: "OPERATIONS", icon: "antenna.radiowaves.left.and.right") {
-            row(label: "Catalyst Home · SpectraMatch", icon: "scope",           to: "500")  // .catalyst
-            row(label: "Active matches",                icon: "bolt",            to: "501")  // .catalyst
-            row(label: "Dispatch board",                icon: "list.bullet.rectangle", to: "303")  // .carrier
-            row(label: "Loads",                          icon: "shippingbox",    to: "301")  // .carrier
-            row(label: "EDI messages",                   icon: "arrow.left.arrow.right", to: "Cat390")  // .catalyst
-            row(label: "Document ingest",                icon: "doc.badge.plus", to: "Cat393")  // .catalyst
-            row(label: "Backhaul optimizer",             icon: "arrow.triangle.2.circlepath", to: "Cat398")  // .catalyst
-            row(label: "Matched loads",                  icon: "checkmark.circle", to: "340")  // .catalyst
-            row(label: "Find loads",                     icon: "magnifyingglass", to: "341")  // .catalyst
-            row(label: "Assigned loads",                 icon: "arrow.right.circle", to: "342")  // .catalyst
-            row(label: "Reports",                        icon: "chart.bar.doc.horizontal", to: "307")  // .catalyst
+    // H2 · Compliance & Documents
+    private var complianceHub: some View {
+        hubCard(id: "compliance", icon: "checkmark.shield.fill",
+                title: "Compliance & Documents",
+                summary: "CSA · IFTA · DataQ · Claims · Insurance", rowCount: 10) {
+            row(label: "Compliance dash",   icon: "shield.checkered",              to: "316")  // .carrier
+            row(label: "Driver compliance", icon: "person.badge.shield.checkmark", to: "326")  // .catalyst
+            row(label: "Driver documents",  icon: "doc.on.doc",                    to: "322")  // .catalyst
+            row(label: "Fleet safety · CSA", icon: "shield.lefthalf.filled",       to: "Cat383")  // .catalyst
+            row(label: "Fleet IFTA",        icon: "map",                           to: "Cat384")  // .catalyst
+            row(label: "Roadside · DataQ",  icon: "doc.text.magnifyingglass",      to: "Cat385")  // .catalyst
+            row(label: "Cargo claim",       icon: "exclamationmark.bubble",        to: "Cat389")  // .catalyst
+            row(label: "Detention alerts",  icon: "bell.badge",                    to: "Cat391")  // .catalyst
+            row(label: "Cargo insurance",   icon: "checkmark.shield",              to: "Cat392")  // .catalyst
+            row(label: "Fleet carbon",      icon: "leaf",                          to: "Cat403")  // .catalyst
         }
     }
 
-    private var fleetSection: some View {
-        sectionCard(title: "FLEET", icon: "person.2") {
-            row(label: "Drivers",                icon: "person.2",            to: "304")  // .carrier
-            row(label: "Driver list",            icon: "list.bullet",         to: "319")  // .carrier wins
-            row(label: "Vehicles",               icon: "truck.box",           to: "320")  // .carrier wins
-            row(label: "ELD · Hours of Service", icon: "clock.badge",         to: "318")  // .carrier
-            row(label: "Maintenance",            icon: "wrench.adjustable",   to: "315")  // .carrier
-            row(label: "Fuel card",              icon: "fuelpump",            to: "314")  // .carrier
-            row(label: "Fleet safety · CSA",     icon: "shield.lefthalf.filled", to: "Cat383")  // .catalyst
-            row(label: "Fleet IFTA",             icon: "map",                 to: "Cat384")  // .catalyst
-            row(label: "Roadside · DataQ",       icon: "doc.text.magnifyingglass", to: "Cat385")  // .catalyst
-            row(label: "Fuel card · fleet",      icon: "creditcard",          to: "Cat386")  // .catalyst
-            row(label: "Reefer fleet monitor",   icon: "thermometer.snowflake", to: "Cat387")  // .catalyst
-            row(label: "Tanker fleet monitor",   icon: "drop",                to: "Cat388")  // .catalyst
-            row(label: "Convoy · platooning",    icon: "car.2",               to: "Cat400")  // .catalyst
-            row(label: "Crew wellness",          icon: "heart.text.square",   to: "Cat401")  // .catalyst
-            row(label: "Capacity planner",       icon: "chart.bar",           to: "Cat402")  // .catalyst
-            row(label: "Driver performance",     icon: "gauge.with.dots.needle.67percent", to: "323")  // .catalyst
-            row(label: "Driver ledger",          icon: "list.bullet.rectangle.portrait", to: "324")  // .catalyst
-            row(label: "Driver onboarding",      icon: "person.badge.plus",   to: "325")  // .catalyst
-            row(label: "Driver profile",         icon: "person.text.rectangle", to: "321")  // .catalyst (was mislabeled "Profile" in Account)
-        }
-    }
-
-    private var financialsSection: some View {
-        sectionCard(title: "FINANCIALS", icon: "dollarsign.circle") {
+    // H3 · Money & Wallet
+    private var moneyHub: some View {
+        hubCard(id: "money", icon: "wallet.pass.fill",
+                title: "Money & Wallet",
+                summary: "Earnings · Settlements · Bids · Factoring · Rates", rowCount: 12) {
             row(label: "Earnings",      icon: "chart.line.uptrend.xyaxis", to: "312")  // .carrier
             row(label: "Settlements",   icon: "doc.text",                  to: "313")  // .carrier wins
             row(label: "My bids",       icon: "hand.tap",                  to: "308")  // .carrier
@@ -219,20 +216,54 @@ struct CarrierMeScreen: View {
         }
     }
 
-    private var complianceSection: some View {
-        sectionCard(title: "COMPLIANCE", icon: "checkmark.shield") {
-            row(label: "Compliance dash",   icon: "shield.checkered",                   to: "316")  // .carrier
-            row(label: "Driver compliance", icon: "person.badge.shield.checkmark",      to: "326")  // .catalyst
-            row(label: "Driver documents",  icon: "doc.on.doc",                         to: "322")  // .catalyst
-            row(label: "Cargo claim",       icon: "exclamationmark.bubble",             to: "Cat389")  // .catalyst
-            row(label: "Detention alerts",  icon: "bell.badge",                         to: "Cat391")  // .catalyst
-            row(label: "Cargo insurance",   icon: "checkmark.shield",                   to: "Cat392")  // .catalyst
-            row(label: "Fleet carbon",      icon: "leaf",                               to: "Cat403")  // .catalyst
+    // H4 · Fleet & Equipment
+    private var fleetHub: some View {
+        hubCard(id: "fleet", icon: "truck.box.fill",
+                title: "Fleet & Equipment",
+                summary: "Drivers · Vehicles · ELD · Maintenance · Monitors", rowCount: 16) {
+            row(label: "Drivers",                icon: "person.2",            to: "304")  // .carrier
+            row(label: "Driver list",            icon: "list.bullet",         to: "319")  // .carrier wins
+            row(label: "Vehicles",               icon: "truck.box",           to: "320")  // .carrier wins
+            row(label: "ELD · Hours of Service", icon: "clock.badge",         to: "318")  // .carrier
+            row(label: "Maintenance",            icon: "wrench.adjustable",   to: "315")  // .carrier
+            row(label: "Fuel card",              icon: "fuelpump",            to: "314")  // .carrier
+            row(label: "Fuel card · fleet",      icon: "creditcard",          to: "Cat386")  // .catalyst
+            row(label: "Reefer fleet monitor",   icon: "thermometer.snowflake", to: "Cat387")  // .catalyst
+            row(label: "Tanker fleet monitor",   icon: "drop",                to: "Cat388")  // .catalyst
+            row(label: "Convoy · platooning",    icon: "car.2",               to: "Cat400")  // .catalyst
+            row(label: "Crew wellness",          icon: "heart.text.square",   to: "Cat401")  // .catalyst
+            row(label: "Capacity planner",       icon: "chart.bar",           to: "Cat402")  // .catalyst
+            row(label: "Driver performance",     icon: "gauge.with.dots.needle.67percent", to: "323")  // .catalyst
+            row(label: "Driver ledger",          icon: "list.bullet.rectangle.portrait", to: "324")  // .catalyst
+            row(label: "Driver onboarding",      icon: "person.badge.plus",   to: "325")  // .catalyst
+            row(label: "Driver profile",         icon: "person.text.rectangle", to: "321")  // .catalyst
         }
     }
 
-    private var settingsSection: some View {
-        sectionCard(title: "SETTINGS", icon: "gearshape") {
+    // H · Operations (kept in Me, collapsed — grouped, not orphaned to workspace)
+    private var operationsHub: some View {
+        hubCard(id: "operations", icon: "rectangle.3.group.fill",
+                title: "Operations",
+                summary: "SpectraMatch · Board · Loads · Backhaul · Reports", rowCount: 11) {
+            row(label: "Catalyst Home · SpectraMatch", icon: "scope",           to: "500")  // .catalyst
+            row(label: "Active matches",                icon: "bolt",            to: "501")  // .catalyst
+            row(label: "Dispatch board",                icon: "list.bullet.rectangle", to: "303")  // .carrier
+            row(label: "Loads",                          icon: "shippingbox",    to: "301")  // .carrier
+            row(label: "EDI messages",                   icon: "arrow.left.arrow.right", to: "Cat390")  // .catalyst
+            row(label: "Document ingest",                icon: "doc.badge.plus", to: "Cat393")  // .catalyst
+            row(label: "Backhaul optimizer",             icon: "arrow.triangle.2.circlepath", to: "Cat398")  // .catalyst
+            row(label: "Matched loads",                  icon: "checkmark.circle", to: "340")  // .catalyst
+            row(label: "Find loads",                     icon: "magnifyingglass", to: "341")  // .catalyst
+            row(label: "Assigned loads",                 icon: "arrow.right.circle", to: "342")  // .catalyst
+            row(label: "Reports",                        icon: "chart.bar.doc.horizontal", to: "307")  // .catalyst
+        }
+    }
+
+    // H5/H6 · Settings & Support
+    private var settingsHub: some View {
+        hubCard(id: "settings", icon: "gearshape.fill",
+                title: "Settings & Support",
+                summary: "App preferences", rowCount: 1) {
             row(label: "App settings",  icon: "gearshape",  to: "311")  // .catalyst
         }
     }
@@ -257,24 +288,65 @@ struct CarrierMeScreen: View {
         .padding(.top, Space.s3)
     }
 
-    // MARK: - Section + row primitives (LifecycleCard parity)
+    // MARK: - Hub + row primitives (bespoke collapsible cards)
 
+    /// A collapsible hub card: a gradient-icon header with title, one-line
+    /// summary and a row-count pill that toggles the row body open/closed on
+    /// tap. Collapsed by default (except Account) so the Me tab reads as a
+    /// clean stack of hubs rather than a 52-row flat list.
     @ViewBuilder
-    private func sectionCard<Content: View>(title: String,
-                                            icon: String,
-                                            @ViewBuilder content: () -> Content) -> some View {
+    private func hubCard<Content: View>(id: String,
+                                        icon: String,
+                                        title: String,
+                                        summary: String,
+                                        rowCount: Int,
+                                        @ViewBuilder content: () -> Content) -> some View {
+        let isOpen = expandedHubs.contains(id)
         LifecycleCard {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text(title)
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                    .foregroundStyle(palette.textPrimary)
+            Button {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    if isOpen { expandedHubs.remove(id) } else { expandedHubs.insert(id) }
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().fill(LinearGradient.diagonal).frame(width: 40, height: 40)
+                        Image(systemName: icon)
+                            .font(.system(size: 16, weight: .heavy))
+                            .foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.system(size: 15, weight: .heavy))
+                            .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                        Text(summary)
+                            .font(EType.mono(.micro)).tracking(0.3)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                    Spacer(minLength: 0)
+                    Text("\(rowCount)")
+                        .font(.system(size: 10, weight: .heavy)).monospacedDigit()
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(palette.bgCardSoft))
+                        .overlay(Capsule().strokeBorder(palette.borderFaint.opacity(0.5)))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                }
             }
-            .padding(.bottom, 2)
-            VStack(spacing: 6) {
-                content()
+            .buttonStyle(.plain)
+
+            if isOpen {
+                Rectangle()
+                    .fill(palette.borderFaint.opacity(0.4))
+                    .frame(height: 1)
+                    .padding(.vertical, 6)
+                VStack(spacing: 6) { content() }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
     }

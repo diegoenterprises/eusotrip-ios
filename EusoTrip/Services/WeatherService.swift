@@ -50,6 +50,7 @@ final class WeatherService: NSObject, ObservableObject {
     private let weatherService = WeatherKit.WeatherService.shared
 
     private var pendingLocation: CheckedContinuation<CLLocation?, Never>?
+    private var pendingLocationID: UUID?
 
     override init() {
         super.init()
@@ -88,9 +89,8 @@ final class WeatherService: NSObject, ObservableObject {
     // MARK: - Public
 
     /// Fetch a single current snapshot for the user's present location.
-    /// Returns `nil` on any failure — UI is expected to gracefully hide the
-    /// weather card rather than show an error state for this non-critical
-    /// dashboard element.
+    /// Returns `nil` on any failure — UI keeps the last real reading when
+    /// one exists, or shows an honest permission/unavailable state.
     ///
     /// Flow:
     ///   1. Kick CoreLocation authorization if we haven't asked yet.
@@ -107,41 +107,30 @@ final class WeatherService: NSObject, ObservableObject {
     /// the driver isn't actually at violated §3 "no-mock" and the 2027
     /// motivation "no fake data" pledge. The dashboard's new
     /// `weatherAvailability` state carries the reason up to the view.
-    /// In-memory last-good snapshot, seeded on every successful fetch AND
-    /// lazily rehydrated from disk on first access (see `cachedSnapshot`).
-    /// A returning view (navigation back, app foreground) renders the
-    /// weather INSTANTLY from this instead of flashing a loading skeleton
-    /// while the live fetch runs. Not a fabrication — it's the most recent
-    /// REAL reading, and it's only ever replaced by a newer real one.
-    ///
-    /// `nil` here is ambiguous (never fetched THIS session vs. genuinely
-    /// no cache), so reads go through `cachedSnapshot`, which falls back to
-    /// the persisted blob. Direct writes are funnelled through
-    /// `storeSnapshot(_:)` so the disk copy always stays in lock-step.
-    static private(set) var lastSnapshot: WeatherSnapshot?
+    /// In-memory last-good snapshot, seeded on every successful fetch. A
+    /// returning view (navigation back, app foreground) renders the weather
+    /// INSTANTLY from this instead of flashing a loading skeleton while the
+    /// live fetch runs. Not a fabrication — it's the most recent REAL
+    /// reading, and it's only ever replaced by a newer real one.
+    static private(set) var lastSnapshot: WeatherSnapshot? = loadCachedSnapshot()
 
     /// True once we've attempted to rehydrate `lastSnapshot` from disk this
     /// process, so the (potentially expensive) JSON decode happens at most
     /// once per launch.
-    static private var didHydrateFromDisk = false
 
     /// UserDefaults key for the persisted last-good snapshot JSON. Stable
     /// across launches + app versions so a cold start always finds the
     /// most recent REAL reading. Versioned suffix lets us invalidate the
     /// blob safely if the Codable shape ever changes.
-    private static let persistedSnapshotKey = "eusotrip.weather.lastGoodSnapshot.v1"
 
     /// The cached last-good snapshot, if any. Consumers show it immediately
-    /// and refresh in the background. On the FIRST access of a process this
-    /// rehydrates the in-memory copy from the persisted disk blob, so a
-    /// COLD launch (where the static `lastSnapshot` is nil) still paints the
-    /// most recent REAL reading instantly instead of a skeleton/"unavailable".
+    /// and refresh in the background.
     static var cachedSnapshot: WeatherSnapshot? {
-        if lastSnapshot == nil, !didHydrateFromDisk {
-            didHydrateFromDisk = true
-            lastSnapshot = loadPersistedSnapshot()
+        guard let snap = lastSnapshot, isUsableCachedSnapshot(snap) else {
+            lastSnapshot = loadCachedSnapshot()
+            return lastSnapshot
         }
-        return lastSnapshot
+        return snap
     }
 
     /// Public entry point — fetches a fresh snapshot and updates the
@@ -150,40 +139,55 @@ final class WeatherService: NSObject, ObservableObject {
     /// blank/stuck card.
     func fetchCurrent() async -> WeatherSnapshot? {
         let snap = await fetchCurrentUncached()
-        if let snap { Self.storeSnapshot(snap) }
+        if let snap { Self.storeLastSnapshot(snap) }
         return snap
     }
 
-    /// Persist a freshly fetched REAL snapshot to both the in-memory cache
-    /// and disk. Only ever called from `fetchCurrent()` with a genuinely
-    /// fetched snapshot — never a fabricated/placeholder value — so the
-    /// persisted blob is always honest live data.
-    private static func storeSnapshot(_ snap: WeatherSnapshot) {
-        lastSnapshot = snap
-        didHydrateFromDisk = true   // memory is now authoritative
-        do {
-            let data = try JSONEncoder().encode(snap)
-            UserDefaults.standard.set(data, forKey: persistedSnapshotKey)
-        } catch {
-            // Persistence is best-effort: a failed encode just means the
-            // next cold start falls back to the loading/needs-location
-            // state. The in-memory cache still serves this session.
-            print("[WeatherService] failed to persist weather snapshot — \(error.localizedDescription)")
-        }
+    private static let cachedSnapshotMaxAge: TimeInterval = 90 * 60
+    private static let cachedSnapshotFileName = "WeatherSnapshot.last-real.json"
+
+    private static func storeLastSnapshot(_ snapshot: WeatherSnapshot) {
+        lastSnapshot = snapshot
+        persistCachedSnapshot(snapshot)
     }
 
-    /// Decode the persisted last-good snapshot from disk, if any. Returns
-    /// nil when nothing was ever stored or the blob can't decode (shape
-    /// drift) — both honest "no cache yet" outcomes, never a fabrication.
-    private static func loadPersistedSnapshot() -> WeatherSnapshot? {
-        guard let data = UserDefaults.standard.data(forKey: persistedSnapshotKey) else {
+    private static func isUsableCachedSnapshot(_ snapshot: WeatherSnapshot) -> Bool {
+        guard let observedAt = snapshot.observedAt else { return false }
+        return Date().timeIntervalSince(observedAt) <= cachedSnapshotMaxAge
+    }
+
+    private static func cacheURL() -> URL? {
+        guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
             return nil
         }
+        return caches
+            .appendingPathComponent("EusoTrip", isDirectory: true)
+            .appendingPathComponent(cachedSnapshotFileName)
+    }
+
+    private static func loadCachedSnapshot() -> WeatherSnapshot? {
+        guard let url = cacheURL(),
+              let data = try? Data(contentsOf: url) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let snapshot = try? decoder.decode(WeatherSnapshot.self, from: data),
+              isUsableCachedSnapshot(snapshot) else { return nil }
+        return snapshot
+    }
+
+    private static func persistCachedSnapshot(_ snapshot: WeatherSnapshot) {
+        guard let url = cacheURL() else { return }
         do {
-            return try JSONDecoder().decode(WeatherSnapshot.self, from: data)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(snapshot)
+            try data.write(to: url, options: [.atomic])
         } catch {
-            print("[WeatherService] failed to decode persisted weather snapshot — \(error.localizedDescription)")
-            return nil
+            print("[WeatherService] Could not persist last real weather snapshot — \(error.localizedDescription)")
         }
     }
 
@@ -192,29 +196,25 @@ final class WeatherService: NSObject, ObservableObject {
             return nil
         }
 
-        // ── Apple WeatherKit (on-device) is the PRIMARY source ──
+        // ── Provider chain: on-device WeatherKit → server → NWS → Open-Meteo ──
         //
-        // The carrier `weatherCode` the v2 glyph set needs is produced
-        // on-device from the WeatherKit condition (see `compose`), and the
-        // server procs (weather.realtime / timelines / forLoad) are now
-        // WeatherKit-backed too — so the home card and the lane-impact
-        // card share one honest provider. No weather API key ever ships in
-        // the iOS bundle; on-device WeatherKit uses the app entitlement,
-        // the server uses its own JWT. On any miss we fall through to
-        // NWS → Open-Meteo — NEVER a fabricated reading.
-        // PRIMARY: the server (weather.byLatLon) is WeatherKit-backed
-        // server-side (PR #101), so it reliably carries current + hourly +
-        // the 7-DAY daily strip and is attributed as Apple Weather. The key
-        // lives ONLY in the server env, never the bundle. We prefer it
-        // because on-device WeatherKit needs the App ID capability enabled;
-        // until then it throws (codes 2/3/4/7) and we'd lose the daily strip
-        // (the regression that emptied the 7-day chips). On any server miss
-        // we fall through to on-device WeatherKit → NWS → Open-Meteo — NEVER
-        // a fabricated reading.
+        // PRIMARY: on-device Apple WeatherKit — the SAME source the iPhone
+        // Weather app reads, so the home card matches it (current temp,
+        // condition, today's REAL high/low). The App ID's WEATHERKIT
+        // capability is enabled (ASC-verified 2026-07-08); no weather API
+        // key ever ships in the iOS bundle — the entitlement authenticates.
+        //
+        // FALLBACK 1: the server (weather.byLatLon), WeatherKit-backed
+        // server-side (PR #101) via its own JWT. It reliably carries the
+        // full daily strip when the on-device path throws (codes 2/3/4/7 —
+        // signing/provisioning nuances on some TestFlight installs). NOTE:
+        // the server has its OWN internal provider chain, so a server-path
+        // caption can honestly read "NWS" if the server's WeatherKit JWT is
+        // down — that is a server-env issue, not a client one.
+        //
+        // FALLBACK 2/3: NWS (US ground stations) → Open-Meteo (keyless,
+        // global). NEVER a fabricated reading at any step.
         let placemark = try? await reverseGeocode(location)
-        if let server = await fetchServerWeather(location: location, placemark: placemark) {
-            return server
-        }
         do {
             let weather = try await weatherService.weather(for: location)
             return Self.compose(weather: weather, placemark: placemark)
@@ -222,7 +222,7 @@ final class WeatherService: NSObject, ObservableObject {
             // Surface the FULL error in every build (not just DEBUG) so a
             // misconfigured signing / entitlement / portal-capability
             // failure is visible in production crash logs / Xcode
-            // console — not silently masked by the NWS fallback.
+            // console — not silently masked by the fallback.
             // WeatherKit-specific failure modes we've seen:
             //   • Code 2: missing entitlement on the bundle ID
             //   • Code 3: app not signed by a team that owns the bundle
@@ -231,8 +231,12 @@ final class WeatherService: NSObject, ObservableObject {
             //              capability in the dev portal — code can't fix)
             //   • Code 7: signing issue, framework not embedded
             let ns = error as NSError
-            print("[WeatherService] WeatherKit fetch failed — domain=\(ns.domain) code=\(ns.code) desc=\(ns.localizedDescription) info=\(ns.userInfo)")
-            let placemark = try? await reverseGeocode(location)
+            print("[WeatherService] on-device WeatherKit failed — domain=\(ns.domain) code=\(ns.code) desc=\(ns.localizedDescription) info=\(ns.userInfo); falling back to server → NWS → Open-Meteo")
+            // Server (WeatherKit/Apple WeatherKit-backed) reliably carries the daily
+            // strip; then US ground truth, then keyless last resort.
+            if let server = await fetchServerWeather(location: location, placemark: placemark) {
+                return server
+            }
             // For US locations, prefer NWS (api.weather.gov). NWS pulls
             // from real ground stations + radar — accurate ground truth.
             // Open-Meteo aggregates multiple models and notoriously
@@ -276,6 +280,7 @@ final class WeatherService: NSObject, ObservableObject {
         let hourly: [Hour]?
         let daily: [Day]?
         let alerts: [Alert]?
+        let nextHour: NextHour?
 
         struct Current: Decodable {
             let tempC: Double?
@@ -296,6 +301,12 @@ final class WeatherService: NSObject, ObservableObject {
             let precipPct: Double?
             let condition: String?
             let weatherCode: Int?
+            let windKph: Double?
+            let windGustKph: Double?
+            let visibilityKm: Double?
+            let uv: Double?
+            let precipMm: Double?
+            let precipType: String?
         }
         struct Day: Decodable {
             let d: String?
@@ -315,12 +326,32 @@ final class WeatherService: NSObject, ObservableObject {
             let description: String?
             let area: String?
         }
+        struct NextHour: Decodable {
+            let forecastStart: String?
+            let forecastEnd: String?
+            let minutes: [Minute]?
+            let summary: [Summary]?
+
+            struct Minute: Decodable {
+                let t: String?
+                let precipPct: Double?
+                let precipIntensityMmPerHour: Double?
+            }
+            struct Summary: Decodable {
+                let start: String?
+                let end: String?
+                let precipPct: Double?
+                let precipIntensityMmPerHour: Double?
+                let precipitationType: String?
+            }
+        }
     }
 
     private struct ByLatLonInput: Encodable {
         let lat: Double
-        let lng: Double
+        let lon: Double
         let units: String
+        let preferredSource: String
     }
 
     /// Fetch the WeatherKit-backed snapshot via the tRPC proxy. Returns
@@ -339,7 +370,12 @@ final class WeatherService: NSObject, ObservableObject {
         do {
             server = try await EusoTripAPI.shared.query(
                 "weather.byLatLon",
-                input: ByLatLonInput(lat: lat, lng: lng, units: "imperial")
+                input: ByLatLonInput(
+                    lat: lat,
+                    lon: lng,
+                    units: "imperial",
+                    preferredSource: "weatherkit"
+                )
             )
         } catch {
             // Server down, proc not deployed yet, or key-absent →
@@ -349,14 +385,14 @@ final class WeatherService: NSObject, ObservableObject {
         }
 
         // Require a real current temperature + condition. Without these
-        // the server had no Tomorrow.io data (key absent / upstream
+        // the server had no Apple WeatherKit data (key absent / upstream
         // failure) and we MUST fall back rather than render an empty
         // shell that looks live.
         guard let cur = server.current,
-              let tC = cur.tempC,
-              let code = cur.weatherCode else {
+              let tC = cur.tempC else {
             return nil
         }
+        let code = cur.weatherCode ?? Self.serverWeatherCode(condition: cur.condition, icon: cur.icon)
         // byLatLon is metric (the web reads the same shape) → convert here.
         func cToF(_ c: Double) -> Double { c * 9.0 / 5.0 + 32.0 }
         func kphToMph(_ k: Double) -> Double { k * 0.621371 }
@@ -400,15 +436,45 @@ final class WeatherService: NSObject, ObservableObject {
 
         let hourly: [WeatherSnapshot.HourlyForecast] = (server.hourly ?? []).prefix(8).compactMap { h in
             guard let date = parseDate(h.t), let t = h.tempC else { return nil }
+            let hourCode = h.weatherCode ?? Self.serverWeatherCode(condition: h.condition, icon: nil)
             return WeatherSnapshot.HourlyForecast(
                 date: date,
                 tempF: Int(cToF(t).rounded()),
-                symbol: Self.tomorrowSymbol(for: h.weatherCode ?? 0),
+                symbol: Self.symbolForCode(for: hourCode),
                 precipChancePct: h.precipPct.map { Int($0.rounded()) },
-                windMph: nil,   // byLatLon hourly carries no per-hour wind — honest nil
-                weatherCode: h.weatherCode ?? 0
+                windMph: h.windKph.map { Int(kphToMph($0).rounded()) },
+                weatherCode: hourCode
             )
         }
+
+        let nextHourPrecip: WeatherSnapshot.NextHourPrecip? = {
+            guard let next = server.nextHour else { return nil }
+            let minutes = (next.minutes ?? []).compactMap { minute -> WeatherSnapshot.NextHourPrecip.Minute? in
+                guard let date = parseDate(minute.t) else { return nil }
+                return WeatherSnapshot.NextHourPrecip.Minute(
+                    date: date,
+                    precipChancePct: minute.precipPct.map { Int($0.rounded()) },
+                    intensityMmPerHour: minute.precipIntensityMmPerHour
+                )
+            }
+            let summaries = (next.summary ?? []).compactMap { summary -> WeatherSnapshot.NextHourPrecip.Summary? in
+                guard let start = parseDate(summary.start) else { return nil }
+                return WeatherSnapshot.NextHourPrecip.Summary(
+                    start: start,
+                    end: parseDate(summary.end),
+                    precipChancePct: summary.precipPct.map { Int($0.rounded()) },
+                    intensityMmPerHour: summary.precipIntensityMmPerHour,
+                    precipitationType: summary.precipitationType
+                )
+            }
+            guard !minutes.isEmpty || !summaries.isEmpty else { return nil }
+            return WeatherSnapshot.NextHourPrecip(
+                forecastStart: parseDate(next.forecastStart),
+                forecastEnd: parseDate(next.forecastEnd),
+                minutes: minutes,
+                summaries: summaries
+            )
+        }()
 
         let weekdayFmt = DateFormatter()
         weekdayFmt.locale = .current
@@ -418,13 +484,14 @@ final class WeatherService: NSObject, ObservableObject {
             guard let date = parseDate(d.d) ?? Self.dayOnly(d.d),
                   let hi = d.hi, let lo = d.lo else { return nil }
             let label = cal.isDateInToday(date) ? "Today" : weekdayFmt.string(from: date)
+            let dayCode = d.weatherCode ?? Self.serverWeatherCode(condition: d.condition, icon: nil)
             return WeatherSnapshot.DailyForecast(
                 date: date,
                 weekdayLabel: label,
                 highF: Int(cToF(hi).rounded()),
                 lowF: Int(cToF(lo).rounded()),
-                symbol: Self.tomorrowSymbol(for: d.weatherCode ?? 0),
-                condition: Self.tomorrowCondition(for: d.weatherCode ?? 0),
+                symbol: Self.symbolForCode(for: dayCode),
+                condition: d.condition ?? Self.conditionForCode(for: dayCode),
                 precipChance: d.precipPct.map { $0 / 100.0 }
             )
         }
@@ -473,14 +540,16 @@ final class WeatherService: NSObject, ObservableObject {
             windMph: windMph,
             visibilityMi: visMi,
             condition: condition,
-            symbol: Self.tomorrowSymbol(for: code),
+            symbol: Self.symbolForCode(for: code),
             nextAlert: nextAlert,
             accent: accent,
             daily: daily,
             feelsLikeF: cur.feelsC.map { Int(cToF($0).rounded()) },
             humidityPct: cur.humidity.map { Int($0.rounded()) },
             windGustMph: cur.windGustKph.map { Int(kphToMph($0).rounded()) },
-            precipChancePct: resolvedPrecip,
+            precipChancePct: resolvedPrecip
+                ?? nextHourPrecip?.peakMinute?.precipChancePct,
+            nextHourPrecip: nextHourPrecip,
             hourly: hourly
         )
         snap.weatherCode = code
@@ -516,7 +585,7 @@ final class WeatherService: NSObject, ObservableObject {
     }
 
     // Wire types for the tRPC `weather.laneImpact` proc — per-load ETA
-    // risk from Tomorrow.io /v4/route (time-aware). Optional throughout
+    // risk from Apple WeatherKit /v4/route (time-aware). Optional throughout
     // so a partial/honest payload decodes; nil/empty → the panel hides.
     private struct ServerLaneImpact: Decodable {
         let available: Bool?
@@ -633,7 +702,7 @@ final class WeatherService: NSObject, ObservableObject {
 
             // §3 drivers[] — the mode metric tiles. Each row needs both a
             // field key and a value; honest "—" values stay (the server
-            // already passes the em-dash when Tomorrow.io omitted the
+            // already passes the em-dash when Apple WeatherKit omitted the
             // field), but a row with no field is dropped.
             let drivers: [WeatherSnapshot.Driver] = (s.drivers ?? []).compactMap { d in
                 guard let field = d.field?.trimmingCharacters(in: .whitespaces),
@@ -675,9 +744,9 @@ final class WeatherService: NSObject, ObservableObject {
         return mapped.isEmpty ? nil : mapped
     }
 
-    /// Tomorrow.io weatherCode → human phrase (mirrors the wiring map's
+    /// Apple WeatherKit weatherCode → human phrase (mirrors the wiring map's
     /// "label" column). Used when the server omits a condition string.
-    private static func tomorrowCondition(for code: Int) -> String {
+    private static func conditionForCode(for code: Int) -> String {
         switch code {
         case 1000: return "Clear"
         case 1100: return "Mostly clear"
@@ -731,7 +800,7 @@ final class WeatherService: NSObject, ObservableObject {
     /// beyond the returned string.
     static func canonicalCondition(code: Int, serverString: String?) -> String {
         if severeWeatherCodes.contains(code) {
-            return tomorrowCondition(for: code)
+            return conditionForCode(for: code)
         }
         if let s = serverString?.trimmingCharacters(in: .whitespaces), !s.isEmpty {
             // Guard the inverse coarsening too: a string that claims a
@@ -739,7 +808,7 @@ final class WeatherService: NSObject, ObservableObject {
             // suspect, but the code remains authoritative either way.
             return s
         }
-        return tomorrowCondition(for: code)
+        return conditionForCode(for: code)
     }
 
     /// Lower bound on precip chance implied by a severe-precip code, so the
@@ -757,10 +826,10 @@ final class WeatherService: NSObject, ObservableObject {
         }
     }
 
-    /// Tomorrow.io weatherCode → SF Symbol (kept for the legacy compact
+        /// Apple WeatherKit weatherCode → SF Symbol (kept for the legacy compact
     /// path + accessibility; the v2 surface draws WeatherIcons off the
     /// code directly).
-    private static func tomorrowSymbol(for code: Int) -> String {
+    private static func symbolForCode(for code: Int) -> String {
         switch code {
         case 1000:                         return "sun.max.fill"
         case 1100, 1101:                   return "cloud.sun.fill"
@@ -777,7 +846,32 @@ final class WeatherService: NSObject, ObservableObject {
         }
     }
 
-    /// Parse a "yyyy-MM-dd" day string (Tomorrow.io daily timestamps can
+    /// Server WeatherKit/OpenWeather fallback paths may not carry a
+    /// Apple WeatherKit numeric weatherCode. Derive the closest glyph code
+    /// from the live provider condition/icon so the client keeps the
+    /// payload instead of discarding a valid Apple Weather response.
+    private static func serverWeatherCode(condition: String?, icon: String?) -> Int {
+        let text = [condition, icon]
+            .compactMap { $0 }
+            .joined(separator: " ")
+            .lowercased()
+        if text.contains("thunder") || text.contains("bolt") { return 8000 }
+        if text.contains("freezing") || text.contains("sleet") || text.contains("hail") || text.contains("ice") { return 6200 }
+        if text.contains("heavy") && text.contains("snow") { return 5101 }
+        if text.contains("snow") || text.contains("flurr") { return 5000 }
+        if text.contains("heavy") && text.contains("rain") { return 4201 }
+        if text.contains("drizzle") { return 4000 }
+        if text.contains("rain") || text.contains("shower") { return 4001 }
+        if text.contains("fog") || text.contains("mist") || text.contains("haze") { return 2000 }
+        if text.contains("partly") { return 1101 }
+        if text.contains("mostly") && text.contains("clear") { return 1100 }
+        if text.contains("mostly") && text.contains("cloud") { return 1102 }
+        if text.contains("cloud") || text.contains("overcast") { return 1001 }
+        if text.contains("clear") || text.contains("sun") { return 1000 }
+        return 0
+    }
+
+    /// Parse a "yyyy-MM-dd" day string (Apple WeatherKit daily timestamps can
     /// arrive date-only) to local midnight.
     private static func dayOnly(_ s: String?) -> Date? {
         guard let s else { return nil }
@@ -923,7 +1017,7 @@ final class WeatherService: NSObject, ObservableObject {
         }()
 
         // Fetch the 7-day / 14-period forecast and fold day+night
-        // periods into 5 daily entries. NWS interleaves periods like
+        // periods into 6 daily entries. NWS interleaves periods like
         // "Today" (day) / "Tonight" (night) / "Tuesday" (day) / "Tuesday
         // Night" / etc. — the day period carries the high, the night
         // period carries the low. Without this the card flipped to
@@ -978,7 +1072,7 @@ final class WeatherService: NSObject, ObservableObject {
             hourly: hourly,
             alerts: alerts
         )
-        // v2: name the real provider (NWS, NOT Tomorrow.io) + infer a
+        // v2: name the real provider (NWS, NOT Apple WeatherKit) + infer a
         // weatherCode from the symbol so the custom glyph still lights.
         // NWS is ground-station truth and `nwsSymbol` already resolves
         // thunder-first, so the inferred code never coarsens a storm to
@@ -1108,7 +1202,7 @@ final class WeatherService: NSObject, ObservableObject {
         .sorted { $0.severity.rank > $1.severity.rank }
     }
 
-    /// Fold NWS's interleaved day/night period list into 5 daily
+    /// Fold NWS's interleaved day/night period list into 6 daily
     /// entries. Returns `[]` on any error so the surrounding NWS path
     /// still ships a usable current-observation snapshot — empty
     /// `daily` triggers the WeatherCard's neutral fallback rather than
@@ -1208,7 +1302,7 @@ final class WeatherService: NSObject, ObservableObject {
         }
 
         let cal = Calendar.current
-        return byDay.prefix(5).map { entry -> WeatherSnapshot.DailyForecast in
+        return byDay.prefix(6).map { entry -> WeatherSnapshot.DailyForecast in
             let high = entry.acc.highF ?? entry.acc.lowF ?? 0
             let low  = entry.acc.lowF  ?? entry.acc.highF ?? 0
             let label = cal.isDateInToday(entry.acc.date) ? "Today" : weekdayFmt.string(from: entry.acc.date)
@@ -1260,7 +1354,7 @@ final class WeatherService: NSObject, ObservableObject {
             URLQueryItem(name: "daily", value: "temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max,sunrise,sunset"),
             URLQueryItem(name: "temperature_unit", value: "fahrenheit"),
             URLQueryItem(name: "wind_speed_unit", value: "mph"),
-            URLQueryItem(name: "forecast_days", value: "5"),
+            URLQueryItem(name: "forecast_days", value: "6"),
             URLQueryItem(name: "timezone", value: "auto")
         ]
         guard let url = comps.url else {
@@ -1358,7 +1452,7 @@ final class WeatherService: NSObject, ObservableObject {
             return .calm
         }()
 
-        // Pull the 5-day daily block into driver-facing entries. The
+        // Pull the 6-day daily block into driver-facing entries. The
         // weekday label is localized against the IANA timezone Open-Meteo
         // resolves for the coordinate, so drivers crossing timezones
         // during a haul still see the right day chip on each card.
@@ -1465,7 +1559,7 @@ final class WeatherService: NSObject, ObservableObject {
         return out
     }
 
-    /// Parse the Open-Meteo daily block into our 5-day forecast array.
+    /// Parse the Open-Meteo daily block into our 6-day forecast array.
     /// Safe against partial payloads — if any of the parallel daily
     /// arrays are shorter than expected we just emit the entries we
     /// can verify.
@@ -1680,17 +1774,17 @@ final class WeatherService: NSObject, ObservableObject {
             return .calm
         }()
 
-        // Pull the first 5 days of the WeatherKit daily forecast into
-        // the flip-side array. We cap at 5 because the card has fixed
-        // vertical real-estate and more rows forces each row to shrink
-        // below the legibility threshold on a 6.1" iPhone.
+        // Pull the first 6 days of the WeatherKit daily forecast into
+        // the flip-side chip row. WeatherCard lays these horizontally
+        // with equal flexible widths so the row stays complete on a
+        // 6.1" iPhone without fabricating a trailing day.
         let daily: [WeatherSnapshot.DailyForecast] = {
             let weekdayFmt = DateFormatter()
             weekdayFmt.locale = .current
             weekdayFmt.dateFormat = "EEE"
             let cal = Calendar.current
 
-            return weather.dailyForecast.forecast.prefix(5).enumerated().map { (i, day) in
+            return weather.dailyForecast.forecast.prefix(6).enumerated().map { (i, day) in
                 let hi = Int(day.highTemperature.converted(to: .fahrenheit).value.rounded())
                 let lo = Int(day.lowTemperature.converted(to: .fahrenheit).value.rounded())
                 let label: String = {
@@ -1822,20 +1916,19 @@ final class WeatherService: NSObject, ObservableObject {
     /// One-shot location read with a 4-second hard timeout so the
     /// simulator (which often has no GPS fix at all) can't stall us.
     private func requestLocationOneShot() async -> CLLocation? {
-        await withTaskGroup(of: CLLocation?.self, returning: CLLocation?.self) { group in
-            group.addTask { @MainActor in
-                await withCheckedContinuation { (cont: CheckedContinuation<CLLocation?, Never>) in
-                    self.pendingLocation = cont
-                    self.locationManager.requestLocation()
-                }
-            }
-            group.addTask {
+        await withCheckedContinuation { (cont: CheckedContinuation<CLLocation?, Never>) in
+            let requestID = UUID()
+            pendingLocation?.resume(returning: nil)
+            pendingLocation = cont
+            pendingLocationID = requestID
+            locationManager.requestLocation()
+            Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
-                return nil
+                guard self.pendingLocationID == requestID else { return }
+                self.pendingLocation?.resume(returning: nil)
+                self.pendingLocation = nil
+                self.pendingLocationID = nil
             }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
         }
     }
 
@@ -1869,6 +1962,7 @@ extension WeatherService: CLLocationManagerDelegate {
             }()
             self.pendingLocation?.resume(returning: acceptable)
             self.pendingLocation = nil
+            self.pendingLocationID = nil
         }
     }
 
@@ -1879,6 +1973,7 @@ extension WeatherService: CLLocationManagerDelegate {
         Task { @MainActor in
             self.pendingLocation?.resume(returning: nil)
             self.pendingLocation = nil
+            self.pendingLocationID = nil
         }
     }
 
@@ -1892,7 +1987,7 @@ extension WeatherService: CLLocationManagerDelegate {
         // nil for `.notDetermined`) and no signal told the view to
         // try again once the user responded.
         NotificationCenter.default.post(
-            name: Notification.Name("eusoWeatherAuthorizationChanged"),
+            name: .eusoWeatherAuthorizationChanged,
             object: nil
         )
     }

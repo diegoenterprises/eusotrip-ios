@@ -43,20 +43,20 @@ struct WeatherSnapshot: Hashable, Codable {
     /// `weatherCode` instead.
     let symbol: String
 
-    // ── Tomorrow.io v2 backbone ─────────────────────────────────────
+    // ── Apple WeatherKit v2 backbone ─────────────────────────────────────
     //
-    // The Tomorrow.io `weatherCode` (the exact field — NOT the
+    // The Apple WeatherKit `weatherCode` (the exact field — NOT the
     // Day/Night/FullDay variants) is the single source of truth for the
     // custom glyph set in `WeatherIcons.swift`. Defaults to 0 ("Unknown")
     // so the legacy WeatherKit / NWS / Open-Meteo compose paths — which
-    // pre-date the Tomorrow.io wiring and only know SF Symbols — still
+    // pre-date the Apple WeatherKit wiring and only know SF Symbols — still
     // build and render their `#i-cloud` fallback honestly. The mapper
     // also infers a best-effort code from the SF symbol so those paths
     // light a real glyph rather than the unknown cloud.
     var weatherCode: Int = 0
 
     /// Where this snapshot came from — drives the attribution line
-    /// ("Conditions · Tomorrow.io" only when Tomorrow.io actually
+    /// ("Conditions · Apple WeatherKit" only when Apple WeatherKit actually
     /// produced the data; never fabricated onto a fallback).
     var dataSource: DataSource = .unknown
 
@@ -71,7 +71,7 @@ struct WeatherSnapshot: Hashable, Codable {
     var alert: ActiveAlert? = nil
 
     /// Per-load ETA-risk segments for the LANE IMPACT panel — populated
-    /// by `weather.laneImpact` (Tomorrow.io `/v4/route`, time-aware).
+    /// by `weather.laneImpact` (Apple WeatherKit `/v4/route`, time-aware).
     /// Nil/empty → the panel collapses (between loads, Enterprise route
     /// tier absent, or the call returned no data). Never seeded.
     var laneImpact: [LaneImpactSegment]? = nil
@@ -118,7 +118,7 @@ struct WeatherSnapshot: Hashable, Codable {
     let nextAlert: String?
     /// Accent color choice — blue for clear/dry, warning for hazard watch.
     let accent: Accent
-    /// 5-day look-ahead rendered on the flip side of the card. First
+    /// 6-day look-ahead rendered on the flip side of the card. First
     /// entry is today — matches the "H 63° / L 56°" line on the front.
     var daily: [DailyForecast] = []
 
@@ -134,6 +134,9 @@ struct WeatherSnapshot: Hashable, Codable {
     var windGustMph: Int? = nil
     /// Chance of precipitation in the next hour, 0–100.
     var precipChancePct: Int? = nil
+    /// Apple WeatherKit minute-by-minute precipitation for the next
+    /// hour. Nil when the source/region does not supply minute data.
+    var nextHourPrecip: NextHourPrecip? = nil
     /// Next ~12 hours, hourly. Empty when the source had no hourly block.
     var hourly: [HourlyForecast] = []
     /// Active severe-weather bulletins (NWS-style severity). Empty =
@@ -141,7 +144,7 @@ struct WeatherSnapshot: Hashable, Codable {
     var alerts: [SevereAlert] = []
 
     /// One hour in the hourly band.
-    struct HourlyForecast: Hashable, Identifiable, Codable {
+    struct HourlyForecast: Hashable, Codable, Identifiable {
         let date: Date
         let tempF: Int
         /// SF Symbol for the hour's condition (legacy paths + a11y).
@@ -150,7 +153,7 @@ struct WeatherSnapshot: Hashable, Codable {
         let precipChancePct: Int?
         /// mph, nil when not supplied.
         let windMph: Int?
-        /// Tomorrow.io weatherCode for the hour — drives the v2 custom
+        /// Apple WeatherKit weatherCode for the hour — drives the v2 custom
         /// glyph in the 8-hour strip. Defaults to 0; the WeatherIcons
         /// mapper infers from `symbol` when this is unset so the legacy
         /// paths still render a real glyph.
@@ -173,11 +176,89 @@ struct WeatherSnapshot: Hashable, Codable {
         }
     }
 
+    /// WeatherKit's next-hour minute precipitation data. The app uses
+    /// this for Apple Weather-style "rain starting soon" copy, but only
+    /// when a real minute forecast exists for the coordinate.
+    struct NextHourPrecip: Hashable, Codable {
+        let forecastStart: Date?
+        let forecastEnd: Date?
+        let minutes: [Minute]
+        let summaries: [Summary]
+
+        struct Minute: Hashable, Codable, Identifiable {
+            let date: Date
+            let precipChancePct: Int?
+            let intensityMmPerHour: Double?
+
+            var id: Date { date }
+        }
+
+        struct Summary: Hashable, Codable, Identifiable {
+            let start: Date
+            let end: Date?
+            let precipChancePct: Int?
+            let intensityMmPerHour: Double?
+            let precipitationType: String?
+
+            var id: Date { start }
+        }
+
+        var peakMinute: Minute? {
+            minutes.max { lhs, rhs in
+                let lChance = lhs.precipChancePct ?? 0
+                let rChance = rhs.precipChancePct ?? 0
+                if lChance != rChance { return lChance < rChance }
+                return (lhs.intensityMmPerHour ?? 0) < (rhs.intensityMmPerHour ?? 0)
+            }
+        }
+
+        var nextMeaningfulMinute: Minute? {
+            let cutoff = Date().addingTimeInterval(-60)
+            return minutes.first { minute in
+                minute.date >= cutoff &&
+                ((minute.precipChancePct ?? 0) >= 35 || (minute.intensityMmPerHour ?? 0) > 0)
+            }
+        }
+
+        var dominantPrecipitationType: String? {
+            summaries.first(where: { ($0.precipChancePct ?? 0) >= 35 || ($0.intensityMmPerHour ?? 0) > 0 })?
+                .precipitationType
+        }
+
+        var displayLine: String? {
+            guard let minute = nextMeaningfulMinute ?? peakMinute,
+                  let chance = minute.precipChancePct,
+                  chance >= 25 || (minute.intensityMmPerHour ?? 0) > 0 else { return nil }
+            let now = Date()
+            let delta = Int(minute.date.timeIntervalSince(now) / 60.0)
+            let label = Self.precipitationLabel(for: dominantPrecipitationType)
+            if delta <= 1 {
+                return "\(label) now · \(chance)%"
+            }
+            if delta < 60 {
+                return "\(label) starts in \(delta) min · \(chance)%"
+            }
+            let f = DateFormatter()
+            f.locale = .current
+            f.setLocalizedDateFormatFromTemplate("h:mm a")
+            return "\(label) near \(f.string(from: minute.date)) · \(chance)%"
+        }
+
+        private static func precipitationLabel(for raw: String?) -> String {
+            switch (raw ?? "").lowercased() {
+            case "snow": return "Snow"
+            case "sleet", "hail", "mixed": return "Ice"
+            case "rain": return "Rain"
+            default: return "Precip"
+            }
+        }
+    }
+
     /// One active severe-weather bulletin. Severity vocabulary follows
     /// NWS CAP ("Minor" | "Moderate" | "Severe" | "Extreme") — the same
     /// strings HERE Destination Weather passes through on `nwsAlerts`
     /// and api.weather.gov returns on /alerts/active.
-    struct SevereAlert: Hashable, Identifiable, Codable {
+    struct SevereAlert: Hashable, Codable, Identifiable {
         /// "Winter Storm Warning"
         let event: String
         let severity: AlertSeverity
@@ -199,7 +280,7 @@ struct WeatherSnapshot: Hashable, Codable {
     }
 
     /// NWS CAP severity ladder.
-    enum AlertSeverity: String, Hashable, Comparable, Codable {
+    enum AlertSeverity: String, Hashable, Codable, Comparable {
         case minor, moderate, severe, extreme, unknown
 
         init(capString: String?) {
@@ -237,8 +318,8 @@ struct WeatherSnapshot: Hashable, Codable {
         }
     }
 
-    /// A single day in the 5-day look-ahead.
-    struct DailyForecast: Hashable, Identifiable, Codable {
+    /// A single day in the 6-day look-ahead.
+    struct DailyForecast: Hashable, Codable, Identifiable {
         /// Midnight in the driver's local timezone for the day this
         /// forecast represents. Used as the list id + label source.
         let date: Date
@@ -284,14 +365,14 @@ struct WeatherSnapshot: Hashable, Codable {
         }
     }
 
-    // MARK: - Tomorrow.io v2 supporting types
+    // MARK: - Apple WeatherKit v2 supporting types
 
-    /// Which upstream produced this snapshot. Only `.tomorrowIO` earns
-    /// the "Conditions · Tomorrow.io" attribution; the rest keep their
+    /// Which upstream produced this snapshot. Only `.appleWeather` earns
+    /// the "Conditions · Apple WeatherKit" attribution; the rest keep their
     /// own honest provenance so the source line never lies about where
     /// a number came from.
     enum DataSource: String, Hashable, Codable {
-        case tomorrowIO   // server weather.byLatLon (Tomorrow.io-backed)
+        case appleWeather   // server weather.byLatLon (Apple WeatherKit-backed)
         case weatherKit   // Apple WeatherKit
         case nws          // api.weather.gov
         case openMeteo    // open-meteo.com
@@ -299,11 +380,11 @@ struct WeatherSnapshot: Hashable, Codable {
         case unknown
 
         /// The attribution string shown on the expanded card's source
-        /// line. Tomorrow.io is the v2 backbone; every other provider
-        /// is named truthfully rather than mislabeled as Tomorrow.io.
+        /// line. Apple WeatherKit is the v2 backbone; every other provider
+        /// is named truthfully rather than mislabeled as Apple WeatherKit.
         var attribution: String {
             switch self {
-            case .tomorrowIO: return "Tomorrow.io"
+            case .appleWeather: return "Apple Weather"
             case .weatherKit: return "Apple Weather"
             case .nws:        return "NWS"
             case .openMeteo:  return "Open-Meteo"
@@ -347,13 +428,13 @@ struct WeatherSnapshot: Hashable, Codable {
         }
     }
 
-    /// Coarse ETA-risk tier for a lane segment. Tomorrow.io `/v4/route`
+    /// Coarse ETA-risk tier for a lane segment. Apple WeatherKit `/v4/route`
     /// worst-case → tier server-side; the client only renders it.
     ///
     /// §3 contract vocabulary is `none|watch|elevated|severe`. The legacy
     /// case was `.clear`; the server emits `"none"` (and "clear" for the
     /// older payloads), so the decoder maps both onto `.none`.
-    enum RiskTier: String, Hashable, Comparable, Codable {
+    enum RiskTier: String, Hashable, Codable, Comparable {
         case none, watch, elevated, severe
 
         var rank: Int {
@@ -400,8 +481,8 @@ struct WeatherSnapshot: Hashable, Codable {
     /// Tri-modal worst-case fields (truck PRECIP/CROSSWIND/VISIBILITY ·
     /// rail YARD VIS/CROSSWIND/STREAMFLOW · vessel SIG WAVE/GUST @ BERTH/
     /// VISIBILITY). `value` is the formatted live reading or "—" when the
-    /// Tomorrow.io field was absent — never fabricated.
-    struct Driver: Hashable, Identifiable, Codable {
+    /// Apple WeatherKit field was absent — never fabricated.
+    struct Driver: Hashable, Codable, Identifiable {
         /// "CROSSWIND" / "SIG WAVE" / "STREAMFLOW".
         let field: String
         /// "31 mph" / "2.4 m" / "Rising" / "—".
@@ -437,7 +518,7 @@ struct WeatherSnapshot: Hashable, Codable {
     /// collapsed strip needs the compact delay). When the server supplies
     /// the structured §3 form the diagram + ESang panel read from it;
     /// when only the legacy flat form arrives they degrade through these.
-    struct LaneImpactSegment: Hashable, Identifiable, Codable {
+    struct LaneImpactSegment: Hashable, Codable, Identifiable {
         // ── §3 contract fields ──────────────────────────────────────
         /// "LD-260615"
         let loadId: String
@@ -559,7 +640,7 @@ struct WeatherSnapshot: Hashable, Codable {
         alerts.max(by: { $0.severity.rank < $1.severity.rank })
     }
 
-    // ── Tomorrow.io v2 display helpers ──────────────────────────────
+    // ── Apple WeatherKit v2 display helpers ──────────────────────────────
 
     /// "UV 7" or "—".
     var uvDisplay: String {
@@ -576,6 +657,45 @@ struct WeatherSnapshot: Hashable, Codable {
     /// Visibility "10 mi".
     var visibilityDisplay: String { "\(visibilityMi) mi" }
 
+    /// "Rain chance 60% near 5 PM" / "Precip likely this hour · 70%" /
+    /// alert title. Derived only from live current/hourly/alert fields.
+    var nextWeatherDisplay: String? {
+        if let alert = heroAlert {
+            return [alert.title, alert.untilDisplay].compactMap { $0 }.joined(separator: " · ")
+        }
+        if let display = nextHourPrecip?.displayLine {
+            return display
+        }
+        if let p = precipChancePct, p >= 50 {
+            return "Precip likely this hour · \(p)%"
+        }
+        let now = Date()
+        if let hour = hourly.first(where: { hour in
+            hour.date >= now && (hour.precipChancePct ?? 0) >= 40
+        }) {
+            let event = precipitationLabel(for: hour.weatherCode)
+            return "\(event) chance \(hour.precipChancePct ?? 0)% near \(hour.hourLabel)"
+        }
+        if let peak = peakHourIndex, hourly.indices.contains(peak) {
+            let hour = hourly[peak]
+            let event = precipitationLabel(for: hour.weatherCode)
+            return "\(event) watch near \(hour.hourLabel)"
+        }
+        if let uvIndex, uvIndex >= 8 {
+            return "High UV now · UV \(uvIndex)"
+        }
+        return nextAlert
+    }
+
+    private func precipitationLabel(for code: Int) -> String {
+        switch code {
+        case 8000: return "Storm"
+        case 5000, 5001, 5100, 5101: return "Snow"
+        case 6000, 6001, 6200, 6201, 7000, 7101, 7102: return "Ice"
+        default: return "Rain"
+        }
+    }
+
     /// The hero/collapsed alert, preferring the explicit v2 `alert` and
     /// falling back to the top CAP bulletin so legacy paths that only
     /// populate `alerts[]` still light the bar.
@@ -586,14 +706,17 @@ struct WeatherSnapshot: Hashable, Codable {
     }
 
     /// The v2 attribution line:
-    /// "Conditions · Tomorrow.io · weatherCode 1101 · updated 2m ago".
-    /// Each clause is omitted honestly when its data is absent — the
-    /// weatherCode clause only shows for a real (non-zero) code, and the
-    /// "updated" clause only when we know `observedAt`.
+    /// "Conditions · Apple Weather · Mostly cloudy · updated 2m ago".
+    /// Each clause is omitted honestly when its data is absent. The
+    /// internal `weatherCode` remains available for glyph logic, but it
+    /// is not user-facing copy.
     var attributionLine: String {
-        var parts: [String] = ["Conditions · \(dataSource.attribution)"]
-        if weatherCode != 0 {
-            parts.append("weatherCode \(weatherCode)")
+        var parts: [String] = ["Conditions", dataSource.attribution]
+        let cleanedCondition = condition.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanedCondition.isEmpty,
+           cleanedCondition != "—",
+           cleanedCondition.lowercased() != "unknown" {
+            parts.append(cleanedCondition)
         }
         if let updated = updatedAgoDisplay {
             parts.append("updated \(updated)")
@@ -620,7 +743,7 @@ struct WeatherSnapshot: Hashable, Codable {
     var peakHourIndex: Int? {
         guard !hourly.isEmpty else { return nil }
         func hazard(_ h: HourlyForecast) -> Int {
-            // Severity bucket from the Tomorrow.io code family (or 0).
+            // Severity bucket from the Apple WeatherKit code family (or 0).
             let code = h.weatherCode
             let bucket: Int
             switch code {

@@ -205,7 +205,7 @@ private struct VesselCBPAlertsBody: View {
             HStack(alignment: .top) {
                 // Open-alert headline block.
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("OPEN ALERTS · getCBPAlerts")
+                    Text("OPEN ALERTS · CBP")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
                     Text(headlineSummary)
@@ -316,7 +316,7 @@ private struct VesselCBPAlertsBody: View {
 
     private var alertFeed: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("ALERTS · getCBPAlerts · \(alerts.count) total · by severity")
+            Text("ALERTS · CBP · \(alerts.count) total · by severity")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
                 .padding(.bottom, Space.s3)

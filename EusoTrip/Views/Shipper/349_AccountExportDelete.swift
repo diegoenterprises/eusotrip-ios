@@ -1,10 +1,11 @@
 //
 //  349_AccountExportDelete.swift
-//  EusoTrip — Shipper · Account export + delete (Arc K).
+//  EusoTrip — Shipper · Account export + delete + migrate (Arc K).
 //
 
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct AccountExportDeleteScreen: View {
     let theme: Theme.Palette
@@ -18,6 +19,7 @@ private struct ExportDeleteBody: View {
     @State private var exporting = false
     @State private var deleting = false
     @State private var exportUrl: String? = nil
+    @State private var exportFilename: String? = nil
     @State private var exportQueued = false
     @State private var deleteRequested = false
     @State private var deleteScheduledFor: String? = nil
@@ -26,17 +28,25 @@ private struct ExportDeleteBody: View {
     @State private var actionError: String? = nil
     @State private var confirmDelete: Bool = false
     @State private var confirmText: String = ""
-    /// In-app share-sheet state for the "Download ZIP" action.
-    /// Replaces the prior `UIApplication.shared.open(url)` Safari
-    /// punt with authed-fetch + UIActivityViewController so the user
-    /// can save the export ZIP straight into Files or AirDrop it.
-    private struct ExportZipShareItem: Identifiable, Hashable {
+    /// In-app share-sheet state for the "Download archive" action.
+    /// Authed fetch + UIActivityViewController so the user can save the
+    /// signed JSON export straight into Files or AirDrop it — never a
+    /// Safari punt.
+    private struct ExportArchiveShareItem: Identifiable, Hashable {
         let id: UUID
         let url: URL
     }
-    @State private var zipShareItem: ExportZipShareItem? = nil
-    @State private var downloadingZip: Bool = false
-    @State private var zipError: String? = nil
+    @State private var archiveShareItem: ExportArchiveShareItem? = nil
+    @State private var downloadingArchive: Bool = false
+    @State private var archiveError: String? = nil
+    // ── Import / migrate state ──
+    @State private var importPickerPresented = false
+    @State private var importing = false
+    @State private var importAck: UsersAPI.ImportRequestAck? = nil
+    @State private var importError: String? = nil
+    // ── Approvals state (users.pendingDataImports) ──
+    @State private var transfers: UsersAPI.ImportTransferList? = nil
+    @State private var decidingImportId: String? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -47,15 +57,24 @@ private struct ExportDeleteBody: View {
                 if deleteCancelled { deleteCancelledCard }
                 if let err = actionError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
                 exportCard
+                importCard
+                approvalsCard
                 if !deleteCancelled { deleteCard }
                 Color.clear.frame(height: 96)
             }
             .padding(.horizontal, 14).padding(.top, 56)
         }
-        .sheet(item: $zipShareItem) { item in
-            ExportZipActivitySheet(url: item.url)
+        .sheet(item: $archiveShareItem) { item in
+            ExportArchiveActivitySheet(url: item.url)
                 .presentationDetents([.medium, .large])
         }
+        .fileImporter(isPresented: $importPickerPresented, allowedContentTypes: [.json, .plainText]) { result in
+            switch result {
+            case .success(let url): Task { await submitImport(from: url) }
+            case .failure(let err): importError = err.localizedDescription
+            }
+        }
+        .task { await loadTransfers() }
     }
 
     private var header: some View {
@@ -68,10 +87,12 @@ private struct ExportDeleteBody: View {
         }
     }
 
+    // MARK: - Export
+
     private var exportCard: some View {
         LifecycleCard {
             LifecycleSection(label: "DATA EXPORT", icon: "square.and.arrow.up")
-            Text("Receive a ZIP of your loads, settlements, contacts and documents. Sent to your account email when ready.")
+            Text("Download a signed archive of your profile, loads, settlements, contacts, documents, wallet history and messages. A copy of the download link is also emailed to your account email.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
             Button { Task { await requestExport() } } label: {
                 HStack(spacing: 6) {
@@ -87,7 +108,7 @@ private struct ExportDeleteBody: View {
     private var exportQueuedCard: some View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: "EXPORT QUEUED", icon: "clock.badge.checkmark")
-            Text("Export queued. We'll email a secure download link to your account email when your ZIP is ready (loads, settlements, contacts, documents).")
+            Text("Export queued. We'll email a secure download link to your account email when your archive is ready (loads, settlements, contacts, documents).")
                 .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -103,17 +124,17 @@ private struct ExportDeleteBody: View {
     private func exportReadyCard(_ url: String) -> some View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: "EXPORT READY", icon: "checkmark.circle")
-            Text("Your archive is ready. Save it to Files, then import it on a new account to migrate your loads, settlements, contacts and documents.")
+            Text("Your archive is ready. Save it to Files, then pick it under Import / Migrate on a new account to move your contacts and documents over.")
                 .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
-            Button { Task { await downloadExportZip(urlString: url) } } label: {
+            Button { Task { await downloadExportArchive(urlString: url) } } label: {
                 HStack(spacing: 6) {
-                    if downloadingZip {
+                    if downloadingArchive {
                         ProgressView().scaleEffect(0.7).tint(.white)
                     } else {
                         Image(systemName: "square.and.arrow.down.fill")
                             .font(.system(size: 11, weight: .heavy))
                     }
-                    Text(downloadingZip ? "Fetching…" : "Download ZIP")
+                    Text(downloadingArchive ? "Fetching…" : "Download archive")
                         .font(.system(size: 11, weight: .heavy)).tracking(0.4)
                 }
                 .foregroundStyle(.white)
@@ -121,42 +142,201 @@ private struct ExportDeleteBody: View {
                 .background(LinearGradient.diagonal).clipShape(Capsule())
             }
             .buttonStyle(.plain)
-            .disabled(downloadingZip)
-            if let zerr = zipError {
-                Text(zerr).font(EType.caption).foregroundStyle(Brand.danger)
+            .disabled(downloadingArchive)
+            if let aerr = archiveError {
+                Text(aerr).font(EType.caption).foregroundStyle(Brand.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
     @MainActor
-    private func downloadExportZip(urlString: String) async {
-        guard !downloadingZip else { return }
-        downloadingZip = true
-        zipError = nil
-        defer { downloadingZip = false }
+    private func downloadExportArchive(urlString: String) async {
+        guard !downloadingArchive else { return }
+        downloadingArchive = true
+        archiveError = nil
+        defer { downloadingArchive = false }
         guard let url = URL(string: urlString) else {
-            zipError = "Couldn't parse the export URL."
+            archiveError = "Couldn't parse the export URL."
             return
         }
         do {
             let (data, _) = try await EusoTripAPI.shared.fetchAuthenticatedData(url)
             guard !data.isEmpty else {
-                zipError = "Server returned an empty file."
+                archiveError = "Server returned an empty file."
                 return
             }
-            let suggested = url.lastPathComponent.isEmpty ? "eusotrip-export.zip" : url.lastPathComponent
-            let safeName = suggested.lowercased().hasSuffix(".zip") ? suggested : "\(suggested).zip"
+            let fallback = url.lastPathComponent.isEmpty ? "eusotrip-export.json" : url.lastPathComponent
+            let suggested = exportFilename ?? fallback
+            let lowered = suggested.lowercased()
+            let safeName = (lowered.hasSuffix(".json") || lowered.hasSuffix(".zip")) ? suggested : "\(suggested).json"
             let tmp = FileManager.default.temporaryDirectory
                 .appendingPathComponent(safeName)
             try data.write(to: tmp, options: .atomic)
-            zipShareItem = ExportZipShareItem(id: UUID(), url: tmp)
+            archiveShareItem = ExportArchiveShareItem(id: UUID(), url: tmp)
         } catch let apiErr as EusoTripAPIError {
-            zipError = apiErr.errorDescription ?? "Network error"
+            archiveError = apiErr.errorDescription ?? "Network error"
         } catch {
-            zipError = error.localizedDescription
+            archiveError = error.localizedDescription
         }
     }
+
+    // MARK: - Import / migrate
+
+    private var importCard: some View {
+        LifecycleCard {
+            LifecycleSection(label: "IMPORT / MIGRATE", icon: "square.and.arrow.down.on.square")
+            Text("Moving to a new account? Pick the signed export archive you downloaded from the old account. The old account's owner approves the request, then contacts and documents move here. Loads, settlements and wallet history stay on the source account for the regulatory retention window.")
+                .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+            if let ack = importAck {
+                Text("PENDING APPROVAL · sent to account #\(ack.sourceUserId)")
+                    .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(LinearGradient.diagonal).clipShape(Capsule())
+                Text("The source account owner has been notified. The request appears under Migration approvals below once it's decided.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+            } else {
+                Button { importPickerPresented = true } label: {
+                    HStack(spacing: 6) {
+                        if importing { ProgressView().tint(.white) }
+                        Text(importing ? "Verifying…" : "Pick export archive").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .background(LinearGradient.diagonal).clipShape(Capsule())
+                }.buttonStyle(.plain).disabled(importing)
+            }
+            if let err = importError {
+                Text(err).font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @MainActor
+    private func submitImport(from fileURL: URL) async {
+        importing = true; importError = nil
+        defer { importing = false }
+        let secured = fileURL.startAccessingSecurityScopedResource()
+        defer { if secured { fileURL.stopAccessingSecurityScopedResource() } }
+        do {
+            let data = try Data(contentsOf: fileURL)
+            struct Archive: Decodable { let manifest: UsersAPI.ExportManifest? }
+            let archive = try JSONDecoder().decode(Archive.self, from: data)
+            guard let manifest = archive.manifest, let signature = manifest.signature, !signature.isEmpty else {
+                importError = "That file has no signed manifest. Download a fresh export archive from the source account and try again."
+                return
+            }
+            importAck = try await EusoTripAPI.shared.users.requestDataImport(manifest: manifest, signature: signature)
+            await loadTransfers()
+        } catch let apiErr as EusoTripAPIError {
+            importError = apiErr.errorDescription ?? "Network error"
+        } catch let decodeErr as DecodingError {
+            _ = decodeErr
+            importError = "That file isn't an EusoTrip export archive."
+        } catch {
+            importError = "Couldn't read that archive: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Migration approvals (source-owner decisions + own requests)
+
+    @ViewBuilder
+    private var approvalsCard: some View {
+        if let t = transfers, !(t.incoming.isEmpty && t.outgoing.isEmpty) {
+            LifecycleCard {
+                LifecycleSection(label: "MIGRATION APPROVALS", icon: "person.2.badge.gearshape")
+                if !t.incoming.isEmpty {
+                    Text("Requests to move data OUT of this account. Approving re-keys your contacts and documents to the requesting account.")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    ForEach(t.incoming) { row in incomingRow(row) }
+                }
+                if !t.outgoing.isEmpty {
+                    Text("Requests you filed from an archive.")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    ForEach(t.outgoing) { row in outgoingRow(row) }
+                }
+            }
+        }
+    }
+
+    private func incomingRow(_ row: UsersAPI.ImportTransferRow) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("→ account #\(row.targetUserId ?? 0)")
+                    .font(.system(size: 11, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                statusBadge(row.status)
+            }
+            if let email = row.targetEmail, !email.isEmpty {
+                Text(email).font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+            if row.status.lowercased() == "pending" {
+                HStack(spacing: 8) {
+                    Button { Task { await decide(row.importId, approve: true) } } label: {
+                        HStack(spacing: 4) {
+                            if decidingImportId == row.importId { ProgressView().scaleEffect(0.6).tint(.white) }
+                            Text("Approve").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(LinearGradient.diagonal).clipShape(Capsule())
+                    }.buttonStyle(.plain).disabled(decidingImportId != nil)
+                    Button { Task { await decide(row.importId, approve: false) } } label: {
+                        Text("Reject").font(.system(size: 11, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(Brand.danger).clipShape(Capsule())
+                    }.buttonStyle(.plain).disabled(decidingImportId != nil)
+                }
+            } else if let ex = row.executed {
+                Text("\(ex.contactsMoved ?? 0) contacts · \(ex.documentsMoved ?? 0) documents moved")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func outgoingRow(_ row: UsersAPI.ImportTransferRow) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text("← account #\(row.sourceUserId ?? 0)")
+                    .font(.system(size: 11, weight: .heavy)).foregroundStyle(palette.textPrimary)
+                statusBadge(row.status)
+            }
+            if let ex = row.executed, row.status.lowercased() == "approved" {
+                Text("\(ex.contactsMoved ?? 0) contacts · \(ex.documentsMoved ?? 0) documents now in this account")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func statusBadge(_ status: String) -> some View {
+        let lowered = status.lowercased()
+        let color: Color = lowered == "approved" ? Brand.success : (lowered == "rejected" ? Brand.danger : Brand.warning)
+        return Text(status.uppercased())
+            .font(.system(size: 8, weight: .heavy)).tracking(0.8).foregroundStyle(.white)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(color).clipShape(Capsule())
+    }
+
+    @MainActor
+    private func loadTransfers() async {
+        do { transfers = try await EusoTripAPI.shared.users.pendingDataImports() }
+        catch { /* approvals card stays hidden until the list loads */ }
+    }
+
+    @MainActor
+    private func decide(_ importId: String, approve: Bool) async {
+        decidingImportId = importId
+        defer { decidingImportId = nil }
+        do {
+            if approve { _ = try await EusoTripAPI.shared.users.approveDataImport(importId: importId) }
+            else { _ = try await EusoTripAPI.shared.users.rejectDataImport(importId: importId) }
+            await loadTransfers()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    // MARK: - Delete
 
     private var deleteCard: some View {
         LifecycleCard(accentDanger: true) {
@@ -204,13 +384,14 @@ private struct ExportDeleteBody: View {
 
     private func requestExport() async {
         exporting = true; actionError = nil
-        struct Out: Decodable { let url: String? }
         do {
-            let r: Out = try await EusoTripAPI.shared.queryNoInput("users.requestDataExport")
-            // A direct URL means the ZIP is ready now; a null URL means the
-            // export was queued and the link will arrive by email.
-            exportUrl = r.url
-            exportQueued = (r.url == nil)
+            let pkg = try await EusoTripAPI.shared.users.requestDataExport()
+            // A non-nil URL means the archive downloads now via the authed
+            // route; a nil URL only survives against older servers whose
+            // export pipeline was still queue-and-email.
+            exportUrl = pkg.url
+            exportFilename = pkg.filename
+            exportQueued = (pkg.url == nil)
         } catch {
             actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
@@ -273,9 +454,9 @@ private struct ExportDeleteBody: View {
     }
 }
 
-// MARK: - In-app share sheet for the export ZIP
+// MARK: - In-app share sheet for the export archive
 
-private struct ExportZipActivitySheet: UIViewControllerRepresentable {
+private struct ExportArchiveActivitySheet: UIViewControllerRepresentable {
     let url: URL
     func makeUIViewController(context: Context) -> UIActivityViewController {
         UIActivityViewController(activityItems: [url], applicationActivities: nil)

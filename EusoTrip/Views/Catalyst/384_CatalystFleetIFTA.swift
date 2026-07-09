@@ -32,17 +32,15 @@
 //  the live server at the cited lines):
 //    fleet.getIFTAReport        (frontend/server/routers/fleet.ts:1028)
 //        → the entire screen. Self-scoped to ctx.user.companyId; input
-//          {quarter,year}. SHIPPED-THIN at audit time (returned
-//          jurisdictions:[] and totalMiles:0); §39 enriches it to aggregate
-//          real per-jurisdiction miles/gallons from trip_state_miles and apply
-//          the IFTA net-tax formula (see fleet.getIFTAReport.patch.ts). This
-//          file decodes the enriched, additive shape; pre-enrichment it simply
-//          renders the honest empty state.
+//          {quarter,year}. The live server aggregates real per-jurisdiction
+//          miles/gallons from trip_state_miles through vehicles.companyId,
+//          applies the IFTA net-tax formula, and returns an honest empty
+//          company-scoped report when no quarter data exists.
 //    fleet.generateIFTAReport   (frontend/server/routers/fleet.ts:1046)
-//        → "Generate report". STUB at audit time (success:true, no write);
-//          §39 stages a persistence+audit upgrade (compliance_events row +
-//          blockchain_audit_trail). This file wires the button to the real
-//          mutation with do/catch error surfacing regardless.
+//        → "Generate report". Persists a compliance_events filing row,
+//          records fleet.ifta.report_generated in blockchain_audit_trail, and
+//          returns {success, reportId, complianceEventId}. This file surfaces
+//          the real persisted id and does not synthesize success on failure.
 //    iftaCalculator.calculateQuarter (iftaCalculator.ts:35)
 //        → the canonical net-tax formula this screen mirrors (miles/MPG →
 //          consumed gallons; consumed − purchased = net; net × state rate =
@@ -416,14 +414,18 @@ struct CatalystFleetIFTA: View {
         generateError = nil
         defer { generating = false }
         struct GenIn: Encodable { let quarter: String; let year: Int }
-        struct GenOut: Decodable { let success: Bool; let reportId: String? }
+        struct GenOut: Decodable {
+            let success: Bool
+            let reportId: String?
+            let complianceEventId: Int?
+        }
         do {
             let out: GenOut = try await EusoTripAPI.shared.mutation(
                 "fleet.generateIFTAReport",
                 input: GenIn(quarter: store.quarter, year: store.year)
             )
             if out.success {
-                generatedReportId = out.reportId
+                generatedReportId = out.reportId ?? out.complianceEventId.map { "compliance_event_\($0)" }
             } else {
                 generateError = "Report could not be generated. Try again."
             }
@@ -476,7 +478,7 @@ struct CatalystFleetIFTA: View {
         VStack(spacing: Space.s2) {
             Text("Couldn't load IFTA")
                 .font(EType.title).foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption).foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
             Button { Task { await store.refresh() } } label: {

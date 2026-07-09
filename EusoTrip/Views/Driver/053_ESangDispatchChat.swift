@@ -172,6 +172,17 @@ struct eSangDispatchChat: View {
         return f.isEmpty ? "driver" : f
     }
 
+    /// Clock-aware ESANG salutation. The old copy always said
+    /// "Morning" on an afternoon/evening screen, which made the live
+    /// brief feel canned even though the facts below are live.
+    private var greetingPart: String {
+        switch Calendar.current.component(.hour, from: Date()) {
+        case 5..<12: return "Morning"
+        case 12..<17: return "Afternoon"
+        default: return "Evening"
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -349,7 +360,7 @@ struct eSangDispatchChat: View {
     /// or weather is invented.
     private var loadFactsBubble: some View {
         esangBubble(
-            text: "Morning, \(greetingName). Here's the tender I'm watching in your lane: \(laneDisplay) · \(distanceDisplay) · \(rateDisplay). Drive remaining \(hos?.drivingRemainingDisplay ?? "—").",
+            text: "\(greetingPart), \(greetingName). Here's the tender I'm watching in your lane: \(laneDisplay) · \(distanceDisplay) · \(rateDisplay). Drive remaining \(hos?.drivingRemainingDisplay ?? "—").",
             time: nil,
             attachment: AnyView(routePreviewPill)
         )

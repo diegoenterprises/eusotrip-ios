@@ -761,9 +761,7 @@ struct ShipperContacts: View {
     private func tapCall(_ phone: String) {
         let stripped = phone.filter { "+0123456789".contains($0) }
         if let url = URL(string: "tel:\(stripped)") {
-            Task { @MainActor in
-                await UIApplication.shared.open(url)
-            }
+            openURL(url)
         }
     }
 

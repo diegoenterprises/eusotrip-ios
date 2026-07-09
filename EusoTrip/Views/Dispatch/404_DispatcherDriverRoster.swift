@@ -89,6 +89,8 @@ private struct DispatcherDriverRosterBody: View {
     @State private var filter: RosterFilter = .all
     @State private var loading: Bool = true
     @State private var actionError: String?
+    @State private var sendingAlertDriverId: String?
+    @State private var actionConfirmation: String?
 
     private var visibleDrivers: [RosterDriver] {
         switch filter {
@@ -115,6 +117,9 @@ private struct DispatcherDriverRosterBody: View {
                 } else if visibleDrivers.isEmpty {
                     emptyState
                 } else {
+                    if let actionConfirmation {
+                        actionConfirmationCard(actionConfirmation)
+                    }
                     rosterList
                     esangNudge
                     broadcastCTA
@@ -197,10 +202,32 @@ private struct DispatcherDriverRosterBody: View {
     private var rosterList: some View {
         VStack(spacing: Space.s3) {
             ForEach(visibleDrivers) { d in
-                Button { message(d) } label: { DriverRosterRow(driver: d) }
-                    .buttonStyle(.plain)
+                DriverRosterRow(
+                    driver: d,
+                    alertInFlight: sendingAlertDriverId == d.id,
+                    onOpen: { openDriver(d) },
+                    onMessage: { message(d) },
+                    onAlert: { Task { await sendUrgentAlert(to: d) } }
+                )
             }
         }
+        .padding(.top, Space.s4)
+    }
+
+    private func actionConfirmationCard(_ message: String) -> some View {
+        HStack(spacing: Space.s3) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 15, weight: .heavy))
+                .foregroundStyle(Brand.success)
+            Text(message)
+                .font(EType.caption.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Radius.lg).fill(palette.bgCardSoft))
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg).strokeBorder(Brand.success.opacity(0.38), lineWidth: 1))
         .padding(.top, Space.s4)
     }
 
@@ -305,6 +332,13 @@ private struct DispatcherDriverRosterBody: View {
         loading = false
     }
 
+    private func openDriver(_ d: RosterDriver) {
+        NotificationCenter.default.post(
+            name: .eusoDispatchNavSwap, object: nil,
+            userInfo: ["screenId": "Dpch740", "driverId": d.id]
+        )
+    }
+
     private func message(_ d: RosterDriver) {
         // Route into the Dispatch comms thread for this driver. The
         // Dispatch surface observes `eusoDispatchNavSwap`; comms hub is
@@ -313,6 +347,44 @@ private struct DispatcherDriverRosterBody: View {
             name: .eusoDispatchNavSwap, object: nil,
             userInfo: ["screenId": "Dpch706", "driverId": d.id]
         )
+    }
+
+    private func sendUrgentAlert(to d: RosterDriver) async {
+        guard sendingAlertDriverId == nil else { return }
+        sendingAlertDriverId = d.id
+        actionError = nil
+        actionConfirmation = nil
+
+        struct AlertInput: Encodable {
+            let driverId: String
+            let message: String
+            let priority: String
+        }
+        struct AlertOutput: Decodable {
+            let success: Bool?
+            let messageId: String?
+            let conversationId: String?
+        }
+
+        let status = d.status.replacingOccurrences(of: "_", with: " ").uppercased()
+        let loadLine = d.loadNumber.map { " Load \($0)." } ?? ""
+        let locationLine = d.locationLine.map { " \($0)." } ?? ""
+        let body = "Dispatch alert: please check in with dispatch now. Status \(status).\(loadLine)\(locationLine)"
+
+        do {
+            let result: AlertOutput = try await EusoTripAPI.shared.mutation(
+                "dispatch.sendDriverMessage",
+                input: AlertInput(driverId: d.id, message: body, priority: "urgent")
+            )
+            guard result.success != false else {
+                throw EusoTripAPIError.trpcError("Dispatch alert was not accepted by the server.")
+            }
+            actionConfirmation = "Urgent alert sent to \(d.name)."
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+
+        sendingAlertDriverId = nil
     }
 
     private func broadcastAll() {
@@ -330,6 +402,10 @@ private struct DispatcherDriverRosterBody: View {
 private struct DriverRosterRow: View {
     @Environment(\.palette) private var palette
     let driver: RosterDriver
+    let alertInFlight: Bool
+    let onOpen: () -> Void
+    let onMessage: () -> Void
+    let onAlert: () -> Void
 
     private var isCritical: Bool { driver.hosBucket == "crit" }
 
@@ -348,7 +424,18 @@ private struct DriverRosterRow: View {
             avatar
             VStack(alignment: .leading, spacing: Space.s1) {
                 HStack(spacing: Space.s2) {
-                    Text(driver.name).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                    Button(action: onOpen) {
+                        HStack(spacing: Space.s1) {
+                            Text(driver.name)
+                                .font(EType.bodyStrong)
+                                .foregroundStyle(palette.textPrimary)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundStyle(palette.textTertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
                     statusBadge
                     if driver.reassignable { reassignablePill }
                 }
@@ -365,10 +452,46 @@ private struct DriverRosterRow: View {
                 }
             }
             Spacer(minLength: Space.s2)
-            hosClock
+            VStack(alignment: .trailing, spacing: Space.s2) {
+                hosClock
+                actionRail
+            }
         }
         .padding(Space.s3)
         .background(rowBackground)
+    }
+
+    private var actionRail: some View {
+        HStack(spacing: Space.s2) {
+            rosterActionButton(systemImage: "message.fill", label: "Message", tint: Brand.blue, action: onMessage)
+            rosterActionButton(systemImage: "bell.badge.fill", label: "Alert", tint: Brand.danger, action: onAlert, busy: alertInFlight)
+        }
+    }
+
+    private func rosterActionButton(systemImage: String, label: String, tint: Color, action: @escaping () -> Void, busy: Bool = false) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if busy {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .tint(tint)
+                } else {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 10, weight: .heavy))
+                }
+                Text(label)
+                    .font(EType.micro.weight(.heavy))
+                    .tracking(0.3)
+            }
+            .foregroundStyle(tint)
+            .frame(height: 24)
+            .padding(.horizontal, Space.s2)
+            .background(Capsule().fill(tint.opacity(0.12)))
+            .overlay(Capsule().strokeBorder(tint.opacity(0.42), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+        .accessibilityLabel(label)
     }
 
     private func laneLine(_ load: String) -> String {

@@ -386,7 +386,7 @@ struct MeBidDetailView: View {
                 Text("Your counter").font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2).minimumScaleFactor(0.75)
-                Text("Push back on the shipper's counter with your number. Server inserts a new round in the chain and notifies the other party.")
+                Text("Push back on the shipper's counter with your number. EusoTrip records a new round in the chain and notifies the other party.")
                     .font(EType.body).foregroundStyle(palette.textSecondary)
                 VStack(alignment: .leading, spacing: 6) {
                     Text("AMOUNT (USD)").font(.system(size: 8, weight: .heavy)).tracking(0.7).foregroundStyle(palette.textTertiary)

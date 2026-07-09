@@ -27,31 +27,50 @@ struct DispatchMeScreen: View {
     @Environment(\.palette) private var palette
     @State private var showSignOutConfirm: Bool = false
 
+    /// Which hub cards are expanded. Consolidation (fix pack L15-11): the Me tab
+    /// rendered 8 always-open sections = ~41 rows in one scroll (with "Comms
+    /// hub" duplicated across two sections). Rebuilt into 7 bespoke collapsible
+    /// hubs; the Command & Fleet and Fleet+HOS sections merged, the duplicate
+    /// Comms hub removed. Operations starts expanded; the rest collapse.
+    @State private var expandedHubs: Set<String> = ["operations"]
+
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
-                topBar
-                titleBlock
-                iridescentHairline
-                identityHero
-                operationsSection
-                commandSection
-                fleetSection
-                analyticsSection
-                driverPerfSection
-                shipperPerfSection
-                vehiclePerfSection
-                settlementSection
-                commsPerfSection
-                laneRfpSection
-                exceptionsSection
-                toolsSection
-                settingsSection
-                signOutButton
-                Color.clear.frame(height: 96)
+        Shell(theme: theme) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    topBar
+                    titleBlock
+                    iridescentHairline
+                    identityHero
+                    EusoCardIssuePanel(
+                        title: "EusoCard",
+                        subtitle: "Dispatch spend card for fleet exceptions and accessorials"
+                    )
+                    operationsHub
+                    commandFleetHub
+                    liveWorkflowsHub
+                    exceptionsHub
+                    analyticsHub
+                    toolsHub
+                    settingsHub
+                    signOutButton
+                    Color.clear.frame(height: 96)
+                }
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 8)
+        } nav: {
+            BottomNav(
+                leading: [
+                    NavSlot(label: "Home", systemImage: "house", isCurrent: false),
+                    NavSlot(label: "Board", systemImage: "rectangle.split.3x1.fill", isCurrent: false)
+                ],
+                trailing: [
+                    NavSlot(label: "Comms", systemImage: "bubble.left.and.bubble.right.fill", isCurrent: false),
+                    NavSlot(label: "Me", systemImage: "person.fill", isCurrent: true)
+                ],
+                orbState: .idle
+            )
         }
         .alert("Sign out?", isPresented: $showSignOutConfirm) {
             Button("Sign out", role: .destructive) {
@@ -144,7 +163,7 @@ struct DispatchMeScreen: View {
                             .minimumScaleFactor(0.85)
                     }
                     if let cid = user?.companyId, !cid.isEmpty {
-                        Text("companyId · \(cid)")
+                        Text("Company ID · \(cid)")
                             .font(EType.mono(.micro)).tracking(0.4)
                             .foregroundStyle(palette.textTertiary)
                             .lineLimit(1)
@@ -164,8 +183,10 @@ struct DispatchMeScreen: View {
     // MARK: - Sections — every id is a registered .dispatch screen
     //         (Dpch700–Dpch712), verified against ContentView.swift.
 
-    private var operationsSection: some View {
-        sectionCard(title: "OPERATIONS", icon: "antenna.radiowaves.left.and.right") {
+    private var operationsHub: some View {
+        hubCard(id: "operations", icon: "antenna.radiowaves.left.and.right",
+                title: "Operations",
+                summary: "Home · Driver board · Assignment · Triage · Kanban", rowCount: 5) {
             row(label: "Dispatch home",       icon: "house",                  to: "Disp400")
             row(label: "Driver board",        icon: "person.3.fill",          to: "Dpch701")
             row(label: "Load assignment",     icon: "shippingbox.fill",       to: "Dpch702")
@@ -174,123 +195,43 @@ struct DispatchMeScreen: View {
         }
     }
 
-    private var fleetSection: some View {
-        sectionCard(title: "FLEET + HOS", icon: "clock.badge") {
+    // COMMAND & FLEET merged with the former FLEET + HOS section (both are
+    // fleet-command surfaces). The 740/750/760/770/780 octet variants stay
+    // registered for event-context deep links but are not top-level rows here.
+    private var commandFleetHub: some View {
+        hubCard(id: "commandFleet", icon: "square.grid.2x2",
+                title: "Command & Fleet",
+                summary: "Command center · Fleet map · HOS · Roster · Scorecard", rowCount: 9) {
+            row(label: "Command center", detail: "Active loads, exceptions and assignment pressure", icon: "square.grid.2x2", to: "Dpch714")
+            row(label: "Fleet map", detail: "Live vehicle and route visibility", icon: "map", to: "Dpch715")
+            row(label: "Performance", detail: "Dispatcher KPI and fleet operating metrics", icon: "chart.line.uptrend.xyaxis", to: "Dpch716")
+            row(label: "Driver roster", detail: "Roster identity, availability and compliance entry", icon: "person.3", to: "Dpch404")
+            row(label: "AI dispatch assist", detail: "Contextual dispatch actions", icon: "sparkles", to: "533")
+            row(label: "Carrier scorecard", detail: "Carrier scoring and company performance", icon: "star.circle", to: "539")
             row(label: "HOS alerts",          icon: "clock.badge.exclamationmark", to: "Dpch704")
             row(label: "Route optimization",  icon: "map",                    to: "Dpch705")
             row(label: "Driver chat",         icon: "bubble.left.and.bubble.right", to: "Dpch706")
         }
     }
 
-    private var analyticsSection: some View {
-        sectionCard(title: "ANALYTICS", icon: "chart.line.uptrend.xyaxis") {
-            row(label: "Daily KPI",           icon: "chart.bar",              to: "Dpch707")
-            row(label: "Reports hub",         icon: "doc.text.magnifyingglass", to: "Dpch712")
-            row(label: "Price book",          icon: "tag",                    to: "Dpch711")
+    private var liveWorkflowsHub: some View {
+        hubCard(id: "liveWorkflows", icon: "point.3.connected.trianglepath.dotted",
+                title: "Live Workflows",
+                summary: "Driver / shipper / vehicle / settlement reviews · RFP", rowCount: 5) {
+            row(label: "Driver performance", detail: "Performance metrics + DQ/HOS context", icon: "gauge.with.dots.needle.67percent", to: "Dpch743")
+            row(label: "Shipper scorecard", detail: "Shipper scoring + account identity", icon: "building.2", to: "Dpch750")
+            row(label: "Vehicle review", detail: "Fleet stats + vehicle roster", icon: "truck.box", to: "Dpch760")
+            row(label: "Settlement review", detail: "Settlement stats and payroll", icon: "dollarsign.circle", to: "Dpch770")
+            // "Comms hub" (Dpch721) lives in Exceptions & Resolution — removed
+            // the duplicate that used to sit here.
+            row(label: "Lane and RFP board", detail: "Lane board, RFP inbox and contract actions", icon: "road.lanes", to: "Dpch790")
         }
     }
 
-    private var toolsSection: some View {
-        sectionCard(title: "TOOLS", icon: "wrench.and.screwdriver") {
-            row(label: "Bulk upload",         icon: "square.and.arrow.up.on.square", to: "Dpch709")
-            row(label: "Run ticket capture",  icon: "camera.viewfinder",      to: "Dpch710")
-            row(label: "Convoy composer",     icon: "car.2.fill",             to: "Dpch710A")
-        }
-    }
-
-    // 2026-06-02 — WAVE 5: surface stranded dispatch management + the
-    // analytics detail octets (740–795) into the Me hub (grouped roll-ups).
-    // Pure lifecycle/kanban cels (Dpch800–811 BH, 820–824 M-04, 531/532)
-    // stay event-reached; Disp400/Disp401 are dup home/kanban (dedup later).
-    private var commandSection: some View {
-        sectionCard(title: "COMMAND & FLEET", icon: "square.grid.2x2") {
-            row(label: "Command center",   icon: "square.grid.2x2",          to: "Dpch714")
-            row(label: "Fleet map",        icon: "map",                      to: "Dpch715")
-            row(label: "Performance",      icon: "chart.line.uptrend.xyaxis", to: "Dpch716")
-            row(label: "Driver roster",    icon: "person.3",                 to: "Dpch404")
-            row(label: "AI dispatch assist", icon: "sparkles",               to: "533")
-            row(label: "Carrier scorecard", icon: "star.circle",            to: "539")
-        }
-    }
-
-    private var driverPerfSection: some View {
-        sectionCard(title: "DRIVER PERFORMANCE", icon: "person.3.fill") {
-            row(label: "Review",       icon: "checkmark.circle",                to: "Dpch740")
-            row(label: "Lane",         icon: "road.lanes",                      to: "Dpch741")
-            row(label: "Incident log", icon: "exclamationmark.triangle",        to: "Dpch742")
-            row(label: "Performance",  icon: "gauge.with.dots.needle.67percent", to: "Dpch743")
-            row(label: "HOS",          icon: "clock.badge",                     to: "Dpch744")
-            row(label: "Onboarding",   icon: "person.badge.plus",               to: "Dpch745")
-            row(label: "Compliance",   icon: "checkmark.shield",                to: "Dpch746")
-            row(label: "Quarter",      icon: "calendar",                        to: "Dpch747")
-        }
-    }
-
-    private var shipperPerfSection: some View {
-        sectionCard(title: "SHIPPER PERFORMANCE", icon: "building.2") {
-            row(label: "Review",      icon: "checkmark.circle", to: "Dpch750")
-            row(label: "Pull volume", icon: "chart.bar",        to: "Dpch751")
-            row(label: "Tender win",  icon: "trophy",           to: "Dpch752")
-            row(label: "Payment",     icon: "creditcard",       to: "Dpch753")
-            row(label: "Lane win",    icon: "road.lanes",       to: "Dpch754")
-            row(label: "Health",      icon: "heart.text.square", to: "Dpch755")
-            row(label: "Onboarding",  icon: "person.badge.plus", to: "Dpch756")
-            row(label: "Quarter",     icon: "calendar",         to: "Dpch757")
-        }
-    }
-
-    private var vehiclePerfSection: some View {
-        sectionCard(title: "VEHICLE PERFORMANCE", icon: "truck.box") {
-            row(label: "Review",      icon: "checkmark.circle",                 to: "Dpch760")
-            row(label: "Utilization", icon: "gauge.with.dots.needle.67percent", to: "Dpch761")
-            row(label: "Maintenance", icon: "wrench.adjustable",                to: "Dpch762")
-            row(label: "On-time",     icon: "clock.badge.checkmark",            to: "Dpch763")
-            row(label: "Inspection",  icon: "checklist",                        to: "Dpch764")
-            row(label: "Deadhead",    icon: "arrow.uturn.backward",             to: "Dpch765")
-            row(label: "Onboarding",  icon: "plus.rectangle.on.folder",         to: "Dpch766")
-            row(label: "Quarter",     icon: "calendar",                         to: "Dpch767")
-        }
-    }
-
-    private var settlementSection: some View {
-        sectionCard(title: "SETTLEMENT", icon: "dollarsign.circle") {
-            row(label: "Review",     icon: "checkmark.circle",          to: "Dpch770")
-            row(label: "DSO",        icon: "calendar.badge.clock",      to: "Dpch771")
-            row(label: "QuickPay",   icon: "bolt",                      to: "Dpch772")
-            row(label: "Ledger",     icon: "list.bullet.rectangle.portrait", to: "Dpch773")
-            row(label: "Clean",      icon: "checkmark.seal",            to: "Dpch774")
-            row(label: "Onboarding", icon: "person.badge.plus",         to: "Dpch775")
-            row(label: "Audit",      icon: "doc.text.magnifyingglass",  to: "Dpch776")
-            row(label: "Quarter",    icon: "calendar",                  to: "Dpch777")
-        }
-    }
-
-    private var commsPerfSection: some View {
-        sectionCard(title: "COMMS PERFORMANCE", icon: "bubble.left.and.bubble.right") {
-            row(label: "Review",     icon: "checkmark.circle",        to: "Dpch780")
-            row(label: "Response",   icon: "arrowshape.turn.up.left", to: "Dpch781")
-            row(label: "SLA",        icon: "timer",                   to: "Dpch782")
-            row(label: "Escalation", icon: "exclamationmark.bubble",  to: "Dpch783")
-            row(label: "Closure",    icon: "checkmark.circle.fill",   to: "Dpch784")
-            row(label: "Volume",     icon: "chart.bar",               to: "Dpch785")
-            row(label: "First-time resolve", icon: "checkmark.seal",  to: "Dpch786")
-            row(label: "Quarter",    icon: "calendar",                to: "Dpch787")
-        }
-    }
-
-    private var laneRfpSection: some View {
-        sectionCard(title: "LANE & RFP", icon: "road.lanes") {
-            row(label: "Lane board",     icon: "rectangle.split.3x1",   to: "Dpch790")
-            row(label: "Lane drill",     icon: "magnifyingglass",       to: "Dpch791")
-            row(label: "Haul detail",    icon: "shippingbox",           to: "Dpch792")
-            row(label: "RFP inbox",      icon: "tray.full",             to: "Dpch793")
-            row(label: "Match-up",       icon: "arrow.triangle.merge",  to: "Dpch794")
-            row(label: "Contract write", icon: "pencil.and.outline",    to: "Dpch795")
-        }
-    }
-
-    private var exceptionsSection: some View {
-        sectionCard(title: "EXCEPTIONS & RESOLUTION", icon: "exclamationmark.triangle") {
+    private var exceptionsHub: some View {
+        hubCard(id: "exceptions", icon: "exclamationmark.triangle",
+                title: "Exceptions & Resolution",
+                summary: "Tenders · Comms · Mismatches · Reroutes · Overrides", rowCount: 14) {
             row(label: "Tender queue",        icon: "tray.full",                to: "Dpch720")
             row(label: "Comms hub",           icon: "bubble.left.and.bubble.right", to: "Dpch721")
             row(label: "BOL mismatch",        icon: "doc.on.doc",               to: "Dpch722")
@@ -308,8 +249,30 @@ struct DispatchMeScreen: View {
         }
     }
 
-    private var settingsSection: some View {
-        sectionCard(title: "SETTINGS", icon: "gearshape") {
+    private var analyticsHub: some View {
+        hubCard(id: "analytics", icon: "chart.line.uptrend.xyaxis",
+                title: "Analytics",
+                summary: "Daily KPI · Reports · Price book", rowCount: 3) {
+            row(label: "Daily KPI",           icon: "chart.bar",              to: "Dpch707")
+            row(label: "Reports hub",         icon: "doc.text.magnifyingglass", to: "Dpch712")
+            row(label: "Price book",          icon: "tag",                    to: "Dpch711")
+        }
+    }
+
+    private var toolsHub: some View {
+        hubCard(id: "tools", icon: "wrench.and.screwdriver",
+                title: "Tools",
+                summary: "Bulk upload · Run ticket · Convoy composer", rowCount: 3) {
+            row(label: "Bulk upload",         icon: "square.and.arrow.up.on.square", to: "Dpch709")
+            row(label: "Run ticket capture",  icon: "camera.viewfinder",      to: "Dpch710")
+            row(label: "Convoy composer",     icon: "car.2.fill",             to: "Dpch710A")
+        }
+    }
+
+    private var settingsHub: some View {
+        hubCard(id: "settings", icon: "gearshape.fill",
+                title: "Settings & Support",
+                summary: "Dispatch preferences", rowCount: 1) {
             row(label: "Dispatch settings", icon: "gearshape", to: "Dpch734")
         }
     }
@@ -334,29 +297,70 @@ struct DispatchMeScreen: View {
         .padding(.top, Space.s3)
     }
 
-    // MARK: - Section + row primitives (LifecycleCard parity with 350)
+    // MARK: - Hub + row primitives (bespoke collapsible cards, parity with 350)
 
+    /// A collapsible hub card: gradient-icon header with title, one-line summary
+    /// and a row-count pill that toggles the body open/closed on tap. Collapsed
+    /// by default (except Operations) so the Me tab reads as a clean stack of
+    /// hubs rather than a ~40-row flat list.
     @ViewBuilder
-    private func sectionCard<Content: View>(title: String,
-                                            icon: String,
-                                            @ViewBuilder content: () -> Content) -> some View {
+    private func hubCard<Content: View>(id: String,
+                                        icon: String,
+                                        title: String,
+                                        summary: String,
+                                        rowCount: Int,
+                                        @ViewBuilder content: () -> Content) -> some View {
+        let isOpen = expandedHubs.contains(id)
         LifecycleCard {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .heavy))
-                    .foregroundStyle(LinearGradient.diagonal)
-                Text(title)
-                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
-                    .foregroundStyle(palette.textPrimary)
+            Button {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    if isOpen { expandedHubs.remove(id) } else { expandedHubs.insert(id) }
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().fill(LinearGradient.diagonal).frame(width: 40, height: 40)
+                        Image(systemName: icon)
+                            .font(.system(size: 16, weight: .heavy))
+                            .foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.system(size: 15, weight: .heavy))
+                            .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                        Text(summary)
+                            .font(EType.mono(.micro)).tracking(0.3)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                    Spacer(minLength: 0)
+                    Text("\(rowCount)")
+                        .font(.system(size: 10, weight: .heavy)).monospacedDigit()
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(palette.bgCardSoft))
+                        .overlay(Capsule().strokeBorder(palette.borderFaint.opacity(0.5)))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                }
             }
-            .padding(.bottom, 2)
-            VStack(spacing: 6) {
-                content()
+            .buttonStyle(.plain)
+
+            if isOpen {
+                Rectangle()
+                    .fill(palette.borderFaint.opacity(0.4))
+                    .frame(height: 1)
+                    .padding(.vertical, 6)
+                VStack(spacing: 6) { content() }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
     }
 
-    private func row(label: String, icon: String, to screenId: String) -> some View {
+    private func row(label: String, detail: String? = nil, icon: String, to screenId: String) -> some View {
         Button(action: { swap(to: screenId) }) {
             HStack(spacing: 12) {
                 ZStack {
@@ -365,9 +369,17 @@ struct DispatchMeScreen: View {
                         .font(.system(size: 14, weight: .heavy))
                         .foregroundStyle(.white)
                 }
-                Text(label)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    if let detail {
+                        Text(detail)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(palette.textTertiary)
+                            .lineLimit(2)
+                    }
+                }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .heavy))

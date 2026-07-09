@@ -19,6 +19,7 @@ struct CancelledInTransitScreen: View {
 
 private struct CancelInTransitBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let live: ShipperAPI.LifecycleSnapshot
     let loadId: String
 
@@ -62,7 +63,7 @@ private struct CancelInTransitBody: View {
         HStack(spacing: 10) {
             Button {
                 if let p = live.driver?.phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") {
-                    UIApplication.shared.open(url)
+                    openURL(url)
                 }
             } label: {
                 Text("Call driver").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)

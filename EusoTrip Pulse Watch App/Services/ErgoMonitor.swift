@@ -54,12 +54,14 @@ final class ErgoMonitor: ObservableObject {
     func begin() {
         guard HKHealthStore.isHealthDataAvailable() else { return }
         let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate)!
-        healthStore.requestAuthorization(toShare: nil, read: [hrType]) { _, _ in
-            // Hop back onto the MainActor with a fresh weak capture so
-            // strict-concurrency doesn't see `self` as a captured var
-            // escaping the outer @Sendable callback.
-            Task { @MainActor [weak self] in
-                self?.startHRStreaming()
+        healthStore.requestAuthorization(toShare: nil, read: [hrType]) { [weak self] _, _ in
+            // `[weak self]` lives on the outer @Sendable callback; bind it to a
+            // local `self` (a let, not the captured weak var) BEFORE the Task,
+            // so the concurrent MainActor hop captures an immutable value —
+            // Swift 6 rejects capturing the weak `var self` in concurrent code.
+            guard let self else { return }
+            Task { @MainActor in
+                self.startHRStreaming()
             }
         }
     }
@@ -83,16 +85,18 @@ final class ErgoMonitor: ObservableObject {
             predicate: nil,
             anchor: nil,
             limit: HKObjectQueryNoLimit
-        ) { _, samples, _, _, _ in
+        ) { [weak self] _, samples, _, _, _ in
             let quantitySamples = (samples as? [HKQuantitySample]) ?? []
-            Task { @MainActor [weak self] in
-                self?.handleHR(samples: quantitySamples)
+            guard let self else { return }
+            Task { @MainActor in
+                self.handleHR(samples: quantitySamples)
             }
         }
-        query.updateHandler = { _, samples, _, _, _ in
+        query.updateHandler = { [weak self] _, samples, _, _, _ in
             let quantitySamples = (samples as? [HKQuantitySample]) ?? []
-            Task { @MainActor [weak self] in
-                self?.handleHR(samples: quantitySamples)
+            guard let self else { return }
+            Task { @MainActor in
+                self.handleHR(samples: quantitySamples)
             }
         }
         hrQuery = query

@@ -28,6 +28,7 @@ import UIKit
 
 struct RoleHomeIntro: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @State private var snapshot: WeatherSnapshot? = nil
     @State private var availability: Availability = .pending
 
@@ -49,7 +50,7 @@ struct RoleHomeIntro: View {
         Button {
             #if canImport(UIKit)
             if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url)
+                openURL(url)
             }
             #endif
         } label: {

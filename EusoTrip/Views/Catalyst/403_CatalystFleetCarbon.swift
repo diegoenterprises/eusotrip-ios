@@ -127,6 +127,14 @@ private struct FleetCarbonBody_403: View {
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
     @State private var offsetQuoteTotal: Double? = nil
+    @State private var liveTonnes: Double? = nil
+    @State private var offsetUsdPerTonne: Double? = nil
+    @State private var offsetProvider: String? = nil
+    @State private var exporting = false
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var exportURL: URL? = nil
+    @State private var showInsight = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -142,6 +150,7 @@ private struct FleetCarbonBody_403: View {
                 laneChart
                 insightRow
                 ctaPair
+                actionFeedback
             }
             .padding(.horizontal, Space.s5)
             .padding(.top, Space.s3)
@@ -151,6 +160,7 @@ private struct FleetCarbonBody_403: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
         }
+        .sheet(isPresented: $showInsight) { insightSheet }
     }
 
     // MARK: TopBar
@@ -378,10 +388,7 @@ private struct FleetCarbonBody_403: View {
     // MARK: ESang insight row
 
     private var insightRow: some View {
-        Button {
-            NotificationCenter.default.post(name: .eusoCatalystCarbonInsight_403, object: nil,
-                userInfo: ["source": "403_CatalystFleetCarbon"])
-        } label: {
+        Button { showInsight = true } label: {
             HStack(spacing: Space.s3) {
                 ZStack {
                     Circle().fill(LinearGradient.diagonal)
@@ -416,13 +423,9 @@ private struct FleetCarbonBody_403: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             Button {
-                // Hands the REAL live quote to the host action layer
-                // (sustainability.buyOffsets not yet bridged for the write).
-                guard let total = offsetQuoteTotal else { return }
-                NotificationCenter.default.post(name: .eusoCatalystCarbonBuyOffsets_403, object: nil,
-                    userInfo: ["source": "403_CatalystFleetCarbon", "amount": total])
+                Task { await quoteOffsets() }
             } label: {
-                Text(offsetQuoteTotal != nil ? "Buy offsets · \(vm.offsetToNetZero)" : "Buy offsets")
+                Text(offsetQuoteTotal != nil ? "Offset quote · \(vm.offsetToNetZero)" : "Offset quote")
                     .font(EType.bodyStrong)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 48)
@@ -432,12 +435,9 @@ private struct FleetCarbonBody_403: View {
             .disabled(offsetQuoteTotal == nil)
             .opacity(offsetQuoteTotal == nil ? 0.5 : 1.0)
             Button {
-                // WIRE: sustainability.exportCarbonReport (sustainability.ts:277) —
-                // shipper-facing CDP/SmartWay packet. Not yet mirrored in EusoTripAPI.
-                NotificationCenter.default.post(name: .eusoCatalystCarbonExport_403, object: nil,
-                    userInfo: ["source": "403_CatalystFleetCarbon"])
+                Task { await exportReport() }
             } label: {
-                Text("Export report")
+                Text(exporting ? "Preparing…" : "Export report")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 144, height: 48)
@@ -445,7 +445,77 @@ private struct FleetCarbonBody_403: View {
                     .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
             }
             .buttonStyle(.plain)
+            .disabled(exporting)
         }
+    }
+
+    @ViewBuilder
+    private var actionFeedback: some View {
+        if let actionError {
+            errorBanner(actionError)
+        } else if let actionMessage {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(actionMessage)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.success)
+                if let exportURL {
+                    ShareLink(item: exportURL) {
+                        Label("Share carbon report", systemImage: "square.and.arrow.up")
+                            .font(EType.caption.weight(.semibold))
+                    }
+                }
+            }
+            .padding(Space.s3)
+            .background(Brand.success.opacity(0.10))
+            .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(Brand.success.opacity(0.35)))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+        }
+    }
+
+    private var insightSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(vm.insightTitle)
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                        Text(vm.insightSub)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                        Text(vm.bandCaption)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    .padding(Space.s4)
+                    .background(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Offset quote")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(palette.textPrimary)
+                        Text(offsetEvidenceLine)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    .padding(Space.s4)
+                    .background(palette.bgCard)
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
+                }
+                .padding(16)
+            }
+            .navigationTitle("Carbon insight")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { showInsight = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     // MARK: Error banner
@@ -491,6 +561,11 @@ private struct FleetCarbonBody_403: View {
         let provider: String?
     }
     private struct OffsetQuoteInput_403: Encodable { let tonnesCO2e: Double }
+    private struct CarbonExportWire_403: Decodable {
+        let csv: String?
+        let filename: String?
+        let rowCount: Int?
+    }
 
     private func loadAll() async {
         loading = true
@@ -507,7 +582,10 @@ private struct FleetCarbonBody_403: View {
                     "sustainability.getOffsetQuote",
                     input: OffsetQuoteInput_403(tonnesCO2e: carbon.totalTonnes))
             }
+            liveTonnes = carbon.totalTonnes > 0 ? carbon.totalTonnes : nil
             offsetQuoteTotal = quote?.total
+            offsetUsdPerTonne = quote?.usdPerTonne
+            offsetProvider = quote?.provider
 
             let progress = min(1.0, max(0.0, carbon.netZeroProgressPct / 100.0))
             vm = FleetCarbonVM_403(
@@ -540,9 +618,71 @@ private struct FleetCarbonBody_403: View {
             )
         } catch {
             vm = .empty
+            liveTonnes = nil
             offsetQuoteTotal = nil
+            offsetUsdPerTonne = nil
+            offsetProvider = nil
             loadError = "Couldn't reach the sustainability service - retry."
         }
+    }
+
+    private func quoteOffsets() async {
+        actionMessage = nil
+        actionError = nil
+        exportURL = nil
+
+        guard let tonnes = liveTonnes, tonnes > 0 else {
+            actionError = "Offset quote needs live CO₂e tonnage first."
+            return
+        }
+
+        do {
+            let quote: OffsetQuoteWire_403 = try await EusoTripAPI.shared.query(
+                "sustainability.getOffsetQuote",
+                input: OffsetQuoteInput_403(tonnesCO2e: tonnes))
+            offsetQuoteTotal = quote.total
+            offsetUsdPerTonne = quote.usdPerTonne
+            offsetProvider = quote.provider
+            actionMessage = "Offset quote ready: \(money_403(quote.total)) through \(quote.provider ?? "EusoTrip Net-Zero Marketplace"). Purchase is not completed here until live payment and registry retirement are connected."
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func exportReport() async {
+        exporting = true
+        actionMessage = nil
+        actionError = nil
+        exportURL = nil
+        defer { exporting = false }
+
+        do {
+            let out: CarbonExportWire_403 = try await EusoTripAPI.shared.queryNoInput(
+                "sustainability.exportCarbonReport")
+            guard let csv = out.csv, !csv.isEmpty else {
+                actionError = "Carbon report export returned no CSV rows."
+                return
+            }
+            let safeName = (out.filename?.isEmpty == false ? out.filename! : "carbon-report.csv")
+                .replacingOccurrences(of: "/", with: "-")
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(safeName)
+            try csv.data(using: .utf8)?.write(to: url, options: .atomic)
+            exportURL = url
+            let rows = out.rowCount ?? 0
+            actionMessage = "Carbon report ready: \(safeName) · \(rows) row\(rows == 1 ? "" : "s")."
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private var offsetEvidenceLine: String {
+        guard let tonnes = liveTonnes, tonnes > 0 else {
+            return "No live CO₂e tonnage is available yet."
+        }
+        let total = offsetQuoteTotal.map(money_403) ?? "quote pending"
+        let rate = offsetUsdPerTonne.map { String(format: "$%.0f/t", $0) } ?? "rate pending"
+        let provider = offsetProvider ?? "provider pending"
+        return String(format: "%.1f t CO₂e · %@ · %@ · %@", tonnes, total, rate, provider)
     }
 
     private func money_403(_ value: Double) -> String {
@@ -552,14 +692,6 @@ private struct FleetCarbonBody_403: View {
         f.maximumFractionDigits = 0
         return f.string(from: NSNumber(value: value)) ?? "$\(Int(value))"
     }
-}
-
-// MARK: - Notifications
-
-extension Notification.Name {
-    static let eusoCatalystCarbonBuyOffsets_403 = Notification.Name("eusoCatalystCarbonBuyOffsets_403")
-    static let eusoCatalystCarbonExport_403     = Notification.Name("eusoCatalystCarbonExport_403")
-    static let eusoCatalystCarbonInsight_403    = Notification.Name("eusoCatalystCarbonInsight_403")
 }
 
 // MARK: - Previews

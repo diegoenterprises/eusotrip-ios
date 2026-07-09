@@ -335,7 +335,7 @@
         <g class="country-MX">
           <text y="-3" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="5" fill="#FFFFFF" letter-spacing="0.3">GAS INFLAMABLE</text>
         </g>
-        <text y="15" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="13" fill="#1A1F2E" letter-spacing="0.6">1075</text>
+        <text y="15" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="13" fill="#1A1F2E" letter-spacing="0.6" data-bind="un_panel_number">1075</text>
         <text y="29" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="900" font-size="10" fill="#1A1F2E">2</text>
       </g>
       </g>

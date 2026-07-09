@@ -31,7 +31,10 @@ import SwiftUI
 
 struct MeContacts: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @StateObject private var store = ContactsStore()
+    @State private var showAddContactSheet = false
+    @State private var pendingDelete: ContactsAPI.Contact?
 
     private let roleFilters: [(label: String, raw: String?)] = [
         ("All",        nil),
@@ -68,6 +71,24 @@ struct MeContacts: View {
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
             Task { await store.refresh() }
         }
+        .sheet(isPresented: $showAddContactSheet) {
+            MeAddContactSheet(store: store)
+        }
+        .alert("Remove contact?", isPresented: deleteAlertBinding, presenting: pendingDelete) { contact in
+            Button("Remove", role: .destructive) {
+                Task { await store.deleteContact(contact) }
+            }
+            Button("Cancel", role: .cancel) { pendingDelete = nil }
+        } message: { contact in
+            Text("This removes \(contact.name) from your contacts.")
+        }
+    }
+
+    private var deleteAlertBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDelete != nil },
+            set: { if !$0 { pendingDelete = nil } }
+        )
     }
 
     // MARK: Header
@@ -83,7 +104,21 @@ struct MeContacts: View {
                     .foregroundStyle(palette.textTertiary)
             }
             Spacer()
-            OrbeSang(state: store.isLoading ? .thinking : .idle, diameter: 40)
+            HStack(spacing: Space.s2) {
+                Button {
+                    showAddContactSheet = true
+                } label: {
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .frame(width: 40, height: 40)
+                        .background(Circle().fill(LinearGradient.diagonal))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Add contact")
+
+                OrbeSang(state: store.isLoading ? .thinking : .idle, diameter: 40)
+            }
         }
     }
 
@@ -259,6 +294,9 @@ struct MeContacts: View {
                     emailButton(email)
                 }
                 favoriteButton(for: c)
+                if c.canDelete == true {
+                    deleteButton(for: c)
+                }
             }
         }
         .padding(Space.s3)
@@ -311,9 +349,8 @@ struct MeContacts: View {
     private func callButton(_ phone: String) -> some View {
         Button {
             let digits = phone.filter { $0.isNumber || $0 == "+" }
-            if let url = URL(string: "tel:\(digits)"),
-               UIApplication.shared.canOpenURL(url) {
-                UIApplication.shared.open(url)
+            if let url = URL(string: "tel:\(digits)") {
+                openURL(url)
             }
         } label: {
             Image(systemName: "phone.fill")
@@ -327,9 +364,8 @@ struct MeContacts: View {
 
     private func emailButton(_ email: String) -> some View {
         Button {
-            if let url = URL(string: "mailto:\(email)"),
-               UIApplication.shared.canOpenURL(url) {
-                UIApplication.shared.open(url)
+            if let url = URL(string: "mailto:\(email)") {
+                openURL(url)
             }
         } label: {
             Image(systemName: "envelope")
@@ -355,6 +391,20 @@ struct MeContacts: View {
         .buttonStyle(.plain)
     }
 
+    private func deleteButton(for c: ContactsAPI.Contact) -> some View {
+        Button {
+            pendingDelete = c
+        } label: {
+            Image(systemName: "trash")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Brand.danger)
+                .frame(width: 32, height: 32)
+                .overlay(Circle().stroke(Brand.danger.opacity(0.45), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Remove \(c.name)")
+    }
+
     // MARK: Footer
 
     private var footer: some View {
@@ -363,6 +413,161 @@ struct MeContacts: View {
             .foregroundStyle(palette.textTertiary)
             .multilineTextAlignment(.center)
             .padding(.horizontal, Space.s2)
+    }
+}
+
+private struct MeAddContactSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var store: ContactsStore
+
+    @State private var contactType: String = "driver"
+    @State private var name: String = ""
+    @State private var company: String = ""
+    @State private var email: String = ""
+    @State private var phone: String = ""
+    @State private var sendInvite: Bool = true
+    @State private var saving: Bool = false
+    @State private var created: Bool = false
+    @State private var saveError: String?
+
+    private let typeOptions: [(id: String, label: String)] = [
+        ("driver", "Driver"),
+        ("shipper", "Shipper"),
+        ("catalyst", "Catalyst"),
+        ("broker", "Broker"),
+        ("dispatch", "Dispatch"),
+        ("terminal", "Terminal"),
+        ("vendor", "Vendor"),
+        ("other", "Other"),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Contact") {
+                    TextField("Name", text: $name)
+                        .textInputAutocapitalization(.words)
+                    Picker("Type", selection: $contactType) {
+                        ForEach(typeOptions, id: \.id) { option in
+                            Text(option.label).tag(option.id)
+                        }
+                    }
+                    TextField("Company", text: $company)
+                        .textInputAutocapitalization(.words)
+                }
+
+                Section("Reach") {
+                    TextField("Email", text: $email)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    TextField("Phone", text: $phone)
+                        .keyboardType(.phonePad)
+                    Toggle("Send onboarding invite", isOn: $sendInvite)
+                        .disabled(inviteTarget == nil)
+                }
+
+                if created {
+                    Section {
+                        Text("Contact added.")
+                    }
+                }
+
+                if let saveError {
+                    Section {
+                        Text(saveError)
+                            .foregroundStyle(Brand.danger)
+                    }
+                }
+            }
+            .navigationTitle("Add contact")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(created ? "Done" : "Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if saving {
+                        ProgressView()
+                    } else if !created {
+                        Button("Save") { Task { await save() } }
+                            .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+        }
+    }
+
+    private var inviteTarget: (method: String, contact: String)? {
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedEmail.isEmpty { return ("email", trimmedEmail) }
+        let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedPhone.isEmpty { return ("sms", trimmedPhone) }
+        return nil
+    }
+
+    private func save() async {
+        guard !saving else { return }
+        saving = true
+        saveError = nil
+
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedCompany = company.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let createdContact = await store.createContact(
+            type: contactType,
+            name: trimmedName,
+            company: trimmedCompany.isEmpty ? nil : trimmedCompany,
+            email: trimmedEmail.isEmpty ? nil : trimmedEmail,
+            phone: trimmedPhone.isEmpty ? nil : trimmedPhone
+        )
+
+        guard createdContact else {
+            saveError = (store.lastError as? EusoTripAPIError)?.errorDescription
+                ?? store.lastError?.localizedDescription
+                ?? "Contact could not be added."
+            saving = false
+            return
+        }
+
+        created = true
+
+        if sendInvite, let target = inviteTarget {
+            do {
+                struct InviteInput: Encodable {
+                    let context: String
+                    let method: String
+                    let contact: String
+                    let targetName: String
+                    let urgency: String?
+                }
+                struct InviteResult: Decodable {
+                    let success: Bool
+                    let error: String?
+                }
+                let result: InviteResult = try await EusoTripAPI.shared.mutation(
+                    "invite.send",
+                    input: InviteInput(
+                        context: "GENERAL",
+                        method: target.method,
+                        contact: target.contact,
+                        targetName: trimmedName,
+                        urgency: "normal"
+                    )
+                )
+                if !result.success {
+                    saveError = result.error ?? "Contact added, invite did not send."
+                }
+            } catch {
+                saveError = "Contact added, invite did not send: "
+                    + ((error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription)
+            }
+        }
+
+        saving = false
+        if saveError == nil { dismiss() }
     }
 }
 

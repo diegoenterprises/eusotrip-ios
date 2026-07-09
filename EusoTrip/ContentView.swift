@@ -182,7 +182,7 @@ enum ScreenRegistry {
             .init(id: "105", title: "Me · Authority",               role: .driver) { p in AnyView(MeAuthorityScreen(theme: p)) },
             .init(id: "106", title: "Me · EusoTicket",              role: .driver) { p in AnyView(MeEusoTicketsScreen(theme: p)) },
             .init(id: "107", title: "Me · My Bids",                 role: .driver) { p in AnyView(MeMyBidsScreen(theme: p)) },
-            .init(id: "108", title: "Me · LoadBoard",               role: .driver) { p in AnyView(MeLoadBoardScreen(theme: p)) },
+            .init(id: "108", title: "Driver · Eusoboards",          role: .driver) { p in AnyView(MeLoadBoardScreen(theme: p)) },
             // 2026-05-21 — Driver lifecycle entry trio (SVG 091/092/093).
             // Numbering uses "DL09x" to avoid the 091-108 Me-section
             // collision; iOS already uses 091_MeDetention etc.
@@ -253,6 +253,15 @@ enum ScreenRegistry {
             .init(id: "DL147", title: "Driver · CEL At Delivery",      role: .driver) { p in AnyView(DriverCELM04AtDeliveryScreen(theme: p, loadId: "0")) },
             .init(id: "DL148", title: "Driver · CEL POD Signed",       role: .driver) { p in AnyView(DriverCELM04PODSignedScreen(theme: p, loadId: "0")) },
             .init(id: "149",   title: "Driver · CEL Closed Paid Receipt", role: .driver) { p in AnyView(DriverCELM04PaidReceiptScreen(theme: p, loadId: "0")) },
+            // 2026-07-03 — Driver paperwork band: 114 DVIR Composite S13-S14
+            // Acked Pickup Roll + 145-148 CEL M04 quartet. loadId "0" matches
+            // the 149 registry convention — surfaces live-bind whatever load
+            // id is passed at presentation and render honest "-" states otherwise.
+            .init(id: "114",   title: "Driver · Zeun DVIR Complete · Pickup Roll", role: .driver) { p in AnyView(DriverDvirCompositePickupRollScreen(theme: p, loadId: "0")) },
+            .init(id: "145",   title: "Driver · Pickup Departed",     role: .driver) { p in AnyView(DriverPickupDepartedCelM04Screen(theme: p, loadId: "0")) },
+            .init(id: "146",   title: "Driver · In Transit",          role: .driver) { p in AnyView(DriverInTransitCelM04Screen(theme: p, loadId: "0")) },
+            .init(id: "147",   title: "Driver · At Delivery Arrival", role: .driver) { p in AnyView(DriverAtDeliveryArrivalCelM04Screen(theme: p, loadId: "0")) },
+            .init(id: "148",   title: "Driver · POD Sign + Unload",   role: .driver) { p in AnyView(DriverPodSignUnloadCelM04Screen(theme: p, loadId: "0")) },
             .init(id: "109", title: "Me · Bid Detail",              role: .driver) { p in AnyView(MeBidDetailScreen(theme: p, loadId: 0)) },
             .init(id: "110", title: "Me · Auto-Accept",             role: .driver) { p in AnyView(MeAutoAcceptRulesScreen(theme: p)) },
             // 2026-05-21 — Bonus Tracker port (web BonusTracker.tsx → iOS).
@@ -1714,6 +1723,19 @@ enum ScreenRegistry {
             }
         )
 
+        // 2026-07-03 — New Wave 07-Escort band: ES-01 Convoy Comms /
+        // ES-02 Height Pole / ES-07 Settlement Detail (iOS 603/604/605).
+        // Pushed surfaces reached from the Escort Me hub (620) rows —
+        // not tab roots, so EscortNavRoute/tabRoots stay untouched.
+        list.append(.init(id: "603", title: "Escort · Convoy Comms", role: .escort) { p in AnyView(EscortConvoyCommsScreen(theme: p)) })
+        list.append(.init(id: "604", title: "Escort · Height Pole", role: .escort) { p in AnyView(EscortHeightPoleScreen(theme: p)) })
+        list.append(.init(id: "605", title: "Escort · Settlement Detail", role: .escort) { p in AnyView(EscortSettlementDetailScreen(theme: p, assignmentId: "0")) })  // pushed surface; pass a real assignment id via the entry-point row when navigating
+        list.append(.init(id: "608", title: "Escort · Vehicle Check", role: .escort) { p in AnyView(EscortVehicleCheckScreen(theme: p, assignmentId: "0")) })  // ES-06 pre-trip equipment gate; resolves the active assignment when id is "0"
+        list.append(.init(id: "606", title: "Escort · Route Survey", role: .escort) { p in AnyView(EscortRouteSurveyScreen(theme: p, assignmentId: "0")) })  // ES-03 pre-move hazard log; resolves the active assignment when id is "0"
+        list.append(.init(id: "609", title: "Escort · Jurisdiction Handoff", role: .escort) { p in AnyView(EscortJurisdictionHandoffScreen(theme: p, assignmentId: "0")) })  // ES-05 state-line LEO handoff; resolves the active assignment when id is "0"
+        list.append(.init(id: "610", title: "Escort · Cert Reciprocity", role: .escort) { p in AnyView(EscortCertReciprocityScreen(theme: p)) })  // ES-08 iOS peer of the live web cert-reciprocity page (spine already live)
+        list.append(.init(id: "607", title: "Escort · Permit & Requirements", role: .escort) { p in AnyView(EscortPermitRequirementsScreen(theme: p)) })  // ES-04 per-state OS/OW matrix from escorts.getStateRequirements
+
         // 2026-05-01 — lifted Terminal 700-702 + Admin 800-803 OUT
         // of the previous `#if DEBUG` block. Both role tracks have
         // shipped real bricks against real backend procedures
@@ -1878,7 +1900,11 @@ enum ScreenRegistry {
             // 2026-06-02 — WAVE-0 orphan recovery: 710A ConvoyComposer
             // (T-023, fully built, was never registered). Reachable via
             // Dpch713 Me → TOOLS → "Convoy composer".
-            .init(id: "Dpch710A", title: "Dispatch · Convoy Composer",  role: .dispatch) { p in AnyView(DispatchConvoyComposerScreen(theme: p)) },
+            .init(id: "Dpch710A", title: "Dispatch · Convoy Composer",  role: .dispatch) { p in
+                let loadId = ShipperLoadIdResolver.normalize(BrokerNavContext.latestLoadId)
+                let loadNumber = ShipperLoadIdResolver.normalize(BrokerNavContext.latestLoadNumber) ?? loadId
+                return AnyView(DispatchConvoyComposerScreen(theme: p, loadId: loadId, loadNumber: loadNumber))
+            },
             // 2026-06-03 — landed 3 scheduled-lane ports from _PORT_STAGING.
             // Dpch402 (NOT "402" — that id is Broker·Tender Detail).
             .init(id: "Dpch402", title: "Dispatch · Profile",           role: .dispatch) { p in AnyView(DispatcherProfileScreen(theme: p)) },
@@ -1964,17 +1990,17 @@ enum ScreenRegistry {
             .init(id: "Dpch795", title: "Dispatch · Contract Write",      role: .dispatch) { p in AnyView(DispatcherContractWriteScreen(theme: p)) },
             // 2026-05-21 — Dispatcher BH-card duodecet (SVG 514-525).
             .init(id: "Dpch800", title: "Dispatch · BH Reassign",         role: .dispatch) { p in AnyView(DispatcherBHReassignScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
-            .init(id: "Dpch801", title: "Dispatch · BH Tender Resolved",  role: .dispatch) { p in AnyView(DispatcherBHTenderResolvedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
-            .init(id: "Dpch802", title: "Dispatch · BH Pickup Armed",     role: .dispatch) { p in AnyView(DispatcherBHPickupArmedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
-            .init(id: "Dpch803", title: "Dispatch · BH Pickup Fired",     role: .dispatch) { p in AnyView(DispatcherBHPickupFiredScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
-            .init(id: "Dpch804", title: "Dispatch · BH In-Transit",       role: .dispatch) { p in AnyView(DispatcherBHInTransitScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
-            .init(id: "Dpch805", title: "Dispatch · BH Approach",         role: .dispatch) { p in AnyView(DispatcherBHDeliveryApproachScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
-            .init(id: "Dpch806", title: "Dispatch · BH At Delivery",      role: .dispatch) { p in AnyView(DispatcherBHAtDeliveryScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
-            .init(id: "Dpch807", title: "Dispatch · BH Docked Loading",   role: .dispatch) { p in AnyView(DispatcherBHDockedLoadingScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
-            .init(id: "Dpch808", title: "Dispatch · BH BOL Pre-Sign",     role: .dispatch) { p in AnyView(DispatcherBHBOLPreSignScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
-            .init(id: "Dpch809", title: "Dispatch · BH BOL Signed",       role: .dispatch) { p in AnyView(DispatcherBHBOLSignedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
-            .init(id: "Dpch810", title: "Dispatch · BH Paperwork",        role: .dispatch) { p in AnyView(DispatcherBHPaperworkScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
-            .init(id: "Dpch811", title: "Dispatch · BH Closed",           role: .dispatch) { p in AnyView(DispatcherBHClosedScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch801", title: "Dispatch · BH Tender Resolved",  role: .dispatch) { p in AnyView(DispatcherBHTenderResolved515Screen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch802", title: "Dispatch · BH Pickup Armed",     role: .dispatch) { p in AnyView(DispatcherBHPickupArmed516Screen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch803", title: "Dispatch · BH Pickup Fired",     role: .dispatch) { p in AnyView(DispatcherBHPickupFired517Screen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch804", title: "Dispatch · BH In-Transit",       role: .dispatch) { p in AnyView(DispatcherBHInTransit518Screen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch805", title: "Dispatch · BH Approach",         role: .dispatch) { p in AnyView(DispatcherBHApproaching519Screen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch806", title: "Dispatch · BH At Delivery",      role: .dispatch) { p in AnyView(DispatcherBHAtDelivery520Screen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch807", title: "Dispatch · BH Docked Loading",   role: .dispatch) { p in AnyView(DispatcherBHDockedLoading521Screen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch808", title: "Dispatch · BH BOL Pre-Sign",     role: .dispatch) { p in AnyView(DispatcherBHBolPreSign522Screen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch809", title: "Dispatch · BH BOL Signed",       role: .dispatch) { p in AnyView(DispatcherBHBolSigned523Screen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch810", title: "Dispatch · BH Paperwork",        role: .dispatch) { p in AnyView(DispatcherBHPaperwork524Screen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
+            .init(id: "Dpch811", title: "Dispatch · BH Closed",           role: .dispatch) { p in AnyView(DispatcherBHClosed525Screen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             // 2026-05-21 — Dispatcher M-04 kanban quintet (SVG 526-530).
             .init(id: "Dpch820", title: "Dispatch · M-04 Awarded Kanban", role: .dispatch) { p in AnyView(DispatcherM04AwardedKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
             .init(id: "Dpch821", title: "Dispatch · M-04 Pickup Kanban",  role: .dispatch) { p in AnyView(DispatcherM04PickupKanbanScreen(theme: p, loadId: BrokerNavContext.latestLoadId)) },
@@ -2121,11 +2147,30 @@ enum ScreenRegistry {
             .init(id: "Rail566", title: "Rail Engineer · Intermodal Transfer", role: .railEngineer) { p in AnyView(RailIntermodalTransferScreen(theme: p, shipmentId: 0)) },
             .init(id: "Rail567", title: "Rail Engineer · Chain of Custody", role: .railEngineer) { p in AnyView(RailChainOfCustodyScreen(theme: p, loadId: "0")) },
             .init(id: "Rail606", title: "Rail Engineer · Cargo Insurance", role: .railEngineer) { p in AnyView(RailCargoInsuranceScreen(theme: p)) },
+            .init(id: "Rail608", title: "Rail Engineer · Demurrage Alerts", role: .railEngineer) { p in AnyView(RailDemurrageAlertsScreen(theme: p)) },
+            .init(id: "Rail613", title: "Rail Engineer · Gate Activity Log", role: .railEngineer) { p in AnyView(RailGateActivityLogScreen(theme: p)) },
+            .init(id: "Rail612", title: "Rail Engineer · Transload Inventory", role: .railEngineer) { p in AnyView(RailTransloadInventoryScreen(theme: p)) },
+            .init(id: "Rail699", title: "Rail Engineer · Bad-Order Handoff", role: .railEngineer) { p in AnyView(RailBadOrderMonitorScreen(theme: p)) },
+            .init(id: "Rail609", title: "Rail Engineer · Reefer Cold-Chain", role: .railEngineer) { p in AnyView(RailReeferMonitorScreen(theme: p)) },
+            .init(id: "Rail610", title: "Rail Engineer · Tank Car Monitor", role: .railEngineer) { p in AnyView(RailTankCarMonitorScreen(theme: p)) },
+            .init(id: "Rail611", title: "Rail Engineer · FSMA Compliance", role: .railEngineer) { p in AnyView(RailFSMAComplianceScreen(theme: p)) },
+            .init(id: "Rail694", title: "Rail Engineer · Interchange Handoff", role: .railEngineer) { p in AnyView(RailInterchangeHandoffScreen(theme: p)) },
+            .init(id: "Rail697", title: "Rail Engineer · Interline Route Plan", role: .railEngineer) { p in AnyView(RailInterlineRoutePlanScreen(theme: p)) },
             .init(id: "Rail656", title: "Rail Engineer · Claim Payments", role: .railEngineer) { p in AnyView(RailClaimPaymentsScreen(theme: p)) },
             .init(id: "Rail669", title: "Rail Engineer · Overcharge Recovery", role: .railEngineer) { p in AnyView(RailOverchargeRecoveryScreen(theme: p)) },
             .init(id: "Rail670", title: "Rail Engineer · Shortage Claims", role: .railEngineer) { p in AnyView(RailShortageClaimsScreen(theme: p)) },
             .init(id: "Rail671", title: "Rail Engineer · Claim Templates", role: .railEngineer) { p in AnyView(RailClaimTemplatesScreen(theme: p)) },
             .init(id: "Rail673", title: "Rail Engineer · Intermodal Dashboard", role: .railEngineer) { p in AnyView(RailIntermodalDashboardScreen(theme: p)) },
+            // 2026-07-03 — Rail 700-706 (mechanical/safety + fraud/trust).
+            // Id "Rail700" is collision-free: Terminal uses bare "700",
+            // Vessel uses "Vesl700".
+            .init(id: "Rail700", title: "Rail Engineer · Carman Cert Registry", role: .railEngineer) { p in AnyView(RailCarmanCertRegistryScreen(theme: p)) },
+            .init(id: "Rail701", title: "Rail Engineer · Repair Work Order", role: .railEngineer) { p in AnyView(RailRepairWorkOrderScreen(theme: p)) },
+            .init(id: "Rail702", title: "Rail Engineer · Wayside Detectors", role: .railEngineer) { p in AnyView(RailWaysideDetectorsScreen(theme: p)) },
+            .init(id: "Rail703", title: "Rail Engineer · Hazmat Incident E-Report", role: .railEngineer) { p in AnyView(RailHazmatIncidentReportScreen(theme: p)) },
+            .init(id: "Rail704", title: "Rail Engineer · Trust Verdict", role: .railEngineer) { p in AnyView(RailTrustVerdictScreen(theme: p, loadId: "0")) },  // loadId accepts "1077" or "load_1077"; pass the real tender id when opened from a shipment context
+            .init(id: "Rail705", title: "Rail Engineer · SCAC Mark Check", role: .railEngineer) { p in AnyView(RailScacMarkCheckScreen(theme: p)) },  // optional enteredMark: pre-fills the mark when opened from a tender
+            .init(id: "Rail706", title: "Rail Engineer · Tag-Swap Scan", role: .railEngineer) { p in AnyView(RailTagSwapScanScreen(theme: p)) },
             .init(id: "Rail639", title: "Rail Engineer · Yard Directory", role: .railEngineer) { p in AnyView(RailYardDirectoryScreen(theme: p)) },
             .init(id: "Rail672", title: "Rail Engineer · Layover Tracking", role: .railEngineer) { p in AnyView(RailLayoverTrackingScreen(theme: p)) },
             .init(id: "Rail568", title: "Rail Engineer · Equipment Lease", role: .railEngineer) { p in AnyView(RailEquipmentLeaseScreen(theme: p)) },
@@ -2295,6 +2340,8 @@ enum ScreenRegistry {
             .init(id: "Vesl676", title: "Vessel Operator · Equipment Health",      role: .vesselOperator) { p in AnyView(VesselEquipmentHealthScreen(theme: p)) },
             .init(id: "Vesl681", title: "Vessel Operator · Emissions CII",         role: .vesselOperator) { p in AnyView(VesselEmissionsCIIScreen(theme: p)) },
             .init(id: "Vesl682", title: "Vessel Operator · Carrier Scorecard",     role: .vesselOperator) { p in AnyView(VesselCarrierScorecardScreen(theme: p)) },
+            // 2026-07-03 — 06 Vessel freshest trio: 675 Carrier Scorecard (LEAGUE/COMPARISON).
+            .init(id: "Vesl675", title: "Vessel Operator · Carrier League",        role: .vesselOperator) { p in AnyView(VesselCarrierScorecard_675(theme: p)) },
             .init(id: "Vesl683", title: "Vessel Operator · Fleet Health",          role: .vesselOperator) { p in AnyView(VesselFleetHealthScreen(theme: p)) },
             // Phase B wave 2 — Vessel operator NEW screens (verbatim ports). Required ids defaulted for registry construction.
             .init(id: "Vesl662", title: "Vessel Operator · Exceptions & Holds",     role: .vesselOperator) { p in AnyView(VesselExceptionsHoldsScreen(theme: p)) },
@@ -2511,7 +2558,7 @@ struct ContentView: View {
     /// 2026-06-09 / audit M25). The non-driver roles each mount their own
     /// `RoleDetailLayer` inside `RoleSurfaceRouter`; the Driver surface is
     /// inline here, so it owns its own pushed-detail truth. Driver screens
-    /// (010 Home, Eusoboards/Loads panes, 108 Me LoadBoard, 068 Me
+    /// (010 Home, Eusoboards/Loads panes, 108 Eusoboards alias, 068 Me
     /// Earnings) call `\.rolePushDetail` to slide the canonical
     /// `LoadDetailSheet` in from the trailing edge instead of presenting
     /// a slide-up modal. Back posts the shared `.eusoRoleNavBack`.
@@ -2608,21 +2655,20 @@ struct ContentView: View {
             // they tap back into the trip (future: dedicated "resume
             // trip" affordance); for now, Home is the dashboard surface.
             .environment(\.driverNavHandler) { label in
-                switch label.lowercased() {
-                case "home":
-                    // Tapping Home from another tab: just switch to Home
-                    // (preserves the current trip phase so the driver
-                    // picks up mid-trip from where they left off).
-                    // Tapping Home while already on Home: rewind to the
-                    // dashboard — standard "take me to the top" gesture.
-                    if nav.currentTab == .home {
-                        trip.jump(to: .idle)
-                    } else {
-                        nav.currentTab = .home
+                let key = label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if driverPushedDetail != nil {
+                    withAnimation(.easeInOut(duration: 0.24)) {
+                        driverPushedDetail = nil
                     }
-                case "trips":
+                }
+                nav.showeSang = false
+                switch key {
+                case "home", "home screen", "dashboard":
+                    nav.currentTab = .home
+                    trip.jump(to: .idle)
+                case "trips", "haul", "eusoboards", "euso boards", "load board":
                     nav.currentTab = .trips
-                case "loads", "wallet":
+                case "my loads", "loads", "wallet":
                     // Request 3: the former "Wallet" slot was renamed to
                     // "Loads". The Tab enum case name stays `.wallet` for
                     // backward-compat; the label mapping is here so both
@@ -3005,6 +3051,13 @@ struct ContentView: View {
             guard let key = note.object as? String else { return }
             handleDriverMeAction(key: key, userInfo: note.userInfo ?? [:])
         }
+        // Load detail "Message" CTA. The sheet resolves a persisted
+        // load-scoped conversation first, then posts this app-level open
+        // request. Root routing matters because Driver presents the native
+        // message sheet while Shipper lands in the 311 thread screen.
+        .onReceive(NotificationCenter.default.publisher(for: .eusoLoadConversationOpen)) { note in
+            handleLoadConversationOpen(note)
+        }
         // Universal hands-free autopilot — mounted ONCE at the root so the
         // orb press-and-hold activates continuous voice for WHATEVER role
         // is signed in (driver / ship captain / rail engineer / shipper /
@@ -3027,10 +3080,13 @@ struct ContentView: View {
                 .presentationDragIndicator(.visible)
         }
 #endif
-        // ESANG coach sheet — presented as a system sheet from the root so
-        // tapping the orb from any Driver surface (lifecycle screen or any
+        // ESANG coach sheet — presented as a full-screen cover from the root
+        // so tapping the orb from any Driver surface (lifecycle screen or any
         // of the three panes) slides it in over the current content.
-        .sheet(isPresented: $nav.showeSang) {
+        // ASC AOd5xzXVfU6CF6hyijTDwgk parity (build 712): the page-sheet peek
+        // band let the presenting surface's labels collide with the status
+        // bar; the coach sheet has its own close X, so nothing is lost.
+        .fullScreenCover(isPresented: $nav.showeSang) {
             DrivereSangCoachSheet()
                 .environment(\.palette, register.palette)
                 // Mirror the root: let the system drive the sheet's
@@ -3175,6 +3231,33 @@ struct ContentView: View {
         }
     }
 
+    /// Open a resolved, persisted load conversation in the native surface for
+    /// the active role. Driver and the non-shipper operational roles use the
+    /// canonical message sheet; Shipper uses the existing 311 push-nav thread
+    /// because it owns a full role-specific chat screen.
+    private func handleLoadConversationOpen(_ note: Notification) {
+        let rawConversationId = note.userInfo?["conversationId"]
+        let conversationId = (rawConversationId as? String)
+            ?? (rawConversationId as? Int).map(String.init)
+        guard let conversationId, !conversationId.isEmpty else { return }
+
+        let loadNumber = (note.userInfo?["loadNumber"] as? String)
+            ?? (note.userInfo?["loadId"] as? String)
+
+        let role = session.user?.roleEnum ?? .driver
+        if role == .shipper {
+            LoadConversationContext.shared.pendingConversationId = conversationId
+            LoadConversationContext.shared.pendingLoadNumber = loadNumber
+            NotificationCenter.default.post(
+                name: .eusoShipperNavSwap,
+                object: nil,
+                userInfo: ["screenId": "311"]
+            )
+        } else {
+            messagingSheetTarget = MessagingSheetTarget(threadId: conversationId)
+        }
+    }
+
     // MARK: - Driver MeAction dispatcher
     //
     // Routes the keys posted by `MeAction.fire(_:)` from any Driver
@@ -3187,28 +3270,28 @@ struct ContentView: View {
     // `\.driverWebContinuation`. No key drops into a void.
     private func handleDriverMeAction(key: String, userInfo: [AnyHashable: Any]) {
         switch key {
-        // Navigation: load / bid / loadboard surfaces live under the
-        // My Loads tab (the slot was renamed from "Wallet" to
-        // "My Loads" 2026-05-07; the enum case stays `.wallet` for
-        // back-compat with screen swap targets).
+        // Navigation: Eusoboards is the Driver Trips tab. Bid-detail and
+        // earnings load-detail surfaces stay under Loads, because those
+        // represent already-owned / already-bid work.
         //
         // `driver.load.detail` was previously routed here too, but
         // the founder bug 2026-05-07 surfaced that tapping a load
         // inside `108_MeLoadBoard` (Eusoboards) yanked the user to
         // My Loads — wrong destination. The fix lives at the source:
-        // 108 now presents the canonical `LoadDetailSheet` IN-PLACE
-        // via `.sheet(item:)` so the user stays inside Eusoboards.
+        // 108 is now only a compatibility alias; all public board entry
+        // points route to the canonical Driver Trips surface.
         // Keeping `driver.load.detail` out of this tab-switch list
         // prevents the same regression from any future caller.
-        case "driver.loadboard.open",
-             "driver.bid.detail",
+        case "driver.loadboard.open":
+            nav.currentTab = .trips
+        case "driver.bid.detail",
              "earnings.load.detail":
             nav.currentTab = .wallet
         case "driver.load.detail":
             // Intentionally NOT switching tabs. Source screens are
             // expected to handle the detail presentation locally
             // (sheet, push, in-place card). If a caller needs the
-            // global Loads-tab path, they should fire
+            // global public-board path, they should fire
             // `driver.loadboard.open` instead.
             break
 

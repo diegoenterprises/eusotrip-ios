@@ -485,7 +485,7 @@ struct TheHaulLeaderboard: View {
                     .font(EType.bodyStrong)
                     .foregroundColor(palette.textPrimary)
             }
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundColor(palette.textSecondary)
                 .lineLimit(3)

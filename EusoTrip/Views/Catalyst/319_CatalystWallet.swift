@@ -181,6 +181,11 @@ private struct WalletBody: View {
 
                 ownerOpSeamBanner
 
+                EusoCardIssuePanel(
+                    title: "EusoCard",
+                    subtitle: "Fleet spend card backed by EusoWallet Treasury"
+                )
+
                 kpiStrip
 
                 filterTabs
@@ -305,7 +310,7 @@ private struct WalletBody: View {
                 Text("OWNER-OP SEAM · CLEAN BOOKS")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(.white.opacity(0.85))
-                Text("Diego pays Eusotrans pays Michael · same companyId · zero days-to-pay")
+                Text("Diego pays Eusotrans pays Michael · same company · zero days-to-pay")
                     .font(EType.micro).foregroundStyle(.white.opacity(0.95)).lineLimit(2)
             }
             Spacer(minLength: 0)

@@ -8,7 +8,7 @@
 //    3. Duress-mode voice phrase
 //
 //  Each trigger does the same three things:
-//    - Fires `emergencyProtocols.activate` on the backend
+//    - Fires `emergencyProtocols.declareEmergency` on the backend
 //    - Asks the phone to place an E911 call (watch can't dial alone)
 //    - Surfaces an emergency UI sheet with 30-second countdown + Cancel
 //
@@ -83,19 +83,21 @@ final class EmergencyController: NSObject, ObservableObject {
             coordinate: coord
         )
 
-        // Backend escalation
+        // Backend escalation — `emergencyProtocols.declareEmergency`
+        // is the REAL proc (emergencyProtocols.ts:497); the previously
+        // called `emergencyProtocols.activate` does not exist, so the
+        // dispatcher/backend never learned of a single wrist SOS.
         Task {
             do {
                 let client = EsangClient(auth: auth)
                 _ = try await client.mutateJSON(
-                    "emergencyProtocols.activate",
-                    input: [
-                        "reason": reason,
-                        "silent": silent,
-                        "lat": coord?.latitude ?? 0,
-                        "lon": coord?.longitude ?? 0,
-                        "source": "watch"
-                    ]
+                    "emergencyProtocols.declareEmergency",
+                    input: Self.declareEmergencyInput(
+                        reason: reason,
+                        lat: coord?.latitude,
+                        lon: coord?.longitude,
+                        at: Date()
+                    )
                 )
             } catch {
                 OfflineQueue.shared.enqueueSOS(
@@ -143,5 +145,44 @@ final class EmergencyController: NSObject, ObservableObject {
         // Countdown elapsed without cancellation — hold the sheet open,
         // keep haptics loud. The phone placed the E911 call already.
         WKInterfaceDevice.current().play(.failure)
+    }
+
+    // MARK: - declareEmergency wire shape
+
+    /// Builds the zod input `emergencyProtocols.declareEmergency`
+    /// requires (emergencyProtocols.ts:497-512): type + severity enums,
+    /// title (min 5 chars), description (min 10 chars), optional
+    /// location string + latitude/longitude numbers. Shared by the
+    /// live path, the OfflineQueue SOS lane, and the phone relay so
+    /// all three speak the identical contract.
+    nonisolated static func declareEmergencyInput(
+        reason: String,
+        lat: Double?,
+        lon: Double?,
+        at: Date
+    ) -> [String: Any] {
+        let lower = reason.lowercased()
+        let type: String = {
+            if lower.contains("crash") || lower.contains("accident") { return "accident" }
+            if lower.contains("medical") || lower.contains("injur")   { return "medical" }
+            if lower.contains("hazmat") || lower.contains("spill")    { return "hazmat_spill" }
+            if lower.contains("breakdown") || lower.contains("mechan") { return "breakdown" }
+            if lower.contains("fire")                                  { return "fire" }
+            if lower.contains("weather") || lower.contains("storm")    { return "weather" }
+            if lower.contains("theft") || lower.contains("cargo")      { return "cargo_theft" }
+            return "security"
+        }()
+        var input: [String: Any] = [
+            "type": type,
+            "severity": "critical",
+            "title": "Wrist SOS — EusoTrip Pulse",
+            "description": "Driver-initiated SOS escalated from the EusoTrip Pulse watch app. Reason: \(reason). Raised at \(ISO8601DateFormatter.iso.string(from: at)).",
+        ]
+        if let lat, let lon {
+            input["latitude"] = lat
+            input["longitude"] = lon
+            input["location"] = String(format: "%.5f, %.5f", lat, lon)
+        }
+        return input
     }
 }

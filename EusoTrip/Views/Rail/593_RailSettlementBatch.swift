@@ -359,7 +359,7 @@ private struct RailSettlementBatchBody: View {
     private var includedList: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
             HStack {
-                Text("INCLUDED · createBatch")
+                Text("INCLUDED · in this batch")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

@@ -145,6 +145,7 @@ final class ZeunBreakdownReporterStore: ObservableObject {
 
 struct ZeunBreakdownReporter: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
     @StateObject private var store = ZeunBreakdownReporterStore()
 
@@ -430,9 +431,7 @@ struct ZeunBreakdownReporter: View {
                             if let phone = p.phone,
                                let url = URL(string: "tel:\(phone.filter { "+0123456789".contains($0) })") {
                                 Button {
-                                    #if canImport(UIKit)
-                                    UIApplication.shared.open(url)
-                                    #endif
+                                    openURL(url)
                                 } label: {
                                     Image(systemName: "phone.fill")
                                         .foregroundStyle(.white)
@@ -702,6 +701,7 @@ struct ZeunProviderNetwork: View {
 
 struct ZeunProviderDetail: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @Environment(\.dismiss) private var dismiss
 
     let providerId: Int
@@ -709,7 +709,7 @@ struct ZeunProviderDetail: View {
     @State private var detail: ZeunMechanicsAPI.ProviderDetail?
     @State private var isLoading: Bool = true
     /// In-app SFSafariViewController presentation for the provider's
-    /// website. Replaces the prior `UIApplication.shared.open(url)`
+    /// website. Replaces the prior raw URL hand-off
     /// Safari kick — driver stays inside the EusoTrip app and can
     /// browse the mechanic shop site without leaving.
     private struct ZeunWebSession: Identifiable, Hashable {
@@ -824,9 +824,7 @@ struct ZeunProviderDetail: View {
                 if let phone = d.phone, !phone.isEmpty {
                     contactRow(icon: "phone.fill", value: phone) {
                         if let url = URL(string: "tel:\(phone.filter { "+0123456789".contains($0) })") {
-                            #if canImport(UIKit)
-                            UIApplication.shared.open(url)
-                            #endif
+                            openURL(url)
                         }
                     }
                 }
@@ -840,9 +838,7 @@ struct ZeunProviderDetail: View {
                 if let email = d.email, !email.isEmpty {
                     contactRow(icon: "envelope.fill", value: email) {
                         if let url = URL(string: "mailto:\(email)") {
-                            #if canImport(UIKit)
-                            UIApplication.shared.open(url)
-                            #endif
+                            openURL(url)
                         }
                     }
                 }

@@ -62,7 +62,7 @@ struct PickupArrival: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 10) {
-            // 100th firing · ledger-hygiene sweep — was `Button { }` (no-op
+            // 100th firing · ledger-hygiene sweep — was a dead tap
             // chevron). Wires to the env-injected `driverNavBack` closure
             // ContentView publishes; the env key falls back to nil so
             // previews keep building. No-op when phase is `.idle`.

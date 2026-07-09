@@ -17,12 +17,10 @@
 //                  reason,carrierName,shipperName}],
 //        summary{total,totalCharges,avgDays} }
 //
-//  STUB · named-gap (to the-oath):
+//  Named gaps (to the-oath):
 //    (1) no structured fault-party field — fault chip derived client-side from free-text `reason`.
 //    (2) no per-event freeDays returned — free-time segment rendered as a fixed 1-day proxy.
-//    (3) 'Bill open' CTA -> detentionAccessorials.fileClaim (bill mutation) NOT wired in this surface.
-//    (4) 'Dispute' CTA -> dispute mutation (audit + WS accessorial channel) NOT wired yet.
-//    Both write CTAs are inert posture controls here; flag STUB until mutation + reload() are wired.
+//    (3) write CTAs target the worst eligible layover and surface backend status preconditions.
 //
 
 import SwiftUI
@@ -164,6 +162,9 @@ private struct RailLayoverTrackingBody672: View {
     @State private var summary: LayoverSummary672? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var actionInFlight = false
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
 
     // W13 hygiene (E2E audit §4 · 2026-06-10): the header carrier + tariff
     // were hardcoded fixtures ("BNSF INTERMODAL · $350/car-day") rendered
@@ -190,6 +191,12 @@ private struct RailLayoverTrackingBody672: View {
     private var readyAmt: Double   { events.filter { $0.status == .open    }.reduce(0) { $0 + chargeValue($1.charge) } }
     private var atRiskAmt: Double  { events.filter { $0.status == .disputed }.reduce(0) { $0 + chargeValue($1.charge) } }
     private var idleCars: Int      { events.reduce(0) { $0 + $1.days } }
+    private var billTarget: LayoverEvent672? {
+        sortedEvents.first { $0.status == .open && chargeValue($0.charge) > 0 }
+    }
+    private var disputeTarget: LayoverEvent672? {
+        sortedEvents.first { $0.status == .open }
+    }
 
     private func chargeValue(_ s: String) -> Double {
         Double(s.filter { $0.isNumber }) ?? 0
@@ -211,6 +218,7 @@ private struct RailLayoverTrackingBody672: View {
                     hero
                     agingLane
                     esangRow
+                    actionFeedback
                     ctaRow
                 }
                 Color.clear.frame(height: 96)
@@ -387,18 +395,18 @@ private struct RailLayoverTrackingBody672: View {
         .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(palette.borderFaint))
     }
 
-    // MARK: CTA pair — both inert posture controls in this surface (STUB · no mutation wired)
+    // MARK: CTA pair — real billing/dispute writes against the worst eligible layover
     private var ctaRow: some View {
         HStack(spacing: 8) {
-            // STUB: 'Bill open' → detentionAccessorials.fileClaim — not wired here; reload() on success.
-            Button { } label: {
+            Button { Task { await billOpenLayover() } } label: {
                 Text("Bill open · \(LayoverEvent672.usd(readyAmt))").font(.system(size: 15, weight: .bold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).frame(height: 48)
                     .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.primary))
             }
             .buttonStyle(.plain)
-            // STUB: 'Dispute' → dispute mutation (audit + WS accessorial) — not wired yet.
-            Button { } label: {
+            .disabled(actionInFlight)
+
+            Button { Task { await disputeWorstLayover() } } label: {
                 Text("Dispute").font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
                     .frame(width: 148, height: 48)
                     .background(palette.bgCard)
@@ -406,6 +414,19 @@ private struct RailLayoverTrackingBody672: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
+            .disabled(actionInFlight)
+        }
+    }
+
+    @ViewBuilder private var actionFeedback: some View {
+        if let actionError {
+            LifecycleCard(accentDanger: true) {
+                Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if let actionMessage {
+            LifecycleCard {
+                Text(actionMessage).font(EType.caption).foregroundStyle(Brand.success)
+            }
         }
     }
 
@@ -430,6 +451,64 @@ private struct RailLayoverTrackingBody672: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+
+    private func billOpenLayover() async {
+        guard let target = billTarget else {
+            actionMessage = nil
+            actionError = "No billable open layover with an amount is available."
+            return
+        }
+        actionInFlight = true
+        actionMessage = nil
+        actionError = nil
+        defer { actionInFlight = false }
+        struct In: Encodable { let claimId: Int }
+        struct Out: Decodable { let success: Bool?; let invoicedAmount: Double? }
+        do {
+            let out: Out = try await EusoTripAPI.shared.mutation(
+                "detentionAccessorials.invoiceDetentionCharge",
+                input: In(claimId: target.id)
+            )
+            guard out.success != false else {
+                actionError = "The layover charge was not accepted for invoicing."
+                return
+            }
+            let amount = out.invoicedAmount.map { LayoverEvent672.usd($0) } ?? target.charge
+            await load()
+            actionMessage = "\(target.facility) invoiced for \(amount)."
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func disputeWorstLayover() async {
+        guard let target = disputeTarget else {
+            actionMessage = nil
+            actionError = "No open layover is available to dispute."
+            return
+        }
+        actionInFlight = true
+        actionMessage = nil
+        actionError = nil
+        defer { actionInFlight = false }
+        struct In: Encodable { let claimId: Int; let reason: String }
+        struct Out: Decodable { let success: Bool?; let status: String?; let message: String? }
+        let reason = "Dispute filed from Rail Layover Tracking for \(target.facility): \(target.reason)"
+        do {
+            let out: Out = try await EusoTripAPI.shared.mutation(
+                "detentionAccessorials.disputeDetention",
+                input: In(claimId: target.id, reason: reason)
+            )
+            guard out.success != false else {
+                actionError = out.message ?? "The layover dispute was not accepted."
+                return
+            }
+            await load()
+            actionMessage = out.message ?? "\(target.facility) moved to \(out.status ?? "disputed")."
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
     }
 }
 

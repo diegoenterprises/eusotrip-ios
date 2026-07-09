@@ -136,7 +136,7 @@ extension WeatherForLoad {
     }
     var conditionLine: String? { origin?.realtime?.condition }
     var locationName: String? { origin?.name }
-    /// Tomorrow.io weatherCode for the hero glyph (WeatherIcons.swift).
+    /// Apple WeatherKit weatherCode for the hero glyph (WeatherIcons.swift).
     var heroWeatherCode: Int { origin?.realtime?.weatherCode ?? 0 }
 
     /// The 4 hero metric tiles (wind · visibility · humidity · precip).

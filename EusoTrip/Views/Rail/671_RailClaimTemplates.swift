@@ -15,13 +15,13 @@
 //    freightClaims.getClaimTemplates  (EXISTS freightClaims.ts:1231 · protectedProcedure.query · no input)
 //        → { templates: [{ id, type(damage|loss|shortage|delay|contamination),
 //                           name, description, requiredFields[], optionalFields[] }] }
-//    'New from template' / 'Blank claim' → freightClaims.fileClaim (EXISTS:332) — NOT wired here.
-//        STUB · the write CTA has no backing mutation on this surface (re-run load() pattern only).
+//    'Draft from template' → native ShareLink packet generated from the live template fields.
+//        freightClaims.fileClaim requires loadId + amount + description + evidence, so this picker
+//        exports a safe draft packet rather than fabricating a claim row.
 //
-//  STUB · named-gaps (to the-oath): (1) no usage stats — getClaimTemplates returns no
+//  Named gaps (to the-oath): (1) no usage stats — getClaimTemplates returns no
 //    usage:{count,lastUsedAt}; the usage footer is honestly omitted (was client-side fiction).
 //    (2) no rail/AAR variants on the row; propose a transportMode filter (AAR Rule 102/123).
-//    (3) no audit row on template instantiation.
 //
 
 import SwiftUI
@@ -71,6 +71,8 @@ private struct ClaimTemplate671: Identifiable {
     let tint: Color
     let requiredCount: Int
     let optionalCount: Int
+    let requiredFields: [String]
+    let optionalFields: [String]
     let mostUsed: Bool
 
     init(_ dto: ClaimTemplateDTO671, mostUsed: Bool) {
@@ -81,8 +83,10 @@ private struct ClaimTemplate671: Identifiable {
         self.badge = style.badge + (mostUsed ? " \u{2605}" : "")
         self.glyph = style.glyph
         self.tint  = style.tint
-        self.requiredCount = dto.requiredFields?.count ?? 0
-        self.optionalCount = dto.optionalFields?.count ?? 0
+        self.requiredFields = dto.requiredFields ?? []
+        self.optionalFields = dto.optionalFields ?? []
+        self.requiredCount = requiredFields.count
+        self.optionalCount = optionalFields.count
         self.mostUsed = mostUsed
     }
 
@@ -106,6 +110,8 @@ private struct RailClaimTemplatesBody671: View {
     @State private var templates: [ClaimTemplate671] = []
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var selectedTemplateId: String? = nil
+    @State private var showingManagePanel = false
 
     private let cardRim671 = LinearGradient(
         colors: [Brand.blue.opacity(0.85), Brand.magenta.opacity(0.85)],
@@ -114,6 +120,10 @@ private struct RailClaimTemplatesBody671: View {
     private let cols671 = [GridItem(.flexible(), spacing: 16), GridItem(.flexible(), spacing: 16)]
 
     private var mostUsedName: String? { templates.first(where: { $0.mostUsed })?.name }
+    private var selectedTemplate: ClaimTemplate671? {
+        if let selectedTemplateId, let match = templates.first(where: { $0.id == selectedTemplateId }) { return match }
+        return templates.first
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -132,6 +142,7 @@ private struct RailClaimTemplatesBody671: View {
                     librarySection
                     esangRow
                     ctaRow
+                    managePanel
                 }
                 Color.clear.frame(height: 96)
             }
@@ -212,7 +223,8 @@ private struct RailClaimTemplatesBody671: View {
     }
 
     private func templateCard(_ t: ClaimTemplate671) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let isSelected = selectedTemplate?.id == t.id
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
                 RoundedRectangle(cornerRadius: 9, style: .continuous).fill(t.tint.opacity(0.14)).frame(width: 32, height: 32)
                     .overlay(Image(systemName: t.glyph).font(.system(size: 14)).foregroundColor(t.tint))
@@ -228,7 +240,9 @@ private struct RailClaimTemplatesBody671: View {
         .padding(14).frame(height: 118, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(palette.bgCard)
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(t.mostUsed ? AnyShapeStyle(cardRim671) : AnyShapeStyle(palette.borderFaint), lineWidth: t.mostUsed ? 1.5 : 1)))
+                .stroke((isSelected || t.mostUsed) ? AnyShapeStyle(cardRim671) : AnyShapeStyle(palette.borderFaint), lineWidth: (isSelected || t.mostUsed) ? 1.5 : 1)))
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onTapGesture { selectedTemplateId = t.id }
     }
 
     private func fieldPips(required: Int, optional: Int) -> some View {
@@ -277,13 +291,24 @@ private struct RailClaimTemplatesBody671: View {
     }
 
     private var ctaRow: some View {
-        // STUB: 'New from <type>' / 'Manage' have no backing mutation on this surface
-        // (freightClaims.fileClaim exists at :332 but is not wired here). Honest no-op refresh.
-        let primaryTitle = mostUsedName.map { "New from \($0)" } ?? "New from template"
+        let selected = selectedTemplate
+        let primaryTitle = selected.map { "Draft \($0.name)" } ?? "Draft claim"
         return HStack(spacing: 8) {
-            CTAButton(title: primaryTitle, action: { Task { await load() } }, leadingIcon: "plus")
-            Button { } label: {
-                Text("Manage")
+            ShareLink(item: draftPacketText(for: selected)) {
+                HStack(spacing: 6) {
+                    Image(systemName: "square.and.arrow.up")
+                    Text(primaryTitle)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(LinearGradient.primary)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            Button { showingManagePanel.toggle() } label: {
+                Text(showingManagePanel ? "Hide" : "Manage")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(palette.textPrimary)
                     .frame(width: 132, height: 48)
@@ -293,6 +318,76 @@ private struct RailClaimTemplatesBody671: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    @ViewBuilder private var managePanel: some View {
+        if showingManagePanel {
+            LifecycleCard {
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    LifecycleSection(label: "LIVE TEMPLATE MANAGEMENT", icon: "doc.on.doc.fill")
+                    if let selectedTemplate {
+                        LifecycleRow(label: "Selected", value: selectedTemplate.name)
+                        LifecycleRow(label: "Type", value: selectedTemplate.badge.replacingOccurrences(of: " ★", with: ""))
+                        LifecycleRow(label: "Required", value: fieldList(selectedTemplate.requiredFields))
+                        LifecycleRow(label: "Optional", value: fieldList(selectedTemplate.optionalFields))
+                    }
+                    ShareLink(item: libraryExportText) {
+                        Text("Export template library")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(palette.textPrimary)
+                            .frame(maxWidth: .infinity, minHeight: 42)
+                            .background(palette.bgCardSoft)
+                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                                .strokeBorder(palette.borderFaint))
+                            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    }
+                }
+            }
+        }
+    }
+
+    private func fieldList(_ fields: [String]) -> String {
+        fields.isEmpty ? "-" : fields.map { $0.replacingOccurrences(of: "_", with: " ") }.joined(separator: ", ")
+    }
+
+    private func draftPacketText(for template: ClaimTemplate671?) -> String {
+        guard let template else {
+            return "EusoTrip Freight Claim Draft\n\nNo live claim template is selected."
+        }
+        return [
+            "EusoTrip Freight Claim Draft",
+            "Template: \(template.name)",
+            "Type: \(template.badge.replacingOccurrences(of: " ★", with: ""))",
+            "",
+            "Required fields:",
+            fieldBulletList(template.requiredFields),
+            "",
+            "Optional fields:",
+            fieldBulletList(template.optionalFields),
+            "",
+            "Filing note: add the shipment/load ID, amount, description and evidence before submission."
+        ].joined(separator: "\n")
+    }
+
+    private func fieldBulletList(_ fields: [String]) -> String {
+        guard !fields.isEmpty else { return "- None returned by the live template." }
+        return fields.map { "- \($0.replacingOccurrences(of: "_", with: " "))" }.joined(separator: "\n")
+    }
+
+    private var libraryExportText: String {
+        var lines = [
+            "EusoTrip Rail Claim Template Library",
+            "Generated: \(Date().formatted(date: .abbreviated, time: .shortened))",
+            "Templates: \(templates.count)",
+            ""
+        ]
+        for template in templates {
+            lines.append("\(template.name) [\(template.badge.replacingOccurrences(of: " ★", with: ""))]")
+            lines.append("Required: \(fieldList(template.requiredFields))")
+            lines.append("Optional: \(fieldList(template.optionalFields))")
+            lines.append("")
+        }
+        return lines.joined(separator: "\n")
     }
 
     // MARK: Load

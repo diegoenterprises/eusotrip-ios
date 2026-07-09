@@ -340,7 +340,7 @@ private struct RailBidBoardBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("railShipments.ts:328")
+                Text("rate-ranked")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -441,7 +441,7 @@ private struct RailBidBoardBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("railShipments.ts:350")
+                Text("award action")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -472,23 +472,32 @@ private struct RailBidBoardBody: View {
 
     // MARK: - CTA pair (Submit quote · Bid history)
 
+    private var bidHistoryLines: [String] {
+        var lines = [
+            "Shipment: \(shipmentId)",
+            "Lane: \(lane)",
+            "Carrier: \(carrierName)",
+            "Shipper: \(shipperOfRecord)",
+            "Bids: \(bids.count)"
+        ]
+        for bid in bids.prefix(6) {
+            lines.append("\(carrierTitle(bid)): \(money(bid.metadata?.amount ?? 0)) - \(rateLabel(bid)) - \(bid.timestamp ?? "-")")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Submit quote",
                       action: { Task { await submitQuote() } },
                       isLoading: submitting)
                 .frame(maxWidth: .infinity)
-            Button(action: { /* Bid history — opens the event timeline */ }) {
-                Text("Bid history")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: 148, minHeight: 48)
-                    .background(Color(hex: 0x232932))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Bid history",
+                sheetTitle: "Rail bid history",
+                lines: bidHistoryLines,
+                systemImage: "clock.arrow.circlepath"
+            )
         }
     }
 

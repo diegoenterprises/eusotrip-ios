@@ -600,7 +600,7 @@ struct ShipperPaymentMethods: View {
             Text("No methods yet")
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
-            Text("Link a bank through Plaid for ACH funding, or attach a card via Stripe. Credentials live at Stripe and Plaid, never on EusoTrip's servers.")
+            Text("Link a bank through Plaid for ACH funding, or attach a card via Stripe. Credentials stay with Stripe and Plaid, never with EusoTrip.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -617,7 +617,7 @@ struct ShipperPaymentMethods: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
             Button {

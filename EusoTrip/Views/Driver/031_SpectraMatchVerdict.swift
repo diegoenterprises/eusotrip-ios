@@ -14,6 +14,7 @@
 //
 
 import SwiftUI
+import Combine
 
 struct SpectraMatchVerdict: View {
     @Environment(\.palette) private var palette

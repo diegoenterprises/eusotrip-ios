@@ -124,6 +124,10 @@ private struct RailCargoClaimBody: View {
     @State private var loadError: String? = nil
     @State private var filing = false
     @State private var fileAck: String? = nil
+    @State private var esangLoading = false
+    @State private var esangReply: String? = nil
+    @State private var esangError: String? = nil
+    @State private var esangSessionId: String? = nil
 
     // Statutory Carmack notice window — fixed 270 days. The wireframe shows
     // "188 of 270 days left". With no carmackDeadline field on the server
@@ -210,6 +214,7 @@ private struct RailCargoClaimBody: View {
                     evidenceSection
                     esangAdvisory
                     ctaPair
+                    esangResponsePanel
                     if let ack = fileAck {
                         Text(ack).font(EType.caption).foregroundStyle(Brand.success)
                     }
@@ -600,8 +605,15 @@ private struct RailCargoClaimBody: View {
             CTAButton(title: "File claim",
                       action: { Task { await fileClaim() } },
                       isLoading: filing)
-            Button { } label: {
-                Text("Message ESang")
+            Button {
+                Task { await messageESang() }
+            } label: {
+                HStack(spacing: 8) {
+                    if esangLoading {
+                        ProgressView().controlSize(.small)
+                    }
+                    Text(esangLoading ? "Asking ESang" : "Message ESang")
+                }
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                     .frame(maxWidth: .infinity, minHeight: 52)
@@ -611,6 +623,35 @@ private struct RailCargoClaimBody: View {
                     .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
+            .disabled(esangLoading || claim == nil)
+        }
+    }
+
+    @ViewBuilder
+    private var esangResponsePanel: some View {
+        if let esangError {
+            LifecycleCard(accentDanger: true) {
+                Text(esangError)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else if let esangReply {
+            LifecycleCard {
+                HStack(alignment: .top, spacing: Space.s3) {
+                    OrbeSang(state: .idle, diameter: 34)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("ESANG RESPONSE")
+                            .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                            .foregroundStyle(LinearGradient.primary)
+                        Text(esangReply)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
         }
     }
 
@@ -691,6 +732,59 @@ private struct RailCargoClaimBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         filing = false
+    }
+
+    // MARK: - ESANG claim context
+
+    private func messageESang() async {
+        guard let claim else { return }
+        esangLoading = true
+        esangError = nil
+        esangReply = nil
+        struct Input: Encodable {
+            let message: String
+            let sessionId: String?
+            let feature: String
+        }
+        struct Output: Decodable {
+            let message: String?
+            let sessionId: String?
+        }
+        do {
+            let out: Output = try await EusoTripAPI.shared.mutation(
+                "esangAIv2.chat",
+                input: Input(message: esangPrompt(for: claim),
+                             sessionId: esangSessionId,
+                             feature: "rail_cargo_claim")
+            )
+            esangSessionId = out.sessionId
+            esangReply = out.message ?? "ESang returned no guidance for this claim."
+        } catch {
+            esangError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        esangLoading = false
+    }
+
+    private func esangPrompt(for claim: RailClaimDetail) -> String {
+        let load = claim.load
+        let origin = real(load?.origin) ?? "unknown origin"
+        let destination = real(load?.destination) ?? "unknown destination"
+        let evidenceCount = claim.evidence?.count ?? 0
+        return """
+        Review this rail cargo claim and give the next best action in plain operational language.
+        Claim: \(claimNumber)
+        Status: \(real(claim.status) ?? "unknown")
+        Type: \(real(claim.type) ?? "unknown")
+        Severity: \(real(claim.severity) ?? "unknown")
+        Description: \(real(claim.description) ?? "not recorded")
+        Claimed amount: \(money(claim.amount))
+        Filed date: \(claim.filedDate ?? "not recorded")
+        Carmack days left: \(filedDate == nil ? "unknown" : "\(daysLeft)")
+        Lane: \(origin) to \(destination)
+        Commodity: \(real(load?.commodity) ?? "not recorded")
+        Evidence files: \(evidenceCount)
+        Tell the user what to attach next, whether the filing window is urgent, and what role should act next. Do not invent missing amounts, parties, lanes, or evidence.
+        """
     }
 }
 

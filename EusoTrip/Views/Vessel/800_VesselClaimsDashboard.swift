@@ -105,7 +105,10 @@ private struct VesselClaimsDashboardBody: View {
                     }
                     claimsCard
                     HStack(spacing: 8) {
-                        CTAButton(title: "View open claims", action: {}, trailingIcon: "tray.full")
+                        CTAButton(
+                            title: "View open claims",
+                            action: { openVesselScreen("Vesl801") },
+                            trailingIcon: "tray.full")
                         secondaryButton(title: "Export") { Task { await exportLedger() } }
                     }
                     ESangRow800(title: esangTitle, subtitle: esangSubtitle)
@@ -116,6 +119,14 @@ private struct VesselClaimsDashboardBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+    }
+
+    private func openVesselScreen(_ screenId: String) {
+        NotificationCenter.default.post(
+            name: .eusoVesselNavSwap,
+            object: nil,
+            userInfo: ["screenId": screenId]
+        )
     }
 
     private var header: some View {

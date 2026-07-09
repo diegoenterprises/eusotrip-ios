@@ -105,7 +105,7 @@ struct EusoTicketParty: Hashable {
     let monogram: String
     /// Subtitle line under the name. Renders in monospaced
     /// face — typical content is the legal-entity descriptor
-    /// ("Eusorone Technologies · companyId 1") or carrier identifiers
+    /// ("Eusorone Technologies · Company ID 1") or carrier identifiers
     /// ("USDOT 3 194 882 · MC-820 144").
     let meta: String
     /// Avatar fill style. Use `.gradient` for the EusoTrip brand
@@ -722,7 +722,7 @@ extension EusoTicketCanvas {
         shipperOfRecord: EusoTicketParty(
             name: "Diego Usoro",
             monogram: "DU",
-            meta: "Eusorone Technologies · companyId 1",
+            meta: "Eusorone Technologies · Company ID 1",
             avatarStyle: .gradient
         ),
         carrier: EusoTicketParty(

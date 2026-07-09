@@ -23,10 +23,9 @@
 //      stats{pending,dispatched,inTransit,completed,avgTurnTime}}. Returns an EMPTY orders list
 //      when the DB has no terminal-tagged loads — the bespoke empty state renders honestly, no
 //      fabricated rows). Lanes/hero/guard all derive from this single real query.
-//    "New drayage order" -> createDrayageOrder (EXISTS :804 · mutation). No compose sheet is part
-//      of THIS board screen, so the CTA is flagged STUB · named-gap (the create flow lives on its
-//      own compose screen) and re-runs load() rather than firing an under-specified write.
-//    "Filter" -> client-side board filter — STUB · named-gap (filter sheet not part of this port).
+//    "New drayage order" -> multiModal.createDrayageOrder persists a terminal/port-backed load row
+//      with drayage metadata in modeRoutePayload, then refreshes this live board.
+//    "Filter" -> applies the same backend type/status/port/search contract as the board query.
 //
 //  0 mock data on load · honest empty/error states. File-scoped helpers (RimCard737 / ESangRow737 /
 //  secondaryButton737 / DrayLane737 / DrayMove737) are suffixed 737 to avoid cross-file private-type
@@ -78,7 +77,7 @@ private enum DrayLane737: String, CaseIterable {
 }
 
 private struct DrayMove737: Identifiable {
-    let id = UUID()
+    let id: String
     let lane: DrayLane737
     let typeLabel: String
     let typeTint: Color
@@ -115,11 +114,34 @@ private struct VesselDrayageOrdersBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var hasOrders = false
+    @State private var actionBanner: String? = nil
+    @State private var actionError: String? = nil
+    @State private var busyAction: String? = nil
+    @State private var showNewOrder = false
+    @State private var showFilters = false
+
+    @State private var filterType = "all"
+    @State private var filterStatus = "all"
+    @State private var filterPortCode = ""
+    @State private var filterSearch = ""
+
+    @State private var draftType = "import"
+    @State private var draftPortCode = ""
+    @State private var draftTerminal = ""
+    @State private var draftContainerNumber = ""
+    @State private var draftContainerSize = "40ft"
+    @State private var draftPickupLocation = ""
+    @State private var draftDeliveryLocation = ""
+    @State private var draftAppointment = Date()
+    @State private var draftWeight = ""
+    @State private var draftRate = ""
+    @State private var draftHazmat = false
+    @State private var draftNotes = ""
 
     // Hero
     @State private var activeCount = 0
     @State private var portCount = 0
-    @State private var avgTurnTime = 68
+    @State private var avgTurnTime: Int? = nil
     @State private var bookedTotal = "$0"
 
     // Lanes / guard
@@ -141,10 +163,13 @@ private struct VesselDrayageOrdersBody: View {
                 } else if !hasOrders {
                     EusoEmptyState(systemImage: "shippingbox",
                                    title: "No drayage orders on the board",
-                                   subtitle: "getDrayageManagement returned no terminal-tagged moves. Nothing to dispatch, the board is clear.")
+                                   subtitle: emptySubtitle)
+                    actionStatus
+                    drayActionRow
                 } else {
                     hero
-                    Text("DISPATCH BOARD · getDrayageManagement")
+                    actionStatus
+                    Text("DISPATCH BOARD · drayage")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
                     ForEach(Array(laneCounts.enumerated()), id: \.offset) { _, pair in
@@ -154,11 +179,7 @@ private struct VesselDrayageOrdersBody: View {
                         }
                     }
                     guardCard
-                    HStack(spacing: 8) {
-                        CTAButton(title: "New drayage order", action: { Task { await newOrder() } }, trailingIcon: "plus")
-                        secondaryButton737(title: "Filter") { Task { await applyFilter() } }
-                            .frame(width: 132)
-                    }
+                    drayActionRow
                     ESangRow737(title: esangTitle, subtitle: esangSubtitle)
                 }
                 Color.clear.frame(height: 96)
@@ -167,6 +188,8 @@ private struct VesselDrayageOrdersBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showNewOrder) { newOrderSheet }
+        .sheet(isPresented: $showFilters) { filterSheet }
     }
 
     // MARK: - Header (back + ✦ eyebrow + mono caption + 28pt title + overflow)
@@ -177,7 +200,7 @@ private struct VesselDrayageOrdersBody: View {
                 Image(systemName: "sparkle").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("VESSEL OPERATOR · DRAYAGE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
                 Spacer()
-                Text("DRAY · USOAK").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
+                Text(headerPortLabel).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("Drayage orders").font(.system(size: 28, weight: .bold)).tracking(-0.4).foregroundStyle(palette.textPrimary)
@@ -196,7 +219,8 @@ private struct VesselDrayageOrdersBody: View {
                     Text("\(activeCount)").font(.system(size: 34, weight: .bold)).monospacedDigit().foregroundStyle(LinearGradient.diagonal)
                     Text("active drayage orders · \(portCount) port\(portCount == 1 ? "" : "s")")
                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.textSecondary)
-                    Text("avg turn-time \(avgTurnTime) min").font(.system(size: 11)).foregroundStyle(palette.textTertiary)
+                    Text(avgTurnTime.map { "avg turn-time \($0) min" } ?? "avg turn-time unavailable")
+                        .font(.system(size: 11)).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
@@ -259,7 +283,7 @@ private struct VesselDrayageOrdersBody: View {
 
     private var guardCard: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("DRAYAGE GUARD · createDrayageOrder").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary)
+            Text("DRAYAGE GUARD · new order").font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary)
             Text("\(nDispatched) dispatched · \(nCompleted) completed · pier-pass 18:00–08:00 windows tracked")
                 .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
         }
@@ -271,6 +295,160 @@ private struct VesselDrayageOrdersBody: View {
             RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
                 .strokeBorder(palette.borderFaint)
         )
+    }
+
+    private var emptySubtitle: String {
+        hasActiveFilters
+        ? "No moves match the current type/status/port/search filters."
+        : "getDrayageManagement returned no terminal-tagged moves. Create a live drayage order to place work on the board."
+    }
+
+    private var headerPortLabel: String {
+        let port = trimmed(filterPortCode)
+        return port == nil ? "DRAY · ALL PORTS" : "DRAY · \(port!.uppercased())"
+    }
+
+    private var hasActiveFilters: Bool {
+        filterType != "all" || filterStatus != "all" || trimmed(filterPortCode) != nil || trimmed(filterSearch) != nil
+    }
+
+    private var actionStatus: some View {
+        Group {
+            if let actionError {
+                LifecycleCard(accentDanger: true) {
+                    Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+                }
+            } else if let actionBanner {
+                LifecycleCard {
+                    Text(actionBanner).font(EType.caption).foregroundStyle(Brand.success)
+                }
+            }
+        }
+    }
+
+    private var drayActionRow: some View {
+        HStack(spacing: 8) {
+            CTAButton(title: busyAction == "create" ? "Creating..." : "New drayage order",
+                      action: {
+                          if draftPortCode.isEmpty { draftPortCode = trimmed(filterPortCode) ?? "" }
+                          showNewOrder = true
+                      },
+                      trailingIcon: "plus")
+            secondaryButton737(title: hasActiveFilters ? "Filters on" : "Filter") { showFilters = true }
+                .frame(width: 132)
+        }
+    }
+
+    private var newOrderSheet: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                sheetHeader(title: "New drayage order", subtitle: "Create a load-backed drayage move on the live board.")
+
+                Picker("Move type", selection: $draftType) {
+                    ForEach(["import", "export", "pier_pass", "shuttle", "repositioning"], id: \.self) { value in
+                        Text(typeLabel(value)).tag(value)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Picker("Container size", selection: $draftContainerSize) {
+                    ForEach(["20ft", "40ft", "40ft_hc", "45ft", "53ft"], id: \.self) { value in
+                        Text(value.replacingOccurrences(of: "_", with: " ").uppercased()).tag(value)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                sheetField("Port code", text: $draftPortCode, hint: "USLAX")
+                sheetField("Terminal", text: $draftTerminal, hint: "APM Terminal or terminal code")
+                sheetField("Container", text: $draftContainerNumber, hint: "MSCU1234567")
+                sheetField("Pickup", text: $draftPickupLocation, hint: "Port pickup location")
+                sheetField("Delivery", text: $draftDeliveryLocation, hint: "Customer / ramp / warehouse")
+
+                DatePicker("Appointment", selection: $draftAppointment, displayedComponents: [.date, .hourAndMinute])
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+
+                HStack(spacing: 10) {
+                    sheetField("Weight", text: $draftWeight, hint: "lbs")
+                    sheetField("Rate", text: $draftRate, hint: "USD")
+                }
+                Toggle("Hazmat", isOn: $draftHazmat)
+                    .font(.system(size: 13, weight: .semibold))
+                sheetField("Notes", text: $draftNotes, hint: "Dispatch instructions")
+
+                HStack(spacing: 8) {
+                    secondaryButton737(title: "Cancel") { showNewOrder = false }
+                    CTAButton(title: busyAction == "create" ? "Creating..." : "Create order",
+                              action: { Task { await submitNewOrder() } },
+                              trailingIcon: "checkmark")
+                }
+            }
+            .padding(Space.s5)
+        }
+        .background(palette.bgPrimary)
+        .presentationDetents([.large])
+    }
+
+    private var filterSheet: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                sheetHeader(title: "Filter drayage", subtitle: "Filters run through multiModal.getDrayageManagement.")
+
+                Picker("Move type", selection: $filterType) {
+                    Text("All types").tag("all")
+                    ForEach(["import", "export", "pier_pass", "shuttle", "repositioning"], id: \.self) { value in
+                        Text(typeLabel(value)).tag(value)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Picker("Status", selection: $filterStatus) {
+                    Text("All statuses").tag("all")
+                    ForEach(["pending", "dispatched", "in_transit", "at_port", "completed"], id: \.self) { value in
+                        Text(statusLabel(value)).tag(value)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                sheetField("Port code", text: $filterPortCode, hint: "USLAX")
+                sheetField("Search", text: $filterSearch, hint: "Order, container, terminal, city")
+
+                HStack(spacing: 8) {
+                    secondaryButton737(title: "Clear") { Task { await clearFilters() } }
+                    CTAButton(title: "Apply filters",
+                              action: { Task { await applyFilters() } },
+                              trailingIcon: "line.3.horizontal.decrease.circle")
+                }
+            }
+            .padding(Space.s5)
+        }
+        .background(palette.bgPrimary)
+        .presentationDetents([.medium, .large])
+    }
+
+    private func sheetHeader(title: String, subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 22, weight: .bold)).foregroundStyle(palette.textPrimary)
+            Text(subtitle).font(.system(size: 12)).foregroundStyle(palette.textSecondary)
+        }
+    }
+
+    private func sheetField(_ title: String, text: Binding<String>, hint: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title.uppercased()).font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+            TextField(hint, text: text)
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(palette.textPrimary)
+                .padding(12)
+                .background(palette.bgCard)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint)
+                )
+        }
     }
 
     // MARK: - Bespoke secondary (outline) button — mirrors 757's grammar
@@ -315,6 +493,7 @@ private struct VesselDrayageOrdersBody: View {
         do {
             struct Port: Decodable { let code: String?; let name: String? }
             struct Order: Decodable {
+                let id: String?
                 let orderNumber: String?
                 let type: String?
                 let status: String?
@@ -336,7 +515,13 @@ private struct VesselDrayageOrdersBody: View {
 
             let r: Resp = try await EusoTripAPI.shared.query(
                 "multiModal.getDrayageManagement",
-                input: DrayInput737(page: 1, limit: 50))
+                input: DrayInput737(
+                    page: 1,
+                    limit: 50,
+                    type: filterType == "all" ? nil : filterType,
+                    status: filterStatus == "all" ? nil : filterStatus,
+                    portCode: trimmed(filterPortCode),
+                    search: trimmed(filterSearch)))
 
             guard let orders = r.orders, !orders.isEmpty else {
                 moves = []; laneCounts = []; hasOrders = false; loading = false; return
@@ -344,28 +529,32 @@ private struct VesselDrayageOrdersBody: View {
 
             var mapped: [DrayMove737] = []
             var bookedSum = 0.0
+            var ratedCount = 0
             var ports = Set<String>()
 
             for o in orders {
                 let lane = DrayLane737(status: o.status ?? "pending")
-                let rate = o.rate ?? 0
-                bookedSum += rate
+                if let rate = o.rate {
+                    bookedSum += rate
+                    ratedCount += 1
+                }
                 if let code = o.port?.code { ports.insert(code) }
 
-                let pickup = o.pickupLocation ?? (o.port?.name ?? "-")
-                let delivery = o.deliveryLocation ?? "-"
+                let pickup = o.pickupLocation ?? o.port?.name
+                let delivery = o.deliveryLocation
 
                 mapped.append(DrayMove737(
+                    id: o.id ?? o.orderNumber ?? UUID().uuidString,
                     lane: lane,
                     typeLabel: typeLabel(o.type),
                     typeTint: typeTint(o.type),
-                    order: o.orderNumber ?? "DRY--",
+                    order: o.orderNumber ?? "—",
                     container: containerLine(o.containerNumber, o.containerSize),
-                    route: "\(pickup) → \(delivery)",
+                    route: routeLine(pickup, delivery),
                     appt: shortTime(o.appointmentTime),
                     lfd: lfdLabel(o.lastFreeDay, perDiem: o.perDiemDays),
                     lfdTint: lfdTint(o.lastFreeDay, perDiem: o.perDiemDays),
-                    rate: "$\(Int(rate))"
+                    rate: o.rate.map { "$\(Int($0).formatted())" } ?? "—"
                 ))
             }
 
@@ -380,8 +569,8 @@ private struct VesselDrayageOrdersBody: View {
             let active = (s?.pending ?? 0) + (s?.dispatched ?? 0) + (s?.inTransit ?? 0) + (counts[.atPort] ?? 0)
             activeCount = active > 0 ? active : (r.total ?? mapped.count)
             portCount = ports.count
-            avgTurnTime = s?.avgTurnTime ?? 68
-            bookedTotal = "$\(Int(bookedSum).formatted())"
+            avgTurnTime = s?.avgTurnTime
+            bookedTotal = ratedCount > 0 ? "$\(Int(bookedSum).formatted())" : "—"
             nDispatched = s?.dispatched ?? counts[.dispatched, default: 0]
             nCompleted = s?.completed ?? counts[.completed, default: 0]
 
@@ -392,12 +581,94 @@ private struct VesselDrayageOrdersBody: View {
         loading = false
     }
 
-    // MARK: - CTAs (named gaps — no compose flow on this board)
+    // MARK: - CTAs
 
-    private func newOrder() async { /* createDrayageOrder — STUB · named-gap (compose lives on its own screen). */ await load() }
-    private func applyFilter() async { /* board filter sheet — STUB · named-gap. */ await load() }
+    private func submitNewOrder() async {
+        actionError = nil
+        actionBanner = nil
+
+        guard let portCode = trimmed(draftPortCode) else {
+            actionError = "Port code is required."
+            return
+        }
+        guard let terminal = trimmed(draftTerminal) else {
+            actionError = "Terminal is required."
+            return
+        }
+        guard let container = trimmed(draftContainerNumber) else {
+            actionError = "Container number is required."
+            return
+        }
+        guard let delivery = trimmed(draftDeliveryLocation) else {
+            actionError = "Delivery location is required."
+            return
+        }
+
+        busyAction = "create"
+        do {
+            let formatter = ISO8601DateFormatter()
+            let out: DrayCreateOut737 = try await EusoTripAPI.shared.mutation(
+                "multiModal.createDrayageOrder",
+                input: DrayCreateInput737(
+                    type: draftType,
+                    portCode: portCode.uppercased(),
+                    terminal: terminal,
+                    containerNumber: container.uppercased(),
+                    containerSize: draftContainerSize,
+                    pickupLocation: trimmed(draftPickupLocation),
+                    deliveryLocation: delivery,
+                    appointmentTime: formatter.string(from: draftAppointment),
+                    weight: Double(trimmed(draftWeight) ?? ""),
+                    rate: Double(trimmed(draftRate) ?? ""),
+                    hazmat: draftHazmat,
+                    notes: trimmed(draftNotes)
+                )
+            )
+            actionBanner = "Created \(out.orderNumber ?? out.id ?? "drayage order")."
+            showNewOrder = false
+            resetDraft()
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        busyAction = nil
+    }
+
+    private func applyFilters() async {
+        showFilters = false
+        await load()
+    }
+
+    private func clearFilters() async {
+        filterType = "all"
+        filterStatus = "all"
+        filterPortCode = ""
+        filterSearch = ""
+        showFilters = false
+        await load()
+    }
+
+    private func resetDraft() {
+        draftType = "import"
+        draftPortCode = trimmed(filterPortCode) ?? ""
+        draftTerminal = ""
+        draftContainerNumber = ""
+        draftContainerSize = "40ft"
+        draftPickupLocation = ""
+        draftDeliveryLocation = ""
+        draftAppointment = Date()
+        draftWeight = ""
+        draftRate = ""
+        draftHazmat = false
+        draftNotes = ""
+    }
 
     // MARK: - Field formatters
+
+    private func trimmed(_ value: String) -> String? {
+        let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return v.isEmpty ? nil : v
+    }
 
     private func typeLabel(_ t: String?) -> String {
         switch t {
@@ -419,13 +690,31 @@ private struct VesselDrayageOrdersBody: View {
         default:              Brand.info
         }
     }
+    private func statusLabel(_ status: String) -> String {
+        switch status {
+        case "pending":    "Pending"
+        case "dispatched": "Dispatched"
+        case "in_transit": "In transit"
+        case "at_port":    "At port"
+        case "completed":  "Completed"
+        default:           status.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
     private func containerLine(_ num: String?, _ size: String?) -> String {
-        let n = num ?? "-"
+        let n = num ?? "—"
         guard let s = size, !s.isEmpty else { return n }
         return "\(n) · \(s)"
     }
+    private func routeLine(_ pickup: String?, _ delivery: String?) -> String {
+        switch (pickup, delivery) {
+        case let (.some(p), .some(d)): return "\(p) → \(d)"
+        case let (.some(p), nil): return p
+        case let (nil, .some(d)): return d
+        default: return "route pending"
+        }
+    }
     private func shortTime(_ iso: String?) -> String {
-        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return iso ?? "-" }
+        guard let iso, let date = ISO8601DateFormatter().date(from: iso) else { return iso ?? "—" }
         let f = DateFormatter(); f.dateFormat = "HH:mm"
         return f.string(from: date)
     }
@@ -437,7 +726,7 @@ private struct VesselDrayageOrdersBody: View {
     }
     private func lfdLabel(_ iso: String?, perDiem: Int?) -> String {
         if let p = perDiem, p > 0 { return "per-diem \(p)d" }
-        guard let d = daysToLFD(iso) else { return "-" }
+        guard let d = daysToLFD(iso) else { return "LFD pending" }
         if d < 0 { return "past LFD" }
         if d == 0 { return "LFD today" }
         return "LFD \(d)d"
@@ -507,7 +796,34 @@ private struct ESangRow737: View {
 
 /// Paginated input for getDrayageManagement (the endpoint merges paginationInput).
 /// Defined per-file — there is no module-level EmptyInput / input helper to reuse.
-private struct DrayInput737: Encodable { let page: Int; let limit: Int }
+private struct DrayInput737: Encodable {
+    let page: Int
+    let limit: Int
+    let type: String?
+    let status: String?
+    let portCode: String?
+    let search: String?
+}
+
+private struct DrayCreateInput737: Encodable {
+    let type: String
+    let portCode: String
+    let terminal: String
+    let containerNumber: String
+    let containerSize: String
+    let pickupLocation: String?
+    let deliveryLocation: String
+    let appointmentTime: String
+    let weight: Double?
+    let rate: Double?
+    let hazmat: Bool
+    let notes: String?
+}
+
+private struct DrayCreateOut737: Decodable {
+    let id: String?
+    let orderNumber: String?
+}
 
 #Preview("737 · Vessel Drayage Orders · Light") {
     VesselDrayageOrdersScreen(theme: Theme.light)

@@ -406,7 +406,7 @@ enum EquipmentKind: String, Hashable, CaseIterable {
         case .stepDeck:              return "STEP-DECK"
         case .conestoga:             return "CONESTOGA"
         case .container:             return "CONTAINER"
-        case .tankerHazmat:          return "MC-306 HAZMAT"
+        case .tankerHazmat:          return "DOT-407 HAZMAT"
         case .tankerPetro:           return "MC-306 PETROLEUM"
         case .tankerLiquid:          return "MC-307 LIQUID BULK"
         case .tankerGas:             return "MC-331 GAS / CRYO"
@@ -660,6 +660,9 @@ struct EquipmentAnimation: View {
     var tankerHose: String      = ""
     var isHazmat: Bool          = false
     var ergMatched: Bool        = false
+    var hazmatClassText: String = ""
+    var unNumberText: String    = ""
+    var commodityName: String   = ""
     var reeferLowText: String   = ""
     var reeferHighText: String  = ""
     var preCoolRequired: Bool   = false
@@ -803,7 +806,12 @@ struct EquipmentAnimation: View {
     @ViewBuilder
     private var content: some View {
         if let svg = EquipmentAnimationCache.shared.svg(for: equipment) {
-            NativeSVGView(svgString: svg, country: country)
+            NativeSVGView(
+                svgString: svg,
+                bindings: liveHeroBindings,
+                placardId: livePlacardSymbolId,
+                country: country
+            )
                 .padding(2)
         } else {
             // Honest fallback — never a fabricated silhouette.
@@ -820,6 +828,60 @@ struct EquipmentAnimation: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private var liveHeroBindings: [String: String] {
+        guard isHazmat else { return [:] }
+        var bindings: [String: String] = [:]
+        let cls = hazmatClassText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let un = normalizedUNNumber
+        switch equipment {
+        case .tankerHazmat:
+            if !cls.isEmpty {
+                bindings["un_hazard_id"] = hazardIdentifier(for: cls)
+            }
+            if let un {
+                bindings["un_number"] = "UN \(un)"
+                bindings["un_panel_number"] = un
+            }
+            bindings["equipment_label"] = equipment.shortLabel
+        case .tankerPetro, .tankerLiquid:
+            if let un {
+                bindings["un_panel_number"] = un
+            }
+        case .tankerGas:
+            if let un {
+                bindings["un_number"] = "UN \(un)"
+                bindings["un_panel_number"] = un
+            }
+            bindings["equipment_label"] = equipment.shortLabel
+        default:
+            break
+        }
+        return bindings
+    }
+
+    private var livePlacardSymbolId: String? {
+        let cls = hazmatClassText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cls.isEmpty else { return nil }
+        return "class\(cls.replacingOccurrences(of: ".", with: "_"))Placard"
+    }
+
+    private var normalizedUNNumber: String? {
+        let raw = unNumberText.uppercased()
+            .replacingOccurrences(of: "UN", with: "")
+            .replacingOccurrences(of: " ", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !raw.isEmpty else { return nil }
+        return raw
+    }
+
+    private func hazardIdentifier(for hazardClass: String) -> String {
+        let trimmed = hazardClass.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.split(separator: ".").first, !first.isEmpty else {
+            return trimmed
+        }
+        return String(first)
     }
 
     private var topRightBadgeStack: some View {

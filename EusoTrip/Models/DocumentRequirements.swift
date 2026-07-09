@@ -85,6 +85,10 @@ public enum DocumentType: String, CaseIterable, Codable, Hashable {
     case manifestUsAce                      = "manifest_us_ace"
     case rppCaCarm                          = "rpp_ca_carm"
     case importExportLicense                = "import_export_license"
+
+    // Vessel Landfall
+    case vesselNoa                          = "vessel_notice_of_arrival"
+    case customsRelease                     = "customs_release"
 }
 
 public struct DocumentRequirement: Codable, Hashable {

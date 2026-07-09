@@ -42,7 +42,7 @@ private struct CounterSignBody: View {
                 Text("SHIPPER · \(TransportLexicon.generic(key: "billOfLading").uppercased()) COUNTER-SIGN").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal).lineLimit(1).minimumScaleFactor(0.7)
             }
             Text("Sign the \(TransportLexicon.generic(key: "billOfLading"))").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary).lineLimit(1).minimumScaleFactor(0.6)
-            Text("Sign with finger or Apple Pencil. Server records the signature image + load ID + timestamp.").font(EType.caption).foregroundStyle(palette.textSecondary)
+            Text("Sign with finger or Apple Pencil. EusoTrip records the signature image, load ID, and timestamp.").font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
 

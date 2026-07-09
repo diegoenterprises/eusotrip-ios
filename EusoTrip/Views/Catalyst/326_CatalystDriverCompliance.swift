@@ -294,7 +294,7 @@ private struct CatalystDriverCompliance: View {
                     .font(.system(size: 10, weight: .heavy))
                     .tracking(0.4)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Same companyId both sides · clean §391 §382 §395 record")
+                Text("Same company both sides · clean §391 §382 §395 record")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)

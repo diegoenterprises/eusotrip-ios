@@ -379,7 +379,7 @@ private struct RailConsigneeTrackingLinkBody: View {
                 trackingRow(
                     icon: "mappin.and.ellipse", iconTint: Brand.info,
                     title: "ETA · \(destination)",
-                    sub: "milestone feed · publicTrack",
+                    sub: "milestone feed · public tracking page",
                     pillText: etaDayLabel, pillKind: .neutral,
                     value: etaTimeLabel
                 )

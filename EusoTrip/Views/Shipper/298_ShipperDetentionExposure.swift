@@ -68,6 +68,11 @@ struct ShipperDetentionExposure: View {
                 heroCard
                 byFacilitySection
                 activeSection
+                // COUNTRY-DONE (wireframe 298B): detention free-time regime by
+                // country. Rows are regime reference constants; the per-load
+                // recompute is a named gap handed to the-oath
+                // (detentionAccessorials.getFreeTimeRegime).
+                FreeTimeRegimeBand(theme: palette)
                 ctaRow
                 footnote
             }
@@ -402,7 +407,7 @@ struct ShipperDetentionExposure: View {
             } else {
                 HStack(alignment: .top, spacing: 6) {
                     WeatherIcons.utility(.alert, size: 13, tint: palette.textTertiary)
-                    Text("Historical weather evidence available with the enterprise feed. Max gust, minimum visibility and peak condition for this dwell window auto-attach as a cited dispute exhibit once the Tomorrow.io history tier is licensed.")
+                    Text("Historical weather evidence available with the enterprise feed. Max gust, minimum visibility and peak condition for this dwell window auto-attach as a cited dispute exhibit with the enterprise historical weather feed.")
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -574,7 +579,7 @@ private struct DisputeChargeSheet: View {
                                 dismiss()
                             } catch {
                                 submitting = false
-                                errorText = "Couldn't file the dispute. \(error.localizedDescription)"
+                                errorText = "Couldn't file the dispute. \(error.eusoUserCopy)"
                             }
                         }
                     } label: {
@@ -707,7 +712,7 @@ struct DetentionWxSnapshot: Decodable, Equatable {
     let maxGustMph: Double?
     /// Cited worst (minimum) visibility over the window, miles.
     let minVisibilityMi: Double?
-    /// The most-hazardous Tomorrow.io weatherCode + its phrase.
+    /// The most-hazardous Apple WeatherKit weatherCode + its phrase.
     let peakWeatherCode: Int?
     let peakCondition: String?
     /// The overlapping severe-alert headline/severity (the thing that

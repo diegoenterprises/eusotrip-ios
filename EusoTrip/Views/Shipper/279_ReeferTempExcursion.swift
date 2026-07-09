@@ -22,6 +22,7 @@ struct ReeferTempExcursionScreen: View {
 
 private struct ReeferBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let live: ShipperAPI.LifecycleSnapshot
     let loadId: String
 
@@ -34,10 +35,26 @@ private struct ReeferBody: View {
     /// an EQUIPMENT FAULT from a HEAT PERIL. Never fabricated.
     @State private var ambient: ReeferAmbient279? = nil
 
+    /// Mirrors `reeferTemp.getReadings` EXACTLY:
+    /// `{ id, zone, tempF, tempC, status, source, notes, recordedAt }`.
+    /// Every field optional so a partial row decodes without throwing (the
+    /// old `temp: Double` / `timestamp: String` non-optionals did NOT exist
+    /// on the wire and broke decode). Hashable is preserved for the
+    /// `ForEach(readings.suffix(8), id: \.self)` ledger.
     private struct ReeferReading: Decodable, Hashable {
+        let id: String?
         let zone: String?
-        let temp: Double
-        let timestamp: String
+        let tempF: Double?
+        let tempC: Double?
+        let status: String?
+        let source: String?
+        let notes: String?
+        let recordedAt: String?
+
+        /// Non-optional display temperature in °F for the chart + ledger.
+        /// `tempF` is the canonical wire field; 0 is an honest fallback when
+        /// a row omits it (rendered as 0.0°F, never a fabricated reading).
+        var displayTempF: Double { tempF ?? 0 }
     }
     private struct ReadingsInput: Encodable { let loadId: Int }
     private struct AmbientInput: Encodable { let loadId: Int }
@@ -50,22 +67,53 @@ private struct ReeferBody: View {
     /// (today's reality) => the ambient line is HIDDEN, never fabricated.
     /// `preCool` decodes leniently (a bool flag or {recommended} object) so a
     /// shape change is safe.
+    /// Mirrors the real `reeferTemp.ambient` envelope EXACTLY. Top-level
+    /// `available`/`reason` gate the overlay; the outside-air reading lives
+    /// in the nested `ambient` block (`temp`/`weatherCode`/…), NOT flat on
+    /// the root (the old flat `ambientTempF`/`weatherCode` never existed on
+    /// the wire). `cargo`/`delta`/`preCool` decode leniently so the
+    /// enterprise-gated `available:false` envelope (or a partial payload)
+    /// decodes without throwing.
     private struct ReeferAmbient279: Decodable {
         let available: Bool?
-        let ambientTempF: Double?
-        let weatherCode: Int?
+        let reason: String?
+        let ambient: Ambient?
+        let cargo: Cargo?
+        let delta: Delta?
         let preCool: PreCool279?
 
+        /// The outside-air block: `{ temp, apparent, unit, weatherCode, condition, observedAt }`.
+        struct Ambient: Decodable {
+            let temp: Double?
+            let apparent: Double?
+            let unit: String?
+            let weatherCode: Int?
+            let condition: String?
+            let observedAt: String?
+        }
+        /// The worst live cargo zone the server contrasted ambient against.
+        struct Cargo: Decodable {
+            let tempF: Double?
+            let tempC: Double?
+            let zone: String?
+            let status: String?
+            let recordedAt: String?
+        }
+        /// ambient − cargo delta (the equipment-fault-vs-heat-peril proof).
+        struct Delta: Decodable {
+            let value: Double?
+            let unit: String?
+            let ambientHotter: Bool?
+            let summary: String?
+        }
+        /// Pre-cool recommendation keyed to the forecast ambient peak.
         struct PreCool279: Decodable {
-            let recommended: Bool?
-            init(from decoder: Decoder) throws {
-                if let b = try? decoder.singleValueContainer().decode(Bool.self) {
-                    recommended = b; return
-                }
-                let c = try? decoder.container(keyedBy: CodingKeys.self)
-                recommended = try? c?.decodeIfPresent(Bool.self, forKey: .recommended)
-            }
-            private enum CodingKeys: String, CodingKey { case recommended }
+            let forecastPeak: Double?
+            let forecastPeakAt: String?
+            let rising: Bool?
+            let text: String?
+            let action: String?
+            let protects: String?
         }
     }
 
@@ -76,20 +124,20 @@ private struct ReeferBody: View {
     // lands. Never a fabricated ambient / spread / peril verdict.
 
     private var ambientReady: Bool {
-        (ambient?.available ?? false) && ambient?.ambientTempF != nil
+        (ambient?.available ?? false) && ambient?.ambient?.temp != nil
     }
 
     /// The warmest live cargo-zone temperature in °F — the trace the ambient
     /// is contrasted against, taken from the SAME live `reeferTemp.getReadings`
     /// rows the chart plots. nil until a zone reports.
     private var cargoZonePeakF: Double? {
-        readings.map(\.temp).max()
+        readings.compactMap(\.tempF).max()
     }
 
     /// Ambient − cargo spread in °F. Positive = ambient hotter than cargo (the
     /// classic heat-peril signature). nil until BOTH sides have a real reading.
     private var ambientSpreadF: Double? {
-        guard let a = ambient?.ambientTempF, let c = cargoZonePeakF else { return nil }
+        guard let a = ambient?.ambient?.temp, let c = cargoZonePeakF else { return nil }
         return a - c
     }
 
@@ -133,9 +181,9 @@ private struct ReeferBody: View {
         }
         var grouped: [String: [TempZone.Reading]] = [:]
         for r in readings {
-            guard let t = parse(r.timestamp) else { continue }
+            guard let ts = r.recordedAt, let t = parse(ts) else { continue }
             let key = (r.zone ?? "center").lowercased()
-            grouped[key, default: []].append(.init(t: t, tempF: r.temp))
+            grouped[key, default: []].append(.init(t: t, tempF: r.displayTempF))
         }
         func zone(_ key: String, _ name: String, _ pos: TempZone.Position, _ color: Color) -> TempZone? {
             guard let rs = grouped[key]?.sorted(by: { $0.t < $1.t }), rs.count >= 2 else { return nil }
@@ -178,12 +226,12 @@ private struct ReeferBody: View {
             } else {
                 ForEach(readings.suffix(8), id: \.self) { r in
                     HStack {
-                        Text(humanISO(r.timestamp, format: "HH:mm")).font(EType.mono(.micro)).tracking(0.4).foregroundStyle(palette.textTertiary)
+                        Text(humanISO(r.recordedAt, format: "HH:mm")).font(EType.mono(.micro)).tracking(0.4).foregroundStyle(palette.textTertiary)
                         Text(r.zone ?? "-").font(EType.caption).foregroundStyle(palette.textSecondary)
                         Spacer(minLength: 0)
-                        Text(String(format: "%.1f°F", r.temp))
+                        Text(String(format: "%.1f°F", r.displayTempF))
                             .font(.system(size: 13, weight: .heavy))
-                            .foregroundStyle(r.temp > 38 || r.temp < 33 ? Brand.danger : palette.textPrimary)
+                            .foregroundStyle(r.displayTempF > 38 || r.displayTempF < 33 ? Brand.danger : palette.textPrimary)
                             .monospacedDigit()
                     }
                 }
@@ -204,8 +252,8 @@ private struct ReeferBody: View {
     /// entirely — no ambient line, no fabricated spread / verdict.
     @ViewBuilder
     private var ambientOverlaySection: some View {
-        if ambientReady, let a = ambient, let aF = a.ambientTempF {
-            let code = a.weatherCode ?? 0
+        if ambientReady, let a = ambient, let aF = a.ambient?.temp {
+            let code = a.ambient?.weatherCode ?? 0
             let spread = ambientSpreadF
             // Heat-peril read is honest: only asserted once we have BOTH the
             // ambient and a live cargo zone to contrast. Without the cargo
@@ -302,7 +350,7 @@ private struct ReeferBody: View {
             }.buttonStyle(.plain)
             Button {
                 if let p = live.driver?.phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") {
-                    UIApplication.shared.open(url)
+                    openURL(url)
                 }
             } label: {
                 Image(systemName: "phone.fill").font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)

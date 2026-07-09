@@ -40,11 +40,10 @@
 //      are city-name strings (not coords), so NO lane is drawn — only the
 //      single real live fix is mapped.
 //
-//  Honest seams flagged in-file:
-//    • The MESSAGE JR ribbon is navigation only (no backing mutation).
-//      This surface fires NO write — the load status mutation lives
-//      downstream at arrival (drivers.ts:859 at_delivery), not on the
-//      catalyst fleet-tracker.
+//  Actions:
+//    • View load → native CatalystLoadDetailScreen for the active load.
+//    • Message driver → messages.getOrCreateLoadConversation, then native
+//      DriverConversationView on the persisted load thread.
 //
 //  Powered by ESANG AI™.
 //
@@ -135,10 +134,17 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
 
     /// In-transit load (the M-04 row in the catalyst's active-loads list).
     @State private var transitLoad: ActiveLoadRow_375? = nil
+    /// Full load detail, used for real shipper-of-record party metadata.
+    @State private var loadDetail: LoadsAPI.LoadDetail? = nil
     /// The fleet driver whose currentLoad == transitLoad.loadNumber.
     @State private var rollingDriver: FleetDriverRow_375? = nil
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
+    @State private var actionBusy: Bool = false
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var showLoadDetail: Bool = false
+    @State private var activeThread: InboxThread? = nil
 
     /// Seed used ONLY by #Preview (no environment session → live fetch
     /// silently yields nothing; the preview seed paints the canonical M-04
@@ -169,6 +175,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                     routeProgressCapsule(l)
                     shipperOfRecordCard
                     actionRibbon
+                    actionFeedback
                 } else {
                     emptyState
                 }
@@ -181,6 +188,15 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
         .task { await fetch() }
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await fetch() }
+        }
+        .sheet(isPresented: $showLoadDetail) {
+            if let loadId = transitLoad?.id {
+                CatalystLoadDetailScreen(theme: palette, loadId: loadId)
+            }
+        }
+        .sheet(item: $activeThread) { thread in
+            DriverConversationView(thread: thread)
+                .environment(\.palette, palette)
         }
     }
 
@@ -475,11 +491,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                     baseLayers: liveMapLayers(l),
                     addOns: .shipperTracking,
                     onSelectMarker: { _ in
-                        NotificationCenter.default.post(
-                            name: .esangOpenMeDetail,
-                            object: "messages",
-                            userInfo: ["loadId": l.id]
-                        )
+                        Task { await openLoadConversation() }
                     }
                 )
                 .frame(height: 200)
@@ -524,7 +536,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
     private func telemetrySection(_ l: ActiveLoadRow_375) -> some View {
         let rows = telemetryRows(l)
         return VStack(alignment: .leading, spacing: 8) {
-            Text("FLEET-TRACKER ECHO · IN-TRANSIT · loadLifecycle.emitLoadStateChange(in_transit)")
+            Text("FLEET-TRACKER ECHO · IN-TRANSIT · live load-state signal")
                 .font(.system(size: 8, weight: .heavy)).tracking(0.5)
                 .foregroundStyle(palette.textTertiary)
                 .lineLimit(1).minimumScaleFactor(0.6)
@@ -576,7 +588,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                 realBacked: locBacked),
             TelemetryRow_375(
                 title: "HOS · \(rollingDriver?.status.lowercased() ?? "driving") · \(rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "-") remaining",
-                detail: "660-min cap math · catalysts.getMyDrivers.hoursRemaining",
+                detail: "660-min cap math · live hours remaining per driver",
                 trailing: rollingDriver?.hoursRemaining.map { formatHOS_375($0) } ?? "-",
                 realBacked: hosBacked),
             TelemetryRow_375(
@@ -609,27 +621,31 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
         .padding(.top, 2)
     }
 
-    // MARK: Shipper-of-record card (DU founder pin co-anchor)
+    // MARK: Shipper-of-record card (real load party from loads.getById)
 
     private var shipperOfRecordCard: some View {
-        HStack(spacing: 10) {
+        let name = shipperDisplayName
+        let meta = shipperMetaLine
+        return HStack(spacing: 10) {
             ZStack {
                 Circle().fill(LinearGradient.diagonal)
-                Text("DU").font(.system(size: 10, weight: .heavy)).foregroundStyle(.white)
+                Text(shipperInitials)
+                    .font(.system(size: 10, weight: .heavy))
+                    .foregroundStyle(.white)
             }
             .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 3) {
-                Text("Shipper of record · Diego Usoro")
+                Text("Shipper of record · \(name)")
                     .font(.system(size: 11, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(1)
-                Text("Eusorone Technologies · in transit")
+                Text(meta)
                     .font(.system(size: 8, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
-            Text("pin 162")
+            Text(shipperPin)
                 .font(.system(size: 8, weight: .heavy))
                 .foregroundStyle(LinearGradient.diagonal)
         }
@@ -649,15 +665,14 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
         )
     }
 
-    // MARK: Action ribbon (navigation only — NO backing mutation · STUB)
+    // MARK: Action ribbon (native load detail + persisted load thread)
 
     private var actionRibbon: some View {
         HStack(spacing: 8) {
             Button {
-                // STUB · navigation only — opens the live map surface.
-                NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+                showLoadDetail = true
             } label: {
-                Text("OPEN LIVE MAP")
+                Text("VIEW LOAD")
                     .font(.system(size: 10, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
@@ -668,14 +683,9 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
             .buttonStyle(.plain)
 
             Button {
-                // STUB · routes to the ESANG dispatch chat for this load.
-                NotificationCenter.default.post(
-                    name: .esangOpenMeDetail,
-                    object: "messages",
-                    userInfo: transitLoad.map { ["loadId": $0.id] } ?? [:]
-                )
+                Task { await openLoadConversation() }
             } label: {
-                Text("MESSAGE JR")
+                Text(actionBusy ? "OPENING" : "MESSAGE DRIVER")
                     .font(.system(size: 10, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(LinearGradient.diagonal)
                     .frame(width: 132, height: 38)
@@ -687,6 +697,32 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
                     )
             }
             .buttonStyle(.plain)
+            .disabled(actionBusy)
+        }
+    }
+
+    @ViewBuilder
+    private var actionFeedback: some View {
+        if let msg = actionError ?? actionMessage {
+            HStack(spacing: 8) {
+                Image(systemName: actionError == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(actionError == nil ? Brand.success : Brand.danger)
+                Text(msg)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(actionError == nil ? palette.textSecondary : Brand.danger)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background((actionError == nil ? Brand.success : Brand.danger).opacity(0.10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder((actionError == nil ? Brand.success : Brand.danger).opacity(0.35), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
     }
 
@@ -783,11 +819,79 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
         return f.string(from: NSNumber(value: rate)) ?? "$\(Int(rate))"
     }
 
+    private var shipperDisplayName: String {
+        nonEmpty(loadDetail?.shipper?.companyName)
+            ?? nonEmpty(loadDetail?.shipper?.name)
+            ?? loadDetail?.shipperId.map { "Shipper #\($0)" }
+            ?? "Shipper metadata pending"
+    }
+
+    private var shipperInitials: String {
+        nonEmpty(loadDetail?.shipper?.initials)
+            ?? monogram_375(shipperDisplayName)
+    }
+
+    private var shipperMetaLine: String {
+        guard let detail = loadDetail else { return "loads.getById party sync pending" }
+        let party = detail.shipper
+        let companyId = (party?.companyId ?? detail.shipperId).map { "companyId \($0)" }
+        let mc = nonEmpty(party?.mcNumber).map { "MC \($0)" }
+        let dot = nonEmpty(party?.dotNumber).map { "DOT \($0)" }
+        let email = nonEmpty(party?.email)
+        let parts = [companyId, mc, dot, email].compactMap { $0 }
+        return parts.isEmpty ? "No shipper party metadata on this load" : parts.joined(separator: " · ")
+    }
+
+    private var shipperPin: String {
+        if let companyId = loadDetail?.shipper?.companyId ?? loadDetail?.shipperId {
+            return "party \(companyId)"
+        }
+        return loadDetail == nil ? "sync" : "party -"
+    }
+
+    private func nonEmpty(_ raw: String?) -> String? {
+        let trimmed = raw?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func surfaceMessage(_ error: Error) -> String {
+        (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+    }
+
+    private func openLoadConversation() async {
+        guard let l = transitLoad else {
+            actionError = "No active in-transit load is available for messaging."
+            return
+        }
+        guard !actionBusy else { return }
+        actionBusy = true
+        actionError = nil
+        actionMessage = nil
+        defer { actionBusy = false }
+        do {
+            let conversation = try await EusoTripAPI.shared.messaging.getOrCreateLoadConversation(loadId: l.id)
+            activeThread = InboxThread(
+                id: conversation.id,
+                glyph: "shippingbox",
+                title: conversation.loadNumber.map { "Load \($0)" } ?? l.loadNumber,
+                subtitle: "In-transit load thread",
+                preview: "Driver, shipper, and catalyst conversation",
+                time: "Now",
+                unread: 0,
+                allowsTransfer: false
+            )
+            actionMessage = conversation.existing == true ? "Opened load conversation." : "Created load conversation."
+        } catch {
+            actionError = surfaceMessage(error)
+        }
+    }
+
     // MARK: Network
 
     private func fetch() async {
         loading = true
         loadError = nil
+        actionError = nil
         defer { loading = false }
 
         // Preview seed path — no live session bound, paint the canonical
@@ -795,6 +899,7 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
         if let seed = previewSeedLoad {
             self.transitLoad = seed
             self.rollingDriver = previewSeedDriver
+            self.loadDetail = nil
             return
         }
 
@@ -809,15 +914,27 @@ private struct CatalystInTransitFleetTrackCelM04Body: View {
             self.transitLoad = inTransit ?? loads.first
 
             if let l = self.transitLoad {
-                let roster: [FleetDriverRow_375] = (try? await EusoTripAPI.shared.query(
-                    "catalysts.getMyDrivers",
-                    input: LimitInput_375(limit: 50)
-                )) ?? []
-                self.rollingDriver = roster.first { $0.currentLoad == l.loadNumber }
-                    ?? roster.first { $0.status.lowercased() == "driving" }
+                do {
+                    self.loadDetail = try await EusoTripAPI.shared.loads.getDetail(id: l.id)
+                } catch {
+                    self.loadDetail = nil
+                    self.actionError = "Load party sync failed: \(surfaceMessage(error))"
+                }
+
+                do {
+                    let roster: [FleetDriverRow_375] = try await EusoTripAPI.shared.query(
+                        "catalysts.getMyDrivers",
+                        input: LimitInput_375(limit: 50)
+                    )
+                    self.rollingDriver = roster.first { $0.currentLoad == l.loadNumber }
+                        ?? roster.first { $0.status.lowercased() == "driving" }
+                } catch {
+                    self.rollingDriver = nil
+                    self.actionError = "Fleet roster sync failed: \(surfaceMessage(error))"
+                }
             }
         } catch {
-            self.loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            self.loadError = surfaceMessage(error)
         }
     }
 }

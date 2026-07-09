@@ -175,7 +175,7 @@ private struct ADBody: View {
         return LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text("AWARDED · COMMIT VERB · dispatch.assignDriver")
+                    Text("AWARDED · COMMIT · assign driver")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                     Spacer(minLength: 0)
@@ -347,7 +347,7 @@ private struct ADBody: View {
                     Text(email)
                         .font(.caption2).foregroundStyle(palette.textSecondary)
                 }
-                Text("Compliance gates fire on commit: company.isActive · FMCSA OOS · insurance min · CDL expiry.")
+                Text("Compliance gates fire on commit: active authority · FMCSA OOS · insurance min · CDL expiry.")
                     .font(.caption2).foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }

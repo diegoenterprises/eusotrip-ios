@@ -388,7 +388,7 @@ private struct RailDetentionHistoryBody: View {
         // wired-pending until a typed accessor lands.
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .top) {
-                Text("ACCESSORIAL ANALYTICS · getAccessorialAnalytics")
+                Text("ACCESSORIAL ANALYTICS · rolling window")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 8)
@@ -413,23 +413,48 @@ private struct RailDetentionHistoryBody: View {
 
     // MARK: - CTA pair (Export cycle · Filter)
 
+    private var exportCycleLines: [String] {
+        var lines = [
+            "Window: 90 days",
+            "Boxes: \(boxCount)",
+            "Billed: \(currencyFull(billedAmount))",
+            "Collected: \(dashboard.map { currencyFull($0.collectedAmount) } ?? "-")",
+            "Disputed events: \(disputedCount)",
+            "Collection rate: \(collectedPct)%"
+        ]
+        for cycle in cycles.prefix(4) {
+            lines.append("\(cycle.monthLabel): \(cycle.boxes) boxes, \(currencyFull(cycle.charge)), \(cycle.openCount) open")
+        }
+        return lines
+    }
+
+    private var filterLines: [String] {
+        [
+            "Open cycles: \(cycles.filter { !$0.closed }.count)",
+            "Closed cycles: \(cycles.filter { $0.closed }.count)",
+            "Raw events: \(events.count)",
+            "Disputed: \(disputedCount)",
+            "Carrier: BNSF Intermodal",
+            "Shipper: Eusorone Technologies (DU)"
+        ]
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Export cycle")
+            RailSecondaryActionButton(
+                title: "Cycle review",
+                sheetTitle: "Detention cycle export context",
+                lines: exportCycleLines,
+                fillWidth: true,
+                systemImage: "square.and.arrow.up"
+            )
                 .frame(maxWidth: .infinity)
-            Button(action: {}) {
-                Text("Filter")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: 148, minHeight: 52)
-                    .frame(maxWidth: .infinity)
-                    .background(palette.bgSecondary)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: 148)
+            RailSecondaryActionButton(
+                title: "Filter",
+                sheetTitle: "Detention filter context",
+                lines: filterLines,
+                systemImage: "line.3.horizontal.decrease.circle"
+            )
         }
     }
 

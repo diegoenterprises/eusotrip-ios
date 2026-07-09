@@ -400,7 +400,7 @@ private struct RailRebookingOptionsBody: View {
 
     private var contextBand: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("COMMIT · advanceSegment")
+            Text("COMMIT · advance this segment")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
             Text("Selecting writes the new segment + notifies the consignee portal")

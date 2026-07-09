@@ -82,6 +82,9 @@ private struct VesselShipmentCO2Body: View {
     @State private var fuelType: String? = nil
     @State private var legs: [EmissionLeg708] = []   // no leg-telemetry source exists — honest empty
     @State private var exporting = false
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var exportURL: URL? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -102,12 +105,13 @@ private struct VesselShipmentCO2Body: View {
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     legsCard
                     esangRow
+                    actionFeedback
                     HStack(spacing: 12) {
                         CTAButton(title: "Export GHG statement",
                                   action: { Task { await exportStatement() } },
                                   trailingIcon: "square.and.arrow.up",
                                   isLoading: exporting)
-                        Button { } label: {
+                        Button { Task { await quoteOffset() } } label: {
                             Text("Offset").font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
                                 .frame(maxWidth: 126, minHeight: 52)
                                 .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard)
@@ -244,6 +248,26 @@ private struct VesselShipmentCO2Body: View {
         .background(RoundedRectangle(cornerRadius: 16).fill(palette.bgCard).overlay(RoundedRectangle(cornerRadius: 16).stroke(palette.borderFaint, lineWidth: 1)))
     }
 
+    @ViewBuilder private var actionFeedback: some View {
+        if let actionError {
+            LifecycleCard(accentDanger: true) {
+                Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if let actionMessage {
+            LifecycleCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(actionMessage).font(EType.caption).foregroundStyle(Brand.success)
+                    if let exportURL {
+                        ShareLink(item: exportURL) {
+                            Label("Share statement", systemImage: "square.and.arrow.up")
+                                .font(EType.caption.weight(.semibold))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Data
 
     /// Raw vessel_shipments row (tolerant subset) — anchors the statement to a REAL booking.
@@ -320,9 +344,48 @@ private struct VesselShipmentCO2Body: View {
     /// (reports.exportCO2Statement, no input, returns {filename,mime,body}).
     private func exportStatement() async {
         exporting = true
+        actionMessage = nil
+        actionError = nil
+        exportURL = nil
+        defer { exporting = false }
         struct Out: Decodable { let filename: String?; let mime: String?; let body: String? }
-        _ = try? await EusoTripAPI.shared.query("reports.exportCO2Statement", input: EmptyInput708()) as Out
-        exporting = false
+        do {
+            let out: Out = try await EusoTripAPI.shared.query("reports.exportCO2Statement", input: EmptyInput708())
+            guard let body = out.body, !body.isEmpty else {
+                actionError = "The GHG statement export returned no CSV body."
+                return
+            }
+            let filename = out.filename?.isEmpty == false ? out.filename! : "ghg-statement.csv"
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+            try body.data(using: .utf8)?.write(to: url, options: .atomic)
+            exportURL = url
+            actionMessage = "GHG statement ready: \(filename)."
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func quoteOffset() async {
+        actionMessage = nil
+        actionError = nil
+        exportURL = nil
+        guard let tonnes = totalTonnes, tonnes > 0 else {
+            actionError = "Offset quote needs a computed CO2e total for this booking."
+            return
+        }
+        struct In: Encodable { let tonnesCO2e: Double }
+        struct Out: Decodable { let total: Double?; let provider: String?; let notes: String? }
+        do {
+            let quote: Out = try await EusoTripAPI.shared.query(
+                "sustainability.getOffsetQuote",
+                input: In(tonnesCO2e: tonnes)
+            )
+            let total = quote.total.map { "$" + String(format: "%.2f", $0) } ?? "quoted"
+            let provider = quote.provider ?? "offset marketplace"
+            actionMessage = "Offset quote: \(total) through \(provider). Purchase is not completed here until live payment and registry retirement are connected."
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
     }
 }
 

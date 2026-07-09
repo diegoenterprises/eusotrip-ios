@@ -55,8 +55,9 @@ import SwiftUI
 
 /// The complete weather taxonomy the engine animates. Each case maps to a
 /// distinct layered scene (atmosphere + celestial + cloud + precipitation).
-/// Mapped from the Tomorrow.io `weatherCode` (the v2 backbone — same codes
-/// `WeatherIcons` + `SkyStageHero` key off) via `SkyConditionV2(weatherCode:)`.
+/// Mapped from the canonical numeric `weatherCode` (the v2 backbone — same
+/// codes `WeatherIcons` + `SkyStageHero` key off, derived from the Apple
+/// WeatherKit condition) via `SkyConditionV2(weatherCode:)`.
 ///
 /// Named `…V2` to coexist with `WeatherCard.swift`'s legacy 6-case
 /// `SkyCondition` while the Integrate lane rewires the card onto this engine
@@ -104,7 +105,7 @@ enum SkyConditionV2: Hashable, CaseIterable {
     // Atmospheric
     case windy            // out-of-band; streak lines + fast clouds
 
-    /// Map the Tomorrow.io `weatherCode` → a granular `SkyConditionV2`.
+    /// Map the canonical numeric `weatherCode` → a granular `SkyConditionV2`.
     /// Unknown / 0 falls back to `.partlyCloudy` (a benign, honest neutral
     /// rather than a fake clear sky).
     init(weatherCode: Int) {

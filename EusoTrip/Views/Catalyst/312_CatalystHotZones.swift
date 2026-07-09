@@ -223,6 +223,17 @@ private struct HotZonesBody: View {
                     center: zonesMapCenter,
                     zoom: 5,
                     baseLayers: [
+                        // GEOTHERMAL (2026-06-20): the live metro map now lights
+                        // up — each metro emits a heat point weighted by its real
+                        // load-to-truck ratio, and the `.geothermal` hint paints
+                        // the continuous blue→red demand field UNDER the tappable
+                        // pins. This catalyst decode ships no cold-zone set, so
+                        // the field is honestly hot-only (no synthesized zones);
+                        // a ratio-less zone falls to the cool end via 0.6.
+                        .heatmap(points: mappedZones.compactMap { z -> HereLatLng? in
+                            guard let c = z.center else { return nil }
+                            return HereLatLng(c.lat, c.lng, weight: z.loadToTruckRatio ?? 0.6)
+                        }),
                         .markers(mappedZones.compactMap { z -> HereMarker? in
                             guard let c = z.center else { return nil }
                             return HereMarker(
@@ -236,6 +247,7 @@ private struct HotZonesBody: View {
                     addOns: [],
                     showLegend: false,
                     showTicker: false,
+                    styleHint: .geothermal,
                     onSelectMarker: { id in
                         if let z = mappedZones.first(where: { $0.id == id }),
                            let lens = ZoneFilter(rawValue: z.kind.capitalized) {

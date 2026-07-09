@@ -2126,6 +2126,15 @@ struct DriverLoadsPane: View {
 struct DriverWalletPane: View {
     @Environment(\.palette) var palette
     @Environment(\.openURL) private var openURL
+    /// Dismisses the hosting sheet. Every live presentation of this pane
+    /// is a `.sheet` (Home "Wallet available" tile + Me → EusoWallet via
+    /// `MeDetailContainer(route: .earnings)` with `ownsOwnChrome == true`)
+    /// and both apply `.eusoSheetX()` — a pure detent helper since the
+    /// 2026-04-25 retraction that paints NO close X. The pinned EusoHeader
+    /// below carries the canonical SheetCloseButton so the sheet always
+    /// has a close affordance (ASC "Maybe add back button", build 721 —
+    /// same `ownsOwnChrome` skip as Driver Intel).
+    @Environment(\.dismiss) private var dismiss
     /// Session is optional so previews (which don't inject one) still
     /// compile. When present, `session.user?.id` supplies the driverId
     /// needed by `settlementBatching.getDriverBatchView` in §4.
@@ -2173,12 +2182,19 @@ struct DriverWalletPane: View {
     @StateObject private var taxStore = TaxSummaryStore()
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                // §9 spec: EusoHeader at top, title "Wallet", no bullet
-                // subtitle.
-                EusoHeader(title: "Wallet")
-                IridescentHairline()
+        VStack(spacing: 0) {
+            // §9 spec: EusoHeader at top, title "Wallet", no bullet
+            // subtitle. Pinned OUTSIDE the ScrollView and carrying the
+            // canonical SheetCloseButton so the dismiss target stays at
+            // the same coordinates while the driver scrolls the eight
+            // wallet sections — matching every other Me sub-sheet's
+            // pinned-header contract (see MeDetailContainer).
+            EusoHeader(title: "Wallet") {
+                SheetCloseButton { dismiss() }
+                    .accessibilityLabel("Close Wallet")
+            }
+            IridescentHairline()
+            ScrollView(.vertical, showsIndicators: false) {
                 // Eight sections, top-to-bottom, each rendered as its
                 // own `sectionShell` so empty/error/loading each resolve
                 // to a branded state without re-laying out the column.
@@ -2195,6 +2211,7 @@ struct DriverWalletPane: View {
                 .padding(.horizontal, Space.s5)
                 .padding(.top, Space.s4)
                 .padding(.bottom, Space.s6)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .refreshable { await refreshAll() }
@@ -2998,10 +3015,10 @@ struct DriverWalletPane: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(Brand.warning)
             VStack(alignment: .leading, spacing: 2) {
-                Text("Can't reach the server")
+                Text("Connection is unavailable")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text(err.localizedDescription)
+                Text(err.eusoUserCopy)
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)
@@ -3920,9 +3937,7 @@ struct DriverMessagesSheet: View {
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(palette.textPrimary)
                         .frame(width: 32, height: 32)
-                        .background(
-                            LinearGradient.diagonal.opacity(0.22)
-                        )
+                        .background { LinearGradient.diagonal.opacity(0.22) }
                         .overlay(
                             RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
                                 .strokeBorder(LinearGradient.diagonal, lineWidth: 1)
@@ -4149,7 +4164,7 @@ struct DriverMessagesSheet: View {
                 }
                 lastDeletedSnapshot = nil
             }
-            loadError = "Couldn't delete - \(error.localizedDescription)"
+            loadError = "Couldn't delete. \(error.eusoUserCopy)"
         }
     }
 
@@ -4169,7 +4184,7 @@ struct DriverMessagesSheet: View {
             loadError = "Please sign in to load messages."
             didFirstLoad = true
         } catch {
-            loadError = "Couldn't refresh messages - \(error.localizedDescription)"
+            loadError = "Couldn't refresh messages. \(error.eusoUserCopy)"
             didFirstLoad = true
         }
     }
@@ -5030,9 +5045,12 @@ struct DrivereSangCoachSheet: View {
                 )
                 reply = resp.message
             } catch {
-                // Best-effort local fallback so an offline driver still
-                // gets a useful response instead of radio silence.
-                reply = Self.canned(for: text)
+                do {
+                    let grounded = try await ShipmentAgentService.shared.ask(text)
+                    reply = grounded.answer
+                } catch {
+                    reply = "ESANG could not connect to live intelligence. Your message was not answered; please try again when the connection returns."
+                }
             }
             // Split ESANG's reply into driver-visible text + machine actions.
             // The parser strips every `<<<ACTION:verb:arg>>>` token so the
@@ -5601,7 +5619,7 @@ struct NewMessageSheet: View {
             errorText = "Sign in to find people to message."
             didFirstLoad = true
         } catch {
-            errorText = "Couldn't reach the directory - \(error.localizedDescription)"
+            errorText = "Couldn't reach the directory. \(error.eusoUserCopy)"
             didFirstLoad = true
         }
     }
@@ -5639,7 +5657,7 @@ struct NewMessageSheet: View {
         } catch EusoTripAPIError.unauthenticated {
             errorText = "Please sign in to start a conversation."
         } catch {
-            errorText = "Couldn't start the conversation - \(error.localizedDescription)"
+            errorText = "Couldn't start the conversation. \(error.eusoUserCopy)"
         }
     }
 
@@ -5667,7 +5685,7 @@ struct NewMessageSheet: View {
         } catch EusoTripAPIError.unauthenticated {
             errorText = "Please sign in to create a group."
         } catch {
-            errorText = "Couldn't create the group - \(error.localizedDescription)"
+            errorText = "Couldn't create the group. \(error.eusoUserCopy)"
         }
     }
 

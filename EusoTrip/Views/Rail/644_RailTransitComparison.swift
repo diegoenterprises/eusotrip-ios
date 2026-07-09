@@ -302,7 +302,7 @@ private struct RailTransitComparisonBody: View {
             .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
 
             // Honest gap note for the un-sourced scoring axes.
-            Text("Transit · reliability · emissions need a routing-comparison endpoint (intermodal.compareRoutings - not yet built). Only landed cost is live.")
+            Text("Transit time · reliability · emissions comparison isn't available yet — landed cost below is live.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -396,7 +396,7 @@ private struct RailTransitComparisonBody: View {
     private var costSourceCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("COST · getIntermodalCostBreakdown")
+                Text("COST · full breakdown")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

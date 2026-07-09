@@ -142,8 +142,8 @@ public final class EusoWalletApplePayProvider: NSObject {
                 // controller.present completion is nonisolated; hop back
                 // to the main actor before touching `resume(_:)`.
                 if !presented {
-                    Task { @MainActor [weak self] in
-                        self?.resume(.failed(error: "Apple Pay sheet refused to present."))
+                    Task { @MainActor in
+                        self.resume(.failed(error: "Apple Pay sheet refused to present."))
                     }
                 }
             }
@@ -168,12 +168,12 @@ extension EusoWalletApplePayProvider: PKPaymentAuthorizationControllerDelegate {
     // `resume(_:)` without the Swift 6 strict-concurrency warning.
 
     nonisolated public func paymentAuthorizationControllerDidFinish(_ controller: PKPaymentAuthorizationController) {
-        controller.dismiss { [weak self] in
+        controller.dismiss {
             // If `resume(_:)` already fired (success or backend
             // failure), this is a no-op. Cancellation lands here
             // when the user dismissed without authorizing.
-            Task { @MainActor [weak self] in
-                self?.resume(.cancelled)
+            Task { @MainActor in
+                self.resume(.cancelled)
             }
         }
     }

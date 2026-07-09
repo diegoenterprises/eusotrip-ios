@@ -509,7 +509,7 @@ struct CatalystRoadsideDataQ: View {
         VStack(spacing: Space.s2) {
             Text("Couldn't load roadside")
                 .font(EType.title).foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption).foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
             Button { Task { await store.refresh() } } label: {
@@ -619,7 +619,7 @@ private struct FileDataQSheet: View {
                 field("EVENT DATE", text: $eventDate, placeholder: "YYYY-MM-DD")
             }
 
-            // Challenge statement + AI assist
+            // Challenge statement + Autopilot draft
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     fieldLabel("CHALLENGE STATEMENT")
@@ -627,7 +627,7 @@ private struct FileDataQSheet: View {
                     Button { Task { await runDraft() } } label: {
                         HStack(spacing: 4) {
                             if drafting { ProgressView().controlSize(.mini) }
-                            Text(drafting ? "Drafting…" : "✦ AI assist")
+                            Text(drafting ? "Drafting…" : "✦ Autopilot")
                                 .font(EType.micro).tracking(0.4)
                         }
                         .foregroundStyle(LinearGradient.diagonal)
@@ -672,7 +672,7 @@ private struct FileDataQSheet: View {
     private func aiDraftCard(_ d: RoadsideAIDraft) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("AI DRAFT").font(EType.micro).tracking(0.6).foregroundStyle(palette.textTertiary)
+                Text("AUTOPILOT DRAFT").font(EType.micro).tracking(0.6).foregroundStyle(palette.textTertiary)
                 Spacer()
                 Text("RISK · \(d.frivolousClaimRisk.uppercased())")
                     .font(EType.micro).tracking(0.6)
@@ -788,10 +788,10 @@ private struct FileDataQSheet: View {
             )
             draft = d
             if !d.available {
-                actionError = "AI assist is unavailable right now. You can still file your own statement."
+                actionError = "Autopilot drafting is unavailable right now. You can still file your own statement."
             }
         } catch {
-            actionError = "AI assist failed: \(error.localizedDescription)"
+            actionError = "Autopilot drafting could not finish. Review your facts and try again."
         }
     }
 
@@ -869,7 +869,7 @@ private struct CarrierPolicySheet: View {
                 case .empty:
                     coverageUnknown
                 case .error(let e):
-                    Text(e.localizedDescription).font(EType.caption).foregroundStyle(Brand.warning)
+                    Text(e.eusoUserCopy).font(EType.caption).foregroundStyle(Brand.warning)
                 case .loaded(let p):
                     if p.coverageLimitCents <= 0 && (p.preferredProviderName ?? "").isEmpty {
                         coverageUnknown

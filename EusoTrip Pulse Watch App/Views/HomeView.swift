@@ -124,6 +124,10 @@ private struct IdleOrbPage: View {
     /// hold, so the release keys the radio down exactly once and a plain
     /// ESANG hold never sends a stray PTT stop.
     @State private var pttTransmitting: Bool = false
+    /// Open-on-iPhone pill state — nil = idle, non-nil = the honest
+    /// post-tap message ("Sent — tap the notification…" or the failure
+    /// copy). Cleared automatically after a short dwell.
+    @State private var openOnPhoneNote: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -176,8 +180,22 @@ private struct IdleOrbPage: View {
             VStack {
                 Spacer()
                 hintLine
-                    .padding(.bottom, 8) // was 4 — 46mm rounded corners eat ~2pt
+                // Pairing gate escape hatch — the old state was a dead
+                // end: copy said "Open EusoTrip on iPhone to pair" but
+                // NOTHING on the wrist could actually get the iPhone
+                // app open. watchOS can't foreground-launch a companion
+                // app, so this pill does the honest platform recipe:
+                // wake the iPhone in the background (WCSession) → the
+                // phone posts an "Open EusoTrip" notification whose tap
+                // lands on Home; the Handoff activity published below
+                // additionally puts the EusoTrip icon in the iPhone App
+                // Switcher / lock screen for instant open.
+                if !auth.isSignedIn {
+                    openOnPhonePill
+                        .padding(.top, 4)
+                }
             }
+            .padding(.bottom, 8) // was 4 — 46mm rounded corners eat ~2pt
 
             #if DEBUG
             // Dedicated debug tap surface: an invisible capsule in the
@@ -218,6 +236,18 @@ private struct IdleOrbPage: View {
         // the orb halo spilling past the rounded corners, but the shape
         // insets the layout and turns the watch face into a visible
         // square. Let the hardware bezel do the final mask.
+        //
+        // Handoff publisher — while the wrist is unpaired, advertise
+        // the continuation activity so the EusoTrip icon appears on the
+        // iPhone lock screen / App Switcher for a one-tap open. The iOS
+        // side declares + handles com.eusotrip.esang.activate; an empty
+        // transcript lands the user on Home with no sheet.
+        .userActivity(EusoTripConfig.handoffActivityType,
+                      isActive: !auth.isSignedIn) { activity in
+            activity.title = "Open EusoTrip"
+            activity.userInfo = ["transcript": ""]
+            activity.isEligibleForHandoff = true
+        }
         .onAppear {
             // Preflight permission surface. If Mic or Speech
             // Recognition was denied in a previous session (or in
@@ -413,6 +443,54 @@ private struct IdleOrbPage: View {
         }
     }
 
+    /// The pairing gate's working "Open on iPhone" affordance. Wakes
+    /// the iPhone app in the background and reports the TRUTH of what
+    /// happened — never a silent tap, never a fake success.
+    @ViewBuilder
+    private var openOnPhonePill: some View {
+        if let note = openOnPhoneNote {
+            Text(note)
+                .font(.system(size: 9, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white.opacity(0.85))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 10)
+                .transition(.opacity)
+        } else {
+            Button {
+                WKInterfaceDevice.current().play(.click)
+                let sent = connectivity.requestPhoneActivation(
+                    transcript: "open eusotrip home",
+                    reply: "Opening EusoTrip on your iPhone."
+                )
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    openOnPhoneNote = sent
+                        ? "Sent — tap the EusoTrip notification on your iPhone (or its icon in the App Switcher)."
+                        : "Can't reach your iPhone — bring it nearby and try again."
+                }
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(6))
+                    withAnimation(.easeInOut(duration: 0.2)) { openOnPhoneNote = nil }
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "iphone.and.arrow.forward")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("Open on iPhone")
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule().fill(Color.white.opacity(0.12))
+                        .overlay(Capsule().strokeBorder(Color.esangBlue.opacity(0.55), lineWidth: 0.8))
+                )
+            }
+            .buttonStyle(.plain)
+            .transition(.opacity)
+        }
+    }
+
     private func handleOrbTap() async {
         // Debounce rapid double-taps. Floor relaxed from 300 ms → 150
         // ms (L1): 300 ms ate legitimate rescue taps on bumpy wrists
@@ -518,6 +596,14 @@ private struct IdleOrbPage: View {
                 await esang.startListening(auth: auth, connectivity: connectivity)
             }
         case .listening:
+            // Recorder-owned turn: the Button tap ALSO lands at the
+            // long-press release (see EsangOrbWatch's simultaneous
+            // gestures). Without this guard the stray tap ran
+            // stopAndSubmit with an EMPTY transcript (the recorder
+            // path never writes `esang.transcript`) and reset the
+            // session to idle mid-turn — killing the hold-to-talk
+            // submit before it could run.
+            if EsangHoldToTalk.isRecorderTurnActive { return }
             await esang.stopAndSubmit(auth: auth, connectivity: connectivity)
         case .thinking:
             break
@@ -565,59 +651,143 @@ private struct IdleOrbPage: View {
             return
         }
 
-        // ESANG (human → AI): hold-to-talk dictation. The long-press fires
-        // when the user has held the orb past EsangOrbWatch's threshold;
-        // we kick the AVAudioRecorder, then watch for the press RELEASE to
-        // stop + transcribe + submit. Without this gesture the only path
-        // to dictation was the system input picker (TextFieldLink /
-        // presentTextInputController) which fell back to the watch
-        // keyboard far too often. Now: hold orb → speak → release →
-        // transcript hits Gemini → ESANG runs.
+        // ESANG (human → AI): hold-to-talk dictation. The long-press
+        // fires when the user has held the orb past EsangOrbWatch's
+        // threshold; the finger LIFT lands in `handleOrbPttRelease`
+        // (EsangOrbWatch's DragGesture.onEnded → release closure),
+        // which stops the recorder and submits. A 30s watchdog Task
+        // is the only other exit — and it SUBMITS the capture rather
+        // than discarding it, so a stuck gesture still delivers the
+        // driver's words.
         let now = Date()
         guard now.timeIntervalSince(lastOrbTapAt) > 0.15 else { return }
         lastOrbTapAt = now
         OrbLog.tap(state: esang.state, signedIn: auth.isSignedIn)
+        await EsangHoldToTalk.begin(esang: esang, auth: auth, connectivity: connectivity)
+    }
 
+    /// Finger lifted on the orb. Two jobs:
+    ///   1. Close a chain-group PTT transmission if one is open —
+    ///      keys the radio DOWN via the phone.
+    ///   2. End a recorder-owned ESANG hold: stop the AVAudioRecorder
+    ///      and submit the capture through transcription → esang.chat.
+    ///      This is THE primary submit path for hold-to-talk; before
+    ///      this fix nothing stopped the recorder on lift and the
+    ///      audio was thrown away.
+    private func handleOrbPttRelease() async {
+        if pttTransmitting {
+            pttTransmitting = false
+            connectivity.sendPttTransmit(begin: false)
+            WKInterfaceDevice.current().play(.stop)
+            // Drop the borrowed "listening" visual back to idle; PTT has no
+            // thinking/transcribe phase — the voice already went out live.
+            if case .listening = esang.state { esang.resetToIdle() }
+            return
+        }
+        await EsangHoldToTalk.end(esang: esang, auth: auth, connectivity: connectivity)
+    }
+}
+
+// MARK: - EsangHoldToTalk
+//
+// Shared hold-to-talk engine for BOTH Home pages (IdleOrbPage +
+// InstrumentPanel) so a held orb means the same thing everywhere:
+// press → AVAudioRecorder arms; lift → recorder stops and the capture
+// rides transcription.transcribeAudio → EsangSession.submitTranscribedText
+// → esang.chat. The 30s watchdog SUBMITS (never discards) a capture
+// whose release event was eaten by a TabView swipe or wrist-down.
+//
+// L4 audio-route handling mirrors EsangSession.startListening():
+// DrivingSessionManager's HKWorkoutSession can hold the route, so we
+// yield before arming the recorder and resume after every stop/cancel
+// path.
+@MainActor
+enum EsangHoldToTalk {
+
+    /// Hard-cap watchdog for the current hold. Cancelled on release.
+    private static var watchdog: Task<Void, Never>?
+
+    /// True while a recorder-owned turn is live. Tap handlers consult
+    /// this to suppress the Button tap that lands at gesture release —
+    /// without the guard, that stray tap ran `stopAndSubmit` with an
+    /// EMPTY transcript and reset the session to idle mid-turn.
+    static var isRecorderTurnActive: Bool {
+        WatchAudioRecorder.shared.isRecording
+    }
+
+    /// Arm the recorder for a hold-to-talk turn.
+    static func begin(
+        esang: EsangSession,
+        auth: AuthStore,
+        connectivity: WatchConnectivityManager
+    ) async {
         // Haptic so the driver knows the recorder armed.
         WKInterfaceDevice.current().play(.start)
+        // Kick a best-effort auth mirror when unpaired so a token can
+        // land while the driver is still speaking.
+        if !auth.isSignedIn { connectivity.requestAuthMirror() }
+        // L4a — yield the workout session's audio route + preflight the
+        // .playAndRecord activation before arming the recorder.
+        DrivingSessionManager.shared.yieldAudioRoute()
         do {
+            try AudioSessionPreflight.check()
             try await WatchAudioRecorder.shared.start()
             esang.state = .listening
         } catch {
+            DrivingSessionManager.shared.resumeAfterVoice()
             esang.setError("Mic unavailable — check Settings → Privacy → Microphone.",
                            kind: .permissionMic)
             return
         }
 
-        // Press-release watchdog. We can't observe the "release" event
-        // through the LongPressGesture closure (it only fires on the
-        // long-press completing, not on lift), so we poll the orb's
-        // pressed state via the recorder's own isRecording flag — the
-        // gesture-end handler that stops recording lives in
-        // EsangOrbWatch's DragGesture.onEnded. As a safety, hard-cap
-        // each utterance at 30s so a stuck gesture can't run forever.
-        let recordStart = Date()
-        while WatchAudioRecorder.shared.isRecording {
-            if Date().timeIntervalSince(recordStart) > 30 {
-                _ = WatchAudioRecorder.shared.stop()
-                break
-            }
-            try? await Task.sleep(nanoseconds: 150_000_000)
+        // Watchdog: if the release never lands, stop at 30s and SUBMIT
+        // the capture instead of discarding it.
+        watchdog?.cancel()
+        watchdog = Task {
+            try? await Task.sleep(nanoseconds: 30 * NSEC_PER_SEC)
+            guard !Task.isCancelled else { return }
+            guard WatchAudioRecorder.shared.isRecording else { return }
+            let url = WatchAudioRecorder.shared.stop()
+            DrivingSessionManager.shared.resumeAfterVoice()
+            await submit(url: url, esang: esang, auth: auth, connectivity: connectivity)
         }
-        await finishRecordingAndSubmit()
     }
 
-    /// Stop the recorder (if still running), upload to Gemini, feed
-    /// the transcript into the existing ESANG submit pipeline. Called
-    /// from the long-press release handler AND from the watchdog.
-    private func finishRecordingAndSubmit() async {
-        guard let url = WatchAudioRecorder.shared.stop()
-                ?? (WatchAudioRecorder.shared.isTranscribing ? nil : nil)
-        else {
-            // Already stopped without a file — nothing to do.
+    /// Finger lifted — stop the recorder and submit the capture. No-op
+    /// when no recorder turn is active (plain tap, PTT hold, or the
+    /// watchdog already closed the turn).
+    static func end(
+        esang: EsangSession,
+        auth: AuthStore,
+        connectivity: WatchConnectivityManager
+    ) async {
+        watchdog?.cancel()
+        watchdog = nil
+        guard WatchAudioRecorder.shared.isRecording else { return }
+        let url = WatchAudioRecorder.shared.stop()
+        DrivingSessionManager.shared.resumeAfterVoice()
+        await submit(url: url, esang: esang, auth: auth, connectivity: connectivity)
+    }
+
+    /// Upload the capture to Gemini transcription and feed the verbatim
+    /// text into the canonical `esang.chat` pipeline. `url == nil`
+    /// means another exit path already owned this turn — nothing to do.
+    private static func submit(
+        url: URL?,
+        esang: EsangSession,
+        auth: AuthStore,
+        connectivity: WatchConnectivityManager
+    ) async {
+        guard let url else { return }
+        WKInterfaceDevice.current().play(.stop)
+        guard auth.isSignedIn else {
+            // The wrist can't transcribe locally (no Speech framework
+            // on watchOS) and the transcription endpoint needs a
+            // bearer. Loud, actionable card — never a silent drop.
+            esang.setError("Sign in on your iPhone to use hold-to-talk.",
+                           kind: .unauthorized)
             return
         }
-        WKInterfaceDevice.current().play(.stop)
         esang.state = .thinking
         do {
             let transcript = try await WatchAudioRecorder.shared
@@ -632,21 +802,6 @@ private struct IdleOrbPage: View {
             esang.setError("Couldn't reach the transcription service. Try again.",
                            kind: .networkTimeout)
         }
-    }
-
-    /// Finger lifted on the orb. Closes a chain-group PTT transmission if
-    /// one is open — keys the radio DOWN via the phone — and resets the
-    /// orb. A no-op for an ESANG hold (whose release is handled by the
-    /// recorder watchdog), guarded by `pttTransmitting` so a plain
-    /// dictation hold never sends a stray walkie-talkie stop.
-    private func handleOrbPttRelease() async {
-        guard pttTransmitting else { return }
-        pttTransmitting = false
-        connectivity.sendPttTransmit(begin: false)
-        WKInterfaceDevice.current().play(.stop)
-        // Drop the borrowed "listening" visual back to idle; PTT has no
-        // thinking/transcribe phase — the voice already went out live.
-        if case .listening = esang.state { esang.resetToIdle() }
     }
 }
 
@@ -1335,17 +1490,25 @@ private struct InstrumentPanel: View {
         case .idle, .error, .done:
             await esang.startListening(auth: auth, connectivity: connectivity)
         case .listening:
+            // Suppress the stray Button tap that lands at the release
+            // of a recorder-owned hold (same guard as IdleOrbPage) —
+            // otherwise it commits an empty transcript and kills the
+            // in-flight hold-to-talk turn.
+            if EsangHoldToTalk.isRecorderTurnActive { return }
             await esang.stopAndSubmit(auth: auth, connectivity: connectivity)
         case .thinking:
             break
         }
     }
 
-    /// Press-and-hold handler. "ESANG on your wrist" — bypasses the
-    /// state switch (skipping the smart-retry dance around `.error`)
-    /// and forces a fresh listening session regardless of current
-    /// state. The orb itself already fired the stronger haptic +
-    /// wider flash ring before this runs.
+    /// Press-and-hold handler. "ESANG on your wrist." Unified with
+    /// IdleOrbPage: a hold means the same thing on every Home page —
+    /// the WatchAudioRecorder hold-to-talk pipeline (EsangHoldToTalk).
+    /// Previously this page routed the hold into the dictation SHEET,
+    /// so the two copies of the same gesture took two different
+    /// pipelines. The tap path continues to route through
+    /// EsangSession.startListening → DictationBroker as the deliberate
+    /// no-audio fallback.
     /// Same gate as IdleOrbPage.pttEngaged, resolved against THIS panel's
     /// injected `loads` store: PTT is the right path only on an active
     /// load whose chain-group the phone has joined and reports available.
@@ -1360,7 +1523,7 @@ private struct InstrumentPanel: View {
     private func handleOrbLongPress() async {
         // BRANCH: chain-group walkie-talkie (human → convoy) vs. ESANG
         // (human → AI). Held on an active-load chain-group with PTT live →
-        // key the radio UP via the phone. Otherwise → ESANG, unchanged.
+        // key the radio UP via the phone. Otherwise → ESANG hold-to-talk.
         if pttEngaged {
             WKInterfaceDevice.current().play(.start)
             esang.state = .listening
@@ -1370,26 +1533,26 @@ private struct InstrumentPanel: View {
         }
 
         OrbLog.tap(state: esang.state, signedIn: auth.isSignedIn)
-        if !auth.isSignedIn {
-            connectivity.requestAuthMirror()
-        }
-        // If mid-listen, commit first so the driver can hold-and-speak
-        // from any state and the audio lands on the server.
-        if case .listening = esang.state {
+        // If mid-listen on a dictation-sheet turn, commit it first so the
+        // driver can hold-and-speak from any state.
+        if case .listening = esang.state, !EsangHoldToTalk.isRecorderTurnActive {
             await esang.stopAndSubmit(auth: auth, connectivity: connectivity)
             return
         }
-        await esang.startListening(auth: auth, connectivity: connectivity)
+        await EsangHoldToTalk.begin(esang: esang, auth: auth, connectivity: connectivity)
     }
 
     /// Finger lifted — close a chain-group PTT transmission (key down) if
-    /// one is open. No-op for an ESANG hold.
+    /// one is open, or end a recorder-owned ESANG hold (stop + submit).
     private func handleOrbPttRelease() async {
-        guard pttTransmitting else { return }
-        pttTransmitting = false
-        connectivity.sendPttTransmit(begin: false)
-        WKInterfaceDevice.current().play(.stop)
-        if case .listening = esang.state { esang.resetToIdle() }
+        if pttTransmitting {
+            pttTransmitting = false
+            connectivity.sendPttTransmit(begin: false)
+            WKInterfaceDevice.current().play(.stop)
+            if case .listening = esang.state { esang.resetToIdle() }
+            return
+        }
+        await EsangHoldToTalk.end(esang: esang, auth: auth, connectivity: connectivity)
     }
 }
 

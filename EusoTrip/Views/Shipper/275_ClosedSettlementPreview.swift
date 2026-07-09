@@ -60,7 +60,7 @@ private struct SettlementBody: View {
             case .loading:
                 Text("Loading settlement…").font(EType.caption).foregroundStyle(palette.textSecondary)
             case .error(let err):
-                Text((err as? EusoTripAPIError)?.errorDescription ?? err.localizedDescription)
+                Text(err.eusoUserCopy)
                     .font(EType.caption).foregroundStyle(Brand.danger)
             }
         }

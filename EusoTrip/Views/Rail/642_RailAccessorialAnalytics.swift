@@ -367,7 +367,7 @@ private struct RailAccessorialAnalyticsBody: View {
     private var tariffCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("TARIFF · getFeeSchedule")
+                Text("TARIFF · fee schedule")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -390,25 +390,29 @@ private struct RailAccessorialAnalyticsBody: View {
 
     // MARK: - CTA row (Configure rates · Export)
 
+    private var exportLines: [String] {
+        var lines = [
+            "Period: 30d",
+            "Total spend: \(usd(total))",
+            "Invoice count: \(invoiceCount)",
+            "Fee schedule: \(feeSchedule?.platformFeePercent.map { String(format: "%.2f%%", $0) } ?? "-")",
+            "Tariff note: \(feeSchedule?.note ?? "-")"
+        ]
+        for row in rankedTypes.prefix(6) {
+            lines.append("\(chargeTitle(row.type)): \(row.count) rows, \(usd(row.amount))")
+        }
+        return lines
+    }
+
     private var ctaRow: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Configure rates", action: { Task { await loadFeeSchedule() } })
-            Button {
-                // Export shares the live roll-up — no dedicated export
-                // endpoint exists; // PORT-GAP — wired to a no-op until
-                // an accessorial.exportReport procedure ships.
-            } label: {
-                Text("Export")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(palette.bgCardSoft)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                .strokeBorder(palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "Export",
+                sheetTitle: "Accessorial export context",
+                lines: exportLines,
+                systemImage: "square.and.arrow.up"
+            )
         }
     }
 

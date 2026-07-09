@@ -104,7 +104,7 @@ private struct PODBody: View {
     private var contextBanner: some View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("§272 DISPATCHED · §292 ME SIGNED · NET-30 ARM-ON-TAP")
+                Text("ME SIGNED · TR SIGNED · NET-30 ARM-ON-TAP")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 if let l = load {
                     Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · ePOD CERT QUEUED · ready for shipper sign-off")

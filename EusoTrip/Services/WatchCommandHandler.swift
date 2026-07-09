@@ -129,13 +129,20 @@ final class WatchCommandHandler: NSObject, ObservableObject {
         guard let path = message["path"] as? String, !path.isEmpty else {
             return ["ok": false, "reason": "missing path"]
         }
-        // Crude but effective allowlist — anything matching a typical
-        // query proc name gets through; mutations (submit, accept,
-        // delete, create, update, mark) are rejected.
+        // Allowlist — the get*/list*-family prefix heuristic PLUS an
+        // explicit set for read procs whose names don't match the
+        // pattern but which the wrist legitimately relays in dead
+        // zones (Port Ops board + per-load weather chip). Mutations
+        // (submit, accept, delete, create, update, mark) stay refused.
+        let explicitQueryAllowlist: Set<String> = [
+            "controlTower.exceptions",
+            "weather.forLoad",
+        ]
         let lastSegment = path.split(separator: ".").last.map(String.init) ?? path
         let allowedPrefixes = ["get", "list", "search", "fetch", "query", "find", "summary"]
         let lower = lastSegment.lowercased()
-        let allowed = allowedPrefixes.contains { lower.hasPrefix($0) }
+        let allowed = explicitQueryAllowlist.contains(path)
+            || allowedPrefixes.contains { lower.hasPrefix($0) }
         guard allowed else {
             return ["ok": false, "reason": "relay refuses non-query \(path)"]
         }
@@ -412,7 +419,13 @@ final class WatchCommandHandler: NSObject, ObservableObject {
         // `transcript`, we pick a deeplink. Full Gemini routing happens
         // only if the user explicitly opens eSang chat on the phone.
         let lower = transcript.lowercased()
-        if lower.contains("wallet") {
+        if transcript.isEmpty || lower.contains("open eusotrip") || lower.contains("home") {
+            // Plain "open the app" request from the wrist (pairing gate
+            // / Open-on-iPhone pill). Landing on the Home screen IS the
+            // destination — set NO deeplink so no sheet covers it; the
+            // local notification below is the one-tap opener.
+            pendingDeeplink = nil
+        } else if lower.contains("wallet") {
             pendingDeeplink = .wallet
         } else if lower.contains("hos") || lower.contains("hours") || lower.contains("log") {
             pendingDeeplink = .hos
@@ -453,9 +466,12 @@ final class WatchCommandHandler: NSObject, ObservableObject {
                     || settings.authorizationStatus == .provisional
                     || settings.authorizationStatus == .ephemeral else { return }
             let content = UNMutableNotificationContent()
-            content.title = "EusoTrip"
-            content.body = transcript.isEmpty
-                ? "Your Apple Watch asked to continue here."
+            content.title = "Open EusoTrip"
+            let lower = transcript.lowercased()
+            let isPlainOpen = transcript.isEmpty
+                || lower.contains("open eusotrip") || lower.contains("home")
+            content.body = isPlainOpen
+                ? "Tap to open EusoTrip on your iPhone."
                 : "From your watch: \(transcript)"
             content.sound = .default
             content.categoryIdentifier = "eusotrip.watchHandoff"
@@ -529,19 +545,48 @@ final class WatchCommandHandler: NSObject, ObservableObject {
     }
 
     private func handleHOSEvent(_ message: [String: Any]) async -> [String: Any] {
-        // The wrist already wrote hos.changeStatus optimistically and the
-        // server reflects it in `hos.getStatus`. Trigger an immediate
-        // HOSClockService poll so the phone's published status catches
-        // up and — crucially — so pushToWatch fires, re-mirroring the
-        // canonical backend view back onto the wrist within ~1s instead
-        // of the next 5-min tick.
+        // The wrist's own direct call is best-effort only (dead zones,
+        // expired wrist JWT) — this phone lane is the TRUE fallback, so
+        // it must actually write the duty change, not assume the wrist
+        // already did. Call the same typed API the iOS ELD surface uses,
+        // then poke HOSClockService so the canonical backend view
+        // re-mirrors onto the wrist within ~1s.
+        let raw = (message["status"] as? String) ?? ""
+        let location = (message["location"] as? String) ?? "watch"
+        let duty: HOSDutyCode? = {
+            switch raw.lowercased() {
+            case "off", "off_duty":       return .offDuty
+            case "sleeper", "sb":         return .sleeperBerth
+            case "driving", "d":          return .driving
+            case "on_duty", "on":         return .onDuty
+            default:                      return nil
+            }
+        }()
+        if let duty {
+            do {
+                _ = try await api.hos.changeStatus(
+                    status: duty,
+                    source: "watch",
+                    location: location,
+                    idempotencyKey: (message["idempotencyKey"] as? String) ?? UUID().uuidString
+                )
+            } catch {
+                print("[WatchCommandHandler] hos.changeStatus relay failed: \(error.localizedDescription)")
+                NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
+                return ["ok": false, "reason": error.localizedDescription]
+            }
+        }
         NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
-        return ["ok": true]
+        return ["ok": duty != nil]
     }
 
-    /// Direct URLRequest POST to `emergencyProtocols.activate`. We build
-    /// the tRPC envelope by hand so we don't have to edit EusoTripAPI's
-    /// typed routers just to light up the wrist's SOS path.
+    /// Direct URLRequest POST to `emergencyProtocols.declareEmergency` —
+    /// the REAL proc (emergencyProtocols.ts:497). The previously targeted
+    /// `emergencyProtocols.activate` does not exist, so every phone-side
+    /// SOS escalation 404'd silently. We build the tRPC envelope by hand
+    /// so we don't have to edit EusoTripAPI's typed routers just to
+    /// light up the wrist's SOS path. Errors are logged loudly — an SOS
+    /// that didn't reach dispatch must never look delivered.
     nonisolated static func fireEmergencyMutation(
         reason: String,
         silent: Bool,
@@ -550,7 +595,7 @@ final class WatchCommandHandler: NSObject, ObservableObject {
         api: EusoTripAPI
     ) async {
         guard let base = await api.baseURL else { return }
-        let url = base.appendingPathComponent("api/trpc/emergencyProtocols.activate")
+        let url = base.appendingPathComponent("api/trpc/emergencyProtocols.declareEmergency")
         var req = URLRequest(url: url, timeoutInterval: 15)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -558,15 +603,26 @@ final class WatchCommandHandler: NSObject, ObservableObject {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         var payload: [String: Any] = [
-            "reason": reason,
-            "silent": silent,
-            "source": "watch"
+            "type": "security",
+            "severity": "critical",
+            "title": "Wrist SOS — EusoTrip Pulse",
+            "description": "Driver-initiated SOS relayed by the paired iPhone. Reason: \(reason).\(silent ? " Duress mode — silent escalation." : "")",
         ]
-        if let lat { payload["lat"] = lat }
-        if let lon { payload["lon"] = lon }
+        if let lat, let lon {
+            payload["latitude"] = lat
+            payload["longitude"] = lon
+            payload["location"] = String(format: "%.5f, %.5f", lat, lon)
+        }
         let body: [String: Any] = ["json": payload]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        _ = try? await URLSession.shared.data(for: req)
+        do {
+            let (data, response) = try await URLSession.shared.data(for: req)
+            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                print("[WatchCommandHandler] SOS declareEmergency HTTP \(http.statusCode): \(String(data: data, encoding: .utf8) ?? "")")
+            }
+        } catch {
+            print("[WatchCommandHandler] SOS declareEmergency failed: \(error.localizedDescription)")
+        }
     }
 
     private func handleLoadAccept(_ message: [String: Any]) async -> [String: Any] {

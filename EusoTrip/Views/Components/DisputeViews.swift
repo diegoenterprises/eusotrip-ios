@@ -120,7 +120,7 @@ struct DisputeListView: View {
                         .foregroundStyle(palette.textPrimary)
                         .padding(.horizontal, Space.s4).padding(.vertical, Space.s2)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(LinearGradient.diagonal.opacity(0.18))
+                        .background { LinearGradient.diagonal.opacity(0.18) }
                 }
                 if let e = actionError {
                     errorBanner(e)

@@ -126,7 +126,7 @@ struct TrustedTraderSheet: View {
             Text("Attach trusted-trader status")
                 .font(EType.h2)
                 .foregroundStyle(palette.textPrimary)
-            Text("Record a customs trusted-trader program so cross-border lanes read the company's cleared standing. Status reflects the server record, it is not self-certified.")
+            Text("Record a customs trusted-trader program so cross-border lanes read the company's cleared standing. Status reflects the verified company record, it is not self-certified.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

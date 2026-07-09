@@ -236,6 +236,10 @@ public struct AstraCaptureSheet: View {
 
     private var captureCTA: some View {
         Button {
+            guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+                error = "Camera is unavailable on this device. Astra needs a live camera capture."
+                return
+            }
             showCamera = true
         } label: {
             Label(mode.ctaCopy, systemImage: "camera.fill")
@@ -349,7 +353,8 @@ private struct AstraCameraSheet: UIViewControllerRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(onImage: onImage) }
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
-        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+        picker.sourceType = .camera
+        picker.cameraCaptureMode = .photo
         picker.allowsEditing = false
         picker.delegate = context.coordinator
         return picker

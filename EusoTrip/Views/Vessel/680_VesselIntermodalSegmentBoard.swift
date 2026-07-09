@@ -329,7 +329,7 @@ private struct VesselIntermodalSegmentBoardBody: View {
             }
             return "leg \(seg.legNumber)"
         }()
-        return Text("JOURNEY SEGMENTS · getIntermodalTracking · activeSegmentId = \(legTxt)")
+        return Text("JOURNEY SEGMENTS · active leg \(legTxt)")
             .font(.system(size: 9, weight: .heavy)).tracking(1.0)
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -628,7 +628,7 @@ private struct VesselIntermodalSegmentBoardBody: View {
     // MARK: - Ops mutations caption
 
     private var opsMutationsCaption: some View {
-        Text("advanceSegment · recordTransfer · ops mutations")
+        Text("Advance segment · record transfer · ops actions")
             .font(.system(size: 10))
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .center)

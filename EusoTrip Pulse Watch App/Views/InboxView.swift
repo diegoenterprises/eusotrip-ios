@@ -43,6 +43,8 @@ final class InboxStore: ObservableObject {
     static let shared = InboxStore()
 
     @Published var threads: [InboxThread] = []
+    @Published var hasLoadedOnce = false
+    @Published var lastError: String?
 
     /// Aggregate unread count mirrored from the phone's
     /// `UnreadMessageStore.total` via `WatchConnectivityManager`. Also
@@ -57,7 +59,10 @@ final class InboxStore: ObservableObject {
     @Published var unreadByConversation: [String: Int] = [:]
 
     func refresh(auth: AuthStore) async {
-        guard auth.isSignedIn else { return }
+        guard auth.isSignedIn else {
+            lastError = "Sign in on your iPhone"
+            return
+        }
         do {
             let client = EsangClient(auth: auth)
             let data = try await client.queryJSON("messages.getConversations")
@@ -113,9 +118,15 @@ final class InboxStore: ObservableObject {
             if unreadTotal == 0 {
                 unreadTotal = sum
             }
+            hasLoadedOnce = true
+            lastError = nil
         } catch {
             // Keep the existing list — a transient network flake
-            // shouldn't clear the inbox.
+            // shouldn't clear the inbox — but RECORD the failure so
+            // the view can distinguish "can't reach messages" from a
+            // genuinely empty inbox.
+            lastError = (error as? LocalizedError)?.errorDescription
+                ?? "Can't reach messages"
         }
     }
 
@@ -203,7 +214,29 @@ struct InboxView: View {
                 }
                 .padding(.horizontal, 2)
 
-                if store.threads.isEmpty {
+                if let err = store.lastError, !store.hasLoadedOnce {
+                    // Honest failure state — a dead transport used to
+                    // masquerade as "No threads yet."
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.esangAmber)
+                        Text(err)
+                            .font(.system(size: 9, weight: .medium))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(6)
+                    .background(Color.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: R.sm))
+                } else if store.threads.isEmpty && !store.hasLoadedOnce {
+                    HStack(spacing: 4) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Loading…")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 12)
+                } else if store.threads.isEmpty {
                     VStack(spacing: 6) {
                         Text("No threads yet")
                             .font(.system(size: 11))
@@ -252,6 +285,12 @@ struct InboxView: View {
         }
         .navigationTitle("Inbox")
         .task { await store.refresh(auth: auth) }
+        // Re-fetch the moment pairing lands so a cold launch before
+        // the auth mirror doesn't leave a false-empty inbox up.
+        .onChange(of: auth.isSignedIn) { _, signedIn in
+            guard signedIn else { return }
+            Task { await store.refresh(auth: auth) }
+        }
         .sheet(item: $activeThread) { thread in
             InboxThreadView(thread: thread)
         }
@@ -268,6 +307,8 @@ struct InboxThreadView: View {
     let thread: InboxThread
     @EnvironmentObject var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
+    @State private var sending = false
+    @State private var sendNote: String?
 
     private let cannedReplies = [
         "On it.",
@@ -283,25 +324,43 @@ struct InboxThreadView: View {
                 Text(thread.title).font(.system(size: 14, weight: .bold))
                 Text(thread.preview).font(.system(size: 12)).foregroundStyle(.secondary)
                 Divider()
+                if let note = sendNote {
+                    Text(note)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(Color.esangAmber)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Text("Quick reply").font(.system(size: 10)).foregroundStyle(.tertiary)
                 ForEach(cannedReplies, id: \.self) { reply in
                     Button {
+                        guard !sending else { return }
+                        sending = true
+                        sendNote = nil
                         Task {
                             // The server's real procedure is
-                            // `messages.sendMessage` and expects
-                            // `conversationId` + `content`. (The legacy
-                            // watch code called `messages.send` with
-                            // `threadId` / `text` and silently failed —
-                            // no thread was ever created.)
-                            _ = try? await EsangClient(auth: auth).mutateJSON(
-                                "messages.sendMessage",
-                                input: [
-                                    "conversationId": thread.id,
-                                    "content": reply,
-                                    "type": "text"
-                                ]
-                            )
-                            dismiss()
+                            // `messages.sendMessage` with
+                            // `conversationId` + `content`. Await the
+                            // result: dismiss only on a REAL send; on
+                            // failure, queue into the Message outbox
+                            // lane and say so instead of pretending.
+                            do {
+                                _ = try await EsangClient(auth: auth).mutateJSON(
+                                    "messages.sendMessage",
+                                    input: [
+                                        "conversationId": thread.id,
+                                        "content": reply,
+                                        "type": "text",
+                                        "idempotencyKey": UUID().uuidString
+                                    ]
+                                )
+                                dismiss()
+                            } catch {
+                                OfflineQueue.shared.enqueueMessage(
+                                    loadId: nil, to: thread.id, text: reply
+                                )
+                                sending = false
+                                sendNote = "Couldn't send now — queued for when you're back online."
+                            }
                         }
                     } label: {
                         Text(reply)
@@ -314,6 +373,7 @@ struct InboxThreadView: View {
                 }
             }
             .padding(.horizontal, S.s2)
+            .opacity(sending ? 0.6 : 1)
         }
         .navigationTitle(thread.title)
         // Canned-reply buttons reach edge to edge; clip to the bezel so

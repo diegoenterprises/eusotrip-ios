@@ -535,7 +535,7 @@ struct ShipperWatchComplication: View {
     // MARK: - Footer (live session anchor — no fabricated persona stamp)
 
     private var footer: some View {
-        Text("companyId \(session.user?.companyId ?? "—") · live load binding")
+        Text("Company ID \(session.user?.companyId ?? "—") · live load binding")
             .font(.system(size: 10))
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .center)

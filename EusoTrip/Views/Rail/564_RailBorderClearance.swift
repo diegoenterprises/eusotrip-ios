@@ -244,7 +244,7 @@ private struct RailBorderClearanceBody: View {
     private var checklistSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("CLEARANCE CHECKLIST · checkCompliance")
+                Text("CLEARANCE CHECKLIST · compliance check")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

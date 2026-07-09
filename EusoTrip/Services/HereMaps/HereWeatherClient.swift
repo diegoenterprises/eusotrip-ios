@@ -25,8 +25,8 @@ import CoreLocation
 // MARK: - Response wire types
 
 /// Top-level shape of `GET /v3/report`. The server echoes back one
-/// entry per place that matched the request; for a single-location
-/// query we only expect `places[0]`.
+/// product block per entry in `places[]` for the same requested
+/// coordinate. We merge those blocks before handing the report to UI.
 struct HereWeatherReport: Decodable {
     let places: [HereWeatherPlace]
 }
@@ -42,9 +42,64 @@ struct HereWeatherPlace: Decodable {
     /// Daily forecast block — present when `products` contained
     /// `forecastDaily` (or `forecast7days`).
     let dailyForecasts: HereDailyForecastBlock?
+    /// HERE returns `forecast7days` as `extendedDailyForecasts` on the
+    /// live v3 contract.
+    let extendedDailyForecasts: HereDailyForecastBlock?
     /// National Weather Service alerts for the U.S. only — present
     /// when `products` contained `nwsAlerts`.
     let nwsAlerts: HereNWSAlertBlock?
+
+    init(
+        address: HereWeatherAddress?,
+        observations: HereWeatherObservations?,
+        hourlyForecasts: HereHourlyForecastBlock?,
+        dailyForecasts: HereDailyForecastBlock?,
+        extendedDailyForecasts: HereDailyForecastBlock?,
+        nwsAlerts: HereNWSAlertBlock?
+    ) {
+        self.address = address
+        self.observations = observations
+        self.hourlyForecasts = hourlyForecasts
+        self.dailyForecasts = dailyForecasts
+        self.extendedDailyForecasts = extendedDailyForecasts
+        self.nwsAlerts = nwsAlerts
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case address, observations, hourlyForecasts, dailyForecasts, extendedDailyForecasts, nwsAlerts
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        address = try c.decodeIfPresent(HereWeatherAddress.self, forKey: .address)
+
+        let observationRows = try c.decodeIfPresent([HereWeatherObservation].self, forKey: .observations) ?? []
+        observations = observationRows.isEmpty ? nil : HereWeatherObservations(observations: observationRows)
+
+        let hourlyBlocks = try c.decodeIfPresent([HereHourlyForecastBlock].self, forKey: .hourlyForecasts) ?? []
+        hourlyForecasts = hourlyBlocks.first { !$0.forecasts.isEmpty }
+
+        let dailyBlocks = try c.decodeIfPresent([HereDailyForecastBlock].self, forKey: .dailyForecasts) ?? []
+        dailyForecasts = dailyBlocks.first { !$0.forecasts.isEmpty }
+
+        let extendedBlocks = try c.decodeIfPresent([HereDailyForecastBlock].self, forKey: .extendedDailyForecasts) ?? []
+        extendedDailyForecasts = extendedBlocks.first { !$0.forecasts.isEmpty }
+
+        let alertBlocks = try c.decodeIfPresent([HereNWSAlertBlock].self, forKey: .nwsAlerts) ?? []
+        nwsAlerts = alertBlocks.first { !($0.alerts ?? []).isEmpty }
+    }
+
+    static func merged(from places: [HereWeatherPlace]) -> HereWeatherPlace? {
+        guard !places.isEmpty else { return nil }
+        return HereWeatherPlace(
+            address: places.compactMap(\.address).first,
+            observations: places.compactMap(\.observations).first { !$0.observations.isEmpty },
+            hourlyForecasts: places.compactMap(\.hourlyForecasts).first { !$0.forecasts.isEmpty },
+            dailyForecasts: places.compactMap(\.dailyForecasts).first { !$0.forecasts.isEmpty },
+            extendedDailyForecasts: places.compactMap(\.extendedDailyForecasts).first { !$0.forecasts.isEmpty },
+            nwsAlerts: places.compactMap(\.nwsAlerts).first { !($0.alerts ?? []).isEmpty }
+        )
+    }
 }
 
 struct HereWeatherAddress: Decodable {
@@ -94,6 +149,31 @@ struct HereWeatherObservation: Decodable {
     /// ISO8601 timestamp.
     let daylight: String?
     let timeZoneOffset: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case temperature, temperatureFahrenheit, comfort, comfortFahrenheit, humidity
+        case windSpeed, windSpeedMph, windSpeedKmh, windDesc, description, iconName, iconId
+        case visibility, daylight, timeZoneOffset
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        temperature = c.decodeLossyDoubleIfPresent(.temperature)
+        temperatureFahrenheit = c.decodeLossyDoubleIfPresent(.temperatureFahrenheit)
+        comfort = c.decodeLossyDoubleIfPresent(.comfort)
+        comfortFahrenheit = c.decodeLossyDoubleIfPresent(.comfortFahrenheit)
+        humidity = c.decodeLossyDoubleIfPresent(.humidity)
+        windSpeed = c.decodeLossyDoubleIfPresent(.windSpeed)
+        windSpeedMph = c.decodeLossyDoubleIfPresent(.windSpeedMph)
+        windSpeedKmh = c.decodeLossyDoubleIfPresent(.windSpeedKmh)
+        windDesc = try c.decodeIfPresent(String.self, forKey: .windDesc)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        iconName = try c.decodeIfPresent(String.self, forKey: .iconName)
+        iconId = c.decodeLossyIntIfPresent(.iconId)
+        visibility = c.decodeLossyDoubleIfPresent(.visibility)
+        daylight = try c.decodeIfPresent(String.self, forKey: .daylight)
+        timeZoneOffset = try c.decodeIfPresent(String.self, forKey: .timeZoneOffset)
+    }
 }
 
 struct HereHourlyForecastBlock: Decodable {
@@ -110,6 +190,24 @@ struct HereHourlyForecast: Decodable {
     let precipitationProbability: Double?
     let windSpeed: Double?
     let windSpeedMph: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case time, description, iconName, iconId, temperature
+        case temperatureFahrenheit, precipitationProbability, windSpeed, windSpeedMph
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        time = try c.decodeIfPresent(String.self, forKey: .time)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        iconName = try c.decodeIfPresent(String.self, forKey: .iconName)
+        iconId = c.decodeLossyIntIfPresent(.iconId)
+        temperature = c.decodeLossyDoubleIfPresent(.temperature)
+        temperatureFahrenheit = c.decodeLossyDoubleIfPresent(.temperatureFahrenheit)
+        precipitationProbability = c.decodeLossyDoubleIfPresent(.precipitationProbability)
+        windSpeed = c.decodeLossyDoubleIfPresent(.windSpeed)
+        windSpeedMph = c.decodeLossyDoubleIfPresent(.windSpeedMph)
+    }
 }
 
 struct HereDailyForecastBlock: Decodable {
@@ -125,8 +223,31 @@ struct HereDailyForecast: Decodable {
     let highTemperatureFahrenheit: Double?
     let lowTemperature: Double?
     let lowTemperatureFahrenheit: Double?
+    let temperature: Double?
     let precipitationProbability: Double?
     let windSpeedMph: Double?
+
+    private enum CodingKeys: String, CodingKey {
+        case date, weekday, description, iconName, highTemperature
+        case highTemperatureFahrenheit, lowTemperature, lowTemperatureFahrenheit
+        case temperature, precipitationProbability, windSpeedMph, time
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        date = try c.decodeIfPresent(String.self, forKey: .date)
+            ?? c.decodeIfPresentString(.time).map { String($0.prefix(10)) }
+        weekday = try c.decodeIfPresent(String.self, forKey: .weekday)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        iconName = try c.decodeIfPresent(String.self, forKey: .iconName)
+        highTemperature = c.decodeLossyDoubleIfPresent(.highTemperature)
+        highTemperatureFahrenheit = c.decodeLossyDoubleIfPresent(.highTemperatureFahrenheit)
+        lowTemperature = c.decodeLossyDoubleIfPresent(.lowTemperature)
+        lowTemperatureFahrenheit = c.decodeLossyDoubleIfPresent(.lowTemperatureFahrenheit)
+        temperature = c.decodeLossyDoubleIfPresent(.temperature)
+        precipitationProbability = c.decodeLossyDoubleIfPresent(.precipitationProbability)
+        windSpeedMph = c.decodeLossyDoubleIfPresent(.windSpeedMph)
+    }
 }
 
 struct HereNWSAlertBlock: Decodable {
@@ -177,19 +298,20 @@ final class HereWeatherClient {
     /// the current chip is needed.
     func report(
         at center: CLLocationCoordinate2D,
-        products: [HereWeatherProduct] = [.observation, .forecastHourly, .forecastDaily, .nwsAlerts]
+        products: [HereWeatherProduct] = [.observation, .forecastHourly, .forecast7days, .nwsAlerts]
     ) async throws -> HereWeatherPlace {
         var comps = URLComponents(string: "https://weather.hereapi.com/v3/report")!
         comps.queryItems = [
             URLQueryItem(name: "location", value: "\(center.latitude),\(center.longitude)"),
-            URLQueryItem(name: "products", value: products.map(\.rawValue).joined(separator: ","))
+            URLQueryItem(name: "products", value: products.map(\.rawValue).joined(separator: ",")),
+            URLQueryItem(name: "units", value: "imperial")
         ]
         guard let url = comps.url else { throw HereMapsError.badURL }
 
         let data = try await HereBearerFetch.data(for: url, session: session)
         do {
             let report = try decoder.decode(HereWeatherReport.self, from: data)
-            guard let place = report.places.first else {
+            guard let place = HereWeatherPlace.merged(from: report.places) else {
                 throw HereMapsError.emptyResponse
             }
             return place
@@ -198,5 +320,29 @@ final class HereWeatherClient {
         } catch {
             throw HereMapsError.decoding(String(describing: error))
         }
+    }
+}
+
+private extension KeyedDecodingContainer {
+    func decodeLossyDoubleIfPresent(_ key: Key) -> Double? {
+        if let value = try? decodeIfPresent(Double.self, forKey: key) { return value }
+        if let value = try? decodeIfPresent(Int.self, forKey: key) { return Double(value) }
+        if let value = try? decodeIfPresent(String.self, forKey: key) {
+            return Double(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    func decodeLossyIntIfPresent(_ key: Key) -> Int? {
+        if let value = try? decodeIfPresent(Int.self, forKey: key) { return value }
+        if let value = try? decodeIfPresent(Double.self, forKey: key) { return Int(value) }
+        if let value = try? decodeIfPresent(String.self, forKey: key) {
+            return Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+        return nil
+    }
+
+    func decodeIfPresentString(_ key: Key) -> String? {
+        try? decodeIfPresent(String.self, forKey: key)
     }
 }

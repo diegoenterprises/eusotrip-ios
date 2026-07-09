@@ -1997,9 +1997,7 @@ struct CreateAccountView: View {
             .foregroundStyle(LinearGradient.diagonal)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(
-                LinearGradient.diagonal.opacity(subtle ? 0.08 : 0.15)
-            )
+            .background { LinearGradient.diagonal.opacity(subtle ? 0.08 : 0.15) }
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
                     .strokeBorder(LinearGradient.diagonal.opacity(0.35), lineWidth: 0.8)

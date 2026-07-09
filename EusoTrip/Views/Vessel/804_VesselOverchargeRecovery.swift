@@ -17,15 +17,13 @@
 //        {recoveries:[{id,invoiceNumber,carrier,overchargeAmount,recoveredAmount,status,identifiedDate,
 //        recoveredDate,type}],total,summary:{totalIdentified,totalRecovered,pendingRecovery,recoveryRate,
 //        avgRecoveryDays}}). Funnel stages are derived from the status buckets; recoveryRate =
-//        totalRecovered/totalIdentified. NOTE recoveries[] currently returns empty (web stub, confirmed
-//        on disk) — ZERO-FALLBACK: state is em-dash/empty-initialized and UNCONDITIONALLY overwritten
-//        by the live response (a real $0 renders $0; empty cases render the honest empty state).
-//    "File recovery dispute" -> freightClaims.fileClaim (EXISTS freightClaims.ts:332 · inserts claim row +
-//        blockchainAuditTrail entry, broadcasts WS_CHANNELS.claims / WS_EVENTS.claimFiled). Today this
-//        screen only re-pulls the tracker after filing (the file-dispute composer lives on the claim flow);
-//        flagged STUB here (no inline mutation wired) rather than faked.
-//    "Export" STUB named-gap exportOverchargeRecovery (re-runs load()). RBAC: protectedProcedure.
-//        transportMode=vessel · USD.
+//        totalRecovered/totalIdentified. ZERO-FALLBACK: state is em-dash/empty-initialized and
+//        UNCONDITIONALLY overwritten by the live response (a real $0 renders $0; empty cases render
+//        the honest empty state).
+//    "File recovery dispute" -> freightClaims.fileDispute (links the selected recovery row to the real
+//        disputes lifecycle and refetches the tracker).
+//    "Export" -> freightClaims.exportOverchargeRecovery (company-scoped CSV content written to a
+//        temporary file and exposed through ShareLink). RBAC: protectedProcedure. transportMode=vessel · USD.
 //
 //  In-module fidelity notes: the canonical port leaned on app symbols that do not exist in this module —
 //  Brand.primary (a LinearGradient here, NOT a Color) -> Brand.blue; palette.track -> palette.borderSoft;
@@ -56,6 +54,39 @@ private struct RecoveryCase804: Identifiable {
     let value: String          // recovered money
     let ofOver: String         // "of $3,200 over"
     let muted: Bool
+}
+
+private struct OpenRecovery804 {
+    let id: String
+    let invoiceNumber: String
+    let carrier: String
+    let amount: Double
+    let type: String
+}
+
+private struct FileDisputeInput804: Encodable {
+    let type: String
+    let invoiceNumber: String
+    let amount: Double
+    let description: String
+    let recoveryId: String?
+}
+
+private struct FileDisputeAck804: Decodable {
+    let id: String?
+    let disputeNumber: String?
+    let status: String?
+}
+
+private struct ExportInput804: Encodable {
+    let limit: Int
+}
+
+private struct ExportAck804: Decodable {
+    let filename: String
+    let contentType: String?
+    let rows: Int
+    let csv: String
 }
 
 struct VesselOverchargeRecoveryScreen: View {
@@ -94,6 +125,11 @@ private struct VesselOverchargeRecoveryBody: View {
     @State private var cases: [RecoveryCase804] = []
     /// Live-derived ESang advisory (best open case) — nil hides the row.
     @State private var esangBestCase: (title: String, subtitle: String)? = nil
+    @State private var openRecovery: OpenRecovery804? = nil
+    @State private var actionBusy = false
+    @State private var actionMessage: String? = nil
+    @State private var actionFailed = false
+    @State private var exportURL: URL? = nil
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -103,6 +139,13 @@ private struct VesselOverchargeRecoveryBody: View {
                 Text(subline).font(.system(size: 12)).foregroundStyle(palette.textSecondary)
                 IridescentHairline()
 
+                if let message = actionMessage {
+                    LifecycleCard(accentDanger: actionFailed) {
+                        Text(message)
+                            .font(EType.caption)
+                            .foregroundStyle(actionFailed ? Brand.danger : palette.textSecondary)
+                    }
+                }
                 if loading {
                     LifecycleCard { Text("Loading…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
@@ -114,8 +157,22 @@ private struct VesselOverchargeRecoveryBody: View {
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     caseLedger
                     HStack(spacing: 8) {
-                        CTAButton(title: "File recovery dispute", action: { Task { await fileDispute() } }, trailingIcon: "doc.text")
-                        secondaryButton804(title: "Export") { Task { await load() } }
+                        CTAButton(title: actionBusy ? "Working…" : "File recovery dispute",
+                                  action: { Task { await fileDispute() } },
+                                  trailingIcon: "doc.text")
+                            .disabled(actionBusy || openRecovery == nil)
+                        secondaryButton804(title: actionBusy ? "Exporting…" : "Export") { Task { await exportRecovery() } }
+                            .disabled(actionBusy)
+                    }
+                    if let exportURL {
+                        ShareLink(item: exportURL) {
+                            Label("Share recovery export", systemImage: "square.and.arrow.up")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(Brand.blue)
+                                .frame(maxWidth: .infinity, minHeight: 42)
+                                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                        }
                     }
                     // ESang advisory derives from the LIVE best open case only —
                     // no fabricated "Maersk duplicate" line when none exists.
@@ -190,8 +247,7 @@ private struct VesselOverchargeRecoveryBody: View {
     @ViewBuilder
     private var caseLedger: some View {
         if cases.isEmpty {
-            // Honest empty — the server returns zero recovery cases today
-            // (getOverchargeRecovery web stub); no invented MSC/Maersk/OOCL rows.
+            // Honest empty — no invented MSC/Maersk/OOCL rows when the live ledger is empty.
             EusoEmptyState(systemImage: "tray",
                            title: "No recovery cases",
                            subtitle: "Overcharge cases appear here as the freight-audit engine flags invoices for recovery.")
@@ -251,7 +307,7 @@ private struct VesselOverchargeRecoveryBody: View {
     private func load() async {
         loading = true; loadError = nil
         do {
-            struct Rec: Decodable { let invoiceNumber: String?; let carrier: String?; let overchargeAmount: Double?; let recoveredAmount: Double?; let status: String?; let type: String? }
+            struct Rec: Decodable { let id: String?; let invoiceNumber: String?; let carrier: String?; let overchargeAmount: Double?; let recoveredAmount: Double?; let status: String?; let type: String? }
             struct Summary: Decodable { let totalIdentified: Double?; let totalRecovered: Double?; let pendingRecovery: Double?; let recoveryRate: Double?; let avgRecoveryDays: Double? }
             struct Out: Decodable { let recoveries: [Rec]; let summary: Summary }
             let r: Out = try await EusoTripAPI.shared.query("freightClaims.getOverchargeRecovery", input: OverchargeInput804(limit: 20, offset: 0))
@@ -302,11 +358,19 @@ private struct VesselOverchargeRecoveryBody: View {
             // ESang advisory from the LIVE best open case (largest open overcharge).
             let open = r.recoveries.filter { ["identified", "disputed"].contains($0.status ?? "") }
             if let best = open.max(by: { ($0.overchargeAmount ?? 0) < ($1.overchargeAmount ?? 0) }) {
+                openRecovery = OpenRecovery804(
+                    id: best.id ?? "",
+                    invoiceNumber: best.invoiceNumber ?? "",
+                    carrier: best.carrier ?? "Counterparty unresolved",
+                    amount: best.overchargeAmount ?? 0,
+                    type: best.type ?? "overcharge"
+                )
                 esangBestCase = (
                     title: "ESang: \(best.carrier ?? "—") · \(best.type ?? "overcharge") is your best open case",
                     subtitle: "\(best.invoiceNumber ?? "—") · \(usd804(best.overchargeAmount ?? 0)) over · file the dispute"
                 )
             } else {
+                openRecovery = nil
                 esangBestCase = nil
             }
         } catch {
@@ -316,10 +380,59 @@ private struct VesselOverchargeRecoveryBody: View {
     }
 
     private func fileDispute() async {
-        // freightClaims.fileClaim (EXISTS freightClaims.ts:332) — inserts claim row + blockchainAuditTrail,
-        // broadcasts WS_CHANNELS.claims / WS_EVENTS.claimFiled. STUB here (no inline composer mutation wired
-        // on this surface); re-pull the tracker after the claim flow files.
-        await load()
+        guard let recovery = openRecovery,
+              !recovery.id.isEmpty,
+              !recovery.invoiceNumber.isEmpty,
+              recovery.amount > 0 else {
+            actionFailed = true
+            actionMessage = "No open recovery case is available to dispute."
+            return
+        }
+        if actionBusy { return }
+        actionBusy = true
+        actionFailed = false
+        actionMessage = nil
+        do {
+            let description = "Vessel overcharge recovery dispute for \(recovery.invoiceNumber). Audit basis: \(recovery.type.replacingOccurrences(of: "_", with: " ")). Carrier: \(recovery.carrier). Amount: \(usd804(recovery.amount))."
+            let ack: FileDisputeAck804 = try await EusoTripAPI.shared.mutation(
+                "freightClaims.fileDispute",
+                input: FileDisputeInput804(
+                    type: "rate",
+                    invoiceNumber: recovery.invoiceNumber,
+                    amount: recovery.amount,
+                    description: description,
+                    recoveryId: recovery.id
+                )
+            )
+            actionMessage = "Filed recovery dispute \(ack.disputeNumber ?? ack.id ?? "") and linked it to \(recovery.invoiceNumber)."
+            await load()
+        } catch {
+            actionFailed = true
+            actionMessage = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        actionBusy = false
+    }
+
+    private func exportRecovery() async {
+        if actionBusy { return }
+        actionBusy = true
+        actionFailed = false
+        actionMessage = nil
+        do {
+            let export: ExportAck804 = try await EusoTripAPI.shared.mutation(
+                "freightClaims.exportOverchargeRecovery",
+                input: ExportInput804(limit: 1000)
+            )
+            let safeName = export.filename.replacingOccurrences(of: "/", with: "-")
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(safeName)
+            try export.csv.data(using: .utf8)?.write(to: url, options: .atomic)
+            exportURL = url
+            actionMessage = "Prepared \(export.rows) recovery row\(export.rows == 1 ? "" : "s") for export."
+        } catch {
+            actionFailed = true
+            actionMessage = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        actionBusy = false
     }
 
     /// USD formatter — the canonical port's `Money.usd(...)` is not a shared app

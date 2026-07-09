@@ -495,7 +495,7 @@ private struct RailLiveTrackingBody: View {
     private var eventsSection: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("EVENTS · getRailTracking")
+                Text("EVENTS · live tracking")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -559,9 +559,37 @@ private struct RailLiveTrackingBody: View {
 
     private var actions: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Share tracking", action: {}, leadingIcon: "square.and.arrow.up")
-            CTAButton(title: "Waybill", leadingIcon: "doc.text")
+            RailSecondaryActionButton(
+                title: "Share context",
+                sheetTitle: "Live tracking share context",
+                lines: trackingShareLines,
+                fillWidth: true,
+                systemImage: "square.and.arrow.up"
+            )
+            RailSecondaryActionButton(
+                title: "Waybill",
+                sheetTitle: "Waybill context",
+                lines: waybillContextLines,
+                fillWidth: true,
+                systemImage: "doc.text"
+            )
         }
+    }
+
+    private var trackingShareLines: [String] {
+        [
+            "\(detail?.shipmentNumber ?? "Shipment") · \(originLabel) → \(destLabel)",
+            "Current \(currentPositionLabel) · progress \(Int((journeyProgress * 100).rounded()))%",
+            "Live geo \(hasLiveGeo ? "available" : "pending") · events \(tracking?.events.count ?? 0)"
+        ]
+    }
+
+    private var waybillContextLines: [String] {
+        [
+            "Waybill \(detail?.waybillNumber ?? "-") · status \(detail?.status ?? "pending")",
+            "\(detail?.numberOfCars ?? 0) car\(detail?.numberOfCars == 1 ? "" : "s") · \(detail?.carType ?? "car type pending")",
+            "\(detail?.commodity ?? "commodity pending") · \(detail?.hazmatClass ?? "non-hazmat")"
+        ]
     }
 
     // MARK: Load

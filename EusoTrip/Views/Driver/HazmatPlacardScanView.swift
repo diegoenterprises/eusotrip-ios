@@ -33,10 +33,18 @@ import UIKit
 public struct HazmatPlacardScanView: View {
     let vehicleId: String?
     let loadId: String?
+    /// Optional hook fired the instant a placard scan succeeds — hands the
+    /// verified `PlacardScanResponse` (UN / hazard class / ERG guide) back to
+    /// the presenting screen (e.g. driver 013 En-Route) so it can reflect the
+    /// scan without re-fetching. nil for standalone / Siri-shortcut opens.
+    let onScanComplete: ((PlacardScanResponse) -> Void)?
 
-    public init(vehicleId: String? = nil, loadId: String? = nil) {
+    public init(vehicleId: String? = nil,
+                loadId: String? = nil,
+                onScanComplete: ((PlacardScanResponse) -> Void)? = nil) {
         self.vehicleId = vehicleId
         self.loadId = loadId
+        self.onScanComplete = onScanComplete
     }
 
     @State private var showCamera: Bool = false
@@ -413,6 +421,8 @@ public struct HazmatPlacardScanView: View {
                 loadId: loadId
             )
             scanResult = result
+            // Hand the verified scan back to the presenting screen (013, etc.).
+            onScanComplete?(result)
         } catch {
             scanError = (error as NSError).localizedDescription
         }

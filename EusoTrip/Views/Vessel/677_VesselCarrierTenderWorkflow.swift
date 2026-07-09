@@ -12,6 +12,7 @@
 //    · getVesselShipmentDetail (server/routers/vesselShipments.ts:234) — active request
 //    · getVesselSchedules      (server/routers/vesselShipments.ts:637) — sailing options
 //    · createVesselBid         (server/routers/vesselShipments.ts:680, bid_submitted event)
+//    · declineVesselTender     (booking_declined event; audited, non-global)
 //  The KPI strip (PENDING · WIN RATE · AVG REPLY) has no backing procedure —
 //  see PORT-GAP below.
 //
@@ -149,7 +150,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
                 .font(.system(size: 30, weight: .bold)).tracking(-0.5)
                 .foregroundStyle(palette.textPrimary)
                 .padding(.top, Space.s4)
-            Text("createVesselBid · inbox live")
+            Text("Tender inbox · live")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 2)
@@ -165,7 +166,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
         let allIn = detail?.allInRate
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
-                Text("BOOKING REQUEST · getVesselShipmentDetail")
+                Text("BOOKING REQUEST · full detail")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: Space.s2)
@@ -265,7 +266,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
 
     private var sailingOptions: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            Text("SAILING OPTIONS · getVesselSchedules")
+            Text("SAILING OPTIONS · live schedules")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             if voyages.isEmpty {
@@ -314,7 +315,7 @@ private struct VesselCarrierTenderWorkflowBody: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    // MARK: - Dual CTA (Decline · Submit quote → createVesselBid)
+    // MARK: - Dual CTA (Decline → declineVesselTender · Submit quote → createVesselBid)
 
     private var dualCTA: some View {
         HStack(spacing: Space.s4) {
@@ -480,12 +481,31 @@ private struct VesselCarrierTenderWorkflowBody: View {
 
     private func decline() async {
         declining = true; actionError = nil; actionAck = nil
-        // PORT-GAP: there is no decline-tender procedure on
-        // server/routers/vesselShipments.ts. updateVesselShipmentStatus
-        // transitions a booking the carrier OWNS — it does not model a
-        // carrier declining an inbound tender request. Surface the gap
-        // honestly rather than firing a wrong mutation.
-        actionError = "Decline is not yet wired, vesselShipments has no declineTender procedure. See portGaps."
+        struct DeclineIn: Encodable {
+            let shipmentId: Int
+            let reason: String?
+        }
+        struct DeclineOut: Decodable {
+            let success: Bool?
+            let eventId: Int?
+            let shipmentId: Int?
+            let status: String?
+            let declinedAt: String?
+        }
+        do {
+            let res: DeclineOut = try await EusoTripAPI.shared.mutation(
+                "vesselShipments.declineVesselTender",
+                input: DeclineIn(shipmentId: shipmentId, reason: "Carrier declined vessel tender from tender workflow")
+            )
+            if res.success != false {
+                actionAck = res.eventId.map { "Tender declined · event #\($0)" } ?? "Tender declined."
+                await load()
+            } else {
+                actionError = "Decline was not accepted by the server."
+            }
+        } catch {
+            actionError = error.eusoUserCopy
+        }
         declining = false
     }
 }

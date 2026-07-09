@@ -11,7 +11,7 @@
 //  size and tints cleanly.
 //
 //  The single public entry point is `WeatherIcons.symbolView(for:)`,
-//  which maps a Tomorrow.io `weatherCode` (the exact field — NOT the
+//  which maps a Apple WeatherKit `weatherCode` (the exact field — NOT the
 //  Day/Night/FullDay variants) to its glyph per the wiring table in
 //  WEATHER_WIDGET_WIRING.md. Legacy paths that only have an SF-symbol
 //  name can route through `code(forSymbol:)` to recover a best-effort
@@ -42,7 +42,7 @@ enum WeatherIcons {
 
     // MARK: - weatherCode → glyph
 
-    /// The v2 glyph for a Tomorrow.io `weatherCode`, per the wiring map.
+    /// The v2 glyph for a Apple WeatherKit `weatherCode`, per the wiring map.
     /// `size` is the square edge in points; the 0–24 SVG viewBox scales
     /// to fit. Unknown / unmapped codes render the neutral cloud.
     @ViewBuilder
@@ -91,7 +91,7 @@ enum WeatherIcons {
         }
     }
 
-    /// Best-effort recovery of a Tomorrow.io-family weatherCode from an
+    /// Best-effort recovery of a Apple WeatherKit-family weatherCode from an
     /// SF Symbol name, so legacy snapshots (WeatherKit/NWS/Open-Meteo)
     /// — which only carry SF symbols — still light a real v2 glyph
     /// rather than the unknown cloud. Conservative: anything ambiguous

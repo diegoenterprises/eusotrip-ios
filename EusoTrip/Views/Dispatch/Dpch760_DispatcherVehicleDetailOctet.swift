@@ -97,7 +97,7 @@ private extension VehicleDetailKind {
                          citation: "DISPATCHER ON-TIME · FLEET VEHICLES · LIVE",
                          title: "On-time pulls",
                          subhead: "FLEET VEHICLES · LIVE",
-                         pillCopy: "On-time-pull grading has no live source on the backend yet. In-transit count is live from fleet.getFleetStats.",
+                         pillCopy: "On-time-pull grading has no live data source yet. In-transit count is live from fleet stats.",
                          statusPill: "ON-TIME \(EM_DASH) · no live source")
         case .inspection:
             return .init(eyebrow: "DISPATCHER · VEHICLE · INSPECT",
@@ -111,21 +111,21 @@ private extension VehicleDetailKind {
                          citation: "DISPATCHER DEADHEAD · FLEET VEHICLES · LIVE",
                          title: "Deadhead corridor",
                          subhead: "FLEET VEHICLES · LIVE",
-                         pillCopy: "Deadhead-corridor grading has no live source on the backend yet.",
+                         pillCopy: "Deadhead-corridor grading has no live data source yet.",
                          statusPill: "DEADHEAD \(EM_DASH) · no live source")
         case .onboarding:
             return .init(eyebrow: "DISPATCHER · VEHICLE · ONBOARD",
                          citation: "DISPATCHER ONBOARD · FLEET VEHICLES · LIVE",
                          title: "Onboarding step",
                          subhead: "FLEET VEHICLES · LIVE",
-                         pillCopy: "Per-step onboarding attainment has no live source on the backend yet. Total fleet count is live.",
+                         pillCopy: "Per-step onboarding attainment has no live data source yet. Total fleet count is live.",
                          statusPill: "STEPS \(EM_DASH) · no live source")
         case .quarter:
             return .init(eyebrow: "DISPATCHER · VEHICLE · TRAJECTORY",
                          citation: "DISPATCHER TRAJECTORY · FLEET VEHICLES · LIVE",
                          title: "Quarter trajectory",
                          subhead: "FLEET VEHICLES · LIVE",
-                         pillCopy: "Per-quarter trajectory rollups have no live source on the backend yet. Total fleet count is live.",
+                         pillCopy: "Per-quarter trajectory rollups have no live data source yet. Total fleet count is live.",
                          statusPill: "YEAR \(EM_DASH) · no live source")
         }
     }

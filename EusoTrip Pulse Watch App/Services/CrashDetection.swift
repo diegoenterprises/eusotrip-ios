@@ -9,7 +9,7 @@
 //  When Apple-native crash detection fires (it only fires for severe
 //  impacts at vehicle speeds) the OS already runs its own prompt. Our
 //  job is parallel — not replacement:
-//    - Fire `emergencyProtocols.activate(reason: "crash_detected")`
+//    - Fire `emergencyProtocols.declareEmergency` (reason: "crash_detected")
 //      so the backend notifies dispatch + broker-of-record + next-of-kin
 //    - Log the event to the HOS log automatically (stops the duty clock)
 //    - Preserve the last 5 minutes of telemetry in case of a claim

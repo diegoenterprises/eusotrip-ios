@@ -43,14 +43,15 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 SWIFT_API_DEFAULT="$REPO_ROOT/EusoTrip/Services/EusoTripAPI.swift"
 SWIFT_API="${SWIFT_API:-$SWIFT_API_DEFAULT}"
+SWIFT_ROOT="${SWIFT_ROOT:-$REPO_ROOT/EusoTrip}"
 
 # The canonical backend lives in a sibling checkout. Override with BACKEND=.
 BACKEND_DEFAULT="$(cd "$REPO_ROOT/.." && pwd)/eusoronetechnologiesinc/frontend/server/routers"
 BACKEND="${BACKEND:-$BACKEND_DEFAULT}"
 SERVER_ROOT="$(dirname "$BACKEND")"
 
-if [[ ! -f "$SWIFT_API" ]]; then
-  echo "ERROR: Swift API file not found at $SWIFT_API" >&2
+if [[ ! -d "$SWIFT_ROOT" ]]; then
+  echo "ERROR: Swift source root not found at $SWIFT_ROOT" >&2
   exit 2
 fi
 if [[ ! -d "$BACKEND" ]]; then
@@ -62,24 +63,45 @@ fi
 SUMMARY_ONLY=0
 [[ "${1:-}" == "--summary-only" ]] && SUMMARY_ONLY=1
 
-# Namespaces that don't live as NS.ts under routers/ — map here.
-declare -A ROUTER_FILE
-ROUTER_FILE[auth]="$SERVER_ROOT/routers.ts"                    # inline auth: router({ ... })
-ROUTER_FILE[esang]="$SERVER_ROOT/esangRouter.ts"               # top-level
+# Namespaces that don't live as NS.ts under routers/.
+# Keep this Bash 3.2-compatible for macOS by avoiding associative arrays.
+router_file_for_prefix() {
+  case "$1" in
+    auth)  printf '%s\n' "$SERVER_ROOT/routers.ts" ;;
+    devPortal) printf '%s\n' "$BACKEND/developerPortal.ts" ;;
+    esang) printf '%s\n' "$SERVER_ROOT/esangRouter.ts" ;;
+    *)
+      local namespaced="$BACKEND/$1.ts"
+      local app_router="$SERVER_ROOT/routers.ts"
+      if [[ -f "$namespaced" ]]; then
+        printf '%s\n' "$namespaced"
+      elif [[ -f "$app_router" ]] && grep -qE "^[[:space:]]*$1[[:space:]]*:[[:space:]]*router\\(" "$app_router"; then
+        printf '%s\n' "$app_router"
+      else
+        printf '%s\n' "$namespaced"
+      fi
+      ;;
+  esac
+}
 
 # Grouped routers (namespace.sub.procedure style, e.g. bayOps.discharge.start).
 # If Swift ever calls one of these three-segment paths, verify against the
 # corresponding sub-router file.
-declare -A GROUP_ROUTER_FILE
-GROUP_ROUTER_FILE[bayOps.discharge]="$BACKEND/bayOps/discharge.ts"
-GROUP_ROUTER_FILE[bayOps.disconnect]="$BACKEND/bayOps/disconnect.ts"
-GROUP_ROUTER_FILE[bayOps.connectHose]="$BACKEND/bayOps/connectHose.ts"
-GROUP_ROUTER_FILE[bayOps.backingAssist]="$BACKEND/bayOps/backingAssist.ts"
+group_router_file_for_prefix() {
+  case "$1" in
+    bayOps.discharge)     printf '%s\n' "$BACKEND/bayOps/discharge.ts" ;;
+    bayOps.disconnect)    printf '%s\n' "$BACKEND/bayOps/disconnect.ts" ;;
+    bayOps.connectHose)   printf '%s\n' "$BACKEND/bayOps/connectHose.ts" ;;
+    bayOps.backingAssist) printf '%s\n' "$BACKEND/bayOps/backingAssist.ts" ;;
+    *)                    printf '%s\n' "" ;;
+  esac
+}
 
-# Extract Swift tRPC paths — matches both "namespace.procedure" and
-# "namespace.sub.procedure" string literals.
-PATHS=$(grep -oE '"[a-z][a-zA-Z]+(\.[a-z][a-zA-Z]+){1,2}"' "$SWIFT_API" \
-  | awk -F'"' '{print $2}' | sort -u)
+# Extract Swift tRPC paths from actual API callsites only. This avoids
+# treating SF Symbol names like "doc.text.image" as backend procedures.
+PATHS=$(find "$SWIFT_ROOT" -name '*.swift' -print0 \
+  | xargs -0 perl -0ne 'while (/\.(?:query|mutation|queryNoInput)\(\s*"([a-z][a-zA-Z0-9]*(?:\.[a-z][a-zA-Z0-9]*){1,2})"/g) { print "$1\n" }' \
+  | sort -u)
 
 TOTAL=0
 LIVE=0
@@ -125,11 +147,14 @@ while read -r path; do
 
   if [[ "$path" == *.*.* ]]; then
     # namespace.sub.procedure
-    FILE="${GROUP_ROUTER_FILE[$PREFIX]:-}"
+    FILE="$(group_router_file_for_prefix "$PREFIX")"
+    if [[ -z "$FILE" ]]; then
+      ROOT_PREFIX="${path%%.*}"
+      FILE="$(router_file_for_prefix "$ROOT_PREFIX")"
+    fi
   else
     # namespace.procedure
-    FILE="${ROUTER_FILE[$PREFIX]:-}"
-    [[ -z "$FILE" ]] && FILE="$BACKEND/$PREFIX.ts"
+    FILE="$(router_file_for_prefix "$PREFIX")"
   fi
 
   if [[ -z "$FILE" || ! -f "$FILE" ]]; then
@@ -143,7 +168,7 @@ while read -r path; do
   R1="${PROC_REGEX//KEY_NAME/$PROC}"
   R2="${PROC_REGEX_TDOT//KEY_NAME/$PROC}"
 
-  if grep -qE "$R1" "$FILE" || grep -qE "$R2" "$FILE" || is_wizard_spread_proc "$FILE" "$PROC"; then
+  if grep -qE "$R1" "$FILE" || grep -qE "$R2" "$FILE" || grep -qE "^[[:space:]]*$PROC[[:space:]]*:" "$FILE" || is_wizard_spread_proc "$FILE" "$PROC"; then
     LIVE=$((LIVE+1))
     [[ $SUMMARY_ONLY -eq 0 ]] && printf "LIVE   %-60s -> %s\n" "$path" "$(basename "$FILE")"
   else
@@ -157,7 +182,7 @@ echo
 echo "================================================================"
 echo "tRPC endpoint verification — EusoTripAPI.swift ↔ backend/routers/"
 echo "================================================================"
-echo "  Swift file:  $SWIFT_API"
+  echo "  Swift root:  $SWIFT_ROOT"
 echo "  Backend:     $BACKEND"
 echo "  Total paths: $TOTAL"
 echo "  LIVE:        $LIVE"

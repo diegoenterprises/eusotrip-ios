@@ -377,6 +377,25 @@ private struct RailCrewCallBoardBody: View {
 
     // MARK: CTA pair
 
+    private var hosRosterLines: [String] {
+        var lines = [
+            "Yard: \(yardLabel)",
+            "Railroad: \(availability?.yardRailroad ?? "-")",
+            "Callable now: \(callableNow)",
+            "Called count: \(calledCount)",
+            "Extra board depth: \(boardSize)",
+            "Average turn: \(avgTurnLabel)"
+        ]
+        if let nextCall {
+            lines.append("Next call: \(nextCall.crewMemberName ?? nextCall.crewMemberId ?? "-")")
+            lines.append("FRA status: \(nextCall.fraComplianceStatus ?? "-")")
+        }
+        for member in crew.prefix(4) {
+            lines.append("\(member.crewId ?? "-") - \(member.craft ?? "crew") - \(member.status ?? "-")")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
             CTAButton(
@@ -385,16 +404,13 @@ private struct RailCrewCallBoardBody: View {
                 leadingIcon: "plus",
                 isLoading: isCalling
             )
-            Button("HOS roster") {}
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(palette.textPrimary)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(palette.bgCard)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).stroke(Color.black.opacity(0.10), lineWidth: 1))
-                )
+            RailSecondaryActionButton(
+                title: "HOS roster",
+                sheetTitle: "Crew HOS roster",
+                lines: hosRosterLines,
+                fillWidth: true,
+                systemImage: "person.3.sequence"
+            )
         }
     }
 

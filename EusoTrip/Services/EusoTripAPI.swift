@@ -28,6 +28,7 @@ enum EusoTripAPIError: Error, LocalizedError {
     case httpStatus(Int, String)
     case decodingFailed(String)
     case unauthenticated
+    case forbidden(String)
     case trpcError(String)
     case empty
     /// The device is offline and the mutation was an enqueue-eligible,
@@ -45,10 +46,73 @@ enum EusoTripAPIError: Error, LocalizedError {
         case .httpStatus(let c, let b): return "HTTP \(c): \(b)"
         case .decodingFailed(let s):    return "Decoding failed: \(s)"
         case .unauthenticated:          return "Authentication required."
+        case .forbidden(let m):         return m
         case .trpcError(let m):         return m
         case .empty:                    return "Empty response."
         case .queuedForOfflineReplay:   return "You're offline — this will sync when you reconnect."
         }
+    }
+
+    /// Honest, context-aware message for a bid / counter-offer action.
+    ///
+    /// The generic "Couldn't send counter. Try again." (and the cryptic
+    /// `NSError.localizedDescription` "…EusoTripAPIError error 5…") masked
+    /// the real reason behind every bid/counter failure — most notably the
+    /// build-753 case where a server `FORBIDDEN` (the DRIVER role lacking
+    /// `CREATE BID`, or a mode-eligibility gate) was promoted to
+    /// `.unauthenticated` and then swallowed by a `.trpcError`-only catch.
+    ///
+    /// This collapses every error class into a specific, diagnosable line so
+    /// the next failure tells the user WHY, never a dead-end retry. The
+    /// verbatim tRPC message is always preserved (that's the server's own
+    /// human copy — duplicate-bid 409, wallet/CDL precondition gates, the
+    /// mode-eligibility "isn't enabled for … freight" reason). `noun` lets
+    /// callers say "counter" / "bid" / "response" in the offline line.
+    func bidActionMessage(noun: String = "counter") -> String {
+        switch self {
+        case .unauthenticated:
+            // A FORBIDDEN authorization failure also lands here (perform()
+            // promotes 401/403/UNAUTHORIZED/FORBIDDEN → .unauthenticated).
+            // Name BOTH possibilities honestly: an expired session OR an
+            // account that genuinely isn't permitted to bid this lane.
+            return "Your session expired, or this account isn't allowed to bid on this lane. Sign in again, or switch to a carrier / dispatcher account."
+        case .trpcError(let m):
+            return m
+        case .forbidden(let m):
+            // Server permission/compliance gate — surface its human copy
+            // verbatim (the CREATE-BID role gate, mode-eligibility, or a
+            // lane restriction each carry their own reason).
+            return m
+        case .httpStatus(let code, _):
+            if code == 401 || code == 403 {
+                return "This account isn't allowed to bid on this lane (HTTP \(code))."
+            }
+            return "Server error \(code). Try again in a moment."
+        case .decodingFailed:
+            return "We couldn't read the server's response to your \(noun). Try again — if it persists, refresh from the load board."
+        case .notConfigured:
+            return "The app isn't fully configured. Try restarting it."
+        case .badURL:
+            return "The \(noun) request URL was malformed. Refresh the load board and try again."
+        case .empty:
+            return "The server returned an empty response to your \(noun). Try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — your \(noun) will be sent automatically when you reconnect."
+        }
+    }
+
+    /// Convenience for a `catch` over an arbitrary `Error`: maps a
+    /// `EusoTripAPIError` via `bidActionMessage`, a raw `URLError` to a
+    /// network line, and anything else to its `localizedDescription` — so a
+    /// caller never has to hand-roll the `as? EusoTripAPIError` ladder (and
+    /// never leaks the cryptic `NSError` "error N" string).
+    static func bidActionMessage(for error: Error, noun: String = "counter") -> String {
+        if let api = error as? EusoTripAPIError { return api.bidActionMessage(noun: noun) }
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain {
+            return "Network unavailable. Check your connection and try again."
+        }
+        return error.localizedDescription
     }
 
     /// Humanize a tRPC error message before it ever reaches the UI.
@@ -122,6 +186,60 @@ enum EusoTripAPIError: Error, LocalizedError {
         case "biddingDurationHours": return "bidding window"
         default:                    return "load details"
         }
+    }
+}
+
+// MARK: - User-facing error copy
+
+extension Error {
+    /// Honest error grammar for visible UI: what failed in user terms,
+    /// what still works, and the next action. Never surfaces transport
+    /// dumps (URLs, HTTP bodies, DecodingError paths) to the user.
+    var eusoUserCopy: String {
+        if let api = self as? EusoTripAPIError {
+            switch api {
+            case .queuedForOfflineReplay:
+                return "You're offline — this is saved and will sync when you reconnect."
+            case .unauthenticated:
+                return "Your session expired. Sign in again to continue."
+            case .forbidden(let message), .trpcError(let message):
+                return EusoTripAPIError.humanize(message)
+            case .decodingFailed:
+                return "EusoTrip sent data this version of the app can't read yet. Pull to refresh, and update the app if it keeps happening."
+            case .httpStatus(let code, _):
+                if code == 404 { return "That record isn't available right now. Pull to refresh." }
+                if code == 429 { return "Too many requests in a row. Wait a few seconds and try again." }
+                if code >= 500 { return "EusoTrip couldn't complete that request. Nothing was changed — try again in a moment." }
+                return "That request didn't go through. Nothing was changed — try again."
+            case .notConfigured, .badURL, .empty:
+                return "EusoTrip couldn't load this screen's data. Check your connection and try again."
+            }
+        }
+        if let urlError = self as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet, .networkConnectionLost, .dataNotAllowed:
+                return "You're offline. Anything already loaded stays available — reconnect and pull to refresh."
+            case .timedOut:
+                return "The connection timed out. Check your signal and try again."
+            case .cancelled:
+                return "That request was interrupted. Try again."
+            default:
+                return "EusoTrip couldn't be reached. Check your connection and try again."
+            }
+        }
+        if self is DecodingError {
+            return "EusoTrip sent data this version of the app can't read yet. Pull to refresh, and update the app if it keeps happening."
+        }
+        if self is CancellationError {
+            return "That request was interrupted. Try again."
+        }
+        // App-authored errors carry deliberate user copy; surface it.
+        if let localized = self as? LocalizedError,
+           let description = localized.errorDescription,
+           !description.isEmpty {
+            return description
+        }
+        return "That didn't go through. Nothing was changed — try again in a moment."
     }
 }
 
@@ -204,6 +322,62 @@ final class EusoTripAPI: ObservableObject {
     /// token. Was previously held only in PushService and never
     /// reached the backend — silent push-token drop.
     var pushDeviceToken: String?
+
+    // MARK: - Token / session refresh (auto re-auth on 401/403)
+    //
+    // The high-leverage fix for the build-751 "Authentication required"
+    // feedback (075 Safety Score, 082 Violations, and every sibling screen
+    // that 401s after the session has been alive for a while). When a tRPC
+    // call comes back UNAUTHORIZED, `perform` calls this closure ONCE to
+    // re-establish the session, then retries the original request a single
+    // time. If the closure returns false (session is genuinely dead), the
+    // original `.unauthenticated` error is surfaced honestly — no loop.
+    //
+    // `EusoTripSession` installs the handler (it owns the keychain + the
+    // cookie-rehydrate path). EusoTrip's auth model has no dedicated
+    // refresh-token grant: the PRIMARY credential is the server-issued
+    // `app_session_id` cookie (see `authCookieSnapshotJSON`), persisted in
+    // the Keychain. The in-memory `HTTPCookieStorage.shared` jar can drop
+    // that cookie out from under a long-lived session (memory reclaim after
+    // a long background, App Service warm-up), which is exactly what makes a
+    // previously-authenticated screen start 401-ing. The refresh handler
+    // re-hydrates the persisted cookie back into the jar and re-validates
+    // with `auth.me` — if that succeeds the session was only "lost in the
+    // jar", and the retried request now carries the restored credential.
+    //
+    // Returns true iff the session is confirmed live after the refresh.
+    var sessionRefreshHandler: (@MainActor () async -> Bool)?
+
+    /// Coalesces concurrent refresh attempts: when 10 screens 401 at once we
+    /// run ONE `auth.me` re-validation and every caller awaits the same
+    /// result, rather than stampeding the backend with 10 re-auths.
+    private var inFlightRefresh: Task<Bool, Never>?
+
+    /// True while a refresh's own `auth.me` call is on the wire. The 401/403
+    /// branches in `perform` check this and SKIP the refresh-retry while it's
+    /// set, so the refresh's `auth.me` can't recursively trigger another
+    /// refresh (which would self-await `inFlightRefresh` and deadlock). It's
+    /// also the honest signal that a 401 DURING the refresh is the real,
+    /// terminal UNAUTHORIZED — surface it, don't retry.
+    private var isRefreshing = false
+
+    /// Single-flight wrapper around `sessionRefreshHandler`. All 401-driven
+    /// callers funnel through here so only one refresh runs at a time.
+    private func refreshSessionOnce() async -> Bool {
+        guard let handler = sessionRefreshHandler, !isRefreshing else { return false }
+        if let existing = inFlightRefresh {
+            return await existing.value
+        }
+        let task = Task<Bool, Never> { @MainActor in
+            isRefreshing = true
+            defer { isRefreshing = false }
+            return await handler()
+        }
+        inFlightRefresh = task
+        let ok = await task.value
+        inFlightRefresh = nil
+        return ok
+    }
 
     /// Underlying URLSession (swap for tests).  Wired to HTTPCookieStorage.shared
     /// so the JWT cookie set by auth.login persists across requests.
@@ -1188,6 +1362,24 @@ final class EusoTripAPI: ObservableObject {
     // MARK: Low-level tRPC invocation
 
     /// GET /api/trpc/<path>?input=<url-encoded-JSON>
+    // MARK: - Vessel Landfall (canonical)
+    //
+    // `vesselShipments.getLandfallRegime` — MCP-verified 2026-07-06.
+    // Returns the arrival/customs/free-time regime for a country.
+
+    public struct LandfallRegimeResponse: Decodable {
+        public let country: String
+        public let arrivalInstrument: String
+        public let releaseInstrument: String
+        public let freeTimeBasis: String
+        public let currency: String
+    }
+
+    public func getLandfallRegime(country: String) async throws -> LandfallRegimeResponse {
+        struct In: Encodable { let country: String }
+        return try await query("vesselShipments.getLandfallRegime", input: In(country: country))
+    }
+
     func query<Output: Decodable, Input: Encodable>(
         _ path: String,
         input: Input
@@ -1236,6 +1428,44 @@ final class EusoTripAPI: ObservableObject {
 
     func queryNoInput<Output: Decodable>(_ path: String) async throws -> Output {
         return try await query(path, input: TRPCEmptyInput())
+    }
+
+    /// Same wire as `query`, but with the 401/403 auto-refresh+retry
+    /// DISABLED. Reserved for `auth.me` — the session-probe that the refresh
+    /// path itself calls. If `auth.me` were allowed to auto-refresh it would
+    /// recurse into the refresh handler (and, during a refresh already in
+    /// flight, self-await the coalescing task). A 401 here is the honest,
+    /// terminal "session is dead" signal that `boot()` / `revalidate()` /
+    /// `refreshSession()` each absorb with their own 2-strike logic.
+    func queryNoAutoRefresh<Output: Decodable, Input: Encodable>(
+        _ path: String,
+        input: Input
+    ) async throws -> Output {
+        guard let baseURL else { throw EusoTripAPIError.notConfigured }
+        let payload = TRPCInputEnvelope(json: input)
+        let data = try encoder.encode(payload)
+        let encoded = String(data: data, encoding: .utf8) ?? "{}"
+        let url = baseURL
+            .appendingPathComponent("api/trpc")
+            .appendingPathComponent(path)
+        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { throw EusoTripAPIError.badURL }
+        comps.queryItems = [URLQueryItem(name: "input", value: encoded)]
+        guard let finalURL = comps.url else { throw EusoTripAPIError.badURL }
+
+        var req = URLRequest(url: finalURL)
+        req.httpMethod = "GET"
+        req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        req.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let authToken {
+            req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        if let pushDeviceToken {
+            req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+        }
+        return try await perform(req, allowRefreshRetry: false)
     }
 
     /// Raw tRPC query that returns the server response bytes verbatim.
@@ -1369,6 +1599,44 @@ final class EusoTripAPI: ObservableObject {
         return try await mutation(path, input: TRPCEmptyInput())
     }
 
+    // MARK: Breadcrumb trail (L13-6)
+
+    /// One breadcrumb point matching the server `locationPointSchema`.
+    /// `speed` is MPH (US trucking convention; the server stores the bare
+    /// decimal and derives its own implied-speed spoofing check from the
+    /// coordinate deltas, so the unit is display-only downstream).
+    struct LocationBatchPoint: Encodable {
+        let lat: Double
+        let lng: Double
+        let timestamp: String
+        let speed: Double?
+        let heading: Double?
+        let accuracy: Double?
+        let altitude: Double?
+        let batteryLevel: Double?
+        let isCharging: Bool?
+    }
+
+    /// Flush a batch (1-200) to `location.telemetry.locationBatch` →
+    /// `ingestBreadcrumbs` (writes the `location_breadcrumbs` trail) +
+    /// `emitTrackingEvent`. Distinct from `drivers.updateLocation` (latest-
+    /// position UPSERT for the live dispatcher pin) — this is the persisted
+    /// trail behind replay / mileage / deviation / detention proof. Returns
+    /// the inserted count (0 when the 2 s per-driver rate limit skipped it).
+    @discardableResult
+    func locationBatch(locations: [LocationBatchPoint], loadId: Int?) async throws -> Int {
+        struct Input: Encodable {
+            let locations: [LocationBatchPoint]
+            let loadId: Int?
+        }
+        struct BatchAck: Decodable { let inserted: Int? }
+        let ack: BatchAck = try await mutation(
+            "location.telemetry.locationBatch",
+            input: Input(locations: locations, loadId: loadId)
+        )
+        return ack.inserted ?? 0
+    }
+
     // MARK: Offline-outbox eligibility
     //
     // Maps a tRPC mutation path to its OfflineQueue enqueue, decoding the
@@ -1447,7 +1715,14 @@ final class EusoTripAPI: ObservableObject {
 
     // MARK: Shared transport
 
-    private func perform<Output: Decodable>(_ req: URLRequest) async throws -> Output {
+    /// `allowRefreshRetry` gates the ONE automatic re-auth + retry on a
+    /// 401/403. Public entry points (`query`/`mutation`/…) call `perform`
+    /// with it true; the single retry recurses with it false so a genuinely
+    /// dead session can never spin in a refresh→401→refresh loop.
+    private func perform<Output: Decodable>(
+        _ req: URLRequest,
+        allowRefreshRetry: Bool = true
+    ) async throws -> Output {
         let (respData, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse else {
             throw EusoTripAPIError.httpStatus(0, "No HTTP response")
@@ -1475,23 +1750,45 @@ final class EusoTripAPI: ObservableObject {
 
         // tRPC can return 200 with an error envelope, or 4xx with an error envelope.
         // Decode the envelope FIRST (before the bare 401/403 check) so we can
-        // promote UNAUTHORIZED errors to `.unauthenticated` using the real
-        // code/httpStatus, while still surfacing the server's human-readable
-        // message for every other trpc error (rate limits, validation, etc.).
+        // keep 401 and 403 distinct. 401 routes the app to re-auth; 403 keeps
+        // the server's role/mode/gate message visible so users do not get a
+        // fake "session expired" remedy for a permission or compliance block.
         if let err = try? decoder.decode(TRPCErrorEnvelope.self, from: respData) {
             let inner = err.error.json
             let httpStatus = inner.data?.httpStatus ?? http.statusCode
             let code = inner.data?.code ?? ""
-            if httpStatus == 401 || httpStatus == 403 || code == "UNAUTHORIZED" || code == "FORBIDDEN" {
+            if httpStatus == 401 || code == "UNAUTHORIZED" {
+                // Auto re-auth + retry ONCE (build-752 feedback fix). If the
+                // session re-hydrates successfully, replay the original
+                // request with the restored credential; otherwise surface the
+                // auth error honestly (no loop — the retry recurses with the
+                // gate off). 403/FORBIDDEN deliberately does NOT retry: a
+                // permission or compliance block is not a stale session, and
+                // re-auth would only hide the server's gate message.
+                if allowRefreshRetry, await refreshSessionOnce() {
+                    return try await perform(reissue(req), allowRefreshRetry: false)
+                }
                 throw EusoTripAPIError.unauthenticated
+            }
+            if httpStatus == 403 || code == "FORBIDDEN" {
+                throw EusoTripAPIError.forbidden(
+                    EusoTripAPIError.humanize(inner.message ?? "You do not have access to this action.")
+                )
             }
             throw EusoTripAPIError.trpcError(
                 EusoTripAPIError.humanize(inner.message ?? "Request failed")
             )
         }
 
-        if http.statusCode == 401 || http.statusCode == 403 {
+        if http.statusCode == 401 {
+            if allowRefreshRetry, await refreshSessionOnce() {
+                return try await perform(reissue(req), allowRefreshRetry: false)
+            }
             throw EusoTripAPIError.unauthenticated
+        }
+        if http.statusCode == 403 {
+            let body = String(data: respData, encoding: .utf8) ?? "Forbidden"
+            throw EusoTripAPIError.forbidden(EusoTripAPIError.humanize(body))
         }
 
         guard 200..<300 ~= http.statusCode else {
@@ -1505,6 +1802,22 @@ final class EusoTripAPI: ObservableObject {
         } catch {
             throw EusoTripAPIError.decodingFailed(String(describing: error))
         }
+    }
+
+    /// Clone a request for the post-refresh retry, re-stamping the
+    /// Authorization header from the CURRENT `authToken` (the refresh may
+    /// have rotated it) so the replay carries the freshest bearer. Cookies
+    /// ride `HTTPCookieStorage.shared` automatically, so the re-hydrated
+    /// `app_session_id` is already attached by the session — we only need
+    /// to refresh the explicit header. Body / method / URL are preserved.
+    private func reissue(_ original: URLRequest) -> URLRequest {
+        var req = original
+        if let authToken {
+            req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        } else {
+            req.setValue(nil, forHTTPHeaderField: "Authorization")
+        }
+        return req
     }
 }
 
@@ -2679,8 +2992,14 @@ struct AuthAPI {
     }
 
     /// `auth.me` — GET query, returns the currently authenticated user.
+    ///
+    /// Runs WITHOUT the API's 401/403 auto-refresh+retry: `auth.me` is the
+    /// session probe the refresh path itself calls, so it must surface a real
+    /// UNAUTHORIZED honestly instead of recursing into another refresh. The
+    /// session's `boot()` / `revalidate()` / `refreshSession()` each apply
+    /// their own 2-strike absorption around this call.
     func me() async throws -> AuthUser {
-        try await api.queryNoInput("auth.me")
+        try await api.queryNoAutoRefresh("auth.me", input: TRPCEmptyInput())
     }
 
     /// `auth.logout` — POST mutation.  Clears server-side session and cookies.
@@ -3787,16 +4106,80 @@ struct WalletAPI {
         let publishableKey: String
     }
 
-    struct StripeAttachedPaymentMethod: Decodable {
-        let paymentMethodId: String
-        let brand: String         // "visa" / "mastercard" / etc.
-        let last4: String
-        let expMonth: Int
-        let expYear: Int
-    }
+	    struct StripeAttachedPaymentMethod: Decodable {
+	        let paymentMethodId: String
+	        let brand: String         // "visa" / "mastercard" / etc.
+	        let last4: String
+	        let expMonth: Int
+	        let expYear: Int
+	    }
 
-    /// `wallet.createStripeSetupIntent` — POST mutation. Backend creates a
-    /// SetupIntent against the driver's Stripe Customer using
+	    // MARK: EusoCard / Stripe Treasury + Issuing
+
+	    struct EusoCardStatus: Decodable, Hashable {
+	        let qualifying: Bool
+	        let role: String
+	        let setupState: String
+	        let canCreate: Bool
+	        let missingRequirements: [String]
+	        let syncError: String?
+	        let treasury: Treasury?
+	        let card: Card?
+
+	        struct Treasury: Decodable, Hashable {
+	            let financialAccountId: String?
+	            let status: String?
+	            let contextId: String?
+	            let availableCents: Int?
+	            let inboundPendingCents: Int?
+	            let outboundPendingCents: Int?
+	            let financialAddressId: String?
+	            let financialAddressStatus: String?
+	            let bankLast4: String?
+	            let bankName: String?
+	            let lastSyncedAt: String?
+	        }
+
+	        struct Card: Decodable, Hashable {
+	            let cardholderId: String?
+	            let cardId: String?
+	            let status: String?
+	            let brand: String?
+	            let last4: String?
+	            let type: String?
+	            let applePayEligible: Bool?
+	            let googlePayEligible: Bool?
+	        }
+	    }
+
+	    /// `wallet.getEusoCardStatus` — query, no input. Returns the signed-in
+	    /// user's Stripe Treasury + Issuing state with only safe masked fields.
+	    func getEusoCardStatus() async throws -> EusoCardStatus {
+	        try await api.queryNoInput("wallet.getEusoCardStatus")
+	    }
+
+	    /// `wallet.createEusoCard` — creates the real Stripe Treasury
+	    /// FinancialAccount / FinancialAddress plus virtual Issuing card. Server
+	    /// enforces qualifying role, real profile address, idempotency, audit,
+	    /// and never returns raw card or bank account credentials.
+	    func createEusoCard(authorizedUserTermsAccepted: Bool = true) async throws -> EusoCardStatus {
+	        struct Input: Encodable {
+	            let cardType: String
+	            let authorizedUserTermsAccepted: Bool
+	            let idempotencyKey: String
+	        }
+	        return try await api.mutation(
+	            "wallet.createEusoCard",
+	            input: Input(
+	                cardType: "virtual",
+	                authorizedUserTermsAccepted: authorizedUserTermsAccepted,
+	                idempotencyKey: UUID().uuidString
+	            )
+	        )
+	    }
+
+	    /// `wallet.createStripeSetupIntent` — POST mutation. Backend creates a
+	    /// SetupIntent against the driver's Stripe Customer using
     /// STRIPE_SECRET_KEY and returns only the `client_secret` plus the
     /// environment-matched publishable key for iOS to use with
     /// StripePaymentSheet (native) or the hosted Checkout session (Safari
@@ -4891,6 +5274,17 @@ struct DriversAPI {
         try await api.queryNoInput("drivers.getPendingLoads")
     }
 
+    func getAssignments(status: String? = nil, limit: Int = 30) async throws -> [LoadSummary] {
+        struct Input: Encodable {
+            let status: String?
+            let limit: Int
+        }
+        return try await api.query(
+            "drivers.getAssignments",
+            input: Input(status: status, limit: limit)
+        )
+    }
+
     // MARK: - Active tender (iOS 052 Ratecon Tender)
 
     /// Tender endpoint (origin / destination) as projected by
@@ -5590,7 +5984,8 @@ struct NewsAPI {
 
     /// `news.getSavedArticles` — user's bookmark list.
     func getSavedArticles() async throws -> [NewsArticle] {
-        try await api.queryNoInput("news.getSavedArticles")
+        let response: NewsArticleListResponse = try await api.queryNoInput("news.getSavedArticles")
+        return response.articles
     }
 
     /// `news.translateArticle` — Gemini 3.5 (ESANG) article translation.
@@ -5622,6 +6017,24 @@ struct NewsAPI {
                 articleId: articleId
             )
         )
+    }
+}
+
+private struct NewsArticleListResponse: Decodable {
+    let articles: [NewsArticle]
+
+    init(from decoder: Decoder) throws {
+        let single = try decoder.singleValueContainer()
+        if let articles = try? single.decode([NewsArticle].self) {
+            self.articles = articles
+            return
+        }
+        let keyed = try decoder.container(keyedBy: CodingKeys.self)
+        self.articles = try keyed.decode([NewsArticle].self, forKey: .articles)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case articles
     }
 }
 
@@ -5705,15 +6118,18 @@ struct HereMapsAPI {
 
     // MARK: Weather hazard reroute (the symbiotic-weather loop)
     //
-    // Server pulls active Severe/Extreme NWS hazard polygons near the
-    // corridor (already ingested in hz_weather_alerts.geometry), turns them
-    // into HERE avoid[areas], and routes the truck AROUND them — returning the
-    // REAL baseline-vs-avoided miles + the detour polyline. Honest:
+    // Server pulls live severe-weather alerts sampled along the corridor,
+    // turns reroutable alert cells into HERE avoid[areas], and routes the
+    // truck AROUND them — returning the REAL baseline-vs-avoided miles +
+    // the detour polyline when HERE can produce one. Honest:
     // hazardCount 0 → no reroute (baseline). Truck only; rail/vessel advise.
     struct WeatherHazard: Decodable, Hashable {
         let event: String?
         let severity: String?
         let headline: String?
+        let lat: Double?
+        let lng: Double?
+        let reroutable: Bool?
     }
     struct WeatherRerouteResult: Decodable, Hashable {
         let rerouted: Bool
@@ -5723,6 +6139,11 @@ struct HereMapsAPI {
         let avoidedMiles: Int?
         let milesAdded: Int
         let polyline: String?
+        let routeSampleCount: Int?
+        let spanCount: Int?
+        let tollCount: Int?
+        let avoidAreaCount: Int?
+        let routeError: String?
     }
     /// Standard 5-axle tractor-trailer so the HERE route honors truck
     /// height/weight restrictions. Callers can override per the real load.
@@ -5764,11 +6185,28 @@ struct HereMapsAPI {
         let lat: Double?
         let lng: Double?
         let category: String?
+        let categoryId: String?
         let distanceMeters: Int?
+        let address: String?
     }
-    func discoverNearby(query: String, at: LatLng, radiusMeters: Int? = nil) async throws -> [Place] {
-        struct In: Encodable { let query: String; let at: LatLng; let radiusMeters: Int? }
-        return try await api.query("hereMaps.discoverNearby", input: In(query: query, at: at, radiusMeters: radiusMeters))
+    func discoverNearby(
+        query: String,
+        at: LatLng,
+        radiusMeters: Int? = nil,
+        categoryIds: [String]? = nil,
+        limit: Int? = nil
+    ) async throws -> [Place] {
+        struct In: Encodable {
+            let query: String
+            let at: LatLng
+            let radiusMeters: Int?
+            let categoryIds: [String]?
+            let limit: Int?
+        }
+        return try await api.query(
+            "hereMaps.discoverNearby",
+            input: In(query: query, at: at, radiusMeters: radiusMeters, categoryIds: categoryIds, limit: limit)
+        )
     }
 
     // MARK: Autosuggest (address fields)
@@ -5777,6 +6215,9 @@ struct HereMapsAPI {
         let title: String
         let lat: Double?
         let lng: Double?
+        let city: String?
+        let state: String?
+        let resultType: String?
     }
     func autosuggest(query: String, anchor: LatLng, country: String? = nil, limit: Int? = nil) async throws -> [Suggestion] {
         struct In: Encodable { let query: String; let anchor: LatLng; let country: String?; let limit: Int? }
@@ -6092,6 +6533,17 @@ struct MessagingAPI {
         )
     }
 
+    /// POST /api/trpc/messages.getOrCreateLoadConversation.
+    /// Resolves a persisted load into the canonical job conversation so load
+    /// detail CTAs open a real thread instead of guessing a participant DM.
+    func getOrCreateLoadConversation(loadId: String) async throws -> MessagingLoadConversationResult {
+        struct Input: Encodable { let loadId: String }
+        return try await api.mutation(
+            "messages.getOrCreateLoadConversation",
+            input: Input(loadId: loadId)
+        )
+    }
+
     /// POST /api/trpc/messages.deleteConversation — soft-delete for caller.
     @discardableResult
     func deleteConversation(conversationId: String) async throws -> MessagingActionResult {
@@ -6296,6 +6748,14 @@ struct MessagingCreateResult: Decodable {
     let id: String
     let createdAt: String?
     let existing: Bool?
+}
+
+struct MessagingLoadConversationResult: Decodable {
+    let id: String
+    let existing: Bool?
+    let loadId: String?
+    let loadNumber: String?
+    let participants: [Int]?
 }
 
 struct MessagingActionResult: Decodable {
@@ -7279,52 +7739,34 @@ struct WalletExtrasAPI {
         )
     }
 
-    // MARK: Earnings summary (canonical `earnings.getSummary` + YTD)
-    //
-    // Backend doesn't expose a single `wallet.getEarningsSummary` — the
-    // matching driver data is spread across `earnings.getSummary(period)`
-    // (weekly gross, pending, loads) and `earnings.getYTDSummary` (year-
-    // to-date gross). We aggregate both and project into
-    // `WalletEarningsSummary` so the UI layer stays unchanged.
+    // MARK: Earnings summary (canonical `wallet.getEarningsSummary`)
 
-    struct EarningsSummaryWire: Decodable {
-        let totalEarnings: Double?
-        let loadsCompleted: Int?
-        let paid: Double?
-        let pending: Double?
-        let avgPerMile: Double?
+    struct WalletEarningsSummaryWire: Decodable {
+        let weekGross: Double
+        let weekNet: Double
+        let monthGross: Double
+        let monthNet: Double
+        let ytdGross: Double
+        let ytdNet: Double
+        let loadsThisWeek: Int
+        let milesThisWeek: Double
+        let currency: String
+        let updatedAt: String
     }
-
-    struct EarningsYTDWire: Decodable {
-        let totalEarnings: Double?
-        let projectedAnnual: Double?
-    }
-
-    struct EarningsSummaryInput: Encodable { let period: String }
 
     func getEarningsSummary() async throws -> WalletEarningsSummary {
-        async let weekly: EarningsSummaryWire = api.query(
-            "earnings.getSummary",
-            input: EarningsSummaryInput(period: "week")
-        )
-        async let monthly: EarningsSummaryWire = api.query(
-            "earnings.getSummary",
-            input: EarningsSummaryInput(period: "month")
-        )
-        async let ytd: EarningsYTDWire = api.queryNoInput("earnings.getYTDSummary")
-
-        let (w, m, y) = try await (weekly, monthly, ytd)
+        let summary: WalletEarningsSummaryWire = try await api.queryNoInput("wallet.getEarningsSummary")
         return WalletEarningsSummary(
-            thisWeekGross: w.totalEarnings ?? 0,
-            thisMonthGross: m.totalEarnings ?? 0,
-            ytdGross: y.totalEarnings ?? 0,
-            pending: w.pending ?? 0,
-            settledLoadsCount: w.loadsCompleted ?? 0,
-            avgRatePerMile: w.avgPerMile,
+            thisWeekGross: summary.weekGross,
+            thisMonthGross: summary.monthGross,
+            ytdGross: summary.ytdGross,
+            pending: 0,
+            settledLoadsCount: summary.loadsThisWeek,
+            avgRatePerMile: summary.milesThisWeek > 0 ? summary.weekGross / summary.milesThisWeek : nil,
             deadheadPct: nil,
             detentionDollars: nil,
-            projectedAnnual: y.projectedAnnual,
-            currency: "USD"
+            projectedAnnual: nil,
+            currency: summary.currency
         )
     }
 }
@@ -7640,6 +8082,80 @@ struct GamificationAPI {
         try await api.mutation(
             "gamification.cancelMission",
             input: MissionIdInput(missionId: missionId)
+        )
+    }
+
+    // MARK: HERE outcome intake
+
+    struct HereOutcomeCorridor: Encodable, Hashable {
+        let corridor: String
+        let kilometres: Double
+    }
+
+    struct HereEngagementOutcome: Encodable, Hashable {
+        let sourceId: String
+        let kind: String
+        let title: String?
+        let xp: Int?
+        let points: Int?
+        let reason: String?
+    }
+
+    struct HereOutcomeInput: Encodable {
+        let newStates: [String]?
+        let newMetros: [String]?
+        let corridors: [HereOutcomeCorridor]?
+        let poiVisitsByCategory: [String: Int]?
+        let evSessions: Int?
+        let evDelivery: Bool?
+        let adZoneKm: Double?
+        let isaClean: Bool?
+        let safetyScore: Double?
+        let routeDeviationPct: Double?
+        let geofenceArrivalOnTime: Bool?
+        let engagement: HereEngagementOutcome?
+    }
+
+    struct HereOutcomeResponse: Decodable {
+        let success: Bool
+        let acceptedAt: String?
+        let statsRecorded: Bool?
+        let badgesAwarded: [String]?
+        let engagementCredited: Bool?
+        let eventsFired: Int?
+    }
+
+    @discardableResult
+    func recordHereDeliveryOutcome(
+        newStates: [String]? = nil,
+        newMetros: [String]? = nil,
+        corridors: [HereOutcomeCorridor]? = nil,
+        poiVisitsByCategory: [String: Int]? = nil,
+        evSessions: Int? = nil,
+        evDelivery: Bool? = nil,
+        adZoneKm: Double? = nil,
+        isaClean: Bool? = nil,
+        safetyScore: Double? = nil,
+        routeDeviationPct: Double? = nil,
+        geofenceArrivalOnTime: Bool? = nil,
+        engagement: HereEngagementOutcome? = nil
+    ) async throws -> HereOutcomeResponse {
+        try await api.mutation(
+            "gamification.recordHereDeliveryOutcome",
+            input: HereOutcomeInput(
+                newStates: newStates,
+                newMetros: newMetros,
+                corridors: corridors,
+                poiVisitsByCategory: poiVisitsByCategory,
+                evSessions: evSessions,
+                evDelivery: evDelivery,
+                adZoneKm: adZoneKm,
+                isaClean: isaClean,
+                safetyScore: safetyScore,
+                routeDeviationPct: routeDeviationPct,
+                geofenceArrivalOnTime: geofenceArrivalOnTime,
+                engagement: engagement
+            )
         )
     }
 
@@ -8004,9 +8520,16 @@ struct FleetCanonicalAPI {
             input: GetVehiclesInput(status: status, limit: limit)
         )
         return rows.map { w in
-            FleetVehicleRow(
-                id: String(w.id ?? Int.random(in: 1...Int.max)),
-                unitNumber: w.unitNumber ?? "UNIT-\(w.id ?? 0)",
+            let stableIdSeed = [w.unitNumber, w.plate, w.make, w.model, w.status]
+                .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "|")
+            let fallbackId = stableIdSeed.isEmpty
+                ? "vehicle-unkeyed"
+                : "vehicle-\(abs(stableIdSeed.hashValue))"
+            return FleetVehicleRow(
+                id: w.id.map(String.init) ?? fallbackId,
+                unitNumber: w.unitNumber ?? w.plate ?? w.id.map { "Vehicle #\($0)" } ?? "Unassigned unit",
                 kind: (w.type ?? "tractor").lowercased(),
                 make: w.make,
                 model: w.model,
@@ -8774,9 +9297,8 @@ struct ProfileAPI {
 //
 // Weekly settlement history lives on `earnings.getWeeklySummaries({ weeks })`
 // — a bare array of per-week gross + miles + loads rows. The iOS
-// EusoWallet weekly-chart section reads from here, which is the only
-// place the backend exposes a weekly time series today (wallet.ts has
-// no `getWeeklyHistory` procedure — verified via MCP search_code).
+// EusoWallet's older weekly-chart section reads from here; the wallet
+// router also exposes `wallet.getWeeklyHistory` for wallet-ledger views.
 //
 // We also expose `getSummary(period)` and `getYTDSummary` so the
 // EarningsStore can aggregate the hero-card side tiles without adding
@@ -9470,15 +9992,28 @@ struct VehicleAPI {
 
     // MARK: Decoded shapes
 
-    /// Shape returned by `vehicle.getAssigned`. The server always returns
-    /// a non-null object; an empty `id` string means "no vehicle assigned
-    /// to this driver" (new driver, between assignments, etc.).
+    /// Discriminator the merged `vehicle.getAssigned` returns alongside the
+    /// (now optional) vehicle. Lets the 095 Vehicle screen tell apart the
+    /// two empty cases — driver record missing vs. no truck assigned — from
+    /// a real assignment, instead of inferring it from an empty id string.
+    enum AssignmentStatus: String, Decodable, Equatable {
+        /// Caller isn't linked to a `drivers` row (e.g. a non-driver role,
+        /// or an unfinished driver onboarding).
+        case noDriver = "no_driver"
+        /// Driver exists but has no vehicle currently assigned to them.
+        case noVehicleAssigned = "no_vehicle_assigned"
+        /// A real assigned vehicle is present in `vehicle`.
+        case vehicleFound = "vehicle_found"
+    }
+
+    /// Inner vehicle payload. On the merged server this is the nested
+    /// `vehicle` object; on legacy deploys the same keys live flat at the
+    /// envelope top level, so `AssignedVehicle` can decode either layout.
     ///
-    /// Note on odometer / fuelLevel: the current backend implementation
-    /// hardcodes these to 0 because the telematics integration has not
-    /// shipped yet (vehicle.ts:138). The view surfaces them only when
+    /// Note on odometer / fuelLevel: the backend hardcodes these to 0 until
+    /// telematics ships (vehicle.ts:138). The view surfaces them only when
     /// non-zero and renders a disclosure footer otherwise. No fake data.
-    struct AssignedVehicle: Decodable, Equatable {
+    struct VehicleRecord: Decodable, Equatable {
         let id: String
         let unitNumber: String
         let year: Int
@@ -9490,8 +10025,122 @@ struct VehicleAPI {
         let fuelLevel: Double
         let status: String
 
-        /// True when the server returned the "no assignment" sentinel.
-        var isUnassigned: Bool { id.isEmpty }
+        private enum Keys: String, CodingKey {
+            case id, unitNumber, year, make, model, vin, licensePlate, odometer, fuelLevel, status
+        }
+
+        /// Decode a String tolerantly (String | Int | Double → String), "" on absence.
+        /// `try?` flattens the `String??` from `decodeIfPresent` to `String?`,
+        /// so a single `if let` binds the unwrapped value.
+        private static func str(_ c: KeyedDecodingContainer<Keys>, _ k: Keys) -> String {
+            if let s = try? c.decodeIfPresent(String.self, forKey: k) { return s }
+            if let i = try? c.decodeIfPresent(Int.self, forKey: k) { return String(i) }
+            if let d = try? c.decodeIfPresent(Double.self, forKey: k) {
+                return d == d.rounded() ? String(Int(d)) : String(d)
+            }
+            return ""
+        }
+        /// Decode an Int tolerantly (Int | Double | String → Int), 0 on absence.
+        private static func int(_ c: KeyedDecodingContainer<Keys>, _ k: Keys) -> Int {
+            if let i = try? c.decodeIfPresent(Int.self, forKey: k) { return i }
+            if let d = try? c.decodeIfPresent(Double.self, forKey: k) { return Int(d) }
+            if let s = try? c.decodeIfPresent(String.self, forKey: k), let i = Int(s) { return i }
+            return 0
+        }
+        /// Decode a Double tolerantly (Double | Int | String → Double), 0 on absence.
+        private static func dbl(_ c: KeyedDecodingContainer<Keys>, _ k: Keys) -> Double {
+            if let d = try? c.decodeIfPresent(Double.self, forKey: k) { return d }
+            if let i = try? c.decodeIfPresent(Int.self, forKey: k) { return Double(i) }
+            if let s = try? c.decodeIfPresent(String.self, forKey: k), let d = Double(s) { return d }
+            return 0
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            self.id           = Self.str(c, .id)          // String or bare number
+            self.unitNumber   = Self.str(c, .unitNumber)
+            self.year         = Self.int(c, .year)
+            self.make         = Self.str(c, .make)
+            self.model        = Self.str(c, .model)
+            self.vin          = Self.str(c, .vin)
+            self.licensePlate = Self.str(c, .licensePlate)
+            self.odometer     = Self.int(c, .odometer)
+            self.fuelLevel    = Self.dbl(c, .fuelLevel)   // Int or Double on the wire
+            self.status       = Self.str(c, .status)
+        }
+    }
+
+    /// Shape returned by `vehicle.getAssigned`.
+    ///
+    /// MERGED server (build-752 batch): `{ vehicle?: {...}, status:
+    /// 'no_driver'|'no_vehicle_assigned'|'vehicle_found' }`.
+    /// LEGACY server: a FLAT `{ id, unitNumber, ... , status }` object where
+    /// an empty `id` meant "no assignment".
+    ///
+    /// This decode reads BOTH: it first looks for a nested `vehicle` +
+    /// `status` discriminator; if neither is present it falls back to
+    /// decoding the flat legacy record. Every consumer keeps working because
+    /// the flat accessors (`unitNumber`, `make`, …) and `isUnassigned` are
+    /// preserved, while `status` and `vehicle` are now first-class.
+    struct AssignedVehicle: Decodable, Equatable {
+        /// The real assignment, or nil when the driver has no truck.
+        let vehicle: VehicleRecord?
+        /// The merged-server discriminator (`no_driver` /
+        /// `no_vehicle_assigned` / `vehicle_found`). Derived for legacy
+        /// deploys. NOTE: this is the ASSIGNMENT-level state — distinct from
+        /// the vehicle's own operating `status` ("active" / …), which stays
+        /// available as the flat `status` accessor below for the existing
+        /// 059 / 073 / 010 status chips.
+        let assignmentStatus: AssignmentStatus
+
+        private enum Keys: String, CodingKey {
+            case vehicle, status
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            // Merged shape: explicit discriminator + optional nested vehicle.
+            let wireStatus = (try? c.decodeIfPresent(AssignmentStatus.self, forKey: .status)) ?? nil
+            let nested = (try? c.decodeIfPresent(VehicleRecord.self, forKey: .vehicle)) ?? nil
+
+            if wireStatus != nil || nested != nil {
+                self.vehicle = (nested?.id.isEmpty == false) ? nested : nil
+                self.assignmentStatus = wireStatus
+                    ?? (self.vehicle != nil ? .vehicleFound : .noVehicleAssigned)
+            } else {
+                // Legacy flat shape: decode the record inline; empty id ⇒ no
+                // assignment. We can't distinguish no_driver vs
+                // no_vehicle_assigned on the old wire, so collapse to
+                // no_vehicle_assigned (the screen renders the same empty card).
+                let flat = try? VehicleRecord(from: decoder)
+                if let flat, !flat.id.isEmpty {
+                    self.vehicle = flat
+                    self.assignmentStatus = .vehicleFound
+                } else {
+                    self.vehicle = nil
+                    self.assignmentStatus = .noVehicleAssigned
+                }
+            }
+        }
+
+        // MARK: Back-compat flat accessors (so existing call sites — 059,
+        // 073, 010, 113, AssignedVehicleStore — compile unchanged; they read
+        // `v.unitNumber`, `v.status`, `v.isUnassigned`, etc. directly).
+        var id: String          { vehicle?.id ?? "" }
+        var unitNumber: String  { vehicle?.unitNumber ?? "" }
+        var year: Int           { vehicle?.year ?? 0 }
+        var make: String        { vehicle?.make ?? "" }
+        var model: String       { vehicle?.model ?? "" }
+        var vin: String         { vehicle?.vin ?? "" }
+        var licensePlate: String { vehicle?.licensePlate ?? "" }
+        var odometer: Int       { vehicle?.odometer ?? 0 }
+        var fuelLevel: Double   { vehicle?.fuelLevel ?? 0 }
+        /// The vehicle's own operating status ("active" / "maintenance" / …).
+        /// Unchanged String type so the existing status chips keep working.
+        var status: String      { vehicle?.status ?? "" }
+
+        /// True when the driver has no vehicle assigned (or no driver row).
+        var isUnassigned: Bool { vehicle == nil }
     }
 
     /// Row shape inside `getMaintenanceHistory.records[]`. Derived from
@@ -9699,18 +10348,21 @@ struct SafetyAPI {
     // MARK: Input envelopes
 
     struct DriverIdInput: Encodable {
-        let driverId: String
+        let driverId: String?
     }
 
     // MARK: Procedures
 
-    /// Fetch the driver's score detail. `driverId` comes from the
-    /// signed-in session — callers resolve it off
-    /// `EusoTripSession.user?.id` (canonical for every Me· screen).
-    func getDriverScoreDetail(driverId: String) async throws -> DriverScoreDetail {
-        try await api.query(
+    /// Fetch the driver's score detail. For the signed-in driver Me surface,
+    /// omit `driverId` and let the protected backend resolve the driver row
+    /// from the authenticated user. Pass a concrete driver-row id only for
+    /// dispatcher/catalyst drilldowns that are intentionally viewing someone
+    /// else inside the same company boundary.
+    func getDriverScoreDetail(driverId: String? = nil) async throws -> DriverScoreDetail {
+        let trimmed = driverId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await api.query(
             "safety.getDriverScoreDetail",
-            input: DriverIdInput(driverId: driverId)
+            input: DriverIdInput(driverId: trimmed?.isEmpty == false ? trimmed : nil)
         )
     }
 
@@ -10464,6 +11116,22 @@ struct ComplianceAPI {
     }
 
     struct CatalystComplianceOverview: Decodable, Hashable {
+        struct FilingStatus: Decodable, Hashable {
+            let status: String?
+            let detail: String?
+            let identifier: String?
+            let expiresAt: String?
+            let dueDate: String?
+        }
+
+        struct Filings: Decodable, Hashable {
+            let hazmat: FilingStatus?
+            let twic: FilingStatus?
+            let ucr: FilingStatus?
+            let ifta: FilingStatus?
+            let irp: FilingStatus?
+        }
+
         /// 0–100 overall score. Sum of: MC (20) + DOT (20) + insurance
         /// not expired (20) + compliance_status compliant (20) + hazmat
         /// license (10) + baseline (10).
@@ -10481,6 +11149,9 @@ struct ComplianceAPI {
         let safetyRating: String
         /// FMCSA CSA composite score; 0 until the SMS feed is wired.
         let csaScore: Int
+        /// Live company filing statuses derived server-side from companies,
+        /// compliance_events, and irp_registrations.
+        let filings: Filings?
     }
 
     func getCatalystCompliance() async throws -> CatalystComplianceOverview {
@@ -11030,6 +11701,63 @@ struct FMCSACarrierLookup: Decodable, Hashable {
 struct CsaScoresAPI {
     let api: EusoTripAPI
 
+    private struct AnyJSONValue: Decodable {
+        init(from decoder: Decoder) throws {
+            if var array = try? decoder.unkeyedContainer() {
+                while !array.isAtEnd {
+                    _ = try? array.decode(AnyJSONValue.self)
+                }
+                return
+            }
+            if let object = try? decoder.container(keyedBy: DynamicCodingKey.self) {
+                for key in object.allKeys {
+                    _ = try? object.decode(AnyJSONValue.self, forKey: key)
+                }
+                return
+            }
+            let single = try decoder.singleValueContainer()
+            if single.decodeNil() { return }
+            if (try? single.decode(Bool.self)) != nil { return }
+            if (try? single.decode(Double.self)) != nil { return }
+            _ = try? single.decode(String.self)
+        }
+    }
+
+    private struct DynamicCodingKey: CodingKey {
+        let stringValue: String
+        let intValue: Int?
+        init?(stringValue: String) {
+            self.stringValue = stringValue
+            self.intValue = nil
+        }
+        init?(intValue: Int) {
+            self.stringValue = "\(intValue)"
+            self.intValue = intValue
+        }
+    }
+
+    private static func decodeInt<T: CodingKey>(
+        _ c: KeyedDecodingContainer<T>,
+        _ key: T
+    ) -> Int {
+        if let value = try? c.decode(Int.self, forKey: key) { return value }
+        if let value = try? c.decode(Double.self, forKey: key) { return Int(value) }
+        if let value = try? c.decode(String.self, forKey: key), let int = Int(value) { return int }
+        if let values = try? c.decode([AnyJSONValue].self, forKey: key) { return values.count }
+        return 0
+    }
+
+    private static func decodeOptionalInt<T: CodingKey>(
+        _ c: KeyedDecodingContainer<T>,
+        _ key: T
+    ) -> Int? {
+        if let value = try? c.decode(Int.self, forKey: key) { return value }
+        if let value = try? c.decode(Double.self, forKey: key) { return Int(value) }
+        if let value = try? c.decode(String.self, forKey: key), let int = Int(value) { return int }
+        if let values = try? c.decode([AnyJSONValue].self, forKey: key) { return values.count }
+        return nil
+    }
+
     struct DataQsChallengeInput: Encodable {
         let violationId: String
         /// Server enum: "incorrect_data" | "not_responsible" |
@@ -11133,6 +11861,20 @@ struct CsaScoresAPI {
         let towAways: Int
         let hazmatReleases: Int
         let recent: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case total, fatalities, injuries, towAways, hazmatReleases, recent
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            total = CsaScoresAPI.decodeInt(c, .total)
+            fatalities = CsaScoresAPI.decodeInt(c, .fatalities)
+            injuries = CsaScoresAPI.decodeInt(c, .injuries)
+            towAways = CsaScoresAPI.decodeInt(c, .towAways)
+            hazmatReleases = CsaScoresAPI.decodeInt(c, .hazmatReleases)
+            recent = CsaScoresAPI.decodeOptionalInt(c, .recent)
+        }
     }
 
     /// FMCSA inspections 24-month summary. Same nil rule as crashes.
@@ -11143,6 +11885,20 @@ struct CsaScoresAPI {
         let vehicleOos: Int
         let hazmatOos: Int
         let recent: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case total, violations, driverOos, vehicleOos, hazmatOos, recent
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            total = CsaScoresAPI.decodeInt(c, .total)
+            violations = CsaScoresAPI.decodeInt(c, .violations)
+            driverOos = CsaScoresAPI.decodeInt(c, .driverOos)
+            vehicleOos = CsaScoresAPI.decodeInt(c, .vehicleOos)
+            hazmatOos = CsaScoresAPI.decodeInt(c, .hazmatOos)
+            recent = CsaScoresAPI.decodeOptionalInt(c, .recent)
+        }
     }
 
     struct CsaOverview: Decodable, Equatable {
@@ -12372,6 +13128,31 @@ struct DriverQualificationAPI {
             input: Input(documentId: documentId, status: status, expiresAt: expiresAt, notes: notes)
         )
     }
+
+    /// Tolerant ack for `deleteDocument`. The merged server returns
+    /// `{ success: true }`; decode every field optional so a slightly
+    /// different envelope (e.g. an echoed `documentId`) never decode-throws.
+    struct DeleteDocumentResult: Decodable {
+        let success: Bool?
+        let documentId: String?
+    }
+
+    /// `driverQualification.deleteDocument` — removes a DQ document from the
+    /// driver's qualification file (build-752 server batch; mirrors the
+    /// soft-delete pattern of `documentCenter.deleteDocument`). 093 Me · DQ
+    /// File swipe-to-delete / "Remove document" calls here. `documentId` is
+    /// a String for parity with `uploadDocument` / `updateDocument` above;
+    /// an optional `reason` rides the same audit field other delete procs use.
+    func deleteDocument(documentId: String, reason: String? = nil) async throws -> DeleteDocumentResult {
+        struct Input: Encodable {
+            let documentId: String
+            let reason: String?
+        }
+        return try await api.mutation(
+            "driverQualification.deleteDocument",
+            input: Input(documentId: documentId, reason: reason)
+        )
+    }
 }
 
 // MARK: - fuelManagementRouter (094 Me · Fuel Cards)
@@ -12795,6 +13576,20 @@ struct LoadBiddingAPI {
     struct SubmitAck: Decodable, Equatable {
         let id: Int?
         let status: String
+        // Tolerate BOTH server success branches — auto-accept `{id,status}`
+        // and the normal pending `{id,status,aiFraudCheck}` — plus any future
+        // shape that omits `status`. `status` defaults to "pending" rather
+        // than throwing `.decodingFailed` on a valid 2xx, so a real success
+        // never surfaces as a counter failure. Extra keys (aiFraudCheck) are
+        // ignored. `id` was already optional (the auto-accept row id can be
+        // absent on a race).
+        enum CodingKeys: String, CodingKey { case id, status }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.id = try c.decodeIfPresent(Int.self, forKey: .id)
+            self.status = (try c.decodeIfPresent(String.self, forKey: .status)) ?? "pending"
+        }
+        init(id: Int?, status: String) { self.id = id; self.status = status }
     }
 
     /// `loadBidding.submit` — one-tap accept at posted rate (Book Now
@@ -13860,6 +14655,42 @@ struct FreightClaimsAPI {
             )
         )
     }
+
+    /// Attach an evidence record to a filed claim. Mirrors
+    /// `freightClaims.addClaimEvidence` (frontend/server/routers/freightClaims.ts:772).
+    struct EvidenceRecord: Decodable {
+        let id: String
+        let claimId: String?
+        let type: String?
+        let name: String?
+        let uploadedAt: String?
+    }
+
+    func addClaimEvidence(
+        claimId: String,
+        type: String,
+        name: String,
+        description: String? = nil,
+        url: String? = nil
+    ) async throws -> EvidenceRecord {
+        struct Input: Encodable {
+            let claimId: String
+            let type: String
+            let name: String
+            let description: String?
+            let url: String?
+        }
+        return try await api.mutation(
+            "freightClaims.addClaimEvidence",
+            input: Input(
+                claimId: claimId,
+                type: type,
+                name: name,
+                description: description,
+                url: url
+            )
+        )
+    }
 }
 
 // MARK: - trackingRouter geofences (map-layer fence grammar · 2026-06-10)
@@ -13972,6 +14803,147 @@ struct TrackingGeofencesAPI {
             + cos(lat1 * .pi / 180) * cos(lat2 * .pi / 180)
             * sin(dLng / 2) * sin(dLng / 2)
         return r * 2 * atan2(sqrt(a), sqrt(1 - a))
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // L13-4 — identified fence resolution + event producer.
+    //
+    // The §3c ring path (`fences(near:)`) deliberately drops the row id (it
+    // only needs center+radius to draw). Closing the geofence loop needs the
+    // NUMERIC server id so the client can POST `location.telemetry.geofenceEvent`
+    // (whose input is `geofenceId: z.number()`), which drives the server-side
+    // ON-SITE / departed status flips. `IdentifiedGeofenceRow` decodes the id
+    // tolerantly (server may serialize it as a JSON number or string) and is a
+    // separate struct so the existing ring decode stays untouched.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// One `tracking.getGeofences` row that KEEPS the numeric id + shape type.
+    struct IdentifiedGeofenceRow: Decodable {
+        let id: Int?
+        let name: String?
+        let type: String?
+        let center: GeofenceCenter?
+        let radius: Double?
+        let active: Bool?
+
+        enum CodingKeys: String, CodingKey { case id, name, type, center, radius, active }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            if let i = try? c.decode(Int.self, forKey: .id) { id = i }
+            else if let s = try? c.decode(String.self, forKey: .id), let i = Int(s) { id = i }
+            else { id = nil }
+            name = try? c.decode(String.self, forKey: .name)
+            type = try? c.decode(String.self, forKey: .type)
+            center = try? c.decode(GeofenceCenter.self, forKey: .center)
+            radius = try? c.decode(Double.self, forKey: .radius)
+            active = try? c.decode(Bool.self, forKey: .active)
+        }
+    }
+
+    /// A server fence row resolved against a facility coordinate, WITH its
+    /// numeric id + shape type — the payload `postGeofenceEvent` needs.
+    struct IdentifiedFence: Hashable {
+        let id: Int
+        let center: HereLatLng
+        let radiusMeters: Double
+        let name: String?
+        let type: String?
+    }
+
+    /// Raw id-preserving read of `tracking.getGeofences`.
+    func identifiedList() async throws -> [IdentifiedGeofenceRow] {
+        try await api.queryNoInput("tracking.getGeofences")
+    }
+
+    /// Resolves the nearest active circular fence row (with id) covering each
+    /// facility coordinate, in ONE read. Same coverage rule as `fences(near:)`
+    /// (center within max(radius, 1500m) of the target). Any failure → [].
+    func identifiedFences(near points: [(lat: Double, lng: Double)]) async -> [IdentifiedFence] {
+        guard !points.isEmpty else { return [] }
+        guard let rows = try? await identifiedList(), !rows.isEmpty else { return [] }
+
+        let usable: [IdentifiedFence] = rows.compactMap { row in
+            guard row.active != false,
+                  let id = row.id,
+                  let c = row.center,
+                  let cLat = c.lat, let cLng = c.lng,
+                  cLat.isFinite, cLng.isFinite,
+                  !(cLat == 0 && cLng == 0),
+                  let r = row.radius, r.isFinite, r > 0
+            else { return nil }
+            return IdentifiedFence(id: id, center: HereLatLng(cLat, cLng),
+                                   radiusMeters: r, name: row.name, type: row.type)
+        }
+        guard !usable.isEmpty else { return [] }
+
+        var out: [IdentifiedFence] = []
+        for p in points {
+            guard p.lat.isFinite, p.lng.isFinite, !(p.lat == 0 && p.lng == 0) else { continue }
+            var best: (fence: IdentifiedFence, meters: Double)? = nil
+            for f in usable {
+                let d = Self.haversineMeters(p.lat, p.lng, f.center.lat, f.center.lng)
+                guard d <= Swift.max(f.radiusMeters, 1_500) else { continue }
+                if best == nil || d < best!.meters { best = (f, d) }
+            }
+            if let hit = best?.fence, !out.contains(hit) { out.append(hit) }
+        }
+        return out
+    }
+
+    /// POST one geofence transition to `location.telemetry.geofenceEvent` →
+    /// server `processGeofenceEvent` → ON-SITE / departed load-status flip +
+    /// detention clock + WS fan-out. Fire-and-forget from the producer's view;
+    /// the server return is void so we decode a permissive ack.
+    func postGeofenceEvent(
+        geofenceId: Int, action: String, lat: Double, lng: Double,
+        timestamp: String, loadId: Int?, geofenceType: String?, facilityName: String?
+    ) async throws {
+        struct LatLng: Encodable { let lat: Double; let lng: Double }
+        struct Input: Encodable {
+            let geofenceId: Int
+            let action: String
+            let location: LatLng
+            let timestamp: String
+            let loadId: Int?
+            let geofenceType: String?
+            let facilityName: String?
+        }
+        struct GeofenceEventAck: Decodable { init(from decoder: Decoder) throws {} }
+        let _: GeofenceEventAck = try await api.mutation(
+            "location.telemetry.geofenceEvent",
+            input: Input(geofenceId: geofenceId, action: action,
+                         location: LatLng(lat: lat, lng: lng), timestamp: timestamp,
+                         loadId: loadId, geofenceType: geofenceType, facilityName: facilityName)
+        )
+    }
+
+    /// Ensure the PICKUP_FACILITY / DELIVERY_FACILITY fences exist server-side
+    /// for a load via `location.geofences.createForLoad` (ownership-gated to a
+    /// party of the load). Returns the created fence count. Called only when a
+    /// resolve found no existing rows — so the geofence loop can still close on
+    /// loads that were dispatched before facility fences were seeded.
+    @discardableResult
+    func createFencesForLoad(
+        loadId: Int, pickupLat: Double, pickupLng: Double, pickupFacilityName: String?,
+        deliveryLat: Double, deliveryLng: Double, deliveryFacilityName: String?
+    ) async throws -> Int {
+        struct Input: Encodable {
+            let loadId: Int
+            let pickupLat: Double
+            let pickupLng: Double
+            let pickupFacilityName: String?
+            let deliveryLat: Double
+            let deliveryLng: Double
+            let deliveryFacilityName: String?
+        }
+        struct CreateAck: Decodable { let count: Int? }
+        let ack: CreateAck = try await api.mutation(
+            "location.geofences.createForLoad",
+            input: Input(loadId: loadId, pickupLat: pickupLat, pickupLng: pickupLng,
+                         pickupFacilityName: pickupFacilityName, deliveryLat: deliveryLat,
+                         deliveryLng: deliveryLng, deliveryFacilityName: deliveryFacilityName)
+        )
+        return ack.count ?? 0
     }
 }
 
@@ -14211,6 +15183,7 @@ struct ContactsAPI {
         let address: Address?
         let favorite: Bool
         let lastContact: String?
+        let canDelete: Bool?
     }
 
     // MARK: - Summary
@@ -14294,6 +15267,49 @@ struct ContactsAPI {
             "contacts.addInteraction",
             input: Input(contactId: contactId, type: kind, notes: notes)
         )
+    }
+
+    struct CreateContactResult: Decodable, Equatable {
+        let id: String
+        let type: String?
+        let name: String?
+        let company: String?
+        let email: String?
+        let phone: String?
+        let canDelete: Bool?
+    }
+
+    /// `contacts.create` — add a contact-book row owned by the current user.
+    func create(
+        type: String,
+        name: String,
+        company: String?,
+        email: String?,
+        phone: String?
+    ) async throws -> CreateContactResult {
+        struct Input: Encodable {
+            let type: String
+            let name: String
+            let company: String?
+            let email: String?
+            let phone: String?
+        }
+        return try await api.mutation(
+            "contacts.create",
+            input: Input(type: type, name: name, company: company, email: email, phone: phone)
+        )
+    }
+
+    struct DeleteContactResult: Decodable, Equatable {
+        let success: Bool?
+        let id: String?
+        let deletedAt: String?
+    }
+
+    /// `contacts.delete` — remove a contact-book row owned by the current user.
+    func delete(id: String) async throws -> DeleteContactResult {
+        struct Input: Encodable { let id: String }
+        return try await api.mutation("contacts.delete", input: Input(id: id))
     }
 }
 
@@ -15171,6 +16187,30 @@ struct SpectraMatchAPI {
 struct ShipperAPI {
     unowned let api: EusoTripAPI
 
+    private static func decodeDouble<K: CodingKey>(
+        _ c: KeyedDecodingContainer<K>,
+        _ key: K,
+        default defaultValue: Double = 0
+    ) -> Double {
+        if let d = try? c.decode(Double.self, forKey: key) { return d }
+        if let i = try? c.decode(Int.self, forKey: key) { return Double(i) }
+        if let s = try? c.decode(String.self, forKey: key),
+           let d = Double(s) { return d }
+        return defaultValue
+    }
+
+    private static func decodeInt<K: CodingKey>(
+        _ c: KeyedDecodingContainer<K>,
+        _ key: K,
+        default defaultValue: Int = 0
+    ) -> Int {
+        if let i = try? c.decode(Int.self, forKey: key) { return i }
+        if let d = try? c.decode(Double.self, forKey: key) { return Int(d) }
+        if let s = try? c.decode(String.self, forKey: key),
+           let d = Double(s) { return Int(d) }
+        return defaultValue
+    }
+
     /// Dashboard KPI envelope. Mirrors `shippers.getDashboardStats`
     /// (frontend/server/routers/shippers.ts:77).
     ///
@@ -15518,13 +16558,24 @@ struct ShipperAPI {
         let loads: Int
 
         var id: String { month }
+
+        private enum CodingKeys: String, CodingKey { case month, loads }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.month = (try? c.decode(String.self, forKey: .month)) ?? ""
+            self.loads = ShipperAPI.decodeInt(c, .loads)
+        }
     }
 
     /// Shipper aggregate stats envelope. Mirrors verbatim
-    /// `shippers.getStats` at `frontend/server/routers/shippers.ts:605`.
-    /// `avgRatePerMile` and `avgPaymentTime` are server-side TODOs (the
-    /// backend currently returns 0 for both); the client honors that
-    /// honestly with em-dash sentinels rather than fake projections.
+    /// `shippers.getStats` at `frontend/server/routers/shippers.ts`.
+    /// `avgRatePerMile` is a server-side TODO (backend returns 0);
+    /// `avgPaymentTime` is REAL as of 2026-07-02 — AVG days between
+    /// load delivery and settlement payout across the shipper's
+    /// completed settlements (0 only when no settled loads exist).
+    /// The client renders 0 honestly as an em-dash/"Unavailable"
+    /// sentinel rather than a fake projection.
     struct Stats: Decodable, Hashable {
         let totalLoads: Int
         let totalSpend: Int
@@ -15535,6 +16586,25 @@ struct ShipperAPI {
         let onTimeRate: Int
         let monthlyVolume: [ProfileMonthlyVolume]
         let maxMonthlyLoads: Int
+
+        private enum CodingKeys: String, CodingKey {
+            case totalLoads, totalSpend, avgRatePerMile, onTimeDeliveryRate
+            case preferredCatalysts, avgPaymentTime, onTimeRate, monthlyVolume
+            case maxMonthlyLoads
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.totalLoads = ShipperAPI.decodeInt(c, .totalLoads)
+            self.totalSpend = ShipperAPI.decodeInt(c, .totalSpend)
+            self.avgRatePerMile = ShipperAPI.decodeDouble(c, .avgRatePerMile)
+            self.onTimeDeliveryRate = ShipperAPI.decodeInt(c, .onTimeDeliveryRate)
+            self.preferredCatalysts = ShipperAPI.decodeInt(c, .preferredCatalysts)
+            self.avgPaymentTime = ShipperAPI.decodeDouble(c, .avgPaymentTime)
+            self.onTimeRate = ShipperAPI.decodeInt(c, .onTimeRate)
+            self.monthlyVolume = (try? c.decode([ProfileMonthlyVolume].self, forKey: .monthlyVolume)) ?? []
+            self.maxMonthlyLoads = ShipperAPI.decodeInt(c, .maxMonthlyLoads)
+        }
     }
 
     func getStats() async throws -> Stats {
@@ -16176,6 +17246,19 @@ struct ShipperAPI {
             let totalSpend: Double
             let avgPerLoad: Double
             var id: String { "\(origin)->\(destination)" }
+
+            private enum CodingKeys: String, CodingKey {
+                case origin, destination, loadCount, totalSpend, avgPerLoad
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                self.origin = (try? c.decode(String.self, forKey: .origin)) ?? ""
+                self.destination = (try? c.decode(String.self, forKey: .destination)) ?? ""
+                self.loadCount = ShipperAPI.decodeInt(c, .loadCount)
+                self.totalSpend = ShipperAPI.decodeDouble(c, .totalSpend)
+                self.avgPerLoad = ShipperAPI.decodeDouble(c, .avgPerLoad)
+            }
         }
 
         struct EquipmentCohort: Decodable, Hashable, Identifiable {
@@ -16185,6 +17268,18 @@ struct ShipperAPI {
             /// Server-computed share of total spend, 0–100.
             let share: Int
             var id: String { equipment }
+
+            private enum CodingKeys: String, CodingKey {
+                case equipment, loadCount, totalSpend, share
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                self.equipment = (try? c.decode(String.self, forKey: .equipment)) ?? ""
+                self.loadCount = ShipperAPI.decodeInt(c, .loadCount)
+                self.totalSpend = ShipperAPI.decodeDouble(c, .totalSpend)
+                self.share = ShipperAPI.decodeInt(c, .share)
+            }
         }
 
         struct CatalystSpend: Decodable, Hashable, Identifiable {
@@ -16193,6 +17288,18 @@ struct ShipperAPI {
             let loadCount: Int
             let totalSpend: Double
             var id: String { catalystId }
+
+            private enum CodingKeys: String, CodingKey {
+                case catalystId, name, loadCount, totalSpend
+            }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                self.catalystId = (try? c.decode(String.self, forKey: .catalystId)) ?? ""
+                self.name = (try? c.decode(String.self, forKey: .name)) ?? ""
+                self.loadCount = ShipperAPI.decodeInt(c, .loadCount)
+                self.totalSpend = ShipperAPI.decodeDouble(c, .totalSpend)
+            }
         }
 
         // Default-empty cohort arrays so a server still returning the
@@ -16202,11 +17309,11 @@ struct ShipperAPI {
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             self.period       = try c.decode(String.self, forKey: .period)
-            self.totalSpend   = try c.decode(Double.self, forKey: .totalSpend)
-            self.loadCount    = try c.decode(Int.self,    forKey: .loadCount)
-            self.avgPerLoad   = try c.decode(Double.self, forKey: .avgPerLoad)
-            self.avgPerMile   = try c.decode(Double.self, forKey: .avgPerMile)
-            self.vsMarketRate = try c.decode(Double.self, forKey: .vsMarketRate)
+            self.totalSpend   = ShipperAPI.decodeDouble(c, .totalSpend)
+            self.loadCount    = ShipperAPI.decodeInt(c, .loadCount)
+            self.avgPerLoad   = ShipperAPI.decodeDouble(c, .avgPerLoad)
+            self.avgPerMile   = ShipperAPI.decodeDouble(c, .avgPerMile)
+            self.vsMarketRate = ShipperAPI.decodeDouble(c, .vsMarketRate)
             self.byLane       = (try? c.decode([LaneCohort].self,      forKey: .byLane))      ?? []
             self.byEquipment  = (try? c.decode([EquipmentCohort].self, forKey: .byEquipment)) ?? []
             self.byCatalyst   = (try? c.decode([CatalystSpend].self,   forKey: .byCatalyst))  ?? []
@@ -16235,6 +17342,20 @@ struct ShipperAPI {
         let totalSpend: Double
 
         var id: String { catalystId }
+
+        private enum CodingKeys: String, CodingKey {
+            case catalystId, name, totalLoads, delivered, onTimeRate, totalSpend
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.catalystId = (try? c.decode(String.self, forKey: .catalystId)) ?? ""
+            self.name = (try? c.decode(String.self, forKey: .name)) ?? ""
+            self.totalLoads = ShipperAPI.decodeInt(c, .totalLoads)
+            self.delivered = ShipperAPI.decodeInt(c, .delivered)
+            self.onTimeRate = ShipperAPI.decodeInt(c, .onTimeRate)
+            self.totalSpend = ShipperAPI.decodeDouble(c, .totalSpend)
+        }
     }
 
     struct GetCatalystPerformanceInput: Encodable {
@@ -16325,6 +17446,19 @@ struct ShipperAPI {
         let totalSpend: Double
 
         var id: String { catalystId }
+
+        private enum CodingKeys: String, CodingKey {
+            case catalystId, name, dotNumber, loadsCompleted, totalSpend
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.catalystId = (try? c.decode(String.self, forKey: .catalystId)) ?? ""
+            self.name = (try? c.decode(String.self, forKey: .name)) ?? ""
+            self.dotNumber = (try? c.decode(String.self, forKey: .dotNumber)) ?? ""
+            self.loadsCompleted = ShipperAPI.decodeInt(c, .loadsCompleted)
+            self.totalSpend = ShipperAPI.decodeDouble(c, .totalSpend)
+        }
     }
 
     /// Server response for `addFavoriteCatalyst`. The backend treats
@@ -19343,6 +20477,10 @@ struct AuthorityAPI {
         let dotNumber: String?
         let insurancePolicy: String?
         let insuranceExpiry: String?
+        let hazmatLicense: String?
+        let hazmatExpiry: String?
+        let twicCard: String?
+        let twicExpiry: String?
         let complianceStatus: String?
         let isActive: Bool?
     }
@@ -19880,6 +21018,120 @@ struct UsersAPI {
     func updateNotificationPreferences(_ patch: Patch) async throws -> UpdateAck {
         try await api.mutation("users.updateNotificationPreferences", input: patch)
     }
+
+    // MARK: Account data export + migration (Shipper 349)
+
+    /// `users.requestDataExport` — query, no input. Server runs the real
+    /// GDPR Article 15 pipeline (all entity sections incl. settlements +
+    /// contacts, signed HMAC manifest, export-ready email) and returns the
+    /// authed download URL (`/api/users/me/data-export.json`). `url` is
+    /// non-nil on success; the null-url "queued" branch only survives for
+    /// older servers.
+    struct ExportPackage: Decodable {
+        let url: String?
+        let filename: String?
+        let format: String?
+        let sizeBytes: Int?
+        let entityCounts: [String: Int]?
+    }
+    func requestDataExport() async throws -> ExportPackage {
+        try await api.queryNoInput("users.requestDataExport")
+    }
+
+    /// Signed manifest parsed out of a downloaded export archive. Field
+    /// names mirror `exportData.manifest` emitted by
+    /// server/services/compliance/data-lifecycle.ts.
+    struct ExportManifest: Codable {
+        let schemaVersion: Int
+        let exportedAt: String
+        let sourceUserId: Int
+        let sourceCompanyId: Int?
+        let sourceEmail: String?
+        let entityCounts: [String: Int]?
+        let contentSha256: String
+        let signature: String?
+    }
+
+    struct ImportRequestAck: Decodable {
+        let importId: String
+        let status: String
+        let sourceUserId: Int
+        let sourceEmail: String?
+    }
+
+    /// `users.requestDataImport` — mutation. Sends the manifest + HMAC
+    /// signature from a picked archive; the server re-verifies the signature
+    /// and parks a pending-approval record with the source-account owner.
+    func requestDataImport(manifest: ExportManifest, signature: String) async throws -> ImportRequestAck {
+        struct ManifestBody: Encodable {
+            let schemaVersion: Int
+            let exportedAt: String
+            let sourceUserId: Int
+            let sourceCompanyId: Int?
+            let sourceEmail: String?
+            let entityCounts: [String: Int]?
+            let contentSha256: String
+        }
+        struct In: Encodable {
+            let manifest: ManifestBody
+            let signature: String
+        }
+        let body = ManifestBody(
+            schemaVersion: manifest.schemaVersion,
+            exportedAt: manifest.exportedAt,
+            sourceUserId: manifest.sourceUserId,
+            sourceCompanyId: manifest.sourceCompanyId,
+            sourceEmail: manifest.sourceEmail,
+            entityCounts: manifest.entityCounts,
+            contentSha256: manifest.contentSha256
+        )
+        return try await api.mutation("users.requestDataImport", input: In(manifest: body, signature: signature))
+    }
+
+    /// One row of `users.pendingDataImports`. `incoming` rows carry
+    /// `targetUserId` (another account wants this account's data — the
+    /// current user approves/rejects); `outgoing` rows carry `sourceUserId`
+    /// (the current user filed the request from an archive).
+    struct ImportTransferRow: Decodable, Identifiable {
+        let importId: String
+        let status: String
+        let requestedAt: String?
+        let targetUserId: Int?
+        let targetEmail: String?
+        let sourceUserId: Int?
+        let sourceEmail: String?
+        let decidedAt: String?
+        let executed: Executed?
+        struct Executed: Decodable {
+            let contactsMoved: Int?
+            let documentsMoved: Int?
+        }
+        var id: String { importId }
+    }
+    struct ImportTransferList: Decodable {
+        let incoming: [ImportTransferRow]
+        let outgoing: [ImportTransferRow]
+    }
+    func pendingDataImports() async throws -> ImportTransferList {
+        try await api.queryNoInput("users.pendingDataImports")
+    }
+
+    struct ImportDecisionAck: Decodable {
+        let success: Bool
+        let contactsMoved: Int?
+        let documentsMoved: Int?
+    }
+    /// `users.approveDataImport` — source-owner only. Server re-keys
+    /// contacts + documents to the target account in one transaction.
+    func approveDataImport(importId: String) async throws -> ImportDecisionAck {
+        struct In: Encodable { let importId: String }
+        return try await api.mutation("users.approveDataImport", input: In(importId: importId))
+    }
+    /// `users.rejectDataImport` — source-owner only. Nothing moves.
+    func rejectDataImport(importId: String) async throws -> ImportDecisionAck {
+        struct In: Encodable { let importId: String }
+        return try await api.mutation("users.rejectDataImport", input: In(importId: importId))
+    }
 }
 
 // MARK: - EusoTicketAPI
@@ -19992,12 +21244,96 @@ struct EusoTicketAPI {
         let createdAt: String?
     }
 
+    /// Result of `eusoTicket.generateRunTicketPDF` / `generateBOLPDF`.
+    ///
+    /// The build-752 server batch returns a REAL rendered PDF inline:
+    ///   `{ filename, mime, body: <base64>, universalLink }`
+    /// The legacy deploy returned a path reference:
+    ///   `{ success, documentUrl, generatedAt, ticketNumber?, bolNumber? }`
+    ///
+    /// The OLD decode (with `success` / `documentUrl` / `generatedAt`
+    /// NON-optional) hard-threw `keyNotFound("success")` on the new inline
+    /// shape — that decode-throw is the root cause of the 106 "couldn't open
+    /// the run ticket / BOL" feedback. The custom decode below reads BOTH
+    /// shapes, and CRUCIALLY keeps `success: Bool` and `documentUrl: String`
+    /// NON-optional and populated so every existing call site
+    /// (`res.success`, `URL(string: res.documentUrl)`,
+    /// `resolveDocumentURL(res.documentUrl)`, `absoluteURL(for:)`) keeps
+    /// compiling AND now actually opens the document — with ZERO view churn.
+    ///
+    /// For the inline shape we materialize the base64 PDF to a temp file
+    /// during decode and point `documentUrl` at that `file://` URL, so the
+    /// in-app `EusoPDFViewer(source: .url(...))` renders the real bytes.
     struct PDFGenerated: Decodable {
+        /// Always populated: true when a renderable document is present
+        /// (inline bytes materialized, or a non-empty server path/URL).
         let success: Bool
+        /// Always a usable URL string: a `file://` path for the inline shape,
+        /// or the server's relative/absolute path for the legacy shape.
         let documentUrl: String
-        let generatedAt: String
+        let generatedAt: String?
         let ticketNumber: String?
         let bolNumber: String?
+
+        // New inline-PDF shape (also surfaced for callers that want them).
+        let filename: String?
+        let mime: String?
+        let universalLink: String?
+        /// Local file URL of the materialized inline PDF (nil for legacy).
+        let localFileURL: URL?
+
+        private enum Keys: String, CodingKey {
+            case success, documentUrl, generatedAt, ticketNumber, bolNumber
+            case filename, mime, body, universalLink
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+
+            self.generatedAt    = try? c.decodeIfPresent(String.self, forKey: .generatedAt)
+            self.ticketNumber   = try? c.decodeIfPresent(String.self, forKey: .ticketNumber)
+            self.bolNumber      = try? c.decodeIfPresent(String.self, forKey: .bolNumber)
+            self.filename       = try? c.decodeIfPresent(String.self, forKey: .filename)
+            self.mime           = try? c.decodeIfPresent(String.self, forKey: .mime)
+            self.universalLink  = try? c.decodeIfPresent(String.self, forKey: .universalLink)
+
+            // Inline base64 body (new shape) takes precedence.
+            let body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? nil
+            if let body, !body.isEmpty, let data = Self.decodeBase64(body) {
+                let name = (self.filename?.isEmpty == false)
+                    ? self.filename!
+                    : "eusoticket-\(self.ticketNumber ?? self.bolNumber ?? UUID().uuidString).pdf"
+                let safe = (name as NSString).lastPathComponent
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(safe)
+                // Best-effort write; if it fails we fall through to the
+                // legacy/server fields rather than throwing the whole decode.
+                if (try? data.write(to: url, options: .atomic)) != nil {
+                    self.localFileURL = url
+                    self.documentUrl = url.absoluteString   // file://…
+                    self.success = true
+                    return
+                }
+            }
+
+            // Legacy path-reference shape (or write failure fallthrough).
+            self.localFileURL = nil
+            let legacyURL = (try? c.decodeIfPresent(String.self, forKey: .documentUrl)) ?? nil
+            self.documentUrl = legacyURL ?? ""
+            let legacySuccess = (try? c.decodeIfPresent(Bool.self, forKey: .success)) ?? nil
+            // Honest success: explicit server flag if present, else "do we
+            // have any usable document reference at all?".
+            self.success = legacySuccess ?? !self.documentUrl.isEmpty
+        }
+
+        /// Decode standard OR base64url, padded or not.
+        private static func decodeBase64(_ s: String) -> Data? {
+            if let d = Data(base64Encoded: s) { return d }
+            var t = s.replacingOccurrences(of: "-", with: "+")
+                     .replacingOccurrences(of: "_", with: "/")
+            let pad = t.count % 4
+            if pad != 0 { t += String(repeating: "=", count: 4 - pad) }
+            return Data(base64Encoded: t)
+        }
     }
 
     struct StatusUpdated: Decodable {
@@ -20095,12 +21431,19 @@ struct EusoTicketAPI {
 
     // MARK: PDF generation
 
-    /// `eusoTicket.generateRunTicketPDF` — server returns a relative
-    /// path under `/documents/run-tickets/`; iOS resolves it against
-    /// the API origin like other document URLs.
+    /// `eusoTicket.generateRunTicketPDF` — the merged server renders a REAL
+    /// PDF and returns it inline (`{ filename, mime, body: <base64>,
+    /// universalLink }`); `PDFGenerated` materializes it to a `file://` URL.
+    ///
+    /// TRANSPORT: this proc is a tRPC `.query` on the server (eusoTicket.ts),
+    /// so it MUST be invoked via GET. The previous build called it via
+    /// `api.mutation` (POST), which tRPC rejects for a query procedure —
+    /// part of why 106 "couldn't open the run ticket". Routed through
+    /// `api.query` now. (BOL generation below stays a mutation — it IS a
+    /// `.mutation` on the server.)
     func generateRunTicketPDF(ticketNumber: String) async throws -> PDFGenerated {
         struct Input: Encodable { let ticketNumber: String }
-        return try await api.mutation(
+        return try await api.query(
             "eusoTicket.generateRunTicketPDF",
             input: Input(ticketNumber: ticketNumber)
         )
@@ -24622,6 +25965,129 @@ struct RailShipmentsAPI {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// MARK: - RailShipments · carload-native yard reads (additive, isolated)
+// ════════════════════════════════════════════════════════════════════════
+//
+// Wraps two real `railShipmentsRouter` procs
+// (frontend/server/routers/railShipments.ts), the carload-native yard
+// surfaces on the Rail Engineer screens (628 Yard Map · 600 Ramp Ops):
+//
+//   getRailYards({ state?, yardType?, hasIntermodal?, limit? })
+//     → [ rail_yards row ]  (railShipments.ts:1207) — the active rail-yard
+//       catalog. Each row carries the REAL id / name / city / state /
+//       coordinates{lat,lng} / yardType / totalTracks / capacity the
+//       carload-native surfaces key off. Returns [] on no-db.
+//
+//   getYardTrackOccupancy({ yardId })
+//     → { yardId, yardName?, totalTracks, capacity, utilizationPct,
+//         tracks:[{ trackNumber, cars:[{id,carNumber,carType,status}],
+//         carCount }], unassigned:[…] }  (railShipments.ts:977) — the real
+//       track layout: track rows derived from rail_yards.totalTracks with the
+//       REAL railcars currently at the yard distributed by trackNumber; a car
+//       whose trackNumber is out of range falls into `unassigned`.
+//
+// ZERO-FABRICATION contract, decoded 1:1:
+//   • utilizationPct is `Double?` — the server emits NULL when capacity is
+//     unknown (capacity <= 0). Views render "—", never a fabricated %.
+//   • The proc has TWO honest-empty return paths (no-db / yard-not-found)
+//     that emit only `{ yardId, tracks:[], unassigned:[], note }` — WITHOUT
+//     yardName / totalTracks / capacity. So those three are decoded as
+//     optional here to stay lossless across every return path; the success
+//     path always carries totalTracks / capacity as real numbers (0 when the
+//     yard row leaves them null). `tracks` / `unassigned` are present in
+//     every path (as []), so they decode as non-optional arrays.
+
+/// One occupant railcar on a track (or in the unassigned lane). Server slim
+/// projection: `{ id, carNumber, carType, status }` — `carNumber` is the
+/// railcar's `railcarNumber`, the rest are the railcar row's own columns.
+/// Only `id` is guaranteed non-null.
+struct YardCar: Decodable, Identifiable, Hashable {
+    let id: Int
+    let carNumber: String?
+    let carType: String?
+    let status: String?
+}
+
+/// One track row: its 1-based number, the cars spotted on it, and the count.
+/// `carCount == cars.count` server-side; kept as the server's own field.
+struct YardTrack: Decodable, Identifiable, Hashable {
+    var id: Int { trackNumber }
+    let trackNumber: Int
+    let cars: [YardCar]
+    let carCount: Int
+}
+
+/// `railShipments.getYardTrackOccupancy` envelope. See the section header for
+/// why the yard-level numbers are optional (honest-empty paths omit them).
+struct YardTrackOccupancy: Decodable {
+    let yardId: Int
+    let yardName: String?
+    let totalTracks: Int?
+    let capacity: Int?
+    let utilizationPct: Double?     // NULL when capacity unknown — render "—"
+    let tracks: [YardTrack]
+    let unassigned: [YardCar]
+}
+
+/// A rail-yard coordinate pin (rail_yards.coordinates JSON). Either component
+/// can be absent; views null-island-guard before mapping.
+struct RailYardCoordinates: Decodable, Hashable {
+    let lat: Double?
+    let lng: Double?
+}
+
+/// One `rail_yards` row from `railShipments.getRailYards`. Only the columns
+/// the carload-native yard surfaces read are decoded; the rest of the row
+/// (splcCode / createdAt / operatingHours / status / …) is ignored by the
+/// decoder. Named `…Row` to avoid the static `RailYard` catalog type in
+/// RailYardLookup.swift.
+struct RailYardRow: Decodable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let city: String?
+    let state: String?
+    let yardType: String?
+    let totalTracks: Int?
+    let capacity: Int?
+    let hasIntermodal: Bool?
+    let coordinates: RailYardCoordinates?
+}
+
+extension RailShipmentsAPI {
+    /// `railShipments.getRailYards` — the active rail-yard catalog the
+    /// carload-native yard surfaces select from. Every filter is optional; the
+    /// default (no filter) returns every active yard up to `limit`.
+    func getRailYards(
+        state: String? = nil,
+        yardType: String? = nil,
+        hasIntermodal: Bool? = nil,
+        limit: Int = 50
+    ) async throws -> [RailYardRow] {
+        struct Input: Encodable {
+            let state: String?
+            let yardType: String?
+            let hasIntermodal: Bool?
+            let limit: Int
+        }
+        return try await api.query(
+            "railShipments.getRailYards",
+            input: Input(state: state, yardType: yardType,
+                         hasIntermodal: hasIntermodal, limit: limit))
+    }
+
+    /// `railShipments.getYardTrackOccupancy` — the real per-track carload
+    /// layout for one yard (track rows + spotted cars + unassigned lane +
+    /// yard-level totals/utilization). Honest-empty envelope on no-db /
+    /// yard-not-found (empty tracks, nil yard-level numbers).
+    func getYardTrackOccupancy(yardId: Int) async throws -> YardTrackOccupancy {
+        struct Input: Encodable { let yardId: Int }
+        return try await api.query(
+            "railShipments.getYardTrackOccupancy",
+            input: Input(yardId: yardId))
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // MARK: - HotZones · dedicated heatmap accessor (additive, isolated)
 // ════════════════════════════════════════════════════════════════════════
 //
@@ -24695,12 +26161,11 @@ extension HotZonesAPI {
 //            carrier cannot bind freight.
 //   GATE 2 - Montgomery v. Caribe carrier-vetting (runCarrierVettingGate):
 //            insurance / authority / safety floors.
-// Both throw a tRPC FORBIDDEN with a human reason. The client's `perform()`
-// promotes FORBIDDEN -> `.unauthenticated` ("Authentication required."),
-// which would MISLEAD on a vetting block - so `acceptOffer` below translates
-// that into `TruckPostingGateError` carrying the honest gate message the
-// board surfaces. Every other proc bubbles the server's own human message
-// through `EusoTripAPIError`.
+// Both throw a tRPC FORBIDDEN with a human reason. The shared `perform()`
+// keeps 401 and 403 distinct, and `acceptOffer` below still translates gate
+// failures into `TruckPostingGateError` so the board carries the honest gate
+// message on every branch. Every other proc bubbles the server's own human
+// message through `EusoTripAPIError`.
 
 /// Surfaced when the server BLOCKS a one-tap accept at one of the two
 /// verification gates (identity-at-booking or carrier-vetting). Carries the
@@ -24954,10 +26419,9 @@ struct TruckPostingAPI {
 
     /// `truckPosting.acceptOffer` - ONE-TAP accept. The server runs BOTH
     /// verification gates (identity-at-booking + Montgomery carrier-vetting)
-    /// before booking. A gate BLOCK arrives as a FORBIDDEN, which the client
-    /// promotes to `.unauthenticated`; we translate that here into
-    /// `TruckPostingGateError` so the board can surface the honest gate reason
-    /// instead of a generic "Authentication required." Other failures bubble
+    /// before booking. A gate BLOCK arrives as a FORBIDDEN; we translate that
+    /// here into `TruckPostingGateError` so the board can surface the honest
+    /// gate reason instead of a generic auth remedy. Other failures bubble
     /// their server message verbatim.
     func acceptOffer(
         offerId: Int,
@@ -24976,11 +26440,11 @@ struct TruckPostingAPI {
         } catch let e as EusoTripAPIError {
             switch e {
             case .unauthenticated:
-                // Could be a true auth lapse OR a gate FORBIDDEN - both land
-                // here. Surface honestly as a verification block; the human
-                // re-auths or fixes vetting, then retries.
                 throw TruckPostingGateError.blocked(
-                    message: "This load couldn't be accepted: a verification gate blocked it. Confirm your identity is verified and your carrier authority / insurance meet the load's requirements, then try again.")
+                    message: "Your session ended before the offer could be accepted. Sign in again, then retry the acceptance.")
+            case .forbidden(let message):
+                throw TruckPostingGateError.blocked(
+                    message: "This load couldn't be accepted: \(message)")
             case .trpcError(let m):
                 // Server gates that surface as a non-promoted tRPC error keep
                 // their verbatim human reason.

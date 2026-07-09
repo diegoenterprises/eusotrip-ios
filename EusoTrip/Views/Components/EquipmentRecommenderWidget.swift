@@ -333,8 +333,10 @@ struct EquipmentRecommenderWidget: View {
 
     @ViewBuilder
     private func pickRow(_ opt: EquipmentOption, isTop: Bool) -> some View {
+        let normalizedKey = Self.normalizedTrailerKey(opt.trailerKey)
+        let selected = normalizedKey == Self.normalizedTrailerKey(currentSelection)
         Button {
-            onApply(opt.trailerKey)
+            onApply(normalizedKey)
         } label: {
             HStack(spacing: 10) {
                 ZStack {
@@ -349,7 +351,7 @@ struct EquipmentRecommenderWidget: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(prettyTrailerKey(opt.trailerKey))
+                        Text(prettyTrailerKey(normalizedKey))
                             .font(.footnote.weight(.semibold))
                             .foregroundStyle(.primary)
                         if opt.availableInFleet > 0 {
@@ -371,7 +373,7 @@ struct EquipmentRecommenderWidget: View {
                         .lineLimit(2)
                 }
                 Spacer()
-                if opt.trailerKey == currentSelection {
+                if selected {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(Color.accentColor)
                 }
@@ -379,14 +381,14 @@ struct EquipmentRecommenderWidget: View {
             .padding(10)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(opt.trailerKey == currentSelection
+                    .fill(selected
                           ? Color.accentColor.opacity(0.08)
                           : Color.clear)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .strokeBorder(
-                        opt.trailerKey == currentSelection
+                        selected
                             ? Color.accentColor.opacity(0.5)
                             : Color.primary.opacity(0.06),
                         lineWidth: 0.5
@@ -397,7 +399,12 @@ struct EquipmentRecommenderWidget: View {
     }
 
     private func prettyTrailerKey(_ raw: String) -> String {
-        raw.split(separator: "_").map { $0.capitalized }.joined(separator: " ")
+        switch raw {
+        case "tanker_petroleum": return "Tanker Petroleum"
+        case "vessel_roro": return "Vessel RoRo"
+        default: break
+        }
+        return raw.split(separator: "_").map { $0.capitalized }.joined(separator: " ")
     }
 
     private var prettyVertical: String {
@@ -427,7 +434,7 @@ struct EquipmentRecommenderWidget: View {
 
     private static let truckTrailerKeys: Set<String> = [
         "dry_van", "reefer", "flatbed", "step_deck", "conestoga", "container",
-        "power_only", "lowboy", "hot_shot", "tanker_petro", "tanker_hazmat",
+        "power_only", "lowboy", "hot_shot", "tanker_petroleum", "tanker_hazmat",
         "tanker_liquid", "tanker_gas", "oversized"
     ]
     private static let railTrailerKeys: Set<String> = [
@@ -439,7 +446,7 @@ struct EquipmentRecommenderWidget: View {
     private static let vesselTrailerKeys: Set<String> = [
         "vessel_container", "vessel_bulk", "vessel_tanker",
         "vessel_iso_tank", "vessel_lng", "vessel_reefer_container",
-        "vessel_ro_ro"
+        "vessel_roro"
     ]
 
     /// Equipment that's legally + operationally able to carry
@@ -448,10 +455,28 @@ struct EquipmentRecommenderWidget: View {
     /// must never surface that. Tankers / ISO tanks / rail tank cars
     /// are the only valid carriers.
     private static let hazmatSafeKeys: Set<String> = [
-        "tanker_hazmat", "tanker_petro", "tanker_liquid", "tanker_gas",
+        "tanker_hazmat", "tanker_petroleum", "tanker_liquid", "tanker_gas",
         "rail_tank_gas", "rail_tank_liquid",
         "vessel_tanker", "vessel_iso_tank", "vessel_lng"
     ]
+
+    private static func normalizedTrailerKey(_ raw: String) -> String {
+        let key = raw
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+        switch key {
+        case "tanker_petro", "tanker_petroleum", "petroleum_tanker":
+            return "tanker_petroleum"
+        case "vessel_ro_ro", "vessel_roro", "roro", "vessel_ro-ro":
+            return "vessel_roro"
+        case "iso_tank", "vessel_isotank":
+            return "vessel_iso_tank"
+        default:
+            return key
+        }
+    }
 
     private func isCargoHazmatLike(_ raw: String) -> Bool {
         let r = raw.lowercased()
@@ -462,6 +487,7 @@ struct EquipmentRecommenderWidget: View {
     }
 
     private func isOptionCompatible(_ opt: EquipmentOption) -> Bool {
+        let trailerKey = Self.normalizedTrailerKey(opt.trailerKey)
         let allowedForMode: Set<String>
         switch vertical {
         case "TRUCK":  allowedForMode = Self.truckTrailerKeys
@@ -470,9 +496,9 @@ struct EquipmentRecommenderWidget: View {
         default:       allowedForMode = Self.truckTrailerKeys
             .union(Self.railTrailerKeys).union(Self.vesselTrailerKeys)
         }
-        guard allowedForMode.contains(opt.trailerKey) else { return false }
+        guard allowedForMode.contains(trailerKey) else { return false }
         if isCargoHazmatLike(cargoTypeRaw),
-           !Self.hazmatSafeKeys.contains(opt.trailerKey) {
+           !Self.hazmatSafeKeys.contains(trailerKey) {
             return false
         }
         return true

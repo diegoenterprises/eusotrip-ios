@@ -392,7 +392,7 @@ private struct RailDetentionByCustomerBody: View {
     private var contextStrip: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .firstTextBaseline) {
-                Text("ACTIVE DETENTIONS · getActiveDetentions")
+                Text("ACTIVE DETENTIONS · live")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -420,19 +420,37 @@ private struct RailDetentionByCustomerBody: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Bill selected", action: {})
+            RailSecondaryActionButton(
+                title: "Billing review",
+                sheetTitle: "Detention billing context",
+                lines: billingContextLines,
+                width: 180,
+                systemImage: "dollarsign.circle"
+            )
                 .frame(maxWidth: .infinity)
-            Button {} label: {
-                Text("By facility")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(palette.bgSecondary)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "By facility",
+                sheetTitle: "Customer detention by facility",
+                lines: facilityContextLines,
+                systemImage: "building.2"
+            )
+        }
+    }
+
+    private var billingContextLines: [String] {
+        [
+            "\(customerCount) customer\(customerCount == 1 ? "" : "s") · \(boxCount) active box\(boxCount == 1 ? "" : "es")",
+            "Open detention \(currency(totalDetention)) · paid \(currency(billedAmount))",
+            "\(overLFDCount) over LFD · carrier \(carrierLabel)"
+        ]
+    }
+
+    private var facilityContextLines: [String] {
+        customers.prefix(8).map { c in
+            let name = c.customerName ?? "Customer"
+            let events = c.eventCount ?? 0
+            let charges = currency(c.totalCharges ?? 0)
+            return "\(name) · \(events) event\(events == 1 ? "" : "s") · \(charges) · \(bucket(for: c).pillText)"
         }
     }
 

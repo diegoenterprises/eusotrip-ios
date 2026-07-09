@@ -143,10 +143,10 @@ private struct VesselClaimWorkflowBody: View {
                                    subtitle: "File a freight claim from a booking to track its lifecycle here.")
                 } else {
                     claimHero
-                    Text("CLAIM LIFECYCLE · getClaimWorkflow · STAGE \(stageOf)")
+                    Text("CLAIM LIFECYCLE · STAGE \(stageOf)")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     lifecycleCard
-                    Text("BLOCKING ITEMS · addClaimEvidence (STUB · needs picker)")
+                    Text("BLOCKING ITEMS · EVIDENCE NEEDED")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     blockingCard
                     esangCard
@@ -186,7 +186,7 @@ private struct VesselClaimWorkflowBody: View {
         RimCard808 {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("CLAIM TOTAL · getClaimById").font(.system(size: 9, weight: .heavy)).tracking(0.9).foregroundStyle(palette.textTertiary)
+                    Text("CLAIM TOTAL · live record").font(.system(size: 9, weight: .heavy)).tracking(0.9).foregroundStyle(palette.textTertiary)
                     // B18: the hero renders the REAL decoded amount — em-dash for 0/absent
                     // (server amount:0 stub is being fixed in a parallel lane).
                     Text(claimTotal).font(.system(size: 44, weight: .bold)).tracking(-1)

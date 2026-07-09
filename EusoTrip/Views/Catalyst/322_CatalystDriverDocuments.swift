@@ -289,7 +289,7 @@ private struct CatalystDriverDocuments: View {
                     .font(.system(size: 10, weight: .heavy))
                     .tracking(0.4)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Same companyId both sides · vault auto-syncs to driver self-service")
+                Text("Same company both sides · vault auto-syncs to driver self-service")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)

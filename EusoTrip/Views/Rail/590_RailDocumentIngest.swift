@@ -260,7 +260,7 @@ private struct RailDocumentIngestBody: View {
                     .font(.system(size: 22, weight: .bold))
                     .kerning(-0.3)
                     .foregroundColor(palette.textPrimary)
-                Text("extractDocumentData · parse ok")
+                Text("Extraction · parse ok")
                     .font(.system(size: 11).monospaced())
                     .kerning(0.4)
                     .foregroundColor(palette.textSecondary)
@@ -355,7 +355,7 @@ private struct RailDocumentIngestBody: View {
     private var extractedFieldsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("EXTRACTED FIELDS · classifyDocument")
+                Text("EXTRACTED FIELDS · auto-classified")
                     .font(.system(size: 9, weight: .black))
                     .kerning(0.6)
                     .foregroundColor(palette.textTertiary)
@@ -486,6 +486,20 @@ private struct RailDocumentIngestBody: View {
 
     // MARK: CTA pair
 
+    private var rawDocumentLines: [String] {
+        [
+            "Document: \(documentId)",
+            "Type: \(parsed?.documentType ?? "-")",
+            "Status: \(parsed?.parseStatus ?? "-")",
+            "Confidence: \(parsed?.confidence.map { String(format: "%.0f%%", $0 * 100) } ?? "-")",
+            "Fields: \(parsed?.fieldsNormalized ?? 0) of \(parsed?.totalFields ?? 0)",
+            "Missing: \(parsed?.missingField ?? "-")",
+            "Waybill: \(fields?.waybillNumber ?? "-")",
+            "Carrier: \(fields?.carrierName ?? "-")",
+            "Lane: \(fields?.lane ?? "-")"
+        ]
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
             Button(action: { isCreating = true; Task { await createShipment() } }) {
@@ -502,16 +516,13 @@ private struct RailDocumentIngestBody: View {
                 .background(RoundedRectangle(cornerRadius: 14).fill(LinearGradient.primary))
             }
 
-            Button("Raw doc") {}
-                .font(.system(size: 14, weight: .bold))
-                .foregroundColor(palette.textPrimary)
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .background(
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(palette.bgCard)
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.black.opacity(0.10), lineWidth: 1))
-                )
+            RailSecondaryActionButton(
+                title: "Raw doc",
+                sheetTitle: "Raw document extraction",
+                lines: rawDocumentLines,
+                fillWidth: true,
+                systemImage: "doc.viewfinder"
+            )
         }
     }
 

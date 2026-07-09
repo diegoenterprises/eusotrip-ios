@@ -362,17 +362,11 @@ struct MarketIntelligenceBody: View {
     /// carries no flip state of its own).
     @State private var flippedSymbols: Set<String> = []
 
-    /// Shared, explicit tile height for BOTH FlipTile faces (founder
-    /// 2026-06-19). The flip-BACK (commodityCardBack) is the TALLER face:
-    /// header + diagonal rule + 30pt price + 40pt sparkline + 3-row 2-col
-    /// stat grid + CTA pill ≈ 282pt. The old 232 CRAMMED it — the back
-    /// overflowed its frame (FlipTile faces weren't clipped) and bled into
-    /// the row below, so every tile read as overlapped by the one under it.
-    /// Lock BOTH faces to the back's TRUE content height so the FRONT *is*
-    /// the taller tapped-shape (founder ask), the back fits with zero
-    /// overflow, and the flip has no size jump. Both faces also clipShape to
-    /// the card rect, so content can never overflow a neighbour again.
-    private let tileHeight: CGFloat = 296
+    /// Default browse tiles stay compact. Only the tapped/flipped row expands
+    /// to the detail height, so customization does not trade a usable grid for
+    /// large invisible gutters.
+    private let frontTileHeight: CGFloat = 192
+    private let detailTileHeight: CGFloat = 296
 
     // marketPricing.getCommodities (canonical web feed)
     @State private var commodities: [CommodityRow] = []
@@ -402,6 +396,7 @@ struct MarketIntelligenceBody: View {
 
     @State private var loading = true
     @State private var loadError: String? = nil
+    private let commodityLoadTimeoutNanoseconds: UInt64 = 10_000_000_000
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -418,7 +413,7 @@ struct MarketIntelligenceBody: View {
                 }
                 if let q = quote { quoteCard(q) }
 
-                if loading && commodities.isEmpty && macro == nil && diesel.isEmpty {
+                if loading && commodities.isEmpty && macro == nil && diesel.isEmpty && loadError == nil {
                     LifecycleCard {
                         HStack(spacing: 8) {
                             ProgressView().tint(LinearGradient.diagonal).scaleEffect(0.8)
@@ -450,10 +445,10 @@ struct MarketIntelligenceBody: View {
                 // tile row (e.g. Ultra-Low Sulfur Diesel) fully clears the nav
                 // plate AND the lifted ESANG orb. A bare 96 left the last row
                 // behind the orb (founder 2026-06-18).
-                Color.clear.frame(height: Device.navHeight + Device.safeBottom + Space.s4)
+                Color.clear.frame(height: Device.navHeight + Device.safeBottom + Space.s8)
             }
             .padding(.horizontal, 14)
-            .padding(.top, 56)
+            .padding(.top, embedded ? Device.safeTop + Space.s4 : 56)
         }
         .task { await load() }
         .refreshable { await load() }
@@ -784,7 +779,7 @@ struct MarketIntelligenceBody: View {
 
     @ViewBuilder
     private func quoteStat(_ label: String, _ value: String?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
@@ -792,6 +787,7 @@ struct MarketIntelligenceBody: View {
                 .font(.system(size: 13, weight: .heavy)).monospacedDigit()
                 .foregroundStyle(value == nil ? palette.textTertiary : palette.textPrimary)
                 .lineLimit(1).minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -946,23 +942,27 @@ struct MarketIntelligenceBody: View {
         if watchlist.customized && visible.isEmpty {
             customizedEmptyCard
         } else {
-            // Founder 2026-06-19: tiles are now the taller 296pt flip-shape
-            // AND hard-clipped to their card rect, so they can no longer
-            // overflow/kiss a neighbour. With overflow impossible, the gap is
-            // tightened to 12pt ("bring them closer and properly spaced") for
-            // a denser, even rhythm on all sides.
-            let cols = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+            let cols = [
+                GridItem(.flexible(), spacing: 12, alignment: .top),
+                GridItem(.flexible(), spacing: 12, alignment: .top)
+            ]
             LazyVGrid(columns: cols, spacing: 12) {
                 ForEach(visible) { row in
                     let isFlipped = flippedSymbols.contains(row.symbol)
                     FlipTile(isFlipped: isFlipped) {
-                        commodityCard(row)
-                    } back: {
+                        // FRONT (founder 2026-07-07): the rich commodity detail
+                        // leads — matching the Hot Zones tile swap. Tapping flips
+                        // to the compact sparkline + price hero.
                         commodityCardBack(row)
+                    } back: {
+                        commodityCard(row)
                     }
-                    // Lock the whole tile to the shared taller height so the
-                    // 3D flip has no size jump and the grid rhythm is even.
-                    .frame(height: tileHeight)
+                    // Heights swap with the faces: the rich detail (now the
+                    // default/front) gets detailTileHeight; the compact hero
+                    // (now the flip-to) gets frontTileHeight.
+                    .frame(height: isFlipped ? frontTileHeight : detailTileHeight)
+                    .animation(.spring(response: 0.42, dampingFraction: 0.84), value: isFlipped)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     .contentShape(Rectangle())
                     .onTapGesture {
                         withAnimation(.spring(response: 0.5, dampingFraction: 0.78)) {
@@ -1059,6 +1059,7 @@ struct MarketIntelligenceBody: View {
                 .font(.system(size: 22, weight: .heavy, design: .rounded)).monospacedDigit()
                 .foregroundStyle(palette.textPrimary)
                 .lineLimit(1).minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 4) {
                 Image(systemName: positive ? "arrow.up.right" : "arrow.down.right")
                     .font(.system(size: 9, weight: .heavy))
@@ -1091,8 +1092,10 @@ struct MarketIntelligenceBody: View {
                 .fill(palette.bgCard)
         )
         .overlay(
+            // On-brand EusoTrip gradient outline (blue→magenta) instead of the
+            // flat faint hairline, so the commodity tiles read as branded cards.
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(palette.borderFaint)
+                .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
         )
         // Hard clip: front content can never bleed past the tile into a neighbour.
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -1203,16 +1206,18 @@ struct MarketIntelligenceBody: View {
         }
         .padding(10)
         // Identical outer frame to the FRONT face — fills the FlipTile's
-        // locked `tileHeight` so the flip has no size jump and the grid
-        // spacing stays even.
+        // expanded detail height and clips inside the card.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .fill(palette.bgCard)
         )
         .overlay(
+            // On-brand EusoTrip gradient outline — matches the compact face so
+            // both flip sides read as branded cards (the trend up/down still
+            // reads through the colored change % and sparkline).
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                .strokeBorder(trendColor.opacity(0.55), lineWidth: 1)
+                .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
         )
         // Hard clip: back content can never bleed past the tile into a neighbour.
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -1329,14 +1334,34 @@ struct MarketIntelligenceBody: View {
     }
 
     private func loadCommodities() async {
-        do {
-            let r: CommoditiesResp = try await EusoTripAPI.shared.query(
-                "marketPricing.getCommodities",
-                input: CommoditiesInput(
-                    category: category == "ALL" ? nil : category,
-                    search: search.isEmpty ? nil : search
-                )
-            )
+        let categoryArg = category == "ALL" ? nil : category
+        let searchArg = search.isEmpty ? nil : search
+        let timeout = commodityLoadTimeoutNanoseconds
+        let result: Result<CommoditiesResp, Error> = await withTaskGroup(
+            of: Result<CommoditiesResp, Error>.self
+        ) { group in
+            group.addTask {
+                do {
+                    let r: CommoditiesResp = try await EusoTripAPI.shared.query(
+                        "marketPricing.getCommodities",
+                        input: CommoditiesInput(category: categoryArg, search: searchArg)
+                    )
+                    return .success(r)
+                } catch {
+                    return .failure(error)
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: timeout)
+                return .failure(URLError(.timedOut))
+            }
+            let first = await group.next() ?? .failure(URLError(.unknown))
+            group.cancelAll()
+            return first
+        }
+
+        switch result {
+        case .success(let r):
             await MainActor.run {
                 commodities = r.commodities
                 categories = r.categories
@@ -1347,13 +1372,13 @@ struct MarketIntelligenceBody: View {
                 }
                 loadError = nil
             }
-        } catch {
+        case .failure(let error):
             // Founder bug 2026-05-07: silent catch hid the failure
             // so the screen sat on 'Loading live commodity feed…'
             // forever. Capture the error for the fallback card so
             // the user gets a real signal + retry action.
             await MainActor.run {
-                loadError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                loadError = error.eusoUserCopy
             }
         }
     }

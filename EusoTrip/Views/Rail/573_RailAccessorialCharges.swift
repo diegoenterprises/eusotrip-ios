@@ -414,17 +414,27 @@ private struct RailAccessorialChargesBody: View {
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
             CTAButton(title: "Apply accessorial", action: { Task { await applyAll() } }, leadingIcon: "plus.circle", isLoading: isApplyingAll)
-            Button {} label: {
-                Text("Send to billing")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Billing review",
+                sheetTitle: "Accessorial billing context",
+                lines: accessorialBillingLines,
+                systemImage: "dollarsign.circle"
+            )
         }
+    }
+
+    private var accessorialBillingLines: [String] {
+        var lines = [
+            "\(routeLabel) · \(billingStatusLabel)",
+            "Total \(heroTotalLabel) · lines \(lineCountLabel)",
+            "Billed MTD \(billedMtdLabel) · pending \(pendingLabel) · disputed \(disputedLabel)"
+        ]
+        lines.append(contentsOf: catalog.prefix(6).map { line in
+            let code = line.code ?? line.chargeType ?? "accessorial"
+            let amount = line.amountUsd.map { "$\(Int($0))" } ?? "-"
+            return "\(line.name ?? code) · \(code) · \(amount) · \(isLineApplied(line) ? "applied" : "open")"
+        })
+        return lines
     }
 
     // MARK: - Load / Actions

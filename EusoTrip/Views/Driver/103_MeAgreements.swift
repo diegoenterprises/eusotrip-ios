@@ -430,7 +430,7 @@ struct MeAgreements: View {
 
     private var footer: some View {
         VStack(spacing: Space.s1) {
-            Text("Every agreement here is encrypted at rest + signed with a Gradient-Ink SHA-256 hash on execution. Signatures are verifiable against the server copy.")
+            Text("Every agreement here is encrypted at rest + signed with a Gradient-Ink SHA-256 hash on execution. Signatures are verifiable against the secured copy.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
@@ -514,7 +514,7 @@ private struct SignSheet: View {
                     Button("Clear") { strokes = [[]] }
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Text("Gradient-Ink signature • SHA-256 server hash")
+                    Text("Gradient-Ink signature • SHA-256 secure hash")
                         .font(EType.micro)
                         .foregroundStyle(.secondary)
                 }

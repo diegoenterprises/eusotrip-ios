@@ -60,6 +60,87 @@ final class EusoTripSession: ObservableObject {
 
     init(api: EusoTripAPI = .shared) {
         self.api = api
+        // Install the auto re-auth hook used by EusoTripAPI.perform when any
+        // tRPC call returns 401/403. This is the high-leverage fix for the
+        // build-751 "Authentication required" feedback (075 Safety Score,
+        // 082 Violations, and every sibling screen): instead of surfacing a
+        // hard auth wall the moment the in-memory cookie jar drops the
+        // session cookie, the API layer transparently re-hydrates the
+        // persisted credential and retries the request once. `refreshSession`
+        // owns the keychain + cookie-rehydrate path, so it lives here.
+        //
+        // [weak self]: the API singleton outlives any one session object;
+        // a strong capture would leak the session. A nil self (session torn
+        // down) reports "not refreshed" so the API falls through to its
+        // honest `.unauthenticated`.
+        api.sessionRefreshHandler = { [weak self] in
+            await self?.refreshSession() ?? false
+        }
+    }
+
+    // MARK: - Auto re-auth (the 401/403 refresh path)
+    //
+    // Called by `EusoTripAPI.perform` (single-flight, coalesced there) when a
+    // request 401/403s. EusoTrip has no dedicated refresh-token grant — the
+    // PRIMARY credential is the server-issued `app_session_id` cookie,
+    // persisted in the Keychain. The in-memory `HTTPCookieStorage.shared`
+    // jar can silently drop that cookie out from under a long-lived session
+    // (iOS memory reclaim after a long background, App Service cold warm-up),
+    // and that dropped cookie is exactly what makes a previously-working
+    // screen start returning "Authentication required". So the refresh is:
+    //
+    //   1. Re-hydrate the persisted auth cookies back into the shared jar.
+    //   2. Re-validate with `auth.me` (this carries the restored cookie +
+    //      the in-memory bearer).
+    //
+    // A successful `auth.me` proves the session is alive — the credential was
+    // only "lost in the jar", so the original request's retry will now carry
+    // the restored cookie and succeed. We refresh the cached profile +
+    // re-snapshot any rotated cookie while we're here.
+    //
+    // Returns true ONLY when the session is confirmed live. On a genuine
+    // UNAUTHORIZED we return false (the API surfaces the honest auth error)
+    // and bump the same 2-strike counter `boot()`/`revalidate()` use, so a
+    // truly dead session still tears down on the second confirmed 401 rather
+    // than leaving the app wedged. NEVER calls back into `perform`'s retry
+    // path — `auth.me` here runs with the refresh gate already closed (the
+    // API coalesces and won't re-enter while a refresh is in flight).
+    func refreshSession() async -> Bool {
+        // Nothing to refresh if we were never signed in / have no token.
+        guard api.authToken != nil else { return false }
+
+        // Re-hydrate the persisted auth cookie into the jar BEFORE re-validating.
+        if let cookieJSON = keychain.load(key: kAuthCookies) {
+            api.restoreAuthCookiesFromJSON(cookieJSON)
+        }
+
+        do {
+            let me = try await api.auth.me()
+            self.user = me
+            saveCachedUser(me)
+            keychain.delete(key: kUnauthStrikes)        // confirmed live → reset
+            if let snapshot = api.authCookieSnapshotJSON() {
+                keychain.save(key: kAuthCookies, value: snapshot)
+            }
+            return true
+        } catch EusoTripAPIError.unauthenticated {
+            // Genuinely unauthorized. Apply the SAME 2-strike absorption the
+            // boot()/revalidate() paths use so a one-off blip doesn't sign the
+            // user out, but a real dead session does on the second strike.
+            let prior = Int(keychain.load(key: kUnauthStrikes) ?? "0") ?? 0
+            let strikes = prior + 1
+            if strikes >= 2 {
+                await signOut()
+            } else {
+                keychain.save(key: kUnauthStrikes, value: String(strikes))
+            }
+            return false
+        } catch {
+            // Transient (offline / 5xx / decode blip) — we can't confirm the
+            // session is dead, so don't retry the original (the caller surfaces
+            // its own transient error) and don't tear the session down.
+            return false
+        }
     }
 
     // MARK: Boot — call once from the app root
@@ -412,18 +493,13 @@ final class EusoTripSession: ObservableObject {
         api.authToken = demoToken
         keychain.save(key: kAuthToken, value: demoToken)
         saveCachedUser(demoUser)
-        // Mirror the demo session to the paired Apple Watch with a
-        // synthetic token — otherwise Pulse stays stuck on "Open EusoTrip
-        // on iPhone to pair" in TestFlight / simulator demo mode. The
-        // watch side only gates its UI on `token != nil`, so any
-        // non-empty marker is enough to flip past the pairing orb into
-        // the authed home.
-        WatchAuthBridge.shared.push(
-            token: demoToken,
-            userId: demoUser.id,
-            userName: demoUser.name,
-            role: demoUser.role
-        )
+        // Do NOT mirror the synthetic demo token to the paired Apple
+        // Watch. The wrist gates on `token != nil` and then attaches
+        // `Bearer demo-…` to REAL production HTTPS calls — every query
+        // 401s while the orb claims signed-in, which reads as "the
+        // watch is broken." A demo phone session sends an explicit
+        // clear so the wrist stays honestly on its pairing state.
+        WatchAuthBridge.shared.clear()
     }
 }
 

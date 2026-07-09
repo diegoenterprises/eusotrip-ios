@@ -23,12 +23,10 @@
 //      (DemurrageChargeEngine.ts:18). Wired through the generic tRPC client with EmptyInput().
 //    row Approve -> demurrageCharges.approveCharge (EXISTS demurrageCharges.ts).
 //    row Dispute -> demurrageCharges.disputeCharge (EXISTS demurrageCharges.ts).
-//    batch -> demurrageCharges.batchApprove (EXISTS demurrageCharges.ts); then invoiceDetentionCharge
-//      posts the batch to settlement.
+//    batch -> demurrageCharges.batchApprove (EXISTS demurrageCharges.ts) persists audit-backed approvals.
 //    ZERO-FALLBACK: state is em-dash/zero/empty-initialized and UNCONDITIONALLY overwritten from the
 //    live generateCharges response — an empty queue renders the honest empty state, never a seeded
-//    composition. The write verbs are honestly flagged STUB rather than faked complete (no
-//    charge.status write / blockchainAuditTrail / WS broadcast persisted yet).
+//    composition. Write verbs hit the canonical demurrageCharges persistence path.
 //
 
 import SwiftUI
@@ -39,13 +37,14 @@ private enum ChargeKind815 { case demurrage, detention, chassis
 }
 
 private struct PendingCharge815: Identifiable {
-    let id = UUID()
+    let id: String
     let kind: ChargeKind815
     let title: String
     let sub: String
     let amount: String
     let amountValue: Double    // real finalCharge — totals are summed from this, never re-parsed strings
     let aged: String
+    let status: String
     var selected: Bool
 }
 
@@ -81,6 +80,10 @@ private struct VesselDemurrageChargeApprovalBody: View {
     @State private var terminalChip: String? = nil   // real terminalName when the queue carries one
 
     @State private var charges: [PendingCharge815] = []
+    @State private var actionMessage: String? = nil
+    @State private var actionError: String? = nil
+    @State private var inFlightChargeId: String? = nil
+    @State private var batchInFlight = false
 
     private var selectedCount: Int { charges.filter { $0.selected }.count }
     private var selectedTotal: Int {
@@ -108,6 +111,7 @@ private struct VesselDemurrageChargeApprovalBody: View {
                                    title: "No charges pending approval",
                                    subtitle: "Stopped financial timers with billable minutes generate the approval queue — nothing is waiting on you.")
                 } else {
+                    actionBanners
                     exposureHero
                     HStack {
                         Text("PENDING QUEUE · \(totalN)").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
@@ -130,6 +134,27 @@ private struct VesselDemurrageChargeApprovalBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+    }
+
+    @ViewBuilder private var actionBanners: some View {
+        if let actionMessage {
+            LifecycleCard {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.seal.fill").foregroundStyle(Brand.success)
+                    Text(actionMessage).font(EType.caption).foregroundStyle(palette.textSecondary)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        if let actionError {
+            LifecycleCard(accentDanger: true) {
+                HStack(spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Brand.danger)
+                    Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
     }
 
     private var header: some View {
@@ -195,12 +220,24 @@ private struct VesselDemurrageChargeApprovalBody: View {
                     }
                 }
                 HStack(spacing: 8) {
-                    Text("Approve").font(.system(size: 11, weight: .bold)).foregroundStyle(Brand.success)
-                        .frame(width: 96, height: 26).background(Capsule().fill(Brand.success.opacity(0.12)))
-                        .onTapGesture { Task { await approve(idx) } }
-                    Text("Dispute").font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textSecondary)
-                        .frame(width: 96, height: 26).overlay(Capsule().stroke(palette.borderFaint, lineWidth: 1))
-                        .onTapGesture { Task { await dispute(idx) } }
+                    Button { Task { await approve(idx) } } label: {
+                        Text(inFlightChargeId == c.id ? "Approving…" : "Approve")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Brand.success)
+                            .frame(width: 96, height: 26)
+                            .background(Capsule().fill(Brand.success.opacity(0.12)))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(inFlightChargeId != nil || batchInFlight)
+                    Button { Task { await dispute(idx) } } label: {
+                        Text(inFlightChargeId == c.id ? "Filing…" : "Dispute")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(palette.textSecondary)
+                            .frame(width: 96, height: 26)
+                            .overlay(Capsule().stroke(palette.borderFaint, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(inFlightChargeId != nil || batchInFlight)
                     Spacer()
                 }
             }
@@ -225,6 +262,7 @@ private struct VesselDemurrageChargeApprovalBody: View {
         loading = true; loadError = nil
         do {
             struct Charge: Decodable {
+                let id: String?
                 let chargeType: String?; let terminalName: String?; let loadReference: String?
                 let finalCharge: Double?; let status: String?; let generatedAt: String?
             }
@@ -235,11 +273,12 @@ private struct VesselDemurrageChargeApprovalBody: View {
             // the honest empty state renders; nothing seeded survives a load.
             let cs = r.charges ?? []
             totalN = cs.count
-            readyN = cs.filter { ($0.status ?? "") != "disputed" }.count
+            readyN = cs.filter { ["pending", "adjusted", ""].contains(($0.status ?? "").lowercased()) }.count
             let total = cs.reduce(0.0) { $0 + ($1.finalCharge ?? 0) }
             pending = "$\(Int(total))"
             terminalChip = cs.compactMap { $0.terminalName }.first(where: { !$0.isEmpty })
-            charges = cs.map { c in
+            charges = cs.compactMap { c in
+                guard let chargeId = c.id, !chargeId.isEmpty else { return nil }
                 let kind: ChargeKind815 = (c.chargeType ?? "").uppercased().contains("DETENTION") ? .detention
                     : ((c.chargeType ?? "").lowercased().contains("chassis") ? .chassis : .demurrage)
                 let title: String = {
@@ -247,14 +286,17 @@ private struct VesselDemurrageChargeApprovalBody: View {
                     if let t = c.terminalName, !t.isEmpty { return "\(type) · \(t)" }
                     return type
                 }()
+                let status = (c.status ?? "pending").lowercased()
                 return PendingCharge815(
+                    id: chargeId,
                     kind: kind,
                     title: title,
                     sub: c.loadReference ?? "—",
                     amount: "$\(Int(c.finalCharge ?? 0))",
                     amountValue: c.finalCharge ?? 0,
                     aged: agedLabel(c.generatedAt),
-                    selected: (c.status ?? "pending") == "pending")
+                    status: status,
+                    selected: status == "pending" || status == "adjusted" || status.isEmpty)
             }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
@@ -274,9 +316,64 @@ private struct VesselDemurrageChargeApprovalBody: View {
         return "\(days)d aged"
     }
 
-    private func approve(_ idx: Int) async { /* demurrageCharges.approveCharge (EXISTS) — STUB persistence, surfaced to the-oath. */ await load() }
-    private func dispute(_ idx: Int) async { /* demurrageCharges.disputeCharge (EXISTS) — STUB persistence. */ await load() }
-    private func batchApprove() async { /* demurrageCharges.batchApprove (EXISTS) — STUB persistence; then invoiceDetentionCharge. */ await load() }
+    private func approve(_ idx: Int) async {
+        guard charges.indices.contains(idx) else { return }
+        let charge = charges[idx]
+        actionMessage = nil; actionError = nil; inFlightChargeId = charge.id
+        defer { inFlightChargeId = nil }
+        do {
+            let out: ChargeDecisionResponse815 = try await EusoTripAPI.shared.mutation(
+                "demurrageCharges.approveCharge",
+                input: ChargeIdInput815(chargeId: charge.id)
+            )
+            actionMessage = "Approved \(charge.sub) · event \(out.eventId.map(String.init) ?? "recorded")"
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func dispute(_ idx: Int) async {
+        guard charges.indices.contains(idx) else { return }
+        let charge = charges[idx]
+        actionMessage = nil; actionError = nil; inFlightChargeId = charge.id
+        defer { inFlightChargeId = nil }
+        do {
+            let out: ChargeDecisionResponse815 = try await EusoTripAPI.shared.mutation(
+                "demurrageCharges.disputeCharge",
+                input: DisputeChargeInput815(chargeId: charge.id, reason: "Disputed from vessel operator charge approval queue.")
+            )
+            actionMessage = "Dispute filed for \(charge.sub) · event \(out.eventId.map(String.init) ?? "recorded")"
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    private func batchApprove() async {
+        let selected = charges.filter { $0.selected }.map(\.id)
+        guard !selected.isEmpty else {
+            actionMessage = nil
+            actionError = "Select at least one charge before approving a batch."
+            return
+        }
+        actionMessage = nil; actionError = nil; batchInFlight = true
+        defer { batchInFlight = false }
+        do {
+            let out: BatchApproveResponse815 = try await EusoTripAPI.shared.mutation(
+                "demurrageCharges.batchApprove",
+                input: BatchApproveInput815(chargeIds: selected)
+            )
+            if let failed = out.failed, !failed.isEmpty {
+                actionMessage = "Approved \(out.approved ?? 0); \(failed.count) need review."
+            } else {
+                actionMessage = "Approved \(out.approved ?? selected.count) demurrage charge\(selected.count == 1 ? "" : "s")."
+            }
+            await load()
+        } catch {
+            actionError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+    }
 }
 
 // MARK: - File-scoped bespoke chrome (self-contained — preserves the 815 EXPOSURE-hero look)
@@ -340,6 +437,16 @@ private struct SecondaryButton815: View {
 }
 
 private struct EmptyInput: Encodable {}
+private struct ChargeIdInput815: Encodable { let chargeId: String }
+private struct DisputeChargeInput815: Encodable { let chargeId: String; let reason: String }
+private struct BatchApproveInput815: Encodable { let chargeIds: [String] }
+private struct ChargeDecisionResponse815: Decodable { let success: Bool?; let status: String?; let eventId: Int? }
+private struct BatchApproveResponse815: Decodable {
+    struct Failure: Decodable { let chargeId: String?; let message: String? }
+    let success: Bool?
+    let approved: Int?
+    let failed: [Failure]?
+}
 
 #Preview("815 · Demurrage Charge Approval · Night") { VesselDemurrageChargeApprovalScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
 #Preview("815 · Demurrage Charge Approval · Light") { VesselDemurrageChargeApprovalScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }

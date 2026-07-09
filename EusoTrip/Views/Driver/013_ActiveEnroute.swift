@@ -122,12 +122,24 @@ struct ActiveEnroute: View {
     /// radius is never invented).
     @State private var receiverFence: TrackingGeofencesAPI.ResolvedFence?
 
-    // NOTE: turn-by-turn maneuver narration ("Take Exit 228 · …") has
-    // NO live source — `HereRouteModels.HereRouteSection` does not
-    // decode the `actions` array, so the next-step instruction text is
-    // not available on the wire. The maneuver card therefore renders
-    // the honest remaining-distance heading + the pickup road/city
-    // from the load, never a fabricated exit string.
+    // L13-3 turn-by-turn: `HereRouteSection` now decodes the `actions`
+    // array (HERE-authored maneuvers), and `TurnByTurnNavigator` projects
+    // each live GPS fix onto the route to drive the live turn banner + voice
+    // prompts + deviation reroute. Gated behind the `tbtEnabled` remote flag
+    // (default false for the first TestFlight); when the flag is OFF the
+    // facade `topManeuverCard` renders the honest remaining-distance heading
+    // + pickup road/city from the load, never a fabricated exit string.
+    @StateObject private var navigator = TurnByTurnNavigator()
+    @AppStorage("tbtEnabled") private var tbtEnabled = false
+    @State private var showManeuverSteps = false
+
+    // L08-9 · Astra hazmat placard scan. Presented as a SHEET (never a nav
+    // push) from a hazmat-gated CTA in the bottom sheet. `lastPlacardUN`
+    // records the UN of the most recent successful scan so the CTA can
+    // confirm it back to the driver — a real local effect off the verified
+    // `PlacardScanResponse`, never fabricated.
+    @State private var showPlacardScan = false
+    @State private var lastPlacardUN: String? = nil
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -135,9 +147,15 @@ struct ActiveEnroute: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                topManeuverCard
-                    .padding(.horizontal, Space.s3)
-                    .padding(.top, Space.s2)
+                if tbtEnabled, navigator.currentManeuver != nil {
+                    liveTurnBanner
+                        .padding(.horizontal, Space.s3)
+                        .padding(.top, Space.s2)
+                } else {
+                    topManeuverCard
+                        .padding(.horizontal, Space.s3)
+                        .padding(.top, Space.s2)
+                }
                 weatherRerouteBanner
                     .padding(.horizontal, Space.s3)
                     .padding(.top, Space.s2)
@@ -150,6 +168,20 @@ struct ActiveEnroute: View {
         .screenTileRoot()
         .task { await hydrateLiveTrip() }
         .task { await refreshHosReachability() }
+        // L13-3 live fix feed — drives maneuver advance + voice + deviation.
+        .onReceive(DriverLocationResolver.shared.$lastLocation.compactMap { $0 }) { fix in
+            guard tbtEnabled else { return }
+            navigator.ingest(fix: fix)
+        }
+        // Deviation → re-request a truck route from the current fix, then
+        // restart the navigator on the new geometry (which clears isRerouting).
+        .onChange(of: navigator.isRerouting) { _, rerouting in
+            guard tbtEnabled, rerouting,
+                  let load = activeLoad,
+                  let fix = DriverLocationResolver.shared.lastLocation else { return }
+            Task { await rerouteFrom(fix, load: load) }
+        }
+        .sheet(isPresented: $showManeuverSteps) { maneuverStepsSheet }
     }
 
     // MARK: - Product + vertical awareness
@@ -248,8 +280,42 @@ struct ActiveEnroute: View {
             }
             let coords = HereRoutingClient.polyline(for: section)
             routePolyline = coords.count >= 2 ? coords.map { HereLatLng($0) } : []
+            // L13-3: seed turn-by-turn from the same resolved section (decodes
+            // the polyline + forwards HERE `actions`). No-op cost when the flag
+            // is off — the banner only mounts when tbtEnabled && a maneuver exists.
+            if tbtEnabled { navigator.start(section: section) }
         } catch {
             routePolyline = []
+        }
+    }
+
+    /// L13-3 deviation reroute — the driver left the corridor (nav raised
+    /// `isRerouting`). Re-request a truck-aware route from the live fix to the
+    /// active destination and restart the navigator on the new geometry, which
+    /// clears the rerouting state. On any failure we clear it so the banner
+    /// doesn't stick on "Rerouting…". Destination is delivery (post-pickup) or
+    /// pickup (pre-pickup) mirrored off the same coords the HUD already uses.
+    @MainActor
+    private func rerouteFrom(_ fix: CLLocation, load: Load) async {
+        let dest = load.deliveryLocation ?? load.pickupLocation
+        guard let d = dest, !(d.lat == 0 && d.lng == 0) else {
+            navigator.clearRerouting(); return
+        }
+        let stops = HereStops(
+            origin: fix.coordinate,
+            destination: CLLocationCoordinate2D(latitude: d.lat, longitude: d.lng)
+        )
+        let profile = TruckProfile.from(load: load)
+        do {
+            let resp = try await HereRoutingClient.shared.route(stops: stops, profile: profile)
+            guard let section = resp.routes.first?.sections.first else {
+                navigator.clearRerouting(); return
+            }
+            navigator.start(section: section)   // clears isRerouting
+            let coords = HereRoutingClient.polyline(for: section)
+            routePolyline = coords.count >= 2 ? coords.map { HereLatLng($0) } : routePolyline
+        } catch {
+            navigator.clearRerouting()
         }
     }
 
@@ -499,11 +565,18 @@ struct ActiveEnroute: View {
         let icon: String?
     }
 
+    /// True when the live load actually carries a hazmat class. Gates the
+    /// HAZMAT ROUTE LOCKED chip AND the placard-scan CTA (L08-9). No load /
+    /// non-hazmat load ⇒ no hazmat affordances (never fabricated).
+    private var isHazmatLoad: Bool {
+        (activeLoad?.hazmatClass ?? "").isEmpty == false
+    }
+
     private var chips: [EnrouteChip] {
         var out: [EnrouteChip] = []
         // HAZMAT chip — rendered only when the live load actually
         // carries a hazmat class. No load = no fabricated chip.
-        let isHazmat = (activeLoad?.hazmatClass ?? "").isEmpty == false
+        let isHazmat = isHazmatLoad
         if isHazmat {
             out.append(EnrouteChip(label: "HAZMAT ROUTE LOCKED", tint: Brand.info, icon: "lock.shield"))
         }
@@ -657,6 +730,116 @@ struct ActiveEnroute: View {
     }
 
     // MARK: - Top maneuver card
+
+    // MARK: - L13-3 live turn-by-turn banner
+    //
+    // Replaces the facade `topManeuverCard` while `tbtEnabled` is on and the
+    // navigator has a current maneuver. Bespoke chrome matching the card
+    // family: gradient glyph tile + counting-down distance + HERE-authored
+    // instruction + voice toggle + a steps pill that opens the full list sheet.
+    // Falls back to the facade whenever the flag is off or no maneuver is live.
+    @ViewBuilder private var liveTurnBanner: some View {
+        let m = navigator.currentManeuver
+        HStack(alignment: .center, spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .fill(LinearGradient.diagonal)
+                Image(systemName: navigator.isRerouting
+                      ? "arrow.triangle.2.circlepath"
+                      : (m?.directionGlyph ?? "arrow.up"))
+                    .font(.system(size: 24, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 60, height: 60)
+
+            VStack(alignment: .leading, spacing: 2) {
+                if navigator.isRerouting {
+                    Text("Rerouting…")
+                        .font(.system(size: 22, weight: .heavy, design: .rounded))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Finding a new truck-legal route")
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                } else {
+                    Text(tbtDistanceLabel(navigator.distanceToManeuverM))
+                        .font(.system(size: 26, weight: .heavy, design: .rounded))
+                        .foregroundStyle(palette.textPrimary)
+                    Text(m?.instruction ?? "")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Spacer(minLength: Space.s2)
+
+            VStack(spacing: Space.s2) {
+                Button { navigator.voiceEnabled.toggle() } label: {
+                    Image(systemName: navigator.voiceEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(navigator.voiceEnabled ? Brand.blue : palette.textTertiary)
+                        .frame(width: 38, height: 38)
+                        .background(Circle().fill(palette.bgPage.opacity(0.6)))
+                }
+                .accessibilityLabel(navigator.voiceEnabled ? "Mute voice guidance" : "Unmute voice guidance")
+                if navigator.maneuvers.count > 1 {
+                    Button { showManeuverSteps = true } label: {
+                        Text("\(navigator.maneuvers.count) steps")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                }
+            }
+        }
+        .padding(Space.s3)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(palette.bgCard.opacity(0.92))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                        .strokeBorder(palette.borderSoft, lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.25), radius: 18, y: 8)
+        )
+    }
+
+    /// Full maneuver list (the spec's `[Maneuver]` sheet) — instruction +
+    /// direction glyph + cumulative distance-from-start, all HERE-authored.
+    @ViewBuilder private var maneuverStepsSheet: some View {
+        NavigationStack {
+            List(navigator.maneuvers) { m in
+                HStack(spacing: Space.s3) {
+                    Image(systemName: m.directionGlyph)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(width: 28)
+                    Text(m.instruction)
+                        .font(EType.body)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer()
+                    Text(tbtDistanceLabel(m.metersFromRouteStart))
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .listRowBackground(palette.bgCard)
+            }
+            .scrollContentBackground(.hidden)
+            .background(palette.bgPage)
+            .navigationTitle("Turn-by-turn")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    /// Imperial distance label for the banner countdown / steps list. Rounds
+    /// sub-1000 ft to the nearest 50 ft; miles to one decimal above that.
+    private func tbtDistanceLabel(_ meters: Double) -> String {
+        guard meters.isFinite else { return "—" }
+        let feet = meters * 3.28084
+        if feet < 1000 { return "\(max(0, Int((feet / 50).rounded())) * 50) ft" }
+        return String(format: "%.1f mi", meters / 1609.344)
+    }
 
     private var topManeuverCard: some View {
         HStack(alignment: .top, spacing: Space.s3) {
@@ -886,6 +1069,34 @@ struct ActiveEnroute: View {
                 .disabled(lifecycle.inflightTransitionId != nil)
                 .accessibilityLabel("Continue route to pickup")
             }
+
+            // L08-9 · Hazmat placard scan — hazmat loads only. Canonical
+            // CTAButton (NO NavigationLink) that presents the already-built
+            // Astra `HazmatPlacardScanView` as a SHEET. Gated on the same
+            // `isHazmatLoad` as the HAZMAT ROUTE LOCKED chip, so a dry-van /
+            // reefer load never sees it. `onScanComplete` records the verified
+            // UN back into the CTA subtitle — a real local effect, not a stub.
+            if isHazmatLoad {
+                CTAButton(
+                    title: "Scan hazmat placard",
+                    action: { showPlacardScan = true },
+                    leadingIcon: "camera.viewfinder",
+                    subtitle: lastPlacardUN.map { "LAST SCAN · UN \($0)" }
+                )
+                .accessibilityLabel("Scan hazmat placard with camera")
+                .sheet(isPresented: $showPlacardScan) {
+                    NavigationStack {
+                        HazmatPlacardScanView(
+                            loadId: activeLoad.map { String($0.id) },
+                            onScanComplete: { resp in
+                                if let un = resp.ocr.unNumber ?? resp.unNumber, !un.isEmpty {
+                                    lastPlacardUN = un
+                                }
+                            }
+                        )
+                    }
+                }
+            }
         }
         .padding(Space.s4)
         .background(
@@ -1095,9 +1306,9 @@ struct ActiveEnrouteScreen: View {
 // MARK: - Weather hazard reroute banner (the symbiotic-weather loop)
 //
 // Closes the loop the weather program opened: calls hereMaps.weatherReroute
-// (real active Severe/Extreme NWS hazard polygons near the corridor → HERE
+// (live HERE Destination Weather alerts sampled along the corridor → HERE
 // avoid[areas] → a truck route AROUND them, with REAL baseline-vs-avoided
-// miles). Honest rendering — it shows ONLY real signal:
+// miles when HERE can produce a detour). Honest rendering shows ONLY real signal:
 //   • a reroute card when a detour actually avoids an ON-ROAD hazard,
 //   • an advisory when hazards are near the corridor but NOT on the road,
 //   • nothing at all when the road is clear.
@@ -1108,6 +1319,7 @@ struct WeatherRerouteBanner: View {
 
     @Environment(\.palette) private var palette
     @State private var result: HereMapsAPI.WeatherRerouteResult?
+    @State private var errorText: String?
     @State private var loaded = false
 
     var body: some View {
@@ -1125,12 +1337,23 @@ struct WeatherRerouteBanner: View {
                          footer: "None on your road — monitoring live")
                 }
                 // r.hazardCount == 0 → clear road → render nothing.
+            } else if let errorText {
+                card(icon: "wifi.exclamationmark", tint: Brand.warning,
+                     title: "Route weather unavailable",
+                     detail: errorText,
+                     footer: "Live monitor paused")
             }
         }
         .task {
             guard !loaded else { return }
             loaded = true
-            result = try? await EusoTripAPI.shared.hereMaps.weatherReroute(origin: origin, destination: destination)
+            do {
+                result = try await EusoTripAPI.shared.hereMaps.weatherReroute(origin: origin, destination: destination)
+                errorText = nil
+            } catch {
+                result = nil
+                errorText = weatherError(error)
+            }
         }
     }
 
@@ -1140,6 +1363,11 @@ struct WeatherRerouteBanner: View {
             return [h.event, h.severity].compactMap { $0 }.joined(separator: " · ")
         }
         return "Active hazard near the corridor"
+    }
+
+    private func weatherError(_ error: Error) -> String {
+        let message = error.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        return message.isEmpty ? "Couldn’t reach the live route-weather monitor." : message
     }
 
     private func card(icon: String, tint: Color, title: String, detail: String, footer: String) -> some View {

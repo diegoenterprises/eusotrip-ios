@@ -117,7 +117,7 @@ private struct VesselEtaPrediction770: Decodable {
 /// (wave / swell → .wave · gust / wind → .wind). `impactMin` is the signed minute
 /// contribution to the ETA delta.
 private struct SeaStateDriver770: Decodable, Identifiable {
-    var id: String { "\(kind)-\(label)" }
+    var id: String { "\(kind)-\(label ?? "")" }
     let kind: String          // wave | swell | gust | wind
     let label: String?
     let value: Double?
@@ -141,6 +141,71 @@ private struct ForecastDriver770: Identifiable {
     let color: Color
 }
 
+private struct TimelineInput770: Encodable {
+    let shipmentId: Int
+    let limit: Int
+}
+
+private struct TimelineResponse770: Decodable {
+    let events: [TimelineEvent770]
+    let total: Int?
+}
+
+private struct TimelineEvent770: Decodable, Identifiable {
+    var id: String {
+        [eventId.map(String.init), source, eventType, timestamp, locationLabel]
+            .compactMap { value in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+            .joined(separator: "|")
+    }
+
+    let eventId: Int?
+    let source: String?
+    let eventType: String?
+    let timestamp: String?
+    let notes: String?
+    let locationLabel: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, source, eventType, timestamp, notes, location
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        eventId = try? c.decodeIfPresent(Int.self, forKey: .id)
+        source = try? c.decodeIfPresent(String.self, forKey: .source)
+        eventType = try? c.decodeIfPresent(String.self, forKey: .eventType)
+        timestamp = try? c.decodeIfPresent(String.self, forKey: .timestamp)
+        notes = try? c.decodeIfPresent(String.self, forKey: .notes)
+        if let s = try? c.decodeIfPresent(String.self, forKey: .location) {
+            locationLabel = s
+        } else if let loc = try? c.decodeIfPresent(Location770.self, forKey: .location) {
+            locationLabel = loc.label
+        } else {
+            locationLabel = nil
+        }
+    }
+
+    private struct Location770: Decodable {
+        let description: String?
+        let name: String?
+        let city: String?
+        let state: String?
+        let country: String?
+        var label: String? {
+            if let description, !description.isEmpty { return description }
+            if let name, !name.isEmpty { return name }
+            let joined = [city, state, country].compactMap { value in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }.joined(separator: ", ")
+            return joined.isEmpty ? nil : joined
+        }
+    }
+}
+
 // MARK: - Body
 
 private struct VesselETAPredictionBody770: View {
@@ -155,6 +220,10 @@ private struct VesselETAPredictionBody770: View {
     @State private var seaEta: VesselEtaPrediction770? = nil
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var showTimeline = false
+    @State private var timelineLoading = false
+    @State private var timelineError: String? = nil
+    @State private var timelineRows: [TimelineEvent770] = []
 
     // LIVE one-tick fusion state (WS_EVENTS.OCEAN_POSITION_TICK). aisFixes accumulate as the
     // vessel reports position; more fixes → tighter cone. degraded widens it on an AIS gap.
@@ -181,7 +250,10 @@ private struct VesselETAPredictionBody770: View {
                     // (vesselShipments.predictVesselEta) above. No invented values.
                     esang(d)
                     HStack(spacing: 8) {
-                        CTAButton(title: "View timeline", action: {})
+                        CTAButton(title: "View timeline", action: {
+                            showTimeline = true
+                            Task { await loadTimeline() }
+                        })
                         secondaryButton("Refresh ETA").frame(width: 140)
                     }
                 }
@@ -193,6 +265,15 @@ private struct VesselETAPredictionBody770: View {
         .refreshable { await load() }
         .onAppear { startLiveTick() }
         .onDisappear { liveTask?.cancel() }
+        .sheet(isPresented: $showTimeline) {
+            VesselETATimelineSheet770(
+                rows: timelineRows,
+                isLoading: timelineLoading,
+                error: timelineError,
+                reload: { Task { await loadTimeline() } }
+            )
+            .environment(\.palette, palette)
+        }
     }
 
     // Bind the single AIS position stream. Each fix re-runs the prediction client-side and
@@ -274,7 +355,7 @@ private struct VesselETAPredictionBody770: View {
         let drivers = live ? (s.drivers ?? []) : []
         return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("SEA-STATE ETA DRIVER · predictVesselEta")
+                Text("SEA-STATE ETA DRIVER · live prediction")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -527,6 +608,110 @@ private struct VesselETAPredictionBody770: View {
             self.seaEta = nil
         }
         loading = false
+    }
+
+    private func loadTimeline() async {
+        timelineLoading = true
+        timelineError = nil
+        do {
+            let response: TimelineResponse770 = try await EusoTripAPI.shared.query(
+                "containerTimeline.timeline",
+                input: TimelineInput770(shipmentId: shipmentId, limit: 100)
+            )
+            timelineRows = response.events
+        } catch {
+            timelineError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        timelineLoading = false
+    }
+}
+
+private struct VesselETATimelineSheet770: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    let rows: [TimelineEvent770]
+    let isLoading: Bool
+    let error: String?
+    let reload: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: Space.s4) {
+                    if isLoading {
+                        LifecycleCard {
+                            Text("Loading timeline…")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    } else if let error {
+                        LifecycleCard(accentDanger: true) {
+                            Text(error)
+                                .font(EType.caption)
+                                .foregroundStyle(Brand.danger)
+                        }
+                    } else if rows.isEmpty {
+                        EusoEmptyState(systemImage: "clock.arrow.circlepath",
+                                       title: "No timeline events",
+                                       subtitle: "containerTimeline.timeline returned no tracking or shipment events for this shipment.")
+                    } else {
+                        LifecycleCard(accentGradient: true) {
+                            LifecycleSection(label: "SHIPMENT TIMELINE", icon: "clock.arrow.circlepath")
+                            LifecycleRow(label: "Events", value: String(rows.count))
+                        }
+                        LifecycleCard {
+                            ForEach(rows) { row in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(display(row.eventType))
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(palette.textPrimary)
+                                    Text(detail(row))
+                                        .font(EType.caption)
+                                        .foregroundStyle(palette.textSecondary)
+                                    Text(meta(row))
+                                        .font(EType.mono(.caption))
+                                        .foregroundStyle(palette.textTertiary)
+                                }
+                                .padding(.vertical, 8)
+                            }
+                        }
+                    }
+                }
+                .padding(Space.s4)
+            }
+            .navigationTitle("Timeline")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Refresh") { reload() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func display(_ raw: String?) -> String {
+        guard let raw, !raw.isEmpty else { return "Timeline event" }
+        return raw.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    private func detail(_ row: TimelineEvent770) -> String {
+        let text = [row.locationLabel, row.notes].compactMap { value in
+            guard let value, !value.isEmpty else { return nil }
+            return value
+        }.joined(separator: " · ")
+        return text.isEmpty ? "—" : text
+    }
+
+    private func meta(_ row: TimelineEvent770) -> String {
+        let text = [row.source, row.timestamp].compactMap { value in
+            guard let value, !value.isEmpty else { return nil }
+            return value
+        }.joined(separator: " · ")
+        return text.isEmpty ? "—" : text
     }
 }
 

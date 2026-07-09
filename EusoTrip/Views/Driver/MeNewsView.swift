@@ -25,10 +25,19 @@ import UIKit
 
 struct MeNewsView: View {
     @Environment(\.palette) var palette
+    /// Dismisses the hosting sheet. This screen is presented via
+    /// `MeDetailContainer(route: .news)` with `ownsOwnChrome == true`,
+    /// which skips the container's EusoHeader + SheetCloseButton — and
+    /// `.eusoSheetX()` has been a pure detent helper since the
+    /// 2026-04-25 retraction. Without its own header the sheet had NO
+    /// close affordance (ASC "Maybe add back button", build 721), so
+    /// the body pins the canonical BackChevron + title + SheetCloseButton
+    /// row above the ScrollView via `.eusoSheetChrome`.
+    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var session: EusoTripSession
     @StateObject private var store = NewsFeedStore()
     /// Selected article pushed to an in-app reader sheet. Replaces the
-    /// old `UIApplication.shared.open()` hand-off to Safari so drivers
+    /// old raw hand-off to Safari so drivers
     /// never leave the EusoTrip shell when they tap a headline.
     @State private var readerArticle: NewsArticle?
 
@@ -76,6 +85,12 @@ struct MeNewsView: View {
         }
         .scrollIndicators(.hidden)
         .refreshable { await store.refresh() }
+        // Set the role BEFORE the first painted frame so the pinned
+        // header title reads "Shipper Intel" (not the `.driver` store
+        // default) when the shipper Me hub presents this route.
+        // `setRole` is guarded (`mapped != role`) so the `.task` call
+        // below stays a no-op after this.
+        .onAppear { store.setRole(fromAuth: session.user?.role) }
         .task {
             store.setRole(fromAuth: session.user?.role)
             await store.bootstrap()
@@ -90,6 +105,20 @@ struct MeNewsView: View {
             NewsArticleReader(article: article)
                 .environment(\.palette, palette)
         }
+        // ASC AGOthuxHXDQ (build 721): the canonical sheet chrome —
+        // BackChevron leading + role-aware title + SheetCloseButton
+        // trailing, pinned above the ScrollView. Per the 2026-04-25
+        // founder direction ("add a back button and the x button") the
+        // driver gets BOTH targets; each dismisses the hosting sheet
+        // since this surface has no internal navigation stack. The
+        // container (`MeDetailContainer.ownsOwnChrome`) skips its own
+        // header for `.news`, so this is the sheet's ONLY chrome — no
+        // double-stamp (the failure mode the retraction fixed).
+        .eusoSheetChrome(
+            title: "\(roleDisplay) Intel",
+            onBack: { dismiss() },
+            onClose: { dismiss() }
+        )
     }
 
     // MARK: Search field
@@ -533,15 +562,15 @@ struct NewsImageView: View {
     let category: NewsCategory
     var articleURL: URL? = nil
 
-    @StateObject private var og = NewsOGImageCache.shared
+    @ObservedObject private var og = NewsOGImageCache.shared
+    @State private var fallbackURL: URL?
 
     /// The URL we'll actually ask AsyncImage to load. Prefers the
     /// server-scraped imageUrl; falls through to the cached / in-
     /// flight OG image when `articleURL` is set.
     private var effectiveURL: URL? {
         if let url { return url }
-        guard let articleURL else { return nil }
-        return og.image(for: articleURL)
+        return fallbackURL
     }
 
     var body: some View {
@@ -560,8 +589,8 @@ struct NewsImageView: View {
                             // Primary failed — try the OG fallback
                             // before giving up. If the primary WAS
                             // the OG fallback, the gradient renders.
-                            if url != nil, let articleURL,
-                               let fallback = og.image(for: articleURL),
+                            if url != nil,
+                               let fallback = fallbackURL,
                                fallback != url {
                                 AsyncImage(url: fallback) { f in
                                     if let img = f.image {
@@ -587,6 +616,30 @@ struct NewsImageView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .clipped()
+        }
+        .task(id: articleURL?.absoluteString) {
+            refreshFallbackURL()
+        }
+        .onReceive(og.$resolved) { _ in
+            updateFallbackFromCache()
+        }
+    }
+
+    private func refreshFallbackURL() {
+        guard let articleURL else {
+            fallbackURL = nil
+            return
+        }
+        fallbackURL = og.image(for: articleURL)
+    }
+
+    private func updateFallbackFromCache() {
+        guard let articleURL else {
+            fallbackURL = nil
+            return
+        }
+        if let cached = og.resolved[articleURL.absoluteString] {
+            fallbackURL = cached
         }
     }
 
@@ -720,7 +773,7 @@ struct NewsCarouselWidget: View {
     @State private var rotationTimer: Timer?
     @State private var showFullSheet: Bool = false
     /// Article pushed into the in-app reader when a carousel card is
-    /// tapped. Previously the tap handed off to `UIApplication.shared.open`
+    /// tapped. Previously the tap handed off to Safari
     /// which kicked the driver into Safari. Per user direction
     /// (2026-04-21) the reader is now a full-screen cover rendered inside
     /// EusoTrip's shell with a back chevron.
@@ -843,6 +896,18 @@ struct NewsCarouselWidget: View {
                     .allowsHitTesting(false)
             )
             .onAppear { startRotation() }
+            .onChange(of: slice.map(\.id)) { _, ids in
+                guard !ids.isEmpty else {
+                    index = 0
+                    rotationTimer?.invalidate()
+                    rotationTimer = nil
+                    return
+                }
+                if index >= ids.count {
+                    index = max(ids.count - 1, 0)
+                }
+                startRotation()
+            }
             .onChange(of: index) { _, _ in
                 // When the driver manually swipes, reset the auto-rotate
                 // clock so it doesn't instantly advance on top of the
@@ -948,4 +1013,24 @@ private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
+}
+
+// MARK: - Previews
+
+#Preview("Driver Intel · Dark") {
+    MeNewsView()
+        .frame(width: 390, height: 844)
+        .background(Theme.dark.bgPage)
+        .environment(\.palette, Theme.dark)
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.dark)
+}
+
+#Preview("Driver Intel · Light") {
+    MeNewsView()
+        .frame(width: 390, height: 844)
+        .background(Theme.light.bgPage)
+        .environment(\.palette, Theme.light)
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.light)
 }

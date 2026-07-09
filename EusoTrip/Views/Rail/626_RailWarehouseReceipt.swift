@@ -298,7 +298,7 @@ private struct RailWarehouseReceiptBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("yardManagement.ts:1314")
+                Text("today's receipts")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -415,7 +415,7 @@ private struct RailWarehouseReceiptBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("yardManagement.ts:1383")
+                Text("inventory on hand")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }

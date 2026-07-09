@@ -503,7 +503,7 @@ struct DeliveryPODCaptureView: View {
                 .foregroundStyle(palette.textPrimary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
-            Text("A clear photo of the signed BOL plus the receiver's signature releases your rig and starts the payment clock. Server stores the bundle on the load and flips status to pod-pending for shipper review.")
+            Text("A clear photo of the signed BOL plus the receiver's signature releases your rig and starts the payment clock. EusoTrip stores the bundle on the load and marks it ready for shipper review.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

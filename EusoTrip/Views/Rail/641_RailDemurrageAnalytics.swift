@@ -321,7 +321,7 @@ private struct RailDemurrageAnalyticsBody: View {
                 }
             }
             .frame(height: 36)
-            Text("8-wk demurrage · $/wk · awaiting weeklyTrend")
+            Text("8-wk demurrage · $/wk · awaiting weekly trend data")
                 .font(EType.mono(.micro))
                 .foregroundStyle(palette.textTertiary)
         }
@@ -443,7 +443,7 @@ private struct RailDemurrageAnalyticsBody: View {
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
-            Text("reportByDwellReason feeds dispute queue · auto-recalc")
+            Text("Dwell-reason report feeds the dispute queue · auto-recalc")
                 .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(palette.textSecondary)
             Text("Carrier BNSF Intermodal · Eusorone (DU) · RAIL-260524-A7140")
@@ -478,9 +478,29 @@ private struct RailDemurrageAnalyticsBody: View {
 
     // MARK: - CTA pair (Export report · Dispute)
 
+    private var exportReportLines: [String] {
+        var lines = [
+            "Active accruals: \(summary?.activeAccruals ?? 0)",
+            "Accruing charges: \(usd(accruedUsd))",
+            "Open disputes: \(summary?.disputesOpen ?? 0)",
+            "Waivers pending: \(summary?.waiversPending ?? 0)",
+            "Dwell reasons: \(rankedReasons.count)"
+        ]
+        for reason in rankedReasons.prefix(4) {
+            lines.append("\(prettyReason(reason.reason)): \(reason.count ?? 0) cars, \(usd(reason.totalCharges ?? 0))")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Export report", action: {}, leadingIcon: "square.and.arrow.up")
+            RailSecondaryActionButton(
+                title: "Report review",
+                sheetTitle: "Demurrage analytics report",
+                lines: exportReportLines,
+                fillWidth: true,
+                systemImage: "square.and.arrow.up"
+            )
                 .frame(maxWidth: .infinity)
             Button(action: { Task { await openDispute() } }) {
                 HStack(spacing: 6) {

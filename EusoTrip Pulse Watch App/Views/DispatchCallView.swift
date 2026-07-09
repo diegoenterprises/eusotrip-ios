@@ -32,16 +32,15 @@ struct DispatchCallView: View {
 
                 Button {
                     WKInterfaceDevice.current().play(.click)
+                    // The phone hand-off IS the action. (A previous
+                    // build also fired a `dispatch.requestCall`
+                    // telemetry mutation here — that proc does not
+                    // exist on any router, so it 404'd on every tap;
+                    // dropped rather than posting into the void.)
                     connectivity.requestPhoneActivation(
                         transcript: "call dispatch",
                         reply: "Dialing dispatch on your iPhone."
                     )
-                    Task {
-                        _ = try? await EsangClient(auth: auth).mutateJSON(
-                            "dispatch.requestCall",
-                            input: ["source": "watch"]
-                        )
-                    }
                     dismiss()
                 } label: {
                     Label("Open on iPhone", systemImage: "iphone.and.arrow.forward")

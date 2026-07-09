@@ -50,6 +50,13 @@ private struct DriverDetailConfig {
     let statusPill: String
 }
 
+private struct DispatchDetailDriverPick: Decodable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let status: String
+    let load: String?
+}
+
 private extension DriverDetailKind {
     var config: DriverDetailConfig {
         switch self {
@@ -100,21 +107,21 @@ private extension DriverDetailKind {
             )
         case .onboarding:
             return .init(
-                eyebrow: "DISPATCHER · DRIVER · STEP DETAIL",
-                citation: "DISPATCHER ONBOARDING · STEP-DETAIL · LIVE · §391",
-                title: "Step detail",
-                subheadContext: "§391.25",
-                pillCopy: "Driver-qualification posture is read from the DQ file · §391.25 annual MVR refresh.",
-                statusPill: "STEP DETAIL · §391.25 ANNUAL MVR REFRESH"
+                eyebrow: "DISPATCH · DRIVER ONBOARDING",
+                citation: "DQ FILE · ANNUAL REVIEW · FMCSA 391",
+                title: "DQ onboarding file",
+                subheadContext: "FMCSA 391.25",
+                pillCopy: "Annual MVR, document status and onboarding gaps are read from the DQ file.",
+                statusPill: "ANNUAL REVIEW · FMCSA 391.25"
             )
         case .compliance:
             return .init(
-                eyebrow: "DISPATCHER · DRIVER · COMPLIANCE ROW",
-                citation: "DISPATCHER COMPLIANCE · ROW DETAIL · LIVE · §383",
-                title: "Compliance row",
-                subheadContext: "§383.93",
-                pillCopy: "Confirm endorsement runway from the DQ file · §383.93 hazmat endorsement.",
-                statusPill: "ROW DETAIL · §383.93 HME"
+                eyebrow: "DISPATCH · DQ COMPLIANCE",
+                citation: "DQ FILE · CDL · MEDICAL · HME",
+                title: "DQ compliance file",
+                subheadContext: "FMCSA 383.93 · 391",
+                pillCopy: "Live DQ posture joins document validity, missing items and dispatch eligibility in one file.",
+                statusPill: "FMCSA 383.93 HME · PART 391 DRIVER QUALIFICATION"
             )
         case .quarter:
             return .init(
@@ -164,6 +171,7 @@ private struct DispatcherDriverDetailBody: View {
     @State private var hos: HOSCurrentStatus?
     @State private var dq: DriverQualificationAPI.Overview?
     @State private var loading: Bool = true
+    @State private var resolvedDriverId: String?
 
     var body: some View {
         let c = kind.config
@@ -173,10 +181,12 @@ private struct DispatcherDriverDetailBody: View {
                 pill(c)
                 identityRow
                 kpiGrid
+                kindEvidencePanel
                 nextStepCard
-                Color.clear.frame(height: 96)
+                Color.clear.frame(height: 150)
             }
-            .padding(.horizontal, 14).padding(.top, 8)
+            .padding(.horizontal, 14)
+            .padding(.top, 58)
         }
         .task { await load() }
         .refreshable { await load() }
@@ -184,8 +194,11 @@ private struct DispatcherDriverDetailBody: View {
 
     // Real driver display name, or honest dash.
     private var driverName: String {
-        let n = profile?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return n.isEmpty ? "—" : n
+        let profileName = profile?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !profileName.isEmpty { return profileName }
+        let dqName = dq?.driverName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !dqName.isEmpty { return dqName }
+        return resolvedDriverId == nil ? "No driver selected" : "Fleet driver"
     }
 
     private func monogram(for name: String) -> String {
@@ -218,13 +231,32 @@ private struct DispatcherDriverDetailBody: View {
         }
     }
 
-    private var identityRow: some View {
+    private var identityRow: AnyView {
         // Identity strip from the typed driver profile only. Truck +
         // CDL render an em-dash when the column is blank — no persona.
-        let truck = (profile?.truckNumber.isEmpty == false) ? "T-\(profile!.truckNumber)" : "—"
-        let cdl = (profile?.cdlNumber.isEmpty == false) ? profile!.cdlNumber : "—"
-        let cls = (profile?.cdl.class.isEmpty == false) ? "Class \(profile!.cdl.class)" : "—"
-        return LifecycleCard {
+        guard resolvedDriverId != nil else {
+            return AnyView(LifecycleCard {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "person.crop.circle.badge.questionmark")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Choose a roster driver")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Text("This detail needs a company-scoped driver before DQ, HOS or scorecard evidence can render.")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                }
+            })
+        }
+        let truck = (profile?.truckNumber.isEmpty == false) ? "Truck \(profile!.truckNumber)" : "Truck not filed"
+        let cdl = (profile?.cdlNumber.isEmpty == false) ? profile!.cdlNumber : "CDL not filed"
+        let cls = (profile?.cdl.class.isEmpty == false) ? "Class \(profile!.cdl.class)" : "Class not filed"
+        return AnyView(LifecycleCard {
             HStack(alignment: .center, spacing: 10) {
                 Circle().fill(LinearGradient.diagonal).frame(width: 32, height: 32)
                     .overlay(Text(monogram(for: driverName)).font(.system(size: 10, weight: .heavy)).foregroundStyle(.white))
@@ -234,7 +266,7 @@ private struct DispatcherDriverDetailBody: View {
                 }
                 Spacer()
             }
-        }
+        })
     }
 
     private var kpiGrid: some View {
@@ -286,20 +318,20 @@ private struct DispatcherDriverDetailBody: View {
                 // Per-step onboarding cycle / due-window / step-id have no
                 // wired source. DQ file gives the documents posture.
                 return [
-                    ("DOCS",       intStr(dq?.documents.total),      "DQ file · §391", .blue),
-                    ("EXPIRING",   intStr(dq?.documents.expiringSoon), "soon · §391", .orange),
-                    ("EXPIRED",    intStr(dq?.documents.expired),    "§391", .orange),
-                    ("MISSING",    intStr(dq?.documents.missing),    "§391", .orange),
+                    ("DOCS",       intStr(dq?.documents.total),      "DQ file", .blue),
+                    ("EXPIRING",   intStr(dq?.documents.expiringSoon), "renewal soon", .orange),
+                    ("EXPIRED",    intStr(dq?.documents.expired),    "expired docs", .orange),
+                    ("MISSING",    intStr(dq?.documents.missing),    "required docs", .orange),
                 ]
             case .compliance:
                 // Per-cert runway / eligible-lane flags have no wired
                 // source. DQ overview gives a real compliance score +
                 // valid-doc count.
                 return [
-                    ("SCORE",      complianceScoreDisplay,           "DQ · §383", .green),
-                    ("VALID",      intStr(dq?.documents.valid),      "docs · §383", .green),
-                    ("EXPIRED",    intStr(dq?.documents.expired),    "docs · §383", .orange),
-                    ("CITATION",   "§383.93",                        "FMCSA renewable", .blue),
+                    ("DQ SCORE",   complianceScoreDisplay,           "qualification file", .green),
+                    ("VALID",      intStr(dq?.documents.valid),      "current documents", .green),
+                    ("GAPS",       intStr(complianceGapCount),        "missing or expired", .orange),
+                    ("STATUS",     dqStatusDisplay,                  "dispatch readiness", .blue),
                 ]
             case .quarter:
                 // No per-quarter archived rollup on a wired proc — bind
@@ -328,6 +360,103 @@ private struct DispatcherDriverDetailBody: View {
         }
     }
 
+    @ViewBuilder
+    private var kindEvidencePanel: some View {
+        let m = scorecard?.metrics
+        let r = scorecard?.rankings
+        switch kind {
+        case .review:
+            LifecycleCard {
+                evidenceHeader("ROSTER EVIDENCE", "Live scorecard inputs")
+                evidenceRow("Inspection pass rate", pct(m?.inspectionPassRate), "driver scorecard")
+                evidenceRow("HOS compliance", pct(m?.hosCompliance), "driver scorecard")
+                evidenceRow("Miles covered", milesK(m?.totalMiles), "rolling performance window")
+            }
+        case .lane:
+            LifecycleCard {
+                evidenceHeader("LANE READINESS", "Live ranking and delivery posture")
+                evidenceRow("Eligible rank", rankDisplay(r), "scored driver pool")
+                evidenceRow("On-time delivery", pct(m?.onTimeDeliveryRate), "lane assignment confidence")
+                evidenceRow("Completed loads", intStr(m?.totalLoads), "rolling operating history")
+            }
+        case .incident:
+            LifecycleCard {
+                evidenceHeader("INCIDENT EVIDENCE", "Live safety-adjacent signals")
+                evidenceRow("Inspection pass rate", pct(m?.inspectionPassRate), "§396 inspection source")
+                evidenceRow("Safety score", safetyDisplay(m?.safetyScore), "CSA score projection")
+                evidenceRow("Incident feed", "—", "no wired event-count source yet")
+            }
+        case .performance:
+            LifecycleCard {
+                evidenceHeader("PERFORMANCE MIX", "Scorecard components")
+                evidenceRow("On-time delivery", pct(m?.onTimeDeliveryRate), "weighted KPI input")
+                evidenceRow("HOS compliance", pct(m?.hosCompliance), "weighted KPI input")
+                evidenceRow("Total miles", milesK(m?.totalMiles), "window mileage")
+            }
+        case .hos:
+            LifecycleCard {
+                evidenceHeader("ELD CLOCK", "Live hours-of-service posture")
+                evidenceRow("Drive headroom", hosDriveHeadroom, "FMCSA 395 drive window")
+                evidenceRow("Limit free", hosDriveLimitFreePct, "remaining drive window")
+                evidenceRow("HOS compliance", pct(m?.hosCompliance), "scorecard history")
+            }
+        case .onboarding:
+            LifecycleCard {
+                evidenceHeader("DQ FILE", "Driver qualification posture")
+                evidenceRow("Status", dq?.status.uppercased() ?? "—", "qualification posture")
+                evidenceRow("Last audit", dq?.lastAudit ?? "—", "audit history")
+                evidenceRow("Next audit", dq?.nextAudit ?? "—", "renewal runway")
+            }
+        case .compliance:
+            LifecycleCard {
+                evidenceHeader("DQ COMPLIANCE", "Documents, gaps and dispatch readiness")
+                evidenceRow("Compliance score", complianceScoreDisplay, "DQ score")
+                evidenceRow("Current documents", intStr(dq?.documents.valid), "valid on file")
+                evidenceRow("Missing or expired", intStr(complianceGapCount), complianceGapCount == 0 ? "no blocking document gaps" : "review before assignment")
+            }
+        case .quarter:
+            LifecycleCard {
+                evidenceHeader("QUARTER SNAPSHOT", "Quarter-period scorecard")
+                evidenceRow("On-time delivery", pct(m?.onTimeDeliveryRate), "quarter window")
+                evidenceRow("Loads completed", intStr(m?.totalLoads), "quarter window")
+                evidenceRow("Inspection pass rate", pct(m?.inspectionPassRate), "quarter window")
+            }
+        }
+    }
+
+    private func evidenceHeader(_ title: String, _ subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(0.8)
+                .foregroundStyle(palette.textTertiary)
+            Text(subtitle)
+                .font(EType.caption.weight(.semibold))
+                .foregroundStyle(palette.textPrimary)
+        }
+        .padding(.bottom, 4)
+    }
+
+    private func evidenceRow(_ label: String, _ value: String, _ detail: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(EType.caption.weight(.semibold))
+                    .foregroundStyle(palette.textPrimary)
+                Text(detail)
+                    .font(.caption2)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Spacer(minLength: 8)
+            Text(value)
+                .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                .foregroundStyle(palette.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .padding(.vertical, 5)
+    }
+
     private var nextStepCard: some View {
         let copy: String = {
             switch kind {
@@ -336,8 +465,8 @@ private struct DispatcherDriverDetailBody: View {
             case .incident:    return "Clean 90-day record attests to §13.3 to surface the driver in the eligible-roster API. Per-incident counts wire when the events feed lands."
             case .performance: return "Refine the 30-day KPI goal off the live on-time floor and inspection pass-rate."
             case .hos:         return "Pre-clear HOS for the next pull. Drive headroom above is read live from the ELD."
-            case .onboarding:  return "Work the DQ file. Expiring and missing §391 documents above drive the onboarding queue."
-            case .compliance:  return "Confirm endorsement posture from the DQ compliance score. Per-cert renewal runway wires when the certifications feed lands."
+            case .onboarding:  return "Work the DQ file. Expiring and missing FMCSA 391 documents above drive the onboarding queue."
+            case .compliance:  return complianceNextStep
             case .quarter:     return "Quarter totals above are the live quarter-period scorecard; roll them into the next-quarter baseline."
             }
         }()
@@ -369,6 +498,28 @@ private struct DispatcherDriverDetailBody: View {
     private var complianceScoreDisplay: String {
         guard let s = dq?.complianceScore else { return "—" }
         return "\(s)%"
+    }
+
+    private var complianceGapCount: Int {
+        (dq?.documents.missing ?? 0) + (dq?.documents.expired ?? 0)
+    }
+
+    private var dqStatusDisplay: String {
+        let raw = dq?.status.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return raw.isEmpty ? "—" : raw.replacingOccurrences(of: "_", with: " ").uppercased()
+    }
+
+    private var complianceNextStep: String {
+        guard resolvedDriverId != nil else {
+            return "Select a fleet driver from the roster to review DQ compliance, document gaps and dispatch readiness."
+        }
+        if complianceGapCount > 0 {
+            return "Resolve \(complianceGapCount) DQ document gap\(complianceGapCount == 1 ? "" : "s") before assigning regulated freight."
+        }
+        if let score = dq?.complianceScore, score < 100 {
+            return "Review the DQ file and close the remaining score gap before high-risk assignments."
+        }
+        return "DQ file is clear in this view. Keep CDL, medical and HME renewals current before the next regulated move."
     }
 
     // MARK: - Letter grade (same recipe as Catalyst 320 scorecard)
@@ -407,25 +558,35 @@ private struct DispatcherDriverDetailBody: View {
 
     private func load() async {
         loading = true; defer { loading = false }
+        guard let targetDriverId = await resolveDriverId() else {
+            resolvedDriverId = nil
+            scorecard = nil
+            profile = nil
+            hos = nil
+            dq = nil
+            return
+        }
+        resolvedDriverId = targetDriverId
+
         // Performance scorecard (typed proc).
         async let scoreTask: DriversAPI.PerformanceScorecard? = {
             try? await EusoTripAPI.shared.drivers.getPerformanceMetrics(
-                driverId: driverId, period: kind.period
+                driverId: targetDriverId, period: kind.period
             )
         }()
         // Identity (typed proc).
         async let profileTask: DriversAPI.DriverProfile? = {
-            try? await EusoTripAPI.shared.drivers.getProfileById(driverId: driverId)
+            try? await EusoTripAPI.shared.drivers.getProfileById(driverId: targetDriverId)
         }()
         // Live HOS — only the HOS lens needs it.
         async let hosTask: HOSCurrentStatus? = {
             guard kind == .hos else { return nil }
-            return try? await EusoTripAPI.shared.hos.getCurrentStatus(driverId: driverId)
+            return try? await EusoTripAPI.shared.hos.getCurrentStatus(driverId: targetDriverId)
         }()
         // DQ overview — onboarding + compliance lenses.
         async let dqTask: DriverQualificationAPI.Overview? = {
             guard kind == .onboarding || kind == .compliance else { return nil }
-            return try? await EusoTripAPI.shared.dq.getOverview(driverId: driverId)
+            return try? await EusoTripAPI.shared.dq.getOverview(driverId: targetDriverId)
         }()
 
         let (s, p, h, d) = await (scoreTask, profileTask, hosTask, dqTask)
@@ -433,6 +594,26 @@ private struct DispatcherDriverDetailBody: View {
         self.profile = p
         self.hos = h
         self.dq = d
+    }
+
+    private func normalizedDriverId(_ raw: String) -> String? {
+        let id = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty, id != "0" else { return nil }
+        return id
+    }
+
+    private func resolveDriverId() async -> String? {
+        if let id = normalizedDriverId(driverId) { return id }
+        struct Input: Encodable { let limit: Int }
+        do {
+            let rows: [DispatchDetailDriverPick] = try await EusoTripAPI.shared.query(
+                "dispatch.getDriverStatuses",
+                input: Input(limit: 1)
+            )
+            return rows.first.map(\.id)
+        } catch {
+            return nil
+        }
     }
 }
 

@@ -800,7 +800,7 @@ private struct ReeferFleetBody_387: View {
     private var footerNote: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("Reefer telemetry · supply/return per zone · FSMA Sanitary Transport rule")
-            Text("Carrier: Eusotrans LLC · USDOT 3 194 882 · live reeferTemp.* feed")
+            Text("Carrier: Eusotrans LLC · USDOT 3 194 882 · live reefer temperature feed")
             Text(data.activeLoad.loadLine + " · " + data.activeLoad.commodity)
         }
         .font(.system(size: 9, design: .monospaced))

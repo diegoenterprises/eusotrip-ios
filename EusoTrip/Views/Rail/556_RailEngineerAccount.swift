@@ -71,6 +71,13 @@ private struct RailEngineerAccountBody: View {
     @State private var loadError: String? = nil
     @State private var saveError: String? = nil
 
+    /// Which hub cards are expanded. Consolidation: the operations surface
+    /// crammed 15 always-open sections (~103 rows) into one endless scroll.
+    /// Rebuilt into 5 bespoke collapsible hubs by canonical taxonomy —
+    /// Operations, Money & Commercial, Compliance & Documents, Equipment &
+    /// Crew, Customs & Intermodal. Operations starts expanded; the rest collapse.
+    @State private var expandedHubs: Set<String> = ["operations"]
+
     private var displayName: String {
         let n = me?.name?.trimmingCharacters(in: .whitespaces) ?? ""
         return n.isEmpty ? "___" : n
@@ -87,9 +94,17 @@ private struct RailEngineerAccountBody: View {
                     LifecycleCard { Text("Loading account…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
                     LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
-                } else {
-                    identityCard
-                    operationsCard
+	                } else {
+	                    identityCard
+	                    EusoCardIssuePanel(
+	                        title: "EusoCard",
+	                        subtitle: "Rail spend card backed by EusoWallet Treasury"
+	                    )
+	                    operationsHub
+                    moneyCommercialHub
+                    complianceDocsHub
+                    equipmentCrewHub
+                    customsIntermodalHub
                     credentialsCard
                     dutyCard
                     preferencesCard
@@ -115,7 +130,7 @@ private struct RailEngineerAccountBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
             Text("Account").font(.system(size: 26, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("users.me · profile, credentials, duty & preferences")
+            Text("Your account · profile, credentials, duty & preferences")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }
@@ -147,17 +162,20 @@ private struct RailEngineerAccountBody: View {
         }
     }
 
-    // MARK: - Operations hub (journey entry points)
+    // MARK: - Operations hubs (journey entry points, bespoke collapsible)
     //
     // Wires the rail-engineer's working surfaces into the real journey.
     // Each row posts `.eusoRailNavSwap{screenId}`, which RailEngineerSurface
     // resolves out of ScreenRegistry (RBAC-gated by RoleAccess.canRender)
     // and pushes onto the role stack. Without this, these screens were
-    // registered but unreachable — islands in dev chrome. Grouped by the
-    // engineer's task domains (mirrors the Vessel + Driver Me-hub IA).
-    private var operationsCard: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            Text("OPERATIONS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+    // registered but unreachable — islands in dev chrome. The 15 task
+    // domains fold into 5 canonical hubs so the Me tab reads as a clean
+    // stack rather than a ~103-row flat list.
+
+    private var operationsHub: some View {
+        hubCard(id: "operations", icon: "antenna.radiowaves.left.and.right",
+                title: "Operations",
+                summary: "Routing · Shipments · Yard · Demurrage · Network", rowCount: 52) {
             opsGroup("PREDICTION & ROUTING", [
                 ("Rail643", "clock.arrow.circlepath", "ETA prediction", "Per-segment arrival forecast"),
                 ("Rail644", "arrow.left.arrow.right", "Transit comparison", "All-rail vs intermodal"),
@@ -166,27 +184,6 @@ private struct RailEngineerAccountBody: View {
                 ("Rail673", "square.grid.3x3.topleft.filled", "Intermodal dashboard", "Rail+truck+ocean legs"),
                 ("Rail639", "building.2", "Yard directory", "Yards by host railroad"),
                 ("Rail672", "hourglass", "Layover tracking", "Layover charges & faults"),
-            ])
-            opsGroup("BIDS & PERFORMANCE", [
-                ("Rail627", "list.bullet.rectangle", "Bid board", "Award open lanes by rate"),
-                ("Rail574", "star.circle", "Carrier scorecard", "Rank carriers by score"),
-                ("Rail569", "doc.text", "Tender workflow", "Respond to incoming tenders"),
-            ])
-            opsGroup("COMMERCIAL & CLAIMS", [
-                ("Rail606", "checkmark.shield", "Cargo insurance", "Bind per-load all-risk cover"),
-                ("Rail642", "chart.line.uptrend.xyaxis", "Accessorial analytics", "Demurrage + detention trend"),
-                ("Rail652", "exclamationmark.bubble", "Claims dashboard", "Freight loss & damage"),
-            ])
-            opsGroup("FREIGHT CLAIMS", [
-                ("Rail656", "creditcard", "Claim payments", "Reconcile & age payables"),
-                ("Rail669", "arrow.uturn.backward.circle", "Overcharge recovery", "Audit & recover overcharges"),
-                ("Rail670", "shippingbox.and.arrow.backward", "Shortage claims", "BOL vs received variance"),
-                ("Rail671", "doc.on.doc", "Claim templates", "Pre-built claim forms"),
-            ])
-            opsGroup("COMPLIANCE & RISK", [
-                ("Rail571", "exclamationmark.triangle", "IMDG hazmat manifest", "DG placards + segregation"),
-                ("Rail578", "cloud.sun", "Route weather", "On-arc severity + reroute"),
-                ("Rail563", "exclamationmark.octagon", "Exceptions & holds", "Active blocks on your cars"),
             ])
             opsGroup("SHIPMENTS & TRACKING", [
                 ("Rail007", "plus.rectangle.on.folder", "New shipment", "Book a rail shipment"),
@@ -231,6 +228,76 @@ private struct RailEngineerAccountBody: View {
                 ("Rail650", "clock.arrow.2.circlepath", "Detention history", "Historical detention log"),
                 ("Rail651", "gearshape.2", "Auto-detention rules", "Automated detention rules"),
             ])
+            opsGroup("NETWORK, DOCS & CLAIMS", [
+                ("Rail579", "bolt.horizontal.circle", "Network disruption", "Active network issues"),
+                ("Rail605", "exclamationmark.bubble", "Cargo claim", "File a cargo claim"),
+                ("Rail653", "list.bullet.clipboard", "Claims list", "All claims"),
+                ("Rail654", "arrow.triangle.2.circlepath", "Claim workflow", "Claim processing"),
+                ("Rail655", "shield.lefthalf.filled", "Loss prevention", "Loss-prevention program"),
+                ("Rail590", "doc.badge.plus", "Document ingest", "Upload + OCR docs"),
+                ("Rail592", "person.badge.key", "Forwarder portal", "Forwarder access"),
+                ("Rail607", "arrow.left.arrow.right", "EDI messages", "EDI 404 / 322 / 990"),
+            ])
+        }
+    }
+
+    private var moneyCommercialHub: some View {
+        hubCard(id: "money", icon: "dollarsign.circle",
+                title: "Money & Commercial",
+                summary: "Bids · Claims · Billing · Settlements", rowCount: 19) {
+            opsGroup("BIDS & PERFORMANCE", [
+                ("Rail627", "list.bullet.rectangle", "Bid board", "Award open lanes by rate"),
+                ("Rail574", "star.circle", "Carrier scorecard", "Rank carriers by score"),
+                ("Rail569", "doc.text", "Tender workflow", "Respond to incoming tenders"),
+            ])
+            opsGroup("COMMERCIAL & CLAIMS", [
+                ("Rail606", "checkmark.shield", "Cargo insurance", "Bind per-load all-risk cover"),
+                ("Rail642", "chart.line.uptrend.xyaxis", "Accessorial analytics", "Demurrage + detention trend"),
+                ("Rail652", "exclamationmark.bubble", "Claims dashboard", "Freight loss & damage"),
+            ])
+            opsGroup("FREIGHT CLAIMS", [
+                ("Rail656", "creditcard", "Claim payments", "Reconcile & age payables"),
+                ("Rail669", "arrow.uturn.backward.circle", "Overcharge recovery", "Audit & recover overcharges"),
+                ("Rail670", "shippingbox.and.arrow.backward", "Shortage claims", "BOL vs received variance"),
+                ("Rail671", "doc.on.doc", "Claim templates", "Pre-built claim forms"),
+            ])
+            opsGroup("COMMERCIAL & BILLING", [
+                ("Rail573", "tag", "Accessorial charges", "Accessorial catalog"),
+                ("Rail577", "fuelpump.circle", "Fuel surcharge", "FSC schedule"),
+                ("Rail580", "tablecells", "Tariff rate lookup", "Tariff rates"),
+                ("Rail581", "doc.text", "Settlement summary", "Settlement totals"),
+                ("Rail593", "doc.on.doc", "Settlement batch", "Batch settlements"),
+                ("Rail594", "list.number", "Cost breakdown", "Per-shipment costs"),
+                ("Rail599", "doc.text.magnifyingglass", "Freight bill audit", "Audit freight bills"),
+                ("Rail635", "dollarsign.circle", "Financial summary", "Financial overview"),
+                ("Rail640", "drop.circle", "Diesel fuel index", "Diesel index"),
+            ])
+        }
+    }
+
+    private var complianceDocsHub: some View {
+        hubCard(id: "compliance", icon: "checkmark.shield",
+                title: "Compliance & Documents",
+                summary: "Hazmat · Weather · Holds · FRA safety", rowCount: 8) {
+            opsGroup("COMPLIANCE & RISK", [
+                ("Rail571", "exclamationmark.triangle", "IMDG hazmat manifest", "DG placards + segregation"),
+                ("Rail578", "cloud.sun", "Route weather", "On-arc severity + reroute"),
+                ("Rail563", "exclamationmark.octagon", "Exceptions & holds", "Active blocks on your cars"),
+            ])
+            opsGroup("COMPLIANCE & SAFETY", [
+                ("Rail567", "link.circle", "Chain of custody", "Custody handoff log"),
+                ("Rail572", "leaf", "Emissions", "CO2 by movement"),
+                ("Rail587", "shield.checkered", "FRA safety", "FRA safety status"),
+                ("Rail625", "checkmark.circle.badge.questionmark", "Appointment compliance", "Appt adherence"),
+                ("Rail631", "doc.text.magnifyingglass", "FRA accident reports", "FRA incident filings"),
+            ])
+        }
+    }
+
+    private var equipmentCrewHub: some View {
+        hubCard(id: "equipment", icon: "wrench.and.screwdriver",
+                title: "Equipment & Crew",
+                summary: "Railcar fleet · Chassis · Crew HOS & certs", rowCount: 13) {
             opsGroup("EQUIPMENT & FLEET", [
                 ("Rail568", "doc.text.below.ecg", "Equipment lease", "Railcar / chassis leases"),
                 ("Rail575", "heart.text.square", "Equipment health", "Car condition telemetry"),
@@ -248,6 +315,13 @@ private struct RailEngineerAccountBody: View {
                 ("Rail632", "person.crop.circle.badge.clock", "Crew availability", "Available crew pool"),
                 ("Rail636", "globe.badge.chevron.backward", "X-border crew certs", "Cross-border crew docs"),
             ])
+        }
+    }
+
+    private var customsIntermodalHub: some View {
+        hubCard(id: "customs", icon: "globe.americas",
+                title: "Customs & Intermodal",
+                summary: "Cross-border clearance · Drayage · Mode mix", rowCount: 11) {
             opsGroup("CUSTOMS & CROSS-BORDER", [
                 ("Rail006", "globe.americas", "Cross-border customs", "Customs clearance"),
                 ("Rail564", "checkmark.shield", "Border clearance", "Border release status"),
@@ -257,40 +331,75 @@ private struct RailEngineerAccountBody: View {
                 ("Rail637", "globe.badge.chevron.backward", "X-border DG regs", "Cross-border DG regs"),
                 ("Rail638", "globe", "X-border compliance", "Cross-border compliance"),
             ])
-            opsGroup("COMPLIANCE & SAFETY", [
-                ("Rail567", "link.circle", "Chain of custody", "Custody handoff log"),
-                ("Rail572", "leaf", "Emissions", "CO2 by movement"),
-                ("Rail587", "shield.checkered", "FRA safety", "FRA safety status"),
-                ("Rail625", "checkmark.circle.badge.questionmark", "Appointment compliance", "Appt adherence"),
-                ("Rail631", "doc.text.magnifyingglass", "FRA accident reports", "FRA incident filings"),
-            ])
-            opsGroup("COMMERCIAL & BILLING", [
-                ("Rail573", "tag", "Accessorial charges", "Accessorial catalog"),
-                ("Rail577", "fuelpump.circle", "Fuel surcharge", "FSC schedule"),
-                ("Rail580", "tablecells", "Tariff rate lookup", "Tariff rates"),
-                ("Rail581", "doc.text", "Settlement summary", "Settlement totals"),
-                ("Rail593", "doc.on.doc", "Settlement batch", "Batch settlements"),
-                ("Rail594", "list.number", "Cost breakdown", "Per-shipment costs"),
-                ("Rail599", "doc.text.magnifyingglass", "Freight bill audit", "Audit freight bills"),
-                ("Rail635", "dollarsign.circle", "Financial summary", "Financial overview"),
-                ("Rail640", "drop.circle", "Diesel fuel index", "Diesel index"),
-            ])
             opsGroup("INTERMODAL & DRAYAGE", [
                 ("Rail617", "truck.box", "Drayage orders", "Drayage moves"),
                 ("Rail618", "arrow.triangle.branch", "Mode optimization", "Cheapest mode mix"),
                 ("Rail620", "lock.open", "Release order", "Equipment release"),
                 ("Rail626", "doc.richtext", "Warehouse receipt", "WHR document"),
             ])
-            opsGroup("NETWORK, DOCS & CLAIMS", [
-                ("Rail579", "bolt.horizontal.circle", "Network disruption", "Active network issues"),
-                ("Rail605", "exclamationmark.bubble", "Cargo claim", "File a cargo claim"),
-                ("Rail653", "list.bullet.clipboard", "Claims list", "All claims"),
-                ("Rail654", "arrow.triangle.2.circlepath", "Claim workflow", "Claim processing"),
-                ("Rail655", "shield.lefthalf.filled", "Loss prevention", "Loss-prevention program"),
-                ("Rail590", "doc.badge.plus", "Document ingest", "Upload + OCR docs"),
-                ("Rail592", "person.badge.key", "Forwarder portal", "Forwarder access"),
-                ("Rail607", "arrow.left.arrow.right", "EDI messages", "EDI 404 / 322 / 990"),
-            ])
+        }
+    }
+
+    // MARK: - Collapsible hub card (bespoke, parity with 350 / Dpch713)
+
+    /// A collapsible hub card: gradient-icon header with title, one-line
+    /// summary and a row-count pill that toggles the body open/closed on tap.
+    /// Collapsed by default (except Operations) so the Me tab reads as a clean
+    /// stack of hubs rather than a ~103-row flat list.
+    @ViewBuilder
+    private func hubCard<Content: View>(id: String,
+                                        icon: String,
+                                        title: String,
+                                        summary: String,
+                                        rowCount: Int,
+                                        @ViewBuilder content: () -> Content) -> some View {
+        let isOpen = expandedHubs.contains(id)
+        LifecycleCard {
+            Button {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    if isOpen { expandedHubs.remove(id) } else { expandedHubs.insert(id) }
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().fill(LinearGradient.diagonal).frame(width: 40, height: 40)
+                        Image(systemName: icon)
+                            .font(.system(size: 16, weight: .heavy))
+                            .foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.system(size: 15, weight: .heavy))
+                            .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                        Text(summary)
+                            .font(EType.mono(.micro)).tracking(0.3)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                    Spacer(minLength: 0)
+                    Text("\(rowCount)")
+                        .font(.system(size: 10, weight: .heavy)).monospacedDigit()
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(palette.bgCardSoft))
+                        .overlay(Capsule().strokeBorder(palette.borderFaint.opacity(0.5)))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                }
+            }
+            .buttonStyle(.plain)
+
+            if isOpen {
+                Rectangle()
+                    .fill(palette.borderFaint.opacity(0.4))
+                    .frame(height: 1)
+                    .padding(.vertical, 6)
+                VStack(spacing: 6) { content() }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
     }
 
@@ -339,7 +448,7 @@ private struct RailEngineerAccountBody: View {
 
     private var credentialsCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("CREDENTIALS · users.getProfile").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("CREDENTIALS · on file").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard {
                 VStack(spacing: Space.s2) {
                     ForEach(credentials) { c in
@@ -359,7 +468,7 @@ private struct RailEngineerAccountBody: View {
         let onDuty = hos?.onDutyHours ?? 6.5
         let limit = hos?.limitHours ?? 12
         return VStack(alignment: .leading, spacing: Space.s2) {
-            Text("DUTY · HOURS OF SERVICE · getCrewHOS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("DUTY · HOURS OF SERVICE · live").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -378,7 +487,7 @@ private struct RailEngineerAccountBody: View {
 
     private var preferencesCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            Text("PREFERENCES · users.updateProfile").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+            Text("PREFERENCES · saved to your profile").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             LifecycleCard {
                 VStack(spacing: Space.s3) {
                     Toggle(isOn: $notificationsOn) {

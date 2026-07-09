@@ -337,7 +337,7 @@ private struct RailDemurrageCalculatorBody: View {
                     Rectangle().fill(palette.borderFaint).frame(height: 1)
                         .padding(.horizontal, Space.s4)
                     HStack {
-                        Text("+ surcharge tiers applied automatically · runBulkAccrual covers \(bulk?.boxCount ?? 0) boxes")
+                        Text("+ surcharge tiers applied automatically · bulk accrual covers \(bulk?.boxCount ?? 0) boxes")
                             .font(.system(size: 10))
                             .foregroundStyle(palette.textTertiary)
                         Spacer()
@@ -411,7 +411,7 @@ private struct RailDemurrageCalculatorBody: View {
     private var bulkStrip: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Text("BULK ACCRUAL · runBulkAccrual")
+                Text("BULK ACCRUAL · all boxes")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
@@ -419,7 +419,7 @@ private struct RailDemurrageCalculatorBody: View {
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
-            Text("calculateAccrual feed · tier schedule applied at LFD")
+            Text("Accrual feed · tier schedule applied at LFD")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
             Text(bulkProvenance)

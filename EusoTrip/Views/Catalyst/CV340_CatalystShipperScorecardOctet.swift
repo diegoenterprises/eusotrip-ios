@@ -87,42 +87,42 @@ private extension CatalystShipperKind {
                          citation: "OWNER-OP SEAM · PAYOR EVIDENCE",
                          title: "Customer documents",
                          subhead: "per-document vault not in scorecard proc",
-                         pillCopy: "Catalyst pins MSA + W-9 + COI + rate confirmations in the payor document cabinet. Per-document status is not returned by the scorecard proc.",
+                         pillCopy: "Catalyst pins MSA + W-9 + COI + rate confirmations in the payor document cabinet. Per-document status isn't part of the scorecard data yet.",
                          statusPill: "DOCUMENT VAULT · NOT IN SCORECARD PROC")
         case .analytics:
             return .init(eyebrow: "CATALYST · CUSTOMER · ANALYTICS",
                          citation: "OWNER-OP SEAM · 90D ROLLING",
                          title: "Customer analytics",
                          subhead: "shipperScorecard.getScorecard · 90 days",
-                         pillCopy: "Catalyst dashboards the payor on tender acceptance, completion and average rate. DSO-in-days and rate-per-mile are not returned by the scorecard proc.",
+                         pillCopy: "Catalyst dashboards the payor on tender acceptance, completion and average rate. DSO-in-days and rate-per-mile aren't part of the scorecard data yet.",
                          statusPill: "TENDER-ACCEPT · AVG RATE · LIVE")
         case .settlements:
             return .init(eyebrow: "CATALYST · CUSTOMER · LEDGER",
                          citation: "OWNER-OP SEAM · §387 NET-30 PAYOR",
                          title: "Customer settlements",
                          subhead: "per-invoice ledger not in scorecard proc",
-                         pillCopy: "Catalyst earns from the shipper-payor. Per-invoice settlement line-items are not returned by the scorecard proc — only delivered-load counts are live.",
+                         pillCopy: "Catalyst earns from the shipper-payor. Per-invoice settlement line-items aren't part of the scorecard data yet — delivered-load counts are live.",
                          statusPill: "DELIVERED COUNT · LIVE")
         case .onboarding:
             return .init(eyebrow: "CATALYST · CUSTOMER · ONBOARD",
                          citation: "OWNER-OP SEAM · 6-STEP LADDER",
                          title: "Customer onboarding",
                          subhead: "onboarding ladder not in scorecard proc",
-                         pillCopy: "Catalyst seats the payor across MSA, W-9, COI, terms, rate-card and first PO. The onboarding-step ladder is not returned by the scorecard proc.",
+                         pillCopy: "Catalyst seats the payor across MSA, W-9, COI, terms, rate-card and first PO. The onboarding-step ladder isn't part of the scorecard data yet.",
                          statusPill: "ONBOARDING LADDER · NOT IN SCORECARD PROC")
         case .compliance:
             return .init(eyebrow: "CATALYST · CUSTOMER · COMPLIANCE",
                          citation: "OWNER-OP SEAM · §387 §388 CLEAN PAYOR",
                          title: "Customer compliance",
                          subhead: "shipperScorecard.getScorecard · 90 days",
-                         pillCopy: "Catalyst monitors the payor on cancellation rate and dispute exposure. §387 §388 document checks are not returned by the scorecard proc.",
+                         pillCopy: "Catalyst monitors the payor on cancellation rate and dispute exposure. §387 §388 document checks aren't part of the scorecard data yet.",
                          statusPill: "CANCELLATION RATE · LIVE")
         case .quarter:
             return .init(eyebrow: "CATALYST · CUSTOMER · QUARTERLY HISTORY",
                          citation: "OWNER-OP SEAM · PAYOR QUARTERLY BOOKS",
                          title: "Quarterly history",
                          subhead: "365-day rolling · scorecard proc",
-                         pillCopy: "Catalyst rolls up the payor across the year. Per-quarter and §6041 1099-NEC rollups are not returned by the scorecard proc — only 365-day aggregates are live.",
+                         pillCopy: "Catalyst rolls up the payor across the year. Per-quarter and §6041 1099-NEC rollups aren't part of the scorecard data yet — 365-day aggregates are live.",
                          statusPill: "365-DAY AGGREGATE · LIVE")
         }
     }
@@ -202,7 +202,7 @@ private struct CatalystShipperBody: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(id.map { "Shipper #\($0)" } ?? "Shipper · —")
                         .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
-                    Text("shipper-of-record · name not in scorecard proc · —")
+                    Text("shipper-of-record · name pending scorecard sync")
                         .font(.caption2).foregroundStyle(palette.textTertiary)
                 }
                 Spacer()

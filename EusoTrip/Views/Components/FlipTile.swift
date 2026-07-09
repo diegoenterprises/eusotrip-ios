@@ -61,23 +61,29 @@ struct FlipTile<Front: View, Back: View>: View {
             // to un-mirror it against.
             ZStack {
                 front()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(isFlipped ? 0 : 1)
                     .accessibilityHidden(isFlipped)
                 back()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(isFlipped ? 1 : 0)
                     .accessibilityHidden(!isFlipped)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
         } else {
             ZStack {
                 front()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(isFlipped ? 0 : 1)
                     .accessibilityHidden(isFlipped)
                 back()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(isFlipped ? 1 : 0)
                     .accessibilityHidden(!isFlipped)
                     .rotation3DEffect(.degrees(180), axis: axis)   // pre-un-mirror the back
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .rotation3DEffect(
                 .degrees(isFlipped ? 180 : 0),
                 axis: axis,

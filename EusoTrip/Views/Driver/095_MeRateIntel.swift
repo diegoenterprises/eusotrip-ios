@@ -185,7 +185,7 @@ struct MeRateIntel: View {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(palette.textSecondary)
-                    Text(err.localizedDescription)
+                    Text(err.eusoUserCopy)
                         .font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                         .multilineTextAlignment(.center)

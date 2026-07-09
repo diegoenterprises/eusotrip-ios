@@ -552,7 +552,7 @@ struct SOSEmergencySheet: View {
                 // Life-safety: keep the sheet open and tell the driver so
                 // they can retry or fall back to a 911 voice call.
                 submitting = false
-                submitError = "We couldn't reach dispatch (\(error.localizedDescription)). Call 911 if this is life-threatening, then tap Retry."
+                submitError = "We couldn't reach dispatch. \(error.eusoUserCopy) Call 911 if this is life-threatening, then tap Retry."
             }
         }
     }

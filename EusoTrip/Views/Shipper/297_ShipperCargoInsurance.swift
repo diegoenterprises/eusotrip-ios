@@ -24,6 +24,14 @@
 //      the shipper runs a quote; never shows fabricated numbers.
 //    • CTA row — "Request COI" (gradient) + "New quote" (secondary). Below: a
 //      live "{n} certificate(s) on file" line.
+//    • Per-load policies card — the EusoShield single-trip ledger
+//      (insurance.getMyPerLoadPolicies), rendered on the loaded AND empty
+//      branches so purchased per-load coverage is never invisible.
+//    • Empty branch adds the FMCSA coverage-requirements ladder
+//      (getCommodityInsuranceRequirements · general / reefer / hazmat cl. 3).
+//    • Quote sheet (medium/large detents) — EusoShield-branded, shipper-scoped
+//      "Insure one of your loads" picker (shippers.getMyLoads), live-debounced
+//      indicative premium, gradient "Lock quote" CTA.
 //    • BottomNav · WALLET active — supplied by the Shipper surface chrome (this
 //      file is a tab destination; the host owns nav + WALLET-selected state,
 //      identical to the sibling Shipper wallet screens).
@@ -33,9 +41,18 @@
 //    insurance.getSummary           (routers/insurance.ts:219) query  → totals (tolerant: array/null → zeros)
 //    insurance.getExpiringPolicies  (routers/insurance.ts:191) query  → which policies expire ≤30d
 //    insurance.getCertificates      (routers/insurance.ts:442) query  → COIs on file
-//    insurance.getPerLoadQuote      (routers/insurance.ts:887) MUTATION → server-priced quote
-//    insurance.purchasePerLoad      (routers/insurance.ts:930) MUTATION → buy per-load policy (wallet debit)
+//    insurance.getPerLoadQuote      (routers/insurance.ts:1216) MUTATION → server-priced quote (live-debounced)
+//    insurance.purchasePerLoad      (routers/insurance.ts:1259) MUTATION → buy per-load policy (wallet debit;
+//                                   threads optional loadId — server input is z.coerce.number().optional())
 //    insurance.requestCertificate   (routers/insurance.ts:468) MUTATION → request a COI
+//    insurance.getMyPerLoadPolicies (routers/insurance.ts:1404) query → per-load EusoShield ledger
+//                                   (server pre-parses money decimals to NUMBERS on this proc)
+//    insurance.getCommodityInsuranceRequirements (routers/insurance.ts:2142) query → FMCSA
+//                                   coverage-minimum ladder (rendered on the empty branch)
+//    shippers.getMyLoads            (routers/shippers.ts:722) query → shipper-SCOPED load picker
+//                                   for "Insure one of your loads" (loads.search is unscoped —
+//                                   it would leak other shippers' loads into the picker, so the
+//                                   picker reuses the 228 BOL-picker pattern / ShipperMyLoadsStore)
 //
 //  Verb note: getPerLoadQuote is registered as a tRPC `mutation` (POST) despite
 //  being a pure read — it is called with `.mutation(...)` here on purpose (see
@@ -122,6 +139,35 @@ private struct RequestCertificateResult: Decodable, Equatable {
     let certificateNumber: String?
 }
 
+/// One row from `insurance.getMyPerLoadPolicies` (insurance.ts:1404) — the
+/// per-load EusoShield ledger. Unlike the annual-policy rows, this proc
+/// pre-parses its money decimals server-side, so these are NUMBERS on the wire.
+private struct PerLoadPolicy: Decodable, Equatable, Identifiable {
+    let id: String
+    let policyNumber: String
+    let coverageAmount: Double?
+    let premium: Double?
+    let commodityType: String?
+    let policyType: String?
+    let status: String?
+    let origin: String?
+    let destination: String?
+    let activatedAt: String?
+    let expiresAt: String?
+}
+
+/// One rung from `insurance.getCommodityInsuranceRequirements`
+/// (insurance.ts:2142) — FMCSA coverage minimums per commodity category.
+/// Server values only; the ladder never invents a dollar figure.
+private struct CommodityRequirement: Decodable, Equatable {
+    let commodityType: String
+    let category: String
+    let minLiability: Double
+    let minCargo: Double
+    let specialEndorsements: [String]
+    let notes: String
+}
+
 /// Everything the screen renders in one settled state.
 private struct CargoInsuranceModel: Equatable {
     let summary: InsuranceSummary
@@ -137,6 +183,19 @@ private final class CargoInsuranceStore: BaseDynamicStore<CargoInsuranceModel> {
 
     private struct PoliciesIn: Encodable { let filter: String?; let limit: Int?; let policyType: String? }
     private struct CertsIn: Encodable { let limit: Int? }
+    private struct PerLoadIn: Encodable { let status: String?; let limit: Int }
+    private struct ReqIn: Encodable { let commodityType: String; let hazmatClass: String? }
+
+    /// Per-load EusoShield ledger (insurance.getMyPerLoadPolicies). Published
+    /// OUTSIDE the RemoteState model because `.empty` carries no payload —
+    /// the enriched empty branch still needs these rows. Tolerant fetch;
+    /// `[]` is the honest degraded value, never a fabricated row.
+    @Published var perLoadPolicies: [PerLoadPolicy] = []
+
+    /// FMCSA coverage-requirements ladder (getCommodityInsuranceRequirements).
+    /// Fetched only when there are no annual policies on file (the ladder
+    /// renders on the empty branch), all values verbatim from the server.
+    @Published var requirementLadder: [CommodityRequirement] = []
 
     /// Treat "no policies AND no coverage on file" as a real empty set so the
     /// branded empty card shows; otherwise render (a zeroed hero is still valid
@@ -170,6 +229,30 @@ private final class CargoInsuranceStore: BaseDynamicStore<CargoInsuranceModel> {
             "insurance.getCertificates",
             input: CertsIn(limit: 25)
         )) ?? []
+
+        // Non-blocking: per-load EusoShield ledger — history for the
+        // "Per-load policies" card on BOTH the loaded and empty branches.
+        perLoadPolicies = (try? await EusoTripAPI.shared.query(
+            "insurance.getMyPerLoadPolicies",
+            input: PerLoadIn(status: nil, limit: 10)
+        )) ?? []
+
+        // Non-blocking, empty-branch only: FMCSA coverage-minimum ladder.
+        // Three probes (general / reefer / hazmat class 3) — each rung is the
+        // server's verbatim requirement row; a failed probe simply drops out.
+        if policies.isEmpty {
+            var ladder: [CommodityRequirement] = []
+            for probe: (type: String, hazmat: String?) in
+                [("general", nil), ("reefer", nil), ("hazmat", "3")] {
+                if let rung: CommodityRequirement = try? await EusoTripAPI.shared.query(
+                    "insurance.getCommodityInsuranceRequirements",
+                    input: ReqIn(commodityType: probe.type, hazmatClass: probe.hazmat)
+                ) { ladder.append(rung) }
+            }
+            requirementLadder = ladder
+        } else {
+            requirementLadder = []
+        }
 
         return CargoInsuranceModel(
             summary: summary,
@@ -210,6 +293,12 @@ struct ShipperCargoInsurance: View {
                     skeleton
                 case .empty:
                     emptyCard
+                    if !store.perLoadPolicies.isEmpty {
+                        perLoadHistoryCard(store.perLoadPolicies)
+                    }
+                    if !store.requirementLadder.isEmpty {
+                        requirementsLadder(store.requirementLadder)
+                    }
                 case .error(let e):
                     errorBanner(e)
                 case .loaded(let model):
@@ -219,6 +308,9 @@ struct ShipperCargoInsurance: View {
                     perLoadQuoteCard
                     ctaRow
                     certificateLine(model.certificates)
+                    if !store.perLoadPolicies.isEmpty {
+                        perLoadHistoryCard(store.perLoadPolicies)
+                    }
                 }
             }
             .padding(.horizontal, Space.s4)
@@ -229,11 +321,15 @@ struct ShipperCargoInsurance: View {
         .task { await store.refresh() }
         .refreshable { await store.refresh() }
         .sheet(isPresented: $quoteSheet) {
+            // Detents kill the dead bottom half: the sheet opens at .medium
+            // (form-height) and grows to .large only when the shipper pulls it.
             PerLoadQuoteSheet { quote, inputs in
                 activeQuote = quote
                 activeQuoteInputs = inputs
             }
             .environment(\.palette, palette)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $coiSheet) {
             RequestCOISheet { result in
@@ -241,6 +337,8 @@ struct ShipperCargoInsurance: View {
                 Task { await store.refresh() }
             }
             .environment(\.palette, palette)
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
     }
 
@@ -426,7 +524,7 @@ struct ShipperCargoInsurance: View {
                 }
                 Text("\(inp.origin) → \(inp.destination)")
                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary).lineLimit(1)
-                Text("\(grouped(Double(inp.cargoValue))) declared · \(q.policyType)")
+                Text(quoteDeclaredLine(q, inp))
                     .font(EType.caption.monospaced()).foregroundStyle(palette.textSecondary).lineLimit(1)
                 perilCoverageLine
                 HStack {
@@ -463,6 +561,15 @@ struct ShipperCargoInsurance: View {
             .fill(Brand.success.opacity(0.10)))
         .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
             .strokeBorder(Brand.success.opacity(0.18), lineWidth: 1))
+    }
+
+    /// "$44,000 declared · LOAD-1077 · All-Risk Cargo" — the linked load
+    /// number appears only when the quote was prefilled from a real load.
+    private func quoteDeclaredLine(_ q: PerLoadQuote, _ inp: PerLoadQuoteInputs) -> String {
+        var bits = ["\(grouped(Double(inp.cargoValue))) declared"]
+        if let n = inp.loadNumber, !n.isEmpty { bits.append(n) }
+        bits.append(q.policyType)
+        return bits.joined(separator: " · ")
     }
 
     // MARK: Peril-coverage line (bespoke · WeatherIcons, zero SF Symbols)
@@ -528,6 +635,125 @@ struct ShipperCargoInsurance: View {
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    // MARK: Per-load policy history (insurance.getMyPerLoadPolicies)
+
+    /// The per-load EusoShield ledger — every single-trip policy this shipper
+    /// has bought, live from `insurance.getMyPerLoadPolicies`. Renders on the
+    /// loaded branch (below the COI line) AND the empty branch, so a shipper
+    /// with zero annual policies still sees the per-load coverage they own.
+    private func perLoadHistoryCard(_ rows: [PerLoadPolicy]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("PER-LOAD POLICIES · \(rows.count) · EUSOSHIELD")
+                .font(EType.micro).tracking(1.0).foregroundStyle(palette.textTertiary)
+                .padding(.bottom, Space.s3)
+            ForEach(Array(rows.enumerated()), id: \.element.id) { idx, p in
+                perLoadPolicyRow(p)
+                if idx < rows.count - 1 { rowDivider }
+            }
+        }
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg)
+    }
+
+    private func perLoadPolicyRow(_ p: PerLoadPolicy) -> some View {
+        HStack(alignment: .top, spacing: Space.s3) {
+            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                .fill(LinearGradient.diagonal.opacity(0.12))
+                .frame(width: 40, height: 40)
+                .overlay(Image(systemName: "shippingbox.fill")
+                    .font(.system(size: 15)).foregroundStyle(LinearGradient.diagonal))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(p.origin ?? "-") → \(p.destination ?? "-")")
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary).lineLimit(1)
+                Text(p.policyNumber)
+                    .font(EType.caption.monospaced()).foregroundStyle(palette.textSecondary).lineLimit(1)
+                Text(perLoadSubline(p)).font(EType.micro).foregroundStyle(palette.textTertiary).lineLimit(1)
+            }
+            Spacer(minLength: Space.s2)
+            VStack(alignment: .trailing, spacing: 6) {
+                perLoadStatusBadge(p)
+                if let prem = p.premium, prem > 0 {
+                    Text(grouped(prem))
+                        .font(EType.caption.monospaced()).foregroundStyle(palette.textPrimary)
+                }
+            }
+        }
+    }
+
+    private func perLoadSubline(_ p: PerLoadPolicy) -> String {
+        var bits: [String] = []
+        if let cov = p.coverageAmount, cov > 0 { bits.append("\(compact(cov)) coverage") }
+        if let c = p.commodityType, !c.isEmpty { bits.append(commodityLabel(c)) }
+        if let exp = p.expiresAt, let d = daysUntil(exp), d >= 0 { bits.append("expires \(d)d") }
+        return bits.isEmpty ? (p.policyType ?? "-") : bits.joined(separator: " · ")
+    }
+
+    @ViewBuilder
+    private func perLoadStatusBadge(_ p: PerLoadPolicy) -> some View {
+        switch (p.status ?? "").lowercased() {
+        case "active":  badgeText("ACTIVE", Brand.success)
+        case "expired": badgeText("EXPIRED", Brand.danger)
+        case "claimed": badgeText("CLAIMED", Brand.warning)
+        default:        badgeText((p.status ?? "-").uppercased(), palette.textTertiary)
+        }
+    }
+
+    private var rowDivider: some View {
+        Rectangle().fill(palette.textTertiary.opacity(0.08))
+            .frame(height: 1).padding(.vertical, Space.s3)
+    }
+
+    // MARK: Coverage-requirements ladder (getCommodityInsuranceRequirements)
+
+    /// FMCSA coverage-minimum ladder — empty-branch education so a shipper
+    /// with no coverage on file sees what the law requires before quoting.
+    /// Every dollar figure / endorsement / note is the server's verbatim row.
+    private func requirementsLadder(_ rungs: [CommodityRequirement]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("COVERAGE REQUIREMENTS · FMCSA MINIMUMS")
+                .font(EType.micro).tracking(1.0).foregroundStyle(palette.textTertiary)
+                .padding(.bottom, Space.s3)
+            ForEach(Array(rungs.enumerated()), id: \.element.category) { idx, r in
+                ladderRung(r)
+                if idx < rungs.count - 1 { rowDivider }
+            }
+        }
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.lg)
+    }
+
+    private func ladderRung(_ r: CommodityRequirement) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(ladderLabel(r.category))
+                    .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                Spacer()
+                Text("\(compact(r.minLiability)) liability · \(compact(r.minCargo)) cargo")
+                    .font(EType.caption.monospaced())
+                    .foregroundStyle(LinearGradient.diagonal)
+            }
+            if !r.specialEndorsements.isEmpty {
+                Text(r.specialEndorsements.joined(separator: " · "))
+                    .font(EType.micro.monospaced()).foregroundStyle(palette.textSecondary).lineLimit(1)
+            }
+            Text(r.notes).font(EType.micro).foregroundStyle(palette.textTertiary).lineLimit(2)
+        }
+    }
+
+    private func ladderLabel(_ category: String) -> String {
+        switch category {
+        case "general":       return "General freight"
+        case "reefer":        return "Reefer · temperature-controlled"
+        case "hazmat_class1": return "Hazmat · Class 1 explosives"
+        case "hazmat_class2": return "Hazmat · Class 2 gas"
+        case "hazmat_class3": return "Hazmat · Class 3 flammable"
+        case "hazmat_class7": return "Hazmat · Class 7 radioactive"
+        case "hazmat_other":  return "Hazmat · other classes"
+        case "oil_gas":       return "Oil & gas"
+        default: return category.replacingOccurrences(of: "_", with: " ").capitalized
+        }
+    }
+
     // MARK: Purchase (real mutation — do/catch, never try?-??)
 
     private func purchase(_ q: PerLoadQuote, _ inp: PerLoadQuoteInputs) async {
@@ -539,6 +765,11 @@ struct ShipperCargoInsurance: View {
             let hazmatSurcharge: Double; let reeferSurcharge: Double; let highValueSurcharge: Double
             let commodityType: String; let policyType: String
             let origin: String; let destination: String
+            /// Links the policy to a real load when the quote was prefilled
+            /// from the "Insure one of your loads" picker. Server input is
+            /// `z.coerce.number().optional()` (insurance.ts purchasePerLoad)
+            /// — nil encodes as absent, which the server folds to NULL.
+            let loadId: Int?
         }
         do {
             let result: PurchasePerLoadResult = try await EusoTripAPI.shared.mutation(
@@ -555,7 +786,8 @@ struct ShipperCargoInsurance: View {
                     commodityType: inp.commodityType,
                     policyType: q.policyType,
                     origin: inp.origin,
-                    destination: inp.destination
+                    destination: inp.destination,
+                    loadId: inp.loadId
                 )
             )
             if result.success {
@@ -629,7 +861,7 @@ struct ShipperCargoInsurance: View {
     private func errorBanner(_ err: Error) -> some View {
         VStack(spacing: Space.s2) {
             Text("Couldn't load insurance").font(EType.title).foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription).font(EType.caption)
+            Text(err.eusoUserCopy).font(EType.caption)
                 .foregroundStyle(palette.textTertiary).multilineTextAlignment(.center)
             Button { Task { await store.refresh() } } label: {
                 Text("Retry").font(EType.bodyStrong).foregroundStyle(.white)
@@ -742,6 +974,11 @@ private struct PerLoadQuoteInputs: Equatable {
     let coverageAmount: Int
     let origin: String
     let destination: String
+    /// Set only when the quote was prefilled from the shipper's own load via
+    /// the "Insure one of your loads" picker — threaded into
+    /// `insurance.purchasePerLoad` so the policy row links to the real load.
+    let loadId: Int?
+    let loadNumber: String?
 }
 
 /// Server rate-table keys (insurance.ts:896). Labels are presentation-only.
@@ -767,96 +1004,343 @@ private struct PerLoadQuoteSheet: View {
     @Environment(\.dismiss) var dismiss
     let onQuoted: (PerLoadQuote, PerLoadQuoteInputs) -> Void
 
-    @State private var commodity = "food_reefer"
+    /// Shipper-SCOPED loads for the "Insure one of your loads" picker —
+    /// `shippers.getMyLoads` via the existing ShipperMyLoadsStore (the same
+    /// store the 228 BOL picker uses). `loads.search` is deliberately NOT
+    /// used here: that proc is unscoped and would leak other shippers' loads.
+    @StateObject private var loadsStore = ShipperMyLoadsStore()
+
+    @State private var commodity = "general"
     @State private var origin = ""
     @State private var destination = ""
     @State private var cargoValue = ""
+    @State private var pickedLoadId: Int? = nil
+    @State private var pickedLoadNumber: String? = nil
+    @State private var valuePrefilledFromRate = false
+    @State private var showLoadPicker = false
     @State private var loading = false
     @State private var quote: PerLoadQuote? = nil
     @State private var errorText: String? = nil
+    /// Monotonic round counter — `.task(id:)` cancels the stale debounce task
+    /// but does not await it, so each round guards its own writes.
+    @State private var quoteRound = 0
 
     private var cargoValueInt: Int { Int(cargoValue.filter(\.isNumber)) ?? 0 }
     private var canQuote: Bool { cargoValueInt > 0 && !origin.isEmpty && !destination.isEmpty }
+    /// Debounce identity — any input change re-arms the 600 ms live-pricing task.
+    private var quoteKey: String { "\(commodity)|\(cargoValueInt)|\(origin)|\(destination)" }
+
+    /// Statuses past the point of insuring a trip — filtered OUT of the picker.
+    private static let closedStatuses: Set<String> = [
+        "delivered", "invoiced", "disputed", "paid", "complete",
+        "cancelled", "expired", "declined", "lapsed",
+    ]
 
     var body: some View {
-        ScrollView {
+        ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
-                HStack {
-                    Text("New per-load quote").font(EType.h2).foregroundStyle(palette.textPrimary)
-                    Spacer()
-                    Button { dismiss() } label: {
-                        Text("Close").font(EType.bodyStrong).foregroundStyle(palette.textSecondary)
-                    }.buttonStyle(.plain)
-                }
-
-                field("COMMODITY") {
-                    Picker("", selection: $commodity) {
-                        ForEach(PerLoadCommodity.all, id: \.key) { Text($0.label).tag($0.key) }
-                    }.pickerStyle(.menu).tint(palette.textPrimary)
-                }
-                field("DECLARED CARGO VALUE (USD)") {
-                    TextField("44000", text: $cargoValue)
-                        .keyboardType(.numberPad).foregroundStyle(palette.textPrimary)
-                }
-                field("ORIGIN") {
-                    TextField("Los Angeles, CA", text: $origin).foregroundStyle(palette.textPrimary)
-                }
-                field("DESTINATION") {
-                    TextField("Phoenix, AZ", text: $destination).foregroundStyle(palette.textPrimary)
-                }
-
-                if let q = quote { quoteResult(q) }
+                sheetHeader
+                loadPickerSection
+                inputFields
+                if let q = quote { quoteResultCard(q) }
                 if let e = errorText {
                     Text(e).font(EType.caption).foregroundStyle(Brand.danger)
                 }
-
-                Button { Task { await runQuote() } } label: {
-                    HStack(spacing: 6) {
-                        if loading { ProgressView().scaleEffect(0.8) }
-                        Text(loading ? "Pricing…" : "Get quote").font(EType.bodyStrong).foregroundStyle(.white)
-                    }
-                    .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
-                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(canQuote ? AnyShapeStyle(LinearGradient.diagonal)
-                                                        : AnyShapeStyle(palette.textTertiary.opacity(0.4))))
-                }.buttonStyle(.plain).disabled(!canQuote || loading)
-
-                if quote != nil {
-                    Button {
-                        if let q = quote {
-                            onQuoted(q, PerLoadQuoteInputs(commodityType: commodity, cargoValue: cargoValueInt,
-                                                           coverageAmount: cargoValueInt, origin: origin, destination: destination))
-                            dismiss()
-                        }
-                    } label: {
-                        Text("Use this quote").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                            .frame(maxWidth: .infinity).padding(.vertical, Space.s3)
-                            .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
-                            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-                    }.buttonStyle(.plain)
-                }
+                lockCTA
             }
             .padding(Space.s4)
         }
         .background(palette.bgPrimary)
+        .task { await loadsStore.refresh() }
+        .task(id: quoteKey) { await debouncedQuote() }
     }
 
-    private func quoteResult(_ q: PerLoadQuote) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text(q.policyType).font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                Spacer()
-                Text(currency(q.totalPremium)).font(.system(size: 22, weight: .bold)).monospacedDigit()
+    // MARK: Header — EusoShield house style (gradient eyebrow + hairline + shield)
+
+    private var sheetHeader: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(alignment: .top) {
+                Text("✦ EUSOSHIELD · PER-LOAD QUOTE")
+                    .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.diagonal)
+                Spacer()
+                Button { dismiss() } label: {
+                    Text("Close").font(EType.bodyStrong).foregroundStyle(palette.textSecondary)
+                }.buttonStyle(.plain)
             }
+            HStack(alignment: .center, spacing: Space.s2) {
+                Text("Insure a single load")
+                    .font(EType.h2).foregroundStyle(palette.textPrimary)
+                Spacer()
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: 26, weight: .regular))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .opacity(0.9)
+            }
+            Text("All-risk coverage for one trip · priced live as you type")
+                .font(EType.caption).foregroundStyle(palette.textSecondary)
+            IridescentHairline()
+        }
+    }
+
+    // MARK: "Insure one of your loads" picker (shippers.getMyLoads)
+
+    @ViewBuilder
+    private var loadPickerSection: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("INSURE ONE OF YOUR LOADS")
+                .font(EType.micro).tracking(0.6).foregroundStyle(palette.textTertiary)
+            if let n = pickedLoadNumber {
+                // Selected-load chip — gradient rim marks the live link.
+                HStack(spacing: Space.s2) {
+                    Image(systemName: "shippingbox.fill").font(.system(size: 14))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(n).font(EType.bodyStrong).foregroundStyle(palette.textPrimary).lineLimit(1)
+                        Text("\(origin) → \(destination)")
+                            .font(EType.caption.monospaced())
+                            .foregroundStyle(palette.textSecondary).lineLimit(1)
+                    }
+                    Spacer()
+                    Button { clearPickedLoad() } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 16))
+                            .foregroundStyle(palette.textTertiary)
+                    }.buttonStyle(.plain)
+                }
+                .padding(Space.s3)
+                .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                    .strokeBorder(LinearGradient.diagonal.opacity(0.85), lineWidth: 1.5))
+            } else {
+                Button {
+                    withAnimation(.easeOut(duration: 0.12)) { showLoadPicker.toggle() }
+                } label: {
+                    HStack {
+                        Image(systemName: "shippingbox").font(.system(size: 13))
+                            .foregroundStyle(LinearGradient.diagonal)
+                        Text("Prefill from one of your loads")
+                            .font(EType.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
+                        Spacer()
+                        Image(systemName: showLoadPicker ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                    .padding(Space.s3)
+                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1))
+                }.buttonStyle(.plain)
+                if showLoadPicker { loadRows }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var loadRows: some View {
+        switch loadsStore.state {
+        case .loading:
+            HStack(spacing: 8) {
+                ProgressView().scaleEffect(0.7)
+                Text("Loading your loads…")
+                    .font(EType.caption).foregroundStyle(palette.textTertiary)
+            }
+            .padding(.vertical, Space.s2)
+        case .empty:
+            Text("No open loads to insure yet — enter the trip manually below.")
+                .font(EType.caption).foregroundStyle(palette.textTertiary)
+        case .error:
+            Text("Couldn't reach your loads — enter the trip manually below.")
+                .font(EType.caption).foregroundStyle(palette.textTertiary)
+        case .loaded(let rows):
+            let open = rows.filter { !Self.closedStatuses.contains($0.status.lowercased()) }
+            if open.isEmpty {
+                Text("No open loads to insure — enter the trip manually below.")
+                    .font(EType.caption).foregroundStyle(palette.textTertiary)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(open.prefix(8)) { l in loadRow(l) }
+                }
+            }
+        }
+    }
+
+    private func loadRow(_ l: ShipperAPI.MyLoad) -> some View {
+        Button { pick(l) } label: {
+            HStack(spacing: Space.s2) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(l.loadNumber)
+                        .font(EType.caption.weight(.bold)).foregroundStyle(palette.textPrimary)
+                    Text("\(l.origin) → \(l.destination)")
+                        .font(EType.micro.monospaced())
+                        .foregroundStyle(palette.textSecondary).lineLimit(1)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(l.status.replacingOccurrences(of: "_", with: " ").uppercased())
+                        .font(.system(size: 8, weight: .bold)).tracking(0.5)
+                        .foregroundStyle(Brand.info)
+                    if let r = l.rate, r > 0 {
+                        Text(currency(r))
+                            .font(EType.micro.monospaced()).foregroundStyle(palette.textTertiary)
+                    }
+                }
+            }
+            .padding(Space.s3)
+            .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCardSoft))
+            .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1))
+        }.buttonStyle(.plain)
+    }
+
+    private func pick(_ l: ShipperAPI.MyLoad) {
+        pickedLoadId = Int(l.id)
+        pickedLoadNumber = l.loadNumber
+        origin = l.origin
+        destination = l.destination
+        // Declared-value seed: the load's line-haul rate is the only real
+        // dollar figure the row carries. Provenance is shown in the field
+        // hint and the field stays editable — the shipper adjusts it to the
+        // cargo's true declared value. Blank when the load has no rate;
+        // never an invented figure.
+        if let r = l.rate, r > 0 {
+            cargoValue = String(Int(r))
+            valuePrefilledFromRate = true
+        } else {
+            valuePrefilledFromRate = false
+        }
+        commodity = Self.commodityKey(for: l)
+        withAnimation(.easeOut(duration: 0.12)) { showLoadPicker = false }
+    }
+
+    private func clearPickedLoad() {
+        pickedLoadId = nil
+        pickedLoadNumber = nil
+        valuePrefilledFromRate = false
+    }
+
+    /// Real server fields (hazmat flag + class, equipment, product) → the
+    /// server rate-table key (insurance.ts getPerLoadQuote RATES). A UI
+    /// convenience only — the shipper can change the picker afterwards.
+    static func commodityKey(for l: ShipperAPI.MyLoad) -> String {
+        if l.hazmat {
+            switch (l.hazmatClass ?? "").prefix(1) {
+            case "1": return "hazmat_explosive"
+            case "2": return "hazmat_gas"
+            case "3": return "hazmat_flammable"
+            case "7": return "hazmat_radioactive"
+            case "8": return "hazmat_corrosive"
+            // Classes 4-6 / 9 have no dedicated rate-table key; flammable is
+            // the closest hazmat rate and the picker stays user-editable.
+            default:  return "hazmat_flammable"
+            }
+        }
+        let e = l.equipment.lowercased(), p = l.product.lowercased()
+        if e.contains("reefer") || e.contains("refriger") || p.contains("frozen") { return "food_reefer" }
+        if p.contains("pharma") || p.contains("medical") { return "pharma" }
+        if p.contains("electronic") { return "electronics" }
+        if p.contains("crude") || p.contains("petroleum") || p.contains("oil") { return "crude_oil" }
+        if p.contains("machin") { return "machinery" }
+        if p.contains("auto") || p.contains("vehicle") { return "auto" }
+        if p.contains("food") || p.contains("grain") || p.contains("produce") { return "food_dry" }
+        return "general"
+    }
+
+    // MARK: Trip fields (instructive placeholders — no dev literals)
+
+    private var inputFields: some View {
+        VStack(alignment: .leading, spacing: Space.s4) {
+            field("COMMODITY") {
+                Picker("", selection: $commodity) {
+                    ForEach(PerLoadCommodity.all, id: \.key) { Text($0.label).tag($0.key) }
+                }.pickerStyle(.menu).tint(palette.textPrimary)
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                field("DECLARED CARGO VALUE (USD)") {
+                    TextField("Declared value", text: $cargoValue)
+                        .keyboardType(.numberPad).foregroundStyle(palette.textPrimary)
+                }
+                if valuePrefilledFromRate {
+                    Text("Seeded from the load's line-haul rate — adjust to the cargo's declared value.")
+                        .font(EType.micro).foregroundStyle(palette.textTertiary)
+                }
+            }
+            field("ORIGIN") {
+                TextField("Pickup city, ST", text: $origin).foregroundStyle(palette.textPrimary)
+            }
+            field("DESTINATION") {
+                TextField("Delivery city, ST", text: $destination).foregroundStyle(palette.textPrimary)
+            }
+        }
+    }
+
+    // MARK: Live indicative premium (gradient-rim card, mirrors the 297 hero)
+
+    private func quoteResultCard(_ q: PerLoadQuote) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(alignment: .top) {
+                Text("INDICATIVE PREMIUM · \(q.policyType.uppercased())")
+                    .font(EType.micro).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer()
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(LinearGradient.diagonal)
+                    .opacity(0.9)
+            }
+            Text(currency(q.totalPremium))
+                .font(.system(size: 34, weight: .bold)).monospacedDigit()
+                .foregroundStyle(LinearGradient.diagonal)
+            Rectangle().fill(palette.textTertiary.opacity(0.08)).frame(height: 1)
             line("Base premium", currency(q.premium))
             if q.hazmatSurcharge > 0 { line("Hazmat surcharge", currency(q.hazmatSurcharge)) }
             if q.reeferSurcharge > 0 { line("Reefer surcharge", currency(q.reeferSurcharge)) }
             if q.highValueSurcharge > 0 { line("High-value surcharge", currency(q.highValueSurcharge)) }
             line("Coverage", currency(q.coverage))
             line("Deductible", currency(q.deductible))
-            if let v = q.validUntil { Text("Valid until \(v)").font(EType.micro.monospaced()).foregroundStyle(palette.textTertiary) }
+            if let v = q.validUntil, let d = ShipperCargoInsurance.parseDate(v) {
+                Text("Valid until \(d.formatted(date: .abbreviated, time: .shortened))")
+                    .font(EType.micro.monospaced()).foregroundStyle(palette.textTertiary)
+            }
         }
-        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading).eusoCard(radius: Radius.lg)
+        .padding(Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous).fill(palette.bgCard))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(LinearGradient.diagonal.opacity(0.85), lineWidth: 1.5)
+        )
+    }
+
+    // MARK: CTA — active gradient "Lock quote", never a dead gray slab
+
+    @ViewBuilder
+    private var lockCTA: some View {
+        if let q = quote {
+            CTAButton(
+                title: "Lock quote",
+                action: {
+                    onQuoted(q, PerLoadQuoteInputs(
+                        commodityType: commodity, cargoValue: cargoValueInt,
+                        coverageAmount: cargoValueInt, origin: origin,
+                        destination: destination,
+                        loadId: pickedLoadId, loadNumber: pickedLoadNumber))
+                    dismiss()
+                },
+                trailingIcon: "lock.fill",
+                isLoading: loading
+            )
+        } else if loading {
+            HStack(spacing: 8) {
+                ProgressView().scaleEffect(0.8)
+                Text("Pricing with EusoShield…")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.vertical, Space.s2)
+        } else {
+            Text("Enter declared value, pickup, and delivery — the indicative premium prices live as you type.")
+                .font(EType.caption).foregroundStyle(palette.textTertiary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private func line(_ l: String, _ v: String) -> some View {
@@ -874,9 +1358,20 @@ private struct PerLoadQuoteSheet: View {
         }
     }
 
-    private func runQuote() async {
+    /// Debounced live pricing — `.task(id: quoteKey)` re-arms on every input
+    /// change, sleeps 600 ms, then fires the REAL `insurance.getPerLoadQuote`
+    /// mutation. Only the settled inputs ever reach the server; a stale round
+    /// never overwrites a newer one.
+    private func debouncedQuote() async {
+        quoteRound &+= 1
+        let round = quoteRound
+        guard canQuote else {
+            quote = nil; errorText = nil; loading = false
+            return
+        }
         loading = true; errorText = nil
-        defer { loading = false }
+        defer { if round == quoteRound { loading = false } }
+        do { try await Task.sleep(nanoseconds: 600_000_000) } catch { return }
         struct QuoteIn: Encodable {
             let cargoValue: Int; let commodityType: String; let coverageAmount: Int
             let origin: String; let destination: String
@@ -887,9 +1382,12 @@ private struct PerLoadQuoteSheet: View {
                 input: QuoteIn(cargoValue: cargoValueInt, commodityType: commodity,
                                coverageAmount: cargoValueInt, origin: origin, destination: destination)
             )
-            quote = q
+            if round == quoteRound, !Task.isCancelled { quote = q }
         } catch {
-            errorText = error.localizedDescription
+            if round == quoteRound, !Task.isCancelled, !(error is CancellationError) {
+                errorText = error.localizedDescription
+                quote = nil
+            }
         }
     }
 
@@ -931,15 +1429,15 @@ private struct RequestCOISheet: View {
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
 
                 field("CERTIFICATE HOLDER NAME") {
-                    TextField("Acme Receiving LLC", text: $holderName).foregroundStyle(palette.textPrimary)
+                    TextField("Certificate holder name", text: $holderName).foregroundStyle(palette.textPrimary)
                 }
                 field("HOLDER EMAIL") {
-                    TextField("ap@acme.com", text: $holderEmail)
+                    TextField("Holder email", text: $holderEmail)
                         .keyboardType(.emailAddress).textInputAutocapitalization(.never)
                         .foregroundStyle(palette.textPrimary)
                 }
                 field("HOLDER ADDRESS") {
-                    TextField("123 Dock St, Phoenix, AZ", text: $holderAddress).foregroundStyle(palette.textPrimary)
+                    TextField("Street, city, ST", text: $holderAddress).foregroundStyle(palette.textPrimary)
                 }
                 Toggle(isOn: $additionalInsured) {
                     Text("Additional insured endorsement").font(EType.caption).foregroundStyle(palette.textPrimary)
@@ -1007,12 +1505,17 @@ private struct RequestCOISheet: View {
 }
 
 #if DEBUG
-struct ShipperCargoInsurance_Previews: PreviewProvider {
-    static var previews: some View {
-        ShipperCargoInsurance()
-            .environment(\.palette, Theme.dark)
-            .background(Theme.dark.bgPrimary)
-            .preferredColorScheme(.dark)
-    }
+#Preview("297 Cargo Insurance · Dark") {
+    ShipperCargoInsurance()
+        .environment(\.palette, Theme.dark)
+        .background(Theme.dark.bgPrimary)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("297 Cargo Insurance · Light") {
+    ShipperCargoInsurance()
+        .environment(\.palette, Theme.light)
+        .background(Theme.light.bgPrimary)
+        .preferredColorScheme(.light)
 }
 #endif

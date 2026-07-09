@@ -457,26 +457,42 @@ private struct RailDutyHTSEstimateBody: View {
 
     private var ctaRow: some View {
         HStack(spacing: Space.s3) {
-            Button(action: {}) {
-                Text("Certify USMCA")
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-            }
-            .background(LinearGradient.primary)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "USMCA review",
+                sheetTitle: "USMCA certification context",
+                lines: dutyCertificationLines,
+                fillWidth: true,
+                systemImage: "checkmark.seal"
+            )
 
-            Button(action: {}) {
-                Text("Breakdown")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 140, height: 48)
-            }
-            .background(palette.bgCardSoft)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Breakdown",
+                sheetTitle: "Duty and tax breakdown",
+                lines: dutyBreakdownLines,
+                width: 140,
+                systemImage: "list.bullet.rectangle"
+            )
         }
+    }
+
+    private var dutyCertificationLines: [String] {
+        [
+            "\(origin) → \(destination) · \(currency)",
+            "USMCA savings \(moneyWhole(usmcaSaves))",
+            "Certified total \(certified.map { moneyWhole($0.summary.grandTotal) } ?? "-") · as-shipped \(asShipped.map { moneyWhole($0.summary.grandTotal) } ?? "-")"
+        ]
+    }
+
+    private var dutyBreakdownLines: [String] {
+        let calc = certified ?? asShipped
+        var lines = [
+            "Declared \(calc.map { moneyWhole($0.summary.totalDeclaredValue) } ?? "-") · duty \(calc.map { moneyWhole($0.summary.totalDuty) } ?? "-")",
+            "Tax \(calc.map { moneyWhole($0.summary.totalTax) } ?? "-") · MPF \(calc.map { moneyWhole($0.summary.merchandiseProcessingFee) } ?? "-")"
+        ]
+        lines.append(contentsOf: (calc?.lineItems ?? []).prefix(6).map { item in
+            "\(item.htsCode) · \(item.description) · \(moneyWhole(item.totalCharges))"
+        })
+        return lines
     }
 
     // MARK: - Formatting helpers

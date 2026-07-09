@@ -426,22 +426,46 @@ private struct RailFRAAccidentReportsBody: View {
 
     // MARK: - Footer actions
 
+    private var stateFilterLines: [String] {
+        let grouped = Dictionary(grouping: incidents) { $0.state ?? "Unknown" }
+        return grouped.keys.sorted().map { state in
+            let rows = grouped[state] ?? []
+            let reportable = rows.filter { isReportable($0) }.count
+            return "\(state): \(rows.count) incidents, \(reportable) reportable"
+        }
+    }
+
+    private var safetyMetricLines: [String] {
+        var lines = [
+            "Railroad: \(safety?.railroadName ?? railroadCode)",
+            "Reporting year: \(safety?.reportingYear.map(String.init) ?? "-")",
+            "Accident rate: \(String(format: "%.2f", safety?.accidentRate ?? 0))",
+            "Compliance rate: \(String(format: "%.1f", safety?.complianceRate ?? 0))",
+            "Overall rating: \(safety?.overallRating ?? "-")",
+            "Reportable incidents: \(reportableCount) of \(archivedCount)"
+        ]
+        if let latest = sortedIncidents.first {
+            lines.append("Latest: \(latest.incidentDate ?? "-") \(latest.city ?? "-"), \(latest.state ?? "-")")
+        }
+        return lines
+    }
+
     private var footerActions: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Filter by state", action: {})
+            RailSecondaryActionButton(
+                title: "State review",
+                sheetTitle: "FRA incidents by state",
+                lines: stateFilterLines,
+                fillWidth: true,
+                systemImage: "line.3.horizontal.decrease.circle"
+            )
                 .frame(maxWidth: .infinity)
-            Button(action: {}) {
-                Text("Safety metrics")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 48, maxHeight: 48)
-                    .background(palette.bgCardSoft)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous)
-                                .strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.pill, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "Safety metrics",
+                sheetTitle: "FRA safety metrics",
+                lines: safetyMetricLines,
+                systemImage: "shield.lefthalf.filled"
+            )
         }
     }
 

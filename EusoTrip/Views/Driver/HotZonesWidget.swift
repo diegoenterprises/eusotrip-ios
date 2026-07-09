@@ -50,6 +50,11 @@ import UIKit
 @MainActor
 final class HotZonesStore: ObservableObject {
     @Published var zones: [HotZoneEntry] = []
+    /// Cold metros (capacity > demand) the same `getRateFeed` envelope ships.
+    /// Surfaced so the demand map can include them as the BLUE end of the
+    /// geothermal ramp (low-weight heat points). Empty when the feed carries
+    /// no cold zones — honest, never synthesized.
+    @Published var coldZones: [ColdZoneEntry] = []
     @Published var marketPulse: HotZonesMarketPulse?
     @Published var feedSource: String?
     @Published var isLoading: Bool = false
@@ -63,6 +68,8 @@ final class HotZonesStore: ObservableObject {
     /// How long a cached feed is considered fresh before a background
     /// refresh kicks in on `.onAppear`. Matches the web page's 5-min TTL.
     private let staleAfter: TimeInterval = 300
+    private static let refreshTimeoutNanoseconds: UInt64 = 10_000_000_000
+    private var refreshGeneration = 0
 
     /// True stale-while-revalidate: when there's already cached data,
     /// surface it immediately AND fire a background refresh so the next
@@ -89,16 +96,48 @@ final class HotZonesStore: ObservableObject {
     /// `zones` / `marketPulse`, which is fine because `getRateFeed`
     /// is idempotent.
     func refresh() async {
+        refreshGeneration += 1
+        let generation = refreshGeneration
+        let requestedEquipment = equipmentFilter
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer {
+            if generation == refreshGeneration {
+                isLoading = false
+            }
+        }
 
-        do {
-            let feed = try await EusoTripAPI.shared.hotZones
-                .getRateFeed(equipment: equipmentFilter)
+        let result: Result<HotZonesFeedResult, Error> = await withTaskGroup(
+            of: Result<HotZonesFeedResult, Error>.self
+        ) { group in
+            group.addTask {
+                do {
+                    let feed = try await EusoTripAPI.shared.hotZones
+                        .getRateFeed(equipment: requestedEquipment)
+                    return .success(feed)
+                } catch {
+                    return .failure(error)
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: Self.refreshTimeoutNanoseconds)
+                return .failure(URLError(.timedOut))
+            }
+            let first = await group.next() ?? .failure(URLError(.unknown))
+            group.cancelAll()
+            return first
+        }
+
+        guard generation == refreshGeneration else { return }
+
+        switch result {
+        case .success(let feed):
             // Sort by live ratio (load-to-truck pressure) desc so the
             // tightest markets rise to the top of the widget carousel.
             self.zones = feed.zones.sorted { $0.liveRatio > $1.liveRatio }
+            // Cold metros from the same envelope (capacity > demand) — the
+            // blue end of the demand map's geothermal ramp. Nil/absent → [].
+            self.coldZones = feed.coldZones ?? []
             // Preserve the last good marketPulse if the server didn't
             // include one this round — without this guard the strip
             // briefly read "AVG RATE $0.00 / CRITICAL 0 zones / L/T
@@ -109,7 +148,8 @@ final class HotZonesStore: ObservableObject {
             }
             self.feedSource = feed.feedSource
             self.lastLoadedAt = Date()
-        } catch {
+            self.errorMessage = nil
+        case .failure(let error):
             self.errorMessage = (error as? LocalizedError)?.errorDescription
                 ?? String(describing: error)
         }
@@ -256,11 +296,43 @@ enum HotZoneDemand {
 /// fronted are deleted — this IS the engine now.)
 struct HotZonesHeatMapView: View {
     var zones: [HotZoneEntry]
+    /// Cold metros (capacity > demand) from the same feed. Included as the
+    /// BLUE end of the geothermal ramp via low-weight heat points. Default []
+    /// keeps every existing caller compiling; a screen with no cold-zone data
+    /// simply passes nothing (honest hot-only field).
+    var coldZones: [ColdZoneEntry] = []
     var selectedZoneId: String? = nil
     var onSelectZone: ((HotZoneEntry) -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.palette) private var palette
+
+    /// The continuous geothermal heat field, fed to `BespokeMapCanvas` via the
+    /// `.geothermal` style hint. Each point's `weight` = load-to-truck ratio
+    /// (the engine's fixed domain: 0.5→cold/blue, 1.4→mid, 3.0+→hot/red).
+    ///   • HOT zones  → weight = `zone.liveRatio` (real demand pressure).
+    ///   • COLD zones → low-weight blue end: a derived sub-balance ratio from
+    ///     `liveSurge` when present (clamped ≤ 1.0 so cold always reads cool),
+    ///     else the constant 0.6. ZERO fabrication: only real store zones with
+    ///     a real coordinate become points; a (0,0) center is dropped.
+    private var heatPoints: [HereLatLng] {
+        var pts: [HereLatLng] = []
+        for z in zones where !(z.center.lat == 0 && z.center.lng == 0) {
+            pts.append(HereLatLng(z.center.lat, z.center.lng, weight: z.liveRatio))
+        }
+        for c in coldZones {
+            guard let ctr = c.center, !(ctr.lat == 0 && ctr.lng == 0) else { continue }
+            // Cold weight: when the feed ships a surge multiplier, fold it into
+            // a sub-balance ratio (≤ 1.0 so it stays on the cool half of the
+            // ramp); otherwise a low constant that lands at the blue end.
+            let coldWeight: Double = {
+                guard let s = c.liveSurge, s > 0 else { return 0.6 }
+                return min(1.0, max(0.3, s * 0.6))
+            }()
+            pts.append(HereLatLng(ctr.lat, ctr.lng, weight: coldWeight))
+        }
+        return pts
+    }
 
     var body: some View {
         // Render the canonical native HERE map (`HereMapView`) with
@@ -273,7 +345,7 @@ struct HotZonesHeatMapView: View {
         // the empty state when there are no zones to plot.
         // Founder report 2026-05-06: "on homescreen driver the
         // hotzones map doesnt show at all."
-        if zones.isEmpty {
+        if zones.isEmpty && coldZones.isEmpty {
             zeroZonesEmptyState
         } else {
             // 2026-05-22: migrated off the legacy raster HereMapView (and the
@@ -283,10 +355,19 @@ struct HotZonesHeatMapView: View {
             // onSelectZone exactly as before. addOns are intentionally empty:
             // this is a demand-zone picker, so amenity/traffic pins would be
             // clutter (matches the driver load-board picker treatment).
+            //
+            // 2026-06-20 GEOTHERMAL: the demand map now LIGHTS UP — alongside
+            // the tappable per-zone pins, it emits a `.heatmap(points:)` layer
+            // (weight = load-to-truck ratio per point) and requests the
+            // `.geothermal` style hint, so the in-house engine paints the
+            // continuous blue→red demand field UNDER the pins. Cold zones ride
+            // in as the cool/blue end (see `heatPoints`). Pins stay tappable —
+            // the detail-sheet flow is unchanged.
             HereLiveMapView(
                 center: mapCenter,
                 zoom: 5,
                 baseLayers: [
+                    .heatmap(points: heatPoints),
                     .markers(zones.map { z in
                         HereMarker(
                             at: .init(z.center.lat, z.center.lng),
@@ -299,6 +380,7 @@ struct HotZonesHeatMapView: View {
                 addOns: [],
                 showLegend: false,
                 showTicker: false,
+                styleHint: .geothermal,
                 onSelectMarker: { id in
                     if let z = zones.first(where: { $0.zoneId == id }) {
                         onSelectZone?(z)
@@ -308,13 +390,23 @@ struct HotZonesHeatMapView: View {
         }
     }
 
-    /// Average of the live zone centers — a stable map anchor (the vector
-    /// view has no fit-to-bounds API; zoom 5 ≈ regional spread).
+    /// Average of the live zone centers (hot + cold) — a stable map anchor (the
+    /// vector view has no fit-to-bounds API; zoom 5 ≈ regional spread). Cold
+    /// centers are folded in so a cold-heavy field stays framed.
     private var mapCenter: HereLatLng {
-        guard !zones.isEmpty else { return .init(39.5, -98.35) }
-        let lat = zones.map { $0.center.lat }.reduce(0, +) / Double(zones.count)
-        let lng = zones.map { $0.center.lng }.reduce(0, +) / Double(zones.count)
-        return .init(lat, lng)
+        var lats: [Double] = []
+        var lngs: [Double] = []
+        for z in zones where !(z.center.lat == 0 && z.center.lng == 0) {
+            lats.append(z.center.lat); lngs.append(z.center.lng)
+        }
+        for c in coldZones {
+            if let ctr = c.center, !(ctr.lat == 0 && ctr.lng == 0) {
+                lats.append(ctr.lat); lngs.append(ctr.lng)
+            }
+        }
+        guard !lats.isEmpty else { return .init(39.5, -98.35) }
+        return .init(lats.reduce(0, +) / Double(lats.count),
+                     lngs.reduce(0, +) / Double(lngs.count))
     }
 
     /// Honest empty state when the live feed has zero zones to plot —
@@ -667,6 +759,7 @@ struct HotZonesWidget: View {
         ZStack(alignment: .topLeading) {
             HotZonesHeatMapView(
                 zones: store.zones,
+                coldZones: store.coldZones,
                 onSelectZone: { zone in selectedZone = zone }
             )
             .frame(height: 190)

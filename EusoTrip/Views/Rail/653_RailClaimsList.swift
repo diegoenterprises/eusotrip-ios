@@ -21,8 +21,7 @@
 //    · freightClaims.getClaims(status:search:limit:) → ClaimsResponse{ claims:[Claim] }
 //      where Claim = id:Int · type · status · description · createdAt · severity
 //  PORT-GAP (flagged below): freightClaims.getClaimById is NOT exposed on the Swift
-//  API surface — the SVG's "tap a row -> getClaimById" detail drill is wired to a
-//  no-op until the per-claim read lands.
+//  API surface. Rows render the live queue record only until the per-claim read lands.
 //
 
 import SwiftUI
@@ -288,7 +287,7 @@ private struct RailClaimsListBody: View {
                 .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
 
                 // PORT-GAP: freightClaims.getClaimById is not on the Swift API.
-                Text("+ tap a row -> getClaimById · evidence + workflow stage")
+                Text("+ row evidence is limited to the live queue payload")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textTertiary)
                     .padding(.top, Space.s2)
@@ -298,45 +297,38 @@ private struct RailClaimsListBody: View {
 
     private func claimRow(_ claim: FreightClaimsAPI.Claim) -> some View {
         let tone = rowTone(claim)
-        return Button {
-            // PORT-GAP: freightClaims.getClaimById — per-claim detail drill
-            // (evidence + workflow stage) is not exposed on EusoTripAPI yet.
-        } label: {
-            HStack(spacing: Space.s3) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(tone.fill.opacity(tone.fillOpacity))
-                        .frame(width: 40, height: 40)
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(tone.ink)
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(claimNumber(claim))
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(palette.textPrimary)
-                    Text(subtitleLine(claim))
-                        .font(EType.mono(.caption)).tracking(0.4)
-                        .foregroundStyle(palette.textSecondary)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: Space.s2)
-                VStack(alignment: .trailing, spacing: 6) {
-                    Text(tone.pill)
-                        .font(.system(size: 11, weight: .bold)).tracking(0.5)
-                        .foregroundStyle(tone.ink)
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(Capsule().fill(tone.fill.opacity(tone.fillOpacity)))
-                    Text(amountString(claim))
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(tone.amountInk)
-                        .monospacedDigit()
-                }
+        return HStack(spacing: Space.s3) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(tone.fill.opacity(tone.fillOpacity))
+                    .frame(width: 40, height: 40)
+                Image(systemName: "doc.text")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(tone.ink)
             }
-            .padding(.vertical, Space.s2)
-            .contentShape(Rectangle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(claimNumber(claim))
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Text(subtitleLine(claim))
+                    .font(EType.mono(.caption)).tracking(0.4)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: Space.s2)
+            VStack(alignment: .trailing, spacing: 6) {
+                Text(tone.pill)
+                    .font(.system(size: 11, weight: .bold)).tracking(0.5)
+                    .foregroundStyle(tone.ink)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Capsule().fill(tone.fill.opacity(tone.fillOpacity)))
+                Text(amountString(claim))
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(tone.amountInk)
+                    .monospacedDigit()
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, Space.s2)
     }
 
     // MARK: - Context strip
@@ -344,11 +336,11 @@ private struct RailClaimsListBody: View {
     private var contextStrip: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("CLAIM DETAIL · getClaimById")
+                Text("CLAIM DETAIL · live record")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("tap a row")
+                Text("live rows")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -372,14 +364,26 @@ private struct RailClaimsListBody: View {
 
     // MARK: - CTA pair (File claim · Sort)
 
+    private var fileClaimLines: [String] {
+        [
+            "Open: \(openCount)",
+            "Awaiting docs: \(awaitingCount)",
+            "Escalated: \(escalatedCount)",
+            "SLA avg: \(slaDays)d",
+            "Loaded rows: \(claims.count)",
+            "Sort mode: \(sortMode.rawValue)"
+        ]
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "File claim", action: {
-                // PORT-GAP: freightClaims.fileClaim requires a loadId + amount +
-                // description context the list surface doesn't carry; the filing
-                // sheet (645/099 grammar) is the canonical entry point. Wired
-                // here as the primary CTA destination once that sheet ports.
-            })
+            RailSecondaryActionButton(
+                title: "Claim review",
+                sheetTitle: "Claim filing context",
+                lines: fileClaimLines,
+                fillWidth: true,
+                systemImage: "plus"
+            )
             Button {
                 cycleSort()
             } label: {

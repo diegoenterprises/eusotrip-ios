@@ -178,8 +178,16 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
 
     /// Ask the iOS app to open Esang. Fires all three activation paths
     /// on the phone side (background wake, Handoff, local notification).
-    func requestPhoneActivation(transcript: String?, reply: String?) {
-        guard let session, session.activationState == .activated else { return }
+    /// Wake the iPhone app (background launch via WCSession) and have
+    /// it post the "Open EusoTrip" local notification + deeplink. A
+    /// third-party watch app CANNOT foreground-launch its companion —
+    /// this wake + one-tap notification (plus the Handoff activity the
+    /// calling surface publishes) is the honest platform-legal recipe.
+    /// Returns false when the session isn't even activated so callers
+    /// can tell the driver the truth instead of faking success.
+    @discardableResult
+    func requestPhoneActivation(transcript: String?, reply: String?) -> Bool {
+        guard let session, session.activationState == .activated else { return false }
         let payload: [String: Any] = [
             "op": "esang.activate",
             "transcript": transcript ?? "",
@@ -194,6 +202,7 @@ final class WatchConnectivityManager: NSObject, ObservableObject {
         } else {
             session.transferUserInfo(payload)
         }
+        return true
     }
 
     /// tRPC relay — ask the paired iPhone to run a tRPC query on our
@@ -702,7 +711,26 @@ extension WatchConnectivityManager: WCSessionDelegate {
     static let realtimeEventNotification = Notification.Name("watchRealtimeEvent")
 
     private func applyContext(_ ctx: [String: Any]) {
-        guard let op = ctx["op"] as? String else { return }
+        guard let op = ctx["op"] as? String else {
+            // MERGED applicationContext (WatchAuthBridge.publishContext):
+            // the phone's single durable slot now carries EVERY state
+            // domain keyed by channel — ["auth": {...op payload...},
+            // "load": ..., "hos": ..., "unread": ..., "settings": ...]
+            // — so a cold-launched watch restores all of them instead
+            // of only whichever op the phone happened to push last.
+            // Auth is applied FIRST so the other domains land on a
+            // signed-in store.
+            let channelOrder = ["auth", "load", "hos", "unread", "settings"]
+            var dispatched = false
+            for channel in channelOrder {
+                if let sub = ctx[channel] as? [String: Any], sub["op"] is String {
+                    dispatched = true
+                    applyContext(sub)
+                }
+            }
+            if !dispatched { return }
+            return
+        }
         switch op {
         case "realtime.event":
             // iPhone forwarded one of its WebSocket events. Re-broadcast

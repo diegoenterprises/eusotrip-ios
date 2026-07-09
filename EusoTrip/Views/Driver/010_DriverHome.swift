@@ -17,6 +17,7 @@
 //
 
 import SwiftUI
+import CoreLocation
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -794,6 +795,7 @@ struct HomeWidgetGrid: View {
 
 struct DriverHome: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var profile: DriverProfileStore
     @StateObject private var vm = DriverHomeViewModel()
     /// Sheet→push detail layer (push-nav mandate, 2026-06-09 / audit
@@ -1194,21 +1196,21 @@ struct DriverHome: View {
     // MARK: TopBar
 
     // Figma 212:444 / SVG 010 — bespoke eyebrow chip ("✦ DRIVER · DASHBOARD"
-    // gradient, GOOD-NIGHT · CITY tertiary on the right), then a two-line
+    // gradient, live status · CITY tertiary on the right), then a two-line
     // display greeting left, uppercase right-column label, chat round button
     // with magenta iridescent badge dot. The eyebrow is the SVG's defining
     // header motif (sparkle glyph used exactly once per surface, §4.3 budget).
     private var topBar: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             // Bespoke eyebrow row — gradient role chip + tertiary
-            // time-of-day · location, matching the Dark-SVG header and
+            // live status · location, matching the Dark-SVG header and
             // the Shipper-200 idiom so the role homes read as one family.
             HStack {
                 Text("✦ DRIVER · DASHBOARD")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(LinearGradient.primary)
                 Spacer(minLength: Space.s2)
-                Text("\(timeOfDayGreeting.uppercased()) · \(vm.locationCity.uppercased())")
+                Text("\(driverHeaderSignal.uppercased()) · \(vm.locationCity.uppercased())")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1)
@@ -1256,14 +1258,13 @@ struct DriverHome: View {
 
             Spacer(minLength: 0)
 
-            // Right-rail greeting + location — two tight lines, no mid-dot,
-            // with a small gradient pin glyph under a clean caps "GOOD
-            // AFTERNOON". Prior single-line mid-dot layout forced a 3-line
-            // wrap in a 110pt frame that read as cramped.
+            // Right-rail location — a small gradient pin glyph + city.
+            // build-752 feedback B: the time-of-day greeting used to live
+            // here too, but it ALSO appears in the eyebrow row above
+            // ("GOOD AFTERNOON · CITY"), so it read twice on the header.
+            // The greeting now shows once (the eyebrow); the right rail
+            // owns the location line only.
             VStack(alignment: .trailing, spacing: 4) {
-                Text(timeOfDayGreeting.uppercased())
-                    .font(EType.micro).tracking(1.0)
-                    .foregroundStyle(palette.textTertiary)
                 HStack(spacing: 4) {
                     Image(systemName: "location.fill")
                         .font(.system(size: 10, weight: .semibold))
@@ -1294,6 +1295,15 @@ struct DriverHome: View {
         case 12..<17: return "Good afternoon"
         case 17..<22: return "Good evening"
         default:      return "Good night"
+        }
+    }
+
+    private var driverHeaderSignal: String {
+        switch vm.weatherAvailability {
+        case .live: return "Weather live"
+        case .needsLocation: return "Location needed"
+        case .pending: return "Syncing"
+        case .unavailable: return "Weather unavailable"
         }
     }
 
@@ -1380,7 +1390,7 @@ struct DriverHome: View {
                     await vm.load()
                 }
             } else if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url)
+                openURL(url)
             }
         } label: {
             HStack(alignment: .center, spacing: Space.s3) {
@@ -1616,7 +1626,7 @@ struct DriverHome: View {
                 HStack(spacing: Space.s2) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(Brand.warning)
-                    Text("Backend unavailable")
+                    Text("Connection unavailable")
                         .font(EType.bodyStrong)
                         .foregroundStyle(palette.textPrimary)
                 }
@@ -2189,24 +2199,38 @@ struct NotificationsWidget: View {
 struct WeatherTileWidget: View {
     @Environment(\.palette) private var palette
     @Environment(\.homeWidgetSpan) private var span
+    @Environment(\.scenePhase) private var scenePhase
     let snapshot: WeatherSnapshot?
     var lane: LaneWeather? = nil
 
+    // Mirrors the live CoreLocation state so the nil card can offer the
+    // RIGHT CTA (system prompt vs. Settings) and re-render when the user
+    // responds. Seeded from the service so a returning view is correct
+    // before the first scenePhase tick. (build-752 feedback A)
+    @State private var authStatus: CLAuthorizationStatus = WeatherService.shared.authorizationStatus
+
     var body: some View {
-        if let s = snapshot {
-            WeatherCard(
-                snapshot: s,
-                lane: span == .half ? nil : lane,
-                style: span == .half ? .compact : .full
-            )
-        } else {
-            // No live snapshot — honest neutral state, no fabricated sky.
-            Text("Enable location for live weather.")
-                .font(EType.caption)
-                .foregroundStyle(palette.textSecondary)
-                .padding(Space.s3)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .eusoCard(radius: Radius.lg)
+        Group {
+            if let s = snapshot {
+                WeatherCard(
+                    snapshot: s,
+                    lane: span == .half ? nil : lane,
+                    style: span == .half ? .compact : .full
+                )
+            } else {
+                // No live snapshot — an INTERACTIVE enable-location card,
+                // not dead text. Tapping fires the iOS prompt (or opens
+                // Settings if denied) so HERE + WeatherKit can light up.
+                WeatherWidgetEnableLocationCard(status: authStatus, compact: span == .half) {
+                    authStatus = WeatherService.shared.authorizationStatus
+                }
+            }
+        }
+        // Re-read the auth state on foreground so a grant made in the
+        // system prompt (or a toggle in Settings) flips the card's CTA
+        // and lets the parent VM's next load() repopulate the snapshot.
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active { authStatus = WeatherService.shared.authorizationStatus }
         }
     }
 }
@@ -2226,8 +2250,13 @@ struct WeatherTileWidget: View {
 struct WeatherAlertsWidget: View {
     @Environment(\.palette) private var palette
     @Environment(\.homeWidgetSpan) private var span
+    @Environment(\.scenePhase) private var scenePhase
     let snapshot: WeatherSnapshot?
     var lane: LaneWeather? = nil
+
+    // Live CoreLocation state so the nil branch's enable card offers the
+    // right CTA and re-renders on grant. (build-752 feedback A)
+    @State private var authStatus: CLAuthorizationStatus = WeatherService.shared.authorizationStatus
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -2342,9 +2371,13 @@ struct WeatherAlertsWidget: View {
                     .padding(.top, 2)
                 }
             } else {
-                Text("Enable location for live route weather.")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
+                // No live snapshot — an INTERACTIVE enable row under the
+                // existing "WEATHER · ROUTE" eyebrow (the tile keeps its
+                // own card chrome). Tapping fires the iOS prompt (or opens
+                // Settings if denied) so HERE + WeatherKit can light up.
+                WeatherWidgetEnableRow(status: authStatus) {
+                    authStatus = WeatherService.shared.authorizationStatus
+                }
             }
         }
         .padding(Space.s3)
@@ -2353,6 +2386,141 @@ struct WeatherAlertsWidget: View {
         // ambient glow (dark) replacing the flat bgCard + faint-border
         // washout, bringing this tile up to the SVG card language.
         .eusoCard(radius: Radius.lg)
+        // Re-read the auth state on foreground so a grant flips the CTA
+        // and the parent VM's next load() repopulates the snapshot.
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active { authStatus = WeatherService.shared.authorizationStatus }
+        }
+    }
+}
+
+// MARK: - Weather widget enable-location CTA (bespoke, build-752 feedback A)
+//
+// The interactive enable-location surfaces for the catalog weather tiles.
+// Reuses the working hero `enableLocationCard` behavior (notDetermined →
+// fire the iOS prompt; denied/restricted → open Settings) but rendered to
+// each tile's idiom: a full card for `WeatherTileWidget`, a compact row
+// under the existing eyebrow for `WeatherAlertsWidget`. Glyphs come from
+// the WeatherIcons utility corpus (no SF Symbols), matching the weather
+// surfaces. After the tap settles, posts `.esangRefreshSurface` so the
+// parent DriverHome re-runs `vm.load()` and repopulates `vm.weather` —
+// flipping the card from CTA → live data with no VM threading.
+
+/// Funnels a tap into the right CoreLocation action, then nudges the host
+/// surface to refetch. `onResolved` lets the caller re-read the live auth
+/// status so the CTA copy/state updates immediately on the tap.
+///
+/// @MainActor: `WeatherService.shared` and its `authorizationStatus` /
+/// `requestPermissionIfNeeded()` are MainActor-isolated. The only callers
+/// are the two enable-location cards' `Button` actions, which already run
+/// on the main actor, so isolating this helper is free and correct.
+@MainActor
+private func weatherWidgetHandleEnableTap(onResolved: @escaping () -> Void) {
+    let status = WeatherService.shared.authorizationStatus
+    if status == .notDetermined {
+        WeatherService.shared.requestPermissionIfNeeded()
+        Task {
+            // Give CoreLocation a beat to deliver the grant + first fix,
+            // then ask DriverHome to re-load so `vm.weather` repopulates.
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+            await MainActor.run {
+                onResolved()
+                NotificationCenter.default.post(name: .esangRefreshSurface, object: nil)
+            }
+        }
+    } else if let url = URL(string: UIApplication.openSettingsURLString) {
+        UIApplication.shared.open(url)
+    }
+}
+
+/// Full enable-location card for the universal "weather" tile. Span-aware:
+/// compact (half) drops the body copy to one tight line.
+private struct WeatherWidgetEnableLocationCard: View {
+    let status: CLAuthorizationStatus
+    var compact: Bool = false
+    var onResolved: () -> Void
+    @Environment(\.palette) private var palette
+
+    private var denied: Bool { status == .denied || status == .restricted }
+
+    var body: some View {
+        Button {
+            weatherWidgetHandleEnableTap(onResolved: onResolved)
+        } label: {
+            HStack(alignment: .center, spacing: Space.s3) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient.diagonal)
+                        .frame(width: compact ? 38 : 48, height: compact ? 38 : 48)
+                    WeatherIcons.utility(.pin, size: compact ? 17 : 22, tint: .white)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(denied ? "Turn location on in Settings" : "Enable location for live weather")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(2)
+                    if !compact {
+                        Text(denied
+                             ? "Location is off for EusoTrip. Tap to open Settings and turn it on for local conditions and route weather."
+                             : "Grant location access to see local conditions, visibility and route weather alerts.")
+                            .font(EType.micro)
+                            .foregroundStyle(palette.textSecondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                Spacer(minLength: 0)
+                WeatherIcons.utility(.chev, size: 13, tint: palette.textTertiary)
+            }
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.lg)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(denied ? "Turn location on in Settings" : "Enable location for live weather")
+        .accessibilityHint(denied
+                           ? "Opens Settings so you can turn location on for the weather tile."
+                           : "Grants location access so the weather tile can show local conditions.")
+    }
+}
+
+/// Compact enable-location row for the "weather_alerts" tile — rendered
+/// under that tile's own "WEATHER · ROUTE" eyebrow + card chrome.
+private struct WeatherWidgetEnableRow: View {
+    let status: CLAuthorizationStatus
+    var onResolved: () -> Void
+    @Environment(\.palette) private var palette
+
+    private var denied: Bool { status == .denied || status == .restricted }
+
+    var body: some View {
+        Button {
+            weatherWidgetHandleEnableTap(onResolved: onResolved)
+        } label: {
+            HStack(spacing: 8) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient.diagonal)
+                        .frame(width: 30, height: 30)
+                    WeatherIcons.utility(.pin, size: 14, tint: .white)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(denied ? "Turn location on in Settings" : "Enable location for live route weather")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                        .lineLimit(2)
+                    Text(denied ? "Tap to open Settings" : "Tap to allow location")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer(minLength: 0)
+                WeatherIcons.utility(.chev, size: 11, tint: palette.textTertiary)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(denied ? "Turn location on in Settings" : "Enable location for live route weather")
+        .accessibilityHint(denied
+                           ? "Opens Settings so you can turn location on for route weather."
+                           : "Grants location access so route weather can load.")
     }
 }
 

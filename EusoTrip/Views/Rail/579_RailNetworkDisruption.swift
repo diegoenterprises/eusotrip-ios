@@ -369,17 +369,27 @@ private struct RailNetworkDisruptionBody: View {
                       action: { Task { await reportDisruption() } },
                       leadingIcon: "exclamationmark.bubble.fill",
                       isLoading: isReporting)
-            Button {} label: {
-                Text("Impacted")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Impacted",
+                sheetTitle: "Impacted rail loads",
+                lines: impactedReviewLines,
+                systemImage: "exclamationmark.triangle.fill"
+            )
         }
+    }
+
+    private var impactedReviewLines: [String] {
+        var lines = [
+            "\(embargoCount) embargo\(embargoCount == 1 ? "" : "es") · \(rampOutageCount) outage\(rampOutageCount == 1 ? "" : "s")",
+            "\(affectedCount) affected load\(affectedCount == 1 ? "" : "s") · \(rerouteYards.count) intermodal reroute yard\(rerouteYards.count == 1 ? "" : "s")"
+        ]
+        lines.append(contentsOf: impacted.prefix(6).map { load in
+            "\(load.loadNumber ?? "Load") · \(load.origin ?? "origin") → \(load.destination ?? "destination") · \(load.alertSeverity ?? "severity pending")"
+        })
+        lines.append(contentsOf: rerouteYards.prefix(3).map { yard in
+            "\(yard.name ?? yard.yardCode ?? "Yard") · \(yard.city ?? "") \(yard.state ?? "")"
+        })
+        return lines
     }
 
     // MARK: - Load / Actions

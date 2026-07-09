@@ -351,7 +351,7 @@ struct MeDocumentsHub: View {
             Text("Can't load documents")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
@@ -621,7 +621,7 @@ struct MeDocumentsHub: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
             }
-            Text("After you upload, ESANG runs OCR + type inference server-side to fill in the document fields automatically. Share links are short-lived and revocable. Archived documents are soft-deleted and retained per the policy you pick.")
+            Text("After you upload, ESANG runs OCR + type inference to fill in the document fields automatically. Share links are short-lived and revocable. Archived documents are soft-deleted and retained per the policy you pick.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

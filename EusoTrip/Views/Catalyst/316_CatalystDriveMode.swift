@@ -83,7 +83,7 @@ private struct DriveModeBody: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("OWNER-OP SEAM · ZERO ROTATION DRIFT")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text("Eusotrans owns the asset · Michael drives it · same companyId · same Schedule C")
+                Text("Eusotrans owns the asset · Michael drives it · same company · same Schedule C")
                     .font(EType.caption).foregroundStyle(palette.textPrimary)
             }
         }

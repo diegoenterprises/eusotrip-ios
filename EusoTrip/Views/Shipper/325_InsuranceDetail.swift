@@ -25,7 +25,7 @@ struct InsuranceDetailScreen: View {
 /// `insurance.getLoadPerilExposure({loadId})` 1:1. The proc tags a load's
 /// weather PERIL EXPOSURE — a named-storm corridor or a freeze window that
 /// the cargo's lane crosses — so the shipper can see coverage-relevant
-/// weather risk before it becomes a claim. Enterprise-gated (Tomorrow.io
+/// weather risk before it becomes a claim. Enterprise-gated (Apple WeatherKit
 /// severe-alert + named-event tier): until the key lands it returns
 /// `available:false` / `peril:"none"`, so every field is optional and the
 /// ribbon stays hidden rather than inventing a storm. When the key lands

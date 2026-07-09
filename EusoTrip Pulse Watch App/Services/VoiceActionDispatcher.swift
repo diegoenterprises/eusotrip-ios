@@ -11,8 +11,8 @@
 //  Catalog (spec §5.3) — watch-side routing:
 //    open_load_details        → push WatchLoadDetailView
 //    accept_load              → confirm + loads.accept via LoadStore
-//    decline_load             → loads.decline
-//    log_arrival              → loads.logArrival(kind: pickup|delivery)
+//    decline_load             → drivers.declineLoad
+//    log_arrival              → loads.updateLoadStatus(at_pickup|at_delivery)
 //    change_hos               → HOSStore.changeStatus(to:)
 //    find_rest_stop           → open Maps via handoff
 //    call_dispatch            → phone call or Walkie-Talkie
@@ -144,26 +144,42 @@ final class VoiceActionDispatcher: ObservableObject {
         case "accept_load":
             if let loadId = action.payload?.dictValue?["loadId"] as? String {
                 let bidId = action.payload?.dictValue?["bidId"] as? String
-                OfflineQueue.shared.enqueueAcceptLoad(loadId: loadId, bidId: bidId)
+                // Honest ack: only claim "accepted" once the outbox
+                // entry actually drained; a still-queued entry gets
+                // the truthful "queued" toast instead of a fabricated
+                // "Dispatch notified."
+                let key = OfflineQueue.shared.enqueueAcceptLoad(loadId: loadId, bidId: bidId)
                 await OfflineQueue.shared.flush(auth: auth)
-                currentRoute = .toast(message: "Accepted \(loadId). Dispatch notified.")
+                currentRoute = OfflineQueue.shared.isPending(key)
+                    ? .toast(message: "Accept queued — sends when you're back online.")
+                    : .toast(message: "Accepted \(loadId). Dispatch notified.")
             }
 
         case "decline_load":
             if let loadId = action.payload?.dictValue?["loadId"] as? String {
-                currentRoute = .toast(message: "Declined \(loadId).")
-                _ = try? await EsangClient(auth: auth).mutateJSON(
-                    "loads.decline",
-                    input: ["loadId": loadId, "source": "watch"]
-                )
+                // Real driver-side decline proc (drivers.ts:1326) — the
+                // previously called `loads.decline` does not exist. The
+                // toast now waits for the mutation instead of preceding
+                // a guaranteed 404.
+                do {
+                    _ = try await EsangClient(auth: auth).mutateJSON(
+                        "drivers.declineLoad",
+                        input: ["loadId": loadId, "reason": "Declined from EusoTrip Pulse"]
+                    )
+                    currentRoute = .toast(message: "Declined \(loadId).")
+                } catch {
+                    currentRoute = .toast(message: "Couldn't decline \(loadId) — try from your iPhone.")
+                }
             }
 
         case "log_arrival":
             if let loadId = action.payload?.dictValue?["loadId"] as? String,
                let kind = action.payload?.dictValue?["kind"] as? String {
-                OfflineQueue.shared.enqueueArrived(loadId: loadId, kind: kind, at: Date())
+                let key = OfflineQueue.shared.enqueueArrived(loadId: loadId, kind: kind, at: Date())
                 await OfflineQueue.shared.flush(auth: auth)
-                currentRoute = .toast(message: "Arrived at \(kind). ✓")
+                currentRoute = OfflineQueue.shared.isPending(key)
+                    ? .toast(message: "Arrival queued — sends when you're back online.")
+                    : .toast(message: "Arrived at \(kind). ✓")
             }
 
         case "change_hos":
@@ -202,9 +218,18 @@ final class VoiceActionDispatcher: ObservableObject {
                let text = action.payload?.dictValue?["text"] as? String {
                 let loadId = action.payload?.dictValue?["loadId"] as? String
                 do {
+                    // Real sender proc + real input shape
+                    // (messages.ts:337): { conversationId, content,
+                    // type } — the old messages.send {threadId, text}
+                    // was a zod BAD_REQUEST on every reply.
                     _ = try await EsangClient(auth: auth).mutateJSON(
-                        "messages.send",
-                        input: ["threadId": threadId, "text": text]
+                        "messages.sendMessage",
+                        input: [
+                            "conversationId": threadId,
+                            "content": text,
+                            "type": "text",
+                            "idempotencyKey": UUID().uuidString
+                        ]
                     )
                     currentRoute = .toast(message: "Sent ✓")
                 } catch {
@@ -231,6 +256,12 @@ final class VoiceActionDispatcher: ObservableObject {
 
         case "escort_check":
             currentRoute = .hazmatEscort
+
+        case "scan_bol", "scan_placard", "bol_copilot":
+            // F15 — BOL/placard copilot. The view existed but was
+            // reachable only from its own #Preview; ESANG ("scan the
+            // placard") now routes to it like every other surface.
+            currentRoute = .bolCopilot
 
         case "show_convoy":
             // F13 — surfaces the convoy detail sheet from Esang.
@@ -283,6 +314,10 @@ enum WatchRoute: Equatable {
     /// overflow menu. The sheet presents the broadcast/capture UI
     /// without interrupting the current tab.
     case proximityHandoff
+    /// F15 — BOL/placard scan copilot. Reachable from Esang ("scan the
+    /// placard", "scan the BOL"); the phone does the camera capture and
+    /// mirrors the parsed result to the wrist.
+    case bolCopilot
     /// F04 offline path — a destructive voice intent is pending the
     /// driver's explicit confirmation. `prompt` is shown verbatim
     /// inside the sheet; `confirmId` indexes into

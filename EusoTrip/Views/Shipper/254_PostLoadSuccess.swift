@@ -169,7 +169,7 @@ private struct SuccessBody: View {
                 draft.reset()
                 NotificationCenter.default.post(
                     name: .eusoShipperNavSwap, object: nil,
-                    userInfo: ["screenId": "250"]
+                    userInfo: ["screenId": "250", "freshDraft": true]
                 )
             }
             actionRow(glyph: .home, title: "Back to dashboard",

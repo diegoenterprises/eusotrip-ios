@@ -267,7 +267,7 @@ private struct VesselContainerPositionsBody: View {
                     summaryTiles
                     positionMapSection
                     stowElevationSection
-                    Text("CONTAINERS · getContainerPositions")
+                    Text("CONTAINERS · live positions")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
                     VStack(spacing: Space.s2) { ForEach(containers) { containerRow($0) } }
                 }

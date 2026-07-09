@@ -20,6 +20,12 @@ private struct InviteCatalystBody: View {
     @State private var sending = false
     @State private var sent = false
     @State private var sentToEmail: String = ""
+    // Honest delivery state (ASC AMNzdpJ3): server now reports whether the
+    // email actually left ACS. false/nil = invite exists but delivery is
+    // unconfirmed, so we surface the signup link for direct sharing.
+    @State private var emailConfirmed = false
+    @State private var shareUrl: String = ""
+    @State private var linkCopied = false
     @State private var actionError: String? = nil
 
     var body: some View {
@@ -73,17 +79,77 @@ private struct InviteCatalystBody: View {
         }
     }
 
+    @ViewBuilder
     private var successCard: some View {
-        LifecycleCard(accentGradient: true) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 16, weight: .bold)).foregroundStyle(LinearGradient.diagonal)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Invite sent").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-                    Text(sentToEmail.isEmpty
-                         ? "The carrier will receive an email shortly."
-                         : "We emailed your referral link to \(sentToEmail). The carrier will receive it shortly.")
-                        .font(EType.caption).foregroundStyle(palette.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
+        if emailConfirmed {
+            LifecycleCard(accentGradient: true) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 16, weight: .bold)).foregroundStyle(LinearGradient.diagonal)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Invite sent").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                        Text(sentToEmail.isEmpty
+                             ? "The carrier will receive an email shortly."
+                             : "We emailed your referral link to \(sentToEmail). The carrier will receive it shortly.")
+                            .font(EType.caption).foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        } else {
+            LifecycleCard(accentGradient: true) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "link.circle.fill").font(.system(size: 16, weight: .bold)).foregroundStyle(LinearGradient.diagonal)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Invite created").font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
+                        Text("Email delivery could not be confirmed. Share your referral link directly:")
+                            .font(EType.caption).foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if !shareUrl.isEmpty {
+                            Text(shareUrl)
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(palette.textPrimary)
+                                .lineLimit(2).truncationMode(.middle)
+                                .padding(.horizontal, 10).padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(palette.bgCard.opacity(0.6))
+                                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+                                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            HStack(spacing: 8) {
+                                Button {
+                                    UIPasteboard.general.string = shareUrl
+                                    withAnimation(.easeOut(duration: 0.12)) { linkCopied = true }
+                                    Task {
+                                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                                        withAnimation(.easeOut(duration: 0.12)) { linkCopied = false }
+                                    }
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: linkCopied ? "checkmark" : "doc.on.doc")
+                                            .font(.system(size: 10, weight: .heavy))
+                                        Text(linkCopied ? "Copied" : "Copy link")
+                                            .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                                    }
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 14).padding(.vertical, 8)
+                                    .background(LinearGradient.diagonal)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                }.buttonStyle(.plain)
+                                ShareLink(item: shareUrl) {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: "square.and.arrow.up")
+                                            .font(.system(size: 10, weight: .heavy))
+                                        Text("Share")
+                                            .font(.system(size: 11, weight: .heavy)).tracking(0.4)
+                                    }
+                                    .foregroundStyle(palette.textPrimary)
+                                    .padding(.horizontal, 14).padding(.vertical, 8)
+                                    .background(palette.bgCard.opacity(0.6))
+                                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                }.buttonStyle(.plain)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -114,13 +180,23 @@ private struct InviteCatalystBody: View {
     private func send() async {
         sending = true; actionError = nil
         struct In: Encodable { let email: String; let dotNumber: String?; let note: String? }
-        struct Out: Decodable { let success: Bool; let invitationId: String? }
+        struct Out: Decodable {
+            let success: Bool
+            let invitationId: String?
+            let emailSent: Bool?
+            let signupUrl: String?
+        }
         do {
-            let _ : Out = try await EusoTripAPI.shared.mutation(
+            let out: Out = try await EusoTripAPI.shared.mutation(
                 "referrals.inviteCarrier",
                 input: In(email: email, dotNumber: dotNumber.isEmpty ? nil : dotNumber, note: note.isEmpty ? nil : note)
             )
             sentToEmail = email
+            // Only claim "we emailed" when the server confirms delivery;
+            // otherwise surface the signup link for direct sharing.
+            emailConfirmed = out.emailSent == true
+            shareUrl = out.signupUrl ?? ""
+            linkCopied = false
             sent = true
             email = ""; dotNumber = ""; note = ""
         } catch {

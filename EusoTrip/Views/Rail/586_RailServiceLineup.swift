@@ -593,6 +593,21 @@ private struct RailServiceLineupBody: View {
 
     // MARK: CTA pair
 
+    private var rerouteLines: [String] {
+        var lines = [
+            "Rail ID: \(railId)",
+            "Shipment: \(detail?.shipmentNumber ?? "-")",
+            "Status: \(lineup?.status ?? detail?.status ?? "-")",
+            "Consist: \(consistLine)",
+            "Current location: \(tracking?.currentLocation?.description ?? "-")",
+            "Calls: \(calls.count)"
+        ]
+        for call in calls.prefix(5) {
+            lines.append("\(call.station): \(call.statusLabel) - \(call.timeLabel)")
+        }
+        return lines
+    }
+
     private var ctaPair: some View {
         HStack(spacing: Space.s3) {
             CTAButton(
@@ -600,19 +615,13 @@ private struct RailServiceLineupBody: View {
                 action: { notifyArmed.toggle() },   // WIRE: railShipments.notifyOnDeparture (proposed mutation — not on disk)
                 leadingIcon: notifyArmed ? "bell.fill" : "bell"
             )
-            Button("Reroute") {}
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(palette.textPrimary)
-                .frame(maxWidth: .infinity)
-                .frame(height: 52)
-                .background(
-                    RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .fill(palette.bgCard)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                                .strokeBorder(palette.borderFaint, lineWidth: 1)
-                        )
-                )
+            RailSecondaryActionButton(
+                title: "Reroute",
+                sheetTitle: "Service reroute context",
+                lines: rerouteLines,
+                fillWidth: true,
+                systemImage: "arrow.triangle.branch"
+            )
         }
     }
 

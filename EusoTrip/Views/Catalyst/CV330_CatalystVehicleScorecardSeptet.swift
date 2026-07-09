@@ -83,12 +83,12 @@ private extension CatalystVehicleKind {
             return .init(eyebrow: "CATALYST · VEHICLE · SCORECARD",
                          citation: "OWNER-OP SEAM · CLEAN ASSET",
                          title: "Vehicle scorecard",
-                         pillCopy: "Catalyst tracks vehicle · same companyId both sides · clean depreciation books")
+                         pillCopy: "Catalyst tracks vehicle · same company both sides · clean depreciation books")
         case .profile:
             return .init(eyebrow: "CATALYST · VEHICLE · PROFILE",
                          citation: "OWNER-OP SEAM · CLEAN ASSET",
                          title: "Vehicle profile",
-                         pillCopy: "Catalyst owns asset · same companyId both sides · clean depreciation books")
+                         pillCopy: "Catalyst owns asset · same company both sides · clean depreciation books")
         case .documents:
             return .init(eyebrow: "CATALYST · VEHICLE · DOCUMENTS",
                          citation: "OWNER-OP SEAM · §396 EVIDENCE",
@@ -98,22 +98,22 @@ private extension CatalystVehicleKind {
             return .init(eyebrow: "CATALYST · VEHICLE · ANALYTICS",
                          citation: "OWNER-OP SEAM · 90D ROLLING",
                          title: "Vehicle analytics",
-                         pillCopy: "Catalyst dashboards asset · same companyId · clean rate-per-mile, MPG and dwell decomposition")
+                         pillCopy: "Catalyst dashboards asset · same company · clean rate-per-mile, MPG and dwell decomposition")
         case .settlements:
             return .init(eyebrow: "CATALYST · VEHICLE · LEDGER",
                          citation: "OWNER-OP SEAM · §396 CLEAN ASSET",
                          title: "Vehicle settlements",
-                         pillCopy: "Catalyst earns on asset · same companyId both sides · clean depreciation books")
+                         pillCopy: "Catalyst earns on asset · same company both sides · clean depreciation books")
         case .onboarding:
             return .init(eyebrow: "CATALYST · VEHICLE · ONBOARD",
                          citation: "OWNER-OP SEAM · 5-STEP LADDER",
                          title: "Vehicle onboarding",
-                         pillCopy: "Catalyst seats asset · same companyId · 5 onboarding pillars")
+                         pillCopy: "Catalyst seats asset · same company · 5 onboarding pillars")
         case .compliance:
             return .init(eyebrow: "CATALYST · VEHICLE · COMPLIANCE",
                          citation: "OWNER-OP SEAM · §396 §393 §397",
                          title: "Vehicle compliance",
-                         pillCopy: "Catalyst monitors asset · same companyId both sides · §396 §393 §397 record")
+                         pillCopy: "Catalyst monitors asset · same company both sides · §396 §393 §397 record")
         }
     }
 }

@@ -113,6 +113,7 @@ final class ShipperAtDockStore: ObservableObject {
 
 struct ShipperAtDock: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @StateObject private var store: ShipperAtDockStore
 
     /// `loadId` is supplied by the caller (load-row tap / deep link). No
@@ -295,7 +296,7 @@ struct ShipperAtDock: View {
                 .frame(width: 22, height: 22)
                 .padding(.top, 2)
             VStack(alignment: .leading, spacing: 4) {
-                Text("SHIPPER AT DOCK · §280 · WITHIN-TRACK FOURTH-PORT 2/3")
+                Text("SHIPPER AT DOCK · LOADING · DWELL LIVE")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(LinearGradient.primary)
                 Text("\(loadNumberText) · \(laneText) · \(equipmentText) · DOCK \(dockText) · \(loadedText) · DU observing")
@@ -338,7 +339,7 @@ struct ShipperAtDock: View {
         HStack(alignment: .top, spacing: 10) {
             personaDisc(driverInitials, diameter: 32, font: 10)
             VStack(alignment: .leading, spacing: 4) {
-                Text("§272 DISPATCH RECAP · DWELL \(dwellText) AT DOCK · LOAD \(loadedText) LIVE")
+                Text("DISPATCH RECAP · DWELL \(dwellText) AT DOCK · LOAD \(loadedText) LIVE")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                     .foregroundStyle(LinearGradient.primary)
                     .lineLimit(1).minimumScaleFactor(0.7)
@@ -602,7 +603,7 @@ struct ShipperAtDock: View {
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()
-            Text("SHIPPER READ-SIDE · §280")
+            Text("SHIPPER READ-SIDE · LIVE")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
         }
@@ -620,7 +621,7 @@ struct ShipperAtDock: View {
         VStack(spacing: 4) {
             // Row 1 · LINE HAUL · gradient rim · payable = load.rate.
             rosterRow(
-                eyebrow: "§11.4 LINE HAUL · PAYABLE",
+                eyebrow: "LINE HAUL · PAYABLE",
                 detail: "DU paid · \(driverLine) · NET-30 to \(carrierLine)",
                 amount: payableText, tag: "PAYABLE",
                 rim: .gradient, accent: nil, eyebrowGradient: true, amountGradient: true)
@@ -654,7 +655,7 @@ struct ShipperAtDock: View {
                 titleStyle: true, amountColor: palette.textSecondary, tagColor: palette.textSecondary)
             // Row 6 · LOAD VISIBILITY · gradient rim · §280.1 forward-flip.
             rosterRow(
-                eyebrow: "LOAD VISIBILITY · §280.1 SHIPPER-AT-DOCK FORWARD-FLIP",
+                eyebrow: "LOAD VISIBILITY · LIVE AT DOCK",
                 detail: "\(loadedText) PALLETS · DOCK \(dockText) · TEMP \(tempText)",
                 amount: loadedText, tag: "BOL \(bolStateText)",
                 rim: .gradient, accent: nil, eyebrowGradient: true, amountGradient: true)
@@ -743,7 +744,7 @@ struct ShipperAtDock: View {
             Text("SHIPPER ECONOMICS · NET-30 PAYABLE · 4TH-PORT 2/3")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(LinearGradient.primary)
-            Text("\(payableText) line-haul payable · BeamConverge · WITHIN-TRACK FOURTH-PORT 2/3")
+            Text("\(payableText) line-haul payable · NET-30")
                 .font(.system(size: 10)).foregroundStyle(palette.textPrimary)
                 .lineLimit(2).minimumScaleFactor(0.85)
         }
@@ -832,7 +833,7 @@ struct ShipperAtDock: View {
         // No facility-phone column on the at-dock projection yet; the
         // dialer opens to a blank facility number when one is missing
         // rather than fabricating a contact.
-        if let url = URL(string: "tel://") { UIApplication.shared.open(url) }
+        if let url = URL(string: "tel://") { openURL(url) }
     }
 
     private func personaDisc(_ initials: String, diameter: CGFloat, font: CGFloat) -> some View {

@@ -270,6 +270,16 @@ final class BlockchainAudit: ObservableObject {
     /// inspection. Returns the proof on success, nil otherwise (errors
     /// are surfaced via `lastAnchorError`, never thrown — this is a
     /// fire-and-forget periodic background call from the HOS tick).
+    ///
+    /// SERVER DEPENDENCY (verified 2026-07-09): `audit.anchor` does
+    /// NOT exist yet — routers.ts has no `audit:` mount and
+    /// blockchainAuditRouter has no `anchor` proc (its `logEvent`
+    /// returns only {success} and cannot produce the counter-signed
+    /// proof this decoder requires). `blockchainAuditEnabled` MUST
+    /// stay false until the server ships an anchor proc that verifies
+    /// driverSignatureB64/envelopeB64 and returns AuditAnchorProof;
+    /// flipping the flag today would 404 every anchor attempt (which
+    /// this method surfaces honestly via `lastAnchorError`).
     @discardableResult
     func anchor(auth: AuthStore, driverId: String) async -> AuditAnchorProof? {
         guard auth.isSignedIn else {

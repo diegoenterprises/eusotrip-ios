@@ -283,7 +283,7 @@ struct ShipperDeparting: View {
                 .frame(width: 22, height: 22)
                 .padding(.top, 2)
             VStack(alignment: .leading, spacing: 4) {
-                Text("SHIPPER DEPARTING · §284 · WITHIN-TRACK FIFTH-PORT 2/3")
+                Text("SHIPPER DEPARTING · DWELL FINAL · ROLLING")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(LinearGradient.primary)
                 // Lane + equipment are live; TEMP + ETA have no source → "—".
@@ -326,7 +326,7 @@ struct ShipperDeparting: View {
         HStack(alignment: .top, spacing: 10) {
             personaDisc("—", diameter: 32, font: 10)
             VStack(alignment: .leading, spacing: 4) {
-                Text("§272 DISPATCH RECAP · DEPARTED · FINAL DWELL —")
+                Text("DISPATCH RECAP · DEPARTED · FINAL DWELL —")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.5)
                     .foregroundStyle(LinearGradient.primary)
                     .lineLimit(1).minimumScaleFactor(0.7)
@@ -559,7 +559,7 @@ struct ShipperDeparting: View {
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(LinearGradient.primary)
             Spacer()
-            Text("SHIPPER READ-SIDE · §284")
+            Text("SHIPPER READ-SIDE · LIVE")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -573,7 +573,7 @@ struct ShipperDeparting: View {
             // Row 1 · LINE HAUL · gradient rim · §11.4 founder pin 57th.
             // Amount = real load rate; "—" when the column is empty.
             rosterRow(
-                eyebrow: "§11.4 LINE HAUL · EUSORONE FOUNDER PIN · 57TH",
+                eyebrow: "LINE HAUL · EUSORONE · NET-30",
                 detail: "Net payable to assigned carrier · NET-30",
                 amount: payableDisplay, tag: "PAYABLE",
                 rim: .gradient, eyebrowGradient: true, amountGradient: true)
@@ -608,7 +608,7 @@ struct ShipperDeparting: View {
             // Row 6 · LANE TRACE · gradient rim · §284.1 substitution.
             // Lane + equipment are live; TEMP + ETA + document id are "—".
             rosterRow(
-                eyebrow: "LANE TRACE · §284.1 SHIPPER-DEPARTING FORWARD-FLIP",
+                eyebrow: "LANE TRACE · LIVE ROLLING",
                 detail: "\(laneShort) · \(distanceLabel) · TEMP — · \(documentLabel) —",
                 amount: "—", tag: "LIVE",
                 rim: .gradient, eyebrowGradient: true, amountGradient: true)
@@ -691,11 +691,11 @@ struct ShipperDeparting: View {
 
     private var economicsFooter: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("SHIPPER ECONOMICS · NET-30 · 57TH FOUNDER PIN · 5TH-PORT 2/3")
+            Text("SHIPPER ECONOMICS · NET-30")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(LinearGradient.primary)
             // Total payable bound to the real load rate; "—" when missing.
-            Text("\(payableDisplay) total payable · BeamConverge POST-LOCK PORT 17 · WITHIN-TRACK FIFTH-PORT 2/3")
+            Text("\(payableDisplay) total payable · NET-30")
                 .font(.system(size: 10)).foregroundStyle(palette.textPrimary)
         }
         .padding(.horizontal, 14).padding(.vertical, 8)

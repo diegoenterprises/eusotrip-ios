@@ -126,7 +126,7 @@ private struct PerfBody: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("OWNER-OP SEAM · CLEAN BOOKS")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text("Catalyst measures driver · same companyId both sides · clean Schedule C books")
+                Text("Catalyst measures driver · same company both sides · clean Schedule C books")
                     .font(EType.caption).foregroundStyle(palette.textPrimary)
             }
         }

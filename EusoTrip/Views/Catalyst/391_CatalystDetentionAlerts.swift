@@ -344,7 +344,7 @@ private struct DetentionAlertsBody_391: View {
     }
 
     private var provenance: some View {
-        Text("disputeDetention · {loadId,reason,evidence}")
+        Text("DISPUTE · reason + evidence required")
             .font(.system(size: 10, design: .monospaced))
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .center)

@@ -473,7 +473,7 @@ private struct ShipperBOLGeneratePicker: View {
                 Text("Pick a load")
                     .font(.system(size: 22, weight: .heavy))
                     .foregroundStyle(palette.textPrimary)
-                Text("Server resolves shipper / consignee / commodity / hazmat from the load.")
+                Text("EusoTrip resolves shipper, consignee, commodity, and hazmat details from the load.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }

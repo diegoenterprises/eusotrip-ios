@@ -15,7 +15,7 @@
 //      (HERE Destination Weather v3) + freight flags derived strictly
 //      from live readings: high-profile wind, ice/snow chain-law risk,
 //      low visibility, reefer ambient extremes.
-//    • Flip side           — 5-day look-ahead + full alert detail.
+//    • Flip side           — 6-day look-ahead + full alert detail.
 //
 //  Backdrop changes by time of day (stars + moon vs sun + atmosphere)
 //  and condition (clear / cloudy / rain / thunder / snow / fog). All
@@ -56,7 +56,7 @@ struct WeatherCard: View {
     /// v2 two-state. `false` = collapsed dashboard card; `true` =
     /// expanded full view. Tapping the collapsed card expands it; the
     /// expanded header's chevron collapses it back. Replaces the prior
-    /// flip-card (the 5-day forecast now lives inline in the expanded
+    /// flip-card (the 6-day forecast now lives inline in the expanded
     /// view as the v2 7-day chip row).
     @State private var expanded: Bool
 
@@ -197,6 +197,10 @@ struct WeatherCard: View {
                     Spacer(minLength: 0)
                 }
 
+                if let next = snapshot.nextWeatherDisplay {
+                    nextWeatherPill(next)
+                }
+
                 // lane strip — N loads in this cell · LD-xxx · +Nm
                 if let strip = snapshot.collapsedLaneStrip {
                     HStack(spacing: 9) {
@@ -280,11 +284,37 @@ struct WeatherCard: View {
         .overlay(Capsule().strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
     }
 
+    private func nextWeatherPill(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            WeatherIcons.utility(.precip, size: 14, tint: .white)
+            Text(text)
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(Color.black.opacity(0.22))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(Color.white.opacity(0.06))
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.5)
+        )
+    }
+
     // MARK: Expanded — full view
 
     /// The v2 EXPANDED state: hero · gov ALERT bar · 4 metrics · 8h
-    /// hourly (peak highlighted) · LANE IMPACT panel · 7-day chips ·
-    /// "Conditions · Tomorrow.io · weatherCode NNNN · updated Nm ago".
+    /// hourly (peak highlighted) · LANE IMPACT panel · 6-day chips ·
+    /// "Conditions · Apple Weather · Partly cloudy · updated Nm ago".
     private var expandedView: some View {
         VStack(alignment: .leading, spacing: 13) {
             heroBlock
@@ -359,6 +389,11 @@ struct WeatherCard: View {
                 // gov ALERT bar
                 if let a = snapshot.heroAlert {
                     alertBar(a).padding(.top, 13)
+                }
+
+                if let next = snapshot.nextWeatherDisplay {
+                    nextWeatherPill(next)
+                        .padding(.top, snapshot.heroAlert == nil ? 13 : 8)
                 }
 
                 // 4 metrics
@@ -735,9 +770,9 @@ struct WeatherCard: View {
         }
     }
 
-    // MARK: Expanded — 7-day chips
+    // MARK: Expanded — 6-day chips
 
-    /// 7-day chip row — each chip = weekday · v3 glyph · hi→lo RANGE BAR ·
+    /// 6-day chip row — each chip = weekday · v3 glyph · hi→lo RANGE BAR ·
     /// hi/lo. The first day is the selected chip (magenta-tinted). The bar
     /// is sized to the day's temperatureMin/Max within the week's overall
     /// range (§D.1.4). Collapses when the upstream returned no daily data.
@@ -756,6 +791,7 @@ struct WeatherCard: View {
                     dayChip(day, isToday: idx == 0, weekLow: weekLow, weekHigh: weekHigh, flex: true)
                 }
             }
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -803,17 +839,17 @@ struct WeatherCard: View {
     }
 
     /// A day chip's weatherCode — uses the day's own code if the upstream
-    /// supplied one (Tomorrow.io path), else infers from its SF symbol.
+    /// supplied one (Apple WeatherKit path), else infers from its SF symbol.
     private func dayCode(_ day: WeatherSnapshot.DailyForecast) -> Int {
         WeatherIcons.code(forSymbol: day.symbol)
     }
 
     // MARK: Expanded — source line
 
-    /// "Conditions · Tomorrow.io · weatherCode NNNN · updated Nm ago".
+    /// "Conditions · Apple Weather · Partly cloudy · updated Nm ago".
     /// Built from `snapshot.attributionLine` so it names the REAL data
-    /// source (Tomorrow.io only when Tomorrow.io produced the data) and
-    /// omits the weatherCode/updated clauses when their data is absent.
+    /// source (Apple WeatherKit only when Apple WeatherKit produced the data) and
+    /// omits condition/updated clauses when their data is absent.
     private var sourceLine: some View {
         // Adaptive — this line sits directly on the page (no card), so
         // white-on-light was invisible in light mode. Palette tertiary
@@ -1156,13 +1192,13 @@ private struct SkyBackdrop: View {
     private var cloudLayer: some View {
         switch condition {
         case .clear:
-            DriftingClouds(density: isNight ? 0.25 : 0.35, tint: Color.white.opacity(isNight ? 0.08 : 0.65), animated: animated)
+            DriftingClouds(density: isNight ? 0.16 : 0.22, tint: Color.white.opacity(isNight ? 0.08 : 0.30), animated: animated)
         case .cloudy, .fog:
-            DriftingClouds(density: 0.9, tint: Color.white.opacity(isNight ? 0.18 : 0.75), animated: animated)
+            DriftingClouds(density: 0.48, tint: Color.white.opacity(isNight ? 0.16 : 0.36), animated: animated)
         case .rain, .thunder:
-            DriftingClouds(density: 0.8, tint: Color.white.opacity(isNight ? 0.15 : 0.60), animated: animated)
+            DriftingClouds(density: 0.46, tint: Color.white.opacity(isNight ? 0.14 : 0.32), animated: animated)
         case .snow:
-            DriftingClouds(density: 0.7, tint: Color.white.opacity(isNight ? 0.22 : 0.80), animated: animated)
+            DriftingClouds(density: 0.42, tint: Color.white.opacity(isNight ? 0.18 : 0.38), animated: animated)
         }
     }
 
@@ -1348,11 +1384,11 @@ private struct DriftingClouds: View {
     private let clouds: [CloudPuff] = (0..<5).map { i in
         var rng = SeededRNG(seed: UInt64(0xC100 + i * 31))
         return CloudPuff(
-            y: 0.15 + rng.next01() * 0.55,
-            width: 0.35 + rng.next01() * 0.55,
+            y: 0.12 + rng.next01() * 0.46,
+            width: 0.24 + rng.next01() * 0.34,
             speed: 0.008 + rng.next01() * 0.012,
             phase: rng.next01(),
-            opacity: 0.6 + rng.next01() * 0.4
+            opacity: 0.45 + rng.next01() * 0.28
         )
     }
 
@@ -1538,7 +1574,7 @@ private struct SeededRNG {
 
 // MARK: - Previews
 
-/// The Austin example from the v2 HTML, end to end — Tomorrow.io source,
+/// The Austin example from the v2 HTML, end to end — Apple WeatherKit source,
 /// weatherCode 1101, a flood-watch alert, the 8h band with a 4 PM storm
 /// peak, and the LD-260615 lane-impact segment + ESang suggestion.
 private func austinPreviewSnapshot() -> WeatherSnapshot {
@@ -1573,7 +1609,7 @@ private func austinPreviewSnapshot() -> WeatherSnapshot {
         }
     )
     snap.weatherCode = 1101
-    snap.dataSource = .tomorrowIO
+    snap.dataSource = .appleWeather
     snap.uvIndex = 7
     snap.observedAt = Date().addingTimeInterval(-120)
     snap.alert = .init(title: "Flood watch", severity: .severe, until: Date().addingTimeInterval(6 * 3600))
@@ -1628,7 +1664,7 @@ private func austinPreviewSnapshot() -> WeatherSnapshot {
                 feelsLikeF: 99, humidityPct: 12
             )
             s.weatherCode = 1000
-            s.dataSource = .tomorrowIO
+            s.dataSource = .appleWeather
             return s
         }(),
         style: .compact

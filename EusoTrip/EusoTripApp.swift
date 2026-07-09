@@ -140,6 +140,7 @@ struct EusoTripApp: App {
                 }
             }
             .onChange(of: scenePhase) { oldPhase, newPhase in
+                AppCrashDiagnosticsReporter.shared.recordSurface("scene.\(newPhase)")
                 // Show the brand veil before iOS snapshots us.
                 let resigning = (newPhase != .active)
                 withAnimation(.easeInOut(duration: 0.10)) {
@@ -185,6 +186,7 @@ struct EusoTripApp: App {
                 // same-actor call (the prior `await` produced the
                 // "No 'async' operations occur within 'await'" warning).
                 WeatherService.shared.requestPermissionIfNeeded()
+                AppCrashDiagnosticsReporter.shared.start()
                 // Unified Outbox — start the reachability hub once so it
                 // can drain the offline action queue on the next
                 // .unsatisfied → .satisfied network edge. Idempotent;
@@ -271,6 +273,7 @@ struct EusoTripApp: App {
 
 extension Notification.Name {
     static let eusoResetPasswordDeepLink = Notification.Name("eusoResetPasswordDeepLink")
+    static let eusoWeatherAuthorizationChanged = Notification.Name("eusoWeatherAuthorizationChanged")
     /// Fired by the ESANG autopilot when the assistant reply contains a
     /// `<<<ACTION:refresh>>>` token. Any visible surface can observe this
     /// and re-run its loader (pull-to-refresh parity for voice).

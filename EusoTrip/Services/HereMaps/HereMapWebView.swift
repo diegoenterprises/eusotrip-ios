@@ -148,6 +148,11 @@ public struct HereVectorMapView: View {
     let interactive: Bool
     let tilt: Double
     let layers: [HereMapLayer]
+    /// Cartography register hint forwarded to `BespokeMapCanvas`. Defaults to
+    /// `.auto` so every existing caller compiles + renders unchanged; a screen
+    /// passes `.geothermal` to turn its `.heatmap(points:)` layer into the
+    /// continuous blue→red geothermal field (Hot Zones demand surfaces).
+    let styleHint: BespokeMapStyleHint
     let onSelectMarker: ((String) -> Void)?
 
     public init(
@@ -156,6 +161,7 @@ public struct HereVectorMapView: View {
         interactive: Bool = true,
         tilt: Double = 0,
         layers: [HereMapLayer] = [],
+        styleHint: BespokeMapStyleHint = .auto,
         onSelectMarker: ((String) -> Void)? = nil
     ) {
         self.center = center
@@ -163,6 +169,7 @@ public struct HereVectorMapView: View {
         self.interactive = interactive
         self.tilt = tilt
         self.layers = layers
+        self.styleHint = styleHint
         self.onSelectMarker = onSelectMarker
     }
 
@@ -173,6 +180,8 @@ public struct HereVectorMapView: View {
         // keeps working verbatim — only the renderer behind `body` changed.
         // The legacy `HereMapWebViewRepresentable` + `buildHTML` are kept
         // below (now private/unused) for reference and quick rollback.
+        // `styleHint` flows into the hinted BespokeMapCanvas init so a
+        // `.geothermal` request lights up the continuous heat field.
         BespokeMapCanvas(
             center: center,
             zoom: zoom,
@@ -180,6 +189,7 @@ public struct HereVectorMapView: View {
             tilt: tilt,
             isDark: colorScheme == .dark,
             layers: layers,
+            style: styleHint,
             onSelectMarker: onSelectMarker
         )
     }
@@ -367,6 +377,10 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         <script src="https://js.api.here.com/v3/3.1/mapsjs-service.js"></script>
         <script src="https://js.api.here.com/v3/3.1/mapsjs-ui.js"></script>
         <script src="https://js.api.here.com/v3/3.1/mapsjs-data.js"></script>
+        <!-- HARP engine module (3.1). REQUIRED for OMV vector tiles to render
+             their full style INCLUDING place LABELS (state / city / street).
+             Without HARP the default engine drew geometry but no text. -->
+        <script src="https://js.api.here.com/v3/3.1/mapsjs-harp.js"></script>
         </head><body><div id="map"></div><script>
         (function(){
           function log(m){ try{ window.webkit.messageHandlers.hzLog.postMessage(String(m)); }catch(e){} }
@@ -406,9 +420,25 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             var base = buildBase(dark);
             if(!base){ document.getElementById("map").innerHTML='<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#fff;opacity:.5;font:11px -apple-system">basemap unavailable</div>'; return; }
 
-            map = new H.Map(document.getElementById("map"), base, {
-              center:{lat:\(centerLat),lng:\(centerLng)}, zoom:\(zoom), pixelRatio: window.devicePixelRatio||1
-            });
+            // HARP is the ONLY 3.1 engine that renders OMV vector labels
+            // (state / city / street). The OMV provider + H.map.render.Style
+            // stack already renders geometry, so it is HARP-compatible; we just
+            // had no engine selected, so text never drew. Double-guarded: only
+            // request HARP when the module loaded, AND if HARP map creation
+            // throws, retry with the default engine so maps NEVER go blank.
+            var baseOpts = { center:{lat:\(centerLat),lng:\(centerLng)}, zoom:\(zoom), pixelRatio: window.devicePixelRatio||1 };
+            var el = document.getElementById("map");
+            if (H.Map.EngineType && H.Map.EngineType.HARP) {
+              try {
+                var harpOpts = { center: baseOpts.center, zoom: baseOpts.zoom, pixelRatio: baseOpts.pixelRatio, engineType: H.Map.EngineType.HARP };
+                map = new H.Map(el, base, harpOpts);
+              } catch(eh) {
+                log("harp engine failed, default fallback: "+eh);
+                map = new H.Map(el, base, baseOpts);
+              }
+            } else {
+              map = new H.Map(el, base, baseOpts);
+            }
             window.addEventListener("resize", function(){ map.getViewPort().resize(); });
             behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
             \(dragFlags)

@@ -44,6 +44,30 @@ final class WatchAuthBridge: NSObject {
     /// `auth.request` op we can answer immediately.
     private var cachedAuth: [String: Any]?
 
+    // MARK: - Merged applicationContext
+    //
+    // WCSession keeps exactly ONE applicationContext dictionary — each
+    // update replaces the last. Six different pushers used to write
+    // single-op dicts into that slot, so a cold-launching watch could
+    // only ever restore whichever domain the phone pushed LAST (an HOS
+    // tick or unread-count bump routinely evicted the auth context
+    // minutes after sign-in). The fix: one durable dictionary keyed by
+    // channel — ["auth": …, "load": …, "hos": …, "unread": …,
+    // "settings": …] — every pusher updates its key and re-publishes
+    // the whole thing. Transient realtime events NEVER touch this slot.
+    private var mergedContext: [String: Any] = [:]
+
+    /// Update one channel of the durable context and re-publish the
+    /// merged dictionary. The watch's `applyContext` detects the
+    /// merged shape (no top-level "op") and dispatches every channel
+    /// through its op-keyed switch, so a cold launch restores ALL
+    /// domains, not just the last writer.
+    private func publishContext(channel: String, payload: [String: Any]) {
+        guard let session else { return }
+        mergedContext[channel] = payload
+        try? session.updateApplicationContext(mergedContext)
+    }
+
     /// Public getter so WatchCommandHandler can answer `auth.request`.
     var lastPushedAuthContext: [String: Any]? { cachedAuth }
 
@@ -96,7 +120,7 @@ final class WatchAuthBridge: NSObject {
             "ts": Date().timeIntervalSince1970
         ]
         cachedAuth = context
-        try? session.updateApplicationContext(context)
+        publishContext(channel: "auth", payload: context)
         // Also fire as a transient message so the watch gets it even if
         // it missed the context update while asleep. If the live link
         // isn't up, queue via transferUserInfo so the wrist still picks
@@ -125,7 +149,7 @@ final class WatchAuthBridge: NSObject {
             "ts": Date().timeIntervalSince1970
         ]
         cachedAuth = nil
-        try? session.updateApplicationContext(context)
+        publishContext(channel: "auth", payload: context)
         if session.isReachable {
             session.sendMessage(context, replyHandler: nil) { _ in }
         } else {
@@ -170,7 +194,7 @@ final class WatchAuthBridge: NSObject {
         }
         guard let ctx else { return false }
         cachedAuth = ctx
-        try? session.updateApplicationContext(ctx)
+        publishContext(channel: "auth", payload: ctx)
         if session.isReachable {
             session.sendMessage(ctx, replyHandler: nil) { _ in }
         } else {
@@ -198,7 +222,7 @@ final class WatchAuthBridge: NSObject {
             "cleared": (snapshot == nil),
             "ts": Date().timeIntervalSince1970
         ]
-        try? session.updateApplicationContext(ctx)
+        publishContext(channel: "load", payload: ctx)
         if session.isReachable {
             session.sendMessage(ctx, replyHandler: nil) { _ in }
         }
@@ -222,7 +246,7 @@ final class WatchAuthBridge: NSObject {
         if let v = windowRemainingMinutes { ctx["windowRemainingMinutes"] = v }
         if let v = cycleRemainingMinutes  { ctx["cycleRemainingMinutes"]  = v }
         cachedHOSSnapshot = ctx
-        try? session.updateApplicationContext(ctx)
+        publishContext(channel: "hos", payload: ctx)
         if session.isReachable {
             session.sendMessage(ctx, replyHandler: nil) { _ in }
         }
@@ -235,7 +259,10 @@ final class WatchAuthBridge: NSObject {
     /// payload by `op` field. No-op when no watch is paired.
     func relayRealtimeEvent(_ payload: [String: Any]) {
         guard let session else { return }
-        try? session.updateApplicationContext(payload)
+        // Transient event — sendMessage/transferUserInfo only. Writing
+        // it into applicationContext used to EVICT the durable auth/
+        // load/HOS context (single-slot semantics), which is why the
+        // watch could never restore auth at activation.
         if session.isReachable {
             session.sendMessage(payload, replyHandler: nil) { _ in }
         } else {
@@ -258,7 +285,7 @@ final class WatchAuthBridge: NSObject {
             "ts": Date().timeIntervalSince1970
         ]
         cachedUnreadSnapshot = ctx
-        try? session.updateApplicationContext(ctx)
+        publishContext(channel: "unread", payload: ctx)
         if session.isReachable {
             session.sendMessage(ctx, replyHandler: nil) { _ in }
         }
@@ -313,7 +340,7 @@ final class WatchAuthBridge: NSObject {
     private func rebroadcast() {
         guard let session, session.activationState == .activated else { return }
         if let ctx = cachedHOSSnapshot {
-            try? session.updateApplicationContext(ctx)
+            publishContext(channel: "hos", payload: ctx)
             if session.isReachable {
                 session.sendMessage(ctx, replyHandler: nil) { _ in }
             }
@@ -325,13 +352,13 @@ final class WatchAuthBridge: NSObject {
                 "cleared": false,
                 "ts": Date().timeIntervalSince1970
             ]
-            try? session.updateApplicationContext(ctx)
+            publishContext(channel: "load", payload: ctx)
             if session.isReachable {
                 session.sendMessage(ctx, replyHandler: nil) { _ in }
             }
         }
         if let ctx = cachedUnreadSnapshot {
-            try? session.updateApplicationContext(ctx)
+            publishContext(channel: "unread", payload: ctx)
             if session.isReachable {
                 session.sendMessage(ctx, replyHandler: nil) { _ in }
             }
@@ -393,7 +420,7 @@ final class WatchAuthBridge: NSObject {
             "pulseSettings": settings,
             "ts": Date().timeIntervalSince1970,
         ]
-        try? session.updateApplicationContext(ctx)
+        publishContext(channel: "settings", payload: ctx)
         if session.isReachable {
             session.sendMessage(ctx, replyHandler: nil) { _ in }
         } else {
@@ -433,6 +460,30 @@ private final class SessionDelegate: NSObject, WCSessionDelegate {
     func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
         if let error {
             print("[WatchAuthBridge] WCSession activate error: \(error.localizedDescription)")
+        }
+        // Re-publish auth the moment the session is live. The boot-time
+        // push() races activation and its updateApplicationContext throws
+        // WCErrorCodeSessionNotActivated (swallowed) — without this
+        // republish, a cold sign-in was silently dropped until the next
+        // reachability flap or wrist poll.
+        guard activationState == .activated else { return }
+        Task { @MainActor in
+            WatchAuthBridge.shared.republishAuth(
+                fallbackToken: EusoTripAPI.shared.authToken
+            )
+        }
+    }
+
+    /// A watch was paired / the watch app was installed AFTER phone
+    /// sign-in. Push the auth context immediately so first-install
+    /// pairing doesn't depend on the wrist's bootstrap poll finding a
+    /// live phone process.
+    func sessionWatchStateDidChange(_ session: WCSession) {
+        guard session.isPaired, session.isWatchAppInstalled else { return }
+        Task { @MainActor in
+            WatchAuthBridge.shared.republishAuth(
+                fallbackToken: EusoTripAPI.shared.authToken
+            )
         }
     }
 

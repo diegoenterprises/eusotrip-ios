@@ -65,6 +65,11 @@
 		<string>audio</string>
 		<string>fetch</string>
 		<string>processing</string>
+		<!-- Push-to-Talk (EusoTrip Pulse). Required by the PushToTalk
+		     framework so the system can wake the app in the background on a
+		     `pushtotalk` APNs push to open the convoy channel speaker. Pairs
+		     with the com.apple.developer.push-to-talk entitlement. -->
+		<string>push-to-talk</string>
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
@@ -111,6 +116,10 @@
 	<string>EusoTrip uses your camera to scan dock-door markers for AR-guided back-in alignment, capture proof-of-delivery photos, and read BOL barcodes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>EusoTrip lets you attach photos from your library to load documents (BOL, rate con, damage reports).</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>EusoTrip reads your recent sleep, resting heart rate, and heart-rate variability from Apple Health to assess fatigue and fitness-for-duty (§392.3). Your health data stays private — it is never shared with your shipper or carrier.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>EusoTrip only reads your sleep and recovery data to assess fatigue (§392.3) — it does not write to Apple Health. This permission is required by the HealthKit framework. Your health data is never shared with your shipper or carrier.</string>
 	<!-- ActivityKit Live Activities — required for ShipperLoadActivityAttributes.
 	     When YES, `Activity<…>.request(...)` succeeds; when NO/missing, every
 	     request throws and the lock-screen card never appears. -->
@@ -133,6 +142,12 @@
 		<string>com.app.eusotrip.SettlementActivity</string>
 		<string>com.app.eusotrip.BidsActivity</string>
 		<string>com.app.eusotrip.ControlTowerActivity</string>
+		<!-- Watch → phone Handoff: EusoTrip Pulse publishes this activity
+		     so the EusoTrip icon appears on the iPhone lock screen / App
+		     Switcher for a one-tap open. Without this declaration iOS
+		     silently refuses to continue the activity even though
+		     EusoTripApp+WatchBridge registers a handler for it. -->
+		<string>com.eusotrip.esang.activate</string>
 	</array>
 	<!-- HERE Maps OAuth + JS credentials. Inlined here because the
 	     project sets GENERATE_INFOPLIST_FILE=NO + INFOPLIST_PREPROCESS=NO,

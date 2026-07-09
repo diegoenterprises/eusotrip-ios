@@ -394,22 +394,42 @@ private struct RailDwellReasonAnalysisBody: View {
 
     // MARK: - CTA pair (Export report / Charge log)
 
+    private var reportReviewLines: [String] {
+        var lines = [
+            "Window: \(periodDays) days",
+            "Events: \(totalEvents)",
+            "Reason codes: \(reasonCodeCount)",
+            "Exposure: \(currencyExact(totalCharges))",
+            "Average over free: \(avgHoursOver)h"
+        ]
+        if let lead = rankedReasons.first {
+            lines.append("Lead reason: \(reasonTitle(lead.reason)) - \(currencyExact(lead.totalCharges))")
+        }
+        return lines
+    }
+
+    private var chargeLogLines: [String] {
+        rankedReasons.prefix(5).map { row in
+            "\(reasonTitle(row.reason)) - \(row.count) events - \(currencyExact(row.totalCharges)) - avg \(Int(row.avgHours.rounded()))h"
+        }
+    }
+
     private var ctaRow: some View {
         HStack(spacing: Space.s3) {
-            CTAButton(title: "Export report", action: {})
+            RailSecondaryActionButton(
+                title: "Report review",
+                sheetTitle: "Dwell report context",
+                lines: reportReviewLines,
+                fillWidth: true,
+                systemImage: "doc.text.magnifyingglass"
+            )
                 .frame(maxWidth: .infinity)
-            Button(action: {}) {
-                Text("Charge log")
-                    .font(EType.title)
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(Color(hex: 0x232932))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.10)))
-            }
-            .buttonStyle(.plain)
-            .frame(width: 148)
+            RailSecondaryActionButton(
+                title: "Charge log",
+                sheetTitle: "Dwell charge log",
+                lines: chargeLogLines,
+                systemImage: "list.bullet.rectangle"
+            )
         }
     }
 

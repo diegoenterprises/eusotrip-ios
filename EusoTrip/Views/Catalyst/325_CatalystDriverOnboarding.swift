@@ -122,7 +122,7 @@ private struct OnboardingBody: View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("OWNER-OP SEAM · §391 CLEAN BOOKS").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                Text("Catalyst onboards driver · same companyId both sides · clean §391 DQ file")
+                Text("Catalyst onboards driver · same company both sides · clean §391 DQ file")
                     .font(EType.caption).foregroundStyle(palette.textPrimary)
             }
         }

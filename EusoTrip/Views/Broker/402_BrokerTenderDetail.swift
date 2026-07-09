@@ -726,7 +726,7 @@ struct BrokerTenderDetail: View {
                         .lineLimit(1)
                 }
             }
-            Text("Carrier shortlist with bid history, fit-score and award affordances will appear here once `brokers.getTenderResponses` ships server-side.")
+            Text("Carrier shortlist with bid history, fit-score, and award tools appears here when tender responses are available.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

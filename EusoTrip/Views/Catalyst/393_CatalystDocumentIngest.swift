@@ -29,8 +29,9 @@
 //  `documentManagement.getDocuments` (EusoTripAPI.swift:7830) with do/catch
 //  + a surfaced loadError and honest empty states. NO seed rows remain.
 //  Per-row OCR confidence has no live source on mobile (aiDocProcessor.*
-//  unbound) — the right column shows the document's REAL status instead,
-//  and the classify CTA is honestly disabled until that namespace binds.
+//  unbound) — the right column shows the document's REAL status instead.
+//  The classify CTA uses the typed documentManagement.classifyDocument
+//  mutation already shipped in EusoTripAPI.swift and refreshes this queue.
 //
 //  Powered by ESANG AI™.
 //
@@ -84,6 +85,16 @@ private struct DocumentIngestBody_393: View {
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
     @State private var hydrated: Bool = false
+    @State private var classifying: Bool = false
+    @State private var classifyMessage: String? = nil
+    @State private var classifyError: String? = nil
+
+    private var classifiableRows: [IngestRow_393] {
+        rows.filter { row in
+            let status = row.rawStatus.lowercased()
+            return ["pending", "uploaded", "processing", "review", "needs_review", "failed", ""].contains(status)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s4) {
@@ -111,16 +122,18 @@ private struct DocumentIngestBody_393: View {
 
             sourceStrip_393
 
-            // Honestly disabled — aiDocProcessor.classifyDocument is not
-            // bridged on the mobile client; no fake in-flight spinner.
             CTAButton(
-                title: "Classify new upload",
-                action: {},
+                title: classifying ? "Classifying…" : "Classify queued docs",
+                action: { Task { await classifyQueuedDocuments() } },
                 trailingIcon: "wand.and.stars",
-                subtitle: "Not yet available on mobile"
+                subtitle: classifiableRows.isEmpty
+                    ? "No queued documents need classification"
+                    : "\(classifiableRows.count) live document\(classifiableRows.count == 1 ? "" : "s") ready"
             )
-            .disabled(true)
-            .opacity(0.5)
+            .disabled(classifying || classifiableRows.isEmpty)
+            .opacity(classifiableRows.isEmpty ? 0.65 : 1)
+
+            classifyFeedback_393
 
             provenanceFootnote_393
 
@@ -280,7 +293,7 @@ private struct DocumentIngestBody_393: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    // MARK: Source strip — bulkExtractLoads
+    // MARK: Source strip — live document sources
 
     private var sourceStrip_393: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -291,7 +304,7 @@ private struct DocumentIngestBody_393: View {
             Text("Driver camera captures at the dock + portal uploads feed this queue")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
-            Text("Bulk extraction (bulkExtractLoads) isn't connected on mobile yet")
+            Text("\(totalDocs) live document\(totalDocs == 1 ? "" : "s") · \(autoExtracted) extracted · \(needsReview) need review · \(failed) failed")
                 .font(.system(size: 11))
                 .foregroundStyle(palette.textSecondary)
         }
@@ -305,10 +318,27 @@ private struct DocumentIngestBody_393: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
+    @ViewBuilder
+    private var classifyFeedback_393: some View {
+        if let classifyMessage {
+            Text(classifyMessage)
+                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .foregroundStyle(Brand.success)
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+        if let classifyError {
+            Text(classifyError)
+                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .foregroundStyle(Brand.warning)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .multilineTextAlignment(.center)
+        }
+    }
+
     // MARK: Provenance footnote
 
     private var provenanceFootnote_393: some View {
-        Text("documentManagement.getDocuments · live")
+        Text("DOCUMENT FEED · live")
             .font(.system(size: 10, design: .monospaced))
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -357,6 +387,42 @@ private struct DocumentIngestBody_393: View {
         }
     }
 
+    private func classifyQueuedDocuments() async {
+        guard !classifying else { return }
+        let targets = classifiableRows
+        guard !targets.isEmpty else {
+            classifyError = "No queued documents need classification."
+            return
+        }
+        classifying = true
+        classifyError = nil
+        classifyMessage = nil
+        defer { classifying = false }
+
+        var successes = 0
+        var failures: [String] = []
+        for row in targets {
+            do {
+                let result = try await EusoTripAPI.shared.documentManagement.classifyDocument(documentId: row.id)
+                if result.success {
+                    successes += 1
+                } else {
+                    failures.append("\(row.detail): \(result.error ?? "classification failed")")
+                }
+            } catch {
+                failures.append("\(row.detail): \(error.localizedDescription)")
+            }
+        }
+
+        await loadAll()
+        if successes > 0 {
+            classifyMessage = "Classified \(successes) document\(successes == 1 ? "" : "s")."
+        }
+        if !failures.isEmpty {
+            classifyError = failures.prefix(2).joined(separator: "\n")
+        }
+    }
+
     /// Map one live `documentManagement.getDocuments` record to a queue row.
     /// Right column is the document's real status — per-row OCR confidence
     /// has no live source on mobile, so it is never invented.
@@ -365,9 +431,11 @@ private struct DocumentIngestBody_393: View {
         let ok = !["pending", "uploaded", "processing", "review", "rejected", "failed"].contains(status)
         let typeTag = String(d.type.replacingOccurrences(of: "_", with: " ").uppercased().prefix(9))
         return IngestRow_393(
+            id: d.id,
             type: typeTag.isEmpty ? "DOC" : typeTag,
             detail: d.name,
             confidence: status.isEmpty ? "—" : status,
+            rawStatus: status,
             ok: ok
         )
     }
@@ -376,10 +444,11 @@ private struct DocumentIngestBody_393: View {
 // MARK: - Ingest queue row model (built from live records only)
 
 private struct IngestRow_393: Identifiable, Equatable {
-    let id = UUID()
+    let id: String
     let type: String
     let detail: String
     let confidence: String
+    let rawStatus: String
     let ok: Bool
 }
 

@@ -27,6 +27,7 @@
 //
 
 import SwiftUI
+import Combine
 
 // MARK: - Screen
 
@@ -263,6 +264,11 @@ struct HosDutyStatus: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Space.s5) {
                     liveStatusCard
+                    if let message = store.lastError {
+                        HOSConnectionBanner(message: message, isLoading: store.isLoading) {
+                            Task { await store.refreshAll() }
+                        }
+                    }
                     dutyPicker
                     timelineCard
                     metricsRow

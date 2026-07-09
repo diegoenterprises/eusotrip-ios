@@ -1665,7 +1665,7 @@ private struct AddEvidenceSheet: View {
             Text("Add evidence to the claim file")
                 .font(EType.body.weight(.bold))
                 .foregroundStyle(palette.textPrimary)
-            Text("Posts directly to freightClaims.addClaimEvidence. The server returns a signed upload URL. Paste a hosted link or open the upload sheet (coming next).")
+            Text("Evidence is saved to the claim file. Paste a hosted link or open the upload sheet when available.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -1862,7 +1862,7 @@ private struct OpenDisputeSheet: View {
             Text("File a formal dispute")
                 .font(EType.body.weight(.bold))
                 .foregroundStyle(palette.textPrimary)
-            Text("Disputes route to a mediator. Posts to freightClaims.fileDispute and creates a DSP-prefixed file you can track from the Disputes board.")
+            Text("Disputes route to a mediator and open a DSP-prefixed file you can track from the Disputes board.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
         }

@@ -55,9 +55,16 @@ final class SVGDocumentCache {
         let key = svg as NSString
         if let hit = cache.object(forKey: key) { return hit.doc }
         return await withCheckedContinuation { continuation in
-            parseQueue.async { [cache] in
+            // NSCache is thread-safe; capture it through a nonisolated(unsafe)
+            // local so the @Sendable parse closure uses it without a
+            // non-Sendable capture diagnostic.
+            nonisolated(unsafe) let cache = cache
+            parseQueue.async {
                 // Re-check under the serial queue — a sibling view may have
-                // parsed the same document while we were queued.
+                // parsed the same document while we were queued. Rebuild the
+                // NSString key from the Sendable `svg` inside the @Sendable
+                // closure instead of capturing a non-Sendable NSString.
+                let key = svg as NSString
                 if let hit = cache.object(forKey: key) {
                     continuation.resume(returning: hit.doc)
                     return

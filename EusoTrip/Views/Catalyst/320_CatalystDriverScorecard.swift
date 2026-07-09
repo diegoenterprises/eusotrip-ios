@@ -348,7 +348,7 @@ private struct CatalystDriverScorecard: View {
                     .font(.system(size: 10, weight: .heavy))
                     .tracking(0.4)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Catalyst rates driver · same companyId both sides · clean Schedule C books")
+                Text("Catalyst rates driver · same company both sides · clean Schedule C books")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)

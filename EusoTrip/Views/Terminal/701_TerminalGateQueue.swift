@@ -260,7 +260,7 @@ struct TerminalGateQueue: View {
                             .foregroundStyle(.white)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 6)
-                    .background(LinearGradient.diagonal.opacity(inFlight ? 0.55 : 1.0))
+                    .background { LinearGradient.diagonal.opacity(inFlight ? 0.55 : 1.0) }
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -493,7 +493,7 @@ private struct AssignDockInputSheet: View {
                         .font(.system(size: 13, weight: .heavy)).tracking(0.4)
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(LinearGradient.diagonal.opacity(canSubmit ? 1.0 : 0.55))
+                        .background { LinearGradient.diagonal.opacity(canSubmit ? 1.0 : 0.55) }
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }
                 .buttonStyle(.plain)

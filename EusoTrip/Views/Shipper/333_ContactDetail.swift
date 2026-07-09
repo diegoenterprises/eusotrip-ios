@@ -26,6 +26,7 @@ private struct Contact: Decodable, Hashable {
 
 private struct ContactDetailBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let contactId: String
     @State private var contact: Contact? = nil
     @State private var loading = true
@@ -69,14 +70,14 @@ private struct ContactDetailBody: View {
     private func ctaRow(_ c: Contact) -> some View {
         HStack(spacing: 10) {
             if let p = c.phone, !p.isEmpty {
-                Button { if let url = URL(string: "tel://\(p.filter(\.isNumber))") { UIApplication.shared.open(url) } } label: {
+                Button { if let url = URL(string: "tel://\(p.filter(\.isNumber))") { openURL(url) } } label: {
                     Text("Call").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
                         .frame(maxWidth: .infinity).padding(.vertical, 12)
                         .background(LinearGradient.diagonal).clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                 }.buttonStyle(.plain)
             }
             if let e = c.email, !e.isEmpty {
-                Button { if let url = URL(string: "mailto:\(e)") { UIApplication.shared.open(url) } } label: {
+                Button { if let url = URL(string: "mailto:\(e)") { openURL(url) } } label: {
                     Image(systemName: "envelope.fill").font(.system(size: 13, weight: .heavy)).foregroundStyle(palette.textPrimary)
                         .frame(width: 44, height: 44).background(palette.bgCard)
                         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))

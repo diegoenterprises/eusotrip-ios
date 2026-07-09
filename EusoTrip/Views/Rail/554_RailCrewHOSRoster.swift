@@ -305,7 +305,7 @@ private struct RailCrewHOSRosterBody: View {
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
                     .fill(note.color.opacity(0.14))
                     .frame(width: 40, height: 40)
-                // Prefer the real Tomorrow.io condition glyph when the segment
+                // Prefer the real Apple WeatherKit condition glyph when the segment
                 // carries a weatherCode; else the driver utility glyph (wind /
                 // eye / alert). Both are bespoke WeatherIcons, no SF Symbols.
                 if let code = note.weatherCode, code != 0 {
@@ -353,7 +353,7 @@ private struct RailCrewHOSRosterBody: View {
     // MARK: Crew list
 
     private var crewHeader: some View {
-        Text("ASSIGNED CREW · getRailCrewHOS")
+        Text("ASSIGNED CREW · live HOS")
             .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
     }
 

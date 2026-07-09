@@ -21,9 +21,9 @@
 //                        avgRecoveryDays } }
 //    Waterfall (identified -> audited-out -> in-dispute -> recovered) derived from summary +
 //    per-status recovery sums, scaled to a 144pt plot. Stepper stage derived from status.
-//  STUB · 'Push disputes' CTA -> freightClaims.fileClaim (writes claim row) is NOT wired here;
-//    no per-invoice disputeDeadline / disputedDate fields on the API yet (named-gap to the-oath).
-//    Both CTAs re-run load() honestly — no fake success.
+//    'Run audit' -> freightClaims.runFreightAudit (persists company-scoped recovery findings).
+//    'Push disputes' -> freightClaims.fileDispute for each open recovery, linking the recovery row
+//    to the real dispute lifecycle and refetching the ledger after writes.
 //  NAV: HOME · SHIPMENTS · [orb] · COMPLIANCE[current] · ME.
 //
 
@@ -78,6 +78,34 @@ private struct RecoverySummary669: Decodable {
     let pendingRecovery: Double?
     let recoveryRate: Double?
     let avgRecoveryDays: Double?
+}
+
+private struct RunAuditInput669: Encodable {
+    let invoiceIds: [String]?
+    let auditType: String
+}
+
+private struct RunAuditAck669: Decodable {
+    let auditId: String?
+    let status: String?
+    let invoicesQueued: Int?
+    let findingsCreated: Int?
+    let totalVariance: Double?
+}
+
+private struct FileDisputeInput669: Encodable {
+    let type: String
+    let invoiceNumber: String
+    let amount: Double
+    let description: String
+    let recoveryId: String?
+}
+
+private struct FileDisputeAck669: Decodable {
+    let id: String?
+    let disputeNumber: String?
+    let status: String?
+    let filedAt: String?
 }
 
 // MARK: - Derived model
@@ -135,6 +163,9 @@ private struct RailOverchargeRecoveryBody: View {
     @State private var total = 0
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var actionBusy = false
+    @State private var actionMessage: String? = nil
+    @State private var actionFailed = false
 
     // MARK: Currency formatting (compact $K for waterfall labels, full $ for amounts)
 
@@ -217,6 +248,13 @@ private struct RailOverchargeRecoveryBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
                 header
+                if let message = actionMessage {
+                    LifecycleCard(accentDanger: actionFailed) {
+                        Text(message)
+                            .font(EType.caption)
+                            .foregroundStyle(actionFailed ? Brand.danger : palette.textSecondary)
+                    }
+                }
                 if loading {
                     LifecycleCard { Text("Loading recoveries…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else if let err = loadError {
@@ -426,32 +464,32 @@ private struct RailOverchargeRecoveryBody: View {
 
     private var ctaRow: some View {
         HStack(spacing: 8) {
-            // STUB: 'Push disputes' has no backing mutation (freightClaims.fileClaim NOT wired
-            // here); re-runs load() honestly rather than fake a write.
-            Button { Task { await load() } } label: {
+            Button { Task { await pushDisputes() } } label: {
                 Text("Push disputes · \(usdCompact(pendingRecovery))")
                     .font(.system(size: 15, weight: .bold)).foregroundStyle(Color.white)
                     .frame(maxWidth: .infinity).frame(height: 48)
                     .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(LinearGradient.diagonal))
             }
-            .buttonStyle(.plain)
-            // STUB: 'Run audit' (freightClaims.runFreightAudit) re-runs load() to re-surface.
-            Button { Task { await load() } } label: {
-                Text("Run audit")
+            .buttonStyle(.plain).disabled(actionBusy)
+            Button { Task { await runAudit() } } label: {
+                Text(actionBusy ? "Working…" : "Run audit")
                     .font(.system(size: 15, weight: .semibold)).foregroundStyle(palette.textPrimary)
                     .frame(width: 132, height: 48)
                     .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCard)
                         .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint)))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.plain).disabled(actionBusy)
         }
     }
 
     private var runAuditButton: some View {
-        CTAButton(title: "Run freight audit", action: { Task { await load() } }, leadingIcon: "magnifyingglass")
+        CTAButton(title: actionBusy ? "Running audit…" : "Run freight audit",
+                  action: { Task { await runAudit() } },
+                  leadingIcon: "magnifyingglass")
+            .disabled(actionBusy)
     }
 
-    // MARK: Load
+    // MARK: Actions
 
     private func load() async {
         loading = true; loadError = nil
@@ -467,6 +505,76 @@ private struct RailOverchargeRecoveryBody: View {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
+    }
+
+    private func runAudit() async {
+        if actionBusy { return }
+        actionBusy = true
+        actionFailed = false
+        actionMessage = nil
+        do {
+            let invoiceIds = rows.compactMap { $0.invoiceNumber }.filter { !$0.isEmpty }
+            let input = RunAuditInput669(invoiceIds: invoiceIds.isEmpty ? nil : invoiceIds,
+                                         auditType: "full")
+            let ack: RunAuditAck669 = try await EusoTripAPI.shared.mutation(
+                "freightClaims.runFreightAudit",
+                input: input
+            )
+            let findings = ack.findingsCreated ?? 0
+            let queued = ack.invoicesQueued ?? 0
+            let variance = usd(ack.totalVariance ?? 0)
+            actionMessage = findings > 0
+                ? "Audit \(ack.auditId ?? "") saved \(findings) recovery finding\(findings == 1 ? "" : "s") across \(queued) invoice\(queued == 1 ? "" : "s") · \(variance)."
+                : "Audit \(ack.auditId ?? "") completed. No overcharges were identified in the audited payment set."
+            await load()
+        } catch {
+            actionFailed = true
+            actionMessage = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        actionBusy = false
+    }
+
+    private func pushDisputes() async {
+        if actionBusy { return }
+        let targets = Array(openRows.prefix(6))
+        guard !targets.isEmpty else {
+            actionFailed = true
+            actionMessage = "No open recovery rows are available to dispute."
+            return
+        }
+
+        actionBusy = true
+        actionFailed = false
+        actionMessage = nil
+        do {
+            var filed = 0
+            for row in targets {
+                guard let invoice = row.invoiceNumber, !invoice.isEmpty else { continue }
+                let amount = row.overchargeAmount ?? 0
+                guard amount > 0 else { continue }
+                let basis = (row.type ?? "overcharge").replacingOccurrences(of: "_", with: " ")
+                let description = "Overcharge recovery dispute for \(invoice). Audit basis: \(basis). Carrier: \(row.carrier ?? "counterparty unresolved"). Amount: \(usd(amount))."
+                let _: FileDisputeAck669 = try await EusoTripAPI.shared.mutation(
+                    "freightClaims.fileDispute",
+                    input: FileDisputeInput669(
+                        type: "rate",
+                        invoiceNumber: invoice,
+                        amount: amount,
+                        description: description,
+                        recoveryId: row.id
+                    )
+                )
+                filed += 1
+            }
+            actionMessage = filed > 0
+                ? "Filed \(filed) overcharge dispute\(filed == 1 ? "" : "s") and linked them to the recovery ledger."
+                : "No disputable invoice rows had a valid invoice number and amount."
+            await load()
+        } catch {
+            actionFailed = true
+            actionMessage = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+        }
+        actionBusy = false
     }
 }
 

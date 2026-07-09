@@ -233,7 +233,7 @@ private struct CatalystVehicleScorecardAxisDetailBody: View {
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.5)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("Catalyst rates asset · same companyId both sides · clean §9.4 vehicle books")
+                Text("Catalyst rates asset · same company both sides · clean §9.4 vehicle books")
                     .font(.system(size: 10))
                     .foregroundStyle(palette.textPrimary)
                     .fixedSize(horizontal: false, vertical: true)

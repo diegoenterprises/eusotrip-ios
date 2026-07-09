@@ -143,7 +143,7 @@ private struct VesselIMDGDGRulesBody: View {
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
                 .padding(.top, Space.s2)
-            Text("getIMDGClasses · live")
+            Text("IMDG classes · live")
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 2)
@@ -170,7 +170,7 @@ private struct VesselIMDGDGRulesBody: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("REGULATION · getIMDGClasses")
+                    Text("REGULATION · IMDG classes")
                         .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                         .foregroundStyle(palette.textTertiary)
                     Text("IMDG Code · Amdt 41-22")
@@ -239,7 +239,7 @@ private struct VesselIMDGDGRulesBody: View {
 
     private var keyRulesSection: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            Text("KEY RULES · getClassMappings")
+            Text("KEY RULES · class mappings")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
 
@@ -312,7 +312,7 @@ private struct VesselIMDGDGRulesBody: View {
 
     private var crossBorderCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("CROSS-BORDER · getDangerousGoodsCrossBorder")
+            Text("CROSS-BORDER · DG rules")
                 .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
             Text("US: 49 CFR + IMDG · CBP HazMat entry")

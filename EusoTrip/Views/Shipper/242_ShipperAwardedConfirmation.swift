@@ -99,7 +99,7 @@ private struct AwardedBody: View {
     private var contextBanner: some View {
         LifecycleCard(accentGradient: true) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("§11.4 AWARDED · POST-ACCEPT FORWARD FLIP")
+                Text("SHIPPER · AWARDED CONFIRMATION")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 if let l = load {
                     Text("\(l.loadNumber ?? "LD-\(l.id ?? 0)") · \(l.pickupCity ?? "-") → \(l.destCity ?? "-") · \(l.trailerType ?? "-") · ACCEPTED")
@@ -163,7 +163,7 @@ private struct AwardedBody: View {
     private var timelineRow: some View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
-                Text("FORWARD FLIP · NEXT STAGES").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
+                Text("NEXT STAGES").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 Text("Pickup → Loading → BOL signing → In transit → Delivery → POD → Settlement")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)

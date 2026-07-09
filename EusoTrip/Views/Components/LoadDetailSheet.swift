@@ -27,6 +27,10 @@ import SwiftUI
 import MapKit
 import CoreLocation
 
+extension Notification.Name {
+    static let eusoLoadConversationOpen = Notification.Name("eusoLoadConversationOpen")
+}
+
 struct LoadDetailSheet: View {
 
     // MARK: - Input
@@ -60,6 +64,7 @@ struct LoadDetailSheet: View {
     @Environment(\.palette)     private var palette
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss)     private var dismiss
+    @Environment(\.openURL)     private var openURL
 
     // MARK: - State
 
@@ -95,6 +100,10 @@ struct LoadDetailSheet: View {
     /// card. `error` = inline error + retry. Server endpoint:
     /// `loadBidding.submit` at the posted rate (one-tap accept).
     @State private var bookState: BookState = .idle
+    /// Message-thread open state. The CTA resolves a persisted load-scoped
+    /// conversation through `messages.getOrCreateLoadConversation`; failures
+    /// render inline so the button never degrades into a silent no-op.
+    @State private var messageOpenState: MessageOpenState = .idle
 
     /// Decoded HERE Routing v8 corridor for the route preview map — the
     /// REAL curved road geometry (pickup→delivery via the actual highway
@@ -106,12 +115,24 @@ struct LoadDetailSheet: View {
     /// SHARED component, every surface that presents `LoadDetailSheet` now
     /// gets road-following polylines.
     @State private var routePolyline: [HereLatLng] = []
+    /// Full `loads.getById` projection used when this sheet opens from a
+    /// summary row with missing/sentinel geometry. This stays nil unless the
+    /// backend supplies a better real route basis.
+    @State private var hydratedRouteLoad: AvailableLoad?
+
+    private var routeDetailLoad: AvailableLoad { hydratedRouteLoad ?? load }
 
     enum BookState: Equatable {
         case idle
         case submitting
         case booked(bidId: Int?, status: String)
         case error(String)
+    }
+
+    enum MessageOpenState: Equatable {
+        case idle
+        case resolving
+        case failed(String)
     }
 
     /// Escort-request state for the empty-state "Request …" button.
@@ -336,7 +357,44 @@ struct LoadDetailSheet: View {
             // water leg) `routePolyline` stays `[]` and the map honestly
             // falls back to the straight base line — never a fabricated
             // path. Same pattern as LifecycleScaffold.refreshRoutePolyline.
+            await hydrateRouteLoadIfNeeded()
             await refreshRoutePolyline()
+        }
+    }
+
+    /// Summary board rows can carry display labels plus no usable geometry
+    /// (0,0 or the CONUS-centroid miss sentinel). Before giving up on the
+    /// map, hydrate the full load row by numeric id and use its stored
+    /// pickup/delivery JSON and distance. This never guesses coordinates:
+    /// if the backend record still lacks real geometry, the route card keeps
+    /// its honest unavailable state.
+    @MainActor
+    private func hydrateRouteLoadIfNeeded() async {
+        guard hydratedRouteLoad == nil,
+              let backendId = load.backendLoadId else { return }
+        let pickup = CLLocationCoordinate2D(latitude: load.originLat, longitude: load.originLng)
+        let delivery = CLLocationCoordinate2D(latitude: load.destLat, longitude: load.destLng)
+        guard load.miles <= 0 || !routeCoordinatesAreReal(pickup: pickup, delivery: delivery) else {
+            return
+        }
+        do {
+            let full = try await EusoTripAPI.shared.loads.getById(backendId)
+            let candidate = AvailableLoad.from(full)
+            let candidatePickup = CLLocationCoordinate2D(
+                latitude: candidate.originLat,
+                longitude: candidate.originLng
+            )
+            let candidateDelivery = CLLocationCoordinate2D(
+                latitude: candidate.destLat,
+                longitude: candidate.destLng
+            )
+            guard candidate.miles > 0 ||
+                  routeCoordinatesAreReal(pickup: candidatePickup, delivery: candidateDelivery) else {
+                return
+            }
+            hydratedRouteLoad = candidate
+        } catch {
+            hydratedRouteLoad = nil
         }
     }
 
@@ -351,16 +409,18 @@ struct LoadDetailSheet: View {
     /// pickup→delivery base line.
     @MainActor
     private func refreshRoutePolyline() async {
+        let detail = routeDetailLoad
+        let routeMode = TransportMode(rawValue: detail.transportMode ?? "truck") ?? .truck
         // Water legs (vessel / barge) are great-circle, not road routes —
         // skip the HERE truck-routing fetch entirely, like LifecycleScaffold.
-        guard mode != .vessel, mode != .barge else {
+        guard routeMode != .vessel, routeMode != .barge else {
             routePolyline = []
             return
         }
-        let pickup   = CLLocationCoordinate2D(latitude: load.originLat,
-                                              longitude: load.originLng)
-        let delivery = CLLocationCoordinate2D(latitude: load.destLat,
-                                              longitude: load.destLng)
+        let pickup   = CLLocationCoordinate2D(latitude: detail.originLat,
+                                              longitude: detail.originLng)
+        let delivery = CLLocationCoordinate2D(latitude: detail.destLat,
+                                              longitude: detail.destLng)
         // Only fetch when both endpoints are honest, distinct coordinates —
         // a centroid-miss / null-island lane has no real route to draw.
         guard routeCoordinatesAreReal(pickup: pickup, delivery: delivery) else {
@@ -499,18 +559,19 @@ struct LoadDetailSheet: View {
     // MARK: - Sections
 
     private var header: some View {
+        let detail = routeDetailLoad
         // Hero id used by §3.1 matchedGeometryEffect. Falls back to
         // the load's own id when the caller didn't pass an explicit
         // source id.
         let heroId = heroSourceId ?? load.id
         return VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: Space.s2) {
-                Text(load.id.uppercased())
+                Text(detail.id.uppercased())
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                     .modifier(LoadDetailHeroMatch(id: "load-\(heroId)-id", namespace: heroNamespace))
                 spotContractBadge
-                if load.hotScore >= 4 {
+                if detail.hotScore >= 4 {
                     // Patch #2: EusoBadge(.hot). Replaces the hand-rolled
                     // "HOT LANE" Label + gradient capsule so every HOT
                     // marker across the app shares one primitive.
@@ -524,19 +585,19 @@ struct LoadDetailSheet: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(spacing: Space.s2) {
-                Text(load.origin)
+                Text(detail.origin)
                     .font(EType.h1).foregroundStyle(LinearGradient.diagonal)
                     .modifier(LoadDetailHeroMatch(id: "load-\(heroId)-origin", namespace: heroNamespace))
                 Image(systemName: "arrow.right")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text(load.destination)
+                Text(detail.destination)
                     .font(EType.h1).foregroundStyle(LinearGradient.diagonal)
                     .modifier(LoadDetailHeroMatch(id: "load-\(heroId)-dest", namespace: heroNamespace))
             }
             .lineLimit(2)
 
-            Text("\(load.miles) mi · \(load.equipment.uppercased()) · \(load.weight.uppercased())")
+            Text("\(detail.miles) mi · \(detail.equipment.uppercased()) · \(detail.weight.uppercased())")
                 .font(EType.caption).tracking(0.4)
                 .foregroundStyle(palette.textSecondary)
         }
@@ -545,20 +606,21 @@ struct LoadDetailSheet: View {
     // MARK: Route card
 
     private var routeCard: some View {
+        let detail = routeDetailLoad
         let lane = HereMapView.Lane(
-            id: load.id,
-            originTitle: load.origin,
-            destinationTitle: load.destination,
-            pickup:   CLLocationCoordinate2D(latitude: load.originLat,
-                                             longitude: load.originLng),
-            delivery: CLLocationCoordinate2D(latitude: load.destLat,
-                                             longitude: load.destLng)
+            id: detail.id,
+            originTitle: detail.origin,
+            destinationTitle: detail.destination,
+            pickup:   CLLocationCoordinate2D(latitude: detail.originLat,
+                                             longitude: detail.originLng),
+            delivery: CLLocationCoordinate2D(latitude: detail.destLat,
+                                             longitude: detail.destLng)
         )
         // Distance/ETA are only honest when the adapter computed a real
         // mileage (miles == 0 is the centroid-miss sentinel). Show an
         // em-dash rather than a fabricated "0 mi · estimated 0h 0m".
-        let routeSubtitle = load.miles > 0
-            ? "\(load.miles) mi · estimated \(estimatedDriveTime)"
+        let routeSubtitle = detail.miles > 0
+            ? "\(detail.miles) mi · estimated \(estimatedDriveTime)"
             : "Distance pending"
         return sectionCard(title: "ROUTE", subtitle: routeSubtitle) {
             // Only draw the map when BOTH endpoints are real, distinct,
@@ -711,9 +773,10 @@ struct LoadDetailSheet: View {
     private var estimatedDriveTime: String {
         // miles == 0 is the honest centroid-miss value, not a real
         // zero-mile lane — don't fabricate a "0h 0m" ETA from it.
-        guard load.miles > 0 else { return "—" }
+        let miles = routeDetailLoad.miles
+        guard miles > 0 else { return "—" }
         // Rough heuristic: highway avg 52 mph.
-        let hours = Double(load.miles) / 52.0
+        let hours = Double(miles) / 52.0
         let h = Int(hours)
         let m = Int((hours - Double(h)) * 60)
         return "\(h)h \(m)m"
@@ -722,20 +785,21 @@ struct LoadDetailSheet: View {
     private var estimatedDeliveryDay: String {
         let f = DateFormatter()
         f.dateFormat = "EEE · HH:mm 'CT'"
-        return f.string(from: Date().addingTimeInterval(Double(load.miles) * 70))
+        return f.string(from: Date().addingTimeInterval(Double(routeDetailLoad.miles) * 70))
     }
 
     // MARK: Rate row
 
     private var rateRow: some View {
-        HStack(spacing: Space.s3) {
-            ratePill(value: "$\(Int(load.rate))",
+        let detail = routeDetailLoad
+        return HStack(spacing: Space.s3) {
+            ratePill(value: "$\(Int(detail.rate))",
                      label: "TOTAL",
                      gradient: true)
-            ratePill(value: String(format: "$%.2f", load.rpm),
+            ratePill(value: String(format: "$%.2f", detail.rpm),
                      label: "PER MILE",
                      gradient: false)
-            ratePill(value: "\(load.miles) mi",
+            ratePill(value: "\(detail.miles) mi",
                      label: "DISTANCE",
                      gradient: false)
         }
@@ -1150,11 +1214,9 @@ struct LoadDetailSheet: View {
                 .overlay(Capsule().strokeBorder(palette.borderFaint))
             if let phone = r.escortPhone, !phone.isEmpty,
                let url = URL(string: "tel:\(phone.filter { "+0123456789".contains($0) })") {
-                Button {
-                    #if canImport(UIKit)
-                    UIApplication.shared.open(url)
-                    #endif
-                } label: {
+	                Button {
+	                    openURL(url)
+	                } label: {
                     Image(systemName: "phone.fill")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white)
@@ -1263,94 +1325,118 @@ struct LoadDetailSheet: View {
                         .overlay(Capsule().strokeBorder(palette.borderFaint))
                 }
 
-                Button {
-                    handleMessageTap()
-                } label: {
-                    Image(systemName: "bubble.left.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .background(
-                            Circle().fill(LinearGradient.diagonal)
-                        )
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Message counterparty")
+                Button { handleMessageTap() } label: { messageButtonLabel }
+                    .buttonStyle(.plain)
+                    .disabled(messageOpenState == .resolving)
+                    .accessibilityLabel("Message counterparty")
+            }
+
+            if case .failed(let message) = messageOpenState {
+                Text(message)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Space.s2)
             }
         }
     }
 
-    /// Message button never goes dead. Three cases:
+    @ViewBuilder
+    private var messageButtonLabel: some View {
+        ZStack {
+            Circle().fill(LinearGradient.diagonal)
+            if messageOpenState == .resolving {
+                ProgressView()
+                    .tint(.white)
+                    .scaleEffect(0.72)
+            } else {
+                Image(systemName: "bubble.left.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(width: 36, height: 36)
+    }
+
+    /// Message button never goes dead. Two cases:
     ///   1. Caller passed `onMessageBroker` — invoke it (legacy path
     ///      where the surface owns its own threading).
-    ///   2. We have a real broker (`commercial.broker`) — open the
-    ///      messaging thread with that company via the canonical
-    ///      `eusoMessagingThreadOpen` notification, which both the
-    ///      shipper and driver surfaces already route to
-    ///      `MessagesScreen` with the thread pre-selected.
-    ///   3. Otherwise (shipper-direct, or commercial still loading) —
-    ///      fall through to ESANG so the user can ask "who's the
-    ///      shipper on LD-…?" and the assistant routes them, instead
-    ///      of staring at a dead button.
-    /// Founder report 2026-05-06 — the message button was wired to
-    /// `onMessageBroker?()` which is `nil` whenever the LoadDetailSheet
-    /// is presented from a surface that doesn't pass the closure.
+    ///   2. Otherwise resolve the persisted load conversation through
+    ///      `messages.getOrCreateLoadConversation`, then ask the app root
+    ///      to open that real thread for the active role.
     private func handleMessageTap() {
         if let onMessageBroker {
             onMessageBroker()
             return
         }
-        // Server resolves whoever posted the load — broker, shipper,
-        // dispatch, driver — into a single `counterparty` field on
-        // CommercialContext. We route to that user regardless of
-        // role, so the Message button works whether the load was
-        // posted by a brokerage, a shipper directly, a dispatcher
-        // on a fleet's behalf, or an owner-operator. Founder
-        // mandate 2026-05-06 — "whether its a broker or just
-        // shipper or its dispatch it needs to work when contacting
-        // whoever posts a load."
-        if let cp = commercial?.counterparty {
-            NotificationCenter.default.post(
-                name: Notification.Name("eusoMessagingThreadOpen"),
-                object: nil,
-                userInfo: [
-                    "userId":      cp.userId,
-                    "companyId":   cp.companyId as Any,
-                    "displayName": cp.companyName ?? cp.userName ?? cp.role.capitalized,
-                    "role":        cp.role,
-                    "loadId":      load.backendLoadId.map(String.init) ?? load.id,
-                ]
-            )
+        guard messageOpenState != .resolving else { return }
+        let loadId = load.backendLoadId.map(String.init) ?? load.id
+        guard !loadId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            messageOpenState = .failed("This load is missing its conversation id. Refresh the load board and try again.")
             return
         }
-        // Legacy broker fallback — kept for the brief window when
-        // a build hits the new client but old server (which doesn't
-        // return `counterparty`).
-        if let broker = commercial?.broker {
-            NotificationCenter.default.post(
-                name: Notification.Name("eusoMessagingThreadOpen"),
-                object: nil,
-                userInfo: [
-                    "userId":      broker.userId,
-                    "companyId":   broker.companyId as Any,
-                    "displayName": broker.companyName ?? broker.userName ?? "Broker",
-                    "role":        "BROKER",
-                    "loadId":      load.backendLoadId.map(String.init) ?? load.id,
-                ]
-            )
-            return
+
+        messageOpenState = .resolving
+        Task {
+            do {
+                let conversation = try await EusoTripAPI.shared.messaging
+                    .getOrCreateLoadConversation(loadId: loadId)
+                await MainActor.run {
+                    messageOpenState = .idle
+                    NotificationCenter.default.post(
+                        name: .eusoLoadConversationOpen,
+                        object: nil,
+                        userInfo: [
+                            "conversationId": conversation.id,
+                            "loadId": conversation.loadId ?? loadId,
+                            "loadNumber": conversation.loadNumber ?? load.id,
+                        ]
+                    )
+                }
+            } catch {
+                await MainActor.run {
+                    messageOpenState = .failed(messageConversationError(error))
+                }
+            }
         }
-        // Commercial context still loading — drop the user into
-        // ESANG with the load id pre-loaded so they can ask "who
-        // do I message about this load?" without typing it.
-        NotificationCenter.default.post(
-            name: Notification.Name("eusoeSangOpenWithLoadContext"),
-            object: nil,
-            userInfo: [
-                "loadId": load.backendLoadId.map(String.init) ?? load.id,
-                "intent": "message_counterparty",
-            ]
-        )
+    }
+
+    private func messageConversationError(_ error: Error) -> String {
+        if let api = error as? EusoTripAPIError {
+            switch api {
+            case .unauthenticated:
+                NotificationCenter.default.post(
+                    name: Notification.Name("eusoLogoutRequested"),
+                    object: nil
+                )
+                return "Your session expired. Sign in again, then retry this message."
+            case .forbidden(let message), .trpcError(let message):
+                return message
+            case .httpStatus(let code, _):
+                if code == 401 {
+                    return "Your session expired. Sign in again, then retry this message."
+                }
+                if code == 403 {
+                    return "This account cannot message on this load."
+                }
+                return "Could not open this load conversation. Try again in a moment."
+            case .decodingFailed:
+                return "We could not read this conversation. Refresh the load board and try again."
+            case .notConfigured:
+                return "Messaging is not configured on this device."
+            case .badURL:
+                return "Messaging URL was malformed. Refresh the load board and try again."
+            case .empty:
+                return "Messaging returned an empty response. Try again."
+            case .queuedForOfflineReplay:
+                return "You are offline. Reconnect, then retry this message."
+            }
+        }
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain {
+            return "Network unavailable. Check your connection and try again."
+        }
+        return error.localizedDescription
     }
 
     /// "BROKER" while we still don't know, or when one is wired.
@@ -1804,13 +1890,10 @@ struct LoadDetailSheet: View {
             // "You have already submitted a bid…"). Falls back to a
             // generic line for transport-level failures.
             //
-            // 2026-05-05: explicit handling for `.unauthenticated` was
-            // missing — server 401/403 surfaced as the cryptic
-            // `EusoTripAPIError error 0` from `localizedDescription`,
-            // which is what the founder hit on Book Now ("does nothing
-            // says something about authentication"). Now we emit a
-            // direct human line and post a session-refresh notification
-            // so the surface can prompt re-auth without dead-ending.
+            // 2026-06-23: keep 401 and 403 distinct. A 401 sends the
+            // user back through real auth; a 403 keeps the server's
+            // role/mode/compliance gate visible so we do not claim an
+            // account mismatch is a stale session.
             let msg: String = {
                 if let api = error as? EusoTripAPIError {
                     switch api {
@@ -1830,7 +1913,9 @@ struct LoadDetailSheet: View {
                             name: Notification.Name("eusoLogoutRequested"),
                             object: nil
                         )
-                        return "Your session expired or this account isn't allowed to bid on this lane. Sign in again or switch to a carrier / dispatcher account."
+                        return "Your session expired. Sign in again, then retry this load."
+                    case .forbidden(let message):
+                        return message
                     case .trpcError(let m):
                         return m
                     case .httpStatus(let code, _):
@@ -2197,12 +2282,9 @@ struct CounterOfferSheet: View {
 
     private func submit() async {
         guard !isSubmitting else { return }
-        // Symmetric with `book()` — the legacy `drivers.counterOffer`
-        // path took the loadNumber string, which the backend's bid
-        // chain rejects (it inserts a `loadBids` row keyed on the
-        // numeric loadId). When the caller didn't surface the numeric
-        // id we can't open a bid chain, so fail fast with a clear,
-        // recoverable line rather than firing a doomed mutation.
+        // Counter-offers use the driver-scoped mutation. It inserts the
+        // bid-chain row for a custom rate and avoids the generic submit
+        // path's posted-rate/duplicate-bid semantics.
         guard let backendId = backendLoadId else {
             lastError = "Load id is missing. Refresh the load board and try again."
             return
@@ -2210,28 +2292,33 @@ struct CounterOfferSheet: View {
         isSubmitting = true
         defer { isSubmitting = false }
         do {
-            // `loadBidding.submit` — same endpoint `book()` and the web
-            // platform's bid-management page use. Fans realtime events
-            // to the shipper, runs the auto-accept rules, and returns
-            // whether the bid was instantly accepted.
-            let resp = try await EusoTripAPI.shared.loadBidding.submit(
-                loadId: backendId,
-                bidAmount: amount,
-                rateType: "flat",
-                conditions: conditions.isEmpty ? nil : conditions,
-                expiresInHours: 24
+            let resp = try await EusoTripAPI.shared.drivers.counterOffer(
+                loadId: String(backendId),
+                amount: amount,
+                conditions: conditions.isEmpty ? nil : conditions
             )
-            ack = .bidding(id: resp.id, status: resp.status)
+            ack = .legacy(status: resp.status)
             lastError = nil
         } catch {
-            // Surface tRPC user-facing messages verbatim — common
-            // ones include the EusoWallet payout-account precondition,
-            // duplicate-bid 409, and CDL/hazmat endorsement gates.
-            if let api = error as? EusoTripAPIError, case .trpcError(let m) = api {
-                lastError = m
-            } else {
-                lastError = "Couldn't send counter. Try again."
+            // Honest, diagnosable message for EVERY failure class — not just
+            // tRPC. `bidActionMessage` surfaces the real reason: the verbatim
+            // tRPC copy (wallet/CDL/dup-bid/mode-eligibility), an auth line,
+            // a network line, or a decode line. Mirrors the `book()` fix at
+            // this file's booking action. 403/FORBIDDEN no longer reaches
+            // this branch as `.unauthenticated` — `perform()` keeps it
+            // distinct so permission gates surface their own message.
+            if let api = error as? EusoTripAPIError, case .unauthenticated = api {
+                // Give the driver a real path back to a bid-capable session —
+                // the same channel every "Sign out" affordance uses
+                // (`eusoLogoutRequested` is observed at the app root and lands
+                // them on Sign In). Without this a genuine session expiry
+                // showed a banner and then dead-ended.
+                NotificationCenter.default.post(
+                    name: Notification.Name("eusoLogoutRequested"),
+                    object: nil
+                )
             }
+            lastError = EusoTripAPIError.bidActionMessage(for: error, noun: "counter")
         }
     }
 }

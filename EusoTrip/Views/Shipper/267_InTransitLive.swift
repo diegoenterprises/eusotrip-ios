@@ -81,6 +81,7 @@ struct InTransitLiveScreen: View {
 
 private struct InTransitBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let live: ShipperAPI.LifecycleSnapshot
 
     private var mode: TransitMode { TransitMode(relationship: live.load.relationship) }
@@ -332,9 +333,9 @@ private struct InTransitBody: View {
         let enabled = (phone?.isEmpty == false) || (icon == "map.fill" && mapDeepLink != nil)
         return Button {
             if let p = phone, let url = URL(string: "tel://\(p.filter(\.isNumber))") {
-                UIApplication.shared.open(url)
+                openURL(url)
             } else if let url = mapDeepLink {
-                UIApplication.shared.open(url)
+                openURL(url)
             }
         } label: {
             VStack(spacing: 4) {

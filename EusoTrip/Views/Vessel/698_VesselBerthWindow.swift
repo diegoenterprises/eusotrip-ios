@@ -585,8 +585,9 @@ private struct VesselBerthWindowBody: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Book a window")
+            CTAButton(title: "Book a window", action: { openVesselScreen("Vesl669") })
             Button {
+                openVesselScreen("Vesl661")
             } label: {
                 Text("List view")
                     .font(.system(size: 15, weight: .semibold))
@@ -600,6 +601,14 @@ private struct VesselBerthWindowBody: View {
             .buttonStyle(.plain)
             .frame(width: 148)
         }
+    }
+
+    private func openVesselScreen(_ screenId: String) {
+        NotificationCenter.default.post(
+            name: .eusoVesselNavSwap,
+            object: nil,
+            userInfo: ["screenId": screenId]
+        )
     }
 
     // MARK: - Loading state

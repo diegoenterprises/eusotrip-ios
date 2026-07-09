@@ -200,7 +200,9 @@ private struct ReassignLoad: Decodable, Hashable {
     let id: Int?
     let loadNumber: String?
     let pickupCity: String?
+    let pickupState: String?
     let destCity: String?
+    let destState: String?
     let trailerType: String?
     let cargoType: String?
     let weight: String?
@@ -248,6 +250,11 @@ private struct ReassignBody: View {
                 } else {
                     ForEach(rankedCandidates) { c in candidateCard(c) }
                 }
+                // COUNTRY-DONE (407): lane-jurisdiction eligibility gate on the
+                // real load context. HOS/cert segments are regulatory constants
+                // (49 CFR 395 · SOR/2005-313 · NOM-087); per-driver borderEligible
+                // pre-filter is a named gap on dispatch.getAvailableDrivers.
+                if load != nil { laneEligibilityGate }
                 actionRow
                 Color.clear.frame(height: 96)
             }
@@ -345,10 +352,55 @@ private struct ReassignBody: View {
         }.buttonStyle(.plain)
     }
 
+    // MARK: - COUNTRY-DONE lane-jurisdiction gate (407)
+
+    /// detectLoadCountry mirror: state/province abbreviation → US | CA | MX.
+    private func laneCountry(_ state: String?) -> CBRegion.Code {
+        guard let s = state?.uppercased(), !s.isEmpty else { return .US }
+        let ca: Set<String> = ["AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT"]
+        let mx: Set<String> = ["AGU", "BCN", "BCS", "CAM", "CHP", "CHH", "CMX", "COA", "COL", "DF", "DUR",
+                               "GUA", "GRO", "HID", "JAL", "MEX", "MIC", "MOR", "NAY", "NLE", "OAX", "PUE",
+                               "QUE", "ROO", "SLP", "SIN", "SON", "TAB", "TAM", "TLA", "VER", "YUC", "ZAC"]
+        if ca.contains(s) { return .CA }
+        if mx.contains(s) { return .MX }
+        return .US
+    }
+
+    private var laneEligibilityGate: some View {
+        let origin = laneCountry(load?.pickupState)
+        let dest = laneCountry(load?.destState)
+        let laneLabel = "\(load?.pickupCity ?? "-")→\(load?.destCity ?? "-")"
+        let verdict: String
+        let ok: Bool
+        switch (origin, dest) {
+        case (.US, .US):
+            verdict = "US DOMESTIC · CDL ONLY"; ok = true
+        case (.CA, _), (_, .CA):
+            verdict = "US ↔ CA · FAST REQUIRED"; ok = false
+        case (.MX, _), (_, .MX):
+            verdict = "US ↔ MX · SENTRI + LIC FED"; ok = false
+        }
+        return DispatcherLaneEligibilityGate(
+            laneLabel: laneLabel,
+            verdict: verdict,
+            verdictOK: ok,
+            regions: [
+                CBRegion(code: .US, accentHex: "1473FF", count: nil, customs: "ACE",
+                         hosLabel: "11h", certLabel: "CDL"),
+                CBRegion(code: .CA, accentHex: "00C48C", count: nil, customs: "ACI",
+                         hosLabel: "13h", certLabel: "FAST"),
+                CBRegion(code: .MX, accentHex: "FF7A00", count: nil, customs: "CARTA PORTE",
+                         hosLabel: "14h", certLabel: "SENTRI·Lic Fed"),
+            ])
+    }
+
     private var actionRow: some View {
         VStack(spacing: 6) {
             HStack(spacing: 10) {
-                Button { dismiss() } label: {
+                Button {
+                    NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+                    dismiss()
+                } label: {
                     Text("Cancel")
                         .font(EType.body.weight(.semibold))
                         .frame(maxWidth: .infinity, minHeight: 48)

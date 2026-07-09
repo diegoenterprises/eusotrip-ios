@@ -453,7 +453,7 @@ struct BrokerTenders: View {
                 Text("Couldn't load tenders")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text(error.localizedDescription)
+                Text(error.eusoUserCopy)
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)

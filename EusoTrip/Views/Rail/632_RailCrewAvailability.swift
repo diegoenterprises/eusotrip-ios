@@ -286,7 +286,7 @@ private struct RailCrewAvailabilityBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("railShipments.ts:795")
+                Text("crew counts")
                     .font(.system(size: 12))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -385,7 +385,7 @@ private struct RailCrewAvailabilityBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("railShipments.ts:784")
+                Text("availability window")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }

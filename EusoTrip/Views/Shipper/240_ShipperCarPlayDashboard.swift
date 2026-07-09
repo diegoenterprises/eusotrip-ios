@@ -558,7 +558,7 @@ struct ShipperCarPlayDashboard: View {
             Text("Powered by CarPlay · MapKit · CPNowPlayingTemplate")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
-            Text("companyId \(session.user?.companyId ?? "—") · live load binding")
+            Text("Company ID \(session.user?.companyId ?? "—") · live load binding")
                 .font(.system(size: 10))
                 .foregroundStyle(palette.textTertiary)
         }

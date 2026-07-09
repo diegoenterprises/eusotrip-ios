@@ -360,7 +360,7 @@ struct DosimetryEntrySheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Space.s4) {
-                    Text("Log a dosimetry reading on this hazmat-7 load. Cumulative mrem auto-calculates server-side; readings retain their kind tag (TLD monthly / EPD continuous / shipment log / ambient) for the final POD audit trail.")
+                    Text("Log a dosimetry reading on this hazmat-7 load. Cumulative mrem auto-calculates for the final POD audit trail; readings retain their kind tag (TLD monthly / EPD continuous / shipment log / ambient).")
                         .font(EType.caption)
                         .foregroundStyle(palette.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)

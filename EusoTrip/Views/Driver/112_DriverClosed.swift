@@ -564,7 +564,7 @@ struct DriverClosed: View {
                     .padding(.vertical, 6)
             }
 
-            Text("Settlement ID: \(settlementId ?? Self.emDash) · earnings.previewSettlement")
+            Text("Settlement ID: \(settlementId ?? Self.emDash) · settlement preview")
                 .font(EType.mono(.caption)).tracking(0.2)
                 .foregroundStyle(palette.textSecondary)
                 .padding(.top, 8)

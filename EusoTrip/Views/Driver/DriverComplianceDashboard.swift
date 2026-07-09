@@ -48,6 +48,11 @@ struct DriverComplianceDashboard: View {
                     skeletonStack
                 } else {
                     hosCard
+                    // COUNTRY-DONE (wireframe 078): HOS cycle basis by jurisdiction.
+                    // US active until the per-country ruleset resolver lands
+                    // (named gap: eld.getActiveHosRuleset / hos.getCycleRule —
+                    // detectLoadCountry keys the active row server-side).
+                    DriverHosCycleJurisdictionBand(active: .us)
                     insuranceCard
                     hazmatCard
                     twicCard

@@ -74,11 +74,10 @@ actor HereMatrixClient {
         let body = MatrixRequest(
             origins:          origins.map(Coord.init),
             destinations:     destinations.map(Coord.init),
-            // 2026-06-03 — Matrix v8 rejects type:"world" alongside a custom
-            // vehicle object (world requires a predefined region profile with
-            // no other options) → 400 Malformed → empty candidates strip.
-            // autoCircle auto-derives a bounding circle around the points.
-            regionDefinition: RegionDef(type: "autoCircle", margin: 10_000),
+            // Short local boards keep HERE's efficient autoCircle. Long-haul
+            // boards switch to world because Matrix v8 hard-rejects
+            // autoCircle regions above a 400 km diameter.
+            regionDefinition: Self.regionDefinition(origins: origins, destinations: destinations),
             transportMode:    "truck",
             matrixAttributes: ["travelTimes", "distances"],
             departureTime:    departureTime,
@@ -182,6 +181,40 @@ actor HereMatrixClient {
                 ? nil
                 : profile.shippedHazardousGoods.map(\.hereValue).sorted()
         }
+    }
+
+    private static func regionDefinition(
+        origins: [CLLocationCoordinate2D],
+        destinations: [CLLocationCoordinate2D]
+    ) -> RegionDef {
+        let points = (origins + destinations).filter { c in
+            c.latitude.isFinite && c.longitude.isFinite &&
+            abs(c.latitude) <= 90 && abs(c.longitude) <= 180 &&
+            !(c.latitude == 0 && c.longitude == 0)
+        }
+        var maxMeters: CLLocationDistance = 0
+        for i in points.indices {
+            for j in points.indices where j > i {
+                maxMeters = max(maxMeters, haversineMeters(points[i], points[j]))
+            }
+        }
+        return maxMeters <= 380_000
+            ? RegionDef(type: "autoCircle", margin: 10_000)
+            : RegionDef(type: "world")
+    }
+
+    private static func haversineMeters(
+        _ a: CLLocationCoordinate2D,
+        _ b: CLLocationCoordinate2D
+    ) -> CLLocationDistance {
+        let radius = 6_371_000.0
+        let dLat = (b.latitude - a.latitude) * .pi / 180
+        let dLng = (b.longitude - a.longitude) * .pi / 180
+        let lat1 = a.latitude * .pi / 180
+        let lat2 = b.latitude * .pi / 180
+        let h = pow(sin(dLat / 2), 2) +
+            cos(lat1) * cos(lat2) * pow(sin(dLng / 2), 2)
+        return 2 * radius * asin(sqrt(h))
     }
 }
 

@@ -103,7 +103,7 @@ struct MeHotZones: View {
     /// state, not as a key-missing fallback.)
     private var heatMap: some View {
         ZStack(alignment: .topLeading) {
-            HotZonesHeatMapView(zones: store.zones)
+            HotZonesHeatMapView(zones: store.zones, coldZones: store.coldZones)
                 .frame(height: 320)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
                 .overlay(
@@ -594,7 +594,7 @@ struct MeHotZonesScreen: View {
 
 private func driverNavLeading_100() -> [NavSlot] {
     [NavSlot(label: "Home",  systemImage: "house",  isCurrent: false),
-     NavSlot(label: "Haul",  systemImage: "trophy", isCurrent: false)]
+     NavSlot(label: "Trips", systemImage: "road.lanes", isCurrent: false)]
 }
 private func driverNavTrailing_100() -> [NavSlot] {
     [NavSlot(label: "My Loads", systemImage: "shippingbox.fill", isCurrent: false),

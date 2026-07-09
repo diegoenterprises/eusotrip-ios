@@ -49,6 +49,7 @@ import SwiftUI
 
 struct CarrierHome: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var session: EusoTripSession
 
     @StateObject private var dashboard = CarrierHomeDashboardStore()
@@ -134,7 +135,7 @@ struct CarrierHome: View {
             if status == .notDetermined {
                 WeatherService.shared.requestPermissionIfNeeded()
             } else if let url = URL(string: UIApplication.openSettingsURLString) {
-                UIApplication.shared.open(url)
+                openURL(url)
             }
         } label: {
             HStack(spacing: 10) {
@@ -706,7 +707,7 @@ struct CarrierHome: View {
                 Text("Couldn't load this card")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text(error.localizedDescription)
+                Text(error.eusoUserCopy)
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(2)

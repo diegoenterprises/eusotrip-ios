@@ -387,7 +387,7 @@ private struct VesselEquipmentHealthBody: View {
                     EusoEmptyState(
                         icon: Image(systemName: "thermometer.snowflake"),
                         title: "No component telemetry",
-                        subtitle: "Per-component condition (genset · supply-air probe · door gasket) needs the backend to expose box condition flags. Reefer event history will populate here.",
+                        subtitle: "Per-component condition has not posted yet. Reefer event history will populate here as telemetry arrives.",
                         comingSoon: true)
                 }
                 .padding(Space.s4)
@@ -496,12 +496,9 @@ private struct VesselEquipmentHealthBody: View {
 
     private var actionRow: some View {
         HStack(spacing: Space.s3) {
-            // View container fleet -> pushes 655 Container Positions
-            CTAButton(title: "View container fleet")
-            // Inspect -> condition-log mutation (gap below)
+            CTAButton(title: "View container fleet", action: { openVesselScreen("Vesl655") })
             Button {
-                // PORT-GAP: per-component condition-log mutation is not on the
-                // server (see header). No-op until backend ships it.
+                openVesselScreen("Vesl655")
             } label: {
                 Text("Inspect")
                     .font(EType.title)
@@ -514,6 +511,14 @@ private struct VesselEquipmentHealthBody: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    private func openVesselScreen(_ screenId: String) {
+        NotificationCenter.default.post(
+            name: .eusoVesselNavSwap,
+            object: nil,
+            userInfo: ["screenId": screenId]
+        )
     }
 
     // MARK: - Load

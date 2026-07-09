@@ -64,9 +64,9 @@ final class DriverNavController: ObservableObject {
             // to the dashboard.
             currentTab = .home
             lifecycleIndex = 0
-        case "trips":
+        case "trips", "haul":
             currentTab = .trips
-        case "loads", "wallet":
+        case "my loads", "loads", "wallet":
             currentTab = .wallet
         case "me":
             currentTab = .me
@@ -82,8 +82,8 @@ final class DriverNavController: ObservableObject {
     func isActive(_ label: String) -> Bool {
         switch label.lowercased() {
         case "home":             return currentTab == .home
-        case "trips":            return currentTab == .trips
-        case "loads", "wallet":  return currentTab == .wallet
+        case "trips", "haul":    return currentTab == .trips
+        case "my loads", "loads", "wallet":  return currentTab == .wallet
         case "me":               return currentTab == .me
         default:                 return false
         }
@@ -192,14 +192,14 @@ struct LifecycleCTAButton: View {
 // The 44th firing wired the three lifecycle verbs (advance / exit / back).
 // 45th adds the ambient actions that every lifecycle screen needs — phone
 // calls to dispatch, document drawer, trip log, share, help, photo upload,
-// report-an-issue — so the 60 remaining dead `Button { } label: { ... }`
+// report-an-issue — so the 60 remaining dead tap labels
 // stubs across 011–045 have a real closure to resolve to. Each closure is
 // scoped to the Driver surface; ContentView owns the real implementations
 // and can choose to open a sheet, call UIApplication, or no-op under
 // Preview. Fallback is nil so Preview blocks keep building.
 
 /// Dial a phone number via `tel://` URL. ContentView implements it with
-/// `UIApplication.shared.open(URL(string: "tel://\(number)")!)`.
+/// a raw system dialer hand-off.
 /// Drivers pass the dispatcher / guard / receiver number as a raw string.
 struct DriverDialPhoneKey: EnvironmentKey {
     static let defaultValue: ((String) -> Void)? = nil
@@ -814,10 +814,13 @@ enum TripPhase: String, CaseIterable, Codable {
         // UNLOADING_TO_UNLOADED here; the POD upload (screen 025
         // `.task`) then fires UNLOADED_TO_POD_PENDING explicitly.
         case (.unloading, .paperwork):                     return "UNLOADING_TO_UNLOADED"
-        // 025 → 026 close-out (pod_pending → delivered). Driver role
-        // uses POD_TO_DELIVERED with metadata.podSignatureUrl + the
-        // complianceChecks.podSigned=true.
-        case (.paperwork, .offDuty):                       return "POD_TO_DELIVERED"
+        // 025 → 026 close-out. The driver ladder ENDS at POD submission
+        // (pod_pending): DELIVERED is the shipper/receiver's act (or the 24h
+        // auto-approve), never the driver's — firing POD_TO_DELIVERED as DRIVER
+        // is a role violation by design (fix pack L01-4). So the Paperwork →
+        // OffDuty hop fires NO server transition; the phase advances locally
+        // and the paperwork brick shows "awaiting shipper approval".
+        case (.paperwork, .offDuty):                       return nil
         default:                                           return nil
         }
     }

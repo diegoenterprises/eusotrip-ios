@@ -40,11 +40,13 @@
     <array>
         <string>UIInterfaceOrientationPortrait</string>
     </array>
+    <!-- Handoff: the pairing gate + load-sync empty state publish this
+         activity so the iPhone shows the EusoTrip icon for a one-tap
+         open. load.view / hos.view were declared but never published
+         anywhere — removed until a surface actually advertises them. -->
     <key>NSUserActivityTypes</key>
     <array>
         <string>com.eusotrip.esang.activate</string>
-        <string>com.eusotrip.load.view</string>
-        <string>com.eusotrip.hos.view</string>
     </array>
     <key>NSMicrophoneUsageDescription</key>
     <string>EusoTrip uses the microphone so you can speak to Esang hands-free while driving.</string>

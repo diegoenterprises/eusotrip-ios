@@ -45,6 +45,7 @@ final class PushService: NSObject, ObservableObject,
     }
 
     @Published private(set) var phase: Phase = .unknown
+    @Published private(set) var backendRegistrationError: String? = nil
 
     /// Hex-encoded APNs device token (64 chars). `nil` until the system
     /// delivers one (which only happens on real devices + TestFlight).
@@ -91,10 +92,10 @@ final class PushService: NSObject, ObservableObject,
         // mutation, then flag the push preference rows active. Without
         // the registerDevice call the table stays empty and the push
         // fan-out has no token to deliver to — flipping the preference
-        // boolean alone is not enough. Best-effort: a registration
-        // failure must never crash or block, so the call is
-        // fire-and-forget with `try?` and the local phase stays
-        // `.authorized` regardless of the result.
+        // boolean alone is not enough. A backend registration failure
+        // must never crash or revoke the APNs authorization, but it is
+        // surfaced through `backendRegistrationError` so Settings can
+        // distinguish "iOS allowed push" from "server fan-out ready."
         let deviceName = UIDevice.current.model
         Task { [weak self] in
             guard let self else { return }
@@ -106,25 +107,33 @@ final class PushService: NSObject, ObservableObject,
                 let platform: String
                 let deviceName: String?
             }
-            struct RegisterDeviceAck: Decodable { let success: Bool? }
-            let _: RegisterDeviceAck? = try? await api.mutation(
-                "notifications.registerDevice",
-                input: RegisterDeviceInput(
-                    token: hex, platform: "ios", deviceName: deviceName
+            struct RegisterDeviceAck: Decodable { let success: Bool?; let registered: Bool? }
+            do {
+                let ack: RegisterDeviceAck = try await api.mutation(
+                    "notifications.registerDevice",
+                    input: RegisterDeviceInput(
+                        token: hex, platform: "ios", deviceName: deviceName
+                    )
                 )
-            )
-
-            _ = try? await api.notifications.updatePreferences(
-                channel: "push", category: "loads",  enabled: true
-            )
-            _ = try? await api.notifications.updatePreferences(
-                channel: "push", category: "safety", enabled: true
-            )
-            _ = try? await api.notifications.updatePreferences(
-                channel: "push", category: "system", enabled: true
-            )
+                guard ack.success != false, ack.registered != false else {
+                    self.backendRegistrationError = "Push permission is enabled, but the device token was not accepted by the server."
+                    return
+                }
+                _ = try await api.notifications.updatePreferences(
+                    channel: "push", category: "loads",  enabled: true
+                )
+                _ = try await api.notifications.updatePreferences(
+                    channel: "push", category: "safety", enabled: true
+                )
+                _ = try await api.notifications.updatePreferences(
+                    channel: "push", category: "system", enabled: true
+                )
+                self.backendRegistrationError = nil
+            } catch {
+                self.backendRegistrationError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            }
             #if DEBUG
-            print("[PushService] registered device + flagged push preferences active · token=\(self.deviceToken?.prefix(8) ?? "<nil>")…")
+            print("[PushService] registered device + flagged push preferences active")
             #endif
         }
     }
@@ -259,6 +268,16 @@ final class EusoTripAppDelegate: NSObject, UIApplicationDelegate {
             [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = PushService.shared
+        // Install the WCSession delegate on EVERY process launch —
+        // including WatchConnectivity background wakes where no scene
+        // ever renders. Without this, a killed iPhone app woken by the
+        // wrist's sendMessage never installed a delegate, the message
+        // timed out, and the watch's 30s auth-bootstrap poll exhausted
+        // ("watch not connected to the app"). activate() is idempotent,
+        // so every existing lazy call site simply becomes a no-op.
+        Task { @MainActor in
+            WatchAuthBridge.shared.activate()
+        }
         return true
     }
 

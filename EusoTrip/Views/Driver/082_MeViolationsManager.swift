@@ -246,21 +246,26 @@ struct MeViolationsManager: View {
     }
 
     private func errorBanner(_ err: Error) -> some View {
-        VStack(spacing: Space.s2) {
-            Image(systemName: "exclamationmark.triangle")
+        let copy = errorCopy(for: err)
+        return VStack(spacing: Space.s2) {
+            Image(systemName: copy.symbol)
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(palette.textSecondary)
-            Text("Can't load violations")
+            Text(copy.title)
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(copy.message)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
             Button {
-                Task { await store.refresh() }
+                if copy.requiresSignIn {
+                    NotificationCenter.default.post(name: Notification.Name("eusoLogoutRequested"), object: nil)
+                } else {
+                    Task { await store.refresh() }
+                }
             } label: {
-                Text("Retry")
+                Text(copy.actionTitle)
                     .font(EType.bodyStrong)
                     .foregroundStyle(.white)
                     .padding(.horizontal, Space.s4)
@@ -272,6 +277,48 @@ struct MeViolationsManager: View {
         .frame(maxWidth: .infinity)
         .padding(Space.s4)
         .eusoCard(radius: Radius.lg)
+    }
+
+    private func errorCopy(for error: Error) -> (symbol: String, title: String, message: String, actionTitle: String, requiresSignIn: Bool) {
+        if let api = error as? EusoTripAPIError {
+            switch api {
+            case .unauthenticated:
+                return (
+                    "lock.shield",
+                    "Session check needed",
+                    "Your saved session did not authorize this compliance file. Sign in again, then reopen Violations.",
+                    "Sign in again",
+                    true
+                )
+            case .forbidden(let message):
+                return (
+                    "person.crop.circle.badge.exclamationmark",
+                    "Compliance role mismatch",
+                    message,
+                    "Retry",
+                    false
+                )
+            case .decodingFailed:
+                return (
+                    "doc.text.magnifyingglass",
+                    "Compliance record changed",
+                    "The server returned a violation shape this build could not read. Refresh after the latest app update lands.",
+                    "Retry",
+                    false
+                )
+            case .trpcError(let message):
+                return ("exclamationmark.triangle", "Can't load violations", message, "Retry", false)
+            default:
+                break
+            }
+        }
+        return (
+            "exclamationmark.triangle",
+            "Can't load violations",
+            (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription,
+            "Retry",
+            false
+        )
     }
 
     // MARK: List
@@ -448,7 +495,7 @@ struct MeViolationsManager: View {
                         let note = resolveNote.trimmingCharacters(in: .whitespacesAndNewlines)
                         let ok = await store.resolve(id: v.id, notes: note.isEmpty ? nil : note)
                         resolveTarget = nil
-                        flashToast(ok ? "Violation resolved" : "Couldn't resolve - try again")
+                        flashToast(ok ? "Violation resolved" : resolveFailureToast)
                     }
                 } label: {
                     Text("Mark resolved")
@@ -531,6 +578,20 @@ struct MeViolationsManager: View {
         Task {
             try? await Task.sleep(nanoseconds: 2_400_000_000)
             await MainActor.run { withAnimation { lastToast = nil } }
+        }
+    }
+
+    private var resolveFailureToast: String {
+        guard let error = store.lastError as? EusoTripAPIError else {
+            return "Couldn't resolve - try again"
+        }
+        switch error {
+        case .unauthenticated:
+            return "Session expired - sign in again"
+        case .forbidden(let message), .trpcError(let message):
+            return message
+        default:
+            return error.errorDescription ?? "Couldn't resolve - try again"
         }
     }
 

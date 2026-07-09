@@ -222,7 +222,10 @@ private struct HOSReassignBody: View {
 
     private var actionRow: some View {
         HStack(spacing: 10) {
-            Button { dismiss() } label: {
+            Button {
+                NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+                dismiss()
+            } label: {
                 Text("Back")
                     .font(EType.body.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 48)
@@ -476,7 +479,10 @@ private struct CancelLoadBody: View {
 
     private var actionRow: some View {
         HStack(spacing: 10) {
-            Button { dismiss() } label: {
+            Button {
+                NotificationCenter.default.post(name: .eusoRoleNavBack, object: nil)
+                dismiss()
+            } label: {
                 Text("Back")
                     .font(EType.body.weight(.semibold))
                     .frame(maxWidth: .infinity, minHeight: 48)

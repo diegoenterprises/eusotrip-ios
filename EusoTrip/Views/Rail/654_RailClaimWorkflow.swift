@@ -390,7 +390,7 @@ private struct RailClaimWorkflowBody: View {
     private var decisionStrip: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text("DECISION · submitClaimDecision")
+                Text("DECISION · approve or deny")
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()

@@ -345,7 +345,13 @@ public struct TrendSparkline: View {
                 scrubOverlay(in: size)
             }
             .contentShape(Rectangle())
-            .gesture(scrubGesture(in: size))
+            // simultaneousGesture (not .gesture): a plain child DragGesture
+            // CAPTURES the touch from an enclosing ScrollView once it passes
+            // its minimum distance, which starved vertical scrolling wherever
+            // this chart fills a scrollable tile ("dead scroll"). Running it
+            // simultaneously lets the ScrollView keep vertical pans while the
+            // scrub still latches on a deliberate horizontal drag.
+            .simultaneousGesture(scrubGesture(in: size))
         }
         .frame(minHeight: 28)
         .sensoryFeedback(.selection, trigger: effectiveSelected)   // haptic tick per sample

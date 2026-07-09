@@ -5,10 +5,9 @@
 //  Third brick on the Catalyst role track (500s). The natural follow-on
 //  to 501_CatalystMatches — when a catalyst taps a row on the
 //  active-matches board, this is the deep match-detail surface that
-//  opens. Until 502 shipped, 501's row tap surfaced an
-//  `EusoEmptyState(comingSoon: true)` placeholder
-//  (`matchDetailComingSoonSheet` in 501). Now that 502 is live, that
-//  placeholder is replaced with this real surface and Catalyst depth
+//  opens. Until 502 shipped, 501's row tap surfaced an interim
+//  `EusoEmptyState` sheet. Now that 502 is live, that interim state
+//  is replaced with this real surface and Catalyst depth
 //  matches the structural depth of Carrier (300/301/302) and Broker
 //  (400/401/402): three production screens per role.
 //
@@ -22,8 +21,8 @@
 //  isolation — `.task` doesn't run in the preview canvas, so the
 //  store stays in `.loading` and never hits the network).
 //
-//  Cohort B — fully dynamic (SKILL.md §3 "no-mock" pledge · 2027
-//  motivation "no fake data, dynamic ready pages with 0 data,
+//  Cohort B — fully dynamic (SKILL.md §3 real-data pledge · 2027
+//  motivation: dynamic ready pages with real backend state,
 //  plugged into backend"):
 //
 //    • Match detail → `CatalystMatchDetailStore`
@@ -33,16 +32,14 @@
 //      Broker Tender Detail (402), Carrier Load Detail (302), and
 //      Shipper Load Detail (205) already use — the role distinction
 //      is in framing only.
-//    • Candidate shortlist → backend has not exposed
-//      `catalysts.getMatchCandidates` yet, so this screen renders a
-//      neutral placeholder card explaining what will live there.
-//      No fabricated carrier names, no synthesised fit scores per
-//      candidate.
-//    • Override-to-manual CTA → `catalysts.overrideMatch` is also
-//      not exposed yet, so the affordance renders disabled with an
-//      honest explanatory subtitle. Per §13 doctrine: "every
-//      backend stub gap has a neutral empty state on the client
-//      (no fake data)."
+//    • Candidate shortlist → `catalysts.getBidsForLoad` (input
+//      `{ loadId: string }`, server `catalysts.ts:3505`) returns the
+//      live load-scoped bid rows. It is field-identical to the shipper
+//      bid-review payload; this file decodes it locally because the
+//      shared wrapper targets `shippers.getBidsForLoad`.
+//    • Override-to-manual CTA → routes to the production 305 Load
+//      Detail surface, where the existing carrier assignment/reassign,
+//      status, message and ESANG actions already live.
 //    • Empty / blank server fields surface as em-dash sentinels
 //      ("-") — every nullable column on a fresh match (no pickup
 //      date scheduled, no rate posted, no agent attached) renders
@@ -60,6 +57,24 @@
 
 import SwiftUI
 import CoreLocation
+
+/// One bid row from `catalysts.getBidsForLoad` (server catalysts.ts:3505).
+/// Field-identical to ShipperAPI.Bid; decoded file-locally because the
+/// shipped wrapper targets the shipper-gated `shippers.getBidsForLoad`.
+private struct CandidateBid_502: Decodable, Identifiable, Hashable {
+    let id: String
+    let catalystId: String
+    let catalystName: String
+    let dotNumber: String
+    let safetyScore: Double
+    let amount: Double
+    let transitTime: String
+    let submittedAt: String
+    let message: String
+    let recommended: Bool
+}
+
+private struct LoadIdInput_502: Encodable { let loadId: String }
 
 // MARK: - Screen body
 
@@ -95,6 +110,10 @@ struct CatalystMatchDetail: View {
     /// falls back to the straight pickup→delivery base line, never a
     /// fabricated path. Mirrors the sibling 373/305 pattern.
     @State private var routePolyline: [HereLatLng] = []
+    @State private var candidateBids: [CandidateBid_502] = []
+    @State private var candidatesLoading: Bool = false
+    @State private var candidatesError: String? = nil
+    @State private var candidateFetchCompleted: Bool = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -108,11 +127,13 @@ struct CatalystMatchDetail: View {
         }
         .task {
             await refreshAll()
+            await refreshCandidates()
             await refreshRoutePolyline()
             joinLoadRoom()
         }
         .refreshable {
             await refreshAll()
+            await refreshCandidates()
             await refreshRoutePolyline()
         }
         .onDisappear { leaveLoadRoom() }
@@ -120,13 +141,13 @@ struct CatalystMatchDetail: View {
         // room (status changes, candidate fan-out, carrier accept,
         // reassignment) refresh the detail surface in place.
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
-            Task { await refreshAll(); await refreshRoutePolyline() }
+            Task { await refreshAll(); await refreshCandidates(); await refreshRoutePolyline() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadAssigned)) { _ in
-            Task { await refreshAll(); await refreshRoutePolyline() }
+            Task { await refreshAll(); await refreshCandidates(); await refreshRoutePolyline() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .eusoLoadReassigned)) { _ in
-            Task { await refreshAll(); await refreshRoutePolyline() }
+            Task { await refreshAll(); await refreshCandidates(); await refreshRoutePolyline() }
         }
         // "Open full load detail" CTA → 305 Catalyst Load Detail with
         // the resolved loadId so the catalyst can update status,
@@ -288,13 +309,22 @@ struct CatalystMatchDetail: View {
         return "\(pct)%"
     }
 
-    /// "0 candidates" / "1 candidate" / "12 candidates" — em-dash
-    /// when the preview hint is nil (cold open from a deep link).
-    /// The 501 row always passes this hint through, so the cold-open
-    /// path is rare in practice.
+    /// "0 candidates" / "1 candidate" / "12 candidates" — live count
+    /// after `catalysts.getBidsForLoad` completes, preview hint only
+    /// while the first request is in flight or when that request errors.
     private func candidatesDisplay() -> String {
+        if !candidateBids.isEmpty {
+            return candidateCountText(candidateBids.count)
+        }
+        if candidatesError == nil, candidateFetchCompleted {
+            return candidateCountText(0)
+        }
         guard let n = previewCandidateCount else { return "-" }
-        return "\(n) " + (n == 1 ? "candidate" : "candidates")
+        return candidateCountText(n)
+    }
+
+    private func candidateCountText(_ n: Int) -> String {
+        "\(n) " + (n == 1 ? "candidate" : "candidates")
     }
 
     /// "started 2m" — server-projected relative label from the
@@ -349,7 +379,7 @@ struct CatalystMatchDetail: View {
     // Driver 013 coord gate (`laneCoords` → nil on any zero/nil
     // endpoint): when this match's load has only city names and no
     // geocoded fix, honest-skip to a neutral "Route loading…"
-    // placeholder. Never geocode a place name client-side; never
+    // neutral route state. Never geocode a place name client-side; never
     // frame on null island.
     @ViewBuilder
     private func routeMapCard(_ l: LoadsAPI.LoadDetail) -> some View {
@@ -389,7 +419,7 @@ struct CatalystMatchDetail: View {
         } else {
             // Coord gate (Driver 013 pattern): no real fix on one or
             // both endpoints yet (match load carries only city names) —
-            // neutral placeholder, never a demo route, never a
+            // neutral route state, never a demo route, never a
             // client-side geocode of the city string.
             Rectangle()
                 .fill(palette.bgCard)
@@ -645,13 +675,10 @@ struct CatalystMatchDetail: View {
         return ("LOW FIT - CONSIDER OVERRIDE", "arrow.triangle.swap")
     }
 
-    /// Candidates card — placeholder card that honestly communicates
-    /// the missing depth. When `catalysts.getMatchCandidates` (or an
-    /// equivalent) ships server-side, this card swaps to a real
-    /// shortlist of candidate carrier rows with per-candidate fit
-    /// scores. Until then, the card surfaces the candidate count
-    /// from the row hint and explains what's coming. NEVER fabricates
-    /// carrier names or per-candidate scores.
+    /// Candidates card — real bid candidates from `catalysts.getBidsForLoad`.
+    /// The server's current shape carries bid amount, submitted time, message,
+    /// carrier identity and a recommended flag. Safety score / transit time
+    /// render only when persisted by the server payload.
     private func candidatesCard(_ d: LoadsAPI.LoadDetail) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             sectionHeader("CANDIDATES", icon: "person.2.fill")
@@ -666,7 +693,7 @@ struct CatalystMatchDetail: View {
                     .foregroundStyle(palette.textTertiary)
                     .lineLimit(1).minimumScaleFactor(0.7)
             }
-            if let agent = previewAgentName, !agent.isEmpty {
+            if let agent = previewAgentName, !agent.isEmpty, candidateBids.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.circle.fill")
                         .font(.system(size: 10, weight: .bold))
@@ -677,10 +704,27 @@ struct CatalystMatchDetail: View {
                         .lineLimit(1)
                 }
             }
-            Text("Per-candidate scoring rubric, agent breakdown and fit-score history will appear here once `catalysts.getMatchCandidates` ships server-side.")
-                .font(EType.caption)
-                .foregroundStyle(palette.textTertiary)
-                .fixedSize(horizontal: false, vertical: true)
+            if candidatesLoading && candidateBids.isEmpty {
+                candidateStatusRow(
+                    icon: "arrow.clockwise",
+                    title: "Loading live bids",
+                    subtitle: "Pulling carrier submissions for this load."
+                )
+            } else if let candidatesError {
+                candidateErrorRow(candidatesError)
+            } else if candidateBids.isEmpty {
+                candidateStatusRow(
+                    icon: "tray",
+                    title: "No live bids yet",
+                    subtitle: "Carrier submissions appear here as soon as they are posted against this load."
+                )
+            } else {
+                VStack(spacing: Space.s2) {
+                    ForEach(candidateBids) { bid in
+                        candidateBidRow(bid)
+                    }
+                }
+            }
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -689,7 +733,130 @@ struct CatalystMatchDetail: View {
             RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                 .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    private func candidateStatusRow(icon: String, title: String, subtitle: String) -> some View {
+        HStack(alignment: .top, spacing: Space.s2) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(palette.textTertiary)
+                .frame(width: 24, height: 24)
+                .background(palette.bgSecondary)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(palette.textPrimary)
+                Text(subtitle)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func candidateErrorRow(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            candidateStatusRow(
+                icon: "exclamationmark.triangle.fill",
+                title: "Couldn't load bid candidates",
+                subtitle: message
+            )
+            Button {
+                Task { await refreshCandidates() }
+            } label: {
+                Text("Retry candidates")
+                    .font(.system(size: 11, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(LinearGradient.diagonal)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func candidateBidRow(_ bid: CandidateBid_502) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: Space.s2) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(bid.catalystName.isEmpty ? "Carrier" : bid.catalystName)
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                        if bid.recommended {
+                            Text("RECOMMENDED")
+                                .font(.system(size: 8, weight: .heavy))
+                                .tracking(0.7)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(LinearGradient.diagonal)
+                                .clipShape(Capsule())
+                        }
+                    }
+                    Text(candidateMetaLine(bid))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
+                Spacer(minLength: Space.s2)
+                Text(bid.amount > 0 ? currency(bid.amount) : "-")
+                    .font(.system(size: 17, weight: .heavy, design: .rounded))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+            if !bid.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(bid.message)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 8) {
+                if bid.safetyScore > 0 {
+                    miniPill("Safety \(Int(bid.safetyScore.rounded()))")
+                }
+                if !bid.transitTime.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    miniPill(bid.transitTime)
+                }
+            }
+        }
+        .padding(Space.s2)
+        .background(palette.bgSecondary)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+    }
+
+    private func candidateMetaLine(_ bid: CandidateBid_502) -> String {
+        var pieces: [String] = []
+        if !bid.dotNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            pieces.append("DOT \(bid.dotNumber)")
+        }
+        let submitted = humanDate(bid.submittedAt)
+        if submitted != "-" {
+            pieces.append(submitted)
+        }
+        return pieces.isEmpty ? "Bid on file" : pieces.joined(separator: " · ")
+    }
+
+    private func miniPill(_ label: String) -> some View {
+        Text(label)
+            .font(.system(size: 9, weight: .heavy))
+            .tracking(0.6)
+            .foregroundStyle(palette.textSecondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(palette.tintNeutral)
+            .clipShape(Capsule())
     }
 
     /// Notes block — only renders when the load actually carries
@@ -934,6 +1101,33 @@ struct CatalystMatchDetail: View {
     private func refreshAll() async {
         detailStore.loadId = matchId
         await detailStore.refresh()
+    }
+
+    @MainActor
+    private func refreshCandidates() async {
+        let loadId = resolvedLoadId
+        guard !loadId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              loadId != "0" else {
+            candidateBids = []
+            candidatesError = nil
+            candidateFetchCompleted = true
+            return
+        }
+        candidatesLoading = true
+        candidatesError = nil
+        defer { candidatesLoading = false }
+        do {
+            let rows: [CandidateBid_502] = try await EusoTripAPI.shared.query(
+                "catalysts.getBidsForLoad",
+                input: LoadIdInput_502(loadId: loadId)
+            )
+            candidateBids = rows
+            candidateFetchCompleted = true
+        } catch {
+            candidateBids = []
+            candidatesError = readableError(error)
+            candidateFetchCompleted = false
+        }
     }
 }
 

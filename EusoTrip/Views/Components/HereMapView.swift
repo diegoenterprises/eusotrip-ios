@@ -218,9 +218,9 @@ struct HereMapView: View {
                 let kind: HereMarker.Kind
                 let label: String
                 if i == 0 {
-                    kind = .pickup; label = stop.cityState.isEmpty ? "Pickup" : stop.cityState
+                    kind = .pickup; label = stop.mapDisplayLabel.isEmpty ? "Pickup" : stop.mapDisplayLabel
                 } else if i == stops.count - 1 {
-                    kind = .delivery; label = stop.cityState.isEmpty ? "Delivery" : stop.cityState
+                    kind = .delivery; label = stop.mapDisplayLabel.isEmpty ? "Delivery" : stop.mapDisplayLabel
                 } else {
                     kind = .stop; label = "Stop \(i)"
                 }

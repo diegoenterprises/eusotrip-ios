@@ -172,7 +172,7 @@ struct TheHaulCrates: View {
         EusoEmptyState(
             systemImage: "shippingbox.and.arrow.backward",
             title: "No crates yet",
-            subtitle: "Finish missions, extend streaks or place in a seasonal tournament to earn a crate. Drops are committed server-side, what shows up here is exactly what you'll open."
+            subtitle: "Complete loads to earn Recognition crates. Finish missions, extend streaks, or place in a seasonal tournament — every crate you earn shows up here, ready to open."
         )
     }
 
@@ -184,7 +184,7 @@ struct TheHaulCrates: View {
             Text("Can't reach the vault")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
@@ -295,7 +295,7 @@ struct TheHaulCrates: View {
             Text("Open \(s.label) crate?")
                 .font(EType.h2)
                 .foregroundStyle(palette.textPrimary)
-            Text("The server rolls contents the moment you tap. You'll see what you pulled on the next screen.")
+            Text("EusoTrip opens the crate the moment you tap. You'll see what you pulled on the next screen.")
                 .font(EType.body)
                 .foregroundStyle(palette.textSecondary)
                 .multilineTextAlignment(.center)
@@ -418,7 +418,7 @@ struct TheHaulCrates: View {
                 )
                 conceptBullet(
                     systemImage: "gift",
-                    text: "Every open commits XP + EusoMiles to your profile server-side. What you see is what you got."
+                    text: "Every open adds XP + EusoMiles to your profile immediately. What you see is what you got."
                 )
                 conceptBullet(
                     systemImage: "calendar.badge.clock",

@@ -82,11 +82,10 @@ final class LoadBoardStore: BaseDynamicListStore<LoadSummary> {
     }
 }
 
-// MARK: - MyLoadsStore — `loads.search(status:)`
+// MARK: - MyLoadsStore — `drivers.getAssignments(status:)`
 
 /// Drives the "My Loads" sheet — three buckets (active / pending /
-/// finished) that each map to a different `status` filter on the
-/// existing `loads.search` tRPC procedure.
+/// finished) that each map to a driver-scoped assignment status class.
 @MainActor
 final class MyLoadsStore: BaseDynamicListStore<LoadSummary> {
     var bucket: Bucket = .active {
@@ -99,11 +98,12 @@ final class MyLoadsStore: BaseDynamicListStore<LoadSummary> {
         case active, pending, finished
         var id: String { rawValue }
 
-        /// Status filter passed to `loads.search`. The backend accepts
-        /// the canonical set { assigned, in_transit, at_pickup, at_delivery, pending, completed }.
+        /// Status class passed to `drivers.getAssignments`. The backend
+        /// expands these through loadStatusAliases, so "active" covers the
+        /// full pickup→POD lifecycle instead of only literal `in_transit`.
         var statusFilter: String? {
             switch self {
-            case .active:   return "in_transit"
+            case .active:   return "active"
             case .pending:  return "pending"
             case .finished: return "completed"
             }
@@ -111,10 +111,23 @@ final class MyLoadsStore: BaseDynamicListStore<LoadSummary> {
     }
 
     override func fetch() async throws -> [LoadSummary] {
-        try await EusoTripAPI.shared.loads.search(
+        try await EusoTripAPI.shared.drivers.getAssignments(
             status: bucket.statusFilter,
             limit: 30
         )
+    }
+}
+
+// MARK: - DriverCompletedTripsStore — `drivers.getAssignments(status: "completed")`
+
+/// Driver-owned retrospective trip feed. Unlike `loads.search`, this path is
+/// scoped to the signed-in driver through `drivers.getAssignments`, so the
+/// completed-history screen cannot accidentally render marketplace or
+/// shipper-owned loads.
+@MainActor
+final class DriverCompletedTripsStore: BaseDynamicListStore<LoadSummary> {
+    override func fetch() async throws -> [LoadSummary] {
+        try await EusoTripAPI.shared.drivers.getAssignments(status: "completed", limit: 30)
     }
 }
 
@@ -1658,10 +1671,10 @@ final class VehicleMaintenanceHistoryStore: BaseDynamicListStore<VehicleAPI.Main
 
 // MARK: - DriverSafetyScoreStore — `safety.getDriverScoreDetail`
 //
-// Drives brick 075 Me · Safety Score. The driver's own id is seeded
-// from the session on bootstrap; an empty id means the session
-// hasn't resolved yet — the view stays in `.loading` until the
-// session's `user?.id` publishes, then the store refreshes.
+// Drives brick 075 Me · Safety Score. For the driver's own Me surface,
+// `driverId` stays empty and the server resolves the driver row from
+// the authenticated user. Other role drilldowns may set a concrete
+// driver-row id before refreshing.
 //
 // Server-authoritative: we don't recompute category scores on the
 // client. `overallScore`, per-category values, and recent events all
@@ -1671,16 +1684,13 @@ final class VehicleMaintenanceHistoryStore: BaseDynamicListStore<VehicleAPI.Main
 
 @MainActor
 final class DriverSafetyScoreStore: BaseDynamicStore<SafetyAPI.DriverScoreDetail> {
-    /// Seeded from `EusoTripSession.user?.id`. Empty string keeps the
-    /// store in `.loading` (fetch throws a clear error that the view
-    /// silently ignores until the id lands).
+    /// Optional explicit driver-row id. Empty means "my signed-in driver".
     var driverId: String = ""
 
     override func fetch() async throws -> SafetyAPI.DriverScoreDetail {
-        guard !driverId.isEmpty else {
-            throw StoreAvailability.comingSoon("Safety score")
-        }
-        return try await EusoTripAPI.shared.safety.getDriverScoreDetail(driverId: driverId)
+        try await EusoTripAPI.shared.safety.getDriverScoreDetail(
+            driverId: driverId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : driverId
+        )
     }
 }
 
@@ -1921,6 +1931,7 @@ final class ViolationsStore: BaseDynamicListStore<UnifiedViolation> {
     @discardableResult
     func resolve(id: String, notes: String? = nil) async -> Bool {
         resolvingId = id
+        lastError = nil
         defer { resolvingId = nil }
         do {
             _ = try await EusoTripAPI.shared.compliance.resolveViolation(
@@ -1931,7 +1942,9 @@ final class ViolationsStore: BaseDynamicListStore<UnifiedViolation> {
             await refresh()
             return true
         } catch {
+            let resolutionError = error
             await refresh()
+            lastError = resolutionError
             return false
         }
     }
@@ -1996,14 +2009,30 @@ final class EarningsBreakdownStore: BaseDynamicStore<WalletAPI.EarningsBreakdown
 @MainActor
 final class PayoutScheduleStore: BaseDynamicStore<WalletAPI.PayoutSchedule> {
     @Published var isSaving: Bool = false
+    /// Non-nil when the last `update(...)` write failed. The view surfaces
+    /// it so the user knows the selection didn't save (instead of silently
+    /// reverting). The optimistic value stays on-screen for an easy retry.
+    @Published var saveError: Error? = nil
 
     override func fetch() async throws -> WalletAPI.PayoutSchedule {
         try await EusoTripAPI.shared.wallet.getPayoutSchedule()
     }
 
     /// Update any subset of the schedule fields. Optimistically
-    /// rewrites `state` so the UI feels instant, then lets the
-    /// server-side `updatedAt` confirm the write on the next fetch.
+    /// rewrites `state` so the UI feels instant; the server now PERSISTS
+    /// the chosen cadence (build-752 batch), so the selection STICKS.
+    ///
+    /// Money-options-revert fix: the prior version `await refresh()`-ed
+    /// on BOTH success and failure. When the server didn't yet persist,
+    /// that refresh returned the default and reverted the user's pick
+    /// (the founder's "money options revert" report). Now:
+    ///   • on success → keep the optimistic value; only patch in the
+    ///     server-recomputed `nextScheduledPayout` (a single targeted
+    ///     re-fetch that NEVER clobbers the field the user just set,
+    ///     because the persisted value matches the optimistic one).
+    ///   • on failure → keep the optimistic value too, and surface the
+    ///     error so the user can retry — we do NOT reconcile to a stale
+    ///     server read that would silently revert their choice.
     func update(
         frequency: String? = nil,
         dayOfWeek: String? = nil,
@@ -2013,6 +2042,7 @@ final class PayoutScheduleStore: BaseDynamicStore<WalletAPI.PayoutSchedule> {
         isSaving = true
         defer { isSaving = false }
 
+        // Optimistic write — the chosen value renders as selected instantly.
         if case .loaded(let current) = state {
             let next = WalletAPI.PayoutSchedule(
                 frequency: frequency ?? current.frequency,
@@ -2025,20 +2055,39 @@ final class PayoutScheduleStore: BaseDynamicStore<WalletAPI.PayoutSchedule> {
         }
 
         do {
-            _ = try await EusoTripAPI.shared.wallet.updatePayoutSchedule(
+            let result = try await EusoTripAPI.shared.wallet.updatePayoutSchedule(
                 frequency: frequency,
                 dayOfWeek: dayOfWeek,
                 minimumAmount: minimumAmount,
                 autoPayoutEnabled: autoPayoutEnabled
             )
-            // Server doesn't return the updated schedule directly, so
-            // re-fetch to pick up any server-computed fields (e.g.
-            // `nextScheduledPayout` which the scheduler recalculates).
-            await refresh()
+            saveError = nil
+            // Pull the server-recomputed `nextScheduledPayout` only when the
+            // write actually succeeded. The persisted cadence now matches the
+            // optimistic state, so this refresh confirms — never reverts.
+            if result.success {
+                await reconcileNextPayout()
+            }
         } catch {
-            // Reconcile against server truth.
-            await refresh()
+            // Keep the user's selection on-screen (no stale-read revert) and
+            // surface the failure so they can retry.
+            saveError = error
         }
+    }
+
+    /// Re-fetch ONLY to absorb the server-computed `nextScheduledPayout`
+    /// after a confirmed write. Leaves the user-chosen cadence/day/minimum/
+    /// auto fields exactly as the optimistic write set them.
+    private func reconcileNextPayout() async {
+        guard let fresh = try? await EusoTripAPI.shared.wallet.getPayoutSchedule(),
+              case .loaded(let current) = state else { return }
+        state = .loaded(WalletAPI.PayoutSchedule(
+            frequency: current.frequency,
+            dayOfWeek: current.dayOfWeek,
+            minimumAmount: current.minimumAmount,
+            nextScheduledPayout: fresh.nextScheduledPayout,
+            autoPayoutEnabled: current.autoPayoutEnabled
+        ))
     }
 }
 
@@ -2248,6 +2297,17 @@ final class TripLifecycleStore: ObservableObject {
     /// advance to the next screen in the ladder (pickup arrived →
     /// show loading, loaded → show en-route, etc.).
     @Published private(set) var currentState: String?
+
+    /// The driver's ladder is COMPLETE once POD is submitted — DELIVERED and
+    /// beyond are the shipper's approval act (or the 24h auto-approve), not the
+    /// driver's tap (fix pack L01-4). So the paperwork brick treats `pod_pending`
+    /// (and every terminal state after it) as trip-complete for the driver, and
+    /// renders "POD submitted — awaiting shipper approval (auto-approves in 24h)"
+    /// rather than blocking on a DELIVERED transition the driver may not fire.
+    var driverLadderComplete: Bool {
+        guard let s = currentState?.lowercased() else { return false }
+        return ["pod_pending", "delivered", "invoiced", "paid", "complete"].contains(s)
+    }
 
     // MARK: - Hydrate from server
 
@@ -2592,7 +2652,8 @@ final class ContactsStore: ObservableObject, DynamicStore {
                 phone: c.phone,
                 address: c.address,
                 favorite: !c.favorite,
-                lastContact: c.lastContact
+                lastContact: c.lastContact,
+                canDelete: c.canDelete
             )
         }
         do {
@@ -2601,6 +2662,42 @@ final class ContactsStore: ObservableObject, DynamicStore {
             if !DynamicStoreUtil.isTransientCancellation(error) {
                 lastError = error
             }
+        }
+    }
+
+    func createContact(type: String, name: String, company: String?, email: String?, phone: String?) async -> Bool {
+        lastError = nil
+        do {
+            _ = try await EusoTripAPI.shared.contacts.create(
+                type: type,
+                name: name,
+                company: company,
+                email: email,
+                phone: phone
+            )
+            await refresh()
+            return true
+        } catch {
+            if !DynamicStoreUtil.isTransientCancellation(error) {
+                lastError = error
+            }
+            return false
+        }
+    }
+
+    func deleteContact(_ contact: ContactsAPI.Contact) async -> Bool {
+        lastError = nil
+        contacts.removeAll { $0.id == contact.id }
+        do {
+            _ = try await EusoTripAPI.shared.contacts.delete(id: contact.id)
+            await refresh()
+            return true
+        } catch {
+            if !DynamicStoreUtil.isTransientCancellation(error) {
+                lastError = error
+            }
+            await refresh()
+            return false
         }
     }
 }
@@ -3093,6 +3190,12 @@ final class DQFileStore: ObservableObject, DynamicStore {
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var lastError: Error?
 
+    /// id of the document currently being removed — drives the row's
+    /// in-flight spinner so the owner sees the delete land before refresh.
+    @Published private(set) var deletingId: String?
+    /// Transient confirmation copy surfaced after a delete resolves.
+    @Published var lastToast: String?
+
     func refresh() async {
         guard !driverId.isEmpty else {
             lastError = NSError(
@@ -3125,6 +3228,40 @@ final class DQFileStore: ObservableObject, DynamicStore {
                 code: -1,
                 userInfo: [NSLocalizedDescriptionKey: "Can't reach DQ service"]
             )
+        }
+    }
+
+    /// Remove an EXPIRED DQ document from the driver's own file via
+    /// `driverQualification.deleteDocument` (build-752 server batch).
+    /// Owner-scoped by construction — this store only ever loads the
+    /// signed-in driver's own documents (`driverId == session.user.id`)
+    /// and the server re-verifies ownership before deleting. Optimistic:
+    /// the row drops immediately, then a refresh reconciles counts +
+    /// the compliance score. On failure we re-fetch so nothing is lost.
+    func deleteDocument(_ doc: DriverQualificationAPI.DQDocument) async {
+        guard deletingId == nil else { return }
+        deletingId = doc.id
+        defer { deletingId = nil }
+        // Optimistic removal so the file feels live.
+        let snapshot = documents
+        documents.removeAll { $0.id == doc.id }
+        do {
+            let ack = try await EusoTripAPI.shared.dq.deleteDocument(
+                documentId: doc.id,
+                reason: "expired_document_removed_by_owner"
+            )
+            if ack.success == false {
+                // Server declined — restore and surface honestly.
+                documents = snapshot
+                lastToast = "Couldn't remove that document"
+            } else {
+                lastToast = "Removed \(doc.name?.isEmpty == false ? doc.name! : "document")"
+            }
+            // Reconcile counts + compliance score with the server truth.
+            await refresh()
+        } catch {
+            documents = snapshot
+            lastToast = "Couldn't remove that document"
         }
     }
 }

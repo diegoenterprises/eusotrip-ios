@@ -158,7 +158,7 @@ private struct VesselBunkerFSCBody: View {
                     .background(Capsule().fill(LinearGradient.diagonal))
             }
             Text("Bunker FSC").font(.system(size: 26, weight: .heavy)).foregroundStyle(palette.textPrimary)
-            Text("getBunkerPrices · VLSFO @ \(hubName) · $/MT → surcharge %")
+            Text("Bunker prices · VLSFO @ \(hubName) · $/MT → surcharge %")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
         }
     }

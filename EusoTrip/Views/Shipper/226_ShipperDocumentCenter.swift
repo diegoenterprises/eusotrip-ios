@@ -177,11 +177,17 @@ final class ShipperDocumentCenterStore: ObservableObject {
         }.count
     }
 
-    func delete(id: String) async {
+    func delete(id: String) async -> Bool {
         deleting.insert(id)
         defer { deleting.remove(id) }
-        _ = try? await api.documents.delete(id: id)
-        await load()
+        do {
+            let ack = try await api.documents.delete(id: id)
+            guard ack.success else { return false }
+            await load()
+            return true
+        } catch {
+            return false
+        }
     }
 }
 
@@ -817,6 +823,7 @@ struct ShipperDocumentCenter: View {
     private func recentRow(_ d: DocumentsAPI.Document) -> some View {
         let style = DocumentStatusStyle.from(d.status)
         let isFav = isFavoriteHeuristic(d)
+        let isDeleting = store.deleting.contains(d.id)
         return Button(action: { tapRow(d) }) {
             HStack(alignment: .top, spacing: Space.s3) {
                 ZStack {
@@ -858,6 +865,24 @@ struct ShipperDocumentCenter: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Download \(d.name)")
+                if isExpired(d) {
+                    Button(action: { tapDelete(d) }) {
+                        Group {
+                            if isDeleting {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(Brand.danger)
+                            } else {
+                                Image(systemName: "trash.circle.fill")
+                                    .font(.system(size: 18, weight: .heavy))
+                            }
+                        }
+                        .foregroundStyle(Brand.danger)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isDeleting)
+                    .accessibilityLabel("Delete expired \(d.name)")
+                }
             }
             .contentShape(Rectangle())
         }
@@ -877,6 +902,11 @@ struct ShipperDocumentCenter: View {
             parts.append("expiring")
         }
         return parts.joined(separator: " · ")
+    }
+
+    private func isExpired(_ d: DocumentsAPI.Document) -> Bool {
+        let status = d.status.lowercased()
+        return status == "expired" || status == "expiring"
     }
 
     private func formatBytes(_ b: Int) -> String {
@@ -1031,7 +1061,7 @@ struct ShipperDocumentCenter: View {
             Text("RETENTION")
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            Text("S3-versioned · 7-year retention · `documents.delete` is soft-archive (recoverable for 30 days)")
+            Text("Versioned storage · 7-year retention · deletes are soft-archive (recoverable for 30 days)")
                 .font(EType.mono(.caption))
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2)
@@ -1069,6 +1099,24 @@ struct ShipperDocumentCenter: View {
             ]
         )
         Task { await fetchAndShare(d) }
+    }
+
+    private func tapDelete(_ d: DocumentsAPI.Document) {
+        NotificationCenter.default.post(
+            name: .eusoShipperDocumentDelete,
+            object: nil,
+            userInfo: [
+                "source": "226_ShipperDocumentCenter",
+                "documentId": d.id,
+                "shipperCompanyId": 1
+            ]
+        )
+        Task {
+            let ok = await store.delete(id: d.id)
+            await MainActor.run {
+                uploadToast = ok ? "Archived \(d.name)" : "Couldn't archive \(d.name)"
+            }
+        }
     }
 
     private func tapCategory(_ c: DocumentsAPI.Category) {
@@ -1236,6 +1284,8 @@ extension Notification.Name {
     static let eusoShipperDocumentRow          = Notification.Name("eusoShipperDocumentRow")
     /// Per-row download chevron tap.
     static let eusoShipperDocumentDownload     = Notification.Name("eusoShipperDocumentDownload")
+    /// Per-row expired-document archive tap.
+    static let eusoShipperDocumentDelete       = Notification.Name("eusoShipperDocumentDelete")
     /// Category tile tap.
     static let eusoShipperDocumentCategoryTile = Notification.Name("eusoShipperDocumentCategoryTile")
     /// Search-row trailing `+` upload capsule tap.

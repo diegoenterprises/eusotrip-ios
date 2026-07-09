@@ -9,6 +9,13 @@ xcuserdata/
 # Secrets — never commit
 EusoTrip.xcconfig
 EusoTrip.xcconfig.local
+AuthKey_*.p8
+*.p8
+asc_feedback_latest.log
+
+# Local App Store Connect feedback cache
+tmp/asc/
+.asc/
 
 # Swift Package Manager
 .swiftpm/

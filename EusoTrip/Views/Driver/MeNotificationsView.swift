@@ -152,6 +152,7 @@ final class InAppInboxBus: ObservableObject {
 
 struct MeNotificationsView: View {
     @Environment(\.palette) var palette
+    @Environment(\.openURL) private var openURL
     @StateObject private var bus = InAppInboxBus.shared
     @ObservedObject private var unread = UnreadMessageStore.shared
     @ObservedObject private var push   = PushService.shared
@@ -249,7 +250,7 @@ struct MeNotificationsView: View {
         switch push.phase {
         case .denied:
             if let url = URL(string: UIApplication.openSettingsURLString) {
-                await MainActor.run { UIApplication.shared.open(url) }
+                openURL(url)
             }
         case .unknown, .failed:
             await push.bootstrap()

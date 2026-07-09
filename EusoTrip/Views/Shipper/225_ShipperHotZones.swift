@@ -106,14 +106,50 @@ final class ShipperHotZonesStore: ObservableObject {
     }
 
     private let api: EusoTripAPI
+    private static let loadTimeoutNanoseconds: UInt64 = 10_000_000_000
+    private var loadGeneration = 0
+
     init(api: EusoTripAPI = .shared) { self.api = api }
 
     func load() async {
-        phase = .loading
-        do {
-            let r = try await api.hotZones.getRateFeed(equipment: equipment.serverEquipment)
+        let previous: HotZonesFeedResult? = {
+            if case .loaded(let feed) = phase { return feed }
+            return nil
+        }()
+        loadGeneration += 1
+        let generation = loadGeneration
+        let equipment = equipment.serverEquipment
+
+        if previous == nil {
+            phase = .loading
+        }
+
+        let result: Result<HotZonesFeedResult, Error> = await withTaskGroup(
+            of: Result<HotZonesFeedResult, Error>.self
+        ) { group in
+            let api = self.api
+            group.addTask {
+                do {
+                    return .success(try await api.hotZones.getRateFeed(equipment: equipment))
+                } catch {
+                    return .failure(error)
+                }
+            }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: Self.loadTimeoutNanoseconds)
+                return .failure(URLError(.timedOut))
+            }
+            let first = await group.next() ?? .failure(URLError(.unknown))
+            group.cancelAll()
+            return first
+        }
+
+        guard generation == loadGeneration else { return }
+
+        switch result {
+        case .success(let r):
             phase = .loaded(r)
-        } catch {
+        case .failure(let error):
             // Surface the REAL failure so a future regression is diagnosable
             // (decode-shape mismatch, 500, auth, timeout) instead of a blanket
             // "Couldn't reach market feed." A genuinely-empty feed is NOT an
@@ -121,7 +157,11 @@ final class ShipperHotZonesStore: ObservableObject {
             // and the screen renders its honest "no demand spike" card. We only
             // reach here when the call itself threw (network/HTTP/decode), and
             // we keep that exact reason so the cause is never swallowed again.
-            phase = .error(Self.diagnose(error))
+            if let previous {
+                phase = .loaded(previous)
+            } else {
+                phase = .error(Self.diagnose(error))
+            }
         }
     }
 
@@ -207,13 +247,10 @@ struct ShipperHotZones: View {
     private static let hotTileHeight: CGFloat = 360
 
     /// Intensity-grid cell height (the 4-col LOAD-TO-TRUCK INTENSITY cells).
-    /// Both faces are locked to this so the FRONT lays out within these exact
-    /// bounds — the state label + load-to-truck multiplier + load caption all
-    /// sit inside the cell with the 10pt vertical inset keeping the value off
-    /// the bottom edge (founder build 740: the value was being clipped because
-    /// the front expanded to the taller back's height and the outer clip cut
-    /// the bottom-anchored value). The back is still hard-clipped to the cell.
-    private static let heatCellHeight: CGFloat = 96
+    /// Both faces are locked to this so the state label, live multiplier, load
+    /// count, rate and Find Loads action all fit without clipped text or hidden
+    /// controls.
+    private static let heatCellHeight: CGFloat = 132
 
     /// Cold-tile locked height — COMPACT (founder build 740: "these cold zone
     /// tiles are way too big for a cold zone … back the way they were before …
@@ -575,12 +612,9 @@ struct ShipperHotZones: View {
             cellBack(z)
         }
         .frame(height: Self.heatCellHeight)
-        // HARD-CLIP the BACK to the 96pt cell — the compact back is taller than
-        // 96pt at intrinsic size, so without this a flipped cell could bleed
-        // into a neighbouring grid cell (the same overlap class as the cold
-        // strip). The FRONT is now itself capped to `heatCellHeight` (see
-        // `heatCellFront`), so this clip no longer cuts the front's value — it
-        // only guards the taller back. The 96pt visual is unchanged.
+        // Keep both faces inside the same stable grid footprint. The flipped
+        // face is purpose-built for this compact size, so this clip is a guard
+        // rail instead of hiding overflowing content.
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onTapGesture {
@@ -615,13 +649,8 @@ struct ShipperHotZones: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        // Lock the FRONT to the cell height so its internal layout (Spacer
-        // pushing the value+caption to the bottom) bottoms out at 96pt — NOT
-        // at the taller back's intrinsic height. Previously `maxHeight:
-        // .infinity` let the front grow to the ZStack height the back forced,
-        // and the outer 96pt clip then cut the bottom-anchored value off
-        // (founder build 740). With the front capped at the cell height the
-        // 10pt vertical inset keeps the value off the bottom edge, fully legible.
+        // Lock the front to the shared cell height so its bottom-anchored live
+        // value cannot be clipped by the flipped face.
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .frame(height: Self.heatCellHeight, alignment: .topLeading)
         .background(
@@ -639,7 +668,7 @@ struct ShipperHotZones: View {
                          valueStyle: ValueStyle,
                          trail: String,
                          trailColor: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
@@ -653,6 +682,9 @@ struct ShipperHotZones: View {
                     }
                 }
                 .font(.system(size: 22, weight: .bold).monospacedDigit())
+                // Guarantee the number's full glyph height so a heavy/gradient
+                // digit is never top-shaved by a tight text frame.
+                .fixedSize(horizontal: false, vertical: true)
                 Text(trail)
                     .font(.system(size: 11, weight: .regular))
                     .foregroundStyle(trailColor)
@@ -795,11 +827,14 @@ struct ShipperHotZones: View {
         // haptic, exactly as before.
         let isFlipped = flippedZones.contains(z.id)
         return FlipTile(isFlipped: isFlipped) {
-            // FRONT — live demand headline + interactive sparkline.
-            hotTileBody(z, demandColor: demandColor, pulse: pulse, pulseColor: pulseColor)
-        } back: {
-            // BACK — the inspiring in-place drill-down.
+            // FRONT (founder 2026-07-07): promoted the rich drill-down —
+            // loads / trucks / rate / equipment / "why hot" + the "Find loads
+            // in {state}" CTA — to the front so the actionable detail leads.
             hotTileBack(z, demandColor: demandColor)
+        } back: {
+            // BACK — the simpler demand-headline + interactive pulse hero is
+            // now the flip-to face.
+            hotTileBody(z, demandColor: demandColor, pulse: pulse, pulseColor: pulseColor)
         }
         // Lock BOTH faces to one frame so the un-tapped hero front reads
         // IDENTICAL in size to the flipped detail back (founder build 740).
@@ -851,6 +886,7 @@ struct ShipperHotZones: View {
                 Text(multiplier)
                     .font(.system(size: 22, weight: .bold).monospacedDigit())
                     .foregroundStyle(demandColor)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("demand")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.4)
@@ -912,8 +948,11 @@ struct ShipperHotZones: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(palette.bgCard)
         .overlay(
+            // On-brand EusoTrip gradient outline (blue→magenta). The demand
+            // tier still reads through the colored "N.N× demand" headline and
+            // the state badge — the ring is now brand-consistent across tiles.
             RoundedRectangle(cornerRadius: Radius.lg)
-                .strokeBorder(demandColor.opacity(0.45), lineWidth: 1)
+                .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
         .accessibilityElement(children: .combine)
@@ -976,34 +1015,71 @@ struct ShipperHotZones: View {
         )
     }
 
-    /// BACK of a flipped demand-grid (Intensity) cell — same design language
-    /// as the hot back, sourced from the same `HotZoneEntry`. Hero = the live
-    /// load-to-truck multiplier; CTA fires the real load search. The cell is a
-    /// tiny 96pt 4-col tile, so the back runs in COMPACT mode with a LEAN stat
-    /// pair (Loads · Rate) — the full real field set stays on the larger
-    /// 2-col hot tile back. Em-dash any absent value; drop nothing here since
-    /// loads + rate are non-optional.
+    /// BACK of a flipped demand-grid cell. It is sourced from the same live
+    /// `HotZoneEntry` as the larger hot cards, but laid out specifically for
+    /// the compact 4-column grid so the action remains visible.
     private func cellBack(_ z: HotZoneEntry) -> some View {
         let band = HeatBand.band(for: z.liveRatio)
-        return FlipBack(
-            accent: band.color,
-            name: z.state,
-            cornerRadius: 12,
-            palette: palette,
-            compact: true,
-            hero: {
-                Text(String(format: "%.1f×", z.liveRatio))
-                    .font(.system(size: 22, weight: .heavy).monospacedDigit())
-                    .foregroundStyle(LinearGradient.diagonal)
-            },
-            pulse: { HotZonePulseChart(zone: z, accent: band.color).frame(height: 22) },
-            stats: [
-                FlipStat("Loads", "\(z.liveLoads)", palette.textPrimary),
-                FlipStat("Rate", String(format: "$%.2f", z.liveRate), palette.textPrimary)
-            ],
-            ctaTitle: "Find loads",
-            cta: { tapFindLoads(state: z.state, metro: z.zoneName) }
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                Text(z.state)
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 0)
+                FlipBackChevron(lineWidth: 2.0)
+                    .frame(width: 12, height: 12)
+                    .foregroundStyle(band.color)
+            }
+
+            LinearGradient.diagonal
+                .frame(height: 2)
+                .clipShape(Capsule())
+
+            Text(String(format: "%.1f×", z.liveRatio))
+                .font(.system(size: 22, weight: .heavy).monospacedDigit())
+                .foregroundStyle(LinearGradient.diagonal)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+
+            HStack(spacing: 6) {
+                Text("\(z.liveLoads) loads")
+                Text(String(format: "$%.2f/mi", z.liveRate))
+            }
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .foregroundStyle(palette.textSecondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.62)
+
+            Spacer(minLength: 0)
+
+            Button(action: { tapFindLoads(state: z.state, metro: z.zoneName) }) {
+                HStack(spacing: 5) {
+                    Text("Find loads")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    FlipBackArrow()
+                        .frame(width: 11, height: 11)
+                        .foregroundStyle(.white)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(LinearGradient.diagonal))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(band.color.opacity(0.55), lineWidth: 1)
         )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(
             "\(z.state) detail. Demand \(String(format: "%.1f", z.liveRatio)) times, "
             + "\(z.liveLoads) loads, \(String(format: "$%.2f per mile", z.liveRate)). Tap to flip back."
@@ -1172,7 +1248,7 @@ struct ShipperHotZones: View {
         .background(palette.bgCard)
         .overlay(
             RoundedRectangle(cornerRadius: Radius.lg)
-                .strokeBorder(Brand.info.opacity(0.45), lineWidth: 1)
+                .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
     }
@@ -1354,7 +1430,7 @@ struct ShipperHotZones: View {
             Text("MARKET PULSE")
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            Text("pulse = avg(rateChangePct) per metro · loads / trucks ratio · 30-day rolling window")
+            Text("pulse = avg rate change % per metro · loads / trucks ratio · 30-day rolling window")
                 .font(EType.mono(.caption))
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(2)

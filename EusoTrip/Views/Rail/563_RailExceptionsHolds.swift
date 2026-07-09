@@ -197,7 +197,7 @@ private struct RailExceptionsHoldsBody: View {
                 glyph: "exclamationmark.triangle.fill",
                 tintColor: Brand.warning,
                 title: "FRA exception - \(v.type ?? "safety alert")",
-                subtitle: "getFRASafetyCompliance · \(v.description ?? "review pending")",
+                subtitle: "FRA safety · \(v.description ?? "review pending")",
                 pill: "FRA ALERT",
                 pillColor: Brand.warning,
                 detail: v.reviewDue ?? "-",
@@ -212,7 +212,7 @@ private struct RailExceptionsHoldsBody: View {
             glyph: "clock.badge.exclamationmark.fill",
             tintColor: Brand.danger,
             title: "Demurrage breach - free time out",
-            subtitle: "getLiveDemurrage · \(days) day\(days == 1 ? "" : "s") over · accruing",
+            subtitle: "Demurrage · \(days) day\(days == 1 ? "" : "s") over · accruing",
             pill: "ACCRUING",
             pillColor: Brand.danger,
             detail: demurrageAmount,
@@ -232,13 +232,13 @@ private struct RailExceptionsHoldsBody: View {
                     dangerWashHero
                     kpiStrip
                     if !badOrderItems.isEmpty {
-                        exceptionGroup(title: "BAD ORDERS · getRailCompliance", items: badOrderItems)
+                        exceptionGroup(title: "BAD ORDERS · compliance holds", items: badOrderItems)
                     }
                     if !fraItems.isEmpty {
-                        exceptionGroup(title: "FRA ALERTS · getFRASafetyCompliance", items: fraItems)
+                        exceptionGroup(title: "FRA ALERTS · safety compliance", items: fraItems)
                     }
                     if !demurrageItems.isEmpty {
-                        exceptionGroup(title: "DEMURRAGE · getLiveDemurrage", items: demurrageItems)
+                        exceptionGroup(title: "DEMURRAGE · live accrual", items: demurrageItems)
                     }
                     if !badOrderItems.isEmpty && !fraItems.isEmpty && !demurrageItems.isEmpty {
                         // Only show empty state when ALL buckets are empty
@@ -423,7 +423,7 @@ private struct RailExceptionsHoldsBody: View {
                 Text("getAssetHealth")
                     .font(.system(size: 11, design: .monospaced)).foregroundStyle(palette.textTertiary)
             }
-            Text("Holds + FRA + demurrage merged · no single getRailAlerts call")
+            Text("Holds + FRA + demurrage merged into one board")
                 .font(.system(size: 11)).foregroundStyle(palette.textSecondary)
             if let condition = assetHealth?.condition {
                 Text("Asset condition: \(condition.replacingOccurrences(of: "_", with: " ").capitalized)")
@@ -442,8 +442,34 @@ private struct RailExceptionsHoldsBody: View {
 
     private var actionsRow: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "View shipment", action: {}, leadingIcon: "list.bullet.rectangle")
-            CTAButton(title: "Resolve hold", leadingIcon: "checkmark.circle")
+            RailSecondaryActionButton(
+                title: "Shipment review",
+                sheetTitle: "Exception shipment context",
+                lines: exceptionReviewLines,
+                fillWidth: true,
+                systemImage: "list.bullet.rectangle"
+            )
+            RailSecondaryActionButton(
+                title: "Hold review",
+                sheetTitle: "Hold resolution context",
+                lines: holdReviewLines,
+                fillWidth: true,
+                systemImage: "checkmark.circle"
+            )
+        }
+    }
+
+    private var exceptionReviewLines: [String] {
+        [
+            "\(totalExceptions) total exception\(totalExceptions == 1 ? "" : "s") · \(holdCount) hold\(holdCount == 1 ? "" : "s")",
+            "\(alertCount) FRA alert\(alertCount == 1 ? "" : "s") · demurrage \(demurrageAmount)",
+            "Asset health \(assetHealth?.condition ?? assetHealth?.status ?? "pending")"
+        ]
+    }
+
+    private var holdReviewLines: [String] {
+        (badOrderItems + fraItems + demurrageItems).prefix(8).map { item in
+            "\(item.title) · \(item.subtitle) · \(item.pill) · \(item.detail)"
         }
     }
 

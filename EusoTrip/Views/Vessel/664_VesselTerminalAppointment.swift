@@ -149,7 +149,7 @@ private struct VesselTerminalAppointmentBody: View {
             Text("Reserve a slot")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("getAvailableSlots · Maersk · USLGB · LBCT Pier T")
+            Text("Available slots · Maersk · USLGB · LBCT Pier T")
                 .font(EType.caption).foregroundStyle(palette.textSecondary)
             IridescentHairline()
         }
@@ -238,7 +238,7 @@ private struct VesselTerminalAppointmentBody: View {
 
     private var slotSection: some View {
         VStack(alignment: .leading, spacing: Space.s3) {
-            Text("AVAILABLE SLOTS · getAvailableSlots · cap 2/slot")
+            Text("AVAILABLE SLOTS · live · cap 2/slot")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                 .foregroundStyle(palette.textTertiary)
             if loading {

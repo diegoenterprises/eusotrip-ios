@@ -139,6 +139,8 @@ private struct DispatcherKanbanBody: View {
     @State private var sheetLoad: KanbanLoad? = nil      // tap-and-shift confirm
     @State private var shifting: Int? = nil
     @State private var actionError: String? = nil
+    @State private var draggingLoadId: Int? = nil
+    @State private var dropLaneId: String? = nil
 
     // Filter chips — verbatim from wireframe (All · Hazmat · Reefer · Dry).
     @State private var filter: BoardFilter = .all
@@ -211,7 +213,7 @@ private struct DispatcherKanbanBody: View {
             Text("Board")
                 .font(.system(size: 28, weight: .bold)).tracking(-0.4)
                 .foregroundStyle(palette.textPrimary)
-            Text("Aurora Freight · tap a load to shift its stage")
+            Text("Aurora Freight · hold a load, then drop it onto a stage")
                 .font(.system(size: 12)).foregroundStyle(palette.textSecondary)
         }
     }
@@ -251,10 +253,11 @@ private struct DispatcherKanbanBody: View {
     private var dryCount: Int    { allLoads.filter { ($0.cargoType ?? "").lowercased().contains("dry") }.count }
     private var allLoads: [KanbanLoad] { byLane.values.flatMap { $0 } }
 
-    // MARK: Stage lane (header row + horizontal card shelf)
+    // MARK: Stage lane (header row + drag/drop card grid)
 
     private func laneView(_ lane: KanbanLane) -> some View {
         let cards = filtered(byLane[lane.id] ?? [])
+        let previewCards = Array(cards.prefix(4))
         return VStack(alignment: .leading, spacing: 10) {
             // Lane header: "TENDER · 8"  ………………  "see all ›"
             HStack {
@@ -268,25 +271,65 @@ private struct DispatcherKanbanBody: View {
             }
             Rectangle().fill(palette.borderFaint).frame(height: 1)
 
-            // Horizontal card shelf.
             if cards.isEmpty {
                 EusoEmptyState(systemImage: "tray",
                                title: "No loads",
                                subtitle: "Nothing in \(lane.label.capitalized) right now.")
                     .padding(.vertical, 4)
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(cards) { l in
-                            Button { sheetLoad = l } label: { cardView(l, lane: lane) }
-                                .buttonStyle(.plain)
-                        }
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(minimum: 0), spacing: 10),
+                        GridItem(.flexible(minimum: 0), spacing: 10)
+                    ],
+                    alignment: .leading,
+                    spacing: 10
+                ) {
+                    ForEach(previewCards) { l in
+                        Button { sheetLoad = l } label: { cardView(l, lane: lane) }
+                            .buttonStyle(.plain)
+                            .draggable(String(l.id)) {
+                                dragPreview(l, lane: lane)
+                            }
+                            .simultaneousGesture(
+                                LongPressGesture(minimumDuration: 0.22).onEnded { _ in
+                                    armDragFeedback(for: l.id)
+                                }
+                            )
                     }
-                    .padding(.trailing, 20)
+                }
+
+                if cards.count > previewCards.count {
+                    Text("\(cards.count - previewCards.count) more in \(lane.label.capitalized) · tap See all for the full lane")
+                        .font(EType.micro)
+                        .tracking(0.5)
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.top, 2)
                 }
             }
         }
         .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .fill(dropLaneId == lane.id ? lane.accent.flat(palette).opacity(0.12) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(
+                    dropLaneId == lane.id ? AnyShapeStyle(lane.accent.color(palette)) : AnyShapeStyle(Color.clear),
+                    lineWidth: 1.25
+                )
+        )
+        .dropDestination(for: String.self) { ids, _ in
+            guard let raw = ids.first, let loadId = Int(raw) else { return false }
+            Task { await drop(loadId, into: lane) }
+            return true
+        } isTargeted: { targeted in
+            withAnimation(.easeOut(duration: 0.12)) {
+                dropLaneId = targeted ? lane.id : nil
+            }
+        }
     }
 
     private func filtered(_ cards: [KanbanLoad]) -> [KanbanLoad] {
@@ -302,6 +345,7 @@ private struct DispatcherKanbanBody: View {
 
     private func cardView(_ l: KanbanLoad, lane: KanbanLane) -> some View {
         let selected = (sheetLoad?.id == l.id)
+        let dragging = draggingLoadId == l.id
         return ZStack(alignment: .topLeading) {
             HStack(spacing: 0) {
                 // Left colored edge rail (3pt in wireframe).
@@ -346,7 +390,7 @@ private struct DispatcherKanbanBody: View {
                 .padding(.leading, 9)
                 .padding(.trailing, 10)
             }
-            .frame(width: 168, height: 70, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: 88, maxHeight: 88, alignment: .topLeading)
             .background(palette.bgCard)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
@@ -356,6 +400,26 @@ private struct DispatcherKanbanBody: View {
                         lineWidth: selected ? 1.5 : 1
                     )
             )
+        }
+        .scaleEffect(dragging ? 1.035 : 1)
+        .rotationEffect(.degrees(dragging ? 1.2 : 0))
+        .shadow(color: dragging ? lane.accent.flat(palette).opacity(0.35) : .clear, radius: 10, x: 0, y: 4)
+    }
+
+    private func dragPreview(_ l: KanbanLoad, lane: KanbanLane) -> some View {
+        cardView(l, lane: lane)
+            .frame(width: 190, height: 92)
+            .onAppear { armDragFeedback(for: l.id) }
+    }
+
+    private func armDragFeedback(for loadId: Int) {
+        withAnimation(.easeInOut(duration: 0.11).repeatCount(4, autoreverses: true)) {
+            draggingLoadId = loadId
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+            if draggingLoadId == loadId {
+                withAnimation(.easeOut(duration: 0.12)) { draggingLoadId = nil }
+            }
         }
     }
 
@@ -457,6 +521,21 @@ private struct DispatcherKanbanBody: View {
                 .disabled(shifting != nil || lane.nextStatus == nil)
                 .opacity(lane.nextStatus == nil ? 0.6 : 1)
 
+                Button { openConvoyComposer(l) } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "car.2.fill")
+                            .font(.system(size: 12, weight: .heavy))
+                        Text("Convoy / escorts")
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                    .foregroundStyle(palette.textPrimary)
+                    .frame(maxWidth: .infinity, minHeight: 36)
+                    .background(palette.bgCard)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderSoft))
+                }
+                .buttonStyle(.plain)
+
                 Button { sheetLoad = nil } label: {
                     Text("Cancel")
                         .font(.system(size: 13, weight: .semibold)).foregroundStyle(palette.textPrimary)
@@ -478,8 +557,21 @@ private struct DispatcherKanbanBody: View {
         .padding(.bottom, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(palette.bgCard)
-        .presentationDetents([.height(220)])
+        .presentationDetents([.height(284)])
         .presentationDragIndicator(.hidden)
+    }
+
+    private func openConvoyComposer(_ l: KanbanLoad) {
+        sheetLoad = nil
+        NotificationCenter.default.post(
+            name: .eusoDispatchNavSwap,
+            object: nil,
+            userInfo: [
+                "screenId": "Dpch710A",
+                "loadId": String(l.id),
+                "loadNumber": l.loadNumber
+            ]
+        )
     }
 
     private func stagePill(_ text: String, color: Color) -> some View {
@@ -526,6 +618,23 @@ private struct DispatcherKanbanBody: View {
         shifting = nil
     }
 
+    private func drop(_ loadId: Int, into lane: KanbanLane) async {
+        guard let load = allLoads.first(where: { $0.id == loadId }) else { return }
+        guard currentLane(for: load.status)?.id != lane.id else {
+            await MainActor.run {
+                dropLaneId = nil
+                draggingLoadId = nil
+            }
+            return
+        }
+        guard let status = dropStatus(for: lane) else { return }
+        await shift(load, to: status)
+        await MainActor.run {
+            dropLaneId = nil
+            draggingLoadId = nil
+        }
+    }
+
     // MARK: - Mapping + formatting helpers
 
     private func laneId(for status: String) -> String? {
@@ -533,6 +642,17 @@ private struct DispatcherKanbanBody: View {
     }
     private func currentLane(for status: String) -> KanbanLane? {
         kanbanLanes.first { $0.statuses.contains(status) }
+    }
+
+    private func dropStatus(for lane: KanbanLane) -> String? {
+        switch lane.id {
+        case "tender": return "posted"
+        case "assigned": return "assigned"
+        case "pickup": return "en_route_pickup"
+        case "transit": return "in_transit"
+        case "delivered": return "delivered"
+        default: return lane.nextStatus
+        }
     }
 
     private func laneText(_ l: KanbanLoad) -> String {

@@ -299,7 +299,7 @@ private struct RailAppointmentComplianceBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 8)
-                Text("yardManagement.ts:2198")
+                Text("live gate scorecards")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
             }
@@ -404,7 +404,7 @@ private struct RailAppointmentComplianceBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 8)
-                Text("yardManagement.ts:563")
+                Text("appointment demand")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
             }

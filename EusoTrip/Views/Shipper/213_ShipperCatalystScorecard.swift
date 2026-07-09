@@ -837,7 +837,7 @@ struct ShipperCatalystScorecard: View {
             Text("FORMULA")
                 .font(EType.micro).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
-            Text("score = onTime · 0.5 + completion · 0.3 + log₁₀(loads+1)/log₁₀(50) · 0.2")
+            Text("score = on-time · 0.5 + completion · 0.3 + log₁₀(loads+1)/log₁₀(50) · 0.2")
                 .font(EType.mono(.caption))
                 .foregroundStyle(palette.textSecondary)
                 .lineLimit(1)
@@ -1064,7 +1064,7 @@ private struct CatalystDetailSheet: View {
     private var whyThisGradeCard: some View {
         sectionCard(title: "WHY THIS GRADE") {
             VStack(alignment: .leading, spacing: 6) {
-                Text("score = onTime · 0.5 + completion · 0.3 + log₁₀(loads+1)/log₁₀(50) · 0.2")
+                Text("score = on-time · 0.5 + completion · 0.3 + log₁₀(loads+1)/log₁₀(50) · 0.2")
                     .font(EType.mono(.caption))
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

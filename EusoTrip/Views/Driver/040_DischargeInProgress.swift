@@ -176,7 +176,7 @@ struct DischargeInProgress: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 10) {
-            // 100th firing · ledger-hygiene sweep — was `Button { }` (no-op
+            // 100th firing · ledger-hygiene sweep — was a dead tap
             // chevron). Wired to env-injected `driverNavBack`.
             Button { navBack?() } label: {
                 Image(systemName: "chevron.left")

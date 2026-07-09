@@ -213,7 +213,7 @@ private struct RailFacilityStatusBody: View {
     private var detailRows: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack {
-                Text("FACILITY DETAIL · getFacilityStatus")
+                Text("FACILITY DETAIL · live status")
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -222,7 +222,7 @@ private struct RailFacilityStatusBody: View {
                     detailRow(
                         glyph: "arrow.up.to.line", tintColor: Brand.info,
                         title: "Outbound lift capacity",
-                        sub: "crane availability · classIRailroadService",
+                        sub: "crane availability · Class I railroad service",
                         value: status?.liftCapacityPct.map { "\(Int($0))%" } ?? "-",
                         badge: nil, badgeColor: nil
                     )
@@ -289,7 +289,7 @@ private struct RailFacilityStatusBody: View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("YARD HEADER · getRailYards")
+                    Text("YARD HEADER · yard directory")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
                     Spacer()
@@ -319,9 +319,37 @@ private struct RailFacilityStatusBody: View {
 
     private var actions: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Reserve gate appt", action: {}, leadingIcon: "calendar.badge.plus")
-            CTAButton(title: "Yard map", leadingIcon: "map")
+            RailSecondaryActionButton(
+                title: "Gate review",
+                sheetTitle: "Gate appointment context",
+                lines: facilityActionLines,
+                fillWidth: true,
+                systemImage: "calendar.badge.plus"
+            )
+            RailSecondaryActionButton(
+                title: "Yard map",
+                sheetTitle: "Yard map context",
+                lines: yardMapContextLines,
+                fillWidth: true,
+                systemImage: "map"
+            )
         }
+    }
+
+    private var facilityActionLines: [String] {
+        [
+            "\(yard?.name ?? facilityCode) · \(railroad)",
+            "Status \(status?.statusLabel ?? yard?.status ?? "pending") · gate queue \(status?.gateQueueMinutes ?? 0)m",
+            "Next gate slot \(status?.nextGateSlot ?? "pending") · inbound \(status?.inboundCars ?? 0)"
+        ]
+    }
+
+    private var yardMapContextLines: [String] {
+        [
+            "\(yard?.city ?? "city pending"), \(yard?.state ?? "state pending") · \(yard?.yardType ?? "yard")",
+            "Capacity \(yard?.capacity ?? 0) cars · tracks \(yard?.totalTracks ?? 0)",
+            "Intermodal \(yard?.hasIntermodal == true ? "yes" : "no") · hazmat \(yard?.hasHazmat == true ? "yes" : "no")"
+        ]
     }
 
     // MARK: Load

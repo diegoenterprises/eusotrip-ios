@@ -79,7 +79,7 @@ struct NewsArticleReader: View {
     /// `article.articleURL` is nil (nothing to extract text from).
     @State private var showTranslationUnavailableAlert: Bool = false
     /// In-app SFSafariViewController presentation for "Open in
-    /// Safari" — the previous `UIApplication.shared.open(url)`
+    /// Safari" — the previous raw URL hand-off
     /// kicked the driver out to the system browser. Per founder
     /// "all on the app" doctrine: stay in-app via SFSafariViewController
     /// (handles paywalls, JS, X-Frame-Options the same way Safari

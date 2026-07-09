@@ -70,7 +70,7 @@ private struct YardCoord559: Decodable, Hashable {
 /// Point conditions read at one yard's `rail_yards.coordinates` via
 /// `weather.realtime({lat,lon})` — the same realtime envelope the v3 widget
 /// consumes (mirrors `WeatherForLoad.Realtime`). EVERY field is optional and
-/// stays nil/`available:false` while the Tomorrow.io feed is enterprise-gated,
+/// stays nil/`available:false` while the Apple WeatherKit feed is enterprise-gated,
 /// so the throttle reads HONEST: no data ⇒ no tint, full slot capacity, no
 /// chip — and lights up the moment the key lands. We never fabricate a
 /// visibility mileage or a "degraded" verdict.
@@ -80,7 +80,7 @@ private struct YardWeather559: Decodable {
     let condition: String?
     let visibilityMi: Double?
 
-    // The realtime envelope names visibility `visibilityMi` (Tomorrow.io v3
+    // The realtime envelope names visibility `visibilityMi` (Apple WeatherKit v3
     // shape, matching WeatherForLoad.Realtime); legacy NWS-flavored points key
     // it `visibility`. Accept both so the throttle lights up whichever the
     // live proc emits — but only ever from a REAL field, never a default.
@@ -782,7 +782,7 @@ private struct RailYardOperationsBody: View {
     /// a miss on any yard just leaves it un-throttled (full capacity, no tint).
     /// Everything is enterprise-gated server-side, so today these resolve to
     /// `available:false` / nil visibility and NO yard tints — the honest empty
-    /// state — and they light up the moment the Tomorrow.io key lands. We never
+    /// state — and they light up the moment the Apple WeatherKit key lands. We never
     /// fabricate a visibility reading or a "degraded" verdict.
     private func hydrateYardWeather() async {
         let geocoded = yards.compactMap { y -> (Int, YardCoord559)? in

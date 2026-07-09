@@ -179,7 +179,7 @@ struct DvirSubmitted: View {
             EusoEmptyState(
                 systemImage: "exclamationmark.triangle",
                 title: "Couldn't reach inspections",
-                subtitle: err.localizedDescription,
+                subtitle: err.eusoUserCopy,
                 cta: ("Try again", { Task { await store.refresh() } })
             )
         }

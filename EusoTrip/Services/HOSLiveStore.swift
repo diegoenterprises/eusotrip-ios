@@ -110,35 +110,85 @@ final class HOSLiveStore: ObservableObject {
 
         // Kick the dashboard snapshot (redundant with HOSClockService's
         // polling but gets us fresh data immediately on first open).
-        async let snap: HOSStatus? = try? api.hos.getStatus()
-        async let td:   HOSDailyLog? = try? api.hos.getDailyLog()
-        async let hist: [HOSDailyLog] = (try? await api.hos.getLogHistory(days: 8)) ?? []
-        async let viol: [HOSViolation] = (try? await api.hos.getViolations()) ?? []
+        async let snap = captureFetch("HOS dashboard") { try await self.api.hos.getStatus() }
+        async let td = captureFetch("daily log") { try await self.api.hos.getDailyLog() }
+        async let hist = captureFetch("8-day history") { try await self.api.hos.getLogHistory(days: 8) }
+        async let viol = captureFetch("violations") { try await self.api.hos.getViolations() }
 
-        let (fresh, day, rollups, v) = await (snap, td, hist, viol)
-        if let fresh { self.status = fresh }
-        if let day   { self.today  = day }
-        self.history    = rollups
-        self.violations = v
-        // Honest failure posture: only clear the error when something
-        // actually landed. The old code reset lastError to nil even when
-        // every fetch failed, masking a dead surface (audit B1).
-        if fresh != nil || day != nil {
-            self.lastError = nil
-        } else if self.today == nil {
-            self.lastError = "Couldn't reach the ELD service — pull to retry."
+        let (snapResult, dayResult, historyResult, violationResult) = await (snap, td, hist, viol)
+        var failures: [HOSFetchFailure] = []
+        var landed = false
+
+        switch snapResult {
+        case .value(let fresh):
+            self.status = fresh
+            landed = true
+        case .failure(let failure):
+            failures.append(failure)
         }
+
+        switch dayResult {
+        case .value(let day):
+            self.today = day
+            landed = true
+        case .failure(let failure):
+            failures.append(failure)
+        }
+
+        switch historyResult {
+        case .value(let rollups):
+            self.history = rollups
+            landed = true
+        case .failure(let failure):
+            failures.append(failure)
+        }
+
+        switch violationResult {
+        case .value(let v):
+            self.violations = v
+            landed = true
+        case .failure(let failure):
+            failures.append(failure)
+        }
+
+        applyFetchFailures(failures, partialDataLanded: landed)
     }
 
     /// Log-only refresh (no dashboard poll — HOSClockService handles that).
     func refreshLogs() async {
-        async let td:   HOSDailyLog? = try? api.hos.getDailyLog()
-        async let hist: [HOSDailyLog] = (try? await api.hos.getLogHistory(days: 8)) ?? []
-        async let viol: [HOSViolation] = (try? await api.hos.getViolations()) ?? []
-        let (day, rollups, v) = await (td, hist, viol)
-        if let day { self.today = day }
-        self.history    = rollups
-        self.violations = v
+        async let td = captureFetch("daily log") { try await self.api.hos.getDailyLog() }
+        async let hist = captureFetch("8-day history") { try await self.api.hos.getLogHistory(days: 8) }
+        async let viol = captureFetch("violations") { try await self.api.hos.getViolations() }
+        let (dayResult, historyResult, violationResult) = await (td, hist, viol)
+
+        var failures: [HOSFetchFailure] = []
+        var landed = false
+
+        switch dayResult {
+        case .value(let day):
+            self.today = day
+            landed = true
+        case .failure(let failure):
+            failures.append(failure)
+        }
+
+        switch historyResult {
+        case .value(let rollups):
+            self.history = rollups
+            landed = true
+        case .failure(let failure):
+            failures.append(failure)
+        }
+
+        switch violationResult {
+        case .value(let v):
+            self.violations = v
+            landed = true
+        case .failure(let failure):
+            failures.append(failure)
+        }
+
+        applyFetchFailures(failures, partialDataLanded: landed)
     }
 
     // MARK: Duty-status transitions
@@ -213,8 +263,14 @@ final class HOSLiveStore: ObservableObject {
             return true
         } catch {
             // Roll back by re-polling
-            if let fresh = try? await api.hos.getStatus() {
+            do {
+                let fresh = try await api.hos.getStatus()
                 self.status = fresh
+            } catch {
+                self.lastError = Self.fetchFailureCopy(
+                    HOSFetchFailure(area: "HOS dashboard", error: error),
+                    partialDataLanded: status != nil
+                )
             }
             // NEVER surface `error.localizedDescription` verbatim —
             // tRPC errors from the server arrive as multi-line Zod
@@ -231,7 +287,7 @@ final class HOSLiveStore: ObservableObject {
             #if DEBUG
             print("[HOSLiveStore] changeStatus error: \(error)")
             #endif
-            flashToast("Couldn't change duty status — try again in a moment.")
+            flashToast(Self.mutationFailureCopy(error, action: "change duty status"))
             return false
         }
     }
@@ -267,7 +323,7 @@ final class HOSLiveStore: ObservableObject {
             flashToast("Duty status queued — will sync when you reconnect")
             return true
         } catch {
-            flashToast("Certify failed — \(error.localizedDescription)")
+            flashToast(Self.mutationFailureCopy(error, action: "certify log"))
             return false
         }
     }
@@ -298,7 +354,7 @@ final class HOSLiveStore: ObservableObject {
             flashToast("Duty status queued — will sync when you reconnect")
             return true
         } catch {
-            flashToast("Remark failed — \(error.localizedDescription)")
+            flashToast(Self.mutationFailureCopy(error, action: "save remark"))
             return false
         }
     }
@@ -339,6 +395,89 @@ final class HOSLiveStore: ObservableObject {
         }
     }
 
+    private enum HOSFetchResult<Value> {
+        case value(Value)
+        case failure(HOSFetchFailure)
+    }
+
+    private struct HOSFetchFailure {
+        let area: String
+        let error: Error
+    }
+
+    private func captureFetch<Value>(
+        _ area: String,
+        _ operation: @escaping () async throws -> Value
+    ) async -> HOSFetchResult<Value> {
+        do {
+            return .value(try await operation())
+        } catch {
+            return .failure(HOSFetchFailure(area: area, error: error))
+        }
+    }
+
+    private func applyFetchFailures(_ failures: [HOSFetchFailure], partialDataLanded: Bool) {
+        guard let first = failures.first else {
+            lastError = nil
+            return
+        }
+        lastError = Self.fetchFailureCopy(first, partialDataLanded: partialDataLanded)
+        if failures.contains(where: { failure in
+            if case EusoTripAPIError.unauthenticated = failure.error { return true }
+            return false
+        }) {
+            NotificationCenter.default.post(name: Notification.Name("eusoLogoutRequested"), object: nil)
+        }
+    }
+
+    private static func fetchFailureCopy(
+        _ failure: HOSFetchFailure,
+        partialDataLanded: Bool
+    ) -> String {
+        let prefix = partialDataLanded ? "Some HOS data could not refresh" : "HOS and ELD data could not load"
+        switch failure.error {
+        case EusoTripAPIError.unauthenticated:
+            return "Session check needed. Sign in again to reload HOS and ELD records."
+        case EusoTripAPIError.forbidden(let message):
+            return "Compliance role mismatch. \(cleanServerMessage(message))"
+        case EusoTripAPIError.decodingFailed:
+            return "\(prefix). The server response changed; update the app or pull to retry."
+        case EusoTripAPIError.notConfigured:
+            return "Compliance service is not configured for this build."
+        case EusoTripAPIError.httpStatus(let code, _):
+            return "\(prefix). Server returned HTTP \(code). Pull to retry."
+        case EusoTripAPIError.trpcError(let message):
+            return "\(prefix): \(cleanServerMessage(message))"
+        default:
+            return "\(prefix). Pull to retry."
+        }
+    }
+
+    private static func mutationFailureCopy(_ error: Error, action: String) -> String {
+        switch error {
+        case EusoTripAPIError.unauthenticated:
+            NotificationCenter.default.post(name: Notification.Name("eusoLogoutRequested"), object: nil)
+            return "Session check needed. Sign in again to \(action)."
+        case EusoTripAPIError.forbidden(let message):
+            return "Permission mismatch: \(cleanServerMessage(message))"
+        case EusoTripAPIError.decodingFailed:
+            return "Could not \(action). The server response changed; update the app or retry."
+        case EusoTripAPIError.trpcError(let message):
+            return "Could not \(action): \(cleanServerMessage(message))"
+        case EusoTripAPIError.httpStatus(let code, _):
+            return "Could not \(action). Server returned HTTP \(code)."
+        default:
+            return "Could not \(action). Try again in a moment."
+        }
+    }
+
+    private static func cleanServerMessage(_ message: String) -> String {
+        let cleaned = message
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty ? "Request failed." : cleaned
+    }
+
     private static let isoDayFormatter: DateFormatter = {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
@@ -346,4 +485,65 @@ final class HOSLiveStore: ObservableObject {
         f.dateFormat = "yyyy-MM-dd"
         return f
     }()
+}
+
+struct HOSConnectionBanner: View {
+    @Environment(\.palette) private var palette
+
+    let message: String
+    let isLoading: Bool
+    let retry: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: Space.s3) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Brand.warning)
+                .frame(width: 22, height: 22)
+
+            Text(message)
+                .font(EType.caption)
+                .foregroundStyle(palette.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: Space.s2)
+
+            Button(action: retry) {
+                HStack(spacing: 5) {
+                    if isLoading {
+                        ProgressView()
+                            .controlSize(.mini)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    Text("Retry")
+                        .font(EType.micro)
+                        .tracking(0.8)
+                }
+                .foregroundStyle(palette.textPrimary)
+                .padding(.horizontal, Space.s2)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                        .fill(palette.bgCard.opacity(0.9))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(isLoading)
+        }
+        .padding(Space.s3)
+        .background(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(Brand.warning.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .strokeBorder(Brand.warning.opacity(0.35), lineWidth: 1)
+        )
+    }
 }

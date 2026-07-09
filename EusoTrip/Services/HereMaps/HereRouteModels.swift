@@ -41,6 +41,21 @@ struct HereRouteSection: Decodable, Identifiable {
     let notices:   [HereNotice]?
     let spans:     [HereSpan]?
     let tolls:     [HereToll]?
+    /// Turn-by-turn maneuvers. Present because the routing request already asks
+    /// for `return=polyline,summary,actions,tolls`. Each `offset` indexes into
+    /// this section's DECODED polyline coords (via `HereFlexiblePolyline.decode`).
+    let actions:   [HereRouteAction]?
+}
+
+/// A single HERE-authored driving maneuver (L13-3 turn-by-turn).
+struct HereRouteAction: Decodable, Equatable {
+    let action: String              // "depart" | "turn" | "continue" | "exit" | "arrive" …
+    let duration: Int?              // seconds
+    let length: Int?                // meters
+    let offset: Int?                // index into the section's DECODED polyline coords
+    let instruction: String?        // HERE-authored, e.g. "Take exit 228 toward Macon."
+    let direction: String?          // "left" | "right" | "slightLeft" …
+    let severity: String?
 }
 
 struct HereSectionEndpoint: Decodable {
@@ -76,17 +91,23 @@ struct HereNotice: Decodable {
 }
 
 /// Per-span metadata (speed limits, road class, country codes). Optional —
-/// only populated when the request asked for `return=polyline,summary,spans`.
+/// only populated when the request asked for `return=polyline,...` and the
+/// separate `spans=` query param.
 struct HereSpan: Decodable {
     let offset: Int
     let length: Int?
     let names: [NamedValue]?
     let routeNumbers: [NamedValue]?
+    /// HERE v8's current span speed field. Older responses and a few local
+    /// callsites still know the deprecated `speedLimit`, so decode both.
+    let maxSpeed: Double?
     let speedLimit: Double?
     let countryCode: String?
     let stateCode:   String?
     let functionalClass: Int?
     let truckAttributes: TruckAttributes?
+
+    var effectiveMaxSpeed: Double? { maxSpeed ?? speedLimit }
 
     struct NamedValue: Decodable {
         let value: String

@@ -23,8 +23,8 @@
 //    • per-load compliance strip        — needs a load context this screen
 //      doesn't carry (insurance.checkLoadCompliance takes a loadId) → honest
 //      "not yet connected" copy, never an invented "met" verdict.
-//    • generateCOI CTA                  — insurance.requestCertificate not yet
-//      bridged → CTA disabled with honest subtitle (no dead-tap fabrication).
+//    • generateCOI CTA                  — insurance.requestCertificate
+//      (insurance.ts:734) with active policyIds, audit, and company fan-out.
 //  NO invented $250k/$1M/MCS-90/expiry figures remain: live policy rows or
 //  honest "No policy on file" + em-dash.
 //
@@ -70,6 +70,9 @@ private struct CargoInsuranceBody_392: View {
     @State private var certificates: [Certificate_392] = []
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
+    @State private var showCOIRequest: Bool = false
+    @State private var coiMessage: String? = nil
+    @State private var coiError: String? = nil
 
     // MARK: Live derivations
 
@@ -113,6 +116,7 @@ private struct CargoInsuranceBody_392: View {
                 coiTieStrip
                 generateCTA
                 ctaSchemaFootnote
+                coiFeedback
 
                 Color.clear.frame(height: 96)
             }
@@ -120,6 +124,14 @@ private struct CargoInsuranceBody_392: View {
             .padding(.top, 56)
         }
         .task { await loadAll() }
+        .sheet(isPresented: $showCOIRequest) {
+            RequestCOISheet_392(policyIds: activePolicies.map(\.id)) { result in
+                coiMessage = "COI requested · \(result.certificateNumber ?? "pending")"
+                coiError = nil
+                Task { await loadAll() }
+            }
+            .environment(\.palette, palette)
+        }
     }
 
     // MARK: - TopBar + title
@@ -301,24 +313,53 @@ private struct CargoInsuranceBody_392: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    // MARK: - CTA (honestly disabled — requestCertificate not yet bridged)
+    // MARK: - CTA (live insurance.requestCertificate)
 
     private var generateCTA: some View {
         CTAButton(
             title: "Generate certificate (COI)",
-            action: {},
+            action: openCOIRequest,
             leadingIcon: "doc.badge.plus"
         )
-        .disabled(true)
-        .opacity(0.5)
     }
 
     private var ctaSchemaFootnote: some View {
-        Text("COI generation isn't connected on mobile yet — request certificates from the web portal.")
+        Text("Requests use your active policy rows and create a pending certificate for compliance review.")
             .font(.system(size: 10, design: .monospaced))
             .foregroundStyle(palette.textTertiary)
             .frame(maxWidth: .infinity, alignment: .center)
             .multilineTextAlignment(.center)
+    }
+
+    @ViewBuilder
+    private var coiFeedback: some View {
+        if let coiMessage {
+            Text(coiMessage)
+                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .foregroundStyle(Brand.success)
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+        if let coiError {
+            Text(coiError)
+                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .foregroundStyle(Brand.warning)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .multilineTextAlignment(.center)
+        }
+    }
+
+    private func openCOIRequest() {
+        coiMessage = nil
+        if loading {
+            coiError = "Coverage is still loading. Try again in a moment."
+            return
+        }
+        guard hasActivePolicy else {
+            coiError = "Add or activate a cargo policy before requesting a COI."
+            return
+        }
+        coiError = nil
+        showCOIRequest = true
     }
 
     // MARK: - Provenance eyebrow
@@ -392,6 +433,162 @@ private struct CargoInsuranceBody_392: View {
         }()
         guard let date = d else { return false }
         return date.timeIntervalSinceNow < Double(days) * 86400 && date.timeIntervalSinceNow > 0
+    }
+}
+
+// MARK: - Request COI sheet (insurance.requestCertificate)
+
+private struct RequestCertificateResult_392: Decodable, Equatable {
+    let success: Bool
+    let certificateId: Int?
+    let certificateNumber: String?
+}
+
+private struct RequestCOISheet_392: View {
+    @Environment(\.palette) private var palette
+    @Environment(\.dismiss) private var dismiss
+
+    let policyIds: [Int]
+    let onRequested: (RequestCertificateResult_392) -> Void
+
+    @State private var holderName = ""
+    @State private var holderEmail = ""
+    @State private var holderAddress = ""
+    @State private var additionalInsured = false
+    @State private var waiverOfSubrogation = false
+    @State private var loading = false
+    @State private var errorText: String? = nil
+
+    private var canSubmit: Bool {
+        !holderName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !loading
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                HStack {
+                    Text("Request certificate")
+                        .font(EType.h2)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Text("Close")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text("A certificate of insurance will be issued from your active Catalyst policy rows and marked pending for compliance review.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+
+                field("CERTIFICATE HOLDER NAME") {
+                    TextField("Certificate holder name", text: $holderName)
+                        .foregroundStyle(palette.textPrimary)
+                }
+                field("HOLDER EMAIL") {
+                    TextField("Holder email", text: $holderEmail)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .foregroundStyle(palette.textPrimary)
+                }
+                field("HOLDER ADDRESS") {
+                    TextField("Street, city, ST", text: $holderAddress)
+                        .foregroundStyle(palette.textPrimary)
+                }
+
+                Toggle(isOn: $additionalInsured) {
+                    Text("Additional insured endorsement")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .tint(Brand.success)
+
+                Toggle(isOn: $waiverOfSubrogation) {
+                    Text("Waiver of subrogation")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .tint(Brand.success)
+
+                if let errorText {
+                    Text(errorText)
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.danger)
+                }
+
+                Button { Task { await submit() } } label: {
+                    HStack(spacing: 6) {
+                        if loading { ProgressView().scaleEffect(0.8) }
+                        Text(loading ? "Requesting…" : "Request COI")
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(.white)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, Space.s3)
+                    .background(
+                        RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                            .fill(canSubmit ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textTertiary.opacity(0.4)))
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSubmit)
+            }
+            .padding(Space.s4)
+        }
+        .background(palette.bgPrimary)
+    }
+
+    private func field<Content: View>(_ label: String, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(EType.micro)
+                .tracking(0.6)
+                .foregroundStyle(palette.textTertiary)
+            content()
+                .padding(.horizontal, Space.s3)
+                .padding(.vertical, Space.s3)
+                .background(RoundedRectangle(cornerRadius: Radius.md).fill(palette.bgCard))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint, lineWidth: 1))
+        }
+    }
+
+    private func submit() async {
+        loading = true
+        errorText = nil
+        defer { loading = false }
+
+        struct Input: Encodable {
+            let holderName: String
+            let holderAddress: String?
+            let holderEmail: String?
+            let policyIds: [Int]?
+            let additionalInsuredEndorsement: Bool
+            let waiverOfSubrogation: Bool
+        }
+
+        do {
+            let result: RequestCertificateResult_392 = try await EusoTripAPI.shared.mutation(
+                "insurance.requestCertificate",
+                input: Input(
+                    holderName: holderName.trimmingCharacters(in: .whitespacesAndNewlines),
+                    holderAddress: holderAddress.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : holderAddress,
+                    holderEmail: holderEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : holderEmail,
+                    policyIds: policyIds.isEmpty ? nil : policyIds,
+                    additionalInsuredEndorsement: additionalInsured,
+                    waiverOfSubrogation: waiverOfSubrogation
+                )
+            )
+            if result.success {
+                onRequested(result)
+                dismiss()
+            } else {
+                errorText = "Request did not complete. Please try again."
+            }
+        } catch {
+            errorText = error.localizedDescription
+        }
     }
 }
 

@@ -788,7 +788,7 @@ private struct RailWaybill: View {
                 "railShipments.getWaybill", input: ShipIn(shipmentId: shipmentId))
             self.detail = d
         } catch {
-            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            loadError = error.eusoUserCopy
         }
         loading = false
     }

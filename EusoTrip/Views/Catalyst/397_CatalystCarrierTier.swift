@@ -112,6 +112,8 @@ private struct CarrierTierBody_397: View {
     @State private var vm: CarrierTierVM_397 = .empty
     @State private var loading: Bool = true
     @State private var loadError: String? = nil
+    @State private var showReachNext: Bool = false
+    @State private var showAllBenefits: Bool = false
 
     private let gold = LinearGradient(
         colors: [Color(red: 0.965, green: 0.776, blue: 0.322),
@@ -143,6 +145,8 @@ private struct CarrierTierBody_397: View {
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await reload() }
         }
+        .sheet(isPresented: $showReachNext) { reachNextSheet }
+        .sheet(isPresented: $showAllBenefits) { allBenefitsSheet }
     }
 
     // MARK: TopBar (inlined — eyebrow / period / back / title)
@@ -413,9 +417,7 @@ private struct CarrierTierBody_397: View {
     private var ctaRow: some View {
         HStack(spacing: Space.s2) {
             Button {
-                NotificationCenter.default.post(
-                    name: .eusoCatalystTierReachNext_397, object: nil,
-                    userInfo: ["source": "397_CatalystCarrierTier", "target": vm.nextTier])
+                showReachNext = true
             } label: {
                 Text(vm.nextTier == "—" ? "How tiers work" : "Reach \(vm.nextTier)")
                     .font(EType.bodyStrong).foregroundStyle(.white)
@@ -426,9 +428,7 @@ private struct CarrierTierBody_397: View {
             .accessibilityLabel(vm.nextTier == "—" ? "How tiers work" : "How to reach \(vm.nextTier)")
 
             Button {
-                NotificationCenter.default.post(
-                    name: .eusoCatalystTierAllBenefits_397, object: nil,
-                    userInfo: ["source": "397_CatalystCarrierTier"])
+                showAllBenefits = true
             } label: {
                 Text("All benefits")
                     .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
@@ -439,6 +439,111 @@ private struct CarrierTierBody_397: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("See all tier benefits")
+        }
+    }
+
+    private var reachNextSheet: some View {
+        NavigationStack {
+            tierSheetScaffold(title: vm.nextTier == "—" ? "How Tiers Work" : "Reach \(vm.nextTier)") {
+                VStack(alignment: .leading, spacing: Space.s3) {
+                    LifecycleCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("CURRENT")
+                                .font(EType.micro).tracking(0.8)
+                                .foregroundStyle(palette.textTertiary)
+                            Text("\(vm.currentTier) · \(vm.points) composite")
+                                .font(EType.bodyStrong)
+                                .foregroundStyle(palette.textPrimary)
+                            Text(vm.boostLabel)
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                    if let next = vm.rungs.first(where: { $0.state == .next }) {
+                        LifecycleCard {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("NEXT RUNG")
+                                    .font(EType.micro).tracking(0.8)
+                                    .foregroundStyle(palette.textTertiary)
+                                Text(next.name)
+                                    .font(EType.bodyStrong)
+                                    .foregroundStyle(palette.textPrimary)
+                                Text(next.threshold)
+                                    .font(EType.mono(.caption))
+                                    .foregroundStyle(palette.textSecondary)
+                                Text(vm.ptsToGo)
+                                    .font(EType.caption)
+                                    .foregroundStyle(Brand.warning)
+                            }
+                        }
+                    }
+                    if !vm.nextUnlockNote.isEmpty {
+                        LifecycleCard {
+                            Text(vm.nextUnlockNote)
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private var allBenefitsSheet: some View {
+        NavigationStack {
+            tierSheetScaffold(title: "\(vm.currentTier) Benefits") {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    if vm.benefits.isEmpty {
+                        EusoEmptyState(
+                            systemImage: "star.circle",
+                            title: "No benefit rows available",
+                            subtitle: loadError ?? "Benefits appear after your tier is computed."
+                        )
+                    } else {
+                        ForEach(vm.benefits) { benefit in
+                            LifecycleCard {
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(benefit.label)
+                                            .font(EType.micro).tracking(0.8)
+                                            .foregroundStyle(palette.textTertiary)
+                                        Text(benefit.value)
+                                            .font(EType.bodyStrong)
+                                            .foregroundStyle(benefit.highlight ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.textPrimary))
+                                    }
+                                    Spacer()
+                                    if benefit.highlight {
+                                        Image(systemName: "star.fill").foregroundStyle(LinearGradient.diagonal)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func tierSheetScaffold<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                Text(title)
+                    .font(.system(size: 22, weight: .heavy))
+                    .foregroundStyle(palette.textPrimary)
+                content()
+            }
+            .padding(18)
+        }
+        .background(palette.bgPrimary.ignoresSafeArea())
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Done") {
+                    showReachNext = false
+                    showAllBenefits = false
+                }
+            }
         }
     }
 
@@ -599,13 +704,6 @@ private func currentQuarterLabel_397() -> String {
     let cal = Calendar.current
     let q = (cal.component(.month, from: now) - 1) / 3 + 1
     return "Q\(q) \(cal.component(.year, from: now))"
-}
-
-// MARK: - Notifications (CTA routing)
-
-extension Notification.Name {
-    static let eusoCatalystTierReachNext_397   = Notification.Name("eusoCatalystTierReachNext_397")
-    static let eusoCatalystTierAllBenefits_397 = Notification.Name("eusoCatalystTierAllBenefits_397")
 }
 
 // MARK: - Honest empty envelope (every figure em-dash until a real hydrate)

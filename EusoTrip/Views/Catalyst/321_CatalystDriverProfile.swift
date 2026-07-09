@@ -75,6 +75,7 @@ private func catalystNavTrailing_321() -> [NavSlot] {
 private struct CatalystDriverProfile: View {
     @Environment(\.palette) private var palette
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.openURL) private var openURL
 
     let initialDriverId: String
 
@@ -335,13 +336,13 @@ private struct CatalystDriverProfile: View {
     private func contactStrip(_ p: DriversAPI.DriverProfile) -> some View {
         HStack(spacing: 8) {
             contactButton(label: "Call",     icon: "phone.fill",    enabled: !p.phone.isEmpty) {
-                openURL(scheme: "tel", value: p.phone)
+                openContactURL(scheme: "tel", value: p.phone)
             }
             contactButton(label: "Message",  icon: "message.fill",  enabled: !p.phone.isEmpty) {
-                openURL(scheme: "sms", value: p.phone)
+                openContactURL(scheme: "sms", value: p.phone)
             }
             contactButton(label: "Email",    icon: "envelope.fill", enabled: !p.email.isEmpty) {
-                openURL(scheme: "mailto", value: p.email)
+                openContactURL(scheme: "mailto", value: p.email)
             }
         }
     }
@@ -373,11 +374,19 @@ private struct CatalystDriverProfile: View {
         .disabled(!enabled)
     }
 
-    private func openURL(scheme: String, value: String) {
+    private func openContactURL(scheme: String, value: String) {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty,
-              let url = URL(string: "\(scheme):\(trimmed)") else { return }
-        UIApplication.shared.open(url)
+        guard !trimmed.isEmpty else { return }
+        let normalized: String
+        if scheme == "tel" || scheme == "sms" {
+            normalized = String(trimmed.filter { "+0123456789".contains($0) })
+        } else {
+            normalized = trimmed
+        }
+        guard !normalized.isEmpty,
+              let encoded = normalized.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
+              let url = URL(string: "\(scheme):\(encoded)") else { return }
+        openURL(url)
     }
 
     // MARK: - Credential pills card (CDL · Medical · Endorsements)

@@ -656,7 +656,7 @@ private struct TevrPreviewHost: View {
                         arrival: Date().addingTimeInterval(72 * 60 + 18),
                         staticETA: "14:20 CT"
                     ),
-                    title: "Events · getRailTracking",
+                    title: "Events · live rail tracking",
                     selection: $selection,
                     onSelect: { _ in }
                 )

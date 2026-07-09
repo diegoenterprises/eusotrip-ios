@@ -8,7 +8,8 @@
 //  Wire bindings:
 //    settings.getSettings                  — current pref bundle
 //    settings.updateNotificationSettings   — toggle persistence
-//    dispatch.getDispatchPresets (read via dispatchTemplates table) — list
+//    dispatch.getDispatchPresets           — dispatchTemplates table list
+//    dispatch.createDispatchPreset         — durable company-scoped template
 //
 
 import SwiftUI
@@ -69,6 +70,8 @@ private struct PrivacyPrefs: Decodable, Hashable {
 
 private struct DispatchPreset: Decodable, Hashable, Identifiable {
     let id: String
+    let name: String?
+    let description: String?
     let lane: String?
     let equipment: String?
     let autoAccept: Bool?
@@ -101,6 +104,19 @@ private struct SettingsBody: View {
     @State private var dvirHosAlerts: Bool = true
     @State private var loading: Bool = true
     @State private var saving: Bool = false
+    @State private var showNewPreset: Bool = false
+    @State private var savingPreset: Bool = false
+    @State private var actionMessage: String?
+    @State private var actionError: String?
+    @State private var presetName: String = ""
+    @State private var presetOriginCity: String = ""
+    @State private var presetOriginState: String = ""
+    @State private var presetDestinationCity: String = ""
+    @State private var presetDestinationState: String = ""
+    @State private var presetCargoType: String = ""
+    @State private var presetTrailerType: String = ""
+    @State private var presetRate: String = ""
+    @State private var presetInstructions: String = ""
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -116,6 +132,7 @@ private struct SettingsBody: View {
         }
         .task { await load() }
         .refreshable { await load() }
+        .sheet(isPresented: $showNewPreset) { newPresetSheet }
     }
 
     private var header: some View {
@@ -171,12 +188,13 @@ private struct SettingsBody: View {
                 Text("DISPATCH PRESETS · \(presets.count)").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
                 Spacer()
                 Button {
-                    NotificationCenter.default.post(name: NSNotification.Name("eusoCatalystNewPresetRequested"), object: nil)
+                    openNewPresetSheet()
                 } label: {
                     Text("+ New preset").font(.caption.weight(.semibold)).foregroundStyle(palette.textPrimary)
                 }
                 .buttonStyle(.plain)
             }
+            actionFeedback
             if loading && presets.isEmpty {
                 LifecycleCard { Text("Loading presets…").font(EType.caption).foregroundStyle(palette.textSecondary) }
             } else if presets.isEmpty {
@@ -191,7 +209,7 @@ private struct SettingsBody: View {
         LifecycleCard {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("\(p.lane ?? "-") · \(p.equipment ?? "-")")
+                    Text(presetTitle(p))
                         .font(EType.body.weight(.semibold))
                         .foregroundStyle(palette.textPrimary)
                     Spacer()
@@ -204,6 +222,8 @@ private struct SettingsBody: View {
                     }
                 }
                 let parts: [String] = [
+                    p.lane,
+                    p.equipment,
                     p.cargoSummary,
                     p.floorRate.map { "floor $\($0)" },
                     p.awardedYTD.map { "\($0) awarded YTD" },
@@ -214,6 +234,88 @@ private struct SettingsBody: View {
                         .foregroundStyle(palette.textTertiary)
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var actionFeedback: some View {
+        if let actionError {
+            LifecycleCard(accentDanger: true) {
+                Text(actionError).font(EType.caption).foregroundStyle(Brand.danger)
+            }
+        } else if let actionMessage {
+            LifecycleCard {
+                Text(actionMessage).font(EType.caption).foregroundStyle(palette.textSecondary)
+            }
+        }
+    }
+
+    private var newPresetSheet: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("New Dispatch Preset")
+                        .font(.system(size: 22, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Save a reusable lane, equipment and rate template to your company dispatch catalog.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    LifecycleCard {
+                        VStack(spacing: 10) {
+                            presetField("Name", text: $presetName)
+                            presetField("Origin city", text: $presetOriginCity)
+                            presetField("Origin state", text: $presetOriginState, limit: 2)
+                            presetField("Destination city", text: $presetDestinationCity)
+                            presetField("Destination state", text: $presetDestinationState, limit: 2)
+                            presetField("Trailer type", text: $presetTrailerType)
+                            presetField("Cargo type", text: $presetCargoType)
+                            presetField("Floor rate", text: $presetRate, keyboard: .decimalPad)
+                            presetField("Instructions", text: $presetInstructions)
+                        }
+                    }
+                    if let actionError {
+                        Text(actionError)
+                            .font(EType.caption)
+                            .foregroundStyle(Brand.danger)
+                    }
+                    Button {
+                        Task { await createPreset() }
+                    } label: {
+                        HStack {
+                            if savingPreset { ProgressView().tint(.white) }
+                            Text(savingPreset ? "Saving…" : "Save preset")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(savingPreset || !presetFormValid)
+                }
+                .padding(18)
+            }
+            .background(palette.bgPrimary.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { showNewPreset = false }
+                }
+            }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func presetField(_ title: String, text: Binding<String>, limit: Int? = nil, keyboard: UIKeyboardType = .default) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title.uppercased()).font(.system(size: 9, weight: .heavy)).tracking(0.7).foregroundStyle(palette.textTertiary)
+            TextField(title, text: text)
+                .font(EType.body)
+                .foregroundStyle(palette.textPrimary)
+                .textInputAutocapitalization(limit == 2 ? .characters : .words)
+                .keyboardType(keyboard)
+                .onChange(of: text.wrappedValue) { _, value in
+                    guard let limit, value.count > limit else { return }
+                    text.wrappedValue = String(value.prefix(limit)).uppercased()
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(palette.bgSecondary))
         }
     }
 
@@ -260,6 +362,35 @@ private struct SettingsBody: View {
         }
     }
 
+    private func presetTitle(_ preset: DispatchPreset) -> String {
+        if let name = preset.name, !name.isEmpty { return name }
+        return "\(preset.lane ?? "-") · \(preset.equipment ?? "-")"
+    }
+
+    private var presetFormValid: Bool {
+        !presetName.trimmed.isEmpty &&
+        !presetOriginCity.trimmed.isEmpty &&
+        presetOriginState.trimmed.count == 2 &&
+        !presetDestinationCity.trimmed.isEmpty &&
+        presetDestinationState.trimmed.count == 2 &&
+        !presetTrailerType.trimmed.isEmpty
+    }
+
+    private func openNewPresetSheet() {
+        actionError = nil
+        actionMessage = nil
+        presetName = ""
+        presetOriginCity = ""
+        presetOriginState = ""
+        presetDestinationCity = ""
+        presetDestinationState = ""
+        presetCargoType = ""
+        presetTrailerType = ""
+        presetRate = ""
+        presetInstructions = ""
+        showNewPreset = true
+    }
+
     private func load() async {
         loading = true; defer { loading = false }
         do {
@@ -270,8 +401,12 @@ private struct SettingsBody: View {
                 dvirHosAlerts = n.dvirHosAlerts ?? true
             }
         } catch { /* */ }
-        // Presets are sourced from existing dispatchTemplates table.
-        // Future: settings.getDispatchPresets once shipped.
+        do {
+            struct In: Encodable { let limit: Int }
+            presets = try await EusoTripAPI.shared.query("dispatch.getDispatchPresets", input: In(limit: 50))
+        } catch {
+            actionError = "Dispatch presets couldn't load. \(error.eusoUserCopy)"
+        }
     }
 
     private func saveNotifications() async {
@@ -290,6 +425,61 @@ private struct SettingsBody: View {
                           dvirHosAlerts: dvirHosAlerts)
             )
         } catch { /* silent — toggle stays in local state */ }
+    }
+
+    private func createPreset() async {
+        actionError = nil
+        actionMessage = nil
+        guard presetFormValid else {
+            actionError = "Name, lane states and trailer type are required."
+            return
+        }
+        let cleanRate = presetRate.trimmed
+        if !cleanRate.isEmpty && Decimal(string: cleanRate) == nil {
+            actionError = "Floor rate must be a number."
+            return
+        }
+        savingPreset = true
+        defer { savingPreset = false }
+        struct In: Encodable {
+            let name: String
+            let originCity: String
+            let originState: String
+            let destinationCity: String
+            let destinationState: String
+            let cargoType: String?
+            let trailerType: String
+            let rate: Decimal?
+            let specialInstructions: String?
+        }
+        struct Out: Decodable { let success: Bool?; let id: String?; let name: String? }
+        do {
+            let out: Out = try await EusoTripAPI.shared.mutation(
+                "dispatch.createDispatchPreset",
+                input: In(name: presetName.trimmed,
+                          originCity: presetOriginCity.trimmed,
+                          originState: presetOriginState.trimmed.uppercased(),
+                          destinationCity: presetDestinationCity.trimmed,
+                          destinationState: presetDestinationState.trimmed.uppercased(),
+                          cargoType: presetCargoType.trimmed.nilIfEmpty,
+                          trailerType: presetTrailerType.trimmed,
+                          rate: cleanRate.isEmpty ? nil : Decimal(string: cleanRate),
+                          specialInstructions: presetInstructions.trimmed.nilIfEmpty)
+            )
+            actionMessage = "Preset saved\(out.name.map { ": \($0)" } ?? "")."
+            showNewPreset = false
+            await load()
+        } catch {
+            actionError = "Dispatch preset wasn't saved. \(error.eusoUserCopy)"
+        }
+    }
+}
+
+private extension String {
+    var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+    var nilIfEmpty: String? {
+        let value = trimmed
+        return value.isEmpty ? nil : value
     }
 }
 

@@ -164,9 +164,6 @@ private struct DispatcherCarrierScorecardBody: View {
                     .foregroundStyle(palette.textTertiary)
             }
             HStack(alignment: .center) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
                 Text("Carriers")
                     .font(.system(size: 28, weight: .bold)).kerning(-0.4)
                     .foregroundStyle(palette.textPrimary)
@@ -235,7 +232,7 @@ private struct DispatcherCarrierScorecardBody: View {
                     .font(.system(size: 9, weight: .heavy)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer()
-                Text("scorecard.ts:21")
+                Text("FMCSA weighted")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
             }

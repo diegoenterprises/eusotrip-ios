@@ -141,7 +141,7 @@ final class eSangVoiceInputController: ObservableObject {
         } catch {
             // Surface the underlying reason (recognizer-unavailable, route-not-ready,
             // etc.) so the user sees why the mic didn't open instead of a generic no-op.
-            status = .error(message: error.localizedDescription)
+            status = .error(message: error.eusoUserCopy)
             cleanup()
         }
     }
@@ -195,12 +195,11 @@ final class eSangVoiceInputController: ObservableObject {
         // keeps the low-latency capture path; duck + Bluetooth let a paired headset mic
         // drive the session.
         let session = AVAudioSession.sharedInstance()
-        let options: AVAudioSession.CategoryOptions
-        if #available(iOS 18.2, *) {
-            options = [.duckOthers, .allowBluetoothHFP]
-        } else {
-            options = [.duckOthers, .allowBluetooth]
-        }
+        // `allowBluetoothHFP` is available on the iOS 17 deployment floor
+        // (the same option the PTT radio session uses in PTChannelManager),
+        // so route Bluetooth Hands-Free input without the deprecated
+        // `allowBluetooth` symbol.
+        let options: AVAudioSession.CategoryOptions = [.duckOthers, .allowBluetoothHFP]
         try session.setCategory(.playAndRecord, mode: .measurement, options: options)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
 
@@ -244,7 +243,7 @@ final class eSangVoiceInputController: ObservableObject {
                         self.finish()
                     }
                 } else if let error {
-                    self.status = .error(message: error.localizedDescription)
+                    self.status = .error(message: error.eusoUserCopy)
                     self.cleanup()
                 }
             }

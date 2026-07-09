@@ -56,6 +56,7 @@ struct ComplianceRule: Identifiable, Equatable {
         case auxPump      = "fmcsa.auxpump.393_67"
         case warningDevice = "fmcsa.warning_device.flares"
         case phmsaExxon   = "phmsa.2025_0777.exxon_preemption"
+        case mc331CargoTank = "phmsa.mc331.180_407.2026"
         // Rail — FRA. Add-only; same ack ledger.
         case railBrakeInspection = "fra.brake_inspection.232"
         case railDefectiveCar    = "fra.freight_car_safety.215"
@@ -244,6 +245,22 @@ Why this matters to you: the determination — whenever it issues — will affec
 """,
             callToAction: "Open docket",
             severity: .informational
+        ),
+        ComplianceRule(
+            tag: .mc331CargoTank,
+            headline: "MC-331 covering + leakage-test clarification",
+            citation: "49 CFR §§ 178.337, 180.407, 180.415, 180.417",
+            effective: "PHMSA 25-0035 / 25-0136 · 2026",
+            summary: "Covered MC-331 areas may need internal inspection, and LPG bubble-fluid checks must be recorded as leakage tests, not pressure tests.",
+            detail: """
+PHMSA interpretation watch: MC-331 is the DOT cargo-tank specification for compressed gases under 49 CFR § 178.337. When insulation, coatings, vinyl wrap, or another covering prevents a complete external visual inspection, the blocked areas must be addressed through the internal visual inspection path tied to the annual external visual cycle. If an internal visual inspection is not possible, the pressure-test path becomes the fallback. Visible areas still need their normal external inspection and report.
+
+LPG bubble-fluid checks at fittings, valves, and welds are leakage tests under 49 CFR § 180.407(h), not hydrostatic or pneumatic pressure tests. The inspection record should capture leakage-test facts such as pressure, hold time, fluid, and components tested; pressure-test boxes should stay untouched unless an actual pressure test was performed.
+
+Video or fiber-optic inspection can support the inspection path when it still lets the inspector view and evaluate the required areas. Reports and durable markings still matter: keep inspection/test records under § 180.417(b) and mark the cargo tank under § 180.415.
+""",
+            callToAction: "I understand",
+            severity: .action
         ),
         // ── Rail — FRA / AAR ─────────────────────────────────────────
         ComplianceRule(
@@ -515,6 +532,14 @@ struct ComplianceInlinePanel: View {
         return auth.isEmpty ? "FMCSA" : auth
     }
 
+    private var headerStatusLabel: String {
+        let labels = Array(Set(rules.map(\.effective))).filter { !$0.isEmpty }
+        guard labels.count == 1, let only = labels.first else { return "CURRENT" }
+        if only.localizedCaseInsensitiveContains("PHMSA") { return "PHMSA · 2026" }
+        if only.count > 18 { return "CURRENT" }
+        return only.uppercased()
+    }
+
     var body: some View {
         if rules.isEmpty { EmptyView() }
         else {
@@ -556,7 +581,7 @@ struct ComplianceInlinePanel: View {
                 .overlay(Circle().strokeBorder(palette.borderFaint))
                 .clipShape(Circle())
             VStack(alignment: .leading, spacing: 0) {
-                Text("\(authorityLabel) · MAR 23, 2026")
+                Text("\(authorityLabel) · \(headerStatusLabel)")
                     .font(EType.mono(.micro))
                     .tracking(0.6)
                     .foregroundStyle(palette.textTertiary)

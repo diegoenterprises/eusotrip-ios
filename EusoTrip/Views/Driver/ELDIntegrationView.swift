@@ -139,6 +139,24 @@ struct ELDIntegrationView: View {
                         .disabled(store.isMutating)
                     }
                     .padding(.top, Space.s2)
+                } else if store.isConnected,
+                          let slug = store.primaryConnectedSlug {
+                    HStack(spacing: Space.s2) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(Brand.success)
+                        Text(providerDisplayName(for: slug))
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Spacer()
+                        Button("Disconnect") {
+                            Task { await store.disconnect(slug: slug) }
+                        }
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(Brand.danger)
+                        .disabled(store.isMutating)
+                    }
+                    .padding(.top, Space.s2)
                 }
             }
         }
@@ -360,7 +378,7 @@ struct ELDIntegrationView: View {
                 if store.isMutating {
                     HStack(spacing: Space.s2) {
                         ProgressView().scaleEffect(0.7)
-                        Text("Talking to the server…")
+                        Text("Syncing...")
                             .font(EType.caption)
                             .foregroundStyle(palette.textTertiary)
                     }
@@ -469,9 +487,8 @@ struct ELDIntegrationView: View {
 
     private var headlineText: String {
         if store.isConnected,
-           let slug = store.primaryConnectedSlug,
-           let p = store.provider(for: slug) {
-            return "\(p.name) is live · HOS flowing from vendor"
+           let slug = store.primaryConnectedSlug {
+            return "\(providerDisplayName(for: slug)) is live · HOS flowing from vendor"
         }
         return "Connect your ELD to unlock real-time HOS"
     }
@@ -484,20 +501,19 @@ struct ELDIntegrationView: View {
     }
 
     private var apiKeyCardTitle: String {
-        guard let slug = store.selectedSlug,
-              let provider = store.provider(for: slug) else {
+        guard let slug = store.selectedSlug else {
             return "API key"
         }
+        let providerName = providerDisplayName(for: slug)
         let connected = store.connection?.providers.contains(slug) == true
-        return connected ? "Replace \(provider.name) key" : "Connect \(provider.name)"
+        return connected ? "Replace \(providerName) key" : "Connect \(providerName)"
     }
 
     private var apiKeyCardHint: String {
-        guard let slug = store.selectedSlug,
-              let provider = store.provider(for: slug) else {
+        guard let slug = store.selectedSlug else {
             return "Pick a provider to see where to find your key."
         }
-        switch provider.slug {
+        switch slug {
         case "samsara":
             return "Admin → Settings → API Tokens (read-only scopes: GPS, HOS, DVIR)."
         case "motive":
@@ -521,7 +537,7 @@ struct ELDIntegrationView: View {
         case "trimble":
             return "PeopleNet Fleet Manager → Admin → API Credentials."
         default:
-            return "Find the read-only API token in your \(provider.name) admin dashboard."
+            return "Find the read-only API token in your \(providerDisplayName(for: slug)) admin dashboard."
         }
     }
 
@@ -550,6 +566,14 @@ struct ELDIntegrationView: View {
         let m = minutes % 60
         if m == 0 { return "\(h)h" }
         return "\(h)h \(m)m"
+    }
+
+    private func providerDisplayName(for slug: String) -> String {
+        if let provider = store.provider(for: slug) { return provider.name }
+        return slug
+            .split(separator: "_")
+            .map { $0.capitalized }
+            .joined(separator: " ")
     }
 }
 

@@ -600,7 +600,7 @@ struct CatalystFleetSafetyCSA: View {
         VStack(spacing: Space.s2) {
             Text("Couldn't load CSA")
                 .font(EType.title).foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption).foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
             Button { Task { await store.refresh() } } label: {
@@ -696,7 +696,7 @@ private struct CSAImprovementPlanSheet: View {
                     Text("No improvement actions on file.").font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 case .error(let e):
-                    Text(e.localizedDescription).font(EType.caption).foregroundStyle(Brand.warning)
+                    Text(e.eusoUserCopy).font(EType.caption).foregroundStyle(Brand.warning)
                 case .loaded(let plan):
                     if let goal = plan.overallGoal {
                         Text(goal).font(EType.body).foregroundStyle(palette.textPrimary)
@@ -797,7 +797,7 @@ private struct CSAHazmatQualSheet: View {
                     Text("No hazmat qualification data on file.").font(EType.caption)
                         .foregroundStyle(palette.textTertiary)
                 case .error(let e):
-                    Text(e.localizedDescription).font(EType.caption).foregroundStyle(Brand.warning)
+                    Text(e.eusoUserCopy).font(EType.caption).foregroundStyle(Brand.warning)
                 case .loaded(let q):
                     qualBadge(q.qualified ?? false)
                     statRow("HMSP active", (q.hmsp?.active ?? false) ? "Yes" : "No")

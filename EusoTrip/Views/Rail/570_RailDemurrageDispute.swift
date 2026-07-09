@@ -93,7 +93,7 @@ private struct DemurrageAnchor570: Decodable, Identifiable {
 
 /// The cited historical-weather report attached when a dwell reason is
 /// "weather" — decodes `weather.historical({lat,lon,from,to})` 1:1. The
-/// proc is Enterprise-gated (Tomorrow.io history tier): until the key
+/// proc is Enterprise-gated (Apple WeatherKit history tier): until the key
 /// lands it returns `available:false` / nulls, so every field is optional
 /// and the screen renders the honest "available with the enterprise feed"
 /// state rather than inventing a max gust / min visibility / peak code.
@@ -103,7 +103,7 @@ private struct HistoricalWeatherEvidence570: Decodable {
     let maxGustMph: Double?
     /// Worst (minimum) visibility over the window, miles.
     let minVisibilityMi: Double?
-    /// The most-hazardous Tomorrow.io weatherCode seen + its phrase — the
+    /// The most-hazardous Apple WeatherKit weatherCode seen + its phrase — the
     /// "peak condition" the citation leads with.
     let peakWeatherCode: Int?
     let peakCondition: String?
@@ -575,7 +575,7 @@ private struct RailDemurrageDisputeBody: View {
                                 Text("Historical weather evidence available with the enterprise feed")
                                     .font(.system(size: 13, weight: .semibold))
                                     .foregroundStyle(palette.textPrimary)
-                                Text("This dwell is anchored to \(facilityLocaleLabel)\(dwellWindowLabel.map { " (\($0))" } ?? ""). Once the Tomorrow.io history tier is licensed, the max gust, minimum visibility, peak condition and any overlapping government bulletins for the window auto-attach as a cited exhibit.")
+                                Text("This dwell is anchored to \(facilityLocaleLabel)\(dwellWindowLabel.map { " (\($0))" } ?? ""). Once the Apple WeatherKit history tier is licensed, the max gust, minimum visibility, peak condition and any overlapping government bulletins for the window auto-attach as a cited exhibit.")
                                     .font(EType.caption)
                                     .foregroundStyle(palette.textSecondary)
                             } else {
@@ -636,7 +636,7 @@ private struct RailDemurrageDisputeBody: View {
         }
     }
 
-    /// The provenance footer — "Tomorrow.io history · computed 2m ago".
+    /// The provenance footer — "Apple WeatherKit history · computed 2m ago".
     /// Each clause omitted honestly when its field is absent.
     private func citationFooter(_ ev: HistoricalWeatherEvidence570?) -> String {
         var parts: [String] = []
@@ -656,17 +656,22 @@ private struct RailDemurrageDisputeBody: View {
         let cLabel = contestedAmount > 0 ? "File dispute · $\(Int(contestedAmount))" : "File dispute"
         return HStack(spacing: Space.s2) {
             CTAButton(title: cLabel, action: { Task { await fileDispute() } }, leadingIcon: "list.bullet.rectangle", isLoading: isFiling)
-            Button {} label: {
-                Text("Save draft")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Review draft",
+                sheetTitle: "Demurrage dispute draft",
+                lines: disputeDraftLines,
+                systemImage: "doc.text.magnifyingglass"
+            )
         }
+    }
+
+    private var disputeDraftLines: [String] {
+        [
+            "Charge \(disputeIdCaption) · accrued \(accruedLabel) · contested \(contestedLabel)",
+            chargeContextSub,
+            "Win rate \(winRateLabel) · evidence \(citationFooter(weatherEvidence))",
+            dwellWindowLabel.map { "Dwell window \($0) · \(facilityLocaleLabel)" } ?? "Dwell window pending"
+        ]
     }
 
     // MARK: - Load / Actions
@@ -734,7 +739,7 @@ private struct RailDemurrageDisputeBody: View {
     /// anchor (or no geocode) has landed we skip the call entirely and leave
     /// the honest empty section rather than querying a guessed point/window.
     private func loadWeatherEvidence() async {
-        // The Tomorrow.io history product is anchored on lat/lon + a time
+        // The Apple WeatherKit history product is anchored on lat/lon + a time
         // window. With no real anchor, there is nothing honest to query.
         guard let anchor, anchor.hasGeo else {
             self.weatherEvidence = nil

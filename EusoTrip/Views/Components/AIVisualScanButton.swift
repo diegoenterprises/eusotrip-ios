@@ -2,9 +2,9 @@
 //  AIVisualScanButton.swift
 //  EusoTrip — reusable Gemini Vision scan button.
 //
-//  Wraps PhotosPicker → base64 → tRPC call → result sheet so any
+//  Wraps camera capture → base64 → tRPC call → result sheet so any
 //  surface can drop in a "Scan with AI" CTA without re-implementing
-//  the upload + decode + inflight UI plumbing.
+//  the capture + decode + inflight UI plumbing.
 //
 //  Used by 011 PretripDVIR (`visualIntelligence.inspectDVIR`),
 //  086 MeIncidentReportFiler (`visualIntelligence.assessDamage`),
@@ -13,7 +13,7 @@
 //
 
 import SwiftUI
-import PhotosUI
+import UIKit
 
 /// Result envelope from the visualIntelligence procs. Shape:
 ///   { findings: [{ severity, description, recommendation }],
@@ -87,7 +87,7 @@ public struct AIVisualScanButton: View {
     public let onResult: (AIVisualScanResult) -> Void
 
     @Environment(\.palette) private var palette
-    @State private var pickerItem: PhotosPickerItem? = nil
+    @State private var showCamera: Bool = false
     @State private var inflight: Bool = false
     @State private var error: String? = nil
 
@@ -107,7 +107,13 @@ public struct AIVisualScanButton: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            PhotosPicker(selection: $pickerItem, matching: .images, photoLibrary: .shared()) {
+            Button {
+                guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+                    error = "Camera is unavailable on this device. ESANG Vision needs a live camera capture."
+                    return
+                }
+                showCamera = true
+            } label: {
                 HStack(spacing: 10) {
                     if inflight {
                         ProgressView().progressViewStyle(.circular)
@@ -138,6 +144,7 @@ public struct AIVisualScanButton: View {
             }
             .buttonStyle(.plain)
             .disabled(inflight)
+            .accessibilityLabel(title)
 
             if let err = error {
                 Text(err)
@@ -145,34 +152,35 @@ public struct AIVisualScanButton: View {
                     .foregroundStyle(Brand.danger)
             }
         }
-        .onChange(of: pickerItem) { _, item in
-            guard let item else { return }
-            Task { await scan(item: item) }
+        .sheet(isPresented: $showCamera) {
+            AIVisualCameraSheet { image in
+                showCamera = false
+                guard let image else { return }
+                Task { await scan(image: image) }
+            }
+            .ignoresSafeArea()
         }
     }
 
     @MainActor
-    private func scan(item: PhotosPickerItem) async {
+    private func scan(image: UIImage) async {
         guard !inflight else { return }
         inflight = true
         defer { inflight = false }
         error = nil
-        guard let data = try? await item.loadTransferable(type: Data.self), !data.isEmpty else {
-            error = "Couldn't read photo"
-            pickerItem = nil
-            return
-        }
         // Compress to JPEG ≤ 800KB so the multimodal payload fits.
-        var jpeg = data
-        if let img = UIImage(data: data) {
-            var quality: CGFloat = 0.85
-            while quality > 0.3 {
-                if let d = img.jpegData(compressionQuality: quality), d.count <= 800_000 {
-                    jpeg = d
-                    break
-                }
-                quality -= 0.1
+        var quality: CGFloat = 0.85
+        var jpeg: Data?
+        while quality > 0.3 {
+            if let d = image.jpegData(compressionQuality: quality) {
+                jpeg = d
+                if d.count <= 800_000 { break }
             }
+            quality -= 0.1
+        }
+        guard let jpeg else {
+            error = "Couldn't encode the camera capture."
+            return
         }
         let base64 = jpeg.base64EncodedString()
         struct In: Encodable {
@@ -195,7 +203,39 @@ public struct AIVisualScanButton: View {
         } catch let e {
             error = "Scan failed: \((e as? EusoTripAPIError)?.errorDescription ?? e.localizedDescription)"
         }
-        pickerItem = nil
+    }
+}
+
+private struct AIVisualCameraSheet: UIViewControllerRepresentable {
+    let onImage: (UIImage?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onImage: onImage) }
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.cameraCaptureMode = .photo
+        picker.allowsEditing = false
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ controller: UIImagePickerController, context: Context) {}
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onImage: (UIImage?) -> Void
+        init(onImage: @escaping (UIImage?) -> Void) { self.onImage = onImage }
+
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+            picker.dismiss(animated: true)
+            onImage(info[.originalImage] as? UIImage)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            picker.dismiss(animated: true)
+            onImage(nil)
+        }
     }
 }
 

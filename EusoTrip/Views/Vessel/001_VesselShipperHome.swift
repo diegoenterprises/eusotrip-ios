@@ -128,9 +128,13 @@ private struct VesselShipperHomeBody: View {
                         actionErrorBanner(actionError)
                     }
 
-                    HomeWeatherWidget()
+	                    HomeWeatherWidget()
+	                    EusoCardIssuePanel(
+	                        title: "EusoCard",
+	                        subtitle: "Vessel shipper spend card for D&D, claims and bookings"
+	                    )
 
-                    if loading {
+	                    if loading {
                         loadingState
                     } else if let err = loadError {
                         LifecycleCard(accentDanger: true) {

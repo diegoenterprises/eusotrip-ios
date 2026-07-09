@@ -104,12 +104,11 @@ private struct FuelSurchargeBody_395: View {
     @State private var surchargeUnit: String = "/mi"
     @State private var nationalLine: String = "—"
 
-    // Step ladder — LIVE fscEngine.getSchedules header; the per-band rows of
-    // fsc_lookup_table are NOT exposed by any read procedure (WIRE-GAP:
-    // fscEngine needs a getScheduleTable read), so the ladder renders an
-    // honest empty state instead of an invented staircase.
+    // Step ladder — LIVE fscEngine.getSchedules header + getLookupTable rows.
     @State private var methodLabel: String  = "—"
     @State private var brackets: [FscBracket_395] = []
+    @State private var activeScheduleId: Int? = nil
+    @State private var liveDieselValue: Double? = nil
 
     // Footer · attached lanes — no live source (pricebook fscIncluded rollup
     // unexposed) → em-dash, never invented.
@@ -119,6 +118,15 @@ private struct FuelSurchargeBody_395: View {
 
     @State private var refreshing: Bool = false
     @State private var scheduleLoadNote: String? = nil
+    @State private var scheduleActionMessage: String? = nil
+    @State private var scheduleActionError: String? = nil
+    @State private var showScheduleEditor: Bool = false
+    @State private var savingSchedule: Bool = false
+    @State private var draftScheduleName: String = ""
+    @State private var draftBasePrice: String = ""
+    @State private var draftBandWidth: String = "0.25"
+    @State private var draftBandCount: Int = 8
+    @State private var draftStepSurcharge: String = "0.05"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -141,6 +149,9 @@ private struct FuelSurchargeBody_395: View {
         .task { await loadAll() }
         .onReceive(NotificationCenter.default.publisher(for: .esangRefreshSurface)) { _ in
             Task { await loadAll() }
+        }
+        .sheet(isPresented: $showScheduleEditor) {
+            scheduleEditorSheet_395
         }
     }
 
@@ -288,12 +299,10 @@ private struct FuelSurchargeBody_395: View {
                 Rectangle().fill(palette.borderFaint).frame(height: 1)
 
                 if brackets.isEmpty {
-                    // Honest: the fsc_lookup_table band rows have no read
-                    // procedure yet — never an invented staircase.
                     EusoEmptyState(
                         systemImage: "tablecells",
-                        title: "Bracket table not yet available",
-                        subtitle: scheduleLoadNote ?? "Your schedule's diesel-band rows aren't exposed to mobile yet."
+                        title: "No bracket table on file",
+                        subtitle: scheduleLoadNote ?? "Create a table schedule here to persist your FSC ladder."
                     )
                     .padding(.vertical, Space.s3)
                 } else {
@@ -380,7 +389,7 @@ private struct FuelSurchargeBody_395: View {
                 .foregroundStyle(palette.textTertiary)
             Spacer()
             Button {
-                // WIRE: fscEngine.createSchedule (fscEngine.ts:49, mutation · method=table · adds a bracket row)
+                openScheduleEditor_395()
             } label: {
                 Text("+ NEW BRACKET")
                     .font(EType.micro).tracking(0.4).fontWeight(.heavy)
@@ -393,32 +402,42 @@ private struct FuelSurchargeBody_395: View {
     // MARK: - CTA pair
 
     private var ctaRow_395: some View {
-        HStack(spacing: Space.s2) {
-            CTAButton(
-                title: "Refresh PADD prices",
-                action: {
-                    // Live re-pull of the EIA PADD-3 diesel index lights the
-                    // hero gauge. The server-side snapshot write is the
-                    // fscEngine mutation below (not yet on iOS).
-                    // WIRE: fscEngine.updatePaddPrices (fscEngine.ts:172, mutation · writes hz_fuel_prices + fsc_history + blockchainAudit, broadcasts FSC_SCHEDULE_UPDATED)
-                    Task { await loadAll() }
-                },
-                isLoading: refreshing
-            )
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: Space.s2) {
+                CTAButton(
+                    title: "Refresh PADD prices",
+                    action: {
+                        Task { await refreshPaddPrices_395() }
+                    },
+                    isLoading: refreshing
+                )
 
-            Button {
-                // WIRE: fscEngine.createSchedule (fscEngine.ts:49, mutation · method=table · tableEntries[])
-            } label: {
-                Text("Edit table")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 132)
-                    .frame(minHeight: 48)
-                    .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCardSoft))
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                Button {
+                    openScheduleEditor_395()
+                } label: {
+                    Text(activeScheduleId == nil ? "Create table" : "New table")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(width: 132)
+                        .frame(minHeight: 48)
+                        .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(palette.bgCardSoft))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Edit surcharge table")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Edit surcharge table")
+            if let msg = scheduleActionError ?? scheduleActionMessage {
+                HStack(spacing: 8) {
+                    Image(systemName: scheduleActionError == nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(scheduleActionError == nil ? Brand.success : Brand.danger)
+                    Text(msg)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(scheduleActionError == nil ? palette.textSecondary : Brand.danger)
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                }
+            }
         }
     }
 
@@ -472,6 +491,48 @@ private struct FuelSurchargeBody_395: View {
         let paddPrice: Double
         let basePrice: Double
     }
+    private struct LookupWire_395: Decodable {
+        let schedule: LookupSchedule_395?
+        let brackets: [LookupBracket_395]
+    }
+    private struct LookupSchedule_395: Decodable {
+        let id: Int
+        let scheduleName: String
+        let method: String
+        let paddRegion: String
+        let basePrice: Double?
+        let lastPaddPrice: Double?
+        let isActive: Bool
+    }
+    private struct LookupBracket_395: Decodable {
+        let id: Int
+        let fuelPriceMin: Double
+        let fuelPriceMax: Double
+        let surchargeAmount: Double
+    }
+    private struct LookupInput_395: Encodable { let scheduleId: Int? }
+    private struct TableEntryInput_395: Encodable {
+        let fuelPriceMin: Double
+        let fuelPriceMax: Double
+        let surchargeAmount: Double
+    }
+    private struct CreateScheduleInput_395: Encodable {
+        let scheduleName: String
+        let method: String
+        let paddRegion: String
+        let fuelType: String?
+        let updateFrequency: String?
+        let basePrice: Double?
+        let tableEntries: [TableEntryInput_395]?
+    }
+    private struct CreateScheduleOut_395: Decodable {
+        let id: Int
+        let scheduleName: String
+        let status: String
+    }
+    private struct PaddUpdateOut_395: Decodable {
+        let updatedCount: Int?
+    }
 
     private func loadAll() async {
         refreshing = true
@@ -479,22 +540,30 @@ private struct FuelSurchargeBody_395: View {
 
         // 1. Live PADD-3 Gulf Coast diesel index → hero gauge + national line.
         var livePadd: Double? = nil
-        if let diesel = try? await EusoTripAPI.shared.rateSheet.getCurrentDiesel(padd: "3") {
+        do {
+            let diesel = try await EusoTripAPI.shared.rateSheet.getCurrentDiesel(padd: "3")
             applyDiesel_395(diesel)
             livePadd = diesel.price
+            liveDieselValue = diesel.price
+        } catch {
+            scheduleActionError = "Diesel index sync failed. \(error.eusoUserCopy)"
         }
 
         // 2. Live schedule header → identity + method + base peg + surcharge-now.
         do {
+            scheduleLoadNote = nil
             let wire: FscSchedulesWire_395 = try await EusoTripAPI.shared.query(
                 "fscEngine.getSchedules", input: SchedulesInput_395(isActive: true))
             guard let schedule = wire.schedules.first else {
+                activeScheduleId = nil
                 scheduleId = "—"
                 methodLabel = "—"
                 appliedSurcharge = "—"
-                scheduleLoadNote = "No FSC schedule on file - create one from the web portal."
+                brackets = []
+                scheduleLoadNote = "No FSC schedule on file. Create a table schedule here to persist your ladder."
                 return
             }
+            activeScheduleId = schedule.id
             scheduleId = schedule.scheduleName.uppercased()
             let freq = (schedule.updateFrequency ?? "weekly").uppercased()
             methodLabel = "\(schedule.method.uppercased()) · \(freq)"
@@ -516,20 +585,187 @@ private struct FuelSurchargeBody_395: View {
                 }
             case "table":
                 // Real band lookup against the live PADD price.
-                if let preview: PreviewWire_395 = try? await EusoTripAPI.shared.query(
-                    "fscEngine.getSchedulePreview",
-                    input: PreviewInput_395(scheduleId: schedule.id, paddPrice: livePadd)
-                ), preview.fsc > 0 {
-                    appliedSurcharge = String(format: "$%.2f", preview.fsc)
-                    surchargeUnit = "/mi"
+                do {
+                    let preview: PreviewWire_395 = try await EusoTripAPI.shared.query(
+                        "fscEngine.getSchedulePreview",
+                        input: PreviewInput_395(scheduleId: schedule.id, paddPrice: livePadd)
+                    )
+                    if preview.fsc > 0 {
+                        appliedSurcharge = String(format: "$%.2f", preview.fsc)
+                        surchargeUnit = "/mi"
+                    }
+                } catch {
+                    scheduleActionError = "FSC preview sync failed. \(error.eusoUserCopy)"
                 }
-                scheduleLoadNote = "Schedule \(schedule.scheduleName) is table-based - its band rows aren't exposed to mobile yet."
+                await loadLookupTable_395(scheduleId: schedule.id, livePadd: livePadd)
             default:
+                brackets = []
+                scheduleLoadNote = "This active FSC schedule uses \(schedule.method.uppercased()); bracket rows apply to table schedules."
                 break
             }
         } catch {
-            scheduleLoadNote = "Couldn't reach the FSC engine - retry."
+            scheduleLoadNote = "Couldn't reach the FSC engine. Retry from this screen."
+            scheduleActionError = error.eusoUserCopy
         }
+    }
+
+    private func loadLookupTable_395(scheduleId: Int, livePadd: Double?) async {
+        do {
+            let lookup: LookupWire_395 = try await EusoTripAPI.shared.query(
+                "fscEngine.getLookupTable",
+                input: LookupInput_395(scheduleId: scheduleId)
+            )
+            brackets = mapLookupBrackets_395(lookup.brackets, livePadd: livePadd)
+            if brackets.isEmpty {
+                scheduleLoadNote = "Schedule \(lookup.schedule?.scheduleName ?? self.scheduleId) has no bracket rows yet. Add a table schedule here."
+            } else {
+                scheduleLoadNote = nil
+            }
+        } catch {
+            brackets = []
+            scheduleLoadNote = "Couldn't load FSC bracket rows. \(error.eusoUserCopy)"
+        }
+    }
+
+    private func mapLookupBrackets_395(_ rows: [LookupBracket_395], livePadd: Double?) -> [FscBracket_395] {
+        let maxSurcharge = max(rows.map(\.surchargeAmount).max() ?? 0, 0.01)
+        return rows.map { row in
+            let active = livePadd.map { $0 >= row.fuelPriceMin && $0 <= row.fuelPriceMax } ?? false
+            return FscBracket_395(
+                id: "\(row.id)",
+                range: "\(formatPrice_395(row.fuelPriceMin)) – \(formatPrice_395(row.fuelPriceMax))",
+                surcharge: formatPrice_395(row.surchargeAmount),
+                barFraction: min(1.0, max(0.08, row.surchargeAmount / maxSurcharge)),
+                active: active
+            )
+        }
+    }
+
+    private func refreshPaddPrices_395() async {
+        guard !refreshing else { return }
+        refreshing = true
+        scheduleActionError = nil
+        scheduleActionMessage = nil
+        defer { refreshing = false }
+        do {
+            let out: PaddUpdateOut_395 = try await EusoTripAPI.shared.mutationNoInput("fscEngine.updatePaddPrices")
+            scheduleActionMessage = "PADD prices refreshed · \(out.updatedCount ?? 0) active schedule\(out.updatedCount == 1 ? "" : "s") updated."
+        } catch {
+            scheduleActionError = "PADD refresh failed. \(error.eusoUserCopy)"
+        }
+        await loadAll()
+    }
+
+    private func openScheduleEditor_395() {
+        scheduleActionError = nil
+        scheduleActionMessage = nil
+        let base = liveDieselValue ?? 3.50
+        draftScheduleName = "PADD 3 table \(shortDate_395(Date().ISO8601Format()))"
+        draftBasePrice = String(format: "%.2f", base)
+        draftBandWidth = "0.25"
+        draftBandCount = 8
+        draftStepSurcharge = "0.05"
+        showScheduleEditor = true
+    }
+
+    private var scheduleEditorSheet_395: some View {
+        NavigationStack {
+            Form {
+                Section("Schedule") {
+                    TextField("Schedule name", text: $draftScheduleName)
+                    TextField("Base diesel price", text: $draftBasePrice)
+                        .keyboardType(.decimalPad)
+                    TextField("Band width", text: $draftBandWidth)
+                        .keyboardType(.decimalPad)
+                    Stepper("Bands: \(draftBandCount)", value: $draftBandCount, in: 3...16)
+                    TextField("Surcharge per band", text: $draftStepSurcharge)
+                        .keyboardType(.decimalPad)
+                }
+                Section("Preview") {
+                    ForEach(buildDraftTableEntries_395().indices, id: \.self) { idx in
+                        let row = buildDraftTableEntries_395()[idx]
+                        HStack {
+                            Text("\(formatPrice_395(row.fuelPriceMin)) – \(formatPrice_395(row.fuelPriceMax))")
+                            Spacer()
+                            Text(formatPrice_395(row.surchargeAmount))
+                                .fontWeight(.semibold)
+                        }
+                    }
+                }
+                if let scheduleActionError {
+                    Section {
+                        Text(scheduleActionError)
+                            .foregroundStyle(Brand.danger)
+                    }
+                }
+            }
+            .navigationTitle("FSC table")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showScheduleEditor = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(savingSchedule ? "Saving..." : "Create") {
+                        Task { await createSchedule_395() }
+                    }
+                    .disabled(savingSchedule || trim_395(draftScheduleName).isEmpty || buildDraftTableEntries_395().isEmpty)
+                }
+            }
+        }
+    }
+
+    private func buildDraftTableEntries_395() -> [TableEntryInput_395] {
+        guard draftBandCount > 0,
+              let base = Double(trim_395(draftBasePrice)),
+              let width = Double(trim_395(draftBandWidth)), width > 0,
+              let surchargeStep = Double(trim_395(draftStepSurcharge)), surchargeStep >= 0 else { return [] }
+        let start = max(0, base - (width * 2))
+        return (0..<draftBandCount).map { index in
+            let priceMin = start + (Double(index) * width)
+            let priceMax = priceMin + width
+            let surcharge = max(0, Double(index - 1) * surchargeStep)
+            return TableEntryInput_395(
+                fuelPriceMin: priceMin,
+                fuelPriceMax: priceMax,
+                surchargeAmount: surcharge
+            )
+        }
+    }
+
+    private func createSchedule_395() async {
+        let entries = buildDraftTableEntries_395()
+        guard !entries.isEmpty else {
+            scheduleActionError = "Enter a base price, band width, and surcharge step."
+            return
+        }
+        guard !savingSchedule else { return }
+        savingSchedule = true
+        scheduleActionError = nil
+        scheduleActionMessage = nil
+        defer { savingSchedule = false }
+        do {
+            let out: CreateScheduleOut_395 = try await EusoTripAPI.shared.mutation(
+                "fscEngine.createSchedule",
+                input: CreateScheduleInput_395(
+                    scheduleName: trim_395(draftScheduleName),
+                    method: "table",
+                    paddRegion: "3",
+                    fuelType: "diesel",
+                    updateFrequency: "weekly",
+                    basePrice: Double(trim_395(draftBasePrice)),
+                    tableEntries: entries
+                )
+            )
+            showScheduleEditor = false
+            scheduleActionMessage = "Created \(out.scheduleName) · \(out.status.uppercased())."
+            await loadAll()
+        } catch {
+            scheduleActionError = "FSC schedule wasn't saved. \(error.eusoUserCopy)"
+        }
+    }
+
+    private func trim_395(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func applyDiesel_395(_ d: RateSheetAPI.CurrentDiesel) {

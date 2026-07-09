@@ -19,6 +19,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - Screen
 
@@ -121,7 +122,7 @@ struct PretripDVIR: View {
             // Save-and-exit chip. Calls the `lifecycleExit` env closure that
             // ContentView wires to `trip.reset()`, returning the driver to
             // the idle Home dashboard. The button used to be an empty
-            // `Button { }` placeholder (left over from the mock pass), which
+            // dead placeholder tap (left over from the mock pass), which
             // made the DVIR screen un-exitable until the user tapped Submit.
             Button {
                 exit?()
@@ -230,8 +231,9 @@ struct PretripDVIR: View {
                     // 2026-05-05.
                     AIVisualScanButton(
                         title: "Scan vehicle with ESANG Vision",
-                        subtitle: "Photo → AI inspection (brakes, lights, leaks, tire wear)",
-                        procPath: "visualIntelligence.inspectDVIR"
+                        subtitle: "Camera → AI inspection (brakes, lights, leaks, tire wear)",
+                        procPath: "visualIntelligence.inspectDVIR",
+                        context: ["inspectionPoint": "full vehicle walkaround"]
                     ) { result in
                         // Surface the result by appending findings to
                         // the current DVIR notes (the editor view-model
@@ -252,6 +254,13 @@ struct PretripDVIR: View {
                     ForEach(Array(vm.sections.enumerated()), id: \.element.id) { idx, section in
                         sectionBlock(section, index: idx + 1, total: vm.sections.count)
                     }
+                    // COUNTRY-DONE (wireframe 104): which inspection regulation
+                    // this DVIR certifies under, by jurisdiction. US active until
+                    // the per-country standard resolver lands (named gap:
+                    // dvir.getInspectionStandard — DVIR reads/writes exist).
+                    DriverInspectionStandardBand(active: .us)
+                        .padding(.horizontal, Space.s5)
+                        .padding(.top, Space.s3)
                     signatureCard
                         .padding(Space.s5)
                 }
@@ -356,12 +365,16 @@ struct PretripDVIR: View {
         .accessibilityLabel(Text("\(item.name), \(trailLabel(for: item.status))"))
     }
 
-    /// "Scan with Astra" camera button. Opens the camera sheet; the
+    /// ESANG Vision camera button. Opens the camera sheet; the
     /// captured photo flows into `vm.analyzeItemWithAstra(itemId:image:)`.
     /// Shows a spinner while the analyze call is in flight.
     @ViewBuilder
     private func astraScanButton(for item: PretripDVIRViewModel.EditableItem) -> some View {
         Button {
+            guard UIImagePickerController.isSourceTypeAvailable(.camera) else {
+                vm.astraErrorMessage = "Camera is unavailable on this device. ESANG Vision needs a live camera capture."
+                return
+            }
             astraCaptureForItemId = item.id
         } label: {
             ZStack {
@@ -378,7 +391,7 @@ struct PretripDVIR: View {
         }
         .buttonStyle(.plain)
         .disabled(vm.astraInFlightItemId != nil)
-        .accessibilityLabel("Scan \(item.name) with Astra")
+        .accessibilityLabel("Scan \(item.name) with ESANG Vision")
     }
 
     /// Inline strip under an item row showing the Astra observation
@@ -391,7 +404,7 @@ struct PretripDVIR: View {
                 Image(systemName: "sparkles")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("ASTRA")
+                Text("ESANG VISION")
                     .font(.system(size: 9, weight: .heavy))
                     .tracking(0.8)
                     .foregroundStyle(palette.textTertiary)
@@ -788,9 +801,8 @@ private struct AstraCameraSheet: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> UIImagePickerController {
         let picker = UIImagePickerController()
-        // Camera if available, otherwise fall back to library so the
-        // affordance is testable on simulator.
-        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+        picker.sourceType = .camera
+        picker.cameraCaptureMode = .photo
         picker.allowsEditing = false
         picker.delegate = context.coordinator
         picker.title = "Scan \(itemLabel)"

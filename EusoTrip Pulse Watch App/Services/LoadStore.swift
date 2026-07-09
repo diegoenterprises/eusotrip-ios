@@ -5,7 +5,7 @@
 //  Single source of truth on the wrist for the active load + any
 //  upcoming assignments. Updated from:
 //    1. WCSession `load.active` pushes from the phone
-//    2. tRPC `loads.getTrackedLoads` pulls on `refresh(auth:)`
+//    2. tRPC `loads.list` (caller-scoped) pulls on `refresh(auth:)`
 //    3. Offline-queue replay when the watch reconnects
 //
 
@@ -36,7 +36,7 @@ final class LoadStore: ObservableObject {
         // Never fall back to a placeholder load — if the watch has no
         // cached snapshot from a previous session, it should render the
         // "no active load" empty state until the phone pushes one or
-        // `refresh(auth:)` pulls one from `loads.getTrackedLoads`.
+        // `refresh(auth:)` pulls one from `loads.list`.
         if let data = try? Data(contentsOf: fileURL),
            let snap = try? JSONDecoder().decode(Snapshot.self, from: data) {
             active = snap.active
@@ -64,21 +64,59 @@ final class LoadStore: ObservableObject {
 
     // MARK: Network
 
-    /// Pull loads.getTrackedLoads for the active driver.
+    /// Statuses that count as a live assignment on the wrist. Terminal
+    /// and pre-award buckets are excluded so `active` is genuinely the
+    /// load the driver is working.
+    private static let activeStatuses: Set<String> = [
+        "accepted", "assigned", "confirmed",
+        "en_route_pickup", "at_pickup", "pickup_checkin", "loading",
+        "loading_exception", "loaded",
+        "in_transit", "transit_hold", "transit_exception",
+        "at_delivery", "delivery_checkin", "unloading",
+        "unloading_exception", "unloaded", "pod_pending",
+    ]
+
+    /// Pull the caller-scoped `loads.list` (routers/loads.ts:1033 — for
+    /// a DRIVER it filters `loads.driverId = user OR shipperId = user`).
+    /// The previous endpoint (`loads.getTrackedLoads`) is SHIPPER-scoped:
+    /// a driver always got `[]`, which nulled the phone-pushed active
+    /// load on every foreground.
     func refresh(auth: AuthStore) async {
         guard auth.isSignedIn else { return }
         do {
             let client = EsangClient(auth: auth)
-            let data = try await client.queryJSON("loads.getTrackedLoads")
-            if let parsed = try? JSONDecoder().decode(TRPCEnvelope.self, from: data) {
-                let loads = parsed.result.data.json.map { $0.asWatchLoad }
-                active = loads.first
-                upcoming = Array(loads.dropFirst())
-                lastRefresh = Date()
-                persist()
-                if let first = loads.first { seedCRDTIfNeeded(for: first) }
-                ComplicationRefresher.shared.reloadTimelines()
+            let data = try await client.queryJSON("loads.list", input: ["limit": 20])
+            guard let parsed = try? JSONDecoder().decode(TRPCEnvelope.self, from: data) else {
+                return // shape drift — keep the local snapshot, never zero it
             }
+            let live = parsed.result.data.json
+                .filter { Self.activeStatuses.contains($0.status ?? "") }
+                .map { $0.asWatchLoad }
+            guard !live.isEmpty else {
+                // Successful-but-empty pull: NEVER clobber a phone-pushed
+                // snapshot with nil. The phone owns clearing via the
+                // explicit `load.active cleared` push (clearActive()).
+                lastRefresh = Date()
+                return
+            }
+            // Prefer keeping the phone-pushed active identity when the
+            // server list contains it, so the wrist doesn't reshuffle
+            // mid-trip just because of server sort order.
+            if let current = active, let match = live.first(where: { $0.id == current.id }) {
+                active = match
+                upcoming = live.filter { $0.id != match.id }
+            } else {
+                active = live.first
+                upcoming = Array(live.dropFirst())
+            }
+            lastRefresh = Date()
+            persist()
+            if let first = active { seedCRDTIfNeeded(for: first) }
+            ComplicationRefresher.shared.reloadTimelines()
+        } catch EsangError.unauthorized {
+            // Expired wrist JWT masquerades as "watch not connected" —
+            // ask the phone for a fresh mirror instead of dying silent.
+            WatchConnectivityManager.shared.requestAuthMirror()
         } catch {
             // swallow — keep the stale local copy
         }
@@ -93,7 +131,10 @@ final class LoadStore: ObservableObject {
             loadId: load.id,
             lifecycle: load.status,
             assignedDriverId: "",
-            estimatedArrivalAt: load.deliverBy,
+            // CRDT-internal ETA seed only (never rendered): fall back
+            // to `now` when the server row carried no delivery date so
+            // the vector-clock slot still initializes.
+            estimatedArrivalAt: load.deliverBy ?? Date(),
             podUploaded: false,
             notes: ""
         )
@@ -142,8 +183,8 @@ final class LoadStore: ObservableObject {
             originState: json["originState"] as? String ?? "",
             destCity: json["destCity"] as? String ?? "",
             destState: json["destState"] as? String ?? "",
-            pickupAt: parseDate(json["pickupAt"]) ?? Date().addingTimeInterval(3600),
-            deliverBy: parseDate(json["deliverBy"]) ?? Date().addingTimeInterval(3600 * 6),
+            pickupAt: parseDate(json["pickupAt"]),
+            deliverBy: parseDate(json["deliverBy"]),
             ratePerMile: json["ratePerMile"] as? Double,
             totalRate: json["totalRate"] as? Double,
             miles: json["miles"] as? Double,
@@ -181,42 +222,67 @@ final class LoadStore: ObservableObject {
         let result: Result
     }
 
+    /// Mirror of the REAL `loads.list` row (routers/loads.ts:1165-1207):
+    /// id is a String, origin/destination are {city,state,address}
+    /// objects, rate/distance are numbers, pickupDate/deliveryDate are
+    /// LOCALE date strings ("M/D/YYYY" via toLocaleDateString), cargo
+    /// type marks hazmat, and companyName/shipperName identify the
+    /// counterparty.
     private struct RemoteLoad: Decodable {
+        struct Place: Decodable {
+            let city: String?
+            let state: String?
+        }
         let id: String
-        let displayId: String?
-        let originCity: String?
-        let originState: String?
-        let destinationCity: String?
-        let destinationState: String?
-        let pickupAt: String?
-        let deliverBy: String?
-        let ratePerMile: Double?
-        let totalRate: Double?
-        let miles: Double?
+        let loadNumber: String?
+        let origin: Place?
+        let destination: Place?
+        let rate: Double?
+        let distance: Double?
         let status: String?
-        let hazmat: Bool?
-        let temperatureF: Int?
-        let equipment: String?
-        let brokerName: String?
+        let cargoType: String?
+        let equipmentType: String?
+        let companyName: String?
+        let shipperName: String?
+        let pickupDate: String?
+        let deliveryDate: String?
+
+        /// Parses the server's `toLocaleDateString()` output
+        /// ("6/12/2026") — nil when absent or unparseable; never
+        /// fabricated.
+        private static func parseLocaleDate(_ raw: String?) -> Date? {
+            guard let raw, !raw.isEmpty else { return nil }
+            if let iso = ISO8601DateFormatter.iso.date(from: raw) { return iso }
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "M/d/yyyy"
+            return f.date(from: raw)
+        }
 
         var asWatchLoad: WatchLoad {
-            WatchLoad(
+            let mileage = (distance ?? 0) > 0 ? distance : nil
+            let total = (rate ?? 0) > 0 ? rate : nil
+            let perMile: Double? = {
+                guard let total, let mileage, mileage > 0 else { return nil }
+                return total / mileage
+            }()
+            return WatchLoad(
                 id: id,
-                displayId: displayId ?? id,
-                originCity: originCity ?? "",
-                originState: originState ?? "",
-                destCity: destinationCity ?? "",
-                destState: destinationState ?? "",
-                pickupAt: ISO8601DateFormatter.iso.date(from: pickupAt ?? "") ?? Date().addingTimeInterval(3600),
-                deliverBy: ISO8601DateFormatter.iso.date(from: deliverBy ?? "") ?? Date().addingTimeInterval(6 * 3600),
-                ratePerMile: ratePerMile,
-                totalRate: totalRate,
-                miles: miles,
+                displayId: loadNumber ?? id,
+                originCity: origin?.city ?? "",
+                originState: origin?.state ?? "",
+                destCity: destination?.city ?? "",
+                destState: destination?.state ?? "",
+                pickupAt: Self.parseLocaleDate(pickupDate),
+                deliverBy: Self.parseLocaleDate(deliveryDate),
+                ratePerMile: perMile,
+                totalRate: total,
+                miles: mileage,
                 status: status ?? "assigned",
-                hazmat: hazmat ?? false,
-                temperatureF: temperatureF,
-                equipment: equipment,
-                brokerName: brokerName
+                hazmat: (cargoType ?? "").lowercased() == "hazmat",
+                temperatureF: nil,
+                equipment: equipmentType,
+                brokerName: companyName ?? shipperName
             )
         }
     }

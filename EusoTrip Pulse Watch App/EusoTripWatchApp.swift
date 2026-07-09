@@ -69,9 +69,11 @@ struct EusoTripWatchApp: App {
                         WatchDictationSheet()
                     }
                 .onAppear {
-                    // Wire the static weak accessor immediately so WCSession
-                    // delegate callbacks that race onAppear can still resolve.
+                    // Wire the static weak accessors immediately so WCSession
+                    // delegate callbacks + App Intents that race onAppear can
+                    // still resolve the live stores.
                     AuthStore.shared = auth
+                    EsangSession.shared = esang
                     // Everything else is deferred off the first frame. Each
                     // step is isolated so a failure in one doesn't prevent
                     // the others. This fixes the build-21 launch crash where

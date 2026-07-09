@@ -177,14 +177,18 @@ private struct Railcar585: Decodable, Identifiable {
         containerNumber = (try? c.decode(String.self, forKey: .containerNumber))
             ?? (try? c.decode(String.self, forKey: .container))
         // speed may arrive as Double or Int → tolerate both before falling back to the `speed` alias.
-        speedMph  = (try? c.decode(Double.self, forKey: .speedMph))
-            ?? (try? c.decode(Int.self, forKey: .speedMph)).map(Double.init)
-            ?? (try? c.decode(Double.self, forKey: .speed))
-            ?? (try? c.decode(Int.self, forKey: .speed)).map(Double.init)
-        dwellHours = (try? c.decode(Double.self, forKey: .dwellHours))
-            ?? (try? c.decode(Int.self, forKey: .dwellHours)).map(Double.init)
-            ?? (try? c.decode(Double.self, forKey: .dwell))
-            ?? (try? c.decode(Int.self, forKey: .dwell)).map(Double.init)
+        // Pre-bind each decode to an explicitly-typed local so the type-checker does
+        // not have to resolve the whole `??` chain as one expression (which times out).
+        let speedMphD: Double? = try? c.decode(Double.self, forKey: .speedMph)
+        let speedMphI: Int?    = try? c.decode(Int.self, forKey: .speedMph)
+        let speedD: Double?    = try? c.decode(Double.self, forKey: .speed)
+        let speedI: Int?       = try? c.decode(Int.self, forKey: .speed)
+        speedMph = speedMphD ?? speedMphI.map(Double.init) ?? speedD ?? speedI.map(Double.init)
+        let dwellHoursD: Double? = try? c.decode(Double.self, forKey: .dwellHours)
+        let dwellHoursI: Int?    = try? c.decode(Int.self, forKey: .dwellHours)
+        let dwellD: Double?      = try? c.decode(Double.self, forKey: .dwell)
+        let dwellI: Int?         = try? c.decode(Int.self, forKey: .dwell)
+        dwellHours = dwellHoursD ?? dwellHoursI.map(Double.init) ?? dwellD ?? dwellI.map(Double.init)
         progressFraction = try? c.decode(Double.self, forKey: .progressFraction)
     }
 
@@ -211,10 +215,11 @@ private struct LiveRailcar585: Decodable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        speed = (try? c.decode(Double.self, forKey: .speed))
-            ?? (try? c.decode(Int.self, forKey: .speed)).map(Double.init)
-            ?? (try? c.decode(Double.self, forKey: .speedMph))
-            ?? (try? c.decode(Int.self, forKey: .speedMph)).map(Double.init)
+        let speedD: Double?    = try? c.decode(Double.self, forKey: .speed)
+        let speedI: Int?       = try? c.decode(Int.self, forKey: .speed)
+        let speedMphD: Double? = try? c.decode(Double.self, forKey: .speedMph)
+        let speedMphI: Int?    = try? c.decode(Int.self, forKey: .speedMph)
+        speed = speedD ?? speedI.map(Double.init) ?? speedMphD ?? speedMphI.map(Double.init)
         location = (try? c.decode(String.self, forKey: .location))
             ?? (try? c.decode(String.self, forKey: .currentLocation))
         status = try? c.decode(String.self, forKey: .status)

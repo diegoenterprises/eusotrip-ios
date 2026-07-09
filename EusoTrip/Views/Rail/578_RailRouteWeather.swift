@@ -14,7 +14,7 @@
 //    weather.getRouteConditions(EXISTS weather.ts:392)  → {available?,origin,destination,
 //        overallRisk, segments:[{from,to,risk,condition,weatherCode,windGust,visibility,
 //        precipitationIntensity,floods[],overallRisk}], advisories:[{eventType,severity,
-//        headline,expiresAt}]}  — Tomorrow.io-sourced; per-segment weather is enterprise-
+//        headline,expiresAt}]}  — Apple WeatherKit-sourced; per-segment weather is enterprise-
 //        gated (available:false / nil today), so the screen renders an HONEST empty corridor.
 //        Input: {origin:{city,state}, destination:{city,state}} — derived from the first
 //        REAL impacted load's "City, ST" endpoints; never invented.
@@ -64,7 +64,7 @@ private struct ImpactedLoad578: Decodable, Identifiable {
 }
 
 /// `weather.getRouteConditions` — the corridor envelope. The server is now
-/// Tomorrow.io-sourced; every weather field is enterprise-gated, so all the
+/// Apple WeatherKit-sourced; every weather field is enterprise-gated, so all the
 /// new keys are OPTIONAL and stay nil today (we render the honest empty
 /// state). `available` is the gate flag (absent on the legacy alert-only
 /// path → treated as `nil`, which the screen reads as "feed not configured").
@@ -103,7 +103,7 @@ private struct RouteAdvisory578: Decodable, Identifiable {
     var id: String { (headline ?? eventType ?? "advisory") + (expiresAt ?? "") }
 }
 
-/// A corridor segment with the new Tomorrow.io per-segment weather. EVERY
+/// A corridor segment with the new Apple WeatherKit per-segment weather. EVERY
 /// field is optional → `Decodable` synthesizes cleanly and the row collapses
 /// to its honest endpoints when the enterprise feed is dark. (ForEach keys on
 /// the enumerated offset, so no `Identifiable`/synthetic id is needed.)
@@ -112,7 +112,7 @@ private struct RouteSegment578: Decodable {
     let to: String?
     let risk: String?                   // per-segment riskTier ladder
     let condition: String?
-    // Tomorrow.io per-segment metrics (gated; nil until the key lands).
+    // Apple WeatherKit per-segment metrics (gated; nil until the key lands).
     let weatherCode: Int?
     let windGust: Double?               // mph
     let visibility: Double?             // mi
@@ -491,7 +491,7 @@ private struct RailRouteWeatherBody: View {
         .padding(.horizontal, 14).padding(.vertical, 12)
     }
 
-    /// One corridor leg: condition glyph (Tomorrow.io weatherCode) + the
+    /// One corridor leg: condition glyph (Apple WeatherKit weatherCode) + the
     /// endpoints + a riskTier dot, with the gated metrics (gust · vis ·
     /// precip) shown only when present.
     private func segmentRow(_ seg: RouteSegment578) -> some View {
@@ -506,7 +506,7 @@ private struct RailRouteWeatherBody: View {
             }
         }()
         return HStack(alignment: .top, spacing: 12) {
-            // Tomorrow.io condition glyph (honest unknown-cloud at code 0).
+            // Apple WeatherKit condition glyph (honest unknown-cloud at code 0).
             WeatherIcons.symbolView(for: seg.weatherCode ?? 0, size: 28)
                 .frame(width: 28, height: 28)
             VStack(alignment: .leading, spacing: 5) {
@@ -783,7 +783,7 @@ private struct RailRouteWeatherBody: View {
                 Text("\(impactedCount) active shipment\(impactedCount == 1 ? "" : "s") impacted")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(palette.textPrimary)
-                Text("getImpactedLoads · \(rerouteCount) reroute candidate\(rerouteCount == 1 ? "" : "s")")
+                Text("Impacted loads · \(rerouteCount) reroute candidate\(rerouteCount == 1 ? "" : "s")")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(palette.textSecondary)
             }
@@ -803,18 +803,45 @@ private struct RailRouteWeatherBody: View {
 
     private var ctaPair: some View {
         HStack(spacing: Space.s2) {
-            CTAButton(title: "Reroute advisory", action: {}, leadingIcon: "arrow.triangle.branch")
-            Button {} label: {
-                Text("Notify shipper")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.textPrimary)
-                    .frame(width: 148, height: 48)
-                    .background(palette.bgCard)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-            }
-            .buttonStyle(.plain)
+            RailSecondaryActionButton(
+                title: "Reroute review",
+                sheetTitle: "Route weather reroute context",
+                lines: rerouteReviewLines,
+                width: 176,
+                systemImage: "arrow.triangle.branch"
+            )
+            RailSecondaryActionButton(
+                title: "Notify review",
+                sheetTitle: "Shipper weather notification context",
+                lines: notifyReviewLines,
+                systemImage: "paperplane.fill"
+            )
         }
+    }
+
+    private var rerouteReviewLines: [String] {
+        var lines = [
+            "Risk \(overallRisk.uppercased()) · impacted \(impactedCount) · reroute candidates \(rerouteCount)",
+            corridorCaption ?? "Corridor endpoints pending"
+        ]
+        lines.append(contentsOf: (route?.segments ?? []).prefix(6).map { seg in
+            "\(seg.from ?? "origin") → \(seg.to ?? "destination") · \(seg.risk ?? seg.overallRisk ?? "risk pending") · \(seg.condition ?? "condition pending")"
+        })
+        lines.append(contentsOf: alerts.prefix(4).map { alert in
+            "\(alert.headline ?? alert.eventType ?? "Alert") · \(alert.severity ?? "severity pending") · \(statesLabel(alert.states))"
+        })
+        return lines
+    }
+
+    private var notifyReviewLines: [String] {
+        var lines = [
+            "\(impactedCount) impacted load\(impactedCount == 1 ? "" : "s") · corridor \(overallRisk)",
+            "Alerts \(alerts.count) · route feed \(corridorAvailable ? "available" : "unavailable")"
+        ]
+        lines.append(contentsOf: impacted.prefix(6).map { load in
+            "\(load.loadNumber ?? "Load") · \(load.origin ?? "origin") → \(load.destination ?? "destination") · \(load.alertSeverity ?? "severity pending")"
+        })
+        return lines
     }
 
     // MARK: - Load

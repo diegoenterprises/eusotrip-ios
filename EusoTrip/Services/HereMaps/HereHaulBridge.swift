@@ -84,9 +84,9 @@ public final class HereHaulBridge {
         reward(for: kind).xp > 0
     }
 
-    /// Engage a monetization / amenity pin → credit The Haul. Posts a local
-    /// reward event (instant UI), and best-effort starts the matching
-    /// server "special" mission. Returns a short confirmation for the card.
+    /// Engage a monetization / amenity pin → credit The Haul. The backend
+    /// credit is the source of truth; the local reward event posts only after
+    /// the server confirms it. Mission start is additive best-effort.
     @discardableResult
     public func engage(_ detail: HereAddOnDetail) async -> String {
         let r = Self.reward(for: detail.kind)
@@ -103,10 +103,42 @@ public final class HereHaulBridge {
         let event = HaulRewardEvent(
             sourceId: detail.id, kind: detail.kind, title: detail.title,
             xp: r.xp, points: r.points, reason: reason)
-        NotificationCenter.default.post(name: .eusoHaulReward, object: event)
 
-        // Best-effort server credit: start the first open "special"
-        // (sponsorship / engagement) mission so it shows in mission progress.
+        var poiVisits: [String: Int] = [:]
+        switch detail.kind {
+        case .fuel: poiVisits["fuel"] = 1
+        case .charger: poiVisits["ev_charger"] = 1
+        case .truckStop: poiVisits["truck_stop"] = 1
+        case .parking: poiVisits["truck_parking"] = 1
+        case .weigh: poiVisits["weigh_station"] = 1
+        default: break
+        }
+        let engagement = GamificationAPI.HereEngagementOutcome(
+            sourceId: detail.id,
+            kind: detail.kind.rawValue,
+            title: detail.title,
+            xp: r.xp,
+            points: r.points,
+            reason: reason
+        )
+
+        do {
+            let response = try await EusoTripAPI.shared.gamification.recordHereDeliveryOutcome(
+                poiVisitsByCategory: poiVisits.isEmpty ? nil : poiVisits,
+                evSessions: detail.kind == .charger ? 1 : nil,
+                adZoneKm: detail.kind == .adZone ? 1 : nil,
+                engagement: engagement
+            )
+            guard response.engagementCredited ?? false else {
+                return "Already credited today"
+            }
+            NotificationCenter.default.post(name: .eusoHaulReward, object: event)
+        } catch {
+            return "Could not credit The Haul"
+        }
+
+        // Mission start remains best-effort so the durable credit above is
+        // the source of truth, and discovery of a matching mission is additive.
         Task {
             if let missions = try? await EusoTripAPI.shared.gamification.getMissions(category: "special") {
                 let pool = missions.available + missions.active
@@ -120,7 +152,7 @@ public final class HereHaulBridge {
     }
 
     /// Push HERE locationAnalytics coverage into The Haul as territory
-    /// progress (leaderboards + territory badges). Fails soft.
+    /// progress (leaderboards + territory badges).
     func recordCoverage(breadcrumbs: [HereMapsAPI.Breadcrumb]) async {
         guard !breadcrumbs.isEmpty else { return }
         guard let summary = try? await EusoTripAPI.shared.hereMaps.locationAnalytics(breadcrumbs: breadcrumbs)
@@ -130,5 +162,13 @@ public final class HereHaulBridge {
             metros: summary.uniqueMetros ?? [],
             totalKm: summary.totalKm ?? 0)
         NotificationCenter.default.post(name: .eusoHaulTerritory, object: event)
+
+        let corridors = (summary.corridorKm ?? [:])
+            .map { GamificationAPI.HereOutcomeCorridor(corridor: $0.key, kilometres: $0.value) }
+        _ = try? await EusoTripAPI.shared.gamification.recordHereDeliveryOutcome(
+            newStates: summary.uniqueStates,
+            newMetros: summary.uniqueMetros,
+            corridors: corridors.isEmpty ? nil : corridors
+        )
     }
 }

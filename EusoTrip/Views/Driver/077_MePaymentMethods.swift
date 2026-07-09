@@ -156,7 +156,7 @@ struct MePaymentMethods: View {
         EusoEmptyState(
             systemImage: "creditcard",
             title: "No payment methods yet",
-            subtitle: "Link a bank through Plaid for ACH payouts, or attach a card via Stripe. Your credentials never touch EusoTrip's servers."
+            subtitle: "Link a bank through Plaid for ACH payouts, or attach a card via Stripe. EusoTrip never stores your credentials."
         )
     }
 
@@ -168,7 +168,7 @@ struct MePaymentMethods: View {
             Text("Can't load payment methods")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)

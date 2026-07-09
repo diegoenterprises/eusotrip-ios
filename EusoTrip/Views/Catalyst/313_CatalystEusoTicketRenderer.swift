@@ -80,15 +80,17 @@ private enum CatalystDocType: String, CaseIterable, Hashable, Identifiable {
 struct CatalystEusoTicketRendererScreen: View {
     let theme: Theme.Palette
     let loadId: String
+    let initialDoc: String
 
-    init(theme: Theme.Palette, loadId: String = "0") {
+    init(theme: Theme.Palette, loadId: String = "0", initialDoc: String = "BOL") {
         self.theme = theme
         self.loadId = loadId
+        self.initialDoc = initialDoc
     }
 
     var body: some View {
         Shell(theme: theme) {
-            CatalystEusoTicketRenderer(loadId: loadId)
+            CatalystEusoTicketRenderer(loadId: loadId, initialDoc: initialDoc)
         } nav: {
             BottomNav(
                 leading: catalystNavLeading_313(),
@@ -129,13 +131,18 @@ private struct CatalystEusoTicketRenderer: View {
     @State private var dispatchError: String? = nil
     @State private var dispatchedURL: String? = nil
     /// In-app PDF presentation for the dispatched EusoTicket PDF.
-    /// Replaces the prior `UIApplication.shared.open(url)` Safari
+    /// Replaces the prior raw Safari
     /// punt with a native EusoPDFViewer sheet so the catalyst stays
     /// in the EusoTrip app.
     @State private var pdfPresentation: EusoPDFPresentation? = nil
 
     /// Honest no-source token — em-dash everywhere a field is absent.
     private let dash = "—"
+
+    init(loadId: String, initialDoc: String = "BOL") {
+        self.loadId = loadId
+        _selectedDoc = State(initialValue: CatalystDocType(rawValue: initialDoc) ?? .bol)
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {

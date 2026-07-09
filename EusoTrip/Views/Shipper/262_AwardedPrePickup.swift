@@ -24,6 +24,7 @@ struct AwardedPrePickupScreen: View {
 
 private struct AwardedBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.openURL) private var openURL
     let live: ShipperAPI.LifecycleSnapshot
     let loadId: String
 
@@ -113,12 +114,12 @@ private struct AwardedBody: View {
 
     private func callDriver() {
         guard let phone = live.driver?.phone, let url = URL(string: "tel://\(phone.filter(\.isNumber))") else { return }
-        UIApplication.shared.open(url)
+        openURL(url)
     }
 
     private func callFacility() {
         guard let phone = live.pickup?.contactPhone, let url = URL(string: "tel://\(phone.filter(\.isNumber))") else { return }
-        UIApplication.shared.open(url)
+        openURL(url)
     }
 
     private func openContract() {

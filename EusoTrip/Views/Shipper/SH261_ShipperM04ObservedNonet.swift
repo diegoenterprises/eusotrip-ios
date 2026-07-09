@@ -265,7 +265,7 @@ private struct ShipperM04ObservedBody: View {
             LifecycleCard(accentDanger: true) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("OBSERVED QUOTES").font(.system(size: 9, weight: .heavy)).tracking(0.8).foregroundStyle(palette.textTertiary)
-                    Text((err as? EusoTripAPIError)?.errorDescription ?? err.localizedDescription)
+                    Text(err.eusoUserCopy)
                         .font(EType.caption).foregroundStyle(Brand.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }

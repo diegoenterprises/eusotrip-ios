@@ -187,7 +187,7 @@ struct SignInView: View {
 
     private var demoEntryRow: some View {
         VStack(spacing: Space.s2) {
-            Text("Preview without backend")
+            Text("Preview mode")
                 .font(EType.micro).tracking(0.8)
                 .foregroundStyle(palette.textTertiary)
             HStack(spacing: Space.s2) {

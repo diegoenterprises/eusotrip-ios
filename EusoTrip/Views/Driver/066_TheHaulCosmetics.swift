@@ -82,13 +82,13 @@ struct TheHaulCosmetics: View {
                     )
                     section(
                         title: "AVATARS",
-                        subtitle: "Preview updates instantly. Cross-device avatar sync lands when the backend persistence wave ships.",
+                        subtitle: "Preview updates instantly. Cross-device avatar sync appears as soon as your profile saves.",
                         type: "avatar",
                         items: catalog.avatars
                     )
                     section(
                         title: "FRAMES",
-                        subtitle: "Preview updates instantly. Cross-device frame sync lands when the backend persistence wave ships.",
+                        subtitle: "Preview updates instantly. Cross-device frame sync appears as soon as your profile saves.",
                         type: "frame",
                         items: catalog.frames
                     )
@@ -137,7 +137,7 @@ struct TheHaulCosmetics: View {
         EusoEmptyState(
             systemImage: "sparkles",
             title: "No cosmetics in catalog",
-            subtitle: "The server didn't return any avatars, frames or titles. Pull to refresh once your profile is set up."
+            subtitle: "No avatars, frames or titles are available yet. Pull to refresh once your profile is set up."
         )
     }
 
@@ -149,7 +149,7 @@ struct TheHaulCosmetics: View {
             Text("Can't load cosmetics")
                 .font(EType.title)
                 .foregroundStyle(palette.textPrimary)
-            Text(err.localizedDescription)
+            Text(err.eusoUserCopy)
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)

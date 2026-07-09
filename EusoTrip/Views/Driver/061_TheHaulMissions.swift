@@ -506,7 +506,7 @@ struct TheHaulMissions: View {
             HStack(spacing: Space.s2) {
                 Image(systemName: "exclamationmark.triangle")
                     .foregroundColor(palette.danger)
-                Text("Couldn't load - \(err.localizedDescription)")
+                Text("Couldn't load - \(err.eusoUserCopy)")
                     .font(EType.caption)
                     .foregroundColor(palette.textSecondary)
                     .lineLimit(2)
