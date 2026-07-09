@@ -245,6 +245,7 @@
 		BFAD202605200001000100B1 /* Vertical.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000100F1 /* Vertical.swift */; };
 		BFAD202605200001000200B2 /* TrailerCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000200F2 /* TrailerCode.swift */; };
 		BFAD202605200001000300B3 /* LoadStateFSM.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000300F3 /* LoadStateFSM.swift */; };
+		LIFECYCLESTAGE0001 /* LifecycleStage.swift in Sources */ = {isa = PBXBuildFile; fileRef = LIFECYCLESTAGE0002 /* LifecycleStage.swift */; };
 		BFAD202605200001000400B4 /* EquipmentEquivalency.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000400F4 /* EquipmentEquivalency.swift */; };
 		BFAD202605200001000500B5 /* DocumentRequirements.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000500F5 /* DocumentRequirements.swift */; };
 		BFAD202605200001000600B6 /* FeeMultiplierEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA1F202605200001000600F6 /* FeeMultiplierEngine.swift */; };
@@ -1846,6 +1847,7 @@
 		FA1F202605200001000100F1 /* Vertical.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Vertical.swift; sourceTree = "<group>"; };
 		FA1F202605200001000200F2 /* TrailerCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailerCode.swift; sourceTree = "<group>"; };
 		FA1F202605200001000300F3 /* LoadStateFSM.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoadStateFSM.swift; sourceTree = "<group>"; };
+		LIFECYCLESTAGE0002 /* LifecycleStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LifecycleStage.swift; sourceTree = "<group>"; };
 		FA1F202605200001000400F4 /* EquipmentEquivalency.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EquipmentEquivalency.swift; sourceTree = "<group>"; };
 		FA1F202605200001000500F5 /* DocumentRequirements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentRequirements.swift; sourceTree = "<group>"; };
 		FA1F202605200001000600F6 /* FeeMultiplierEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeeMultiplierEngine.swift; sourceTree = "<group>"; };
@@ -2895,6 +2897,7 @@
 				FA1F202605200001000100F1 /* Vertical.swift */,
 				FA1F202605200001000200F2 /* TrailerCode.swift */,
 				FA1F202605200001000300F3 /* LoadStateFSM.swift */,
+				LIFECYCLESTAGE0002 /* LifecycleStage.swift */,
 				FA1F202605200001000400F4 /* EquipmentEquivalency.swift */,
 				FA1F202605200001000500F5 /* DocumentRequirements.swift */,
 				FA1F202605202008000100F8 /* ESangIntent.swift */,
@@ -3837,6 +3840,7 @@
 				BFAD202605200001000100B1 /* Vertical.swift in Sources */,
 				BFAD202605200001000200B2 /* TrailerCode.swift in Sources */,
 				BFAD202605200001000300B3 /* LoadStateFSM.swift in Sources */,
+				LIFECYCLESTAGE0001 /* LifecycleStage.swift in Sources */,
 				BFAD202605200001000400B4 /* EquipmentEquivalency.swift in Sources */,
 				BFAD202605200001000500B5 /* DocumentRequirements.swift in Sources */,
 				BFAD202605200001000600B6 /* FeeMultiplierEngine.swift in Sources */,

@@ -81,7 +81,7 @@ private func catalystNavTrailing_305() -> [NavSlot] {
 
 // MARK: - 8-stage lifecycle
 
-private enum LifecycleStage: String, CaseIterable {
+private enum CatalystStageStrip: String, CaseIterable {
     case posted    = "POSTED"
     case bidding   = "BIDDING"
     case awarded   = "AWARDED"
@@ -96,7 +96,7 @@ private enum LifecycleStage: String, CaseIterable {
     /// CLAUDE.md memory: pending / accepted / assigned / in_transit /
     /// delivered / completed / cancelled. The mapping is deliberately
     /// inclusive — any unknown future status defaults to .posted.
-    static func from(loadStatus: String?) -> LifecycleStage {
+    static func from(loadStatus: String?) -> CatalystStageStrip {
         switch (loadStatus ?? "").lowercased() {
         case "pending":                                    return .posted
         case "bidding":                                    return .bidding
@@ -506,10 +506,10 @@ private struct CatalystLoadDetail: View {
 
     /// A load is "active" (live-tracked) for weather-refresh purposes once
     /// it's in the pickup→delivery window — the same lifecycle band the
-    /// strip paints as in-flight. Mirrors `LifecycleStage.from` so the two
+    /// strip paints as in-flight. Mirrors `CatalystStageStrip.from` so the two
     /// surfaces agree on what "in progress" means.
     private func isLoadActive(_ l: LoadsAPI.LoadDetail) -> Bool {
-        switch LifecycleStage.from(loadStatus: l.status) {
+        switch CatalystStageStrip.from(loadStatus: l.status) {
         case .pickup, .inTransit, .delivery: return true
         default:                             return false
         }
@@ -518,8 +518,8 @@ private struct CatalystLoadDetail: View {
     // MARK: - 8-stage lifecycle strip
 
     private func lifecycleCard(_ l: LoadsAPI.LoadDetail) -> some View {
-        let current = LifecycleStage.from(loadStatus: l.status)
-        let allStages = LifecycleStage.allCases
+        let current = CatalystStageStrip.from(loadStatus: l.status)
+        let allStages = CatalystStageStrip.allCases
 
         return VStack(alignment: .leading, spacing: 12) {
             Text(lifecycleEyebrowLabel(l))
@@ -558,7 +558,7 @@ private struct CatalystLoadDetail: View {
         return "LIFECYCLE · \(cargo)"
     }
 
-    private func lifecycleProgressLine(current: LifecycleStage, allStages: [LifecycleStage]) -> some View {
+    private func lifecycleProgressLine(current: CatalystStageStrip, allStages: [CatalystStageStrip]) -> some View {
         let currentIdx = allStages.firstIndex(of: current) ?? 0
         return GeometryReader { geo in
             ZStack(alignment: .leading) {
@@ -612,7 +612,7 @@ private struct CatalystLoadDetail: View {
         }
     }
 
-    private func lifecycleStageLabels(current: LifecycleStage, allStages: [LifecycleStage]) -> some View {
+    private func lifecycleStageLabels(current: CatalystStageStrip, allStages: [CatalystStageStrip]) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(allStages.enumerated()), id: \.offset) { idx, stage in
                 let currentIdx = allStages.firstIndex(of: current) ?? 0
@@ -639,7 +639,7 @@ private struct CatalystLoadDetail: View {
         }
     }
 
-    private func productAwareKicker(_ l: LoadsAPI.LoadDetail, current: LifecycleStage) -> String {
+    private func productAwareKicker(_ l: LoadsAPI.LoadDetail, current: CatalystStageStrip) -> String {
         let driverName = assignedDriver?.name.split(separator: " ").first.map(String.init) ?? "driver"
         switch current {
         case .posted:    return "Live · awaiting bids"

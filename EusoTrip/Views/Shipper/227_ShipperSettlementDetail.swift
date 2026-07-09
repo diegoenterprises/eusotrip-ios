@@ -59,13 +59,13 @@ import SwiftUI
 
 private enum LifecycleStageState { case past, active, upcoming, warn }
 
-private struct LifecycleStage {
+private struct SettlementTimelineRow {
     let label: String
     let timestamp: String
     let state: LifecycleStageState
 }
 
-private func deriveLifecycle(status: String?) -> [LifecycleStage] {
+private func deriveLifecycle(status: String?) -> [SettlementTimelineRow] {
     let s = (status ?? "").lowercased()
     let activeIdx: Int = {
         switch s {
@@ -78,14 +78,14 @@ private func deriveLifecycle(status: String?) -> [LifecycleStage] {
         }
     }()
     let labels = ["BOL RECEIVED", "AUDIT", "APPROVED", "FUNDED", "CLEARED"]
-    var out: [LifecycleStage] = []
+    var out: [SettlementTimelineRow] = []
     for (i, label) in labels.enumerated() {
         let state: LifecycleStageState
         if i < activeIdx { state = .past }
         else if i == activeIdx {
             state = (s == "disputed") ? .warn : .active
         } else { state = .upcoming }
-        out.append(LifecycleStage(label: label, timestamp: "-", state: state))
+        out.append(SettlementTimelineRow(label: label, timestamp: "-", state: state))
     }
     return out
 }
@@ -577,7 +577,7 @@ struct ShipperSettlementDetail: View {
 
     // MARK: Lifecycle strip (5 stages)
 
-    private func lifecycleStrip(_ stages: [LifecycleStage]) -> some View {
+    private func lifecycleStrip(_ stages: [SettlementTimelineRow]) -> some View {
         GeometryReader { geo in
             let total = geo.size.width
             let count = stages.count
