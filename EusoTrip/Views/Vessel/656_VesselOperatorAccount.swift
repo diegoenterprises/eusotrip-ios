@@ -73,6 +73,12 @@ private struct VesselOperatorAccountBody: View {
     @State private var loadError: String? = nil
     @State private var saveError: String? = nil
 
+    /// Which hub cards are expanded. Consolidation: the Me tab rendered 17
+    /// always-open ops groups (~74 rows) in one scroll. Rebuilt into 5 bespoke
+    /// collapsible hubs by canonical taxonomy — every destination preserved.
+    /// Bookings & Tenders starts expanded; the rest collapse.
+    @State private var expandedHubs: Set<String> = ["bookings"]
+
     private var displayName: String {
         let n = me?.name?.trimmingCharacters(in: .whitespaces) ?? ""
         return n.isEmpty ? "___" : n
@@ -95,7 +101,11 @@ private struct VesselOperatorAccountBody: View {
 	                        title: "EusoCard",
 	                        subtitle: "Vessel spend card backed by EusoWallet Treasury"
 	                    )
-	                    operationsCard
+	                    bookingsHub
+	                    trackingTerminalHub
+	                    customsComplianceHub
+	                    claimsRecoveryHub
+	                    financeFleetHub
                     certificatesCard
                     watchCard
                     preferencesCard
@@ -163,65 +173,17 @@ private struct VesselOperatorAccountBody: View {
     // chrome. Grouped by the operator's task domains so the bid board,
     // D&D money tools, booking edits, and drayage dispatch are reachable
     // from the Me tab (mirrors the Driver Me-hub IA).
-    private var operationsCard: some View {
-        VStack(alignment: .leading, spacing: Space.s3) {
-            Text("OPERATIONS").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
+    // Hub 1 — Bookings & Tenders (bids, bookings, shipments, intermodal)
+    private var bookingsHub: some View {
+        hubCard(id: "bookings", icon: "shippingbox.fill",
+                title: "Bookings & Tenders",
+                summary: "Bids · Bookings · Shipments · Intermodal", rowCount: 11) {
             opsGroup("BIDS & TENDERS", [
                 ("Vesl709", "sailboat.fill", "Bid board", "Award open lanes by rate"),
             ])
             opsGroup("BOOKINGS", [
                 ("Vesl669", "doc.badge.gearshape", "Booking amendment", "Propose changes to a booking"),
                 ("Vesl706", "arrow.triangle.2.circlepath", "Rebooking suggestions", "Reroute on a blanked sailing"),
-            ])
-            opsGroup("DEMURRAGE & DETENTION", [
-                ("Vesl757", "envelope.badge", "Detention letters", "Notice ledger by facility"),
-                ("Vesl815", "checkmark.seal", "Charge approval", "Approve / dispute D&D charges"),
-                ("Vesl792", "function", "Demurrage calculator", "Tier the billable detention"),
-                ("Vesl772", "chart.bar.xaxis", "Demurrage analytics", "Avoidable vs baseline trend"),
-                ("Vesl735", "bell.badge", "Demurrage alerts", "Free-time cutoffs at risk"),
-                ("Vesl784", "timer", "Detention tracking", "Live detention accrual"),
-                ("Vesl731", "list.bullet.rectangle", "Accessorial charges", "Code-keyed charge ledger"),
-            ])
-            opsGroup("INTERMODAL", [
-                ("Vesl737", "truck.box.fill", "Drayage orders", "Dispatch the inland leg"),
-            ])
-            opsGroup("CLAIMS", [
-                ("Vesl800", "doc.text.magnifyingglass", "Claims dashboard", "Open / pending / resolved + aging"),
-                ("Vesl801", "list.bullet.clipboard", "Claims list", "Filter & search all claims"),
-                ("Vesl808", "arrow.right.doc.on.clipboard", "Claim workflow", "Advance a claim file → close"),
-                ("Vesl732", "shippingbox.and.arrow.backward", "Cargo claim", "File loss & damage on a load"),
-                ("Vesl811", "chart.pie", "Claims analytics", "Loss trend & recovery rate"),
-                ("Vesl812", "doc.on.doc", "Claim templates", "Pre-built claim forms"),
-            ])
-            opsGroup("CUSTOMS", [
-                ("Vesl814", "doc.badge.plus", "Customs entry filing", "File the CBP 7501 entry"),
-                ("Vesl789", "clock.arrow.circlepath", "Customs status update", "Advance customs disposition"),
-            ])
-            opsGroup("TRACKING & ANALYTICS", [
-                ("Vesl770", "point.topleft.down.curvedto.point.bottomright.up", "ETA prediction", "Arrival confidence cone"),
-                ("Vesl782", "chart.bar.doc.horizontal", "Dwell analysis", "Free-time exposure by terminal"),
-                ("Vesl816", "trophy", "Top shippers", "Ranked by volume & completion"),
-            ])
-            opsGroup("REEFER & RESILIENCE", [
-                ("Vesl820", "thermometer.snowflake", "Reefer pre-cool", "FSMA pre-cool gate"),
-                ("Vesl821", "exclamationmark.triangle", "Reefer alert console", "Cold-chain deviations"),
-                ("Vesl689", "bolt.horizontal.circle", "Network disruption", "Blank sailings & reroutes"),
-                ("Vesl730", "calendar.badge.exclamationmark", "Blank sailing watch", "Cancelled sailings triage"),
-            ])
-            opsGroup("DISPUTE & RECOVERY", [
-                ("Vesl802", "creditcard", "Claim payments", "Reconcile claim payouts"),
-                ("Vesl804", "arrow.uturn.backward.circle", "Overcharge recovery", "Audit & recover overcharges"),
-                ("Vesl805", "shield.lefthalf.filled", "Loss prevention", "Cargo loss risk + mitigation"),
-                ("Vesl809", "scalemass", "Dispute resolution", "Resolve carrier disputes"),
-                ("Vesl810", "person.2.badge.gearshape", "Dispute mediation", "Mediator sessions & briefs"),
-            ])
-            opsGroup("POSITION & FINANCE", [
-                ("Vesl660", "dot.radiowaves.up.forward", "Live position", "AIS track + ETA to berth"),
-                ("Vesl661", "point.3.connected.trianglepath.dotted", "Port calls", "Rotation & berth schedule"),
-                ("Vesl674", "list.bullet.rectangle.portrait", "Cost breakdown", "Per-move charge detail"),
-                ("Vesl696", "banknote", "Settlement batch", "Approve carrier payouts"),
-                ("Vesl670", "fuelpump", "Bunker prices", "VLSFO/MGO regional trend"),
-                ("Vesl708", "leaf", "Shipment CO₂", "CII rating + GHG statement"),
             ])
             opsGroup("BOOKINGS & SHIPMENTS", [
                 ("Vesl008", "arrow.triangle.swap", "Intermodal journey", "End-to-end leg map"),
@@ -231,6 +193,22 @@ private struct VesselOperatorAccountBody: View {
                 ("Vesl677", "doc.badge.gearshape", "Carrier tender workflow", "Carrier-side tender steps"),
                 ("Vesl680", "rectangle.split.3x1", "Intermodal segment board", "Per-leg segment status"),
                 ("Vesl688", "calendar", "Sailing schedule", "Vessel sailing calendar"),
+            ])
+            opsGroup("INTERMODAL", [
+                ("Vesl737", "truck.box.fill", "Drayage orders", "Dispatch the inland leg"),
+            ])
+        }
+    }
+
+    // Hub 2 — Tracking & Terminal (tracking, timeline, berth/terminal, D&D, reefer)
+    private var trackingTerminalHub: some View {
+        hubCard(id: "tracking", icon: "point.3.connected.trianglepath.dotted",
+                title: "Tracking & Terminal",
+                summary: "Tracking · Timeline · Berth · D&D · Reefer", rowCount: 22) {
+            opsGroup("TRACKING & ANALYTICS", [
+                ("Vesl770", "point.topleft.down.curvedto.point.bottomright.up", "ETA prediction", "Arrival confidence cone"),
+                ("Vesl782", "chart.bar.doc.horizontal", "Dwell analysis", "Free-time exposure by terminal"),
+                ("Vesl816", "trophy", "Top shippers", "Ranked by volume & completion"),
             ])
             opsGroup("TRACKING & TIMELINE", [
                 ("Vesl655", "location.viewfinder", "Container positions", "Where your boxes are"),
@@ -244,6 +222,33 @@ private struct VesselOperatorAccountBody: View {
                 ("Vesl697", "ferry.fill", "Port operations", "Live terminal ops console"),
                 ("Vesl658", "hourglass", "Demurrage & detention", "Free-time exposure summary"),
             ])
+            opsGroup("DEMURRAGE & DETENTION", [
+                ("Vesl757", "envelope.badge", "Detention letters", "Notice ledger by facility"),
+                ("Vesl815", "checkmark.seal", "Charge approval", "Approve / dispute D&D charges"),
+                ("Vesl792", "function", "Demurrage calculator", "Tier the billable detention"),
+                ("Vesl772", "chart.bar.xaxis", "Demurrage analytics", "Avoidable vs baseline trend"),
+                ("Vesl735", "bell.badge", "Demurrage alerts", "Free-time cutoffs at risk"),
+                ("Vesl784", "timer", "Detention tracking", "Live detention accrual"),
+                ("Vesl731", "list.bullet.rectangle", "Accessorial charges", "Code-keyed charge ledger"),
+            ])
+            opsGroup("REEFER & RESILIENCE", [
+                ("Vesl820", "thermometer.snowflake", "Reefer pre-cool", "FSMA pre-cool gate"),
+                ("Vesl821", "exclamationmark.triangle", "Reefer alert console", "Cold-chain deviations"),
+                ("Vesl689", "bolt.horizontal.circle", "Network disruption", "Blank sailings & reroutes"),
+                ("Vesl730", "calendar.badge.exclamationmark", "Blank sailing watch", "Cancelled sailings triage"),
+            ])
+        }
+    }
+
+    // Hub 3 — Customs & Compliance (customs filings, port state, IMDG, crew, emissions)
+    private var customsComplianceHub: some View {
+        hubCard(id: "customs", icon: "checkmark.shield.fill",
+                title: "Customs & Compliance",
+                summary: "Customs · Port state · IMDG · Crew · Emissions", rowCount: 13) {
+            opsGroup("CUSTOMS", [
+                ("Vesl814", "doc.badge.plus", "Customs entry filing", "File the CBP 7501 entry"),
+                ("Vesl789", "clock.arrow.circlepath", "Customs status update", "Advance customs disposition"),
+            ])
             opsGroup("CUSTOMS & COMPLIANCE", [
                 ("Vesl662", "exclamationmark.octagon", "Exceptions & holds", "Active blocks on your boxes"),
                 ("Vesl663", "doc.badge.plus", "CBP entry detail", "7501 entry line detail"),
@@ -254,16 +259,49 @@ private struct VesselOperatorAccountBody: View {
                 ("Vesl710", "exclamationmark.triangle.fill", "Marine casualty", "Incident & casualty filing"),
                 ("Vesl738", "scalemass", "VGM declaration", "SOLAS verified gross mass"),
             ])
-            opsGroup("EQUIPMENT & FLEET", [
-                ("Vesl673", "doc.text.below.ecg", "Container lease", "Box / chassis leases"),
-                ("Vesl676", "heart.text.square", "Equipment health", "Reefer & box condition"),
-                ("Vesl683", "waveform.path.ecg", "Fleet health", "Fleet-wide condition"),
-                ("Vesl702", "thermometer.snowflake", "Reefer monitoring", "Live reefer telemetry"),
-            ])
             opsGroup("CREW & EMISSIONS", [
                 ("Vesl654", "checkmark.seal", "Crew certifications", "STCW cert status"),
                 ("Vesl711", "bed.double", "Crew rest hours", "MLC rest-hour compliance"),
                 ("Vesl681", "leaf", "Emissions CII", "Carbon intensity indicator"),
+            ])
+        }
+    }
+
+    // Hub 4 — Claims & Recovery (claims lifecycle, disputes, overcharge recovery)
+    private var claimsRecoveryHub: some View {
+        hubCard(id: "claims", icon: "doc.text.magnifyingglass",
+                title: "Claims & Recovery",
+                summary: "Claims · Disputes · Overcharge recovery", rowCount: 11) {
+            opsGroup("CLAIMS", [
+                ("Vesl800", "doc.text.magnifyingglass", "Claims dashboard", "Open / pending / resolved + aging"),
+                ("Vesl801", "list.bullet.clipboard", "Claims list", "Filter & search all claims"),
+                ("Vesl808", "arrow.right.doc.on.clipboard", "Claim workflow", "Advance a claim file → close"),
+                ("Vesl732", "shippingbox.and.arrow.backward", "Cargo claim", "File loss & damage on a load"),
+                ("Vesl811", "chart.pie", "Claims analytics", "Loss trend & recovery rate"),
+                ("Vesl812", "doc.on.doc", "Claim templates", "Pre-built claim forms"),
+            ])
+            opsGroup("DISPUTE & RECOVERY", [
+                ("Vesl802", "creditcard", "Claim payments", "Reconcile claim payouts"),
+                ("Vesl804", "arrow.uturn.backward.circle", "Overcharge recovery", "Audit & recover overcharges"),
+                ("Vesl805", "shield.lefthalf.filled", "Loss prevention", "Cargo loss risk + mitigation"),
+                ("Vesl809", "scalemass", "Dispute resolution", "Resolve carrier disputes"),
+                ("Vesl810", "person.2.badge.gearshape", "Dispute mediation", "Mediator sessions & briefs"),
+            ])
+        }
+    }
+
+    // Hub 5 — Finance & Fleet (position/finance, commercial billing, equipment)
+    private var financeFleetHub: some View {
+        hubCard(id: "finance", icon: "dollarsign.circle",
+                title: "Finance & Fleet",
+                summary: "Position · Settlement · Billing · Equipment", rowCount: 17) {
+            opsGroup("POSITION & FINANCE", [
+                ("Vesl660", "dot.radiowaves.up.forward", "Live position", "AIS track + ETA to berth"),
+                ("Vesl661", "point.3.connected.trianglepath.dotted", "Port calls", "Rotation & berth schedule"),
+                ("Vesl674", "list.bullet.rectangle.portrait", "Cost breakdown", "Per-move charge detail"),
+                ("Vesl696", "banknote", "Settlement batch", "Approve carrier payouts"),
+                ("Vesl670", "fuelpump", "Bunker prices", "VLSFO/MGO regional trend"),
+                ("Vesl708", "leaf", "Shipment CO₂", "CII rating + GHG statement"),
             ])
             opsGroup("COMMERCIAL & BILLING", [
                 ("Vesl659", "fuelpump.circle", "Bunker FSC", "Bunker surcharge"),
@@ -274,6 +312,75 @@ private struct VesselOperatorAccountBody: View {
                 ("Vesl700", "doc.text.magnifyingglass", "Freight bill audit", "Audit ocean freight bills"),
                 ("Vesl712", "dollarsign.circle", "Financial summary", "Financial overview"),
             ])
+            opsGroup("EQUIPMENT & FLEET", [
+                ("Vesl673", "doc.text.below.ecg", "Container lease", "Box / chassis leases"),
+                ("Vesl676", "heart.text.square", "Equipment health", "Reefer & box condition"),
+                ("Vesl683", "waveform.path.ecg", "Fleet health", "Fleet-wide condition"),
+                ("Vesl702", "thermometer.snowflake", "Reefer monitoring", "Live reefer telemetry"),
+            ])
+        }
+    }
+
+    // MARK: - Hub primitive (bespoke collapsible card, parity with 350 / 713)
+
+    /// A collapsible hub card: gradient-icon header with title, one-line summary
+    /// and a row-count pill that toggles the body open/closed on tap. Collapsed
+    /// by default (except the first hub) so the Me tab reads as a clean stack of
+    /// hubs rather than a ~74-row flat list.
+    @ViewBuilder
+    private func hubCard<Content: View>(id: String,
+                                        icon: String,
+                                        title: String,
+                                        summary: String,
+                                        rowCount: Int,
+                                        @ViewBuilder content: () -> Content) -> some View {
+        let isOpen = expandedHubs.contains(id)
+        LifecycleCard {
+            Button {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    if isOpen { expandedHubs.remove(id) } else { expandedHubs.insert(id) }
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().fill(LinearGradient.diagonal).frame(width: 40, height: 40)
+                        Image(systemName: icon)
+                            .font(.system(size: 16, weight: .heavy))
+                            .foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.system(size: 15, weight: .heavy))
+                            .foregroundStyle(palette.textPrimary)
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                        Text(summary)
+                            .font(EType.mono(.micro)).tracking(0.3)
+                            .foregroundStyle(palette.textSecondary)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                    }
+                    Spacer(minLength: 0)
+                    Text("\(rowCount)")
+                        .font(.system(size: 10, weight: .heavy)).monospacedDigit()
+                        .foregroundStyle(palette.textTertiary)
+                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .background(Capsule().fill(palette.bgCardSoft))
+                        .overlay(Capsule().strokeBorder(palette.borderFaint.opacity(0.5)))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(palette.textTertiary)
+                        .rotationEffect(.degrees(isOpen ? 90 : 0))
+                }
+            }
+            .buttonStyle(.plain)
+
+            if isOpen {
+                Rectangle()
+                    .fill(palette.borderFaint.opacity(0.4))
+                    .frame(height: 1)
+                    .padding(.vertical, 6)
+                VStack(spacing: 6) { content() }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
     }
 
