@@ -29,11 +29,15 @@ final class AuthStore: ObservableObject {
     private let userAccount = "esang.user"
     private let roleAccount = "esang.role"
 
-    /// Shared keychain access group — matches the Pulse watch +
-    /// iPhone companion entitlements so either bundle can read the
-    /// other's Esang auth token. Dropping this into every SecItem*
-    /// query removes WCSession as the single pairing transport SPOF
-    /// (L3, per synth_B).
+    /// Keychain access group used for the watch's OWN token storage.
+    ///
+    /// IMPORTANT (corrected): keychain access groups share items
+    /// between processes ON THE SAME DEVICE only. watchOS has its own
+    /// keychain — generic-password items NEVER sync iPhone → Watch, so
+    /// this group is NOT a WCSession fallback and must never be relied
+    /// on as one. WCSession (auth.update mirror + requestAuthMirror)
+    /// is the single pairing transport; this group just namespaces the
+    /// wrist's local persistence.
     ///
     /// Format: `$(AppIdentifierPrefix)com.app.eusotrip.shared`. We
     /// resolve the team prefix at runtime from the bundle so this

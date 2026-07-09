@@ -24,6 +24,23 @@ struct RouteOverviewView: View {
                     header(load)
                     statRow
                     waypointRow
+                    if let err = route.lastError, route.etaText == "—" {
+                        // Distinguish "route data unreachable" from "no
+                        // route data on this load" — staleness must be
+                        // visible, never a permanent silent Pending.
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(Color.esangAmber)
+                            Text(err)
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(Color.esangAmber)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(6)
+                        .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: R.sm))
+                    }
                     actions
                 } else {
                     emptyState
@@ -34,6 +51,16 @@ struct RouteOverviewView: View {
         }
         .navigationTitle("Route")
         .task { await route.refresh(auth: auth, loadId: loads.active?.id) }
+        // The one-shot .task used to fire BEFORE the phone pushed the
+        // active load, leaving "—/—/Pending" up forever. Re-run the
+        // fetch whenever the active load or the auth mirror lands.
+        .onChange(of: loads.active?.id) { _, newId in
+            Task { await route.refresh(auth: auth, loadId: newId) }
+        }
+        .onChange(of: auth.isSignedIn) { _, signedIn in
+            guard signedIn else { return }
+            Task { await route.refresh(auth: auth, loadId: loads.active?.id) }
+        }
         // Mask overscroll bleed of the brand-gradient route header +
         // colored stat cards into the curved bezel corners.
         .clipShape(ContainerRelativeShape())
@@ -169,6 +196,10 @@ final class RouteProgressStore: ObservableObject {
     @Published var etaText: String = "—"
     @Published var milesRemainingText: String = "—"
     @Published var nextWaypoint: String = "Pending"
+    /// Last transport failure — rendered as a small banner when the
+    /// stats are still placeholders so "unreachable" is distinguishable
+    /// from "no route data on this load".
+    @Published var lastError: String?
 
     /// The raw, REAL weather signal that reached the wrist. Sourced (in
     /// priority order) from:
@@ -232,8 +263,12 @@ final class RouteProgressStore: ObservableObject {
             // Coarse route flag is the baseline weather signal.
             weatherFlag = p.weatherFlag
             weatherHeadline = nil
+            lastError = nil
         } catch {
-            // keep last known — honest staleness, no fabrication.
+            // keep last known — honest staleness, no fabrication —
+            // but record the failure so the view can badge it.
+            lastError = (error as? LocalizedError)?.errorDescription
+                ?? "Can't reach route progress"
         }
 
         // --- Canonical per-load lane impact (preferred weather signal) ---

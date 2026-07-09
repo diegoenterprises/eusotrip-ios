@@ -227,23 +227,58 @@ final class OfflineQueue: ObservableObject {
 
     // MARK: - Enqueue
 
-    func enqueueVoice(text: String, loadId: String?) {
-        append(.voice(text: text, loadId: loadId, key: key()))
+    // Each enqueue returns the entry's idempotency key so callers can
+    // track the entry's outcome after a flush (sent = no longer in
+    // `entries`; queued/failed = still present, `lastError` populated)
+    // and render an HONEST sent/queued/failed state instead of a
+    // fire-and-forget fake success.
+    @discardableResult
+    func enqueueVoice(text: String, loadId: String?) -> String {
+        let k = key()
+        append(.voice(text: text, loadId: loadId, key: k))
+        return k
     }
-    func enqueueHOSEvent(status: String, at date: Date) {
-        append(.hosEvent(status: status, at: date, key: key()))
+    @discardableResult
+    func enqueueHOSEvent(status: String, at date: Date) -> String {
+        let k = key()
+        append(.hosEvent(status: status, at: date, key: k))
+        return k
     }
-    func enqueueAcceptLoad(loadId: String, bidId: String?) {
-        append(.acceptLoad(loadId: loadId, bidId: bidId, key: key()))
+    @discardableResult
+    func enqueueAcceptLoad(loadId: String, bidId: String?) -> String {
+        let k = key()
+        append(.acceptLoad(loadId: loadId, bidId: bidId, key: k))
+        return k
     }
-    func enqueueArrived(loadId: String, kind: String, at date: Date) {
-        append(.arrived(loadId: loadId, kind: kind, at: date, key: key()))
+    @discardableResult
+    func enqueueArrived(loadId: String, kind: String, at date: Date) -> String {
+        let k = key()
+        append(.arrived(loadId: loadId, kind: kind, at: date, key: k))
+        return k
     }
-    func enqueueSOS(reason: String, lat: Double?, lon: Double?) {
-        append(.sos(reason: reason, lat: lat, lon: lon, at: Date(), key: key()))
+    @discardableResult
+    func enqueueSOS(reason: String, lat: Double?, lon: Double?) -> String {
+        let k = key()
+        append(.sos(reason: reason, lat: lat, lon: lon, at: Date(), key: k))
+        return k
     }
-    func enqueueMessage(loadId: String?, to recipient: String, text: String) {
-        append(.message(loadId: loadId, to: recipient, text: text, key: key()))
+    @discardableResult
+    func enqueueMessage(loadId: String?, to recipient: String, text: String) -> String {
+        let k = key()
+        append(.message(loadId: loadId, to: recipient, text: text, key: k))
+        return k
+    }
+
+    /// True while the entry with this key is still waiting in a lane
+    /// (i.e. its action has NOT yet reached the server). Used by UI
+    /// call sites to distinguish "sent" from "queued".
+    func isPending(_ key: String) -> Bool {
+        entries.contains { $0.id == key }
+    }
+
+    /// Last transport error recorded for a queued entry, if any.
+    func lastError(for key: String) -> String? {
+        entries.first(where: { $0.id == key })?.lastError
     }
 
     private func append(_ action: QueuedAction) {
@@ -358,44 +393,75 @@ final class OfflineQueue: ObservableObject {
                 "voiceESANG.processVoiceCommand",
                 input: ["text": text, "loadId": loadId ?? "", "idempotencyKey": key, "surface": "watch-offline"]
             )
-        case .hosEvent(let status, let at, let key):
+        case .hosEvent(let status, _, let key):
+            // Real server contract (routers/hos.ts:200-205):
+            // { newStatus: dutyStatusSchema, location: string } — the
+            // old { status, ts, source } shape 400'd forever, so the
+            // lane replayed the identical malformed payload until the
+            // heat death of the queue.
             _ = try await client.mutateJSON(
                 "hos.changeStatus",
-                input: ["status": status, "ts": at.timeIntervalSince1970, "idempotencyKey": key, "source": "watch-offline"]
+                input: [
+                    "newStatus": HOSStore.serverDutyStatus(status),
+                    "location": "watch",
+                    "idempotencyKey": key
+                ]
             )
         case .acceptLoad(let loadId, let bidId, let key):
+            if let bidId, !bidId.isEmpty {
+                // Shipper/broker bid-award lane — `loads.accept` is the
+                // bid-award proc and takes ONLY { bidId } (loads.ts:4648).
+                _ = try await client.mutateJSON("loads.accept", input: ["bidId": bidId])
+            } else {
+                // Driver accepting an offered load — the driver-side
+                // proc the iOS app uses (drivers.ts:1269).
+                _ = try await client.mutateJSON(
+                    "drivers.acceptLoad",
+                    input: ["loadId": loadId, "idempotencyKey": key]
+                )
+            }
+        case .arrived(let loadId, let kind, let at, _):
+            // Real lifecycle mutation (loads.ts:4858 updateLoadStatus)
+            // — `loads.logArrival` does not exist on any router. Kind
+            // maps to the canonical status enum.
+            let status: String = {
+                switch kind {
+                case "pickup":    return "at_pickup"
+                case "delivered": return "delivered"
+                default:          return "at_delivery"
+                }
+            }()
             _ = try await client.mutateJSON(
-                "loads.accept",
-                input: ["loadId": loadId, "bidId": bidId ?? "", "idempotencyKey": key, "source": "watch-offline"]
-            )
-        case .arrived(let loadId, let kind, let at, let key):
-            _ = try await client.mutateJSON(
-                "loads.logArrival",
-                input: ["loadId": loadId, "kind": kind, "ts": at.timeIntervalSince1970, "idempotencyKey": key]
-            )
-        case .sos(let reason, let lat, let lon, let at, let key):
-            _ = try await client.mutateJSON(
-                "emergencyProtocols.activate",
+                "loads.updateLoadStatus",
                 input: [
-                    "reason": reason,
-                    "lat": lat ?? 0,
-                    "lon": lon ?? 0,
-                    "ts": at.timeIntervalSince1970,
-                    "idempotencyKey": key,
-                    "source": "watch-offline"
+                    "loadId": loadId,
+                    "status": status,
+                    "notes": "Logged from EusoTrip Pulse at \(ISO8601DateFormatter.iso.string(from: at))"
                 ]
+            )
+        case .sos(let reason, let lat, let lon, let at, _):
+            // `emergencyProtocols.activate` does not exist — the real
+            // proc is declareEmergency (emergencyProtocols.ts:497).
+            _ = try await client.mutateJSON(
+                "emergencyProtocols.declareEmergency",
+                input: EmergencyController.declareEmergencyInput(
+                    reason: reason, lat: lat, lon: lon, at: at
+                )
             )
         case .message(let loadId, let to, let text, let key):
-            _ = try await client.mutateJSON(
-                "messaging.send",
-                input: [
-                    "loadId": loadId ?? "",
-                    "to": to,
-                    "text": text,
-                    "idempotencyKey": key,
-                    "surface": "watch-offline"
-                ]
-            )
+            // `messaging.send` does not exist. The real sender is
+            // messages.sendMessage { conversationId, content, type } —
+            // it already dedupes on our idempotencyKey (messages.ts:346).
+            var input: [String: Any] = [
+                "conversationId": to,
+                "content": text,
+                "type": "text",
+                "idempotencyKey": key
+            ]
+            if let loadId, !loadId.isEmpty {
+                input["metadata"] = ["loadId": loadId, "surface": "watch-offline"]
+            }
+            _ = try await client.mutateJSON("messages.sendMessage", input: input)
         }
     }
 }

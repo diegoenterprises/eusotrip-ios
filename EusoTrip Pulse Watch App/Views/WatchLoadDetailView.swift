@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import WatchKit
 
 struct WatchLoadDetailView: View {
     let loadId: String
@@ -15,6 +16,12 @@ struct WatchLoadDetailView: View {
     @EnvironmentObject var loads: LoadStore
     @EnvironmentObject var connectivity: WatchConnectivityManager
     @Environment(\.dismiss) private var dismiss
+
+    /// Honest action lifecycle — replaces the old instant
+    /// enqueue-and-dismiss which read as success even when the
+    /// underlying proc 404'd forever.
+    @State private var isSending = false
+    @State private var statusNote: String?
 
     var body: some View {
         // Never fall back to a synthetic load — if the ID isn't in the
@@ -39,17 +46,45 @@ struct WatchLoadDetailView: View {
             Text("Load not on wrist")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white)
-            Text("Open EusoTrip on iPhone to sync")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundStyle(.white.opacity(0.55))
-                .multilineTextAlignment(.center)
-            Button("Close") { dismiss() }
+            if let note = statusNote {
+                Text(note)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+            } else {
+                // Working affordance — the old copy told the driver to
+                // open the iPhone app but nothing here could make that
+                // happen. This wakes the phone in the background; the
+                // phone posts the one-tap "Open EusoTrip" notification.
+                Button {
+                    let sent = connectivity.requestPhoneActivation(
+                        transcript: "open eusotrip home",
+                        reply: "Opening EusoTrip on your iPhone."
+                    )
+                    statusNote = sent
+                        ? "Sent — tap the EusoTrip notification on your iPhone."
+                        : "Can't reach your iPhone — bring it nearby and try again."
+                } label: {
+                    Label("Open on iPhone", systemImage: "iphone.and.arrow.forward")
+                        .font(.system(size: 10, weight: .semibold))
+                }
                 .buttonStyle(.borderedProminent)
                 .tint(.esangBlue)
                 .controlSize(.mini)
-                .padding(.top, 4)
+            }
+            Button("Close") { dismiss() }
+                .buttonStyle(.bordered)
+                .controlSize(.mini)
+                .padding(.top, 2)
         }
         .padding()
+        // Handoff — while this dead-end is visible, put the EusoTrip
+        // icon in the iPhone App Switcher / lock screen for instant open.
+        .userActivity(EusoTripConfig.handoffActivityType, isActive: true) { activity in
+            activity.title = "Open EusoTrip"
+            activity.userInfo = ["transcript": ""]
+            activity.isEligibleForHandoff = true
+        }
     }
 
     @ViewBuilder
@@ -80,24 +115,35 @@ struct WatchLoadDetailView: View {
                 if let broker = load.brokerName {
                     row("Broker",  broker)
                 }
-                row("Pickup",   load.pickupAt.formatted(date: .abbreviated, time: .shortened))
-                row("Deliver",  load.deliverBy.formatted(date: .abbreviated, time: .shortened))
+                row("Pickup",   load.pickupAt.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "—")
+                row("Deliver",  load.deliverBy.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "—")
 
                 VStack(spacing: S.s1) {
+                    if let note = statusNote {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(Color.esangAmber)
+                            Text(note)
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(Color.esangAmber)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(6)
+                        .background(Color.esangAmber.opacity(0.15), in: RoundedRectangle(cornerRadius: R.sm))
+                    }
                     actionButton(label: "Accept", systemImage: "checkmark.circle.fill", gradient: .esangSuccess) {
-                        OfflineQueue.shared.enqueueAcceptLoad(loadId: load.id, bidId: nil)
-                        Task { await OfflineQueue.shared.flush(auth: auth) }
-                        dismiss()
+                        // Driver-side accept → drivers.acceptLoad
+                        perform { OfflineQueue.shared.enqueueAcceptLoad(loadId: load.id, bidId: nil) }
                     }
                     actionButton(label: "I'm at pickup", systemImage: "mappin.circle.fill", gradient: .esangPrimary) {
-                        OfflineQueue.shared.enqueueArrived(loadId: load.id, kind: "pickup", at: Date())
-                        Task { await OfflineQueue.shared.flush(auth: auth) }
-                        dismiss()
+                        // loads.updateLoadStatus → at_pickup
+                        perform { OfflineQueue.shared.enqueueArrived(loadId: load.id, kind: "pickup", at: Date()) }
                     }
                     actionButton(label: "Delivered", systemImage: "shippingbox.and.arrow.backward.fill", gradient: .esangSuccess) {
-                        OfflineQueue.shared.enqueueArrived(loadId: load.id, kind: "delivery", at: Date())
-                        Task { await OfflineQueue.shared.flush(auth: auth) }
-                        dismiss()
+                        // loads.updateLoadStatus → delivered
+                        perform { OfflineQueue.shared.enqueueArrived(loadId: load.id, kind: "delivered", at: Date()) }
                     }
                     actionButton(label: "Navigate on iPhone", systemImage: "map.fill", gradient: .esangPrimary) {
                         connectivity.requestPhoneActivation(
@@ -108,6 +154,8 @@ struct WatchLoadDetailView: View {
                     }
                 }
                 .padding(.top, 4)
+                .opacity(isSending ? 0.5 : 1)
+                .disabled(isSending)
             }
             .padding(S.s2)
         }
@@ -116,6 +164,31 @@ struct WatchLoadDetailView: View {
         // could flash into the corner curve when the ScrollView
         // overscrolls; clip to the bezel to prevent it.
         .clipShape(ContainerRelativeShape())
+    }
+
+    /// Enqueue an action, flush the outbox, then report the TRUTH:
+    /// entry drained → success haptic + dismiss; entry still queued →
+    /// keep the sheet up with an amber "queued" note (retry haptic).
+    /// A dead endpoint can no longer masquerade as a done deal.
+    private func perform(_ enqueue: @escaping () -> String) {
+        guard !isSending else { return }
+        isSending = true
+        statusNote = nil
+        WKInterfaceDevice.current().play(.click)
+        let key = enqueue()
+        Task {
+            await OfflineQueue.shared.flush(auth: auth)
+            if OfflineQueue.shared.isPending(key) {
+                isSending = false
+                statusNote = OfflineQueue.shared.lastError(for: key) == nil
+                    ? "Queued — will send when you're back online."
+                    : "Couldn't reach EusoTrip — queued for retry."
+                WKInterfaceDevice.current().play(.retry)
+            } else {
+                WKInterfaceDevice.current().play(.success)
+                dismiss()
+            }
+        }
     }
 
     @ViewBuilder

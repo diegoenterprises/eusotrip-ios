@@ -39,32 +39,35 @@ final class ShipperShipmentsStore: ObservableObject {
         do {
             let client = EsangClient(auth: auth)
             let data = try await client.queryJSON("shipments.listActive", input: ["limit": 10])
-            struct Envelope: Decodable {
-                struct Result: Decodable {
-                    struct DataContainer: Decodable {
-                        let json: [RemoteShipment]
-                    }
-                    let data: DataContainer
-                }
-                let result: Result
+            // REAL server contract (routers/shipments.ts:93-105): the
+            // rows ride inside a { shipments: [...] } wrapper with
+            // { id, title, status(bucket), pickupCity, destCity,
+            //   updatedAt, eta }. The previous bare-array decode threw
+            // a typeMismatch on EVERY response, so the shipper board
+            // could never show data.
+            struct Wrapper: Decodable {
+                let shipments: [RemoteShipment]
             }
             struct RemoteShipment: Decodable {
                 let id: String
-                let displayId: String?
-                let lane: String?
-                let eta: String?
+                let title: String?
                 let status: String?
-                let exception: String?
+                let pickupCity: String?
+                let destCity: String?
+                let eta: String?
             }
-            let env = try JSONDecoder().decode(Envelope.self, from: data)
-            shipments = env.result.data.json.map {
-                ShipperShipment(
-                    id: $0.id,
-                    displayId: $0.displayId ?? $0.id,
-                    lane: $0.lane ?? "",
-                    eta: ISO8601DateFormatter.iso.date(from: $0.eta ?? ""),
-                    status: $0.status ?? "in_transit",
-                    exception: $0.exception
+            let env = try JSONDecoder().decode(TRPCEnvelope<Wrapper>.self, from: data)
+            shipments = env.result.data.json.shipments.map { s in
+                let lane = [s.pickupCity, s.destCity]
+                    .compactMap { $0?.isEmpty == false ? $0 : nil }
+                    .joined(separator: " → ")
+                return ShipperShipment(
+                    id: s.id,
+                    displayId: s.title ?? "Shipment #\(s.id)",
+                    lane: lane,
+                    eta: ISO8601DateFormatter.iso.date(from: s.eta ?? ""),
+                    status: s.status ?? "in_transit",
+                    exception: (s.status ?? "").lowercased() == "delayed" ? "Running behind schedule" : nil
                 )
             }
             hasLoadedOnce = true
@@ -83,11 +86,33 @@ struct ShipperShipmentsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: S.s1) {
-                if store.shipments.isEmpty {
+                // Honest state ladder — an error can never present as
+                // "No active shipments." (lastError/hasLoadedOnce were
+                // published but never read before this fix).
+                if let err = store.lastError, !store.hasLoadedOnce {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.esangAmber)
+                        Text(err)
+                            .font(.system(size: 9, weight: .medium))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(6)
+                    .background(Color.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: R.sm))
+                } else if store.shipments.isEmpty && store.hasLoadedOnce {
                     Text("No active shipments.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 20)
+                } else if store.shipments.isEmpty {
+                    HStack(spacing: 4) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Loading…")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 20)
                 } else {
                     ForEach(store.shipments) { s in
                         shipmentRow(s)
@@ -114,6 +139,10 @@ struct ShipperShipmentsView: View {
         }
         .navigationTitle("Shipments")
         .task { await store.refresh(auth: auth) }
+        .onChange(of: auth.isSignedIn) { _, signedIn in
+            guard signedIn else { return }
+            Task { await store.refresh(auth: auth) }
+        }
         // Clip shipment status pills and the brand-gradient "Open on
         // iPhone" footer button to the rounded bezel so they can't
         // show through the corner radius.

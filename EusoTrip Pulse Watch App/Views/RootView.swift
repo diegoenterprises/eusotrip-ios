@@ -92,6 +92,8 @@ struct RootView: View {
             ConvoyView()
         case .proximityHandoff:
             ProximityHandoffView()
+        case .bolCopilot:
+            BOLCopilotView()
         case .voiceConfirm(let prompt, let confirmId):
             VoiceConfirmSheet(prompt: prompt, confirmId: confirmId)
         case .hos, .home, .inbox, .wallet, .emergency,
@@ -120,6 +122,7 @@ extension WatchRoute: Identifiable {
         case .brokerBoard: return "broker"
         case .convoy: return "convoy"
         case .proximityHandoff: return "proximityHandoff"
+        case .bolCopilot: return "bolCopilot"
         case .voiceConfirm(_, let cid): return "voiceConfirm-\(cid)"
         }
     }

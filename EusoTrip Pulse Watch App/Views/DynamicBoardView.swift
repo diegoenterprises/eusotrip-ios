@@ -395,11 +395,13 @@ enum BoardFactory {
 
     // MARK: Compliance — compliance.getViolations
     //
-    // Server shape (routers/compliance.ts:getViolations):
-    //   [{ id, driverId, vehicleId, type, status, defectsFound,
-    //      oosViolation, location, completedAt, createdAt,
-    //      driverName? }]
-    // Flat array (not wrapped).
+    // REAL server shape (routers/compliance.ts:1234-1247) — flat array:
+    //   [{ id: "vio_N" (STRING), type, driver, driverId, vehicleId,
+    //      date: "YYYY-MM-DD", severity, status, defectsFound,
+    //      oosViolation, location, regulation }]
+    // The previous decoder declared `id: Int` + completedAt/createdAt/
+    // driverName — none of which exist — so the board errored out
+    // precisely when violations existed.
 
     static func compliance() -> DynamicBoardStore {
         DynamicBoardStore(
@@ -407,15 +409,14 @@ enum BoardFactory {
             input: ["limit": 10]
         ) { data in
             struct Row: Decodable {
-                let id: Int
+                let id: String
                 let type: String?
                 let status: String?
                 let defectsFound: Int?
                 let oosViolation: Bool?
                 let location: String?
-                let completedAt: String?
-                let createdAt: String?
-                let driverName: String?
+                let date: String?
+                let driver: String?
             }
             let env = try JSONDecoder().decode(TRPCEnvelope<[Row]>.self, from: data)
             return env.result.data.json.map { r in
@@ -426,12 +427,14 @@ enum BoardFactory {
                     ? "\(r.defectsFound!) defect\(r.defectsFound! == 1 ? "" : "s")"
                     : (r.type?.capitalized ?? "Violation")
                 return BoardRow(
-                    id: String(r.id),
+                    id: r.id,
                     title: title,
-                    subtitle: [r.driverName, r.location].compactMap { $0 }.joined(separator: " · "),
+                    subtitle: [r.driver, r.location]
+                        .compactMap { $0?.isEmpty == false ? $0 : nil }
+                        .joined(separator: " · "),
                     accessory: (r.oosViolation == true) ? "OOS" : r.type?.uppercased(),
                     severity: sev,
-                    timestamp: BoardDate.parse(r.completedAt ?? r.createdAt)
+                    timestamp: BoardDate.parse(r.date)
                 )
             }
         }
@@ -640,50 +643,50 @@ enum BoardFactory {
 
     // MARK: Rail shipments — railShipments.getRailShipments
     //
-    // Server shape (routers/railShipments.ts:getRailShipments):
-    //   { shipments: [DrizzleRow], total }
-    // Drizzle row uses camelCase `railShipments` table columns —
-    // we decode a forgiving subset.
+    // REAL server shape (routers/railShipments.ts:285-407): a BARE
+    // ARRAY — canonical per audit B27, do NOT expect a {shipments:}
+    // wrapper — of { id: String, railRef, origin, destination, meta,
+    // status, lifecycleStage, rate, progress, equipmentKind, hazmat,
+    // commodity, numberOfCars, weight, createdAt, carrier }. The old
+    // decoder expected an envelope + Int ids + waybillNumber/yard
+    // columns, so every call threw for all four rail roles.
 
     static func railShipmentBoard() -> DynamicBoardStore {
         DynamicBoardStore(
             endpoint: "railShipments.getRailShipments",
             input: ["limit": 10]
         ) { data in
-            struct Envelope: Decodable {
-                let shipments: [Row]
-            }
             struct Row: Decodable {
-                let id: Int
-                let waybillNumber: String?
-                let originYard: String?
-                let destinationYard: String?
+                let id: String
+                let railRef: String?
                 let origin: String?
                 let destination: String?
+                let meta: String?
                 let status: String?
+                let hazmat: Bool?
                 let commodity: String?
-                let eta: String?
                 let createdAt: String?
             }
-            let env = try JSONDecoder().decode(TRPCEnvelope<Envelope>.self, from: data)
-            return env.result.data.json.shipments.map { r in
-                let lane = [r.originYard ?? r.origin, r.destinationYard ?? r.destination]
+            let env = try JSONDecoder().decode(TRPCEnvelope<[Row]>.self, from: data)
+            return env.result.data.json.map { r in
+                let lane = [r.origin, r.destination]
                     .compactMap { $0?.isEmpty == false ? $0 : nil }
                     .joined(separator: " → ")
                 let sev: BoardRowSeverity = {
+                    if r.hazmat == true { return .critical }
                     switch (r.status ?? "").lowercased() {
                     case let s where s.contains("delay"): return .watch
-                    case let s where s.contains("hold"):  return .critical
+                    case let s where s.contains("hold"):  return .watch
                     default:                              return .info
                     }
                 }()
                 return BoardRow(
-                    id: String(r.id),
-                    title: r.waybillNumber ?? "RS-\(r.id)",
-                    subtitle: lane.isEmpty ? r.commodity : lane,
-                    accessory: r.status?.uppercased(),
+                    id: r.id,
+                    title: r.railRef ?? "RS-\(r.id)",
+                    subtitle: lane.isEmpty ? (r.commodity ?? r.meta) : lane,
+                    accessory: r.hazmat == true ? "HAZMAT" : r.status?.uppercased(),
                     severity: sev,
-                    timestamp: BoardDate.parse(r.eta ?? r.createdAt)
+                    timestamp: BoardDate.parse(r.createdAt)
                 )
             }
         }
@@ -691,10 +694,14 @@ enum BoardFactory {
 
     // MARK: Train consist — railShipments.getRailcars
     //
-    // Server shape (routers/railShipments.ts:getRailcars):
-    //   { railcars: [DrizzleRow], total }
-    // Drizzle `railcars` columns: `carNumber`, `carType`, `status`,
-    // `owner`, `currentYardId`, `lastLoadCommodity` (schema-dependent).
+    // REAL server shape (routers/railShipments.ts:930-980):
+    //   { railcars: [drizzle railcars row + yardName + yardCoordinates],
+    //     total }
+    // Drizzle `railcars` columns (schema.ts:11072): `railcarNumber`
+    // (NOT carNumber), `carType`, `owner`, `status`, `currentYardId`.
+    // The old decoder read carNumber/lastLoadCommodity/hazmat — none
+    // exist — so every row fell back to "RC-\(id)" and the hazmat
+    // severity path never fired.
 
     static func trainConsist() -> DynamicBoardStore {
         DynamicBoardStore(
@@ -706,33 +713,44 @@ enum BoardFactory {
             }
             struct Row: Decodable {
                 let id: Int
-                let carNumber: String?
+                let railcarNumber: String?
                 let carType: String?
                 let status: String?
                 let owner: String?
-                let lastLoadCommodity: String?
-                let commodity: String?
-                let hazmat: Bool?
+                let yardName: String?
             }
             let env = try JSONDecoder().decode(TRPCEnvelope<Envelope>.self, from: data)
             return env.result.data.json.railcars.map { r in
-                let isHazmat = r.hazmat == true
-                let subtitle = r.lastLoadCommodity ?? r.commodity ?? r.carType
+                // Tank cars are the hazmat-adjacent equipment class the
+                // catalog actually encodes (carType enum) — flag them.
+                let isTank = (r.carType ?? "") == "tankcar"
+                let subtitle = [
+                    r.carType?.replacingOccurrences(of: "_", with: " ").capitalized,
+                    r.yardName
+                ].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: " · ")
                 let accessory: String = {
-                    if isHazmat { return "HAZMAT" }
                     switch (r.status ?? "").lowercased() {
-                    case "loaded":     return "LOADED"
-                    case "empty":      return "MT"
-                    case "in_transit": return "TRANSIT"
-                    default:           return (r.status?.uppercased() ?? "—")
+                    case "loaded":         return "LOADED"
+                    case "available":      return "AVAIL"
+                    case "in_transit":     return "TRANSIT"
+                    case "in_repair":      return "REPAIR"
+                    case "out_of_service": return "OOS"
+                    case "stored":         return "STORED"
+                    case "assigned":       return "ASSIGNED"
+                    default:               return (r.status?.uppercased() ?? "—")
                     }
+                }()
+                let sev: BoardRowSeverity = {
+                    let s = (r.status ?? "").lowercased()
+                    if s == "out_of_service" || s == "in_repair" { return .critical }
+                    return isTank ? .watch : .info
                 }()
                 return BoardRow(
                     id: String(r.id),
-                    title: r.carNumber ?? "RC-\(r.id)",
-                    subtitle: subtitle,
+                    title: r.railcarNumber ?? "RC-\(r.id)",
+                    subtitle: subtitle.isEmpty ? r.owner : subtitle,
                     accessory: accessory,
-                    severity: isHazmat ? .critical : .info,
+                    severity: sev,
                     timestamp: nil
                 )
             }
@@ -794,7 +812,11 @@ enum BoardFactory {
                 let bolNumber: String?
                 let shipmentId: Int?
                 let status: String?
-                let issuedAt: String?
+                // Real issue-date column is `dateOfIssue`
+                // (schema.ts bills_of_lading) — the previously decoded
+                // `issuedAt` does not exist, so recency always fell
+                // back to createdAt.
+                let dateOfIssue: String?
                 let createdAt: String?
             }
             let env = try JSONDecoder().decode(TRPCEnvelope<[Row]>.self, from: data)
@@ -802,14 +824,14 @@ enum BoardFactory {
                 let statusLower = (r.status ?? "").lowercased()
                 let sev: BoardRowSeverity = statusLower == "surrendered"
                     ? .positive
-                    : (statusLower == "pending" ? .watch : .info)
+                    : (statusLower == "draft" ? .watch : .info)
                 return BoardRow(
                     id: String(r.id),
                     title: r.bolNumber ?? "BOL-\(r.id)",
                     subtitle: r.shipmentId.map { "Shipment #\($0)" },
                     accessory: r.status?.uppercased(),
                     severity: sev,
-                    timestamp: BoardDate.parse(r.issuedAt ?? r.createdAt)
+                    timestamp: BoardDate.parse(r.dateOfIssue ?? r.createdAt)
                 )
             }
         }
@@ -828,26 +850,34 @@ enum BoardFactory {
             struct Envelope: Decodable {
                 let shipments: [Row]
             }
+            // Real intermodal_shipments columns (schema.ts:12178):
+            // `intermodalNumber` (NOT containerNumber), commodity,
+            // hazmatClass, originType/destinationType, status,
+            // createdAt. The old containerNumber/chassisNumber/eta
+            // fields don't exist, so every row fell back to "IM-\(id)".
             struct Row: Decodable {
                 let id: Int
-                let containerNumber: String?
-                let chassisNumber: String?
+                let intermodalNumber: String?
                 let status: String?
-                let currentSegment: String?
-                let segment: String?
                 let commodity: String?
-                let eta: String?
+                let hazmatClass: String?
+                let originType: String?
+                let destinationType: String?
                 let createdAt: String?
             }
             let env = try JSONDecoder().decode(TRPCEnvelope<Envelope>.self, from: data)
             return env.result.data.json.shipments.map { r in
-                BoardRow(
+                let modeLane = [r.originType, r.destinationType]
+                    .compactMap { $0?.isEmpty == false ? $0 : nil }
+                    .joined(separator: " → ")
+                let isHazmat = (r.hazmatClass ?? "").isEmpty == false
+                return BoardRow(
                     id: String(r.id),
-                    title: r.containerNumber ?? r.chassisNumber ?? "IM-\(r.id)",
-                    subtitle: r.commodity ?? r.currentSegment ?? r.segment,
-                    accessory: r.status?.uppercased(),
-                    severity: .info,
-                    timestamp: BoardDate.parse(r.eta ?? r.createdAt)
+                    title: r.intermodalNumber ?? "IM-\(r.id)",
+                    subtitle: r.commodity ?? (modeLane.isEmpty ? nil : modeLane),
+                    accessory: isHazmat ? "HAZMAT" : r.status?.uppercased(),
+                    severity: isHazmat ? .critical : .info,
+                    timestamp: BoardDate.parse(r.createdAt)
                 )
             }
         }
@@ -871,11 +901,25 @@ enum BoardFactory {
                 let truckExceptions: [TruckRow]?
                 let vesselExceptions: [VesselRow]?
             }
+            // Truck rows spread `loads.pickupLocation`/`deliveryLocation`
+            // as JSON OBJECTS ({city, state, address…}, controlTower.ts:
+            // 183-186) — decoding them as String threw a typeMismatch
+            // exactly when exceptions existed.
+            struct Loc: Decodable {
+                let city: String?
+                let state: String?
+                var label: String? {
+                    let s = [city, state]
+                        .compactMap { $0?.isEmpty == false ? $0 : nil }
+                        .joined(separator: ", ")
+                    return s.isEmpty ? nil : s
+                }
+            }
             struct TruckRow: Decodable {
                 let id: Int
                 let status: String?
-                let pickupLocation: String?
-                let deliveryLocation: String?
+                let pickupLocation: Loc?
+                let deliveryLocation: Loc?
                 let deliveryDate: String?
                 let exceptionType: String?
             }
@@ -889,8 +933,8 @@ enum BoardFactory {
             let env = try JSONDecoder().decode(TRPCEnvelope<Envelope>.self, from: data)
             var rows: [BoardRow] = []
             for t in env.result.data.json.truckExceptions ?? [] {
-                let lane = [t.pickupLocation, t.deliveryLocation]
-                    .compactMap { $0?.isEmpty == false ? $0 : nil }
+                let lane = [t.pickupLocation?.label, t.deliveryLocation?.label]
+                    .compactMap { $0 }
                     .joined(separator: " → ")
                 rows.append(BoardRow(
                     id: "truck-\(t.id)",

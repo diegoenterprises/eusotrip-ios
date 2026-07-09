@@ -493,18 +493,13 @@ final class EusoTripSession: ObservableObject {
         api.authToken = demoToken
         keychain.save(key: kAuthToken, value: demoToken)
         saveCachedUser(demoUser)
-        // Mirror the demo session to the paired Apple Watch with a
-        // synthetic token — otherwise Pulse stays stuck on "Open EusoTrip
-        // on iPhone to pair" in TestFlight / simulator demo mode. The
-        // watch side only gates its UI on `token != nil`, so any
-        // non-empty marker is enough to flip past the pairing orb into
-        // the authed home.
-        WatchAuthBridge.shared.push(
-            token: demoToken,
-            userId: demoUser.id,
-            userName: demoUser.name,
-            role: demoUser.role
-        )
+        // Do NOT mirror the synthetic demo token to the paired Apple
+        // Watch. The wrist gates on `token != nil` and then attaches
+        // `Bearer demo-…` to REAL production HTTPS calls — every query
+        // 401s while the orb claims signed-in, which reads as "the
+        // watch is broken." A demo phone session sends an explicit
+        // clear so the wrist stays honestly on its pairing state.
+        WatchAuthBridge.shared.clear()
     }
 }
 

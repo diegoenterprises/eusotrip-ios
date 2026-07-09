@@ -15,8 +15,12 @@ struct WatchLoad: Codable, Identifiable, Equatable {
     let originState: String
     let destCity: String
     let destState: String
-    let pickupAt: Date
-    let deliverBy: Date
+    /// Optional — nil when the server row carried no schedule. The UI
+    /// renders an honest "—" instead of a fabricated now+1h/now+6h
+    /// fallback (the old behavior invented pickup windows on rows the
+    /// server never dated).
+    let pickupAt: Date?
+    let deliverBy: Date?
     let ratePerMile: Double?
     let totalRate: Double?
     let miles: Double?

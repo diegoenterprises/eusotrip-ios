@@ -103,11 +103,33 @@ struct DispatcherBoardView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                if store.exceptions.isEmpty {
+                // Honest state ladder: a transport/auth failure paints
+                // an error banner — "All clear." is reserved for a
+                // successful pull that genuinely returned zero rows.
+                if let err = store.lastError, !store.hasLoadedOnce {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.esangAmber)
+                        Text(err)
+                            .font(.system(size: 9, weight: .medium))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(6)
+                    .background(Color.orange.opacity(0.18), in: RoundedRectangle(cornerRadius: R.sm))
+                } else if store.exceptions.isEmpty && store.hasLoadedOnce {
                     Text("All clear.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 20)
+                } else if store.exceptions.isEmpty {
+                    HStack(spacing: 4) {
+                        ProgressView().scaleEffect(0.7)
+                        Text("Loading…")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 20)
                 } else {
                     ForEach(store.exceptions) { ex in
                         exceptionRow(ex)
@@ -135,6 +157,12 @@ struct DispatcherBoardView: View {
         }
         .navigationTitle("Board")
         .task { await store.refresh(auth: auth) }
+        // Re-fetch the moment pairing lands — a cold launch before the
+        // auth mirror used to leave "All clear." on screen forever.
+        .onChange(of: auth.isSignedIn) { _, signedIn in
+            guard signedIn else { return }
+            Task { await store.refresh(auth: auth) }
+        }
         // Prevent overscroll of the brand-gradient "Open on iPhone"
         // button or any severity-colored row from bleeding past the
         // watch's rounded bezel.

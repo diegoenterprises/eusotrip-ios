@@ -63,6 +63,20 @@ final class DictationBroker: ObservableObject {
     /// swipe-to-dismiss gesture (which routes through `cancel()`).
     @Published var isPresenting: Bool = false
 
+    /// Failure note set by the sheet when the fallback input path is
+    /// unreachable. `EsangSession.startListening` reads + clears this
+    /// after a nil `requestText()` so the driver sees a LOUD error card
+    /// instead of the orb silently snapping back to idle.
+    private(set) var lastFailure: String?
+
+    /// Consume-and-clear accessor — one failure maps to exactly one
+    /// error card.
+    func takeFailure() -> String? {
+        let f = lastFailure
+        lastFailure = nil
+        return f
+    }
+
     /// Pending continuation awaiting the sheet's result. Resumed
     /// exactly once — either by `submit(_:)` with the dictated
     /// transcript, or by `cancel()` with nil.
@@ -111,6 +125,14 @@ final class DictationBroker: ObservableObject {
         isPresenting = false
         cont?.resume(returning: nil)
     }
+
+    /// Loud-failure exit: the fallback input path was unreachable.
+    /// Records the failure so the awaiting `EsangSession` can surface
+    /// an error card, then resolves the continuation like `cancel()`.
+    func cancel(failure: String) {
+        lastFailure = failure
+        cancel()
+    }
 }
 
 // MARK: - WatchDictationSheet
@@ -140,16 +162,16 @@ struct WatchDictationSheet: View {
                 )
                 .padding(.top, 4)
 
-            // Primary CTA — direct imperative `presentTextInputController`
-            // call instead of `TextFieldLink`. The link wasn't firing
-            // on watchOS 26 (user reported "the button isnt working")
-            // because `.buttonStyle(.plain)` ate its tap target. The
-            // imperative API runs the moment the user actually taps,
-            // not on sheet appear, so this fixes both that bug AND
-            // the earlier "keyboard auto-opens after 2s" complaint.
-            Button {
-                presentDictation()
-            } label: {
+            // Primary CTA — the doctrine-mandated `TextFieldLink`
+            // (watchOS has NO Speech framework; the link IS the
+            // system dictation affordance in a SwiftUI-only app).
+            // CRITICAL: no `.buttonStyle(.plain)` on the link — that
+            // was the original tap-target killer ("the button isnt
+            // working"): the plain style swallowed the link's own tap
+            // recognizer. The gradient CTA look is applied to the
+            // LABEL view instead, so the link keeps its native hit
+            // handling while the visual stays on-brand.
+            TextFieldLink(prompt: Text("Speak to ESANG")) {
                 HStack(spacing: 8) {
                     Image(systemName: "mic.fill")
                         .font(.system(size: 15, weight: .bold))
@@ -170,11 +192,31 @@ struct WatchDictationSheet: View {
                     )
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            } onSubmit: { text in
+                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+                lastDictated = trimmed
+                broker.submit(trimmed)
+                dismiss()
+            }
+
+            // Fallback — imperative input picker. Kept ONLY as a
+            // secondary lane for the rare configuration where the
+            // TextFieldLink UI is unavailable; its failure is LOUD
+            // (haptic + error card via the broker), never a silent
+            // return.
+            Button {
+                presentDictation()
+            } label: {
+                Text("Use input picker")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 5)
             }
             .buttonStyle(.plain)
 
-            // Secondary action — skip / cancel. Small, muted, so the
-            // CTA keeps primary weight.
+            // Cancel — small, muted, so the CTA keeps primary weight.
             Button {
                 broker.cancel()
                 dismiss()
@@ -203,9 +245,18 @@ struct WatchDictationSheet: View {
     /// watchOS. Suggestions list is empty so the controller defaults
     /// to dictation when the user taps the mic icon. Result string
     /// resolves the broker continuation and dismisses the sheet.
+    ///
+    /// FALLBACK ONLY: in a pure-SwiftUI watch app (no WKExtension
+    /// delegate) `visibleInterfaceController` is usually nil — see
+    /// the header. When that happens we fail LOUDLY: failure haptic,
+    /// broker failure note (which EsangSession turns into a visible
+    /// error card), sheet dismissed. Never a silent dead button.
     private func presentDictation() {
         #if os(watchOS)
         guard let controller = WKApplication.shared().visibleInterfaceController else {
+            WKInterfaceDevice.current().play(.failure)
+            broker.cancel(failure: "Voice input didn't open — tap the mic button instead.")
+            dismiss()
             return
         }
         controller.presentTextInputController(
@@ -228,4 +279,14 @@ struct WatchDictationSheet: View {
         }
         #endif
     }
+}
+
+#Preview("Dictation sheet — Dark") {
+    WatchDictationSheet()
+        .preferredColorScheme(.dark)
+}
+
+#Preview("Dictation sheet — Light") {
+    WatchDictationSheet()
+        .preferredColorScheme(.light)
 }

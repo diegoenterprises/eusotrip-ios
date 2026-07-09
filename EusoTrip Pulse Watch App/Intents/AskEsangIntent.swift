@@ -35,14 +35,38 @@ struct AskEsangIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard let auth = AuthStore.shared else {
-            return .result(dialog: "Sign in on your iPhone to use Esang.")
-        }
-        let session = EsangSession()
+        // `AuthStore.shared` is nil until RootView's first frame — an
+        // intent with openAppWhenRun can perform BEFORE that commits.
+        // Bounded wait for the live store, then fall back to a
+        // keychain-restored store so a valid token never reads as
+        // "signed out" just because Siri beat the scene.
+        let auth = await AskEsangIntentSupport.resolveAuth()
+        // Route the turn through the app's LIVE session when it exists
+        // so the orb history / suggestions / spoken reply all land on
+        // the surface the driver is looking at. A fresh session is the
+        // last-resort fallback for a pre-frame perform.
+        let session = EsangSession.shared ?? EsangSession()
         let connectivity = WatchConnectivityManager.shared
         await session.submitTranscribedText(query, auth: auth, connectivity: connectivity)
         let reply = session.replyText.isEmpty ? "Esang is processing." : session.replyText
         return .result(dialog: IntentDialog(stringLiteral: reply))
+    }
+}
+
+/// Shared store-resolution helpers for the App Intents entry points.
+@MainActor
+enum AskEsangIntentSupport {
+    /// Wait up to ~2s for the app-owned AuthStore, then fall back to a
+    /// keychain-backed instance. The returned store always reflects
+    /// whatever token the wrist actually holds.
+    static func resolveAuth() async -> AuthStore {
+        for _ in 0..<20 {
+            if let live = AuthStore.shared { return live }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        let fallback = AuthStore()
+        fallback.restore()
+        return fallback
     }
 }
 
@@ -58,9 +82,10 @@ struct EsangSOSIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        guard let auth = AuthStore.shared else {
-            return .result(dialog: "Sign in on your iPhone to use Esang.")
-        }
+        // Same store-race guard as AskEsangIntent: never bounce an SOS
+        // because Siri performed before the first frame assigned
+        // `AuthStore.shared`.
+        let auth = await AskEsangIntentSupport.resolveAuth()
         await EmergencyController.shared.activate(
             reason: "siri-sos",
             auth: auth,

@@ -12,13 +12,17 @@
     </array>
     <key>aps-environment</key>
     <string>development</string>
-    <key>com.apple.developer.location.push</key>
-    <true/>
+    <!-- com.apple.developer.location.push REMOVED: it authorizes an
+         iOS Location Push Service Extension — watchOS cannot host one,
+         the watch app has no such target, and the Apple-approval-gated
+         key risked hard signing failures if the App ID capability ever
+         drops out of a regenerated profile. If location-push wakeups
+         are wanted later they belong on an iOS extension target. -->
     <!--
-      Shared Keychain access group so the watch + iPhone can both read
-      the Esang auth token without WCSession being the sole transport.
-      Prevents the "stuck pairing" state when WCSession is cold on a
-      fresh install and the watch has no way to recover the token.
+      Shared Keychain access group for the watch's OWN reads/writes.
+      NOTE: keychain access groups share between processes ON THE SAME
+      DEVICE only — watchOS keychains never sync from the iPhone, so
+      WCSession remains the actual pairing transport.
     -->
     <key>keychain-access-groups</key>
     <array>

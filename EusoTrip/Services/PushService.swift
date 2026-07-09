@@ -268,6 +268,16 @@ final class EusoTripAppDelegate: NSObject, UIApplicationDelegate {
             [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
         UNUserNotificationCenter.current().delegate = PushService.shared
+        // Install the WCSession delegate on EVERY process launch —
+        // including WatchConnectivity background wakes where no scene
+        // ever renders. Without this, a killed iPhone app woken by the
+        // wrist's sendMessage never installed a delegate, the message
+        // timed out, and the watch's 30s auth-bootstrap poll exhausted
+        // ("watch not connected to the app"). activate() is idempotent,
+        // so every existing lazy call site simply becomes a no-op.
+        Task { @MainActor in
+            WatchAuthBridge.shared.activate()
+        }
         return true
     }
 

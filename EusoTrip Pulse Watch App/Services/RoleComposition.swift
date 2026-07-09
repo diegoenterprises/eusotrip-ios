@@ -144,12 +144,20 @@ enum RoleComposition {
         // Admin/Super Admin). Shipper/Broker/Factoring don't file
         // DataQs against their own carrier records, so the tab is
         // omitted from their layouts to keep wrist real estate tight.
-        "SHIPPER":             [.home, .shipperBoard, .inbox, .wallet, .compliance],
+        // NOTE — server role gates (verified): compliance.getViolations
+        // is violationProcedure = DRIVER/CATALYST/DISPATCH/TERMINAL_
+        // MANAGER/COMPLIANCE_OFFICER/SAFETY_MANAGER (+admins). SHIPPER,
+        // ESCORT, RAIL_DISPATCHER, RAIL_CONDUCTOR were assigned a
+        // .compliance tab that always answered FORBIDDEN — swapped to
+        // tabs those roles can actually read (claims.list, wallet, and
+        // railProcedure boards are protected/rail-gated, not
+        // violation-gated).
+        "SHIPPER":             [.home, .shipperBoard, .inbox, .wallet, .insurance],
         "CATALYST":            [.home, .dispatchBoard, .brokerAuctions, .dataqs, .inbox, .wallet],
         "BROKER":              [.home, .brokerAuctions, .dispatchBoard, .inbox, .wallet],
         "DRIVER":              [.home, .hos, .route, .inbox, .wallet, .safetyCoach, .dataqs],
         "DISPATCH":            [.home, .dispatchBoard, .inbox, .hos, .maintenance],
-        "ESCORT":              [.home, .hazmatEscort, .route, .inbox, .compliance],
+        "ESCORT":              [.home, .hazmatEscort, .route, .inbox, .wallet],
         "TERMINAL_MANAGER":    [.home, .dispatchBoard, .compliance, .maintenance, .inbox],
         "COMPLIANCE_OFFICER":  [.home, .compliance, .dataqs, .hos, .safetyOps, .inbox],
         "SAFETY_MANAGER":      [.home, .safetyOps, .compliance, .dataqs, .hos, .inbox],
@@ -158,11 +166,15 @@ enum RoleComposition {
         "SUPER_ADMIN":         [.home, .adminPlatform, .dispatchBoard, .compliance, .dataqs, .safetyOps],
 
         // ── Rail (6) ─────────────────────────────────────────────
-        "RAIL_SHIPPER":        [.home, .railShipmentBoard, .inbox, .wallet, .customs],
+        // RAIL_SHIPPER's old fifth tab was .customs → vesselShipments.
+        // listBOLs, a vesselProcedure — rail roles carry only RAIL mode
+        // so it was always FORBIDDEN. Swapped to .trainConsist
+        // (railShipments.getRailcars, a railProcedure the role passes).
+        "RAIL_SHIPPER":        [.home, .railShipmentBoard, .inbox, .wallet, .trainConsist],
         "RAIL_CATALYST":       [.home, .railShipmentBoard, .dispatchBoard, .inbox, .wallet],
-        "RAIL_DISPATCHER":     [.home, .dispatchBoard, .railShipmentBoard, .inbox, .compliance],
+        "RAIL_DISPATCHER":     [.home, .dispatchBoard, .railShipmentBoard, .inbox, .trainConsist],
         "RAIL_ENGINEER":       [.home, .hos, .trainConsist, .inbox, .safetyCoach],
-        "RAIL_CONDUCTOR":      [.home, .trainConsist, .hos, .compliance, .inbox],
+        "RAIL_CONDUCTOR":      [.home, .trainConsist, .hos, .wallet, .inbox],
         "RAIL_BROKER":         [.home, .brokerAuctions, .railShipmentBoard, .inbox, .wallet],
 
         // ── Vessel (6) ───────────────────────────────────────────
@@ -231,10 +243,13 @@ enum RoleComposition {
         "broker_agent":                [.home, .brokerAuctions, .inbox, .wallet, .dispatchBoard],
         "broker":                      [.home, .brokerAuctions, .dispatchBoard, .inbox, .wallet],
 
-        "shipper_ftl":                 [.home, .shipperBoard, .inbox, .compliance, .wallet],
-        "shipper_ltl":                 [.home, .shipperBoard, .inbox, .wallet, .compliance],
-        "shipper":                     [.home, .shipperBoard, .inbox, .compliance, .wallet],
-        "consignee":                   [.home, .shipperBoard, .inbox, .wallet, .compliance],
+        // Shipper-family legacy keys: compliance.getViolations is
+        // FORBIDDEN for shipper roles — claims (protectedProcedure)
+        // replaces it, same as the canonical SHIPPER layout.
+        "shipper_ftl":                 [.home, .shipperBoard, .inbox, .insurance, .wallet],
+        "shipper_ltl":                 [.home, .shipperBoard, .inbox, .wallet, .insurance],
+        "shipper":                     [.home, .shipperBoard, .inbox, .insurance, .wallet],
+        "consignee":                   [.home, .shipperBoard, .inbox, .wallet, .insurance],
 
         "warehouse_manager":           [.home, .maintenance, .dispatchBoard, .inbox, .compliance],
         "dock_supervisor":             [.home, .dispatchBoard, .compliance, .inbox, .hos],
