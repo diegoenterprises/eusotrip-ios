@@ -40,14 +40,63 @@ enum LifecycleStage: String, CaseIterable, Codable {
         "paid": .closed, "complete": .closed, "cancelled": .closed, "expired": .closed,
     ]
 
-    /// Canonical derivation. `on_hold`/`customs_hold` render in the stage they
-    /// interrupted (via `previousState`) rather than jumping the strip.
-    static func derive(status: String?, previousState: String? = nil) -> LifecycleStage {
+    /// RAIL map — all 21 rail_shipments.status values (L02-21). Transit-side
+    /// exceptions pin conservatively to IN_TRANSIT.
+    static let railStatusToStage: [String: LifecycleStage] = [
+        "requested": .posted,
+        "car_ordered": .awarded,
+        "car_placed": .pickup, "loading": .pickup, "loaded": .pickup, "in_consist": .pickup,
+        "departed": .inTransit, "in_transit": .inTransit, "at_interchange": .inTransit,
+        "in_yard": .inTransit, "interchange_delay": .inTransit, "derailment_hold": .inTransit,
+        "hazmat_exception": .inTransit, "on_hold": .inTransit,
+        "spotted": .delivery, "unloading": .delivery, "unloaded": .delivery,
+        "empty_returned": .paperwork, "invoiced": .paperwork,
+        "settled": .closed, "cancelled": .closed,
+    ]
+
+    /// VESSEL map — all 19 vessel_shipments.status values (L03-14). `customs_hold`
+    /// pins to DELIVERY (destination hold) via this explicit entry, which wins
+    /// over the generic hold heuristic; `rolled` re-opens BIDDING.
+    static let vesselStatusToStage: [String: LifecycleStage] = [
+        "booking_requested": .posted,
+        "booking_confirmed": .awarded, "documentation": .awarded,
+        "container_released": .pickup, "gate_in": .pickup, "loaded_on_vessel": .pickup,
+        "departed": .inTransit, "in_transit": .inTransit, "transshipment": .inTransit,
+        "arrived": .delivery, "customs_hold": .delivery, "customs_cleared": .delivery,
+        "discharged": .delivery, "gate_out": .delivery, "delivered": .delivery,
+        "invoiced": .paperwork,
+        "settled": .closed, "cancelled": .closed,
+        "rolled": .bidding,
+    ]
+
+    /// Transport mode for stage derivation. Mirrors the server `TransportModeKey`.
+    enum Mode: String { case truck = "TRUCK", rail = "RAIL", vessel = "VESSEL" }
+
+    private static func map(for mode: Mode) -> [String: LifecycleStage] {
+        switch mode {
+        case .truck:  return truckStatusToStage
+        case .rail:   return railStatusToStage
+        case .vessel: return vesselStatusToStage
+        }
+    }
+
+    /// Mode-aware canonical derivation. The explicit per-mode mapping wins first
+    /// (e.g. VESSEL `customs_hold` → DELIVERY); only an UNMAPPED `on_hold`/
+    /// `customs_hold` falls back to the interrupted stage (via `previousState`)
+    /// or IN_TRANSIT. Mirrors `deriveLifecycleStage` in server/shared/lifecycle.ts.
+    static func derive(status: String?, mode: Mode, previousState: String? = nil) -> LifecycleStage {
+        let table = map(for: mode)
         let s = (status ?? "").lowercased()
+        if let stage = table[s] { return stage }
         if s == "on_hold" || s == "customs_hold" {
-            if let prev = previousState?.lowercased(), let stage = truckStatusToStage[prev] { return stage }
+            if let prev = previousState?.lowercased(), let stage = table[prev] { return stage }
             return .inTransit
         }
-        return truckStatusToStage[s] ?? .posted
+        return .posted
+    }
+
+    /// Back-compat TRUCK overload for existing call sites.
+    static func derive(status: String?, previousState: String? = nil) -> LifecycleStage {
+        derive(status: status, mode: .truck, previousState: previousState)
     }
 }
