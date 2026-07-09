@@ -49,6 +49,7 @@
 
 import Foundation
 import CoreLocation
+import UIKit
 
 @MainActor
 final class DriverGPSPushService: NSObject, ObservableObject,
@@ -62,6 +63,37 @@ final class DriverGPSPushService: NSObject, ObservableObject,
 
     private let manager = CLLocationManager()
     private var activeLoadId: Int?
+
+    // MARK: - Breadcrumb trail (L13-6)
+    //
+    // `drivers.updateLocation` (above) only keeps the LATEST position for the
+    // live pin. The persisted TRAIL — behind replay / mileage / deviation /
+    // detention proof + The Haul territory coverage — comes from batching
+    // fixes to the existing `location.telemetry.locationBatch`. We buffer
+    // every accepted fix (one per 50 m via `distanceFilter`) and flush ≤25 at
+    // a time on 20 buffered / 60 s / stop(). The 15 s updateLocation loop is
+    // untouched. Gated by the `breadcrumbsEnabled` flag (default on;
+    // kill-switch — the buffer simply never flushes when off).
+
+    /// Raw buffered fix; converted to the wire shape at flush time so each
+    /// consumer (locationBatch = mph, Haul coverage = kph) gets its own unit.
+    private struct Crumb {
+        let lat: Double, lng: Double
+        let timestamp: String
+        let speedMps: Double?      // raw m/s (nil when CoreLocation reports <0)
+        let heading: Double?
+        let accuracy: Double?
+        let altitude: Double?
+        let batteryPct: Double?
+        let isCharging: Bool?
+    }
+    private var crumbBuffer: [Crumb] = []
+    private var lastCrumbFlushAt: Date = .distantPast
+    private let crumbIso = ISO8601DateFormatter()
+
+    private var breadcrumbsEnabled: Bool {
+        (UserDefaults.standard.object(forKey: "breadcrumbsEnabled") as? Bool) ?? true
+    }
 
     /// Minimum interval between two backend POSTs even if the driver
     /// moves rapidly. CoreLocation can fire `didUpdateLocations`
@@ -80,6 +112,8 @@ final class DriverGPSPushService: NSObject, ObservableObject,
         manager.distanceFilter  = 50
         manager.pausesLocationUpdatesAutomatically = false
         manager.activityType = .automotiveNavigation
+        // Real battery telemetry for the breadcrumb trail (nil otherwise).
+        UIDevice.current.isBatteryMonitoringEnabled = true
     }
 
     // MARK: - Public lifecycle
@@ -111,6 +145,7 @@ final class DriverGPSPushService: NSObject, ObservableObject,
     }
 
     func stop() {
+        flushCrumbs()                 // persist whatever's buffered before teardown
         manager.stopUpdatingLocation()
         activeLoadId = nil
         isStreaming = false
@@ -128,6 +163,7 @@ final class DriverGPSPushService: NSObject, ObservableObject,
         guard age < 60 else { return }
         Task { @MainActor [weak self] in
             self?.maybePush(fix: fix)
+            self?.bufferCrumb(fix)
         }
     }
 
@@ -178,6 +214,12 @@ final class DriverGPSPushService: NSObject, ObservableObject,
         let lat = fix.coordinate.latitude
         let lng = fix.coordinate.longitude
 
+        // L13-10: carry heading + speed on the live push too (the server
+        // consumes both for the directional pin + live-ping payload). speed
+        // in mph to match the breadcrumb trail unit.
+        let heading: Double? = fix.course >= 0 ? fix.course : nil
+        let speedMph: Double? = fix.speed >= 0 ? fix.speed * 2.236_94 : nil
+
         Task {
             do {
                 struct UpdateLocationInput: Encodable {
@@ -185,17 +227,89 @@ final class DriverGPSPushService: NSObject, ObservableObject,
                     let lng: Double
                     let city: String?
                     let state: String?
+                    let heading: Double?
+                    let speed: Double?
                 }
                 struct Ack: Decodable { let success: Bool? }
                 let _: Ack = try await EusoTripAPI.shared.mutation(
                     "drivers.updateLocation",
-                    input: UpdateLocationInput(lat: lat, lng: lng, city: nil, state: nil)
+                    input: UpdateLocationInput(lat: lat, lng: lng, city: nil, state: nil,
+                                               heading: heading, speed: speedMph)
                 )
                 await MainActor.run { self.lastPushAt = Date() }
             } catch {
                 await MainActor.run {
                     self.lastError = "GPS push failed: \(error.localizedDescription)"
                 }
+            }
+        }
+    }
+
+    // MARK: - Breadcrumb trail
+
+    /// Buffer one accepted fix (called from `didUpdateLocations` after the
+    /// stale-fix guard). Flushes when 20 are buffered or 60 s have elapsed.
+    @MainActor
+    private func bufferCrumb(_ fix: CLLocation) {
+        guard breadcrumbsEnabled else { return }
+        let battery = UIDevice.current.isBatteryMonitoringEnabled && UIDevice.current.batteryLevel >= 0
+            ? Double(UIDevice.current.batteryLevel * 100) : nil
+        let charging: Bool? = UIDevice.current.isBatteryMonitoringEnabled
+            ? (UIDevice.current.batteryState == .charging || UIDevice.current.batteryState == .full)
+            : nil
+        crumbBuffer.append(Crumb(
+            lat: fix.coordinate.latitude,
+            lng: fix.coordinate.longitude,
+            timestamp: crumbIso.string(from: fix.timestamp),
+            speedMps: fix.speed >= 0 ? fix.speed : nil,
+            heading: fix.course >= 0 ? fix.course : nil,
+            accuracy: fix.horizontalAccuracy >= 0 ? fix.horizontalAccuracy : nil,
+            altitude: fix.verticalAccuracy >= 0 ? fix.altitude : nil,
+            batteryPct: battery,
+            isCharging: charging))
+        if crumbBuffer.count >= 20 || Date().timeIntervalSince(lastCrumbFlushAt) >= 60 {
+            flushCrumbs()
+        }
+    }
+
+    /// Flush ≤25 buffered fixes to `location.telemetry.locationBatch` and feed
+    /// the same points to `HereHaulBridge.recordCoverage` (its first real
+    /// caller — lights up `hereMaps.locationAnalytics` territory events). On
+    /// failure the batch is re-buffered for the next flush (buffer capped at
+    /// 200 so a long offline stretch never grows unbounded).
+    @MainActor
+    private func flushCrumbs() {
+        guard breadcrumbsEnabled, !crumbBuffer.isEmpty else { return }
+        let batch = Array(crumbBuffer.prefix(25))
+        crumbBuffer.removeFirst(min(25, crumbBuffer.count))
+        lastCrumbFlushAt = Date()
+        let loadId = activeLoadId
+
+        let points = batch.map { c in
+            EusoTripAPI.LocationBatchPoint(
+                lat: c.lat, lng: c.lng, timestamp: c.timestamp,
+                speed: c.speedMps.map { $0 * 2.236_94 },   // m/s → mph
+                heading: c.heading, accuracy: c.accuracy, altitude: c.altitude,
+                batteryLevel: c.batteryPct, isCharging: c.isCharging)
+        }
+        let coverage = batch.map { c in
+            HereMapsAPI.Breadcrumb(
+                lat: c.lat, lng: c.lng, capturedAt: c.timestamp,
+                speedKph: c.speedMps.map { $0 * 3.6 })       // m/s → kph
+        }
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await EusoTripAPI.shared.locationBatch(locations: points, loadId: loadId)
+                await HereHaulBridge.shared.recordCoverage(breadcrumbs: coverage)
+            } catch {
+                // Re-buffer for retry; cap at 200 (drop oldest overflow).
+                self.crumbBuffer.insert(contentsOf: batch, at: 0)
+                if self.crumbBuffer.count > 200 {
+                    self.crumbBuffer.removeLast(self.crumbBuffer.count - 200)
+                }
+                self.lastError = "locationBatch: \(error.localizedDescription)"
             }
         }
     }

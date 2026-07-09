@@ -1599,6 +1599,44 @@ final class EusoTripAPI: ObservableObject {
         return try await mutation(path, input: TRPCEmptyInput())
     }
 
+    // MARK: Breadcrumb trail (L13-6)
+
+    /// One breadcrumb point matching the server `locationPointSchema`.
+    /// `speed` is MPH (US trucking convention; the server stores the bare
+    /// decimal and derives its own implied-speed spoofing check from the
+    /// coordinate deltas, so the unit is display-only downstream).
+    struct LocationBatchPoint: Encodable {
+        let lat: Double
+        let lng: Double
+        let timestamp: String
+        let speed: Double?
+        let heading: Double?
+        let accuracy: Double?
+        let altitude: Double?
+        let batteryLevel: Double?
+        let isCharging: Bool?
+    }
+
+    /// Flush a batch (1-200) to `location.telemetry.locationBatch` →
+    /// `ingestBreadcrumbs` (writes the `location_breadcrumbs` trail) +
+    /// `emitTrackingEvent`. Distinct from `drivers.updateLocation` (latest-
+    /// position UPSERT for the live dispatcher pin) — this is the persisted
+    /// trail behind replay / mileage / deviation / detention proof. Returns
+    /// the inserted count (0 when the 2 s per-driver rate limit skipped it).
+    @discardableResult
+    func locationBatch(locations: [LocationBatchPoint], loadId: Int?) async throws -> Int {
+        struct Input: Encodable {
+            let locations: [LocationBatchPoint]
+            let loadId: Int?
+        }
+        struct BatchAck: Decodable { let inserted: Int? }
+        let ack: BatchAck = try await mutation(
+            "location.telemetry.locationBatch",
+            input: Input(locations: locations, loadId: loadId)
+        )
+        return ack.inserted ?? 0
+    }
+
     // MARK: Offline-outbox eligibility
     //
     // Maps a tRPC mutation path to its OfflineQueue enqueue, decoding the
