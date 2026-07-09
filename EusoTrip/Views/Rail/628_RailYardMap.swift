@@ -23,8 +23,11 @@
 //
 //  ZERO-FABRICATION: utilizationPct is null when capacity is unknown — the
 //  header renders "—", never an invented %. Empty tracks/unassigned render an
-//  honest empty state. Every occupant chip shows ONLY real slim fields
-//  (carNumber · carType · status). No coordinates → the map card hides itself.
+//  honest empty state; a FAILED occupancy read renders a distinct retryable
+//  error, never the empty state. Every occupant chip shows ONLY real slim
+//  fields (carNumber · carType · status). No coordinates → the map card hides
+//  itself. Yard switches are generation-guarded — a slow earlier response can
+//  never paint a stale yard's board over the current selection.
 //
 
 import SwiftUI
@@ -88,6 +91,13 @@ private struct RailYardMapBody: View {
     @State private var loading = true
     @State private var loadError: String? = nil
     @State private var occLoading = false
+    /// Occupancy-read failure — renders the retryable error state, distinct
+    /// from the true "No tracks configured" empty state.
+    @State private var occError: String? = nil
+    /// Generation token for the occupancy fetch — bumped on every request so
+    /// a slow earlier response can be discarded instead of painting a stale
+    /// yard's board over the current selection.
+    @State private var occRequestId = 0
 
     /// Detail-list scope toggle (secondary CTA). Default: only occupied tracks.
     @State private var showAllTracks = false
@@ -320,7 +330,10 @@ private struct RailYardMapBody: View {
                 .padding(.top, Space.s3)
 
             let tracks = occupancy?.tracks ?? []
-            if tracks.isEmpty {
+            if let occErr = occError {
+                occupancyErrorState(occErr)
+                    .padding(.top, Space.s4)
+            } else if tracks.isEmpty {
                 emptyTrackState
                     .padding(.top, Space.s4)
             } else {
@@ -515,6 +528,40 @@ private struct RailYardMapBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
     }
 
+    // MARK: - Occupancy error state (failed read — distinct from true empty)
+
+    /// A failed occupancy read renders THIS, never the "No tracks configured"
+    /// empty state — that claim is only honest when the read succeeded.
+    private func occupancyErrorState(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "wifi.exclamationmark")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Brand.danger)
+                Text(message)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Button {
+                Task { await reloadOccupancy() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("Retry")
+                        .font(.system(size: 11, weight: .bold)).tracking(0.3)
+                }
+                .foregroundStyle(Brand.danger)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Capsule().fill(Brand.danger.opacity(0.14)))
+                .overlay(Capsule().strokeBorder(Brand.danger.opacity(0.35)))
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Space.s2)
+    }
+
     // MARK: - Empty track state
 
     private var emptyTrackState: some View {
@@ -689,17 +736,34 @@ private struct RailYardMapBody: View {
     }
 
     /// Load the real carload track occupancy for the selected yard.
+    ///
+    /// RACE GUARD: tapping yards back-to-back fires overlapping requests — a
+    /// slow earlier response must never land after a newer one and render the
+    /// wrong yard's board. Each request captures a generation token plus the
+    /// yardId it was fired for; the response (success OR failure) is discarded
+    /// unless both still match the current state when it lands.
     private func reloadOccupancy() async {
-        guard let yardId = selectedYardId else { occupancy = nil; return }
+        guard let yardId = selectedYardId else {
+            occupancy = nil
+            occError = nil
+            return
+        }
+        occRequestId += 1
+        let requestId = occRequestId
         occLoading = true
         do {
-            self.occupancy = try await EusoTripAPI.shared.railShipments.getYardTrackOccupancy(yardId: yardId)
+            let board = try await EusoTripAPI.shared.railShipments.getYardTrackOccupancy(yardId: yardId)
+            guard requestId == occRequestId, yardId == selectedYardId else { return }
+            self.occupancy = board
+            self.occError = nil
         } catch {
-            // Occupancy is secondary — leave the last-known board rather than
-            // wiping the whole page when a single yard read fails.
-            if loadError == nil { self.occupancy = nil }
+            guard requestId == occRequestId, yardId == selectedYardId else { return }
+            // HONESTY: a failed read must never render as "No tracks
+            // configured" — clear the board and surface the retryable error.
+            self.occupancy = nil
+            self.occError = "Couldn't load track occupancy."
         }
-        occLoading = false
+        if requestId == occRequestId { occLoading = false }
     }
 }
 

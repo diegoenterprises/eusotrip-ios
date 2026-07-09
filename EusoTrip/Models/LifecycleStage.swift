@@ -41,14 +41,19 @@ enum LifecycleStage: String, CaseIterable, Codable {
     ]
 
     /// RAIL map — all 21 rail_shipments.status values (L02-21). Transit-side
-    /// exceptions pin conservatively to IN_TRANSIT.
+    /// exceptions pin conservatively to IN_TRANSIT. `on_hold` is deliberately
+    /// ABSENT from this map so `derive`'s hold heuristic renders the stage it
+    /// interrupted (via `previousState`) — a hold on a still-loading shipment
+    /// shows PICKUP, not mid-transit — falling back to IN_TRANSIT only when
+    /// the interrupted stage is unknown. Mirrors RAIL_STATUS_TO_STAGE in
+    /// server/shared/lifecycle.ts (adversarial-verify catch 2026-07-09).
     static let railStatusToStage: [String: LifecycleStage] = [
         "requested": .posted,
         "car_ordered": .awarded,
         "car_placed": .pickup, "loading": .pickup, "loaded": .pickup, "in_consist": .pickup,
         "departed": .inTransit, "in_transit": .inTransit, "at_interchange": .inTransit,
         "in_yard": .inTransit, "interchange_delay": .inTransit, "derailment_hold": .inTransit,
-        "hazmat_exception": .inTransit, "on_hold": .inTransit,
+        "hazmat_exception": .inTransit,
         "spotted": .delivery, "unloading": .delivery, "unloaded": .delivery,
         "empty_returned": .paperwork, "invoiced": .paperwork,
         "settled": .closed, "cancelled": .closed,
