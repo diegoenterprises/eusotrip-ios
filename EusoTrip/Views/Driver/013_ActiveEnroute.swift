@@ -133,6 +133,14 @@ struct ActiveEnroute: View {
     @AppStorage("tbtEnabled") private var tbtEnabled = false
     @State private var showManeuverSteps = false
 
+    // L08-9 · Astra hazmat placard scan. Presented as a SHEET (never a nav
+    // push) from a hazmat-gated CTA in the bottom sheet. `lastPlacardUN`
+    // records the UN of the most recent successful scan so the CTA can
+    // confirm it back to the driver — a real local effect off the verified
+    // `PlacardScanResponse`, never fabricated.
+    @State private var showPlacardScan = false
+    @State private var lastPlacardUN: String? = nil
+
     var body: some View {
         ZStack(alignment: .top) {
             mapLayer
@@ -557,11 +565,18 @@ struct ActiveEnroute: View {
         let icon: String?
     }
 
+    /// True when the live load actually carries a hazmat class. Gates the
+    /// HAZMAT ROUTE LOCKED chip AND the placard-scan CTA (L08-9). No load /
+    /// non-hazmat load ⇒ no hazmat affordances (never fabricated).
+    private var isHazmatLoad: Bool {
+        (activeLoad?.hazmatClass ?? "").isEmpty == false
+    }
+
     private var chips: [EnrouteChip] {
         var out: [EnrouteChip] = []
         // HAZMAT chip — rendered only when the live load actually
         // carries a hazmat class. No load = no fabricated chip.
-        let isHazmat = (activeLoad?.hazmatClass ?? "").isEmpty == false
+        let isHazmat = isHazmatLoad
         if isHazmat {
             out.append(EnrouteChip(label: "HAZMAT ROUTE LOCKED", tint: Brand.info, icon: "lock.shield"))
         }
@@ -1053,6 +1068,34 @@ struct ActiveEnroute: View {
                 .buttonStyle(.plain)
                 .disabled(lifecycle.inflightTransitionId != nil)
                 .accessibilityLabel("Continue route to pickup")
+            }
+
+            // L08-9 · Hazmat placard scan — hazmat loads only. Canonical
+            // CTAButton (NO NavigationLink) that presents the already-built
+            // Astra `HazmatPlacardScanView` as a SHEET. Gated on the same
+            // `isHazmatLoad` as the HAZMAT ROUTE LOCKED chip, so a dry-van /
+            // reefer load never sees it. `onScanComplete` records the verified
+            // UN back into the CTA subtitle — a real local effect, not a stub.
+            if isHazmatLoad {
+                CTAButton(
+                    title: "Scan hazmat placard",
+                    action: { showPlacardScan = true },
+                    leadingIcon: "camera.viewfinder",
+                    subtitle: lastPlacardUN.map { "LAST SCAN · UN \($0)" }
+                )
+                .accessibilityLabel("Scan hazmat placard with camera")
+                .sheet(isPresented: $showPlacardScan) {
+                    NavigationStack {
+                        HazmatPlacardScanView(
+                            loadId: activeLoad.map { String($0.id) },
+                            onScanComplete: { resp in
+                                if let un = resp.ocr.unNumber ?? resp.unNumber, !un.isEmpty {
+                                    lastPlacardUN = un
+                                }
+                            }
+                        )
+                    }
+                }
             }
         }
         .padding(Space.s4)
