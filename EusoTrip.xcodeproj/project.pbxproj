@@ -411,6 +411,7 @@
 		D1A11111111111111111EV01 /* HereEVStrip.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111EV02 /* HereEVStrip.swift */; };
 		D1A11111111111111111HG01 /* DriverHomeGlances.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111HG02 /* DriverHomeGlances.swift */; };
 		D1A11111111111111111HP41 /* ES02_HeightPole.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111HP42 /* ES02_HeightPole.swift */; };
+		ES06VEHCHK0001 /* ES06_VehicleCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES06VEHCHK0002 /* ES06_VehicleCheck.swift */; };
 		D1A11111111111111111HZ01 /* HotZonesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111HZ02 /* HotZonesWidget.swift */; };
 		D1A11111111111111111KH01 /* 500_CatalystHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111KH02 /* 500_CatalystHome.swift */; };
 		D1A11111111111111111KMD1 /* 502_CatalystMatchDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111KMD2 /* 502_CatalystMatchDetail.swift */; };
@@ -1471,6 +1472,7 @@
 		D1A11111111111111111EV02 /* HereEVStrip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereEVStrip.swift; sourceTree = "<group>"; };
 		D1A11111111111111111HG02 /* DriverHomeGlances.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DriverHomeGlances.swift; sourceTree = "<group>"; };
 		D1A11111111111111111HP42 /* ES02_HeightPole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES02_HeightPole.swift; path = EusoTrip/Views/Escort/ES02_HeightPole.swift; sourceTree = SOURCE_ROOT; };
+		ES06VEHCHK0002 /* ES06_VehicleCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES06_VehicleCheck.swift; path = EusoTrip/Views/Escort/ES06_VehicleCheck.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111HZ02 /* HotZonesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotZonesWidget.swift; sourceTree = "<group>"; };
 		D1A11111111111111111KH02 /* 500_CatalystHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 500_CatalystHome.swift; path = EusoTrip/Views/Catalyst/500_CatalystHome.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111KMD2 /* 502_CatalystMatchDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 502_CatalystMatchDetail.swift; path = EusoTrip/Views/Catalyst/502_CatalystMatchDetail.swift; sourceTree = SOURCE_ROOT; };
@@ -2848,6 +2850,7 @@
 				D1A11111111111111111ECM2 /* 602_EscortCorridorMap.swift */,
 				D1A11111111111111111CC32 /* ES01_ConvoyComms.swift */,
 				D1A11111111111111111HP42 /* ES02_HeightPole.swift */,
+				ES06VEHCHK0002 /* ES06_VehicleCheck.swift */,
 				D1A11111111111111111SD52 /* ES07_SettlementDetail.swift */,
 				D1A11111111111111111TH02 /* 700_TerminalHome.swift */,
 				D1A11111111111111111TNC2 /* TerminalNavController.swift */,
@@ -4677,6 +4680,7 @@
 				D1A11111111111111111ECM1 /* 602_EscortCorridorMap.swift in Sources */,
 				D1A11111111111111111CC31 /* ES01_ConvoyComms.swift in Sources */,
 				D1A11111111111111111HP41 /* ES02_HeightPole.swift in Sources */,
+				ES06VEHCHK0001 /* ES06_VehicleCheck.swift in Sources */,
 				D1A11111111111111111SD51 /* ES07_SettlementDetail.swift in Sources */,
 				D1A11111111111111111TH01 /* 700_TerminalHome.swift in Sources */,
 				D1A11111111111111111TNC1 /* TerminalNavController.swift in Sources */,

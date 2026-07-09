@@ -1730,6 +1730,7 @@ enum ScreenRegistry {
         list.append(.init(id: "603", title: "Escort · Convoy Comms", role: .escort) { p in AnyView(EscortConvoyCommsScreen(theme: p)) })
         list.append(.init(id: "604", title: "Escort · Height Pole", role: .escort) { p in AnyView(EscortHeightPoleScreen(theme: p)) })
         list.append(.init(id: "605", title: "Escort · Settlement Detail", role: .escort) { p in AnyView(EscortSettlementDetailScreen(theme: p, assignmentId: "0")) })  // pushed surface; pass a real assignment id via the entry-point row when navigating
+        list.append(.init(id: "608", title: "Escort · Vehicle Check", role: .escort) { p in AnyView(EscortVehicleCheckScreen(theme: p, assignmentId: "0")) })  // ES-06 pre-trip equipment gate; resolves the active assignment when id is "0"
 
         // 2026-05-01 — lifted Terminal 700-702 + Admin 800-803 OUT
         // of the previous `#if DEBUG` block. Both role tracks have
