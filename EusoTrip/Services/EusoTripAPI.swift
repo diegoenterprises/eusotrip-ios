@@ -25965,6 +25965,129 @@ struct RailShipmentsAPI {
 }
 
 // ════════════════════════════════════════════════════════════════════════
+// MARK: - RailShipments · carload-native yard reads (additive, isolated)
+// ════════════════════════════════════════════════════════════════════════
+//
+// Wraps two real `railShipmentsRouter` procs
+// (frontend/server/routers/railShipments.ts), the carload-native yard
+// surfaces on the Rail Engineer screens (628 Yard Map · 600 Ramp Ops):
+//
+//   getRailYards({ state?, yardType?, hasIntermodal?, limit? })
+//     → [ rail_yards row ]  (railShipments.ts:1207) — the active rail-yard
+//       catalog. Each row carries the REAL id / name / city / state /
+//       coordinates{lat,lng} / yardType / totalTracks / capacity the
+//       carload-native surfaces key off. Returns [] on no-db.
+//
+//   getYardTrackOccupancy({ yardId })
+//     → { yardId, yardName?, totalTracks, capacity, utilizationPct,
+//         tracks:[{ trackNumber, cars:[{id,carNumber,carType,status}],
+//         carCount }], unassigned:[…] }  (railShipments.ts:977) — the real
+//       track layout: track rows derived from rail_yards.totalTracks with the
+//       REAL railcars currently at the yard distributed by trackNumber; a car
+//       whose trackNumber is out of range falls into `unassigned`.
+//
+// ZERO-FABRICATION contract, decoded 1:1:
+//   • utilizationPct is `Double?` — the server emits NULL when capacity is
+//     unknown (capacity <= 0). Views render "—", never a fabricated %.
+//   • The proc has TWO honest-empty return paths (no-db / yard-not-found)
+//     that emit only `{ yardId, tracks:[], unassigned:[], note }` — WITHOUT
+//     yardName / totalTracks / capacity. So those three are decoded as
+//     optional here to stay lossless across every return path; the success
+//     path always carries totalTracks / capacity as real numbers (0 when the
+//     yard row leaves them null). `tracks` / `unassigned` are present in
+//     every path (as []), so they decode as non-optional arrays.
+
+/// One occupant railcar on a track (or in the unassigned lane). Server slim
+/// projection: `{ id, carNumber, carType, status }` — `carNumber` is the
+/// railcar's `railcarNumber`, the rest are the railcar row's own columns.
+/// Only `id` is guaranteed non-null.
+struct YardCar: Decodable, Identifiable, Hashable {
+    let id: Int
+    let carNumber: String?
+    let carType: String?
+    let status: String?
+}
+
+/// One track row: its 1-based number, the cars spotted on it, and the count.
+/// `carCount == cars.count` server-side; kept as the server's own field.
+struct YardTrack: Decodable, Identifiable, Hashable {
+    var id: Int { trackNumber }
+    let trackNumber: Int
+    let cars: [YardCar]
+    let carCount: Int
+}
+
+/// `railShipments.getYardTrackOccupancy` envelope. See the section header for
+/// why the yard-level numbers are optional (honest-empty paths omit them).
+struct YardTrackOccupancy: Decodable {
+    let yardId: Int
+    let yardName: String?
+    let totalTracks: Int?
+    let capacity: Int?
+    let utilizationPct: Double?     // NULL when capacity unknown — render "—"
+    let tracks: [YardTrack]
+    let unassigned: [YardCar]
+}
+
+/// A rail-yard coordinate pin (rail_yards.coordinates JSON). Either component
+/// can be absent; views null-island-guard before mapping.
+struct RailYardCoordinates: Decodable, Hashable {
+    let lat: Double?
+    let lng: Double?
+}
+
+/// One `rail_yards` row from `railShipments.getRailYards`. Only the columns
+/// the carload-native yard surfaces read are decoded; the rest of the row
+/// (splcCode / createdAt / operatingHours / status / …) is ignored by the
+/// decoder. Named `…Row` to avoid the static `RailYard` catalog type in
+/// RailYardLookup.swift.
+struct RailYardRow: Decodable, Identifiable, Hashable {
+    let id: Int
+    let name: String
+    let city: String?
+    let state: String?
+    let yardType: String?
+    let totalTracks: Int?
+    let capacity: Int?
+    let hasIntermodal: Bool?
+    let coordinates: RailYardCoordinates?
+}
+
+extension RailShipmentsAPI {
+    /// `railShipments.getRailYards` — the active rail-yard catalog the
+    /// carload-native yard surfaces select from. Every filter is optional; the
+    /// default (no filter) returns every active yard up to `limit`.
+    func getRailYards(
+        state: String? = nil,
+        yardType: String? = nil,
+        hasIntermodal: Bool? = nil,
+        limit: Int = 50
+    ) async throws -> [RailYardRow] {
+        struct Input: Encodable {
+            let state: String?
+            let yardType: String?
+            let hasIntermodal: Bool?
+            let limit: Int
+        }
+        return try await api.query(
+            "railShipments.getRailYards",
+            input: Input(state: state, yardType: yardType,
+                         hasIntermodal: hasIntermodal, limit: limit))
+    }
+
+    /// `railShipments.getYardTrackOccupancy` — the real per-track carload
+    /// layout for one yard (track rows + spotted cars + unassigned lane +
+    /// yard-level totals/utilization). Honest-empty envelope on no-db /
+    /// yard-not-found (empty tracks, nil yard-level numbers).
+    func getYardTrackOccupancy(yardId: Int) async throws -> YardTrackOccupancy {
+        struct Input: Encodable { let yardId: Int }
+        return try await api.query(
+            "railShipments.getYardTrackOccupancy",
+            input: Input(yardId: yardId))
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════════
 // MARK: - HotZones · dedicated heatmap accessor (additive, isolated)
 // ════════════════════════════════════════════════════════════════════════
 //

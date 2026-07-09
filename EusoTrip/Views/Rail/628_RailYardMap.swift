@@ -2,37 +2,29 @@
 //  628_RailYardMap.swift
 //  EusoTrip — Rail Engineer · Yard Map (628).
 //
-//  CARRIER-SIDE MAP archetype — a live track-grid MapCanvas hero (slots
-//  colored occupied/reserved/open/maintenance with legend) over a ZONES
-//  list where each zone row carries a 40 pin-chip + relative fill bar +
-//  occupancy pill + tabular slots-used. Owen reads yard saturation at a
-//  glance and jumps to the open block instead of walking the lead.
+//  CARRIER-SIDE MAP archetype — a live rail-yard map hero (each real yard a
+//  translucent footprint + pin over the in-house BespokeMapCanvas) above a
+//  TRACK OCCUPANCY board (a track-tile grid colored occupied/open, per-track
+//  car detail, and an unassigned lane) and a ZONES list of the rail-yard
+//  catalog. Owen reads yard saturation at a glance and jumps to the open
+//  track instead of walking the lead.
 //
 //  Verbatim port of "628 Rail Yard Map · Dark". transportMode=rail · US.
-//  RBAC: protectedProcedure (companyId-scoped) on every yardManagement call.
 //
-//  WIRING (yardManagement.ts — REAL, verified):
-//    • grid     ← yardManagement.getYardMap        (input { locationId }) —
-//                 returns { rows, cols, spots:[{ status: empty|occupied|
-//                 reserved|maintenance, … }] }.  EXISTS · yardManagement.ts:344
-//    • zones    ← yardManagement.getYardLocations  (input { status }) —
-//                 returns { locations:[…], total }. EXISTS · yardManagement.ts:246
-//    • Locate trailer → yardManagement.updateTrailerPosition (mutation ·
-//                 re-spots a unit). EXISTS · yardManagement.ts:501
+//  WIRING (railShipments.ts — REAL carload-native, verified):
+//    • yards  ← railShipments.getRailYards            (railShipments.ts:1207)
+//               → [rail_yards row] (id/name/city/state/coordinates/yardType/
+//                 totalTracks/capacity). The map + ZONES key off these.
+//    • tracks ← railShipments.getYardTrackOccupancy   (railShipments.ts:977)
+//               → { yardId, yardName?, totalTracks, capacity, utilizationPct,
+//                 tracks:[{trackNumber, cars:[{id,carNumber,carType,status}],
+//                 carCount}], unassigned:[…] }. REAL railcars currently at the
+//                 yard, distributed by trackNumber; out-of-range → unassigned.
 //
-//  PORT-GAPs (surfaced honestly, no fabricated data):
-//    • getYardMap requires a `locationId`; the server returns a flat spot
-//      grid WITHOUT the per-zone fill-bar / occupancy-pill / slots-used
-//      projection the wireframe's ZONES list shows. We render the real
-//      grid and derive zones from getYardLocations (capacity/occupied);
-//      the server currently reports occupied: 0 for every location
-//      (yardManagement.ts:313,325 — "would need real-time tracking"), so
-//      the fill bars read honestly off whatever the server projects.
-//    • No `yardName` / `trackCount` header projection — the subtitle reads
-//      off the selected location's name + capacity when available.
-//    • yard-move blockchain audit + WS yard channel = STUB (per <desc>):
-//      updateTrailerPosition inserts a completed yardMoves row but NO
-//      blockchainAuditTrail row and NO WS_CHANNELS broadcast yet.
+//  ZERO-FABRICATION: utilizationPct is null when capacity is unknown — the
+//  header renders "—", never an invented %. Empty tracks/unassigned render an
+//  honest empty state. Every occupant chip shows ONLY real slim fields
+//  (carNumber · carType · status). No coordinates → the map card hides itself.
 //
 
 import SwiftUI
@@ -52,93 +44,32 @@ struct RailYardMapScreen: View {
     }
 }
 
-// MARK: - Data shapes (mirror yardManagement.ts projections verbatim)
+// MARK: - Track status model (only the two real per-track states)
 
-/// One spot in the live track grid. Server: yardManagement.getYardMap →
-/// spots[]. `status` ∈ empty | occupied | reserved | maintenance.
-private struct YardSpot628: Decodable, Identifiable, Hashable {
-    let id: String
-    let row: Int
-    let col: Int
-    let label: String?
-    let status: String?
-    let trailerId: String?
-    let trailerNumber: String?
-    let type: String?
-}
+/// A track is either OCCUPIED (carCount > 0) or OPEN. The carload-native read
+/// carries no per-track reserved/maintenance status, so the legend shows only
+/// the two states that exist — no fabricated buckets.
+private enum TrackStatus {
+    case occupied, open
 
-/// getYardMap envelope. Server: { locationId, rows, cols, spots, lastUpdated }.
-private struct YardMap628: Decodable {
-    let locationId: String?
-    let rows: Int?
-    let cols: Int?
-    let spots: [YardSpot628]?
-    let lastUpdated: String?
-}
+    init(carCount: Int) { self = carCount > 0 ? .occupied : .open }
 
-/// One yard location / zone. Server: yardManagement.getYardLocations →
-/// locations[]. `occupied` is real-time-tracked (currently 0 server-side).
-/// `lat`/`lng` are the REAL facility/terminal coordinates the server
-/// projects (yardManagement.ts:274,297,316-317,328-329 — facilities/
-/// terminals.latitude/longitude); we map them onto the in-house map.
-private struct YardLocation628: Decodable, Identifiable, Hashable {
-    let id: String
-    let name: String?
-    let address: String?
-    let type: String?
-    let capacity: Int?
-    let occupied: Int?
-    let dockDoors: Int?
-    let status: String?
-    let lat: Double?
-    let lng: Double?
-}
-
-/// getYardLocations envelope. Server: { locations, total }.
-private struct YardLocations628: Decodable {
-    let locations: [YardLocation628]?
-    let total: Int?
-}
-
-// MARK: - Spot status model
-
-private enum SpotStatus: String {
-    case occupied, reserved, empty, maintenance
-
-    init(server: String?) {
-        switch (server ?? "empty").lowercased() {
-        case "occupied":    self = .occupied
-        case "reserved":    self = .reserved
-        case "maintenance": self = .maintenance
-        default:            self = .empty
-        }
-    }
-
-    /// SVG fills: occupied #1473FF@0.9 · reserved #FFA726@0.9 ·
-    /// open #FFFFFF@0.18 · maint #F44336@0.9.
-    var fill: Color {
+    var tileFill: Color {
         switch self {
-        case .occupied:    return Brand.blue.opacity(0.9)
-        case .reserved:    return Brand.warning.opacity(0.9)
-        case .maintenance: return Brand.danger.opacity(0.9)
-        case .empty:       return Color.white.opacity(0.18)
+        case .occupied: return Brand.blue.opacity(0.9)
+        case .open:     return Color.white.opacity(0.18)
         }
     }
-    /// Legend swatch fills (SVG @0.85 / open @0.18).
     var legendFill: Color {
         switch self {
-        case .occupied:    return Brand.blue.opacity(0.85)
-        case .reserved:    return Brand.warning.opacity(0.85)
-        case .maintenance: return Brand.danger.opacity(0.85)
-        case .empty:       return Color.white.opacity(0.18)
+        case .occupied: return Brand.blue.opacity(0.85)
+        case .open:     return Color.white.opacity(0.18)
         }
     }
     var legendLabel: String {
         switch self {
-        case .occupied:    return "Occupied"
-        case .reserved:    return "Reserved"
-        case .empty:       return "Open"
-        case .maintenance: return "Maint"
+        case .occupied: return "Occupied"
+        case .open:     return "Open"
         }
     }
 }
@@ -150,17 +81,16 @@ private struct RailYardMapBody: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var session: EusoTripSession
 
-    @State private var locations: [YardLocation628] = []
-    @State private var grid: YardMap628? = nil
-    @State private var selectedLocationId: String? = nil
+    @State private var yards: [RailYardRow] = []
+    @State private var occupancy: YardTrackOccupancy? = nil
+    @State private var selectedYardId: Int? = nil
 
     @State private var loading = true
     @State private var loadError: String? = nil
+    @State private var occLoading = false
 
-    // Locate-trailer mutation state.
-    @State private var locating = false
-    @State private var locateAck: String? = nil
-    @State private var locateError: String? = nil
+    /// Detail-list scope toggle (secondary CTA). Default: only occupied tracks.
+    @State private var showAllTracks = false
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -177,17 +107,15 @@ private struct RailYardMapBody: View {
                         LifecycleCard(accentDanger: true) {
                             Text(err).font(EType.caption).foregroundStyle(Brand.danger)
                         }
+                    } else if yards.isEmpty {
+                        EusoEmptyState(systemImage: "mappin.and.ellipse",
+                                       title: "No rail yards",
+                                       subtitle: "Rail yards will appear here once the catalog is configured.")
                     } else {
                         yardMapCard
-                        trackGridCard
+                        trackOccupancyCard
                         zonesSection
                         zonesCard
-                        if let ack = locateAck {
-                            inlineBanner(ack, color: Brand.success, icon: "checkmark.circle.fill")
-                        }
-                        if let err = locateError {
-                            inlineBanner(err, color: Brand.danger, icon: "exclamationmark.triangle.fill")
-                        }
                         ctaRow
                     }
                     Color.clear.frame(height: 96)
@@ -200,11 +128,16 @@ private struct RailYardMapBody: View {
         .refreshable { await reload() }
     }
 
-    // MARK: - Top bar (eyebrow + back + title + menu + subtitle)
+    // MARK: - Selected yard
+
+    private var selectedYard: RailYardRow? {
+        yards.first { $0.id == selectedYardId } ?? yards.first
+    }
+
+    // MARK: - Top bar (eyebrow + title + menu + subtitle)
 
     private var topBar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Eyebrow row: brand label + monospace yard ref.
             HStack {
                 Text("✦  RAIL ENGINEER · YARD MAP")
                     .font(EType.micro).tracking(1.0)
@@ -214,7 +147,6 @@ private struct RailYardMapBody: View {
                     .font(EType.mono(.micro)).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
             }
-            // Title row: back chevron · "Yard map" · three-dot menu.
             HStack(alignment: .center, spacing: Space.s3) {
                 Text("Yard map")
                     .font(.system(size: 28, weight: .bold))
@@ -226,7 +158,6 @@ private struct RailYardMapBody: View {
                     .foregroundStyle(palette.textPrimary)
             }
             .padding(.top, Space.s4)
-            // Subtitle: yard name · track count · live.
             Text(subtitle)
                 .font(EType.caption)
                 .foregroundStyle(palette.textSecondary)
@@ -236,25 +167,21 @@ private struct RailYardMapBody: View {
         .padding(.top, Space.s4)
     }
 
-    /// Monospace yard reference, derived from the selected location id when
-    /// available — falls back to the SVG-style RAIL prefix.
+    /// Monospace yard reference — the selected rail yard id, else a RAIL prefix.
     private var yardRef: String {
-        if let id = selectedLocationId, !id.isEmpty {
-            return "RAIL · \(id.uppercased())"
-        }
+        if let id = selectedYardId { return "RAIL · YARD \(id)" }
         return "RAIL · YARD MAP"
     }
 
     private var subtitle: String {
-        let active = locations.first { $0.id == selectedLocationId } ?? locations.first
-        let name = active?.name.flatMap { $0.isEmpty ? nil : $0 } ?? "Yard"
-        // Track count: prefer the live grid geometry; fall back to the
-        // location's capacity. No fabricated "24 tracks".
-        if let g = grid, let r = g.rows, r > 0 {
-            return "\(name) · \(r) tracks · live"
+        let name = selectedYard?.name ?? occupancy?.yardName ?? "Yard"
+        // Track count: prefer the live occupancy geometry; fall back to the
+        // selected yard row's totalTracks. No fabricated "24 tracks".
+        if let t = occupancy?.totalTracks, t > 0 {
+            return "\(name) · \(t) tracks · live"
         }
-        if let cap = active?.capacity, cap > 0 {
-            return "\(name) · \(cap) slots · live"
+        if let t = selectedYard?.totalTracks, t > 0 {
+            return "\(name) · \(t) tracks · live"
         }
         return "\(name) · live"
     }
@@ -280,23 +207,18 @@ private struct RailYardMapBody: View {
 
     // MARK: - Yard map card (in-house BespokeMapCanvas · .adZones footprints)
 
-    /// Yards with REAL coordinates the server projected (lat/lng ≠ 0,0).
-    /// Null-island guard per cheat-sheet §6 — never render a fabricated pin.
-    private var mappableZones: [YardLocation628] {
-        locations.filter { loc in
-            guard let la = loc.lat, let lo = loc.lng else { return false }
+    /// Yards with REAL coordinates (lat/lng present, not null-island).
+    private var mappableYards: [RailYardRow] {
+        yards.filter { y in
+            guard let la = y.coordinates?.lat, let lo = y.coordinates?.lng else { return false }
             return !(la == 0 && lo == 0)
         }
     }
 
-    /// The yard map: each real yard footprint as a translucent `.adZones`
-    /// polygon (mirrors Driver 022 DockAssigned `yardLayoutPolygons ->
-    /// .adZones`) plus a pickup pin per zone, tappable to select it. RAIL
-    /// has no dedicated register — standard board (tilt: 0, style: .auto).
     @ViewBuilder
     private var yardMapCard: some View {
-        let zones = mappableZones
-        if zones.isEmpty {
+        let mapped = mappableYards
+        if mapped.isEmpty {
             EmptyView()
         } else {
             VStack(alignment: .leading, spacing: 0) {
@@ -305,7 +227,7 @@ private struct RailYardMapBody: View {
                         .font(EType.micro).tracking(1.0)
                         .foregroundStyle(palette.textTertiary)
                     Spacer(minLength: 8)
-                    Text("\(zones.count) yard\(zones.count == 1 ? "" : "s")")
+                    Text("\(mapped.count) yard\(mapped.count == 1 ? "" : "s")")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -318,20 +240,19 @@ private struct RailYardMapBody: View {
                     tilt: 0,
                     isDark: colorScheme == .dark,
                     layers: [
-                        .adZones(zones.map(yardFootprint(for:))),
-                        .markers(zones.map { loc in
+                        .adZones(mapped.map(yardFootprint(for:))),
+                        .markers(mapped.map { y in
                             HereMarker(
-                                at: HereLatLng(loc.lat ?? 0, loc.lng ?? 0),
+                                at: HereLatLng(y.coordinates?.lat ?? 0, y.coordinates?.lng ?? 0),
                                 kind: .pickup,
-                                label: loc.name.flatMap { $0.isEmpty ? nil : $0 } ?? "Yard",
-                                id: loc.id)
+                                label: y.name,
+                                id: String(y.id))
                         })
                     ],
-                    onSelectMarker: { zoneId in
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            selectedLocationId = zoneId
-                        }
-                        Task { await reloadGrid() }
+                    onSelectMarker: { markerId in
+                        guard let id = Int(markerId) else { return }
+                        withAnimation(.easeInOut(duration: 0.18)) { selectedYardId = id }
+                        Task { await reloadOccupancy() }
                     }
                 )
                 .frame(height: 220)
@@ -348,27 +269,22 @@ private struct RailYardMapBody: View {
         }
     }
 
-    /// Camera center = centroid of the real yard coordinates (no fabrication).
     private var mapCenter: HereLatLng {
-        let zones = mappableZones
-        guard !zones.isEmpty else { return HereLatLng(39.5, -98.35) }
-        let lat = zones.reduce(0.0) { $0 + ($1.lat ?? 0) } / Double(zones.count)
-        let lng = zones.reduce(0.0) { $0 + ($1.lng ?? 0) } / Double(zones.count)
+        let mapped = mappableYards
+        guard !mapped.isEmpty else { return HereLatLng(39.5, -98.35) }
+        let lat = mapped.reduce(0.0) { $0 + ($1.coordinates?.lat ?? 0) } / Double(mapped.count)
+        let lng = mapped.reduce(0.0) { $0 + ($1.coordinates?.lng ?? 0) } / Double(mapped.count)
         return HereLatLng(lat, lng)
     }
 
-    /// Tighter framing for a single yard; wider when several yards span out.
-    private var mapZoom: Int { mappableZones.count <= 1 ? 14 : 9 }
+    private var mapZoom: Int { mappableYards.count <= 1 ? 14 : 9 }
 
-    /// Build a small square footprint ring (~250 m) centered on the yard's
-    /// real coordinate — the server projects a point, not a GeoJSON ring,
-    /// so we draw an honest footprint box around the true location (the
-    /// selected yard reads brighter). Mirrors the `.adZones` contract used
-    /// by Driver 022's `yardLayoutPolygons`.
-    private func yardFootprint(for loc: YardLocation628) -> HerePolygon {
-        let lat = loc.lat ?? 0
-        let lng = loc.lng ?? 0
-        // ~0.0022° lat ≈ 250 m; scale lng by cos(lat) so the box stays square.
+    /// Small ~250 m square footprint centered on the yard's real coordinate —
+    /// the catalog projects a point, not a ring, so we draw an honest footprint
+    /// box (selected yard reads brighter).
+    private func yardFootprint(for y: RailYardRow) -> HerePolygon {
+        let lat = y.coordinates?.lat ?? 0
+        let lng = y.coordinates?.lng ?? 0
         let dLat = 0.0022
         let dLng = 0.0022 / max(cos(lat * .pi / 180), 0.2)
         let ring = [
@@ -377,34 +293,50 @@ private struct RailYardMapBody: View {
             HereLatLng(lat - dLat, lng + dLng),
             HereLatLng(lat - dLat, lng - dLng),
         ]
-        let isSelected = (selectedLocationId ?? locations.first?.id) == loc.id
+        let isSelected = (selectedYardId ?? yards.first?.id) == y.id
         return HerePolygon(
             ring: ring,
             fillHex: "#1473FF",
             opacity: isSelected ? 0.30 : 0.16,
-            label: loc.name.flatMap { $0.isEmpty ? nil : $0 })
+            label: y.name)
     }
 
-    // MARK: - Track grid card (live MapCanvas hero)
+    // MARK: - Track occupancy card (tile grid + totals + per-track detail)
 
-    private var trackGridCard: some View {
+    private var trackOccupancyCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Card header: TRACK GRID · LIVE   ·   <name> · N tracks
+            // Header: TRACK OCCUPANCY · LIVE   ·   totals.
             HStack(alignment: .firstTextBaseline) {
-                Text("TRACK GRID · LIVE")
+                Text("TRACK OCCUPANCY · LIVE")
                     .font(EType.micro).tracking(1.0)
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 8)
-                Text(gridHeaderRight)
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(palette.textTertiary)
+                if occLoading {
+                    ProgressView().scaleEffect(0.6).tint(palette.textTertiary)
+                }
             }
-            // The slot grid.
-            gridView
-                .padding(.top, Space.s4)
-            // Legend.
-            legendRow
-                .padding(.top, Space.s4)
+            // Yard-level totals strip (real: totalTracks / capacity / util%).
+            totalsStrip
+                .padding(.top, Space.s3)
+
+            let tracks = occupancy?.tracks ?? []
+            if tracks.isEmpty {
+                emptyTrackState
+                    .padding(.top, Space.s4)
+            } else {
+                tileGrid(tracks)
+                    .padding(.top, Space.s4)
+                legendRow
+                    .padding(.top, Space.s4)
+                trackDetailList(tracks)
+                    .padding(.top, Space.s4)
+            }
+
+            // Unassigned lane — cars whose trackNumber is out of range.
+            if let unassigned = occupancy?.unassigned, !unassigned.isEmpty {
+                unassignedLane(unassigned)
+                    .padding(.top, Space.s4)
+            }
         }
         .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -414,64 +346,90 @@ private struct RailYardMapBody: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.xl, style: .continuous))
     }
 
-    private var gridHeaderRight: String {
-        let active = locations.first { $0.id == selectedLocationId } ?? locations.first
-        let name = active?.name.flatMap { $0.isEmpty ? nil : $0 } ?? "Yard"
-        if let g = grid, let r = g.rows, r > 0 {
-            return "\(name) · \(r) tracks"
-        }
-        return name
-    }
-
-    /// 8-wide rows of slot tiles. SVG: 38×28 rounded-6 tiles in an
-    /// 8-col × 4-row grid. We render the REAL spots from getYardMap; when
-    /// the server returns an empty grid we draw the open-slot scaffold so
-    /// the operator still sees yard geometry (no fabricated occupancy).
-    @ViewBuilder
-    private var gridView: some View {
-        let spots = grid?.spots ?? []
-        if spots.isEmpty {
-            // Empty-yard scaffold: 8×4 open tiles + an honest note.
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(0..<4, id: \.self) { _ in
-                    HStack(spacing: 8) {
-                        ForEach(0..<8, id: \.self) { _ in
-                            slotTile(status: .empty)
-                        }
-                    }
-                }
-                Text("No live spots configured for this yard.")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textTertiary)
-                    .padding(.top, Space.s1)
-            }
-        } else {
-            // Real grid: group by server row, ordered.
-            let rows = Dictionary(grouping: spots, by: { $0.row })
-                .sorted { $0.key < $1.key }
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(rows, id: \.key) { _, rowSpots in
-                    HStack(spacing: 8) {
-                        ForEach(rowSpots.sorted { $0.col < $1.col }) { spot in
-                            slotTile(status: SpotStatus(server: spot.status))
-                        }
-                    }
-                }
-            }
+    /// Real yard totals: N tracks · cap M · util X% ("—" when unknown).
+    private var totalsStrip: some View {
+        HStack(spacing: Space.s3) {
+            totalStat(value: totalTracksLabel, label: "tracks")
+            statDivider
+            totalStat(value: capacityLabel, label: "car cap")
+            statDivider
+            totalStat(value: utilizationLabel, label: "utilization")
+            Spacer(minLength: 0)
         }
     }
 
-    private func slotTile(status: SpotStatus) -> some View {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(status.fill)
-            .frame(maxWidth: .infinity)
-            .frame(height: 28)
+    private var statDivider: some View {
+        Rectangle().fill(palette.borderFaint).frame(width: 1, height: 26)
     }
 
-    /// Legend: Occupied · Reserved · Open · Maint (SVG order).
+    private func totalStat(value: String, label: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(.system(size: 18, weight: .bold)).monospacedDigit()
+                .foregroundStyle(palette.textPrimary)
+            Text(label)
+                .font(.system(size: 9, weight: .regular)).tracking(0.4)
+                .foregroundStyle(palette.textTertiary)
+        }
+    }
+
+    private var totalTracksLabel: String {
+        if let t = occupancy?.totalTracks, t > 0 { return "\(t)" }
+        if let t = selectedYard?.totalTracks, t > 0 { return "\(t)" }
+        return "—"
+    }
+    private var capacityLabel: String {
+        if let c = occupancy?.capacity, c > 0 { return "\(c)" }
+        if let c = selectedYard?.capacity, c > 0 { return "\(c)" }
+        return "—"
+    }
+    /// Honest "—" when capacity is unknown (server emits null utilizationPct).
+    private var utilizationLabel: String {
+        guard let pct = occupancy?.utilizationPct else { return "—" }
+        if pct == pct.rounded() { return "\(Int(pct))%" }
+        return String(format: "%.1f%%", pct)
+    }
+
+    /// Bespoke tile grid — one tile per track (1..N), colored occupied/open,
+    /// 8 per row. The real carload geometry, not a fabricated 8×4 scaffold.
+    private func tileGrid(_ tracks: [YardTrack]) -> some View {
+        let ordered = tracks.sorted { $0.trackNumber < $1.trackNumber }
+        let rows = stride(from: 0, to: ordered.count, by: 8).map { start in
+            Array(ordered[start..<min(start + 8, ordered.count)])
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, rowTracks in
+                HStack(spacing: 8) {
+                    ForEach(rowTracks) { track in
+                        trackTile(track)
+                    }
+                    // Pad the final short row so tiles stay left-sized.
+                    if rowTracks.count < 8 {
+                        ForEach(0..<(8 - rowTracks.count), id: \.self) { _ in
+                            Color.clear.frame(maxWidth: .infinity).frame(height: 30)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func trackTile(_ track: YardTrack) -> some View {
+        let status = TrackStatus(carCount: track.carCount)
+        return ZStack {
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(status.tileFill)
+            Text("\(track.trackNumber)")
+                .font(.system(size: 10, weight: .bold)).monospacedDigit()
+                .foregroundStyle(status == .occupied ? Color.white : palette.textTertiary)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 30)
+    }
+
     private var legendRow: some View {
         HStack(spacing: Space.s4) {
-            ForEach([SpotStatus.occupied, .reserved, .empty, .maintenance], id: \.self) { s in
+            ForEach([TrackStatus.occupied, .open], id: \.legendLabel) { s in
                 HStack(spacing: 6) {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
                         .fill(s.legendFill)
@@ -485,16 +443,108 @@ private struct RailYardMapBody: View {
         }
     }
 
+    // MARK: - Per-track detail list
+
+    @ViewBuilder
+    private func trackDetailList(_ tracks: [YardTrack]) -> some View {
+        let occupied = tracks.filter { $0.carCount > 0 }.sorted { $0.trackNumber < $1.trackNumber }
+        let shown = showAllTracks
+            ? tracks.sorted { $0.trackNumber < $1.trackNumber }
+            : occupied
+        if shown.isEmpty {
+            Text("No cars spotted on any track.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textTertiary)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(shown.enumerated()), id: \.element.id) { idx, track in
+                    trackDetailRow(track)
+                    if idx < shown.count - 1 {
+                        Rectangle().fill(palette.borderFaint).frame(height: 1)
+                            .padding(.vertical, Space.s1)
+                    }
+                }
+            }
+        }
+    }
+
+    private func trackDetailRow(_ track: YardTrack) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                Text("Track \(track.trackNumber)")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                Spacer(minLength: 8)
+                Text(track.carCount == 0 ? "open" : "\(track.carCount) car\(track.carCount == 1 ? "" : "s")")
+                    .font(.system(size: 10, weight: .bold)).tracking(0.3)
+                    .foregroundStyle(track.carCount == 0 ? palette.textTertiary : Brand.blue)
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(Capsule().fill((track.carCount == 0 ? palette.textTertiary : Brand.blue).opacity(0.18)))
+            }
+            if track.cars.isEmpty {
+                Text("no cars spotted")
+                    .font(EType.mono(.caption)).tracking(0.2)
+                    .foregroundStyle(palette.textTertiary)
+            } else {
+                FlowChips(cars: track.cars)
+            }
+        }
+        .padding(.vertical, Space.s2)
+    }
+
+    // MARK: - Unassigned lane
+
+    private func unassignedLane(_ cars: [YardCar]) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
+                Text("UNASSIGNED · \(cars.count)")
+                    .font(EType.micro).tracking(0.8)
+                    .foregroundStyle(Brand.warning)
+                Spacer(minLength: 8)
+                Text("no track number")
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundStyle(palette.textTertiary)
+            }
+            Rectangle().fill(palette.borderFaint).frame(height: 1)
+            FlowChips(cars: cars)
+        }
+        .padding(Space.s3)
+        .background(Brand.warning.opacity(0.06))
+        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+            .strokeBorder(Brand.warning.opacity(0.30)))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    // MARK: - Empty track state
+
+    private var emptyTrackState: some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack(spacing: Space.s2) {
+                Image(systemName: "tram")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(palette.textTertiary)
+                Text("No tracks configured for this yard.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+            Text("Track occupancy appears once the yard's track count is set.")
+                .font(.system(size: 10))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Space.s2)
+    }
+
     // MARK: - ZONES section header
 
     private var zonesSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("ZONES · \(locations.count)")
+                Text("ZONES · \(yards.count)")
                     .font(EType.micro).tracking(0.8)
                     .foregroundStyle(Color(hex: 0x4DA3FF))
                 Spacer(minLength: 8)
-                Text("see all ›")
+                Text("tap to load tracks ›")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(palette.textTertiary)
             }
@@ -505,50 +555,39 @@ private struct RailYardMapBody: View {
         }
     }
 
-    // MARK: - Zones card (pin-chip rows)
+    // MARK: - Zones card (rail-yard rows)
 
     @ViewBuilder
     private var zonesCard: some View {
-        if locations.isEmpty {
-            EusoEmptyState(systemImage: "mappin.and.ellipse",
-                           title: "No yard zones",
-                           subtitle: "Yard locations will appear here once configured.")
-        } else {
-            VStack(spacing: 0) {
-                ForEach(Array(locations.enumerated()), id: \.element.id) { idx, loc in
-                    zoneRow(loc)
-                    if idx < locations.count - 1 {
-                        Rectangle()
-                            .fill(palette.borderFaint)
-                            .frame(height: 1)
-                            .padding(.horizontal, Space.s4)
-                    }
+        VStack(spacing: 0) {
+            ForEach(Array(yards.enumerated()), id: \.element.id) { idx, y in
+                zoneRow(y)
+                if idx < yards.count - 1 {
+                    Rectangle()
+                        .fill(palette.borderFaint)
+                        .frame(height: 1)
+                        .padding(.horizontal, Space.s4)
                 }
             }
-            .padding(.vertical, Space.s1)
-            .background(palette.bgCard)
-            .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
-                .strokeBorder(palette.borderFaint))
-            .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
         }
+        .padding(.vertical, Space.s1)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+            .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private func zoneRow(_ loc: YardLocation628) -> some View {
-        let cap = max(loc.capacity ?? 0, 0)
-        let occ = max(loc.occupied ?? 0, 0)
-        let pct: Double = cap > 0 ? min(Double(occ) / Double(cap), 1.0) : 0
-        let pctInt = Int((pct * 100).rounded())
-        let accent = zoneAccent(loc)
-        let isSelected = (selectedLocationId ?? locations.first?.id) == loc.id
+    private func zoneRow(_ y: RailYardRow) -> some View {
+        let cap = max(y.capacity ?? 0, 0)
+        let tracks = max(y.totalTracks ?? 0, 0)
+        let accent = zoneAccent(y)
+        let isSelected = (selectedYardId ?? yards.first?.id) == y.id
 
         return Button {
-            withAnimation(.easeInOut(duration: 0.18)) {
-                selectedLocationId = loc.id
-            }
-            Task { await reloadGrid() }
+            withAnimation(.easeInOut(duration: 0.18)) { selectedYardId = y.id }
+            Task { await reloadOccupancy() }
         } label: {
             HStack(alignment: .top, spacing: Space.s3) {
-                // 40 pin-chip.
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(accent.opacity(0.18))
@@ -558,33 +597,21 @@ private struct RailYardMapBody: View {
                         .foregroundStyle(accent)
                 }
                 VStack(alignment: .leading, spacing: Space.s1) {
-                    Text(loc.name.flatMap { $0.isEmpty ? nil : $0 } ?? "Yard zone")
+                    Text(y.name)
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(palette.textPrimary)
                         .lineLimit(1)
-                    Text(zoneSubtitle(loc))
+                    Text(zoneSubtitle(y))
                         .font(EType.mono(.caption)).tracking(0.3)
                         .foregroundStyle(palette.textSecondary)
                         .lineLimit(1)
-                    // Relative fill bar.
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(Color.white.opacity(0.18))
-                            Capsule().fill(accent)
-                                .frame(width: max(geo.size.width * pct, pct > 0 ? 6 : 0))
-                        }
-                    }
-                    .frame(height: 6)
-                    .padding(.top, Space.s1)
                 }
-                // Trailing: occupancy pill + tabular slots-used.
+                Spacer(minLength: 8)
                 VStack(alignment: .trailing, spacing: Space.s1) {
-                    occupancyPill(pctInt: pctInt, occupied: occ, capacity: cap, accent: accent)
-                    Text(cap > 0 ? "\(occ)/\(cap)" : "-")
-                        .font(.system(size: 14, weight: .bold, design: .default))
-                        .monospacedDigit()
+                    Text(tracks > 0 ? "\(tracks) tracks" : "—")
+                        .font(.system(size: 13, weight: .bold)).monospacedDigit()
                         .foregroundStyle(palette.textPrimary)
-                    Text(slotsUnit(loc))
+                    Text(cap > 0 ? "\(cap) car cap" : "cap —")
                         .font(.system(size: 9, weight: .regular))
                         .foregroundStyle(palette.textTertiary)
                 }
@@ -597,85 +624,44 @@ private struct RailYardMapBody: View {
         .buttonStyle(.plain)
     }
 
-    /// Occupancy pill — color-coded by saturation (SVG: blue ≥80%, orange
-    /// mid, slate "OPEN"). Reads off real occupancy, not a fixed label.
-    private func occupancyPill(pctInt: Int, occupied: Int, capacity: Int, accent: Color) -> some View {
-        let label: String
-        let color: Color
-        if capacity <= 0 {
-            label = "-"; color = palette.textTertiary
-        } else if pctInt < 30 {
-            label = "OPEN"; color = Brand.rail
-        } else {
-            label = "\(pctInt)% FULL"
-            color = pctInt >= 80 ? Brand.blue : (pctInt >= 60 ? Brand.warning : accent)
-        }
-        return Text(label)
-            .font(.system(size: 10.5, weight: .bold)).tracking(0.4)
-            .foregroundStyle(color)
-            .padding(.horizontal, 10).padding(.vertical, 3)
-            .background(Capsule().fill(color.opacity(0.20)))
-    }
-
-    private func zoneAccent(_ loc: YardLocation628) -> Color {
-        switch (loc.type ?? "").lowercased() {
-        case let t where t.contains("reefer"):     return Brand.warning
-        case let t where t.contains("chassis"),
-             let t where t.contains("pool"):        return Brand.rail
+    private func zoneAccent(_ y: RailYardRow) -> Color {
+        switch (y.yardType ?? "").lowercased() {
         case let t where t.contains("intermodal"): return Brand.blue
+        case let t where t.contains("classification"),
+             let t where t.contains("flat"):        return Brand.rail
+        case let t where t.contains("industry"),
+             let t where t.contains("team"):         return Brand.warning
         default:                                     return Brand.blue
         }
     }
 
-    private func zoneSubtitle(_ loc: YardLocation628) -> String {
-        if let addr = loc.address, !addr.isEmpty { return addr }
-        if let t = loc.type, !t.isEmpty { return t }
-        return "yard location"
+    private func zoneSubtitle(_ y: RailYardRow) -> String {
+        var parts: [String] = []
+        let place = [y.city, y.state].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: ", ")
+        if !place.isEmpty { parts.append(place) }
+        if let t = y.yardType, !t.isEmpty { parts.append(t.replacingOccurrences(of: "_", with: " ")) }
+        return parts.isEmpty ? "rail yard" : parts.joined(separator: " · ")
     }
 
-    private func slotsUnit(_ loc: YardLocation628) -> String {
-        (loc.type ?? "").lowercased().contains("chassis") ? "chassis" : "slots"
-    }
-
-    // MARK: - Inline banner (locate ack / error)
-
-    private func inlineBanner(_ text: String, color: Color, icon: String) -> some View {
-        HStack(spacing: Space.s2) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(color)
-            Text(text)
-                .font(EType.caption)
-                .foregroundStyle(palette.textPrimary)
-            Spacer(minLength: 0)
-        }
-        .padding(Space.s3)
-        .background(color.opacity(0.10))
-        .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-            .strokeBorder(color.opacity(0.35)))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-    }
-
-    // MARK: - CTA row (Locate trailer · List)
+    // MARK: - CTA row (Refresh · All/Occupied detail toggle)
 
     private var ctaRow: some View {
         HStack(spacing: Space.s3) {
             CTAButton(
-                title: "Locate trailer",
-                action: { Task { await locateTrailer() } },
-                leadingIcon: "list.bullet.rectangle",
-                isLoading: locating
+                title: "Refresh occupancy",
+                action: { Task { await reloadOccupancy() } },
+                leadingIcon: "arrow.clockwise",
+                isLoading: occLoading
             )
             .frame(maxWidth: .infinity)
 
             Button {
-                // List view toggle — same dataset, no separate route in
-                // the wireframe; keeps the secondary affordance present.
+                withAnimation(.easeInOut(duration: 0.18)) { showAllTracks.toggle() }
             } label: {
-                Text("List")
+                Text(showAllTracks ? "Occupied" : "All tracks")
                     .font(EType.title)
                     .foregroundStyle(palette.textPrimary)
-                    .frame(width: 120, height: 52)
+                    .frame(width: 130, height: 52)
                     .background(palette.bgCardSoft)
                     .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                         .strokeBorder(palette.borderSoft))
@@ -689,89 +675,84 @@ private struct RailYardMapBody: View {
 
     private func reload() async {
         loading = true; loadError = nil
-        locateAck = nil; locateError = nil
-        struct LocsIn: Encodable { let status: String }
         do {
-            let locs: YardLocations628 = try await EusoTripAPI.shared.query(
-                "yardManagement.getYardLocations", input: LocsIn(status: "active"))
-            let list = locs.locations ?? []
-            self.locations = list
-            if selectedLocationId == nil { selectedLocationId = list.first?.id }
-            await reloadGrid()
+            let list = try await EusoTripAPI.shared.railShipments.getRailYards()
+            self.yards = list
+            if selectedYardId == nil || !list.contains(where: { $0.id == selectedYardId }) {
+                selectedYardId = list.first?.id
+            }
+            await reloadOccupancy()
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         loading = false
     }
 
-    /// Load the live track grid for the selected location.
-    private func reloadGrid() async {
-        guard let locId = selectedLocationId else { grid = nil; return }
-        struct GridIn: Encodable { let locationId: String }
+    /// Load the real carload track occupancy for the selected yard.
+    private func reloadOccupancy() async {
+        guard let yardId = selectedYardId else { occupancy = nil; return }
+        occLoading = true
         do {
-            let g: YardMap628 = try await EusoTripAPI.shared.query(
-                "yardManagement.getYardMap", input: GridIn(locationId: locId))
-            self.grid = g
+            self.occupancy = try await EusoTripAPI.shared.railShipments.getYardTrackOccupancy(yardId: yardId)
         } catch {
-            // Grid is secondary — surface as a soft note inside the error
-            // banner only if the whole page hasn't already errored.
-            if loadError == nil {
-                self.grid = nil
+            // Occupancy is secondary — leave the last-known board rather than
+            // wiping the whole page when a single yard read fails.
+            if loadError == nil { self.occupancy = nil }
+        }
+        occLoading = false
+    }
+}
+
+// MARK: - Flow-wrapped occupant car chips (shared by tracks + unassigned lane)
+
+/// Wrapping row of car chips. Each chip renders ONLY real slim fields:
+/// carNumber (mono) · carType · status. Missing carNumber → em-dash.
+private struct FlowChips: View {
+    @Environment(\.palette) private var palette
+    let cars: [YardCar]
+
+    var body: some View {
+        // Reuses the module-wide `FlowLayout` (Auth/002_CreateAccount.swift):
+        // a wrapping container so variable-width car chips pack tightly.
+        FlowLayout(spacing: 6) {
+            ForEach(cars) { car in
+                chip(car)
             }
         }
     }
 
-    // MARK: - Locate trailer (updateTrailerPosition mutation)
-
-    /// 'Locate trailer' CTA → yardManagement.updateTrailerPosition. Re-spots
-    /// the most-recently-known trailer in the selected yard. Requires a
-    /// trailer + a destination spot; when neither is resolvable from the
-    /// live grid we surface an honest error instead of inventing IDs.
-    //
-    // PORT-GAP: updateTrailerPosition writes a completed yardMoves row but
-    // NO blockchainAuditTrail row and NO WS_CHANNELS broadcast yet (per
-    // <desc> · yardManagement.ts:468). Surfaced to the-oath.
-    private func locateTrailer() async {
-        guard let locId = selectedLocationId else {
-            locateError = "Select a yard zone first."
-            return
-        }
-        // Resolve a real occupied spot + its trailer from the live grid —
-        // no fabricated trailer/spot IDs.
-        let occupiedSpots = (grid?.spots ?? []).filter {
-            SpotStatus(server: $0.status) == .occupied && ($0.trailerId?.isEmpty == false)
-        }
-        guard let spot = occupiedSpots.first, let trailerId = spot.trailerId else {
-            locateError = "No located trailer in this yard yet."
-            return
-        }
-
-        locating = true; locateAck = nil; locateError = nil
-        struct LocateIn: Encodable {
-            let trailerId: String
-            let spotId: String
-            let locationId: String
-        }
-        struct LocateResult: Decodable {
-            let success: Bool?
-            let trailerId: String?
-            let newSpotId: String?
-        }
-        do {
-            let res: LocateResult = try await EusoTripAPI.shared.mutation(
-                "yardManagement.updateTrailerPosition",
-                input: LocateIn(trailerId: trailerId, spotId: spot.id, locationId: locId))
-            if res.success == true {
-                let unit = spot.trailerNumber.flatMap { $0.isEmpty ? nil : $0 } ?? trailerId
-                locateAck = "Located \(unit) · spot \(spot.label ?? spot.id)."
-                await reloadGrid()
-            } else {
-                locateError = "Locate did not complete. Try again."
+    private func chip(_ car: YardCar) -> some View {
+        HStack(spacing: 5) {
+            Text(car.carNumber?.isEmpty == false ? car.carNumber! : "—")
+                .font(EType.mono(.micro)).tracking(0.2)
+                .foregroundStyle(palette.textPrimary)
+            if let t = car.carType, !t.isEmpty {
+                Text(t)
+                    .font(.system(size: 9, weight: .regular))
+                    .foregroundStyle(palette.textSecondary)
             }
-        } catch {
-            locateError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
+            if let s = car.status, !s.isEmpty {
+                Text(s)
+                    .font(.system(size: 8.5, weight: .bold)).tracking(0.3)
+                    .foregroundStyle(statusColor(s))
+                    .padding(.horizontal, 5).padding(.vertical, 1.5)
+                    .background(Capsule().fill(statusColor(s).opacity(0.18)))
+            }
         }
-        locating = false
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(palette.bgCardSoft)
+        .overlay(Capsule().strokeBorder(palette.borderFaint))
+        .clipShape(Capsule())
+    }
+
+    private func statusColor(_ s: String) -> Color {
+        switch s.lowercased() {
+        case "loaded", "in_transit", "assigned": return Brand.blue
+        case "available":                          return Brand.success
+        case "in_repair", "out_of_service":        return Brand.danger
+        case "stored":                             return Brand.warning
+        default:                                    return palette.textSecondary
+        }
     }
 }
 
