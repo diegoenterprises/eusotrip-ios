@@ -142,6 +142,12 @@
 		<string>com.app.eusotrip.SettlementActivity</string>
 		<string>com.app.eusotrip.BidsActivity</string>
 		<string>com.app.eusotrip.ControlTowerActivity</string>
+		<!-- Watch → phone Handoff: EusoTrip Pulse publishes this activity
+		     so the EusoTrip icon appears on the iPhone lock screen / App
+		     Switcher for a one-tap open. Without this declaration iOS
+		     silently refuses to continue the activity even though
+		     EusoTripApp+WatchBridge registers a handler for it. -->
+		<string>com.eusotrip.esang.activate</string>
 	</array>
 	<!-- HERE Maps OAuth + JS credentials. Inlined here because the
 	     project sets GENERATE_INFOPLIST_FILE=NO + INFOPLIST_PREPROCESS=NO,

@@ -43,9 +43,16 @@ private struct EusoTripWatchBridgeModifier: ViewModifier {
                 handler.pendingDeeplink = nil
             }
             .onContinueUserActivity("com.eusotrip.esang.activate") { activity in
+                // Watch → phone Handoff. An empty transcript means the
+                // wrist just wants the app OPEN (pairing gate / "Open
+                // on iPhone") — landing on Home is the whole point, so
+                // don't cover it with a handoff sheet. A non-empty
+                // transcript seeds the ESANG chat hand-off sheet.
                 let transcript = activity.userInfo?["transcript"] as? String
-                esangSeed = transcript
-                showeSang = true
+                if let transcript, !transcript.isEmpty {
+                    esangSeed = transcript
+                    showeSang = true
+                }
             }
             .sheet(isPresented: $showeSang) {
                 // Presented as a simple reminder for now — the full
