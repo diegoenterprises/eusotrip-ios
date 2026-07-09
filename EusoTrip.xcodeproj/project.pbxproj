@@ -415,6 +415,7 @@
 		ES03ROUTESRV001 /* ES03_RouteSurvey.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES03ROUTESRV002 /* ES03_RouteSurvey.swift */; };
 		ES05JURHAND001 /* ES05_JurisdictionHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES05JURHAND002 /* ES05_JurisdictionHandoff.swift */; };
 		ES08CERTRECI001 /* ES08_CertReciprocity.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES08CERTRECI002 /* ES08_CertReciprocity.swift */; };
+		ES04PERMITREQ01 /* ES04_PermitRequirements.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES04PERMITREQ02 /* ES04_PermitRequirements.swift */; };
 		D1A11111111111111111HZ01 /* HotZonesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111HZ02 /* HotZonesWidget.swift */; };
 		D1A11111111111111111KH01 /* 500_CatalystHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111KH02 /* 500_CatalystHome.swift */; };
 		D1A11111111111111111KMD1 /* 502_CatalystMatchDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111KMD2 /* 502_CatalystMatchDetail.swift */; };
@@ -1479,6 +1480,7 @@
 		ES03ROUTESRV002 /* ES03_RouteSurvey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES03_RouteSurvey.swift; path = EusoTrip/Views/Escort/ES03_RouteSurvey.swift; sourceTree = SOURCE_ROOT; };
 		ES05JURHAND002 /* ES05_JurisdictionHandoff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES05_JurisdictionHandoff.swift; path = EusoTrip/Views/Escort/ES05_JurisdictionHandoff.swift; sourceTree = SOURCE_ROOT; };
 		ES08CERTRECI002 /* ES08_CertReciprocity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES08_CertReciprocity.swift; path = EusoTrip/Views/Escort/ES08_CertReciprocity.swift; sourceTree = SOURCE_ROOT; };
+		ES04PERMITREQ02 /* ES04_PermitRequirements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ES04_PermitRequirements.swift; path = EusoTrip/Views/Escort/ES04_PermitRequirements.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111HZ02 /* HotZonesWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotZonesWidget.swift; sourceTree = "<group>"; };
 		D1A11111111111111111KH02 /* 500_CatalystHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 500_CatalystHome.swift; path = EusoTrip/Views/Catalyst/500_CatalystHome.swift; sourceTree = SOURCE_ROOT; };
 		D1A11111111111111111KMD2 /* 502_CatalystMatchDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 502_CatalystMatchDetail.swift; path = EusoTrip/Views/Catalyst/502_CatalystMatchDetail.swift; sourceTree = SOURCE_ROOT; };
@@ -2860,6 +2862,7 @@
 				ES03ROUTESRV002 /* ES03_RouteSurvey.swift */,
 				ES05JURHAND002 /* ES05_JurisdictionHandoff.swift */,
 				ES08CERTRECI002 /* ES08_CertReciprocity.swift */,
+				ES04PERMITREQ02 /* ES04_PermitRequirements.swift */,
 				D1A11111111111111111SD52 /* ES07_SettlementDetail.swift */,
 				D1A11111111111111111TH02 /* 700_TerminalHome.swift */,
 				D1A11111111111111111TNC2 /* TerminalNavController.swift */,
@@ -4693,6 +4696,7 @@
 				ES03ROUTESRV001 /* ES03_RouteSurvey.swift in Sources */,
 				ES05JURHAND001 /* ES05_JurisdictionHandoff.swift in Sources */,
 				ES08CERTRECI001 /* ES08_CertReciprocity.swift in Sources */,
+				ES04PERMITREQ01 /* ES04_PermitRequirements.swift in Sources */,
 				D1A11111111111111111SD51 /* ES07_SettlementDetail.swift in Sources */,
 				D1A11111111111111111TH01 /* 700_TerminalHome.swift in Sources */,
 				D1A11111111111111111TNC1 /* TerminalNavController.swift in Sources */,
