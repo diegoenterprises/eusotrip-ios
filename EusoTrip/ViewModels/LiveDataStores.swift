@@ -2298,6 +2298,17 @@ final class TripLifecycleStore: ObservableObject {
     /// show loading, loaded → show en-route, etc.).
     @Published private(set) var currentState: String?
 
+    /// The driver's ladder is COMPLETE once POD is submitted — DELIVERED and
+    /// beyond are the shipper's approval act (or the 24h auto-approve), not the
+    /// driver's tap (fix pack L01-4). So the paperwork brick treats `pod_pending`
+    /// (and every terminal state after it) as trip-complete for the driver, and
+    /// renders "POD submitted — awaiting shipper approval (auto-approves in 24h)"
+    /// rather than blocking on a DELIVERED transition the driver may not fire.
+    var driverLadderComplete: Bool {
+        guard let s = currentState?.lowercased() else { return false }
+        return ["pod_pending", "delivered", "invoiced", "paid", "complete"].contains(s)
+    }
+
     // MARK: - Hydrate from server
 
     /// Find the driver's currently-active load and populate

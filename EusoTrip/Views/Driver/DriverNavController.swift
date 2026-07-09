@@ -814,10 +814,13 @@ enum TripPhase: String, CaseIterable, Codable {
         // UNLOADING_TO_UNLOADED here; the POD upload (screen 025
         // `.task`) then fires UNLOADED_TO_POD_PENDING explicitly.
         case (.unloading, .paperwork):                     return "UNLOADING_TO_UNLOADED"
-        // 025 → 026 close-out (pod_pending → delivered). Driver role
-        // uses POD_TO_DELIVERED with metadata.podSignatureUrl + the
-        // complianceChecks.podSigned=true.
-        case (.paperwork, .offDuty):                       return "POD_TO_DELIVERED"
+        // 025 → 026 close-out. The driver ladder ENDS at POD submission
+        // (pod_pending): DELIVERED is the shipper/receiver's act (or the 24h
+        // auto-approve), never the driver's — firing POD_TO_DELIVERED as DRIVER
+        // is a role violation by design (fix pack L01-4). So the Paperwork →
+        // OffDuty hop fires NO server transition; the phase advances locally
+        // and the paperwork brick shows "awaiting shipper approval".
+        case (.paperwork, .offDuty):                       return nil
         default:                                           return nil
         }
     }
