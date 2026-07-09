@@ -236,7 +236,80 @@ struct SkyStageHero: View {
     }
 }
 
-/// The stage mood resolved from a Apple WeatherKit weatherCode — clear widens
+// MARK: - 1b · SKY STAGE HERO (live engine overload)
+
+/// The build-751 upgrade of the brand hero: the SAME iridescent route-motif
+/// signature drawn OVER a full `WeatherSkyView` continuous scene (drifting
+/// clouds, intensity-scaled precipitation, lightning + bolt, moon-with-phase,
+/// stars, sun + rays + flare, fog drift, wind shear) — every layer bound to
+/// the live `WeatherSnapshot`. This is the engine fan-out: every weather
+/// surface that already hosts a `SkyStageHero` gains the continuous animated
+/// sky by passing the snapshot instead of just the bare `weatherCode`.
+///
+/// The legacy `SkyStageHero(weatherCode:)` (static aurora-only stage) is
+/// retained for callers that genuinely hold only a code; new wiring should
+/// prefer this snapshot overload so the whole app shares one engine.
+///
+/// `animated == false` (Reduce Motion) passes straight through to the
+/// engine's single static frame — the route motif is drawn once either way.
+struct SkyStageHeroLive: View {
+    let snapshot: WeatherSnapshot
+    var animated: Bool = true
+    /// Collapsed state uses the smaller route-motif composition (matches the
+    /// v3 collapsed stage viewBox 360×150 vs expanded 360×220).
+    var compact: Bool = false
+
+    var body: some View {
+        ZStack {
+            // ── Base: the full Apple-Weather-grade continuous sky engine ──
+            WeatherSkyView(snapshot: snapshot, animated: animated)
+
+            // ── Brand signature on top: the dashed route motif + nodes ──
+            // (the operational "lane drawn through the sky" identity the raw
+            // engine doesn't carry — kept so every surface reads as EusoTrip).
+            Canvas { ctx, size in
+                drawRouteMotif(ctx: &ctx, size: size)
+            }
+            .allowsHitTesting(false)
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// The dashed route motif + origin (#cdbcff) / dest (#FF55A6) nodes —
+    /// identical geometry to the legacy `SkyStageHero` so the two render the
+    /// same brand mark at both stage sizes.
+    private func drawRouteMotif(ctx: inout GraphicsContext, size: CGSize) {
+        let w = size.width
+        let h = size.height
+        let sx = w / 360.0
+        let sy = h / (compact ? 150.0 : 220.0)
+        func P(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * sx, y: y * sy) }
+
+        var route = Path()
+        let o: CGPoint
+        let d: CGPoint
+        if compact {
+            o = P(36, 128); d = P(326, 112)
+            route.move(to: o)
+            route.addCurve(to: d, control1: P(130, 100), control2: P(210, 146))
+        } else {
+            o = P(40, 188); d = P(322, 168)
+            route.move(to: o)
+            route.addCurve(to: d, control1: P(130, 150), control2: P(210, 210))
+        }
+        ctx.stroke(
+            route, with: .color(WeatherV3.nodeOrigin.opacity(0.5)),
+            style: StrokeStyle(lineWidth: 1.4 * sx, lineCap: .round, dash: [2 * sx, 5 * sx])
+        )
+        let r: CGFloat = (compact ? 3 : 3.2) * sx
+        ctx.fill(Path(ellipseIn: CGRect(x: o.x - r, y: o.y - r, width: r * 2, height: r * 2)),
+                 with: .color(WeatherV3.nodeOrigin.opacity(0.7)))
+        ctx.fill(Path(ellipseIn: CGRect(x: d.x - r, y: d.y - r, width: r * 2, height: r * 2)),
+                 with: .color(WeatherV3.nodeDest.opacity(0.8)))
+    }
+}
+
+/// The stage mood resolved from an Apple WeatherKit weatherCode — clear widens
 /// the aurora and lights a sun halo; storm darkens the stage tint and
 /// densifies the cloud. Strictly derived from the live code; an unknown
 /// code (0) renders the neutral default.

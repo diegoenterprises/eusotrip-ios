@@ -326,15 +326,32 @@ struct DriverWeeklyPlan: View {
                     .font(EType.bodyStrong.monospacedDigit())
                     .foregroundStyle(LinearGradient.diagonal)
                     .lineLimit(1)
-                Text(pickupShort(l.pickupDate))
-                    .font(EType.micro)
-                    .tracking(1.0)
-                    .foregroundColor(palette.textTertiary)
-                    .lineLimit(1)
+                // Pickup → delivery window. `deliveryDate` now ships in the
+                // build-752 `loads.search` projection; when it's nil (draft
+                // row / legacy deploy) the delivery line reads an honest "—"
+                // rather than fabricating or hiding the date entirely.
+                dateLine(prefix: "PU", iso: l.pickupDate)
+                dateLine(prefix: "DEL", iso: l.deliveryDate)
             }
         }
         .padding(Space.s4)
         .contentShape(Rectangle())
+    }
+
+    /// One labeled date trailer ("PU JUN 21" / "DEL —"). The prefix keeps
+    /// pickup vs delivery unambiguous now that the row carries both.
+    private func dateLine(prefix: String, iso: String?) -> some View {
+        HStack(spacing: 4) {
+            Text(prefix)
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundColor(palette.textSecondary)
+            Text(dateShortOrDash(iso))
+                .font(EType.micro)
+                .tracking(1.0)
+                .foregroundColor(palette.textTertiary)
+        }
+        .lineLimit(1)
     }
 
     // MARK: - Earnings section (mini 7-week bar chart)
@@ -545,6 +562,18 @@ struct DriverWeeklyPlan: View {
         fmt.currencyCode = "USD"
         fmt.maximumFractionDigits = 0
         return fmt.string(from: NSNumber(value: amount)) ?? "$0"
+    }
+
+    /// Optional-aware short date for the PU/DEL trailers. Returns an honest
+    /// em-dash for nil / empty / unparseable input (never a fabricated date)
+    /// and the uppercased "MMM d" form otherwise — reusing `pickupShort`'s
+    /// parse so both lines format identically.
+    private func dateShortOrDash(_ iso: String?) -> String {
+        guard let iso, !iso.isEmpty else { return "—" }
+        let formatted = pickupShort(iso)
+        // `pickupShort` echoes the raw string when it can't parse; treat that
+        // as no usable date rather than dumping an ISO blob into the trailer.
+        return formatted == iso ? "—" : formatted
     }
 
     private func pickupShort(_ iso: String) -> String {

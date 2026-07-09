@@ -1037,7 +1037,46 @@ private struct CatalystLoadDetail: View {
                 docTile(label: "Rate-con", icon: "checkmark.seal", status: rateconStatus(l), action: "RATECON", load: l)
                 docTile(label: TransportLexicon.short(.proofOfDelivery, mode: docMode, equipmentRaw: l.equipmentType), icon: "photo", status: podStatus(l), action: "POD", load: l)
             }
+            // Add-to-Wallet — the ONE reusable entry point (AddToWalletButton),
+            // mirroring shipper 205. Tap presents the bespoke card-style picker +
+            // mints the THEMED Apple Wallet pickup pass for THIS load. Server:
+            // eusoWallet.listWalletThemes / setWalletTheme + createPickupCredential.
+            AddToWalletButton(loadId: loadId) {
+                walletPassTile
+            }
         }
+    }
+
+    /// Full-width "Add to Apple Wallet" affordance beneath the document tiles —
+    /// matches the catalyst doc-strip language (bgCard + faint border).
+    private var walletPassTile: some View {
+        HStack(spacing: Space.s3) {
+            Image(systemName: "wallet.pass.fill")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(LinearGradient.diagonal)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Add to Apple Wallet")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("Themed pickup pass · pick your card style")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .heavy))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private func bolStatus(_ l: LoadsAPI.LoadDetail) -> (text: String, tint: Color) {

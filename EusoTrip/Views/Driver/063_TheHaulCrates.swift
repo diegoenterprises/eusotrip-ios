@@ -172,7 +172,7 @@ struct TheHaulCrates: View {
         EusoEmptyState(
             systemImage: "shippingbox.and.arrow.backward",
             title: "No crates yet",
-            subtitle: "Finish missions, extend streaks or place in a seasonal tournament to earn a crate. When a crate appears here, it is ready to open."
+            subtitle: "Complete loads to earn Recognition crates. Finish missions, extend streaks, or place in a seasonal tournament — every crate you earn shows up here, ready to open."
         )
     }
 

@@ -148,6 +148,11 @@ public struct HereVectorMapView: View {
     let interactive: Bool
     let tilt: Double
     let layers: [HereMapLayer]
+    /// Cartography register hint forwarded to `BespokeMapCanvas`. Defaults to
+    /// `.auto` so every existing caller compiles + renders unchanged; a screen
+    /// passes `.geothermal` to turn its `.heatmap(points:)` layer into the
+    /// continuous blue→red geothermal field (Hot Zones demand surfaces).
+    let styleHint: BespokeMapStyleHint
     let onSelectMarker: ((String) -> Void)?
 
     public init(
@@ -156,6 +161,7 @@ public struct HereVectorMapView: View {
         interactive: Bool = true,
         tilt: Double = 0,
         layers: [HereMapLayer] = [],
+        styleHint: BespokeMapStyleHint = .auto,
         onSelectMarker: ((String) -> Void)? = nil
     ) {
         self.center = center
@@ -163,6 +169,7 @@ public struct HereVectorMapView: View {
         self.interactive = interactive
         self.tilt = tilt
         self.layers = layers
+        self.styleHint = styleHint
         self.onSelectMarker = onSelectMarker
     }
 
@@ -173,6 +180,8 @@ public struct HereVectorMapView: View {
         // keeps working verbatim — only the renderer behind `body` changed.
         // The legacy `HereMapWebViewRepresentable` + `buildHTML` are kept
         // below (now private/unused) for reference and quick rollback.
+        // `styleHint` flows into the hinted BespokeMapCanvas init so a
+        // `.geothermal` request lights up the continuous heat field.
         BespokeMapCanvas(
             center: center,
             zoom: zoom,
@@ -180,6 +189,7 @@ public struct HereVectorMapView: View {
             tilt: tilt,
             isDark: colorScheme == .dark,
             layers: layers,
+            style: styleHint,
             onSelectMarker: onSelectMarker
         )
     }

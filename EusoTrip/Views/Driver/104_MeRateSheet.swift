@@ -111,11 +111,12 @@ private extension String {
 @MainActor
 final class RateSheetStore: ObservableObject {
     enum Pane: String, CaseIterable, Identifiable {
-        case calculator, sheets, reconcile
+        case calculator, surcharges, sheets, reconcile
         var id: String { rawValue }
         var label: String {
             switch self {
             case .calculator: return "Calculator"
+            case .surcharges: return "Surcharges"
             case .sheets:     return "Sheets"
             case .reconcile:  return "Reconcile"
             }
@@ -153,6 +154,31 @@ final class RateSheetStore: ObservableObject {
     @Published private(set) var criteriaSaving: Bool = false
     @Published var criteriaAck: String?
 
+    // MARK: Surcharge editor (customizable rate-sheet surcharges)
+    //
+    // The hard-coded surcharge defaults become editable here. Edits feed
+    // the live calculator immediately (the `surcharges` override on
+    // `CalculateRateInput`) and persist to the selected sheet via
+    // `rateSheet.updateRateSheet` — the same JSON-backed write the web
+    // platform's surcharge editor uses (server-side `rate_sheet_surcharges`).
+    //
+    // Seeded from `getDefaultTiers` on bootstrap (honest defaults from the
+    // server, not a fabricated table), then overwritten by the selected
+    // sheet's own surcharges when a sheet is attached.
+    @Published var editableSurcharges = RateSheetAPI.Surcharges()
+    /// The surcharges last loaded (default or selected sheet) — used to
+    /// detect unsaved edits so SAVE only enables when something changed.
+    @Published private(set) var savedSurcharges = RateSheetAPI.Surcharges()
+    @Published private(set) var isSavingSurcharges = false
+    @Published var surchargeToast: String?
+
+    /// True when the on-screen surcharge fields differ from what's saved.
+    var surchargesDirty: Bool { editableSurcharges != savedSurcharges }
+    /// Persistence requires a sheet to write to (the surcharges live ON a
+    /// rate sheet). With no sheet attached, edits still tune the calculator
+    /// but there's nowhere to persist them — the UI says so honestly.
+    var canPersistSurcharges: Bool { selectedSheetId != nil }
+
     // Sheets pane data
     @Published private(set) var sheets: [RateSheetAPI.RateSheetSummary] = []
     @Published private(set) var sheetsLoading: Bool = false
@@ -175,9 +201,24 @@ final class RateSheetStore: ObservableObject {
         // Auto-populate diesel via EIA on first appear so the FSC math
         // reflects this week's PADD baseline.
         await refreshDiesel()
+        await seedDefaultSurcharges()
         await refreshCriteriaDefaults(recalculate: false)
         await recalc()
         await refreshSheets()
+    }
+
+    /// Seed the surcharge editor from the server's honest Permian
+    /// baseline (`getDefaultTiers`) so the fields start from a real,
+    /// known-good config rather than a hand-coded guess. Falls back to
+    /// the `Surcharges()` struct defaults (which mirror the same
+    /// baseline) if the call fails.
+    private func seedDefaultSurcharges() async {
+        if let defaults = try? await api.rateSheet.getDefaultTiers() {
+            editableSurcharges = defaults.surcharges
+            savedSurcharges = defaults.surcharges
+        } else {
+            savedSurcharges = editableSurcharges
+        }
     }
 
     // MARK: Live calc
@@ -190,6 +231,11 @@ final class RateSheetStore: ObservableObject {
             self.isCalculating = true
             defer { self.isCalculating = false }
             do {
+                // The editor IS the surcharge source for the live calc —
+                // edits show up in the pay preview before they're saved.
+                // (When a sheet is attached, selecting it copies the
+                // sheet's surcharges into `editableSurcharges`, so this
+                // still reflects the sheet until the driver tunes it.)
                 let input = RateSheetAPI.CalculateRateInput(
                     netBarrels: netBarrels,
                     oneWayMiles: oneWayMiles,
@@ -199,7 +245,7 @@ final class RateSheetStore: ObservableObject {
                     travelSurchargeMiles: travelSurchargeMiles,
                     currentDieselPrice: diesel?.price,
                     rateTiers: selectedSheet?.rateTiers ?? draftTiers,
-                    surcharges: selectedSheet?.surcharges ?? draftSurcharges
+                    surcharges: editableSurcharges
                 )
                 let calc = try await api.rateSheet.calculateRate(input)
                 if Task.isCancelled { return }
@@ -324,15 +370,85 @@ final class RateSheetStore: ObservableObject {
         selectedSheetId = id
         guard let id else {
             selectedSheet = nil
+            // Detaching falls back to the server's default surcharges so
+            // the editor + calculator have an honest baseline again.
+            await seedDefaultSurcharges()
             await recalc()
             return
         }
         do {
             selectedSheet = try await api.rateSheet.getRateSheet(id: id)
+            // Load the attached sheet's own surcharges INTO the editor so
+            // edits + SAVE target this sheet. `savedSurcharges` mirrors it
+            // so SAVE stays disabled until the driver actually changes one.
+            if let s = selectedSheet?.surcharges {
+                editableSurcharges = s
+                savedSurcharges = s
+            }
         } catch {
             selectedSheet = nil
         }
         await recalc()
+    }
+
+    // MARK: Surcharge persistence
+
+    /// Persist the edited surcharges to the SELECTED sheet via
+    /// `rateSheet.updateRateSheet`. This is the real write the web
+    /// platform uses: the server merges the surcharge schedule into the
+    /// sheet, snapshots the prior version for the audit trail, and bumps
+    /// the sheet version (owner/company-scoped — the server re-verifies
+    /// ownership before writing). No selected sheet → nothing to persist.
+    func saveSurcharges() async {
+        guard let id = selectedSheetId else {
+            surchargeToast = "Attach a rate sheet to save surcharges"
+            return
+        }
+        guard surchargesDirty else { return }
+        isSavingSurcharges = true
+        defer { isSavingSurcharges = false }
+        do {
+            let input = RateSheetAPI.UpdateInput(
+                id: id,
+                name: nil,
+                region: nil,
+                productType: nil,
+                trailerType: nil,
+                rateUnit: nil,
+                effectiveDate: nil,
+                expirationDate: nil,
+                agreementId: nil,
+                rateTiers: nil,
+                surcharges: editableSurcharges,
+                notes: nil
+            )
+            let ack = try await api.rateSheet.update(input)
+            if ack.success {
+                savedSurcharges = editableSurcharges
+                surchargeToast = "Surcharges saved (v\(ack.version))"
+                // Re-pull the sheet so `selectedSheet.surcharges` + the
+                // calculator reflect the persisted, server-canonical values.
+                // `try?` flattens `getRateSheet`'s own optional, so this
+                // is a single unwrap to a non-optional RateSheetDetail.
+                if let fresh = try? await api.rateSheet.getRateSheet(id: id) {
+                    selectedSheet = fresh
+                    editableSurcharges = fresh.surcharges
+                    savedSurcharges = fresh.surcharges
+                }
+                await recalc()
+                await refreshSheets()
+            } else {
+                surchargeToast = "Couldn't save surcharges"
+            }
+        } catch {
+            surchargeToast = "Couldn't save surcharges"
+        }
+    }
+
+    /// Revert in-progress edits back to the last-saved schedule.
+    func resetSurcharges() {
+        editableSurcharges = savedSurcharges
+        Task { await recalc() }
     }
 
     // MARK: Reconcile pane
@@ -394,6 +510,7 @@ struct MeRateSheet: View {
         .refreshable {
             switch store.pane {
             case .calculator: await store.recalc()
+            case .surcharges: await store.recalc()
             case .sheets:     await store.refreshSheets()
             case .reconcile:  await store.refreshReconciliations()
             }
@@ -420,6 +537,29 @@ struct MeRateSheet: View {
             Button("OK", role: .cancel) { uploadError = nil }
         } message: {
             Text(uploadError ?? "")
+        }
+        // Surcharge save / reset confirmation toast.
+        .overlay(alignment: .bottom) {
+            if let toast = store.surchargeToast {
+                Text(toast)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, Space.s3)
+                    .padding(.vertical, Space.s2)
+                    .background(palette.bgCard.opacity(0.96))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().strokeBorder(palette.borderFaint))
+                    .padding(.bottom, Space.s6)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: store.surchargeToast)
+        .onChange(of: store.surchargeToast) { _, newValue in
+            guard newValue != nil else { return }
+            Task {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                await MainActor.run { store.surchargeToast = nil }
+            }
         }
     }
 
@@ -579,30 +719,34 @@ struct MeRateSheet: View {
     // MARK: Pane tabs
 
     private var paneTabs: some View {
-        HStack(spacing: Space.s2) {
-            ForEach(RateSheetStore.Pane.allCases) { p in
-                Button {
-                    store.pane = p
-                    if p == .reconcile && store.reconciliations.isEmpty {
-                        Task { await store.refreshReconciliations() }
+        // Four panes now (added Surcharges) — scroll horizontally so the
+        // chips never truncate on narrow devices. The chip styling is
+        // unchanged from the original design language.
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Space.s2) {
+                ForEach(RateSheetStore.Pane.allCases) { p in
+                    Button {
+                        store.pane = p
+                        if p == .reconcile && store.reconciliations.isEmpty {
+                            Task { await store.refreshReconciliations() }
+                        }
+                    } label: {
+                        Text(p.label)
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(p == store.pane ? .white : palette.textPrimary)
+                            .padding(.horizontal, Space.s3)
+                            .padding(.vertical, 8)
+                            .background(p == store.pane
+                                        ? AnyShapeStyle(LinearGradient.diagonal)
+                                        : AnyShapeStyle(palette.bgCardSoft))
+                            .overlay(
+                                Capsule().stroke(palette.borderFaint, lineWidth: 1)
+                            )
+                            .clipShape(Capsule())
                     }
-                } label: {
-                    Text(p.label)
-                        .font(EType.bodyStrong)
-                        .foregroundStyle(p == store.pane ? .white : palette.textPrimary)
-                        .padding(.horizontal, Space.s3)
-                        .padding(.vertical, 8)
-                        .background(p == store.pane
-                                    ? AnyShapeStyle(LinearGradient.diagonal)
-                                    : AnyShapeStyle(palette.bgCardSoft))
-                        .overlay(
-                            Capsule().stroke(palette.borderFaint, lineWidth: 1)
-                        )
-                        .clipShape(Capsule())
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
-            Spacer()
         }
     }
 
@@ -612,6 +756,7 @@ struct MeRateSheet: View {
     private var paneBody: some View {
         switch store.pane {
         case .calculator: calculatorPane
+        case .surcharges: surchargesPane
         case .sheets:     sheetsPane
         case .reconcile:  reconcilePane
         }
@@ -932,6 +1077,336 @@ struct MeRateSheet: View {
                 .padding(.top, 4)
             }
         }
+    }
+
+    // MARK: Surcharges pane (customizable rate-sheet surcharges)
+    //
+    // The previously hard-coded surcharge values (wait-time rate, split-
+    // load fee, reject fee, FSC baseline, travel surcharge, etc.) are now
+    // editable fields. Edits feed the live calculator immediately; SAVE
+    // persists them to the attached rate sheet via `rateSheet.updateRateSheet`
+    // — the same JSON-backed write the web platform's surcharge editor uses.
+
+    @ViewBuilder
+    private var surchargesPane: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: Space.s4) {
+                surchargeContextBanner
+                fscCard
+                accessorialCard
+                optionalFeesCard
+                Color.clear.frame(height: Space.s8)
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            saveBar
+        }
+    }
+
+    /// Tells the driver exactly where a SAVE lands: onto the attached
+    /// sheet (named, real persistence) or — with no sheet attached —
+    /// that edits tune the calculator only until they pick/upload a sheet.
+    private var surchargeContextBanner: some View {
+        HStack(alignment: .top, spacing: Space.s2) {
+            Image(systemName: store.canPersistSurcharges ? "doc.text.fill" : "info.circle")
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(store.canPersistSurcharges ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(Brand.warning))
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                if store.canPersistSurcharges, let sheet = store.selectedSheet {
+                    Text("Editing surcharges for")
+                        .font(EType.micro).tracking(0.6)
+                        .foregroundStyle(palette.textTertiary)
+                    Text("\(sheet.name ?? "Unnamed sheet") · v\(sheet.version)")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                } else {
+                    Text("No sheet attached")
+                        .font(EType.caption.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Edits tune the calculator live. Attach a rate sheet in Sheets to save them.")
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCardSoft)
+        .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+    }
+
+    /// Fuel surcharge schedule (FSC).
+    private var fscCard: some View {
+        ActiveCard {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                surchargeSectionHeader("FUEL SURCHARGE (FSC)")
+                Toggle(isOn: surchargeBinding(\.fscEnabled)) {
+                    Text("FSC enabled")
+                        .font(EType.body)
+                        .foregroundStyle(palette.textPrimary)
+                }
+                .toggleStyle(GradientToggleStyle())
+
+                if store.editableSurcharges.fscEnabled {
+                    surchargeField(
+                        "Baseline diesel",
+                        unit: "$/gal",
+                        value: surchargeBinding(\.fscBaselineDieselPrice)
+                    )
+                    surchargeField(
+                        "Truck efficiency",
+                        unit: "mpg",
+                        value: surchargeBinding(\.fscMilesPerGallon)
+                    )
+                    if let live = store.diesel {
+                        Text(String(format: "Live EIA diesel: $%.2f / gal · PADD %@", live.price, live.padd ?? "3"))
+                            .font(EType.micro)
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Per-load accessorial fees (wait time, split, reject, travel, min bbl).
+    private var accessorialCard: some View {
+        ActiveCard {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                surchargeSectionHeader("ACCESSORIALS")
+                surchargeField(
+                    "Wait-time rate",
+                    unit: "$/hr",
+                    value: surchargeBinding(\.waitTimeRatePerHour)
+                )
+                surchargeField(
+                    "Free wait time",
+                    unit: "hr",
+                    value: surchargeBinding(\.waitTimeFreeHours)
+                )
+                surchargeField(
+                    "Split-load fee",
+                    unit: "$",
+                    value: surchargeBinding(\.splitLoadFee)
+                )
+                surchargeField(
+                    "Reject fee",
+                    unit: "$",
+                    value: surchargeBinding(\.rejectFee)
+                )
+                surchargeField(
+                    "Travel surcharge",
+                    unit: "$/mi",
+                    value: surchargeBinding(\.travelSurchargePerMile)
+                )
+                surchargeField(
+                    "Minimum barrels",
+                    unit: "BBL",
+                    value: surchargeBinding(\.minimumBarrels)
+                )
+            }
+        }
+    }
+
+    /// Optional lease-road / multiple-gates fees (nil until set).
+    private var optionalFeesCard: some View {
+        ActiveCard {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                surchargeSectionHeader("OPTIONAL FEES")
+                Text("Left blank when your carrier doesn't bill them.")
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textTertiary)
+                optionalSurchargeField(
+                    "Long-lease road fee",
+                    unit: "$",
+                    value: optionalSurchargeBinding(\.longLeaseRoadFee)
+                )
+                optionalSurchargeField(
+                    "Multiple-gates fee",
+                    unit: "$",
+                    value: optionalSurchargeBinding(\.multipleGatesFee)
+                )
+            }
+        }
+    }
+
+    private func surchargeSectionHeader(_ text: String) -> some View {
+        Text(text)
+            .font(EType.micro).tracking(0.8)
+            .foregroundStyle(palette.textTertiary)
+    }
+
+    /// One editable surcharge row: label + trailing decimal field + unit.
+    private func surchargeField(
+        _ label: String,
+        unit: String,
+        value: Binding<Double>
+    ) -> some View {
+        HStack {
+            Text(label)
+                .font(EType.body)
+                .foregroundStyle(palette.textPrimary)
+            Spacer()
+            HStack(spacing: 4) {
+                TextField("0", text: doubleText(value))
+                    .font(EType.bodyStrong.monospacedDigit())
+                    .foregroundStyle(palette.textPrimary)
+                    .keyboardType(.decimalPad)
+                    .frame(width: 64)
+                    .multilineTextAlignment(.trailing)
+                Text(unit)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .frame(width: 36, alignment: .leading)
+            }
+            .padding(.horizontal, Space.s3)
+            .padding(.vertical, 6)
+            .overlay(Capsule().stroke(palette.borderFaint, lineWidth: 1))
+        }
+    }
+
+    /// Optional-double variant: empty field = nil (fee not billed).
+    private func optionalSurchargeField(
+        _ label: String,
+        unit: String,
+        value: Binding<Double?>
+    ) -> some View {
+        HStack {
+            Text(label)
+                .font(EType.body)
+                .foregroundStyle(palette.textPrimary)
+            Spacer()
+            HStack(spacing: 4) {
+                TextField("—", text: optionalDoubleText(value))
+                    .font(EType.bodyStrong.monospacedDigit())
+                    .foregroundStyle(palette.textPrimary)
+                    .keyboardType(.decimalPad)
+                    .frame(width: 64)
+                    .multilineTextAlignment(.trailing)
+                Text(unit)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                    .frame(width: 36, alignment: .leading)
+            }
+            .padding(.horizontal, Space.s3)
+            .padding(.vertical, 6)
+            .overlay(Capsule().stroke(palette.borderFaint, lineWidth: 1))
+        }
+    }
+
+    /// SAVE / RESET bar, pinned to the bottom of the surcharges pane.
+    /// SAVE is enabled only when there are unsaved edits AND a sheet is
+    /// attached to persist into (honest: nothing to save against otherwise).
+    private var saveBar: some View {
+        HStack(spacing: Space.s2) {
+            if store.surchargesDirty {
+                Button {
+                    store.resetSurcharges()
+                } label: {
+                    Text("Reset")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textSecondary)
+                        .padding(.horizontal, Space.s4)
+                        .padding(.vertical, Space.s3)
+                        .overlay(Capsule().stroke(palette.borderFaint, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+            Button {
+                Task { await store.saveSurcharges() }
+            } label: {
+                HStack(spacing: Space.s2) {
+                    if store.isSavingSurcharges {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 14, weight: .heavy))
+                    }
+                    Text(store.canPersistSurcharges ? "Save surcharges" : "Attach a sheet to save")
+                        .font(EType.bodyStrong)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Space.s3)
+                .background(
+                    (store.surchargesDirty && store.canPersistSurcharges)
+                        ? AnyShapeStyle(LinearGradient.diagonal)
+                        : AnyShapeStyle(palette.tintNeutral.opacity(0.5))
+                )
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(!store.surchargesDirty || !store.canPersistSurcharges || store.isSavingSurcharges)
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.s2)
+        .background(.ultraThinMaterial)
+    }
+
+    // MARK: Surcharge field bindings (String <-> Double bridges)
+
+    /// A two-way binding into the editable surcharge struct that re-runs
+    /// the live calculator on every change so the pay preview tracks edits.
+    private func surchargeBinding<V>(
+        _ keyPath: WritableKeyPath<RateSheetAPI.Surcharges, V>
+    ) -> Binding<V> {
+        Binding(
+            get: { store.editableSurcharges[keyPath: keyPath] },
+            set: {
+                store.editableSurcharges[keyPath: keyPath] = $0
+                Task { await store.recalc() }
+            }
+        )
+    }
+
+    private func optionalSurchargeBinding(
+        _ keyPath: WritableKeyPath<RateSheetAPI.Surcharges, Double?>
+    ) -> Binding<Double?> {
+        Binding(
+            get: { store.editableSurcharges[keyPath: keyPath] },
+            set: {
+                store.editableSurcharges[keyPath: keyPath] = $0
+                Task { await store.recalc() }
+            }
+        )
+    }
+
+    /// Bridge a Double binding to the TextField's String. Parses on commit;
+    /// keeps the field usable mid-typing (e.g. "3." before the decimals).
+    private func doubleText(_ value: Binding<Double>) -> Binding<String> {
+        Binding(
+            get: {
+                let v = value.wrappedValue
+                // Whole numbers print clean (50, not 50.0); fractions keep 2dp.
+                return v == v.rounded()
+                    ? String(format: "%.0f", v)
+                    : String(format: "%.2f", v)
+            },
+            set: { text in
+                let cleaned = text.replacingOccurrences(of: ",", with: "")
+                if let d = Double(cleaned) { value.wrappedValue = d }
+                else if cleaned.isEmpty { value.wrappedValue = 0 }
+            }
+        )
+    }
+
+    private func optionalDoubleText(_ value: Binding<Double?>) -> Binding<String> {
+        Binding(
+            get: {
+                guard let v = value.wrappedValue else { return "" }
+                return v == v.rounded()
+                    ? String(format: "%.0f", v)
+                    : String(format: "%.2f", v)
+            },
+            set: { text in
+                let cleaned = text.trimmingCharacters(in: .whitespaces)
+                    .replacingOccurrences(of: ",", with: "")
+                if cleaned.isEmpty { value.wrappedValue = nil }
+                else if let d = Double(cleaned) { value.wrappedValue = d }
+            }
+        )
     }
 
     // MARK: Sheets pane

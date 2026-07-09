@@ -357,12 +357,22 @@ struct ShipperHandoffContinuity: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/handoff/run/\(activeHandoff.id)") {
-            openURL(url)
+        // "Continue here" — the handoff carries a loadId, so open that
+        // load's detail natively on THIS device rather than browser-
+        // bouncing to `…/handoff/run/<id>`. The load-open path mounts
+        // 205 on the real id (Wave I1 gate).
+        if let lid = ShipperLoadIdResolver.normalize("LD-260427-A38FB12C7E") {
+            NotificationCenter.default.post(
+                name: .eusoShipperLoadOpen, object: nil,
+                userInfo: ["loadId": lid]
+            )
         }
     }
 
     private func tapDeviceToggle(_ device: PairedDevice) {
+        // In-place paired-device enable/disable — telemetry persists,
+        // selection haptic confirms. (Was an openURL browser-bounce.)
+        UISelectionFeedbackGenerator().selectionChanged()
         NotificationCenter.default.post(
             name: .eusoShipperHandoffToggle,
             object: nil,
@@ -373,12 +383,12 @@ struct ShipperHandoffContinuity: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/handoff/device/\(device.id)/toggle") {
-            openURL(url)
-        }
     }
 
     private func tapDeviceRow(_ device: PairedDevice) {
+        // In-place row selection — preview haptic + telemetry, no nav.
+        // (Was an openURL browser-bounce.)
+        UISelectionFeedbackGenerator().selectionChanged()
         NotificationCenter.default.post(
             name: .eusoShipperHandoffRow,
             object: nil,
@@ -390,12 +400,16 @@ struct ShipperHandoffContinuity: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/handoff/device/\(device.id)") {
-            openURL(url)
-        }
     }
 
     private func tapPasteClipboard() {
+        // REAL local action — push the load reference onto the system
+        // pasteboard. Universal Clipboard then makes it available on the
+        // user's paired Mac/iPad (exactly the handoff this screen
+        // configures). A confirming haptic fires. (Was an openURL
+        // browser-bounce to `…/handoff/clipboard/<id>/paste`.)
+        UIPasteboard.general.string = clipboardItem.loadId
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
         NotificationCenter.default.post(
             name: .eusoShipperHandoffClipboardPaste,
             object: nil,
@@ -406,12 +420,11 @@ struct ShipperHandoffContinuity: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/handoff/clipboard/\(clipboardItem.id)/paste") {
-            openURL(url)
-        }
     }
 
     private func tapManageContinuity() {
+        // Manage opens Settings (211) natively (single scrolling Settings
+        // screen). Previously an openURL to `/shipper/settings/handoff`.
         NotificationCenter.default.post(
             name: .eusoShipperHandoffManage,
             object: nil,
@@ -421,9 +434,10 @@ struct ShipperHandoffContinuity: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/handoff") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "211"]
+        )
     }
 }
 

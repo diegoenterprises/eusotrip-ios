@@ -362,7 +362,7 @@ struct DriverCounterInboxView: View {
             pairs = resolved
             error = nil
         } catch {
-            self.error = (error as NSError).localizedDescription
+            self.error = EusoTripAPIError.bidActionMessage(for: error, noun: "counters")
         }
     }
 
@@ -375,7 +375,7 @@ struct DriverCounterInboxView: View {
             withAnimation { toast = "Counter accepted · load assigned" }
             await load()
         } catch {
-            self.error = (error as NSError).localizedDescription
+            self.error = EusoTripAPIError.bidActionMessage(for: error, noun: "response")
         }
     }
 
@@ -388,7 +388,7 @@ struct DriverCounterInboxView: View {
             withAnimation { toast = "Counter declined" }
             await load()
         } catch {
-            self.error = (error as NSError).localizedDescription
+            self.error = EusoTripAPIError.bidActionMessage(for: error, noun: "response")
         }
     }
 
@@ -627,7 +627,7 @@ struct DriverCounterDetailView: View {
             chain = try await EusoTripAPI.shared.loadBidding
                 .getBidChain(loadId: pair.loadId)
         } catch {
-            self.error = (error as NSError).localizedDescription
+            self.error = EusoTripAPIError.bidActionMessage(for: error, noun: "counter chain")
         }
     }
 
@@ -640,7 +640,7 @@ struct DriverCounterDetailView: View {
             onChanged()
             dismiss()
         } catch {
-            self.error = (error as NSError).localizedDescription
+            self.error = EusoTripAPIError.bidActionMessage(for: error, noun: "response")
         }
     }
 
@@ -654,7 +654,7 @@ struct DriverCounterDetailView: View {
             onChanged()
             dismiss()
         } catch {
-            self.error = (error as NSError).localizedDescription
+            self.error = EusoTripAPIError.bidActionMessage(for: error, noun: "response")
         }
     }
 

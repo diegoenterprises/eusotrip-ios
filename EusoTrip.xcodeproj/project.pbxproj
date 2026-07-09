@@ -7,6 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		BMAPGEOBUILD1 /* Map/BespokeMapGeography.swift in Sources */ = {isa = PBXBuildFile; fileRef = BMAPGEOFREF1 /* Map/BespokeMapGeography.swift */; };
+		HEA1TH5ERV1CE0000000AA01 /* HealthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = HEA1TH5ERV1CE0000000AA02 /* HealthService.swift */; };
+		B1A1F70000000000000B0001 /* WeatherSkyEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A1F70000000000000B0002 /* WeatherSkyEngine.swift */; };
+		WALCRD0000000000000TH01 /* WalletCardTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = WALCRD0000000000000TH02 /* WalletCardTheme.swift */; };
+		WALCRD0000000000000AP01 /* EusoTripAPI+Wallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = WALCRD0000000000000AP02 /* EusoTripAPI+Wallet.swift */; };
+		WALCRD0000000000000ST01 /* WalletCardStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = WALCRD0000000000000ST02 /* WalletCardStore.swift */; };
+		WALCRD0000000000000PK01 /* WalletCardPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = WALCRD0000000000000PK02 /* WalletCardPickerView.swift */; };
+		WALCRD0000000000000BT01 /* AddToWalletButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = WALCRD0000000000000BT02 /* AddToWalletButton.swift */; };
+		WALCRD0000000000000AC01 /* AddAccessCardButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = WALCRD0000000000000AC02 /* AddAccessCardButton.swift */; };
+		WALCRD0000000000000AX01 /* EusoTripAPI+Access.swift in Sources */ = {isa = PBXBuildFile; fileRef = WALCRD0000000000000AX02 /* EusoTripAPI+Access.swift */; };
+		WALCRD0000000000000BG01 /* WalletCardBackgrounds.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = WALCRD0000000000000BG02 /* WalletCardBackgrounds.xcassets */; };
+		D1A11111111111111111ACS1 /* AccessControllerScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1A11111111111111111ACS2 /* AccessControllerScannerView.swift */; };
 		5CB000000000000000000000 /* SVGCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR000000000000000000000 /* SVGCore.swift */; };
 		5CB010000000000000000000 /* SVGPathParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR010000000000000000000 /* SVGPathParser.swift */; };
 		5CB020000000000000000000 /* SVGModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CR020000000000000000000 /* SVGModel.swift */; };
@@ -1094,6 +1106,18 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		BMAPGEOFREF1 /* Map/BespokeMapGeography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Map/BespokeMapGeography.swift; sourceTree = "<group>"; };
+		HEA1TH5ERV1CE0000000AA02 /* HealthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthService.swift; sourceTree = "<group>"; };
+		B1A1F70000000000000B0002 /* WeatherSkyEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeatherSkyEngine.swift; sourceTree = "<group>"; };
+		WALCRD0000000000000TH02 /* WalletCardTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletCardTheme.swift; sourceTree = "<group>"; };
+		WALCRD0000000000000AP02 /* EusoTripAPI+Wallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EusoTripAPI+Wallet.swift"; sourceTree = "<group>"; };
+		WALCRD0000000000000ST02 /* WalletCardStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletCardStore.swift; sourceTree = "<group>"; };
+		WALCRD0000000000000PK02 /* WalletCardPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletCardPickerView.swift; sourceTree = "<group>"; };
+		WALCRD0000000000000BT02 /* AddToWalletButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddToWalletButton.swift; sourceTree = "<group>"; };
+		WALCRD0000000000000AC02 /* AddAccessCardButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddAccessCardButton.swift; sourceTree = "<group>"; };
+		WALCRD0000000000000AX02 /* EusoTripAPI+Access.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "EusoTripAPI+Access.swift"; sourceTree = "<group>"; };
+		WALCRD0000000000000BG02 /* WalletCardBackgrounds.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WalletCardBackgrounds.xcassets; sourceTree = "<group>"; };
+		D1A11111111111111111ACS2 /* AccessControllerScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AccessControllerScannerView.swift; path = EusoTrip/Views/Terminal/AccessControllerScannerView.swift; sourceTree = SOURCE_ROOT; };
 		5CR000000000000000000000 /* SVGCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SVGCore.swift; path = EusoTrip/Views/Components/SVGNative/SVGCore.swift; sourceTree = SOURCE_ROOT; };
 		5CR010000000000000000000 /* SVGPathParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SVGPathParser.swift; path = EusoTrip/Views/Components/SVGNative/SVGPathParser.swift; sourceTree = SOURCE_ROOT; };
 		5CR020000000000000000000 /* SVGModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SVGModel.swift; path = EusoTrip/Views/Components/SVGNative/SVGModel.swift; sourceTree = SOURCE_ROOT; };
@@ -2176,6 +2200,29 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		WALCRD000000000000FEAT0 /* Features */ = {
+			isa = PBXGroup;
+			children = (
+				WALCRD00000000000WALL0 /* Wallet */,
+			);
+			path = Features;
+			sourceTree = "<group>";
+		};
+		WALCRD00000000000WALL0 /* Wallet */ = {
+			isa = PBXGroup;
+			children = (
+				WALCRD0000000000000TH02 /* WalletCardTheme.swift */,
+				WALCRD0000000000000AP02 /* EusoTripAPI+Wallet.swift */,
+				WALCRD0000000000000ST02 /* WalletCardStore.swift */,
+				WALCRD0000000000000PK02 /* WalletCardPickerView.swift */,
+				WALCRD0000000000000BT02 /* AddToWalletButton.swift */,
+				WALCRD0000000000000AC02 /* AddAccessCardButton.swift */,
+				WALCRD0000000000000AX02 /* EusoTripAPI+Access.swift */,
+				WALCRD0000000000000BG02 /* WalletCardBackgrounds.xcassets */,
+			);
+			path = Wallet;
+			sourceTree = "<group>";
+		};
 		A1000000000000000000AAAB = {
 			isa = PBXGroup;
 			children = (
@@ -2205,6 +2252,7 @@
 		A1000000000000000000AAB8 /* EusoTrip */ = {
 			isa = PBXGroup;
 			children = (
+				WALCRD000000000000FEAT0 /* Features */,
 				A1D3CC244FE3B63DFF710117 /* ContentView.swift */,
 				A1006F894BE68F2F15836F50 /* EusoTripApp.swift */,
 				B1A11111111111111111AA09 /* EusoTrip.entitlements */,
@@ -2887,6 +2935,7 @@
 				C1A11111111111111111BA02 /* DriverProfileStore.swift */,
 				MKW1TCH11ST0000000BA02 /* MarketWatchlistStore.swift */,
 				B1A11111111111111111AA04 /* WeatherService.swift */,
+				HEA1TH5ERV1CE0000000AA02 /* HealthService.swift */,
 				B1A21111111111111111AA02 /* AgreementPDFBuilder.swift */,
 				B1A41111111111111111AA02 /* EusoWalletPassService.swift */,
 				A1DMC0001000000000000021 /* DriverLocationResolver.swift */,
@@ -2996,6 +3045,7 @@
 				BMAPPROJFREF1 /* Map/BespokeMapProjection.swift */,
 				BMAPSTYLFREF1 /* Map/BespokeMapStyle.swift */,
 				BMAPCNVSFREF1 /* Map/BespokeMapCanvas.swift */,
+				BMAPGEOFREF1 /* Map/BespokeMapGeography.swift */,
 				BMAPBASEFREF1 /* Map/BespokeMapBasemap.swift */,
 				HAFD00010CE0FF10000012A1 /* HereAddressField.swift */,
 				LTBD00010CE0FF10000012A1 /* ListingTrustBadge.swift */,
@@ -3010,6 +3060,7 @@
 				CP9M2026060200000012A1 /* 903_ComplianceMe.swift */,
 				AD8M2026060200000012A1 /* 804_AdminMe.swift */,
 				TM7M2026060200000012A1 /* 703_TerminalMe.swift */,
+				D1A11111111111111111ACS2 /* AccessControllerScannerView.swift */,
 				ES6M2026060200000012A1 /* 620_EscortMeHome.swift */,
 				BR4B2026060200000012A1 /* 404B_BrokerMe.swift */,
 				R6722026060200000012A1 /* 672_RailLayoverTracking.swift */,
@@ -3093,6 +3144,7 @@
 				MSGS00010CE0FF10000012A1 /* MessagesScreen.swift */,
 				B1A11111111111111111AA06 /* WeatherCard.swift */,
 				B1A1F300000000000000AC02 /* WeatherV3Components.swift */,
+				B1A1F70000000000000B0002 /* WeatherSkyEngine.swift */,
 				B1A1F600000000000000AF02 /* PerLoadWeatherCard.swift */,
 				B1A11111111111111111AA0B /* WeatherIcons.swift */,
 				D2RHIN000000000000ACDS /* RoleHomeIntro.swift */,
@@ -3574,6 +3626,7 @@
 				A1F1000000000000000007AA /* intro_light.json in Resources */,
 				A1F20260622000000001002 /* EusoTrip_Splash_Dark_Config.json in Resources */,
 				A1F20260622000000001001 /* EusoTrip_Splash_iOS_3s_1080x1920.mp4 in Resources */,
+				WALCRD0000000000000BG01 /* WalletCardBackgrounds.xcassets in Resources */,
 				ANIMSVG0001BUILDFILE0001 /* Animations in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -3868,6 +3921,17 @@
 				BMAPPROJBUILD1 /* Map/BespokeMapProjection.swift in Sources */,
 				BMAPSTYLBUILD1 /* Map/BespokeMapStyle.swift in Sources */,
 				BMAPCNVSBUILD1 /* Map/BespokeMapCanvas.swift in Sources */,
+				BMAPGEOBUILD1 /* Map/BespokeMapGeography.swift in Sources */,
+				HEA1TH5ERV1CE0000000AA01 /* HealthService.swift in Sources */,
+				B1A1F70000000000000B0001 /* WeatherSkyEngine.swift in Sources */,
+				WALCRD0000000000000TH01 /* WalletCardTheme.swift in Sources */,
+				WALCRD0000000000000AP01 /* EusoTripAPI+Wallet.swift in Sources */,
+				WALCRD0000000000000ST01 /* WalletCardStore.swift in Sources */,
+				WALCRD0000000000000PK01 /* WalletCardPickerView.swift in Sources */,
+				WALCRD0000000000000BT01 /* AddToWalletButton.swift in Sources */,
+				WALCRD0000000000000AC01 /* AddAccessCardButton.swift in Sources */,
+				WALCRD0000000000000AX01 /* EusoTripAPI+Access.swift in Sources */,
+				D1A11111111111111111ACS1 /* AccessControllerScannerView.swift in Sources */,
 				BMAPBASEBUILD1 /* Map/BespokeMapBasemap.swift in Sources */,
 				HAFD00010CE0FF10000011A1 /* HereAddressField.swift in Sources */,
 				LTBD00010CE0FF10000011A1 /* ListingTrustBadge.swift in Sources */,

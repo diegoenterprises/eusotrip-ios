@@ -37,6 +37,20 @@ struct MeDQFile: View {
     @EnvironmentObject private var session: EusoTripSession
     @StateObject private var store = DQFileStore()
 
+    /// The expired document the owner is about to remove. Drives the
+    /// confirmation dialog so a destructive delete is never one-tap.
+    @State private var pendingDelete: DriverQualificationAPI.DQDocument?
+
+    /// Owner gate: the delete affordance only appears when the file on
+    /// screen is the SIGNED-IN driver's own DQ file. `store.driverId` is
+    /// always seeded from `session.user.id`, so this is true here — but
+    /// gating explicitly keeps the rule honest if the screen is ever
+    /// reused to render another driver's file in a read-only context.
+    private var isOwnerOfFile: Bool {
+        guard let me = session.user?.id, !me.isEmpty else { return false }
+        return store.driverId == me
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: Space.s5) {
@@ -61,6 +75,49 @@ struct MeDQFile: View {
         .onChange(of: session.user?.id) { _, newId in
             store.driverId = newId ?? ""
             Task { await store.refresh() }
+        }
+        // Destructive remove is confirmed, not one-tap. Expired-only by
+        // the call site; owner-only by `isOwnerOfFile`.
+        .confirmationDialog(
+            "Remove this expired document?",
+            isPresented: Binding(
+                get: { pendingDelete != nil },
+                set: { if !$0 { pendingDelete = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: pendingDelete
+        ) { doc in
+            Button("Remove document", role: .destructive) {
+                let target = doc
+                pendingDelete = nil
+                Task { await store.deleteDocument(target) }
+            }
+            Button("Keep", role: .cancel) { pendingDelete = nil }
+        } message: { doc in
+            Text("\(doc.name?.isEmpty == false ? doc.name! : humanType(doc.type)) is expired. Removing it takes it off your DQ file. Re-upload the current version to stay compliant.")
+        }
+        // Confirmation / failure toast.
+        .overlay(alignment: .bottom) {
+            if let toast = store.lastToast {
+                Text(toast)
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, Space.s3)
+                    .padding(.vertical, Space.s2)
+                    .background(palette.bgCard.opacity(0.96))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().strokeBorder(palette.borderFaint))
+                    .padding(.bottom, Space.s6)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: store.lastToast)
+        .onChange(of: store.lastToast) { _, newValue in
+            guard newValue != nil else { return }
+            Task {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                await MainActor.run { store.lastToast = nil }
+            }
         }
     }
 
@@ -271,7 +328,9 @@ struct MeDQFile: View {
     }
 
     private func documentRow(_ d: DriverQualificationAPI.DQDocument) -> some View {
-        HStack(spacing: Space.s3) {
+        let expired = isExpired(d)
+        let deleting = store.deletingId == d.id
+        return HStack(spacing: Space.s3) {
             Image(systemName: docIcon(d.type))
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(palette.textSecondary)
@@ -302,9 +361,55 @@ struct MeDQFile: View {
 
             Spacer()
             statusChip(d.status ?? "pending")
+
+            // Owner-only remove, expired documents only. A swipe-style
+            // affordance isn't available (this is a VStack, not a List),
+            // so the destructive action is an explicit trash button that
+            // routes through a confirmation dialog before it deletes.
+            if expired && isOwnerOfFile {
+                Button {
+                    pendingDelete = d
+                } label: {
+                    if deleting {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(Brand.magenta)
+                            .frame(width: 28, height: 28)
+                    } else {
+                        Image(systemName: "trash")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Brand.magenta)
+                            .frame(width: 28, height: 28)
+                            .background(
+                                RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                                    .fill(Brand.magenta.opacity(0.12))
+                            )
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(deleting)
+                .accessibilityLabel("Remove expired document")
+            }
         }
         .padding(Space.s3)
         .eusoCard(radius: Radius.md)
+    }
+
+    /// A DQ document counts as expired when the server says so OR its
+    /// `expiresAt` is in the past. Honest: we never infer expiry from
+    /// absence of data — a missing `expiresAt` with a non-expired status
+    /// is treated as current.
+    private func isExpired(_ d: DriverQualificationAPI.DQDocument) -> Bool {
+        if (d.status ?? "").lowercased() == "expired" { return true }
+        guard let raw = d.expiresAt, !raw.isEmpty else { return false }
+        let inF = DateFormatter()
+        inF.dateFormat = "yyyy-MM-dd"
+        inF.locale = Locale(identifier: "en_US_POSIX")
+        let iso = ISO8601DateFormatter()
+        guard let date = inF.date(from: String(raw.prefix(10))) ?? iso.date(from: raw) else {
+            return false
+        }
+        return date < Date()
     }
 
     @ViewBuilder

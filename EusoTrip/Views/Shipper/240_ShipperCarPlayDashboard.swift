@@ -582,9 +582,11 @@ struct ShipperCarPlayDashboard: View {
                 "zone":             "driver_cluster"
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/carplay/tile/\(activeTile.id)/add") {
-            openURL(url)
-        }
+        // Local CarPlay-tile add confirmation — a haptic pulse +
+        // telemetry the API layer acts on. (Was an openURL browser-
+        // bounce to `…/carplay/tile/<id>/add`; the openURL was a
+        // placeholder — CarPlay tiles are configured in-app.)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     private func tapWidgetRow(_ widget: CarPlayWidget) {
@@ -600,9 +602,9 @@ struct ShipperCarPlayDashboard: View {
                 "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/carplay/widget/\(widget.id)") {
-            openURL(url)
-        }
+        // In-place widget enable/disable — telemetry persists, selection
+        // haptic confirms. (Was an openURL browser-bounce.)
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 
     private func tapZoneRow(_ zone: CarPlayZone) {
@@ -618,9 +620,9 @@ struct ShipperCarPlayDashboard: View {
                 "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/carplay/zone/\(zone.id)") {
-            openURL(url)
-        }
+        // In-place zone enable/disable — telemetry persists, selection
+        // haptic confirms. (Was an openURL browser-bounce.)
+        UISelectionFeedbackGenerator().selectionChanged()
     }
 
     private func tapManageCarPlay() {
@@ -633,9 +635,12 @@ struct ShipperCarPlayDashboard: View {
                 "shipperCompanyId": session.user?.companyId ?? ""
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/carplay") {
-            openURL(url)
-        }
+        // Manage opens Settings (211) natively (single scrolling Settings
+        // screen). Previously an openURL to `/shipper/settings/carplay`.
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "211"]
+        )
     }
 }
 

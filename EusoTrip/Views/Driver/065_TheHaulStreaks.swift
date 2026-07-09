@@ -385,7 +385,7 @@ struct TheHaulStreaks: View {
             VStack(alignment: .leading, spacing: Space.s2) {
                 conceptBullet(
                     systemImage: "flame",
-                    text: "Every active day adds to your daily streak. Miss a day, the streak resets against your last completed load."
+                    text: "Every active day adds to your daily streak. Miss a day and it resets — your streak updates automatically with each completed load."
                 )
                 conceptBullet(
                     systemImage: "bolt",

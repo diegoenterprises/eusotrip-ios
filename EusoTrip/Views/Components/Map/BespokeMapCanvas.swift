@@ -74,12 +74,18 @@ import UIKit
 /// w16 casing, road ribbons, maneuver node, heading-arrow puck).
 /// `.portApproach` forces the Vessel 660 port-approach chart (deep navy in
 /// BOTH modes — #15233A landmass, history wake, container-vessel AIS hull).
+/// `.geothermal` forces the Hot Zones thermal register: a CONTINUOUS
+/// blue→red geothermal field (inverse-distance-weighted from the live
+/// `.heatmap` load-to-truck ratios) painted UNDER the route, replacing the
+/// legacy 3-band demand blobs. A land board otherwise (states / cities /
+/// corridors still render beneath the field).
 public enum BespokeMapStyleHint: Hashable {
     case auto
     case ocean
     case rail
     case nav
     case portApproach
+    case geothermal
 }
 
 // MARK: - Public entry (drop-in for HereMapWebViewRepresentable)
@@ -252,6 +258,10 @@ public struct BespokeMapCanvas: View {
         case .rail:         return BespokeMapStyle.rail(isDark: isDark)
         case .nav:          return BespokeMapStyle.nav(isDark: isDark)
         case .portApproach: return BespokeMapStyle.portApproach
+        // Geothermal = a flat shipper/catalyst land board with the continuous
+        // thermal field painted over it; resolve to the standard board register
+        // (falls through with .auto), the field is layered in paint().
+        case .geothermal:   break
         case .auto:         break
         }
         if tilt > 0 {
@@ -435,6 +445,10 @@ extension BespokeMapCanvas {
         // register swaps the basemap + grid grammar (660).
         var isNav: Bool = false
         var isPortApproach: Bool = false
+        // Geothermal register (Hot Zones): the heatmap renders as ONE
+        // continuous IDW thermal field (geoField) instead of the legacy
+        // 3-band demand blobs.
+        var isGeothermal: Bool = false
         // Dark-backdrop register (white-tinted grid) — picks the §2/§3c dark
         // fence + traffic opacities, same probe as the basemap land wash.
         var isDarkRegister: Bool = false
@@ -450,8 +464,23 @@ extension BespokeMapCanvas {
         var coastColor: Color = .clear
         var coastWidth: CGFloat = 0.9
 
+        // Geographic context (§1b, land registers only) — projected ONCE in
+        // build, culled to the viewport, zoom-gated. State/province + national
+        // borders as screen-space ring polylines, interstate freight corridors
+        // as screen-space polylines, and the rank-tagged metro labels.
+        var stateBorders: [[CGPoint]] = []
+        var nationalBorders: [[CGPoint]] = []
+        var corridors: [[CGPoint]] = []
+        var placeLabels: [(at: CGPoint, text: String, rank: Int)] = []
+
         // Heatmap blobs (screen-space centers + weights), pre-culled.
         var heatBlobs: [(center: CGPoint, weight: Double)] = []
+
+        // Geothermal field (§4a, .geothermal register) — ONE prebuilt CGImage
+        // of the IDW thermal field, drawn scaled to the view rect under the
+        // route. nil when not geothermal or no live heat points.
+        var geoField: CGImage? = nil
+        var geoFieldRect: CGRect = .zero
 
         // Ad-zone polygons (screen space) + their fill.
         var adZones: [(pts: [CGPoint], fill: Color, opacity: Double)] = []
@@ -504,6 +533,7 @@ extension BespokeMapCanvas {
             m.isDriverGrid = style.ping != nil
             m.isNav = hint == .nav
             m.isPortApproach = hint == .portApproach
+            m.isGeothermal = hint == .geothermal
             m.isDarkRegister = BespokeMapCanvas.gridIsLight(style.grid.color)
             let rect = CGRect(origin: .zero, size: size)
 
@@ -533,6 +563,14 @@ extension BespokeMapCanvas {
                     guard bb.intersects(cullRect) else { continue }
                     m.basemapRings.append(pts)
                 }
+
+                // ── 1c — REAL geographic context (FEATURE 1). Projected ONCE
+                //    through the committed camera (so it's cached + culled),
+                //    zoom-gated so a CONUS framing shows nation outline + a few
+                //    primary metros while a route/metro framing reveals states,
+                //    cities, and freight corridors. Off the open-water ocean
+                //    register (handled by !isOcean above). ──
+                m.buildGeography(viewport: viewport, rect: rect)
             }
 
             // ── 4a — heatmap (cull off-screen blobs) ──
@@ -545,6 +583,16 @@ extension BespokeMapCanvas {
                         m.heatBlobs.append((c, p.weight ?? 1.0))
                     }
                 }
+            }
+
+            // ── 4a2 — geothermal field (FEATURE 2). On the .geothermal
+            //    register the heat points are rasterized ONCE into a single
+            //    inverse-distance-weighted thermal field CGImage (blue cold →
+            //    red hot), drawn scaled under the route in paint(). ZERO
+            //    fabrication — built only when real heat points exist. ──
+            if m.isGeothermal && !m.heatBlobs.isEmpty {
+                m.geoFieldRect = rect
+                m.geoField = BespokeMapCanvas.geothermalField(blobs: m.heatBlobs, rect: rect)
             }
 
             // ── 4b — ad-zones ──
@@ -762,8 +810,89 @@ extension BespokeMapCanvas {
                 }
             }
         }
+
+        /// FEATURE 1 — project the real geographic context (state / province +
+        /// national borders, interstate freight corridors, metro labels) into
+        /// screen space ONCE, culled to the viewport and zoom-gated. Mirrors the
+        /// continents-loop projection + cull (so it's cached, never per-frame).
+        /// Mutates `self`. The thresholds are tuned so a continental framing
+        /// reads as nation outline + a handful of primary metros, and a route /
+        /// metro framing reveals states, cities, and the freight corridors.
+        mutating func buildGeography(viewport: BespokeMapViewport, rect: CGRect) {
+            let z = viewport.zoom
+            // Generous cull so a border ring or corridor straddling the edge is
+            // still drawn (its on-screen portion clips naturally at paint time).
+            let cull = rect.insetBy(dx: -BespokeMapCanvas.geoCullMargin,
+                                    dy: -BespokeMapCanvas.geoCullMargin)
+
+            // National outlines (US / CA / MX) — ALWAYS on (the coarsest, most
+            // stabilizing register; a bare CONUS framing still gets its border).
+            for feature in BespokeMapGeography.naOutlines {
+                for ring in feature.rings where ring.count >= 2 {
+                    let pts = ring.map { viewport.screenPoint(HereLatLng($0.lat, $0.lng)) }
+                    guard BespokeMapCanvas.boundingBox(pts).intersects(cull) else { continue }
+                    nationalBorders.append(pts)
+                }
+            }
+
+            // State / province borders — regional-or-closer only (≥ ~4.5), so a
+            // whole-continent view stays clean. Per-feature span gate drops a
+            // state whose bbox is a sliver of the viewport at very low zoom.
+            if z >= BespokeMapCanvas.geoStateZoom {
+                for feature in BespokeMapGeography.usStates + BespokeMapGeography.caProvinces {
+                    for ring in feature.rings where ring.count >= 2 {
+                        let pts = ring.map { viewport.screenPoint(HereLatLng($0.lat, $0.lng)) }
+                        guard BespokeMapCanvas.boundingBox(pts).intersects(cull) else { continue }
+                        stateBorders.append(pts)
+                    }
+                }
+            }
+
+            // Interstate freight corridors ("the streets" indication) — only
+            // when closer in (≥ ~5.5), so they read as lanes along the route,
+            // not continental clutter.
+            if z >= BespokeMapCanvas.geoCorridorZoom {
+                for corridor in BespokeMapGeography.interstates where corridor.path.count >= 2 {
+                    let pts = corridor.path.map { viewport.screenPoint(HereLatLng($0.lat, $0.lng)) }
+                    guard BespokeMapCanvas.boundingBox(pts).intersects(cull) else { continue }
+                    corridors.append(pts)
+                }
+            }
+
+            // Metro labels — rank-gated by zoom (rank 1 from ~3.5, rank 2 from
+            // ~5, rank 3 from ~6.5), culled to the visible rect, then capped to
+            // the nearest-to-center N so a dense region never over-labels.
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+            var candidates: [(at: CGPoint, text: String, rank: Int, d2: CGFloat)] = []
+            for place in BespokeMapGeography.metros {
+                let minZoom: Double
+                switch place.rank {
+                case 1:  minZoom = BespokeMapGeography_rank1Zoom
+                case 2:  minZoom = BespokeMapGeography_rank2Zoom
+                default: minZoom = BespokeMapGeography_rank3Zoom
+                }
+                guard z >= minZoom else { continue }
+                let p = viewport.screenPoint(HereLatLng(place.lat, place.lng))
+                guard rect.contains(p) else { continue }
+                let dx = p.x - center.x, dy = p.y - center.y
+                candidates.append((p, place.name, place.rank, dx * dx + dy * dy))
+            }
+            // Primary metros first, then nearest-to-center, capped.
+            candidates.sort { a, b in
+                if a.rank != b.rank { return a.rank < b.rank }
+                return a.d2 < b.d2
+            }
+            for c in candidates.prefix(BespokeMapCanvas.maxPlaceLabels) {
+                placeLabels.append((c.at, c.text, c.rank))
+            }
+        }
     }
 }
+
+// Metro-label zoom thresholds (file-scope so `buildGeography` reads cleanly).
+private let BespokeMapGeography_rank1Zoom = 3.5
+private let BespokeMapGeography_rank2Zoom = 5.0
+private let BespokeMapGeography_rank3Zoom = 6.5
 
 // MARK: - Tuning constants
 
@@ -779,6 +908,169 @@ extension BespokeMapCanvas {
     static let markerCullMargin: CGFloat = 40
     /// Off-screen margin (points) added to the visible-bounds cull for labels.
     static let labelCullMargin: CGFloat = 120
+
+    // FEATURE 1 — geography tuning.
+    /// Off-screen margin (points) for the geography border / corridor cull.
+    static let geoCullMargin: CGFloat = 200
+    /// Fractional zoom at/above which state + province borders render.
+    static let geoStateZoom: Double = 4.5
+    /// Fractional zoom at/above which interstate corridors render.
+    static let geoCorridorZoom: Double = 5.5
+    /// Hard cap on metro labels drawn (nearest-to-center, primary first).
+    static let maxPlaceLabels = 18
+
+    // FEATURE 2 — geothermal field tuning.
+    /// Downsampled IDW grid resolution (px) — aspect-matched at build, capped.
+    static let geoFieldGridW = 88
+    static let geoFieldGridH = 56
+}
+
+// MARK: - Geothermal field (FEATURE 2 — continuous IDW thermal map)
+
+extension BespokeMapCanvas {
+
+    /// The exact geothermal ramp, interpolated LINEARLY in sRGB. `t ∈ [0,1]`
+    /// (cold → hot). Returns straight-alpha 0–255 RGB bytes for the bitmap.
+    ///   0.00 #0A2A8C · 0.20 #1E6BFF · 0.40 #00C8D7 · 0.55 #43D17A ·
+    ///   0.70 #FFD23F · 0.85 #FF7A29 · 1.00 #F0322B
+    static func geothermalRGB(_ t: Double) -> (r: UInt8, g: UInt8, b: UInt8) {
+        // Stops: (location, R, G, B).
+        let stops: [(Double, Double, Double, Double)] = [
+            (0.00, 0x0A, 0x2A, 0x8C),
+            (0.20, 0x1E, 0x6B, 0xFF),
+            (0.40, 0x00, 0xC8, 0xD7),
+            (0.55, 0x43, 0xD1, 0x7A),
+            (0.70, 0xFF, 0xD2, 0x3F),
+            (0.85, 0xFF, 0x7A, 0x29),
+            (1.00, 0xF0, 0x32, 0x2B),
+        ]
+        let x = Swift.min(1.0, Swift.max(0.0, t))
+        var lo = stops[0]
+        var hi = stops[stops.count - 1]
+        for i in 0..<(stops.count - 1) {
+            if x >= stops[i].0 && x <= stops[i + 1].0 {
+                lo = stops[i]; hi = stops[i + 1]; break
+            }
+        }
+        let span = hi.0 - lo.0
+        let f = span > 1e-9 ? (x - lo.0) / span : 0
+        let r = lo.1 + (hi.1 - lo.1) * f
+        let g = lo.2 + (hi.2 - lo.2) * f
+        let b = lo.3 + (hi.3 - lo.3) * f
+        return (UInt8(r.rounded()), UInt8(g.rounded()), UInt8(b.rounded()))
+    }
+
+    /// Map a raw load-to-truck ratio onto the geothermal domain `t ∈ [0,1]`
+    /// through a FIXED piecewise scale (0.5→0 cold … 1.4→~0.36 … 3.0→1 hot),
+    /// clamped — so the same ratio always reads the same temperature across
+    /// cameras / datasets (no per-frame renormalization).
+    static func geothermalT(forRatio ratio: Double) -> Double {
+        let r = ratio
+        if r <= 0.5 { return 0.0 }
+        if r >= 3.0 { return 1.0 }
+        if r <= 1.4 {
+            // 0.5 → 0.0 … 1.4 → 0.36
+            return (r - 0.5) / (1.4 - 0.5) * 0.36
+        }
+        // 1.4 → 0.36 … 3.0 → 1.0
+        return 0.36 + (r - 1.4) / (3.0 - 1.4) * (1.0 - 0.36)
+    }
+
+    /// FEATURE 2 — rasterize the heat blobs into ONE continuous geothermal
+    /// field CGImage via inverse-distance weighting on a downsampled grid.
+    /// Built ONCE in `RenderModel.build`; the per-frame closure just blits it.
+    /// Each cell's temperature is the IDW of the nearby zones' ratios mapped
+    /// through `geothermalT`; cell alpha rises with both a base tint and the
+    /// IDW coverage so the whole field is graded yet readable under the route.
+    /// Returns nil when there are no blobs (zero-fabrication contract).
+    static func geothermalField(
+        blobs: [(center: CGPoint, weight: Double)],
+        rect: CGRect
+    ) -> CGImage? {
+        guard !blobs.isEmpty, rect.width > 1, rect.height > 1 else { return nil }
+
+        // Aspect-matched grid, capped at the tuning resolution.
+        let aspect = rect.width / Swift.max(1, rect.height)
+        var gw = geoFieldGridW
+        var gh = geoFieldGridH
+        if aspect >= 1 {
+            gh = Swift.max(8, Swift.min(geoFieldGridH, Int((Double(gw) / Double(aspect)).rounded())))
+        } else {
+            gw = Swift.max(8, Swift.min(geoFieldGridW, Int((Double(gh) * Double(aspect)).rounded())))
+        }
+
+        // Influence radius (points) — scaled to the view so isolated zones
+        // bleed into a field rather than reading as dots. IDW power 2.
+        let influence = Double(Swift.max(rect.width, rect.height)) * 0.42
+        let inf2 = influence * influence
+
+        let cellW = Double(rect.width) / Double(gw)
+        let cellH = Double(rect.height) / Double(gh)
+
+        // Precompute blob centers (relative to rect origin) + their temperature.
+        let pts: [(x: Double, y: Double, t: Double)] = blobs.map {
+            (Double($0.center.x - rect.minX),
+             Double($0.center.y - rect.minY),
+             geothermalT(forRatio: $0.weight))
+        }
+
+        let bytesPerPixel = 4
+        let bytesPerRow = gw * bytesPerPixel
+        var buffer = [UInt8](repeating: 0, count: gh * bytesPerRow)
+
+        for gy in 0..<gh {
+            let py = (Double(gy) + 0.5) * cellH
+            for gx in 0..<gw {
+                let px = (Double(gx) + 0.5) * cellW
+                // IDW over the zones (power 2). `cover` is the summed inverse-
+                // distance weight → drives alpha so cells far from any zone fade.
+                var wsum = 0.0
+                var tsum = 0.0
+                var nearest2 = Double.greatestFiniteMagnitude
+                for p in pts {
+                    let dx = px - p.x, dy = py - p.y
+                    let d2 = dx * dx + dy * dy
+                    if d2 < nearest2 { nearest2 = d2 }
+                    let w = 1.0 / (d2 + 60.0)   // +eps avoids singularity at a zone
+                    wsum += w
+                    tsum += w * p.t
+                }
+                let t = wsum > 0 ? tsum / wsum : 0
+                let (r, g, b) = geothermalRGB(t)
+
+                // Coverage falloff: full alpha within the influence radius of the
+                // nearest zone, easing to a low base tint beyond it (so the whole
+                // field is graded, denser near zones).
+                let near = Swift.min(1.0, nearest2 / inf2)
+                let coverage = 1.0 - near          // 1 at a zone → 0 past influence
+                let baseAlpha = 0.16               // everything tinted
+                let peakAlpha = 0.62               // near a zone
+                let a = baseAlpha + (peakAlpha - baseAlpha) * coverage
+                let alpha = UInt8((Swift.min(1.0, Swift.max(0.0, a)) * 255.0).rounded())
+
+                let off = gy * bytesPerRow + gx * bytesPerPixel
+                // Premultiplied straight→premul (premultipliedLast): scale RGB by α.
+                let af = Double(alpha) / 255.0
+                buffer[off]     = UInt8((Double(r) * af).rounded())
+                buffer[off + 1] = UInt8((Double(g) * af).rounded())
+                buffer[off + 2] = UInt8((Double(b) * af).rounded())
+                buffer[off + 3] = alpha
+            }
+        }
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
+        guard let ctx = CGContext(
+            data: &buffer,
+            width: gw,
+            height: gh,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo.rawValue
+        ) else { return nil }
+        return ctx.makeImage()
+    }
 }
 
 // MARK: - Canvas painting (static so no closures capture self)
@@ -847,6 +1139,9 @@ extension BespokeMapCanvas {
         // 1b — basemap (pre-projected rings).
         if !model.isOcean {
             paintBasemap(&context, model: model)
+            // 1c — real geographic context (FEATURE 1): national + state
+            // borders, interstate corridors, metro labels — UNDER the route.
+            paintGeography(&context, model: model)
         }
 
         // 2 — faint grid.
@@ -857,9 +1152,23 @@ extension BespokeMapCanvas {
         paintSilhouettes(&context, rect: rect, silhouettes: style.silhouettes,
                          isOcean: model.isOcean, isNav: model.isNav)
 
-        // 4a — heatmap.
-        for blob in model.heatBlobs {
-            paintHeatBlob(&context, center: blob.center, weight: blob.weight, maxWeight: heatMaxWeight(model))
+        // 4a — heatmap. The .geothermal register paints ONE continuous IDW
+        // thermal field (FEATURE 2) UNDER the route; every other register keeps
+        // the legacy per-zone demand blobs (contract preserved).
+        if model.isGeothermal {
+            if let field = model.geoField {
+                // High interpolation so the downsampled grid blits as a SMOOTH
+                // field (continuous grade, no blocks). The interpolation quality
+                // travels on the Image itself (.interpolation(.high)) rather than
+                // the GraphicsContext, so no quality state leaks to later painters.
+                let img = Image(decorative: field, scale: 1, orientation: .up)
+                    .interpolation(.high)
+                context.draw(img, in: model.geoFieldRect)
+            }
+        } else {
+            for blob in model.heatBlobs {
+                paintHeatBlob(&context, center: blob.center, weight: blob.weight, maxWeight: heatMaxWeight(model))
+            }
         }
         // 4b — ad-zones.
         for z in model.adZones {
@@ -962,6 +1271,102 @@ extension BespokeMapCanvas {
                 with: .color(model.coastColor),
                 style: StrokeStyle(lineWidth: model.coastWidth, lineCap: .round, lineJoin: .round)
             )
+        }
+    }
+
+    // MARK: 1c — Real geographic context (FEATURE 1 — borders / roads / cities)
+
+    /// Rasterize the pre-projected geography the model computed: national
+    /// borders (a slightly bolder coastColor stroke), state / province borders
+    /// (thin, low-opacity coastColor), interstate freight corridors (thin warm
+    /// desaturated "streets" along the lanes), and metro labels (small haloed
+    /// text). All UNDER the route / markers so the lane stays the focal layer.
+    /// Nothing here projects — `RenderModel.buildGeography` already did, culled
+    /// + zoom-gated. Tasteful + faint by design; matches the light/dark register
+    /// via `model.coastColor` / `model.isDarkRegister`.
+    static func paintGeography(_ context: inout GraphicsContext, model: RenderModel) {
+        // State / province borders — THIN, low-opacity (≈0.6pt, coast @~0.5α).
+        if !model.stateBorders.isEmpty {
+            var statePath = Path()
+            for pts in model.stateBorders where pts.count >= 2 {
+                statePath.move(to: pts[0])
+                for p in pts.dropFirst() { statePath.addLine(to: p) }
+            }
+            context.stroke(
+                statePath,
+                with: .color(model.coastColor.opacity(0.5)),
+                style: StrokeStyle(lineWidth: 0.6, lineCap: .round, lineJoin: .round))
+        }
+
+        // Interstate corridors — thin warm desaturated road-tint ("streets").
+        // Slightly brighter on dark registers so they read over the land wash.
+        if !model.corridors.isEmpty {
+            let roadTint = model.isDarkRegister
+                ? Color(hex: 0xC9A36B).opacity(0.40)   // warm tan, dark backdrop
+                : Color(hex: 0xB07B3A).opacity(0.34)   // warm desaturated, light
+            var roadPath = Path()
+            for pts in model.corridors where pts.count >= 2 {
+                roadPath.move(to: pts[0])
+                for p in pts.dropFirst() { roadPath.addLine(to: p) }
+            }
+            context.stroke(
+                roadPath,
+                with: .color(roadTint),
+                style: StrokeStyle(lineWidth: 0.8, lineCap: .round, lineJoin: .round))
+        }
+
+        // National borders — a slightly BOLDER coastColor stroke (the most
+        // stabilizing register). Painted last of the line work so it reads on top
+        // of the fainter state lines.
+        if !model.nationalBorders.isEmpty {
+            var natPath = Path()
+            for pts in model.nationalBorders where pts.count >= 2 {
+                natPath.move(to: pts[0])
+                for p in pts.dropFirst() { natPath.addLine(to: p) }
+            }
+            context.stroke(
+                natPath,
+                with: .color(model.coastColor.opacity(0.85)),
+                style: StrokeStyle(lineWidth: model.coastWidth + 0.4, lineCap: .round, lineJoin: .round))
+        }
+
+        // Metro labels — small system text with a subtle halo/shadow so they
+        // stay legible over the land wash, UNDER the route. Primary metros a
+        // touch larger / bolder than secondary + tertiary.
+        guard !model.placeLabels.isEmpty else { return }
+        let textColor: Color = model.isDarkRegister
+            ? Color.white.opacity(0.82)
+            : Color(hex: 0x2A2F36).opacity(0.78)
+        let haloColor: Color = model.isDarkRegister
+            ? Color.black.opacity(0.55)
+            : Color.white.opacity(0.75)
+        for label in model.placeLabels {
+            let size: CGFloat = label.rank == 1 ? 10.5 : (label.rank == 2 ? 9.5 : 9.0)
+            let weight: Font.Weight = label.rank == 1 ? .semibold : .medium
+            var resolved = context.resolve(
+                Text(label.text)
+                    .font(.system(size: size, weight: weight, design: .default))
+                    .foregroundColor(textColor))
+            let ts = resolved.measure(in: CGSize(width: 160, height: 24))
+            // Anchor the label just above its place dot.
+            let origin = CGPoint(x: label.at.x - ts.width / 2, y: label.at.y - ts.height - 3)
+            // Halo — draw the text offset in 4 directions in the halo color.
+            var halo = resolved
+            halo.shading = .color(haloColor)
+            for off in [(-0.6, 0.0), (0.6, 0.0), (0.0, -0.6), (0.0, 0.6)] as [(CGFloat, CGFloat)] {
+                context.draw(halo, in: CGRect(x: origin.x + off.0, y: origin.y + off.1,
+                                              width: ts.width, height: ts.height))
+            }
+            resolved.shading = .color(textColor)
+            context.draw(resolved, in: CGRect(origin: origin, size: ts))
+            // A small place dot at the metro anchor (primary only, to avoid
+            // clutter at the dense secondary tier).
+            if label.rank == 1 {
+                let r: CGFloat = 1.6
+                let dot = Path(ellipseIn: CGRect(x: label.at.x - r, y: label.at.y - r,
+                                                 width: r * 2, height: r * 2))
+                context.fill(dot, with: .color(textColor))
+            }
         }
     }
 

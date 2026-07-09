@@ -365,6 +365,10 @@ struct ShipperAppIntents: View {
     // MARK: - Tap handlers (§20.4 no dead buttons)
 
     private func tapRunShortcut() {
+        // RUN the active App Intent in-app instead of opening a Safari
+        // sheet that re-mounted this list. The intent's tRPC `binding`
+        // maps to a native destination; run-shortcut navigates there so
+        // "post that load again" actually opens the post-load surface.
         NotificationCenter.default.post(
             name: .eusoShipperIntentRun,
             object: nil,
@@ -375,12 +379,16 @@ struct ShipperAppIntents: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/intents/run/\(activeIntent.id)") {
-            inAppLink = EusoSafariLink(url: url)
-        }
+        runIntentBinding("loads.create")
     }
 
     private func tapIntentToggle(_ intent: Intent) {
+        // In-place enable/disable — the telemetry post is what the API
+        // layer / LiveDataStore observes to persist the toggle; there is
+        // no navigation. (Was a Safari sheet to `…/intents/<id>/toggle`
+        // that re-mounted this same list — the openURL was a
+        // placeholder.) A light selection haptic confirms the tap.
+        UISelectionFeedbackGenerator().selectionChanged()
         NotificationCenter.default.post(
             name: .eusoShipperIntentToggle,
             object: nil,
@@ -391,12 +399,14 @@ struct ShipperAppIntents: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/intents/\(intent.id)/toggle") {
-            inAppLink = EusoSafariLink(url: url)
-        }
     }
 
     private func tapIntentRow(_ intent: Intent) {
+        // Tapping an intent row RUNS that intent (same as the hero
+        // run-shortcut, scoped to the tapped row). Routes to the row's
+        // bound native destination; non-navigational bindings (read-only
+        // queries) just fire telemetry. Was a Safari sheet to
+        // `…/intents/<id>` that re-mounted this list.
         NotificationCenter.default.post(
             name: .eusoShipperIntentRow,
             object: nil,
@@ -408,12 +418,42 @@ struct ShipperAppIntents: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/intents/\(intent.id)") {
-            inAppLink = EusoSafariLink(url: url)
+        runIntentBinding(intent.binding)
+    }
+
+    /// Maps an App Intent tRPC `binding` to its native destination and
+    /// navigates there. Bindings that resolve to a screen swap in-app;
+    /// read-only bindings with no dedicated landing surface intentionally
+    /// no-op the nav (the telemetry post already fired) rather than
+    /// browser-bounce or fabricate a screen.
+    private func runIntentBinding(_ binding: String) {
+        // The binding may carry a trailing annotation
+        // ("loads.getById · stage 5/8") — match on the procedure prefix.
+        let proc = binding.split(separator: " ").first.map(String.init) ?? binding
+        let screenId: String?
+        switch proc {
+        case "loads.create":                screenId = "204"   // Create Load
+        case "loads.getById":               screenId = "201"   // Loads list (no per-row id here)
+        case "controlTower.recentActivity",
+             "controlTower.exceptions":      screenId = "212"   // Control Tower
+        case "settlements.getWeekly":        screenId = "206"   // Settlements
+        case "shippers.getBidsForLoad":      screenId = "215"   // RFP / bids
+        case "shippers.getCatalystPerformance":
+                                             screenId = "224"   // Partner directory
+        default:                             screenId = nil
+        }
+        if let id = screenId {
+            NotificationCenter.default.post(
+                name: .eusoShipperNavSwap, object: nil,
+                userInfo: ["screenId": id]
+            )
         }
     }
 
     private func tapManageIntents() {
+        // Manage opens Settings (211) natively. Previously a Safari
+        // sheet to `/shipper/settings/siri`; 211 is the single scrolling
+        // Settings screen the whole settings/<feature> family lands on.
         NotificationCenter.default.post(
             name: .eusoShipperIntentManage,
             object: nil,
@@ -423,9 +463,10 @@ struct ShipperAppIntents: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/siri") {
-            inAppLink = EusoSafariLink(url: url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "211"]
+        )
     }
 }
 

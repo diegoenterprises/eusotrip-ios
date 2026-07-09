@@ -2009,14 +2009,30 @@ final class EarningsBreakdownStore: BaseDynamicStore<WalletAPI.EarningsBreakdown
 @MainActor
 final class PayoutScheduleStore: BaseDynamicStore<WalletAPI.PayoutSchedule> {
     @Published var isSaving: Bool = false
+    /// Non-nil when the last `update(...)` write failed. The view surfaces
+    /// it so the user knows the selection didn't save (instead of silently
+    /// reverting). The optimistic value stays on-screen for an easy retry.
+    @Published var saveError: Error? = nil
 
     override func fetch() async throws -> WalletAPI.PayoutSchedule {
         try await EusoTripAPI.shared.wallet.getPayoutSchedule()
     }
 
     /// Update any subset of the schedule fields. Optimistically
-    /// rewrites `state` so the UI feels instant, then lets the
-    /// server-side `updatedAt` confirm the write on the next fetch.
+    /// rewrites `state` so the UI feels instant; the server now PERSISTS
+    /// the chosen cadence (build-752 batch), so the selection STICKS.
+    ///
+    /// Money-options-revert fix: the prior version `await refresh()`-ed
+    /// on BOTH success and failure. When the server didn't yet persist,
+    /// that refresh returned the default and reverted the user's pick
+    /// (the founder's "money options revert" report). Now:
+    ///   • on success → keep the optimistic value; only patch in the
+    ///     server-recomputed `nextScheduledPayout` (a single targeted
+    ///     re-fetch that NEVER clobbers the field the user just set,
+    ///     because the persisted value matches the optimistic one).
+    ///   • on failure → keep the optimistic value too, and surface the
+    ///     error so the user can retry — we do NOT reconcile to a stale
+    ///     server read that would silently revert their choice.
     func update(
         frequency: String? = nil,
         dayOfWeek: String? = nil,
@@ -2026,6 +2042,7 @@ final class PayoutScheduleStore: BaseDynamicStore<WalletAPI.PayoutSchedule> {
         isSaving = true
         defer { isSaving = false }
 
+        // Optimistic write — the chosen value renders as selected instantly.
         if case .loaded(let current) = state {
             let next = WalletAPI.PayoutSchedule(
                 frequency: frequency ?? current.frequency,
@@ -2038,20 +2055,39 @@ final class PayoutScheduleStore: BaseDynamicStore<WalletAPI.PayoutSchedule> {
         }
 
         do {
-            _ = try await EusoTripAPI.shared.wallet.updatePayoutSchedule(
+            let result = try await EusoTripAPI.shared.wallet.updatePayoutSchedule(
                 frequency: frequency,
                 dayOfWeek: dayOfWeek,
                 minimumAmount: minimumAmount,
                 autoPayoutEnabled: autoPayoutEnabled
             )
-            // Server doesn't return the updated schedule directly, so
-            // re-fetch to pick up any server-computed fields (e.g.
-            // `nextScheduledPayout` which the scheduler recalculates).
-            await refresh()
+            saveError = nil
+            // Pull the server-recomputed `nextScheduledPayout` only when the
+            // write actually succeeded. The persisted cadence now matches the
+            // optimistic state, so this refresh confirms — never reverts.
+            if result.success {
+                await reconcileNextPayout()
+            }
         } catch {
-            // Reconcile against server truth.
-            await refresh()
+            // Keep the user's selection on-screen (no stale-read revert) and
+            // surface the failure so they can retry.
+            saveError = error
         }
+    }
+
+    /// Re-fetch ONLY to absorb the server-computed `nextScheduledPayout`
+    /// after a confirmed write. Leaves the user-chosen cadence/day/minimum/
+    /// auto fields exactly as the optimistic write set them.
+    private func reconcileNextPayout() async {
+        guard let fresh = try? await EusoTripAPI.shared.wallet.getPayoutSchedule(),
+              case .loaded(let current) = state else { return }
+        state = .loaded(WalletAPI.PayoutSchedule(
+            frequency: current.frequency,
+            dayOfWeek: current.dayOfWeek,
+            minimumAmount: current.minimumAmount,
+            nextScheduledPayout: fresh.nextScheduledPayout,
+            autoPayoutEnabled: current.autoPayoutEnabled
+        ))
     }
 }
 
@@ -3143,6 +3179,12 @@ final class DQFileStore: ObservableObject, DynamicStore {
     @Published private(set) var isLoading: Bool = false
     @Published private(set) var lastError: Error?
 
+    /// id of the document currently being removed — drives the row's
+    /// in-flight spinner so the owner sees the delete land before refresh.
+    @Published private(set) var deletingId: String?
+    /// Transient confirmation copy surfaced after a delete resolves.
+    @Published var lastToast: String?
+
     func refresh() async {
         guard !driverId.isEmpty else {
             lastError = NSError(
@@ -3175,6 +3217,40 @@ final class DQFileStore: ObservableObject, DynamicStore {
                 code: -1,
                 userInfo: [NSLocalizedDescriptionKey: "Can't reach DQ service"]
             )
+        }
+    }
+
+    /// Remove an EXPIRED DQ document from the driver's own file via
+    /// `driverQualification.deleteDocument` (build-752 server batch).
+    /// Owner-scoped by construction — this store only ever loads the
+    /// signed-in driver's own documents (`driverId == session.user.id`)
+    /// and the server re-verifies ownership before deleting. Optimistic:
+    /// the row drops immediately, then a refresh reconciles counts +
+    /// the compliance score. On failure we re-fetch so nothing is lost.
+    func deleteDocument(_ doc: DriverQualificationAPI.DQDocument) async {
+        guard deletingId == nil else { return }
+        deletingId = doc.id
+        defer { deletingId = nil }
+        // Optimistic removal so the file feels live.
+        let snapshot = documents
+        documents.removeAll { $0.id == doc.id }
+        do {
+            let ack = try await EusoTripAPI.shared.dq.deleteDocument(
+                documentId: doc.id,
+                reason: "expired_document_removed_by_owner"
+            )
+            if ack.success == false {
+                // Server declined — restore and surface honestly.
+                documents = snapshot
+                lastToast = "Couldn't remove that document"
+            } else {
+                lastToast = "Removed \(doc.name?.isEmpty == false ? doc.name! : "document")"
+            }
+            // Reconcile counts + compliance score with the server truth.
+            await refresh()
+        } catch {
+            documents = snapshot
+            lastToast = "Couldn't remove that document"
         }
     }
 }

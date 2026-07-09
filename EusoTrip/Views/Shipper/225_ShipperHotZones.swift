@@ -206,7 +206,11 @@ struct ShipperHotZones: View {
     var embedded: Bool = false
 
     @Environment(\.palette) private var palette
-    @Environment(\.openURL) private var openURL
+    // NOTE 2026-06-19 — `@Environment(\.openURL)` removed. This screen no
+    // longer hands off to any web URL: all CTAs (Find loads → 201, cold-zone
+    // post → 204) now route natively via `.eusoShipperNavSwap`, so the
+    // ShipperSurface openURL interceptor (which mis-mapped /loads/search → 205
+    // "Load not found") is never engaged from here.
     @StateObject private var store = ShipperHotZonesStore()
 
     /// Per-zone flip state. Tapping a hot tile flips it IN PLACE on its
@@ -1082,26 +1086,36 @@ struct ShipperHotZones: View {
         )
     }
 
-    /// Real load-search action fired by the Hot + Intensity backs. Same
-    /// pattern as `tapPostRecommendation`: a telemetry post for observability
-    /// plus a Bearer-authed web continuation into the shipper load search
-    /// pre-seeded with the metro. No re-login.
+    /// Real load-search action fired by the Hot + Intensity backs.
+    ///
+    /// FOUNDER FIX 2026-06-19 — this used to fire a dead telemetry post
+    /// (`.eusoShipperHotZonesFindLoads`, no observer anywhere) PLUS an
+    /// `openURL("https://app.eusotrip.com/shipper/loads/search?…")`. Inside
+    /// ShipperSurface that web URL was intercepted by ShipperWebToNativeMap,
+    /// which mistook the literal path segment "search" in `/loads/search` for
+    /// a loadId → routed to 205 (Load Detail) with id "search" → server
+    /// returned nothing → the founder saw "Load not found".
+    ///
+    /// Now it stays fully IN-APP: pre-seed the shipper Loads board (201) with
+    /// the zone state as a free-text search query (201 matches it against the
+    /// lane origin/destination) and push it via the native `.eusoShipperNavSwap`
+    /// slot — the SAME race-free hand-off the cold-zone CTA (204) and 212
+    /// Control Tower use. The state is parked in `ShipperLoadsNavContext`
+    /// BEFORE the swap post because 201 reads it on `.onAppear` (it mounts
+    /// only after the surface consumes the post, so an `.onReceive` would
+    /// miss it). Honest by construction: if no loads match the state, 201
+    /// renders its real empty state — nothing fabricated.
     private func tapFindLoads(state: String, metro: String) {
+        // Filter by state to match the CTA copy ("Find loads in {state}").
+        // 201 free-text query matches `origin`/`destination` lane strings,
+        // which carry the state, so this scopes the board to that region.
+        let query = state.trimmingCharacters(in: .whitespacesAndNewlines)
+        ShipperLoadsNavContext.setPush(origin: "225", query: query)
         NotificationCenter.default.post(
-            name: .eusoShipperHotZonesFindLoads,
+            name: .eusoShipperNavSwap,
             object: nil,
-            userInfo: [
-                "source": "225_ShipperHotZones",
-                "state": state,
-                "metro": metro,
-                "shipperCompanyId": 1
-            ]
+            userInfo: ["screenId": "201", "query": query, "backTo": "225"]
         )
-        let q = metro.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        let st = state.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-        if let url = URL(string: "https://app.eusotrip.com/shipper/loads/search?origin=\(q)&state=\(st)") {
-            openURL(url)
-        }
     }
 
     /// Intermodal (rail/vessel) one-line summary for the compact tile back.
@@ -2003,8 +2017,9 @@ extension Notification.Name {
     static let eusoShipperHotZonesEquip            = Notification.Name("eusoShipperHotZonesEquip")
     /// Action ribbon tap — cold-zone post recommendation.
     static let eusoShipperHotZonesPostRecommendation = Notification.Name("eusoShipperHotZonesPostRecommendation")
-    /// Hot / Intensity flip-back CTA tap — load search for a hot metro.
-    static let eusoShipperHotZonesFindLoads        = Notification.Name("eusoShipperHotZonesFindLoads")
+    // 2026-06-19 — `eusoShipperHotZonesFindLoads` removed. It was a dead
+    // telemetry post with NO observer anywhere; the Find-loads CTA now routes
+    // natively to the shipper Loads board (201) via `.eusoShipperNavSwap`.
 }
 
 // MARK: - Previews

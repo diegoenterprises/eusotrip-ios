@@ -329,41 +329,72 @@ struct ShipperPushNotificationLanding: View {
     // MARK: Notification posts (§20.4)
 
     private func tapOpenTarget() {
-        NotificationCenter.default.post(
-            name: .eusoShipperPushOpenTarget,
-            object: nil,
-            userInfo: [
-                "source": "231_ShipperPushNotificationLanding",
-                "pushId": activePush.id,
-                "loadId": activePush.loadId,
-                "categoryId": activePush.categoryId,
-                "targetScreen": activePush.targetScreen,
-                "shipperCompanyId": 1
-            ]
-        )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/push/\(activePush.id)/open") {
-            openURL(url)
+        // The hero CTA opens the push's TARGET screen natively (it used
+        // to round-trip through `openURL("…/push/<id>/open")` which had
+        // no mapper case → browser-bounced). `activePush.targetScreen`
+        // is a "<id> <Name>" label (e.g. "212 Control Tower"); parse the
+        // id and swap. If the target is a load-context screen (205/222)
+        // and the push carries a loadId, route through the load-open
+        // path so the detail mounts on the real id (Wave I1 gate).
+        if let target = ShipperWebToNativeMap.targetScreenId(from: activePush.targetScreen) {
+            let lid = ShipperLoadIdResolver.normalize(activePush.loadId)
+            if target == "222", let lid = lid {
+                // Live tracking opens on the map via the dedicated path.
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadOpenMap, object: nil,
+                    userInfo: ["loadId": lid]
+                )
+            } else if target == "205", let lid = lid {
+                // Load detail mounts on the real id (Wave I1 gate).
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadOpen, object: nil,
+                    userInfo: ["loadId": lid]
+                )
+            } else if target == "205" || target == "222" {
+                // Load-context target but NO resolvable id — never mount
+                // a bare 205/222 (registry sentinel → forever-skeleton).
+                // Fall to the loads list so the user picks the load.
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadListOpen, object: nil
+                )
+            } else {
+                // Non-load target (e.g. 212 Control Tower) — plain swap.
+                NotificationCenter.default.post(
+                    name: .eusoShipperNavSwap, object: nil,
+                    userInfo: ["screenId": target]
+                )
+            }
         }
     }
 
     private func tapRouteRow(_ category: PushCategory) {
-        NotificationCenter.default.post(
-            name: .eusoShipperPushRouteRow,
-            object: nil,
-            userInfo: [
-                "source": "231_ShipperPushNotificationLanding",
-                "categoryId": category.id,
-                "targetScreen": category.targetScreen,
-                "isActiveCategory": category.id == activeCategoryId,
-                "shipperCompanyId": 1
-            ]
-        )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/push/category/\(category.id)") {
-            openURL(url)
+        // Category rows open their TARGET screen natively. The
+        // `targetScreen` label ("→ 205 Load Detail", "→ 212 Control
+        // Tower · ACTIVE", "→ 229 BOL Upload") parses to a screen id.
+        // For a load-context target we have no per-category loadId, so
+        // open the loads list (201) rather than mounting a bare 205;
+        // otherwise swap straight to the labelled screen. Previously
+        // `openURL("…/push/category/<id>")` browser-bounced.
+        if let target = ShipperWebToNativeMap.targetScreenId(from: category.targetScreen) {
+            if target == "205" || target == "222" {
+                NotificationCenter.default.post(
+                    name: .eusoShipperLoadListOpen, object: nil
+                )
+            } else {
+                NotificationCenter.default.post(
+                    name: .eusoShipperNavSwap, object: nil,
+                    userInfo: ["screenId": target]
+                )
+            }
         }
     }
 
     private func tapManagePrefs() {
+        // Manage opens Settings (211) natively (single scrolling Settings
+        // screen — notification prefs live there). Previously an openURL
+        // to `/shipper/settings/push` that round-tripped the interceptor
+        // to the same 211; now a direct swap, consistent with the other
+        // leaf screens' manage CTAs.
         NotificationCenter.default.post(
             name: .eusoShipperPushManagePrefs,
             object: nil,
@@ -373,9 +404,10 @@ struct ShipperPushNotificationLanding: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/push") {
-            openURL(url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "211"]
+        )
     }
 }
 

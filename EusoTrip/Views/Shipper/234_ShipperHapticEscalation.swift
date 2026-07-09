@@ -377,6 +377,11 @@ struct ShipperHapticEscalation: View {
     // MARK: - Tap handlers (§20.4 no dead buttons)
 
     private func tapTestPattern() {
+        // Fire the active pattern's haptic LOCALLY as a preview — this
+        // screen configures `UIImpactFeedbackGenerator` patterns, so the
+        // "test" CTA should actually PLAY one, not open a Safari sheet
+        // that re-mounted this list. Resolve the active category to read
+        // its intensity + tap count.
         NotificationCenter.default.post(
             name: .eusoShipperHapticTestPattern,
             object: nil,
@@ -387,12 +392,18 @@ struct ShipperHapticEscalation: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/haptic/test/\(activePattern.id)") {
-            inAppLink = EusoSafariLink(url: url)
+        if let cat = categories.first(where: { $0.id == activePattern.categoryId }) {
+            firePattern(intensity: cat.intensity, tapCount: cat.tapCount)
+        } else {
+            firePattern(intensity: .sharp, tapCount: 3)
         }
     }
 
     private func tapCategoryToggle(_ category: HapticCategory) {
+        // In-place enable/disable. The telemetry post is what persists
+        // the toggle; a light selection haptic confirms the tap. (Was a
+        // Safari sheet that re-mounted this list.)
+        UISelectionFeedbackGenerator().selectionChanged()
         NotificationCenter.default.post(
             name: .eusoShipperHapticCategoryToggle,
             object: nil,
@@ -403,12 +414,13 @@ struct ShipperHapticEscalation: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/haptic/category/\(category.id)/toggle") {
-            inAppLink = EusoSafariLink(url: url)
-        }
     }
 
     private func tapCategoryRow(_ category: HapticCategory) {
+        // Tapping a category row PLAYS that category's haptic preview so
+        // the user can feel the pattern they are configuring — the real
+        // intent of this screen. (Was a Safari sheet that re-mounted this
+        // list.)
         NotificationCenter.default.post(
             name: .eusoShipperHapticCategoryRow,
             object: nil,
@@ -421,12 +433,33 @@ struct ShipperHapticEscalation: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/haptic/category/\(category.id)") {
-            inAppLink = EusoSafariLink(url: url)
+        firePattern(intensity: category.intensity, tapCount: category.tapCount)
+    }
+
+    /// Plays a local haptic sequence matching a configured pattern —
+    /// `tapCount` impacts of the mapped `UIImpactFeedbackGenerator`
+    /// style, 0.08s apart (matches the §spec gap grammar).
+    private func firePattern(intensity: HapticIntensity, tapCount: Int) {
+        let style: UIImpactFeedbackGenerator.FeedbackStyle
+        switch intensity {
+        case .sharp:  style = .heavy
+        case .medium: style = .medium
+        case .soft:   style = .light
+        case .mixed:  style = .medium
+        }
+        let gen = UIImpactFeedbackGenerator(style: style)
+        gen.prepare()
+        let count = max(1, tapCount)
+        for i in 0..<count {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.08) {
+                gen.impactOccurred()
+            }
         }
     }
 
     private func tapManageHapticPrefs() {
+        // Manage opens Settings (211) natively (single scrolling Settings
+        // screen). Previously a Safari sheet to `/shipper/settings/haptics`.
         NotificationCenter.default.post(
             name: .eusoShipperHapticManagePrefs,
             object: nil,
@@ -436,9 +469,10 @@ struct ShipperHapticEscalation: View {
                 "shipperCompanyId": 1
             ]
         )
-        if let url = URL(string: "https://app.eusotrip.com/shipper/settings/haptics") {
-            inAppLink = EusoSafariLink(url: url)
-        }
+        NotificationCenter.default.post(
+            name: .eusoShipperNavSwap, object: nil,
+            userInfo: ["screenId": "211"]
+        )
     }
 }
 

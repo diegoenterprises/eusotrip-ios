@@ -250,11 +250,14 @@ private struct CounterReviewBody: View {
                 actionError = "Accept returned no success flag. Reload and try again."
             }
         } catch let err {
-            actionError = (err as? LocalizedError)?.errorDescription ?? "Accept failed: \(err)"
+            actionError = EusoTripAPIError.bidActionMessage(for: err, noun: "acceptance")
         }
     }
 
     private func sendCounterBack() async {
+        // `loadBidding.counter` keys the new round on the PARENT bid + the
+        // numeric loadId and returns `{ id, round, status }` — the build-755
+        // contract fix, now carried by the typed `loadBidding.counter` wrapper.
         guard let bidId = counter?.id,
               let amount = Double(counterAmountText),
               let numericLoadId = load?.id ?? Int(loadId) else { return }
@@ -271,7 +274,7 @@ private struct CounterReviewBody: View {
             counterAmountText = ""
             await self.load()
         } catch let err {
-            actionError = (err as? LocalizedError)?.errorDescription ?? "Counter failed: \(err)"
+            actionError = EusoTripAPIError.bidActionMessage(for: err, noun: "counter")
         }
     }
 

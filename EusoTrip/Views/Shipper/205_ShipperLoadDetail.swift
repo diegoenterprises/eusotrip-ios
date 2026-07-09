@@ -1679,7 +1679,48 @@ struct ShipperLoadDetail: View {
                         stateColor: Brand.success,
                         iconStyle: .success)
             }
+            // Add-to-Wallet — routes through the ONE reusable entry point
+            // (AddToWalletButton) so the bespoke card-style picker + themed
+            // Add-to-Wallet behave identically everywhere ("across the board").
+            // Server: eusoWallet.listWalletThemes / setWalletTheme +
+            // createPickupCredential. The bespoke document-strip tile is supplied
+            // as the button's label, so the 205 look is preserved while the picker
+            // behavior lives in the shared component. Mints the themed Apple Wallet
+            // pickup pass for THIS load.
+            AddToWalletButton(loadId: loadId) {
+                walletPassTile
+            }
         }
+    }
+
+    /// Full-width "Add to Apple Wallet" affordance beneath the document tiles.
+    private var walletPassTile: some View {
+        HStack(spacing: Space.s3) {
+            Image(systemName: "wallet.pass.fill")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(LinearGradient.primary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Add to Apple Wallet")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("Themed pickup pass · pick your card style")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(palette.bgCard)
+        .overlay(RoundedRectangle(cornerRadius: Radius.lg)
+                    .strokeBorder(palette.borderFaint))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg))
+        .contentShape(Rectangle())
     }
 
     private var bolStateText: String {

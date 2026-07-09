@@ -29,6 +29,7 @@ struct TerminalMeScreen: View {
                 titleBlock
                 iridescentHairline
                 identityHero
+                accessCardSection
                 EusoCardIssuePanel(
                     title: "Terminal EusoCard",
                     subtitle: "Virtual card for terminal operations spend"
@@ -159,6 +160,52 @@ struct TerminalMeScreen: View {
             row(label: "Gate queue", icon: "arrow.left.arrow.right", to: "701")
             row(label: "Yard map",   icon: "map",                    to: "702")
         }
+    }
+
+    // MARK: - Access card section
+    //
+    // Two sides of the staff ACCESS CARD, grounded in the real
+    // `staffAccessTokens` grant (server terminals.ts):
+    //   • HOLDER  — "Add access card to Wallet": mints the themed Apple Wallet
+    //     access pass for THIS staff member's temporary access token. Presents
+    //     the shared WalletCardPickerView in access mode (AddAccessCardButton).
+    //   • CONTROLLER — "Access control · scan": opens the scanner/verify surface
+    //     so an access controller can verify a scanned card honestly. A pushed
+    //     leaf via .eusoTerminalNavSwap → "TerminalAccessScan".
+
+    private var accessCardSection: some View {
+        sectionCard(title: "ACCESS CARD", icon: "lock.shield") {
+            // Holder side — the AddAccessCardButton owns the picker-sheet.
+            AddAccessCardButton {
+                accessRowChrome(label: "Add access card to Wallet",
+                                icon: "wallet.pass",
+                                trailingSystemImage: "plus.circle")
+            }
+            // Controller side — push the scanner/verify surface.
+            row(label: "Access control · scan", icon: "qrcode.viewfinder", to: "TerminalAccessScan")
+        }
+    }
+
+    /// Row chrome matching `row(...)` but used inside the AddAccessCardButton
+    /// label (which owns the tap, so this isn't a nav `Button`).
+    private func accessRowChrome(label: String, icon: String, trailingSystemImage: String) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(LinearGradient.diagonal).frame(width: 36, height: 36)
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .heavy))
+                    .foregroundStyle(.white)
+            }
+            Text(label)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(palette.textPrimary)
+            Spacer(minLength: 0)
+            Image(systemName: trailingSystemImage)
+                .font(.system(size: 13, weight: .heavy))
+                .foregroundStyle(palette.textTertiary)
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 
     private var supportSection: some View {

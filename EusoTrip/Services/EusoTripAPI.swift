@@ -53,6 +53,63 @@ enum EusoTripAPIError: Error, LocalizedError {
         }
     }
 
+    /// Honest, context-aware message for a bid / counter-offer action.
+    ///
+    /// The generic "Couldn't send counter. Try again." (and the cryptic
+    /// `NSError.localizedDescription` "…EusoTripAPIError error 5…") masked
+    /// the real reason behind every bid/counter failure — most notably the
+    /// build-753 case where a server `FORBIDDEN` (the DRIVER role lacking
+    /// `CREATE BID`, or a mode-eligibility gate) was promoted to
+    /// `.unauthenticated` and then swallowed by a `.trpcError`-only catch.
+    ///
+    /// This collapses every error class into a specific, diagnosable line so
+    /// the next failure tells the user WHY, never a dead-end retry. The
+    /// verbatim tRPC message is always preserved (that's the server's own
+    /// human copy — duplicate-bid 409, wallet/CDL precondition gates, the
+    /// mode-eligibility "isn't enabled for … freight" reason). `noun` lets
+    /// callers say "counter" / "bid" / "response" in the offline line.
+    func bidActionMessage(noun: String = "counter") -> String {
+        switch self {
+        case .unauthenticated:
+            // A FORBIDDEN authorization failure also lands here (perform()
+            // promotes 401/403/UNAUTHORIZED/FORBIDDEN → .unauthenticated).
+            // Name BOTH possibilities honestly: an expired session OR an
+            // account that genuinely isn't permitted to bid this lane.
+            return "Your session expired, or this account isn't allowed to bid on this lane. Sign in again, or switch to a carrier / dispatcher account."
+        case .trpcError(let m):
+            return m
+        case .httpStatus(let code, _):
+            if code == 401 || code == 403 {
+                return "This account isn't allowed to bid on this lane (HTTP \(code))."
+            }
+            return "Server error \(code). Try again in a moment."
+        case .decodingFailed:
+            return "We couldn't read the server's response to your \(noun). Try again — if it persists, refresh from the load board."
+        case .notConfigured:
+            return "The app isn't fully configured. Try restarting it."
+        case .badURL:
+            return "The \(noun) request URL was malformed. Refresh the load board and try again."
+        case .empty:
+            return "The server returned an empty response to your \(noun). Try again."
+        case .queuedForOfflineReplay:
+            return "You're offline — your \(noun) will be sent automatically when you reconnect."
+        }
+    }
+
+    /// Convenience for a `catch` over an arbitrary `Error`: maps a
+    /// `EusoTripAPIError` via `bidActionMessage`, a raw `URLError` to a
+    /// network line, and anything else to its `localizedDescription` — so a
+    /// caller never has to hand-roll the `as? EusoTripAPIError` ladder (and
+    /// never leaks the cryptic `NSError` "error N" string).
+    static func bidActionMessage(for error: Error, noun: String = "counter") -> String {
+        if let api = error as? EusoTripAPIError { return api.bidActionMessage(noun: noun) }
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain {
+            return "Network unavailable. Check your connection and try again."
+        }
+        return error.localizedDescription
+    }
+
     /// Humanize a tRPC error message before it ever reaches the UI.
     ///
     /// The server's tRPC errorFormatter (`_core/trpc.ts`) only rewrites
@@ -260,6 +317,62 @@ final class EusoTripAPI: ObservableObject {
     /// token. Was previously held only in PushService and never
     /// reached the backend — silent push-token drop.
     var pushDeviceToken: String?
+
+    // MARK: - Token / session refresh (auto re-auth on 401/403)
+    //
+    // The high-leverage fix for the build-751 "Authentication required"
+    // feedback (075 Safety Score, 082 Violations, and every sibling screen
+    // that 401s after the session has been alive for a while). When a tRPC
+    // call comes back UNAUTHORIZED, `perform` calls this closure ONCE to
+    // re-establish the session, then retries the original request a single
+    // time. If the closure returns false (session is genuinely dead), the
+    // original `.unauthenticated` error is surfaced honestly — no loop.
+    //
+    // `EusoTripSession` installs the handler (it owns the keychain + the
+    // cookie-rehydrate path). EusoTrip's auth model has no dedicated
+    // refresh-token grant: the PRIMARY credential is the server-issued
+    // `app_session_id` cookie (see `authCookieSnapshotJSON`), persisted in
+    // the Keychain. The in-memory `HTTPCookieStorage.shared` jar can drop
+    // that cookie out from under a long-lived session (memory reclaim after
+    // a long background, App Service warm-up), which is exactly what makes a
+    // previously-authenticated screen start 401-ing. The refresh handler
+    // re-hydrates the persisted cookie back into the jar and re-validates
+    // with `auth.me` — if that succeeds the session was only "lost in the
+    // jar", and the retried request now carries the restored credential.
+    //
+    // Returns true iff the session is confirmed live after the refresh.
+    var sessionRefreshHandler: (@MainActor () async -> Bool)?
+
+    /// Coalesces concurrent refresh attempts: when 10 screens 401 at once we
+    /// run ONE `auth.me` re-validation and every caller awaits the same
+    /// result, rather than stampeding the backend with 10 re-auths.
+    private var inFlightRefresh: Task<Bool, Never>?
+
+    /// True while a refresh's own `auth.me` call is on the wire. The 401/403
+    /// branches in `perform` check this and SKIP the refresh-retry while it's
+    /// set, so the refresh's `auth.me` can't recursively trigger another
+    /// refresh (which would self-await `inFlightRefresh` and deadlock). It's
+    /// also the honest signal that a 401 DURING the refresh is the real,
+    /// terminal UNAUTHORIZED — surface it, don't retry.
+    private var isRefreshing = false
+
+    /// Single-flight wrapper around `sessionRefreshHandler`. All 401-driven
+    /// callers funnel through here so only one refresh runs at a time.
+    private func refreshSessionOnce() async -> Bool {
+        guard let handler = sessionRefreshHandler, !isRefreshing else { return false }
+        if let existing = inFlightRefresh {
+            return await existing.value
+        }
+        let task = Task<Bool, Never> { @MainActor in
+            isRefreshing = true
+            defer { isRefreshing = false }
+            return await handler()
+        }
+        inFlightRefresh = task
+        let ok = await task.value
+        inFlightRefresh = nil
+        return ok
+    }
 
     /// Underlying URLSession (swap for tests).  Wired to HTTPCookieStorage.shared
     /// so the JWT cookie set by auth.login persists across requests.
@@ -1312,6 +1425,44 @@ final class EusoTripAPI: ObservableObject {
         return try await query(path, input: TRPCEmptyInput())
     }
 
+    /// Same wire as `query`, but with the 401/403 auto-refresh+retry
+    /// DISABLED. Reserved for `auth.me` — the session-probe that the refresh
+    /// path itself calls. If `auth.me` were allowed to auto-refresh it would
+    /// recurse into the refresh handler (and, during a refresh already in
+    /// flight, self-await the coalescing task). A 401 here is the honest,
+    /// terminal "session is dead" signal that `boot()` / `revalidate()` /
+    /// `refreshSession()` each absorb with their own 2-strike logic.
+    func queryNoAutoRefresh<Output: Decodable, Input: Encodable>(
+        _ path: String,
+        input: Input
+    ) async throws -> Output {
+        guard let baseURL else { throw EusoTripAPIError.notConfigured }
+        let payload = TRPCInputEnvelope(json: input)
+        let data = try encoder.encode(payload)
+        let encoded = String(data: data, encoding: .utf8) ?? "{}"
+        let url = baseURL
+            .appendingPathComponent("api/trpc")
+            .appendingPathComponent(path)
+        guard var comps = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { throw EusoTripAPIError.badURL }
+        comps.queryItems = [URLQueryItem(name: "input", value: encoded)]
+        guard let finalURL = comps.url else { throw EusoTripAPIError.badURL }
+
+        var req = URLRequest(url: finalURL)
+        req.httpMethod = "GET"
+        req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        req.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let authToken {
+            req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        }
+        if let pushDeviceToken {
+            req.setValue(pushDeviceToken, forHTTPHeaderField: "x-push-token")
+        }
+        return try await perform(req, allowRefreshRetry: false)
+    }
+
     /// Raw tRPC query that returns the server response bytes verbatim.
     /// Used by the Pulse relay path: the wrist sends us a path +
     /// already-serialized `{"json": <input>}` string, we run the GET
@@ -1521,7 +1672,14 @@ final class EusoTripAPI: ObservableObject {
 
     // MARK: Shared transport
 
-    private func perform<Output: Decodable>(_ req: URLRequest) async throws -> Output {
+    /// `allowRefreshRetry` gates the ONE automatic re-auth + retry on a
+    /// 401/403. Public entry points (`query`/`mutation`/…) call `perform`
+    /// with it true; the single retry recurses with it false so a genuinely
+    /// dead session can never spin in a refresh→401→refresh loop.
+    private func perform<Output: Decodable>(
+        _ req: URLRequest,
+        allowRefreshRetry: Bool = true
+    ) async throws -> Output {
         let (respData, resp) = try await session.data(for: req)
         guard let http = resp as? HTTPURLResponse else {
             throw EusoTripAPIError.httpStatus(0, "No HTTP response")
@@ -1557,6 +1715,16 @@ final class EusoTripAPI: ObservableObject {
             let httpStatus = inner.data?.httpStatus ?? http.statusCode
             let code = inner.data?.code ?? ""
             if httpStatus == 401 || code == "UNAUTHORIZED" {
+                // Auto re-auth + retry ONCE (build-752 feedback fix). If the
+                // session re-hydrates successfully, replay the original
+                // request with the restored credential; otherwise surface the
+                // auth error honestly (no loop — the retry recurses with the
+                // gate off). 403/FORBIDDEN deliberately does NOT retry: a
+                // permission or compliance block is not a stale session, and
+                // re-auth would only hide the server's gate message.
+                if allowRefreshRetry, await refreshSessionOnce() {
+                    return try await perform(reissue(req), allowRefreshRetry: false)
+                }
                 throw EusoTripAPIError.unauthenticated
             }
             if httpStatus == 403 || code == "FORBIDDEN" {
@@ -1570,6 +1738,9 @@ final class EusoTripAPI: ObservableObject {
         }
 
         if http.statusCode == 401 {
+            if allowRefreshRetry, await refreshSessionOnce() {
+                return try await perform(reissue(req), allowRefreshRetry: false)
+            }
             throw EusoTripAPIError.unauthenticated
         }
         if http.statusCode == 403 {
@@ -1588,6 +1759,22 @@ final class EusoTripAPI: ObservableObject {
         } catch {
             throw EusoTripAPIError.decodingFailed(String(describing: error))
         }
+    }
+
+    /// Clone a request for the post-refresh retry, re-stamping the
+    /// Authorization header from the CURRENT `authToken` (the refresh may
+    /// have rotated it) so the replay carries the freshest bearer. Cookies
+    /// ride `HTTPCookieStorage.shared` automatically, so the re-hydrated
+    /// `app_session_id` is already attached by the session — we only need
+    /// to refresh the explicit header. Body / method / URL are preserved.
+    private func reissue(_ original: URLRequest) -> URLRequest {
+        var req = original
+        if let authToken {
+            req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
+        } else {
+            req.setValue(nil, forHTTPHeaderField: "Authorization")
+        }
+        return req
     }
 }
 
@@ -2762,8 +2949,14 @@ struct AuthAPI {
     }
 
     /// `auth.me` — GET query, returns the currently authenticated user.
+    ///
+    /// Runs WITHOUT the API's 401/403 auto-refresh+retry: `auth.me` is the
+    /// session probe the refresh path itself calls, so it must surface a real
+    /// UNAUTHORIZED honestly instead of recursing into another refresh. The
+    /// session's `boot()` / `revalidate()` / `refreshSession()` each apply
+    /// their own 2-strike absorption around this call.
     func me() async throws -> AuthUser {
-        try await api.queryNoInput("auth.me")
+        try await api.queryNoAutoRefresh("auth.me", input: TRPCEmptyInput())
     }
 
     /// `auth.logout` — POST mutation.  Clears server-side session and cookies.
@@ -9756,15 +9949,28 @@ struct VehicleAPI {
 
     // MARK: Decoded shapes
 
-    /// Shape returned by `vehicle.getAssigned`. The server always returns
-    /// a non-null object; an empty `id` string means "no vehicle assigned
-    /// to this driver" (new driver, between assignments, etc.).
+    /// Discriminator the merged `vehicle.getAssigned` returns alongside the
+    /// (now optional) vehicle. Lets the 095 Vehicle screen tell apart the
+    /// two empty cases — driver record missing vs. no truck assigned — from
+    /// a real assignment, instead of inferring it from an empty id string.
+    enum AssignmentStatus: String, Decodable, Equatable {
+        /// Caller isn't linked to a `drivers` row (e.g. a non-driver role,
+        /// or an unfinished driver onboarding).
+        case noDriver = "no_driver"
+        /// Driver exists but has no vehicle currently assigned to them.
+        case noVehicleAssigned = "no_vehicle_assigned"
+        /// A real assigned vehicle is present in `vehicle`.
+        case vehicleFound = "vehicle_found"
+    }
+
+    /// Inner vehicle payload. On the merged server this is the nested
+    /// `vehicle` object; on legacy deploys the same keys live flat at the
+    /// envelope top level, so `AssignedVehicle` can decode either layout.
     ///
-    /// Note on odometer / fuelLevel: the current backend implementation
-    /// hardcodes these to 0 because the telematics integration has not
-    /// shipped yet (vehicle.ts:138). The view surfaces them only when
+    /// Note on odometer / fuelLevel: the backend hardcodes these to 0 until
+    /// telematics ships (vehicle.ts:138). The view surfaces them only when
     /// non-zero and renders a disclosure footer otherwise. No fake data.
-    struct AssignedVehicle: Decodable, Equatable {
+    struct VehicleRecord: Decodable, Equatable {
         let id: String
         let unitNumber: String
         let year: Int
@@ -9776,8 +9982,122 @@ struct VehicleAPI {
         let fuelLevel: Double
         let status: String
 
-        /// True when the server returned the "no assignment" sentinel.
-        var isUnassigned: Bool { id.isEmpty }
+        private enum Keys: String, CodingKey {
+            case id, unitNumber, year, make, model, vin, licensePlate, odometer, fuelLevel, status
+        }
+
+        /// Decode a String tolerantly (String | Int | Double → String), "" on absence.
+        /// `try?` flattens the `String??` from `decodeIfPresent` to `String?`,
+        /// so a single `if let` binds the unwrapped value.
+        private static func str(_ c: KeyedDecodingContainer<Keys>, _ k: Keys) -> String {
+            if let s = try? c.decodeIfPresent(String.self, forKey: k) { return s }
+            if let i = try? c.decodeIfPresent(Int.self, forKey: k) { return String(i) }
+            if let d = try? c.decodeIfPresent(Double.self, forKey: k) {
+                return d == d.rounded() ? String(Int(d)) : String(d)
+            }
+            return ""
+        }
+        /// Decode an Int tolerantly (Int | Double | String → Int), 0 on absence.
+        private static func int(_ c: KeyedDecodingContainer<Keys>, _ k: Keys) -> Int {
+            if let i = try? c.decodeIfPresent(Int.self, forKey: k) { return i }
+            if let d = try? c.decodeIfPresent(Double.self, forKey: k) { return Int(d) }
+            if let s = try? c.decodeIfPresent(String.self, forKey: k), let i = Int(s) { return i }
+            return 0
+        }
+        /// Decode a Double tolerantly (Double | Int | String → Double), 0 on absence.
+        private static func dbl(_ c: KeyedDecodingContainer<Keys>, _ k: Keys) -> Double {
+            if let d = try? c.decodeIfPresent(Double.self, forKey: k) { return d }
+            if let i = try? c.decodeIfPresent(Int.self, forKey: k) { return Double(i) }
+            if let s = try? c.decodeIfPresent(String.self, forKey: k), let d = Double(s) { return d }
+            return 0
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            self.id           = Self.str(c, .id)          // String or bare number
+            self.unitNumber   = Self.str(c, .unitNumber)
+            self.year         = Self.int(c, .year)
+            self.make         = Self.str(c, .make)
+            self.model        = Self.str(c, .model)
+            self.vin          = Self.str(c, .vin)
+            self.licensePlate = Self.str(c, .licensePlate)
+            self.odometer     = Self.int(c, .odometer)
+            self.fuelLevel    = Self.dbl(c, .fuelLevel)   // Int or Double on the wire
+            self.status       = Self.str(c, .status)
+        }
+    }
+
+    /// Shape returned by `vehicle.getAssigned`.
+    ///
+    /// MERGED server (build-752 batch): `{ vehicle?: {...}, status:
+    /// 'no_driver'|'no_vehicle_assigned'|'vehicle_found' }`.
+    /// LEGACY server: a FLAT `{ id, unitNumber, ... , status }` object where
+    /// an empty `id` meant "no assignment".
+    ///
+    /// This decode reads BOTH: it first looks for a nested `vehicle` +
+    /// `status` discriminator; if neither is present it falls back to
+    /// decoding the flat legacy record. Every consumer keeps working because
+    /// the flat accessors (`unitNumber`, `make`, …) and `isUnassigned` are
+    /// preserved, while `status` and `vehicle` are now first-class.
+    struct AssignedVehicle: Decodable, Equatable {
+        /// The real assignment, or nil when the driver has no truck.
+        let vehicle: VehicleRecord?
+        /// The merged-server discriminator (`no_driver` /
+        /// `no_vehicle_assigned` / `vehicle_found`). Derived for legacy
+        /// deploys. NOTE: this is the ASSIGNMENT-level state — distinct from
+        /// the vehicle's own operating `status` ("active" / …), which stays
+        /// available as the flat `status` accessor below for the existing
+        /// 059 / 073 / 010 status chips.
+        let assignmentStatus: AssignmentStatus
+
+        private enum Keys: String, CodingKey {
+            case vehicle, status
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+            // Merged shape: explicit discriminator + optional nested vehicle.
+            let wireStatus = (try? c.decodeIfPresent(AssignmentStatus.self, forKey: .status)) ?? nil
+            let nested = (try? c.decodeIfPresent(VehicleRecord.self, forKey: .vehicle)) ?? nil
+
+            if wireStatus != nil || nested != nil {
+                self.vehicle = (nested?.id.isEmpty == false) ? nested : nil
+                self.assignmentStatus = wireStatus
+                    ?? (self.vehicle != nil ? .vehicleFound : .noVehicleAssigned)
+            } else {
+                // Legacy flat shape: decode the record inline; empty id ⇒ no
+                // assignment. We can't distinguish no_driver vs
+                // no_vehicle_assigned on the old wire, so collapse to
+                // no_vehicle_assigned (the screen renders the same empty card).
+                let flat = try? VehicleRecord(from: decoder)
+                if let flat, !flat.id.isEmpty {
+                    self.vehicle = flat
+                    self.assignmentStatus = .vehicleFound
+                } else {
+                    self.vehicle = nil
+                    self.assignmentStatus = .noVehicleAssigned
+                }
+            }
+        }
+
+        // MARK: Back-compat flat accessors (so existing call sites — 059,
+        // 073, 010, 113, AssignedVehicleStore — compile unchanged; they read
+        // `v.unitNumber`, `v.status`, `v.isUnassigned`, etc. directly).
+        var id: String          { vehicle?.id ?? "" }
+        var unitNumber: String  { vehicle?.unitNumber ?? "" }
+        var year: Int           { vehicle?.year ?? 0 }
+        var make: String        { vehicle?.make ?? "" }
+        var model: String       { vehicle?.model ?? "" }
+        var vin: String         { vehicle?.vin ?? "" }
+        var licensePlate: String { vehicle?.licensePlate ?? "" }
+        var odometer: Int       { vehicle?.odometer ?? 0 }
+        var fuelLevel: Double   { vehicle?.fuelLevel ?? 0 }
+        /// The vehicle's own operating status ("active" / "maintenance" / …).
+        /// Unchanged String type so the existing status chips keep working.
+        var status: String      { vehicle?.status ?? "" }
+
+        /// True when the driver has no vehicle assigned (or no driver row).
+        var isUnassigned: Bool { vehicle == nil }
     }
 
     /// Row shape inside `getMaintenanceHistory.records[]`. Derived from
@@ -12765,6 +13085,31 @@ struct DriverQualificationAPI {
             input: Input(documentId: documentId, status: status, expiresAt: expiresAt, notes: notes)
         )
     }
+
+    /// Tolerant ack for `deleteDocument`. The merged server returns
+    /// `{ success: true }`; decode every field optional so a slightly
+    /// different envelope (e.g. an echoed `documentId`) never decode-throws.
+    struct DeleteDocumentResult: Decodable {
+        let success: Bool?
+        let documentId: String?
+    }
+
+    /// `driverQualification.deleteDocument` — removes a DQ document from the
+    /// driver's qualification file (build-752 server batch; mirrors the
+    /// soft-delete pattern of `documentCenter.deleteDocument`). 093 Me · DQ
+    /// File swipe-to-delete / "Remove document" calls here. `documentId` is
+    /// a String for parity with `uploadDocument` / `updateDocument` above;
+    /// an optional `reason` rides the same audit field other delete procs use.
+    func deleteDocument(documentId: String, reason: String? = nil) async throws -> DeleteDocumentResult {
+        struct Input: Encodable {
+            let documentId: String
+            let reason: String?
+        }
+        return try await api.mutation(
+            "driverQualification.deleteDocument",
+            input: Input(documentId: documentId, reason: reason)
+        )
+    }
 }
 
 // MARK: - fuelManagementRouter (094 Me · Fuel Cards)
@@ -13188,6 +13533,20 @@ struct LoadBiddingAPI {
     struct SubmitAck: Decodable, Equatable {
         let id: Int?
         let status: String
+        // Tolerate BOTH server success branches — auto-accept `{id,status}`
+        // and the normal pending `{id,status,aiFraudCheck}` — plus any future
+        // shape that omits `status`. `status` defaults to "pending" rather
+        // than throwing `.decodingFailed` on a valid 2xx, so a real success
+        // never surfaces as a counter failure. Extra keys (aiFraudCheck) are
+        // ignored. `id` was already optional (the auto-accept row id can be
+        // absent on a race).
+        enum CodingKeys: String, CodingKey { case id, status }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            self.id = try c.decodeIfPresent(Int.self, forKey: .id)
+            self.status = (try c.decodeIfPresent(String.self, forKey: .status)) ?? "pending"
+        }
+        init(id: Int?, status: String) { self.id = id; self.status = status }
     }
 
     /// `loadBidding.submit` — one-tap accept at posted rate (Book Now
@@ -20701,12 +21060,96 @@ struct EusoTicketAPI {
         let createdAt: String?
     }
 
+    /// Result of `eusoTicket.generateRunTicketPDF` / `generateBOLPDF`.
+    ///
+    /// The build-752 server batch returns a REAL rendered PDF inline:
+    ///   `{ filename, mime, body: <base64>, universalLink }`
+    /// The legacy deploy returned a path reference:
+    ///   `{ success, documentUrl, generatedAt, ticketNumber?, bolNumber? }`
+    ///
+    /// The OLD decode (with `success` / `documentUrl` / `generatedAt`
+    /// NON-optional) hard-threw `keyNotFound("success")` on the new inline
+    /// shape — that decode-throw is the root cause of the 106 "couldn't open
+    /// the run ticket / BOL" feedback. The custom decode below reads BOTH
+    /// shapes, and CRUCIALLY keeps `success: Bool` and `documentUrl: String`
+    /// NON-optional and populated so every existing call site
+    /// (`res.success`, `URL(string: res.documentUrl)`,
+    /// `resolveDocumentURL(res.documentUrl)`, `absoluteURL(for:)`) keeps
+    /// compiling AND now actually opens the document — with ZERO view churn.
+    ///
+    /// For the inline shape we materialize the base64 PDF to a temp file
+    /// during decode and point `documentUrl` at that `file://` URL, so the
+    /// in-app `EusoPDFViewer(source: .url(...))` renders the real bytes.
     struct PDFGenerated: Decodable {
+        /// Always populated: true when a renderable document is present
+        /// (inline bytes materialized, or a non-empty server path/URL).
         let success: Bool
+        /// Always a usable URL string: a `file://` path for the inline shape,
+        /// or the server's relative/absolute path for the legacy shape.
         let documentUrl: String
-        let generatedAt: String
+        let generatedAt: String?
         let ticketNumber: String?
         let bolNumber: String?
+
+        // New inline-PDF shape (also surfaced for callers that want them).
+        let filename: String?
+        let mime: String?
+        let universalLink: String?
+        /// Local file URL of the materialized inline PDF (nil for legacy).
+        let localFileURL: URL?
+
+        private enum Keys: String, CodingKey {
+            case success, documentUrl, generatedAt, ticketNumber, bolNumber
+            case filename, mime, body, universalLink
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: Keys.self)
+
+            self.generatedAt    = try? c.decodeIfPresent(String.self, forKey: .generatedAt)
+            self.ticketNumber   = try? c.decodeIfPresent(String.self, forKey: .ticketNumber)
+            self.bolNumber      = try? c.decodeIfPresent(String.self, forKey: .bolNumber)
+            self.filename       = try? c.decodeIfPresent(String.self, forKey: .filename)
+            self.mime           = try? c.decodeIfPresent(String.self, forKey: .mime)
+            self.universalLink  = try? c.decodeIfPresent(String.self, forKey: .universalLink)
+
+            // Inline base64 body (new shape) takes precedence.
+            let body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? nil
+            if let body, !body.isEmpty, let data = Self.decodeBase64(body) {
+                let name = (self.filename?.isEmpty == false)
+                    ? self.filename!
+                    : "eusoticket-\(self.ticketNumber ?? self.bolNumber ?? UUID().uuidString).pdf"
+                let safe = (name as NSString).lastPathComponent
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(safe)
+                // Best-effort write; if it fails we fall through to the
+                // legacy/server fields rather than throwing the whole decode.
+                if (try? data.write(to: url, options: .atomic)) != nil {
+                    self.localFileURL = url
+                    self.documentUrl = url.absoluteString   // file://…
+                    self.success = true
+                    return
+                }
+            }
+
+            // Legacy path-reference shape (or write failure fallthrough).
+            self.localFileURL = nil
+            let legacyURL = (try? c.decodeIfPresent(String.self, forKey: .documentUrl)) ?? nil
+            self.documentUrl = legacyURL ?? ""
+            let legacySuccess = (try? c.decodeIfPresent(Bool.self, forKey: .success)) ?? nil
+            // Honest success: explicit server flag if present, else "do we
+            // have any usable document reference at all?".
+            self.success = legacySuccess ?? !self.documentUrl.isEmpty
+        }
+
+        /// Decode standard OR base64url, padded or not.
+        private static func decodeBase64(_ s: String) -> Data? {
+            if let d = Data(base64Encoded: s) { return d }
+            var t = s.replacingOccurrences(of: "-", with: "+")
+                     .replacingOccurrences(of: "_", with: "/")
+            let pad = t.count % 4
+            if pad != 0 { t += String(repeating: "=", count: 4 - pad) }
+            return Data(base64Encoded: t)
+        }
     }
 
     struct StatusUpdated: Decodable {
@@ -20804,12 +21247,19 @@ struct EusoTicketAPI {
 
     // MARK: PDF generation
 
-    /// `eusoTicket.generateRunTicketPDF` — server returns a relative
-    /// path under `/documents/run-tickets/`; iOS resolves it against
-    /// the API origin like other document URLs.
+    /// `eusoTicket.generateRunTicketPDF` — the merged server renders a REAL
+    /// PDF and returns it inline (`{ filename, mime, body: <base64>,
+    /// universalLink }`); `PDFGenerated` materializes it to a `file://` URL.
+    ///
+    /// TRANSPORT: this proc is a tRPC `.query` on the server (eusoTicket.ts),
+    /// so it MUST be invoked via GET. The previous build called it via
+    /// `api.mutation` (POST), which tRPC rejects for a query procedure —
+    /// part of why 106 "couldn't open the run ticket". Routed through
+    /// `api.query` now. (BOL generation below stays a mutation — it IS a
+    /// `.mutation` on the server.)
     func generateRunTicketPDF(ticketNumber: String) async throws -> PDFGenerated {
         struct Input: Encodable { let ticketNumber: String }
-        return try await api.mutation(
+        return try await api.query(
             "eusoTicket.generateRunTicketPDF",
             input: Input(ticketNumber: ticketNumber)
         )

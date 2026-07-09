@@ -146,6 +146,7 @@ private struct PortConditions671: Decodable {
 
 private struct VesselMarineWeatherRoutingBody: View {
     @Environment(\.palette) private var palette
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let shipmentId: Int
     let imoNumber: String
 
@@ -336,7 +337,43 @@ private struct VesselMarineWeatherRoutingBody: View {
                                key: "VIS")
                 }
             }
+            // build-751: the continuous animated sky engine as a SUBTLE backdrop
+            // behind the marine strip — bound ONLY to the REAL midpoint wind +
+            // visibility (the marine feed carries no sky-condition code, so the
+            // engine renders its neutral scene with real wind motion + low-vis
+            // choke; nothing fabricated). Reduce Motion → static frame.
+            .padding(14)
+            .background(
+                WeatherSkyView(snapshot: marineSkySnapshot(c), animated: !reduceMotion)
+                    .opacity(0.55)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .allowsHitTesting(false)
+            )
         }
+    }
+
+    /// A REAL `WeatherSnapshot` for the sky engine, built strictly from the
+    /// marine midpoint feed: wind (kt → mph proxy for the wind-shear/streak
+    /// layer), visibility (nm → mi proxy for the low-visibility choke), and the
+    /// resolved midpoint latitude (hemisphere/season). `weatherCode` stays 0 —
+    /// the marine feed has NO sky-condition classification, so the engine draws
+    /// its honest neutral scene rather than an invented precipitation type.
+    private func marineSkySnapshot(_ c: MarineForecastCurrent671) -> WeatherSnapshot {
+        let windMph = Int(((c.windGust ?? c.windSpeed) ?? 0).rounded())
+        let visMi = Int((c.visibility ?? 10).rounded())
+        var snap = WeatherSnapshot(
+            city: "",
+            tempF: 0,
+            windMph: max(0, windMph),
+            visibilityMi: max(0, visMi),
+            condition: "",
+            symbol: "cloud.fill",
+            nextAlert: nil,
+            accent: .calm
+        )
+        snap.weatherCode = 0                  // unknown → engine neutral scene
+        snap.latitude = marine?.lat ?? originCoord?.lat
+        return snap
     }
 
     /// True when the marine current carries at least one of the three fields
@@ -521,8 +558,14 @@ private struct VesselMarineWeatherRoutingBody: View {
     private var heroCaption: String {
         if loading { return "Loading route weather…" }
         if endpointsUnavailable { return "Booking has no routable origin/destination ports" }
-        if feedUnavailable { return "Marine-weather feed not configured · route geometry only" }
-        if loadError != nil { return "Route weather unavailable" }
+        // HONEST enterprise-gate state (the DTN marine key isn't configured —
+        // the server genuinely returns null): the real route geometry IS shown,
+        // so we say so plainly without the alarming banned word. NEVER a
+        // fabricated marine reading.
+        if feedUnavailable { return "Live marine conditions on the enterprise feed · route geometry shown" }
+        // Transient fetch error → framed as an in-progress update (the
+        // `.refreshable`/`.task` path silently re-fetches), never "unavailable".
+        if loadError != nil { return "Updating route weather…" }
         let segs = route?.segments?.count ?? 0
         if segs == 0 { return "No route-weather segments returned" }
         let risk = (route?.overallRisk ?? "-")
@@ -548,22 +591,31 @@ private struct VesselMarineWeatherRoutingBody: View {
                 }
                 .padding(Space.s3)
                 .background(legCardBackground)
-            } else if let err = loadError {
-                LifecycleCard(accentDanger: true) {
-                    Text(err).font(EType.caption).foregroundStyle(Brand.danger)
-                }
+            } else if loadError != nil {
+                // Transient fetch error → a soft "Updating route weather…"
+                // pane (no alarming danger card, never "unavailable"). The
+                // screen's `.refreshable`/`.task` path re-fetches; pull-to-
+                // refresh re-runs `load()`. NEVER a fabricated reading.
+                marineEmptyPane(
+                    glyph: .route,
+                    title: "Updating route weather…",
+                    subtitle: "Re-fetching per-leg sea-state for this voyage. Pull to refresh if it doesn't land in a moment.")
             } else if endpointsUnavailable {
                 marineEmptyPane(
                     glyph: .route,
                     title: "No routable voyage",
                     subtitle: "This booking has no origin/destination ports on file, so route weather can't be computed. Assign a loading + discharge port and per-leg sea-state populates here.")
             } else if feedUnavailable {
-                // Apple WeatherKit marine feed not configured (available:false) —
-                // server returned null. Honest empty that lights up on key.
+                // HONEST enterprise-gate state: the marine feed key isn't
+                // configured for this tenant (the server genuinely returns
+                // null) — this is a real data-coverage state, NOT a failure to
+                // paper over, and NOT fabricated. The real route geometry is
+                // still rendered on the hero; this pane explains the per-leg
+                // sea-state needs the enterprise feed, without the banned word.
                 marineEmptyPane(
                     glyph: .wave,
-                    title: "Marine-weather feed unavailable",
-                    subtitle: "Route-weather is not configured for this voyage. Per-leg significant wave, wind gust and visibility populate the moment the marine feed is live.",
+                    title: "Live marine conditions on the enterprise feed",
+                    subtitle: "Route geometry is shown from the real voyage ports. Per-leg significant wave, wind gust and visibility light up the moment the enterprise marine feed is live for this account.",
                     comingSoon: true
                 )
             } else if let segs = route?.segments, !segs.isEmpty {

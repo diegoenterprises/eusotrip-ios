@@ -1142,7 +1142,7 @@ struct ShipperBids: View {
                         )
                         return (bid.id, nil)
                     } catch {
-                        return (bid.id, (error as NSError).localizedDescription)
+                        return (bid.id, EusoTripAPIError.bidActionMessage(for: error, noun: "counter"))
                     }
                 }
             }
@@ -1321,10 +1321,11 @@ struct ShipperBids: View {
     }
 
     private func readableError(_ error: Error) -> String {
-        if let api = error as? EusoTripAPIError {
-            return api.errorDescription ?? "Request failed."
-        }
-        return error.localizedDescription
+        // Route bid accept/reject failures through the shared honest mapper so
+        // a server FORBIDDEN/auth gate (or a raw network drop) reads as a
+        // specific, diagnosable line instead of the generic "Authentication
+        // required." / cryptic NSError string. Verbatim tRPC copy preserved.
+        EusoTripAPIError.bidActionMessage(for: error, noun: "bid")
     }
 }
 

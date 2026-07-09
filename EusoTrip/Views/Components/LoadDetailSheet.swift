@@ -2300,21 +2300,25 @@ struct CounterOfferSheet: View {
             ack = .legacy(status: resp.status)
             lastError = nil
         } catch {
-            // Surface tRPC user-facing messages verbatim — common
-            // ones include the EusoWallet payout-account precondition,
-            // duplicate-bid 409, and CDL/hazmat endorsement gates.
-            if let api = error as? EusoTripAPIError {
-                switch api {
-                case .trpcError(let m), .forbidden(let m):
-                    lastError = m
-                case .unauthenticated:
-                    lastError = "Your session expired. Sign in again, then retry this counter-offer."
-                default:
-                    lastError = api.errorDescription ?? "Couldn't send counter. Try again."
-                }
-            } else {
-                lastError = "Couldn't send counter. Try again."
+            // Honest, diagnosable message for EVERY failure class — not just
+            // tRPC. `bidActionMessage` surfaces the real reason: the verbatim
+            // tRPC copy (wallet/CDL/dup-bid/mode-eligibility), an auth line,
+            // a network line, or a decode line. Mirrors the `book()` fix at
+            // this file's booking action. 403/FORBIDDEN no longer reaches
+            // this branch as `.unauthenticated` — `perform()` keeps it
+            // distinct so permission gates surface their own message.
+            if let api = error as? EusoTripAPIError, case .unauthenticated = api {
+                // Give the driver a real path back to a bid-capable session —
+                // the same channel every "Sign out" affordance uses
+                // (`eusoLogoutRequested` is observed at the app root and lands
+                // them on Sign In). Without this a genuine session expiry
+                // showed a banner and then dead-ended.
+                NotificationCenter.default.post(
+                    name: Notification.Name("eusoLogoutRequested"),
+                    object: nil
+                )
             }
+            lastError = EusoTripAPIError.bidActionMessage(for: error, noun: "counter")
         }
     }
 }
