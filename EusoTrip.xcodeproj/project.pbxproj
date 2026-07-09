@@ -37,6 +37,7 @@
 		A12E1A1C0010CE0FF1000005 /* HereRouteModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000006 /* HereRouteModels.swift */; };
 		A12E1A1C0010CE0FF1000007 /* HereFlexiblePolyline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */; };
 		A12E1A1C0010CE0FF1000009 /* HereRoutingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000A /* HereRoutingClient.swift */; };
+		A12E1A1C0010CE0FF13B0001 /* TurnByTurnNavigator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF13B0002 /* TurnByTurnNavigator.swift */; };
 		A12E1A1C0010CE0FF100000B /* HereGeocodingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000C /* HereGeocodingClient.swift */; };
 		A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */; };
 		A12E1A1C0010CE0FF100000F /* HereTileOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */; };
@@ -1144,6 +1145,7 @@
 		A12E1A1C0010CE0FF1000006 /* HereRouteModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereRouteModels.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereFlexiblePolyline.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF100000A /* HereRoutingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereRoutingClient.swift; sourceTree = "<group>"; };
+		A12E1A1C0010CE0FF13B0002 /* TurnByTurnNavigator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TurnByTurnNavigator.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF100000C /* HereGeocodingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereGeocodingClient.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereMatrixClient.swift; sourceTree = "<group>"; };
 		A12E1A1C0010CE0FF1000010 /* HereTileOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HereTileOverlay.swift; sourceTree = "<group>"; };
@@ -3027,6 +3029,7 @@
 				A12E1A1C0010CE0FF1000006 /* HereRouteModels.swift */,
 				A12E1A1C0010CE0FF1000008 /* HereFlexiblePolyline.swift */,
 				A12E1A1C0010CE0FF100000A /* HereRoutingClient.swift */,
+				A12E1A1C0010CE0FF13B0002 /* TurnByTurnNavigator.swift */,
 				A12E1A1C0010CE0FF100000C /* HereGeocodingClient.swift */,
 				LCGCSTORE0010CE0FF1A1B2C4 /* LifecycleGeocodeStore.swift */,
 				A12E1A1C0010CE0FF100000E /* HereMatrixClient.swift */,
@@ -3922,6 +3925,7 @@
 				A12E1A1C0010CE0FF1000005 /* HereRouteModels.swift in Sources */,
 				A12E1A1C0010CE0FF1000007 /* HereFlexiblePolyline.swift in Sources */,
 				A12E1A1C0010CE0FF1000009 /* HereRoutingClient.swift in Sources */,
+				A12E1A1C0010CE0FF13B0001 /* TurnByTurnNavigator.swift in Sources */,
 				A12E1A1C0010CE0FF100000B /* HereGeocodingClient.swift in Sources */,
 				LCGCSTORE0010CE0FF1A1B2C3 /* LifecycleGeocodeStore.swift in Sources */,
 				A12E1A1C0010CE0FF100000D /* HereMatrixClient.swift in Sources */,

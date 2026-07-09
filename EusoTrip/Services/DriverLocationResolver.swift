@@ -35,6 +35,10 @@ final class DriverLocationResolver: NSObject, ObservableObject {
     static let shared = DriverLocationResolver()
 
     @Published private(set) var lastCoordinate: CLLocationCoordinate2D?
+    /// Full most-recent fix (course + speed + accuracy), for consumers that
+    /// need heading — e.g. `TurnByTurnNavigator` deviation detection. Twin of
+    /// `lastCoordinate`; existing coordinate-only callers are unaffected.
+    @Published private(set) var lastLocation: CLLocation?
     @Published private(set) var authorizationStatus: CLAuthorizationStatus
 
     private let manager: CLLocationManager
@@ -169,6 +173,7 @@ extension DriverLocationResolver: CLLocationManagerDelegate {
         let coord = loc.coordinate
         Task { @MainActor in
             self.lastCoordinate = coord
+            self.lastLocation = loc
             self.lastFixAt = Date()
             self.drainPending(with: coord)
         }

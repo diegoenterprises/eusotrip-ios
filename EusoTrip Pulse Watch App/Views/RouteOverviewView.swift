@@ -175,7 +175,7 @@ final class RouteProgressStore: ObservableObject {
     ///   1. `weather.forLoad → laneImpact` — the canonical per-load
     ///      tri-modal severity (riskTier + headline) that the phone's v3
     ///      card renders. This is the strongest signal: it's the same
-    ///      Tomorrow.io-backed lane analysis the founder's weather surface
+    ///      WeatherKit-backed lane analysis the founder's weather surface
     ///      uses.
     ///   2. `routeOptimization.getProgress.weatherFlag` — a coarse route-
     ///      level flag string ("severe-thunderstorm" | "wind-advisory" | …).

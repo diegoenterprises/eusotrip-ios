@@ -41,6 +41,21 @@ struct HereRouteSection: Decodable, Identifiable {
     let notices:   [HereNotice]?
     let spans:     [HereSpan]?
     let tolls:     [HereToll]?
+    /// Turn-by-turn maneuvers. Present because the routing request already asks
+    /// for `return=polyline,summary,actions,tolls`. Each `offset` indexes into
+    /// this section's DECODED polyline coords (via `HereFlexiblePolyline.decode`).
+    let actions:   [HereRouteAction]?
+}
+
+/// A single HERE-authored driving maneuver (L13-3 turn-by-turn).
+struct HereRouteAction: Decodable, Equatable {
+    let action: String              // "depart" | "turn" | "continue" | "exit" | "arrive" …
+    let duration: Int?              // seconds
+    let length: Int?                // meters
+    let offset: Int?                // index into the section's DECODED polyline coords
+    let instruction: String?        // HERE-authored, e.g. "Take exit 228 toward Macon."
+    let direction: String?          // "left" | "right" | "slightLeft" …
+    let severity: String?
 }
 
 struct HereSectionEndpoint: Decodable {

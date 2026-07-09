@@ -28,7 +28,7 @@ import SwiftUI
 
 /// The wrist-side weather severity, normalised from whatever real signal
 /// reached the watch. Mirrors the phone's `LaneRiskTier`
-/// (none/watch/elevated/severe) and the Tomorrow.io-style flag strings
+/// (none/watch/elevated/severe) and the route-flag strings
 /// that `routeOptimization.getProgress` returns
 /// ("severe-thunderstorm" | "wind-advisory" | "rain" | "fog" | …).
 ///
