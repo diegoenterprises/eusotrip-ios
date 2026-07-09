@@ -78,6 +78,11 @@ enum EusoTripAPIError: Error, LocalizedError {
             return "Your session expired, or this account isn't allowed to bid on this lane. Sign in again, or switch to a carrier / dispatcher account."
         case .trpcError(let m):
             return m
+        case .forbidden(let m):
+            // Server permission/compliance gate — surface its human copy
+            // verbatim (the CREATE-BID role gate, mode-eligibility, or a
+            // lane restriction each carry their own reason).
+            return m
         case .httpStatus(let code, _):
             if code == 401 || code == 403 {
                 return "This account isn't allowed to bid on this lane (HTTP \(code))."
