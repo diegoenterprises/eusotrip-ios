@@ -159,6 +159,7 @@ struct EscortMeHomeScreen: View {
             row(label: "Convoy comms",      icon: "dot.radiowaves.left.and.right", to: "603")
             row(label: "Height pole",       icon: "arrow.up.and.down",      to: "604")
             row(label: "Vehicle check",     icon: "checklist",              to: "608")
+            row(label: "Jurisdiction handoff", icon: "shield.lefthalf.filled", to: "609")
             row(label: "Settlement detail", icon: "banknote",               to: "605")
         }
     }
