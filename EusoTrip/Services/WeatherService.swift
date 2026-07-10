@@ -51,6 +51,11 @@ final class WeatherService: NSObject, ObservableObject {
 
     private var pendingLocation: CheckedContinuation<CLLocation?, Never>?
     private var pendingLocationID: UUID?
+    /// True once the current one-shot already burned its single retry —
+    /// a rejected stale cached fix triggers ONE fresh `requestLocation()`
+    /// (CoreLocation is usually already acquiring the real fix) instead of
+    /// failing the whole fetch.
+    private var pendingLocationDidRetry = false
 
     override init() {
         super.init()
@@ -123,14 +128,22 @@ final class WeatherService: NSObject, ObservableObject {
     /// most recent REAL reading. Versioned suffix lets us invalidate the
     /// blob safely if the Codable shape ever changes.
 
-    /// The cached last-good snapshot, if any. Consumers show it immediately
-    /// and refresh in the background.
+    /// The cached last-good snapshot, if any — REGARDLESS of age. The
+    /// build-747 "NEVER unavailable" guarantee means existence and
+    /// freshness are separate signals: consumers show the last REAL
+    /// reading instantly (with its honest "updated Nh ago" attribution)
+    /// and refresh behind it. `cachedSnapshotIsStale` carries freshness.
     static var cachedSnapshot: WeatherSnapshot? {
-        guard let snap = lastSnapshot, isUsableCachedSnapshot(snap) else {
-            lastSnapshot = loadCachedSnapshot()
-            return lastSnapshot
-        }
-        return snap
+        if let snap = lastSnapshot { return snap }
+        lastSnapshot = loadCachedSnapshot()
+        return lastSnapshot
+    }
+
+    /// True when a cached snapshot exists but is older than the 90-minute
+    /// freshness ceiling — a staleness SIGNAL, never an existence gate.
+    static var cachedSnapshotIsStale: Bool {
+        guard let snap = cachedSnapshot else { return false }
+        return !isUsableCachedSnapshot(snap)
     }
 
     /// Public entry point — fetches a fresh snapshot and updates the
@@ -145,6 +158,8 @@ final class WeatherService: NSObject, ObservableObject {
 
     private static let cachedSnapshotMaxAge: TimeInterval = 90 * 60
     private static let cachedSnapshotFileName = "WeatherSnapshot.last-real.json"
+    /// Pre-757 UserDefaults blob (build-751 persistence) — migrated once.
+    private static let legacyDefaultsKey = "eusotrip.weather.lastGoodSnapshot.v1"
 
     private static func storeLastSnapshot(_ snapshot: WeatherSnapshot) {
         lastSnapshot = snapshot
@@ -156,7 +171,19 @@ final class WeatherService: NSObject, ObservableObject {
         return Date().timeIntervalSince(observedAt) <= cachedSnapshotMaxAge
     }
 
+    /// Application Support (NON-purgeable) — Caches can be purged by iOS
+    /// under disk pressure, which silently broke the cold-launch guarantee.
     private static func cacheURL() -> URL? {
+        guard let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        return dir
+            .appendingPathComponent("EusoTrip", isDirectory: true)
+            .appendingPathComponent(cachedSnapshotFileName)
+    }
+
+    /// The pre-757 Caches location — read once as a migration source.
+    private static func legacyCachesURL() -> URL? {
         guard let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
             return nil
         }
@@ -166,13 +193,30 @@ final class WeatherService: NSObject, ObservableObject {
     }
 
     private static func loadCachedSnapshot() -> WeatherSnapshot? {
-        guard let url = cacheURL(),
-              let data = try? Data(contentsOf: url) else { return nil }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let snapshot = try? decoder.decode(WeatherSnapshot.self, from: data),
-              isUsableCachedSnapshot(snapshot) else { return nil }
-        return snapshot
+        func decode(_ data: Data?) -> WeatherSnapshot? {
+            guard let data else { return nil }
+            return try? decoder.decode(WeatherSnapshot.self, from: data)
+        }
+        // Canonical location. No age gate — existence and freshness are
+        // separate signals (see `cachedSnapshotIsStale`).
+        if let url = cacheURL(), let snap = decode(try? Data(contentsOf: url)) {
+            return snap
+        }
+        // One-time migrations: the pre-757 purgeable Caches file, then the
+        // build-751 UserDefaults blob. Whichever decodes is re-persisted to
+        // the canonical Application Support location.
+        var migrated: WeatherSnapshot? = nil
+        if let url = legacyCachesURL(), let snap = decode(try? Data(contentsOf: url)) {
+            migrated = snap
+        }
+        if migrated == nil,
+           let snap = decode(UserDefaults.standard.data(forKey: legacyDefaultsKey)) {
+            migrated = snap
+        }
+        if let migrated { persistCachedSnapshot(migrated) }
+        return migrated
     }
 
     private static func persistCachedSnapshot(_ snapshot: WeatherSnapshot) {
@@ -217,7 +261,14 @@ final class WeatherService: NSObject, ObservableObject {
         let placemark = try? await reverseGeocode(location)
         do {
             let weather = try await weatherService.weather(for: location)
-            return Self.compose(weather: weather, placemark: placemark)
+            var snap = Self.compose(weather: weather, placemark: placemark)
+            // Lane Impact rides EVERY provider path (adversarial-verify
+            // 2026-07-09): it's an independent proc (weather.laneImpactActive),
+            // best-effort, nil on failure — previously it was only fetched on
+            // the server-fallback path, so the panel was dead whenever
+            // on-device WeatherKit succeeded (the normal case).
+            snap.laneImpact = await fetchLaneImpact()
+            return snap
         } catch {
             // Surface the FULL error in every build (not just DEBUG) so a
             // misconfigured signing / entitlement / portal-capability
@@ -251,13 +302,18 @@ final class WeatherService: NSObject, ObservableObject {
                 return cc == "US" || cc == "USA" || cc.isEmpty
             }()
             if isUS {
-                if let nws = try? await fetchNWS(location: location, placemark: placemark) {
+                if var nws = try? await fetchNWS(location: location, placemark: placemark) {
+                    nws.laneImpact = await fetchLaneImpact()
                     return nws
                 }
             }
             // Non-US fallback (or NWS failed) — Open-Meteo as last
             // resort. Better imperfect data than no card at all.
-            return try? await fetchOpenMeteo(location: location, placemark: placemark)
+            guard var om = try? await fetchOpenMeteo(location: location, placemark: placemark) else {
+                return nil
+            }
+            om.laneImpact = await fetchLaneImpact()
+            return om
         }
     }
 
@@ -506,7 +562,9 @@ final class WeatherService: NSObject, ObservableObject {
         }
 
         let windMph = Int(kphToMph(cur.windKph ?? 0).rounded())
-        let visMi = Int((cur.visibilityKm.map(kmToMi) ?? 10).rounded())
+        // Honest visibility: nil when the server omitted it (em-dash
+        // doctrine) — the old `?? 10` default could suppress LOW VIS.
+        let visMi: Int? = cur.visibilityKm.map { Int(kmToMi($0).rounded()) }
 
         // Accent — real alert severity wins, else freight thresholds +
         // the code family, mirroring the other paths.
@@ -515,7 +573,7 @@ final class WeatherService: NSObject, ObservableObject {
             let severeCodes: Set<Int> = [8000, 4201, 6201, 7101]
             let watchCodes: Set<Int> = [4000, 4200, 4001, 5000, 5001, 5100, 5101,
                                         6000, 6001, 6200, 7000, 7102, 2000, 2100]
-            if severeCodes.contains(code) || windMph >= 25 || visMi <= 2 { return .warn }
+            if severeCodes.contains(code) || windMph >= 25 || (visMi ?? .max) <= 2 { return .warn }
             if alert != nil { return .watch }
             if watchCodes.contains(code) { return .watch }
             return .calm
@@ -568,12 +626,13 @@ final class WeatherService: NSObject, ObservableObject {
         }
         // Honest provenance from the server's own source tag. byLatLon is
         // WeatherKit-backed now (PR #101); credit Apple Weather, never a
-        // retired provider.
+        // retired provider — and never mislabel OpenWeather as Open-Meteo.
         switch (server.source ?? "").lowercased() {
-        case "weatherkit":               snap.dataSource = .weatherKit
-        case "openweather", "openmeteo": snap.dataSource = .openMeteo
-        case "nws":                      snap.dataSource = .nws
-        default:                         snap.dataSource = .weatherKit
+        case "weatherkit":  snap.dataSource = .weatherKit
+        case "openweather": snap.dataSource = .openWeather
+        case "openmeteo":   snap.dataSource = .openMeteo
+        case "nws":         snap.dataSource = .nws
+        default:            snap.dataSource = .weatherKit
         }
         snap.uvIndex = cur.uv.map { Int($0.rounded()) }
         snap.alert = alert
@@ -592,8 +651,19 @@ final class WeatherService: NSObject, ObservableObject {
         let loads: [ServerSegment]?
         struct ServerSegment: Decodable {
             let loadId: String?
+            /// Per-row availability — the server marks a load it could not
+            /// compute (no coords / tier absent) `available: false`; those
+            /// rows must NOT render as blank Lane Impact segments.
+            let available: Bool?
+            /// Human load number ("LD-260615") — preferred over the raw DB
+            /// id for the footer display.
+            let loadNumber: String?
             let mode: String?
             let route: String?
+            /// rowMeta endpoint names — the route-string fallback when the
+            /// server omits the combined `route` field.
+            let origin: String?
+            let destination: String?
             let pickupTime: String?
             let etaDelayMin: Int?
             let riskTier: String?
@@ -672,6 +742,10 @@ final class WeatherService: NSObject, ObservableObject {
 
         let mapped: [WeatherSnapshot.LaneImpactSegment] = segs.compactMap { s in
             guard let loadId = s.loadId, !loadId.isEmpty else { return nil }
+            // Drop rows the server could not compute (`available: false`) —
+            // they carried no risk data and rendered as blank segments
+            // exposing the internal DB id.
+            guard s.available != false else { return nil }
             let mode: WeatherSnapshot.LaneMode = {
                 switch (s.mode ?? "").lowercased() {
                 case "rail":   return .rail
@@ -726,8 +800,20 @@ final class WeatherService: NSObject, ObservableObject {
                 )
             }()
 
+            // Route string — the combined `route` when present, else built
+            // from the rowMeta endpoint names (mirrors PerLoadWeatherCard's
+            // bridgedSegment). Honest "" when neither is available.
+            let routeString: String = {
+                if let r = s.route?.trimmingCharacters(in: .whitespaces), !r.isEmpty { return r }
+                let o = s.origin?.trimmingCharacters(in: .whitespaces) ?? ""
+                let d = s.destination?.trimmingCharacters(in: .whitespaces) ?? ""
+                if !o.isEmpty && !d.isEmpty { return "\(o) → \(d)" }
+                return o
+            }()
+
             return WeatherSnapshot.LaneImpactSegment(
-                loadId: loadId,
+                // Prefer the human load number over the internal DB id.
+                loadId: s.loadNumber?.isEmpty == false ? s.loadNumber! : loadId,
                 mode: mode,
                 riskTier: risk,
                 headline: s.headline ?? "",
@@ -735,7 +821,7 @@ final class WeatherService: NSObject, ObservableObject {
                 drivers: drivers,
                 recommendation: recommendation,
                 computedAt: computed,
-                route: s.route ?? "",
+                route: routeString,
                 pickupTime: pickup,
                 etaDelayMin: s.etaDelayMin,
                 esangSuggestion: s.esangSuggestion
@@ -973,8 +1059,9 @@ final class WeatherService: NSObject, ObservableObject {
         let tempF = Int((tempC * 9.0 / 5.0 + 32.0).rounded())
         let windKmh = p.windSpeed?.value ?? 0
         let windMph = Int((windKmh * 0.621371).rounded())
-        let visM = p.visibility?.value ?? 0
-        let visMi = Int((visM / 1609.344).rounded())
+        // Honest visibility: nil when the station omitted it — the old
+        // `?? 0` default read as "0 mi" and falsely tripped LOW VIS.
+        let visMi: Int? = p.visibility?.value.map { Int(($0 / 1609.344).rounded()) }
         let conditionText = p.textDescription ?? "Conditions unknown"
         let symbol = Self.nwsSymbol(for: conditionText, iconURL: p.icon)
 
@@ -1050,7 +1137,7 @@ final class WeatherService: NSObject, ObservableObject {
             let watchText  = t.contains("rain") || t.contains("snow") ||
                              t.contains("fog") || t.contains("haze") ||
                              t.contains("drizzle") || t.contains("flurr")
-            if severeText || windMph >= 25 || visMi <= 2 { return .warn }
+            if severeText || windMph >= 25 || (visMi ?? .max) <= 2 { return .warn }
             if watchText || alerts.contains(where: { $0.severity == .moderate }) { return .watch }
             return .calm
         }()
@@ -1388,7 +1475,9 @@ final class WeatherService: NSObject, ObservableObject {
 
         // Visibility — Open-Meteo ships this on hourly (meters). Prefer the
         // current hour if the timestamps align; otherwise first available.
-        let visibilityMi: Int = {
+        // Nil when the payload omitted it (em-dash doctrine — never a
+        // fabricated 10-mile default).
+        let visibilityMi: Int? = {
             let metersCandidate: Double? = {
                 guard let times = payload.hourly?.time,
                       let values = payload.hourly?.visibility,
@@ -1407,10 +1496,7 @@ final class WeatherService: NSObject, ObservableObject {
                 }
                 return values.first
             }()
-            if let m = metersCandidate {
-                return Int((m / 1609.34).rounded())
-            }
-            return 10
+            return metersCandidate.map { Int(($0 / 1609.34).rounded()) }
         }()
 
         // DATA-ACCURACY: Open-Meteo aggregates multiple models, so WMO 95
@@ -1444,7 +1530,7 @@ final class WeatherService: NSObject, ObservableObject {
         let accent: WeatherSnapshot.Accent = {
             let code = payload.current.weather_code
             let hazardousWind = windMph >= 25
-            let lowVis = visibilityMi <= 2
+            let lowVis = (visibilityMi ?? .max) <= 2
             let severe: Set<Int> = [65, 67, 75, 82, 86, 95, 96, 99] // heavy rain/snow, thunder
             let watch: Set<Int> = [45, 48, 51, 53, 55, 56, 57, 61, 63, 66, 71, 73, 77, 80, 81, 85]
             if severe.contains(code) || hazardousWind || lowVis { return .warn }
@@ -1691,6 +1777,39 @@ final class WeatherService: NSObject, ObservableObject {
 
     // MARK: - Composition
 
+    /// WeatherKit's TYPED `WeatherCondition` → the canonical integer code
+    /// space — a Swift twin of the server's WEATHERKIT_CONDITION_TO_CODE
+    /// table (weatherKit.ts), so the primary on-device path keeps the same
+    /// granularity (heavy rain 4201 vs rain 4001, flurries 5001 vs snow
+    /// 5000, freezing family 6xxx, ice 7xxx) the server envelope carries.
+    /// Unrecognised/future cases fall back to the SF-symbol inference so
+    /// the glyph still lights honestly.
+    private static func code(for condition: WeatherCondition, symbol: String) -> Int {
+        switch condition {
+        case .clear, .hot:                                   return 1000
+        case .mostlyClear, .frigid:                          return 1100
+        case .partlyCloudy:                                  return 1101
+        case .mostlyCloudy:                                  return 1102
+        case .cloudy, .breezy, .windy:                       return 1001
+        case .foggy:                                         return 2000
+        case .haze, .smoky, .blowingDust:                    return 2100
+        case .drizzle:                                       return 4000
+        case .rain, .sunShowers:                             return 4001
+        case .heavyRain:                                     return 4201
+        case .flurries, .sunFlurries:                        return 5001
+        case .snow, .blowingSnow:                            return 5000
+        case .heavySnow, .blizzard:                          return 5101
+        case .freezingDrizzle:                               return 6000
+        case .freezingRain, .wintryMix:                      return 6001
+        case .sleet, .hail:                                  return 7000
+        case .thunderstorms, .isolatedThunderstorms,
+             .scatteredThunderstorms, .strongStorms,
+             .hurricane, .tropicalStorm:                     return 8000
+        default:
+            return WeatherIcons.code(forSymbol: symbol)
+        }
+    }
+
     private static func compose(
         weather: Weather,
         placemark: CLPlacemark?
@@ -1823,9 +1942,35 @@ final class WeatherService: NSObject, ObservableObject {
                     symbol: hour.symbolName,
                     precipChancePct: Int((hour.precipitationChance * 100).rounded()),
                     windMph: Int(hour.wind.speed.converted(to: .milesPerHour).value.rounded()),
-                    weatherCode: WeatherIcons.code(forSymbol: hour.symbolName)
+                    // Typed condition → canonical code (light/heavy variants
+                    // preserved); the SF-symbol round-trip is the fallback.
+                    weatherCode: Self.code(for: hour.condition, symbol: hour.symbolName)
                 )
             }
+        // Apple WeatherKit minute-by-minute next-hour precipitation — the
+        // SAME product the server envelope maps at ServerWeather.NextHour.
+        // Previously only the server-fallback path carried it, so the
+        // forecastNextHour pill was dead on the primary on-device path.
+        let nextHourPrecip: WeatherSnapshot.NextHourPrecip? = {
+            let mf: Forecast<MinuteWeather>? = weather.minuteForecast
+            guard let mf else { return nil }
+            let minutes: [WeatherSnapshot.NextHourPrecip.Minute] = mf.forecast.prefix(60).map { m in
+                WeatherSnapshot.NextHourPrecip.Minute(
+                    date: m.date,
+                    precipChancePct: Int((m.precipitationChance * 100).rounded()),
+                    // UnitSpeed m/s → mm/hr (1 m/s = 3,600,000 mm/hr).
+                    intensityMmPerHour: m.precipitationIntensity
+                        .converted(to: .metersPerSecond).value * 3_600_000
+                )
+            }
+            guard !minutes.isEmpty else { return nil }
+            return WeatherSnapshot.NextHourPrecip(
+                forecastStart: minutes.first?.date,
+                forecastEnd: minutes.last?.date,
+                minutes: minutes,
+                summaries: []
+            )
+        }()
         let precipChancePct: Int? = hourly.first?.precipChancePct
         let alerts: [WeatherSnapshot.SevereAlert] = (weather.weatherAlerts ?? []).map { alert in
             let sev: WeatherSnapshot.AlertSeverity = {
@@ -1859,13 +2004,17 @@ final class WeatherService: NSObject, ObservableObject {
             humidityPct: humidityPct,
             windGustMph: windGustMph,
             precipChancePct: precipChancePct,
+            nextHourPrecip: nextHourPrecip,
             hourly: hourly,
             alerts: alerts
         )
-        // v2: name the real provider (Apple Weather) + infer the custom
-        // glyph code from the WeatherKit symbol.
+        // v2: name the real provider (Apple Weather) + the canonical code
+        // from WeatherKit's TYPED condition enum (heavyRain / flurries /
+        // freezingDrizzle / blizzard all keep their granularity — the old
+        // SF-symbol round-trip collapsed light/heavy variants so the sky
+        // engine's granular scenes could never fire on the primary path).
         snap.dataSource = .weatherKit
-        snap.weatherCode = WeatherIcons.code(forSymbol: symbol)
+        snap.weatherCode = Self.code(for: current.condition, symbol: symbol)
         snap.observedAt = Date()
         // Sky-engine geometry — latitude off the placemark's coordinate,
         // the timezone it resolved, and today's real WeatherKit sun pair.
@@ -1921,14 +2070,22 @@ final class WeatherService: NSObject, ObservableObject {
             pendingLocation?.resume(returning: nil)
             pendingLocation = cont
             pendingLocationID = requestID
+            pendingLocationDidRetry = false
             locationManager.requestLocation()
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 4_000_000_000)
-                guard self.pendingLocationID == requestID else { return }
-                self.pendingLocation?.resume(returning: nil)
-                self.pendingLocation = nil
-                self.pendingLocationID = nil
-            }
+            armLocationTimeout(for: requestID)
+        }
+    }
+
+    /// 4-second watchdog for one pending location attempt. Re-armed with a
+    /// fresh id when the stale-fix retry fires, so the retry gets its own
+    /// full window instead of being killed by the original deadline.
+    private func armLocationTimeout(for requestID: UUID) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            guard self.pendingLocationID == requestID else { return }
+            self.pendingLocation?.resume(returning: nil)
+            self.pendingLocation = nil
+            self.pendingLocationID = nil
         }
     }
 
@@ -1960,6 +2117,19 @@ extension WeatherService: CLLocationManagerDelegate {
                 guard let s = snapshot else { return nil }
                 return abs(now.timeIntervalSince(s.timestamp)) <= self.maxLocationAgeSeconds ? s : nil
             }()
+            // A rejected STALE cached fix gets one retry: CoreLocation is
+            // typically already acquiring the fresh reading, so instead of
+            // failing the fetch we keep the continuation pending, fire one
+            // more `requestLocation()`, and re-arm the timeout window.
+            if acceptable == nil, snapshot != nil,
+               !self.pendingLocationDidRetry, self.pendingLocation != nil {
+                self.pendingLocationDidRetry = true
+                let retryID = UUID()
+                self.pendingLocationID = retryID
+                self.locationManager.requestLocation()
+                self.armLocationTimeout(for: retryID)
+                return
+            }
             self.pendingLocation?.resume(returning: acceptable)
             self.pendingLocation = nil
             self.pendingLocationID = nil

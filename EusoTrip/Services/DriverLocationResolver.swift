@@ -138,6 +138,20 @@ final class DriverLocationResolver: NSObject, ObservableObject {
         }
     }
 
+    /// L13-2 adversarial-verify — continuous live-feed bridge. While a trip
+    /// is active, `DriverGPSPushService` streams best-accuracy 50 m-filtered
+    /// fixes; it mirrors each one here so `$lastLocation` consumers (013's
+    /// `onReceive` → `TurnByTurnNavigator.ingest`) get a CONTINUOUS feed
+    /// instead of the one-shot, 90 s-cached, kilometer-accuracy fixes this
+    /// resolver produces on its own. Also refreshes the cache so glance
+    /// widgets stop re-burning the radio while streaming.
+    func ingest(externalFix loc: CLLocation) {
+        lastCoordinate = loc.coordinate
+        lastLocation = loc
+        lastFixAt = Date()
+        drainPending(with: loc.coordinate)
+    }
+
     private func drainPending(with coord: CLLocationCoordinate2D?) {
         guard !pending.isEmpty else { return }
         let waiters = pending

@@ -138,13 +138,17 @@ final class TurnByTurnNavigator: NSObject, ObservableObject {
         // 3. voice at 300 m / 100 m
         for gate in [300.0, 100.0] where distanceToManeuverM <= gate {
             let key = "\(m.id)@\(Int(gate))"
-            if voiceEnabled, !spokenIds.contains(key) {
-                spokenIds.insert(key)
-                let u = AVSpeechUtterance(string: gate == 300
-                    ? "In 300 meters, \(m.instruction)" : m.instruction)
-                u.rate = AVSpeechUtteranceDefaultSpeechRate
-                synth.speak(u)
-            }
+            guard voiceEnabled, !spokenIds.contains(key) else { continue }
+            spokenIds.insert(key)
+            // Already inside the final gate (closely spaced city maneuvers /
+            // sparse fix cadence): the "In 300 meters" line would be factually
+            // wrong AND immediately followed by the final prompt — skip it.
+            // The key is marked spoken above so it can never fire late either.
+            if gate == 300, distanceToManeuverM <= 100 { continue }
+            let u = AVSpeechUtterance(string: gate == 300
+                ? "In 300 meters, \(m.instruction)" : m.instruction)
+            u.rate = AVSpeechUtteranceDefaultSpeechRate
+            synth.speak(u)
         }
     }
 

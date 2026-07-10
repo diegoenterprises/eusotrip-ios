@@ -54,10 +54,16 @@ final class WeatherCardStore: ObservableObject {
             self.isStale = false
 
             // 2) Complete the v3 widget from the origin coords (best-effort —
-            //    a timelines/alerts miss must NOT fail the card).
+            //    a timelines/alerts miss must NOT fail the card). The origin
+            //    STATE + country ride along so the server's stateCodes filter
+            //    scopes the DB alert fallback to this lane — without them a
+            //    nationwide max-severity alert could paint the hero bar as if
+            //    local to the load's origin.
             if let lat = forLoad.origin?.lat, let lon = forLoad.origin?.lon {
+                let state = Self.stateCode(from: forLoad.origin?.name)
                 async let tl: WeatherTimelines? = Self.fetchTimelines(lat: lat, lon: lon)
-                async let al: [WeatherAlertRow] = Self.fetchAlerts(lat: lat, lon: lon)
+                async let al: [WeatherAlertRow] = Self.fetchAlerts(
+                    lat: lat, lon: lon, state: state, country: Self.country(forState: state))
                 let (timelines, alerts) = await (tl, al)
                 if let timelines { self.hourly = timelines.hourPoints; self.daily = timelines.dayPoints }
                 self.alert = alerts.compactMap(AlertBar.init).max(by: { $0.severityRank < $1.severityRank })
@@ -103,9 +109,42 @@ final class WeatherCardStore: ObservableObject {
         struct In: Encodable { let lat: Double; let lon: Double }
         return try? await EusoTripAPI.shared.query("weather.timelines", input: In(lat: lat, lon: lon))
     }
-    private static func fetchAlerts(lat: Double, lon: Double) async -> [WeatherAlertRow] {
-        struct In: Encodable { let lat: Double; let lon: Double }
-        return (try? await EusoTripAPI.shared.query("weather.getAlerts", input: In(lat: lat, lon: lon))) ?? []
+
+    /// `state` + `country` scope the server read: the state applies the
+    /// stateCodes DB filter (no nationwide leak onto a per-load card) and
+    /// the country feeds the WeatherKit weatherAlerts dataset (tri-country
+    /// platform — US/CA/MX). Nil keys are omitted from the wire payload.
+    private static func fetchAlerts(lat: Double, lon: Double,
+                                    state: String?, country: String?) async -> [WeatherAlertRow] {
+        struct In: Encodable {
+            let lat: Double; let lon: Double
+            let state: String?; let country: String?
+        }
+        return (try? await EusoTripAPI.shared.query(
+            "weather.getAlerts",
+            input: In(lat: lat, lon: lon, state: state, country: country))) ?? []
+    }
+
+    /// "Laredo, TX" → "TX". Nil when the endpoint name carries no trailing
+    /// 2-letter region code — the fetch then stays point-scoped only.
+    private static func stateCode(from name: String?) -> String? {
+        guard let name else { return nil }
+        let parts = name.components(separatedBy: ",")
+        guard parts.count >= 2,
+              let last = parts.last?.trimmingCharacters(in: .whitespaces).uppercased(),
+              last.count == 2, last.allSatisfy(\.isLetter) else { return nil }
+        return last
+    }
+
+    private static let caProvinces: Set<String> = [
+        "ON", "QC", "BC", "AB", "MB", "SK", "NS", "NB", "NL", "PE", "NT", "YT", "NU",
+    ]
+
+    /// Region code → the server's country enum ("US" | "CA"). Mexican state
+    /// codes are 3 letters, so a 2-letter non-province code is a US state.
+    private static func country(forState state: String?) -> String? {
+        guard let state else { return nil }
+        return caProvinces.contains(state) ? "CA" : "US"
     }
 }
 

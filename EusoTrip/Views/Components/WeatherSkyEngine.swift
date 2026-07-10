@@ -254,9 +254,11 @@ struct WeatherSkyView: View {
     }
 
     /// Low-visibility darkening 0…1 from the LIVE `visibilityMi` — chokes
-    /// the scene as real visibility drops below ~6 mi.
+    /// the scene as real visibility drops below ~6 mi. An unreported
+    /// visibility (nil) means NO choke — never a fabricated haze.
     private var visibilityChoke: Double {
-        let v = Double(snapshot.visibilityMi)
+        guard let raw = snapshot.visibilityMi else { return 0 }
+        let v = Double(raw)
         guard v < 6 else { return 0 }
         return min(0.5, (6 - v) / 12.0)
     }

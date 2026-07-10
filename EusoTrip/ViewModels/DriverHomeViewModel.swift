@@ -517,11 +517,11 @@ final class DriverHomeViewModel: ObservableObject {
 
         let originSnap: WeatherSnapshot? = {
             guard let place = originResolved, let pu = pickup else { return nil }
-            return WeatherSnapshot.fromHereWeather(place, city: pu.city)
+            return WeatherSnapshot.fromHereWeather(place, city: pu.city, latitude: pu.lat)
         }()
         let destSnap: WeatherSnapshot? = {
             guard let place = destResolved, let del = delivery else { return nil }
-            return WeatherSnapshot.fromHereWeather(place, city: del.city)
+            return WeatherSnapshot.fromHereWeather(place, city: del.city, latitude: del.lat)
         }()
 
         // Lane strip — both ends when available.
