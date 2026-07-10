@@ -212,6 +212,10 @@ private struct CHBody: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Space.s4) {
                 header
+                // Universal Home-widget doctrine: every routed role home
+                // carries the always-visible weather surface directly after
+                // the greeting block (matches 500_CatalystHome placement).
+                HomeWeatherWidget()
                 driveModeRow
                 kpiGrid
                 activeHaulCard

@@ -81,7 +81,9 @@ struct PerLoadWeatherCard: View {
             city: card.origin?.name ?? "",
             tempF: Int((rt?.temperature ?? 0).rounded()),
             windMph: Int((rt?.windSpeedMph ?? 0).rounded()),
-            visibilityMi: Int((rt?.visibilityMi ?? 10).rounded()),
+            // Honest nil when the realtime block omitted visibility —
+            // the sky engine treats nil as no choke (em-dash doctrine).
+            visibilityMi: rt?.visibilityMi.map { Int($0.rounded()) },
             condition: rt?.condition ?? "",
             symbol: "cloud.fill",
             nextAlert: nil,
@@ -152,8 +154,12 @@ struct PerLoadWeatherCard: View {
         }
         .padding(14)
         .background(
+            // Always-dark sky ink (NOT the adaptive palette.bgCard, which
+            // went white in light mode and made every white-text element —
+            // eyebrow, tiles, ribbon labels, day chips, source line —
+            // invisible). Matches WeatherCard's dayChip/laneImpactPanel.
             RoundedRectangle(cornerRadius: 26, style: .continuous)
-                .fill(palette.bgCard)
+                .fill(WeatherV3.cardInk)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 26, style: .continuous)
@@ -300,7 +306,24 @@ struct PerLoadWeatherCard: View {
                         }
                     }
                     Spacer()
-                    WeatherIcons.symbolView(for: card.heroWeatherCode, size: 66)
+                    VStack(spacing: 10) {
+                        // Collapse affordance (chevron up) — ports the
+                        // WeatherCard pattern; without it the card was
+                        // stuck expanded once opened.
+                        Button {
+                            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                                expanded = false
+                            }
+                        } label: {
+                            WeatherIcons.utility(.chev, size: 16, tint: .white.opacity(0.85))
+                                .rotationEffect(.degrees(180))
+                                .padding(7)
+                                .background(Circle().fill(Color.white.opacity(0.14)))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Collapse lane weather")
+                        WeatherIcons.symbolView(for: card.heroWeatherCode, size: 66)
+                    }
                 }
                 .padding(16)
             }
@@ -546,8 +569,9 @@ struct PerLoadWeatherCard: View {
         }
         .padding(15)
         .background(
+            // Always-dark ink — white panel text must survive light mode.
             RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .fill(palette.bgCard)
+                .fill(WeatherV3.cardInk)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -802,12 +826,14 @@ struct PerLoadWeatherCard: View {
     }
 
     private func dayChip(_ day: DayPoint, isToday: Bool, weekLow: Int, weekHigh: Int) -> some View {
+        // Always-dark ink (matches WeatherCard.dayChip) — the adaptive
+        // palette.bgCard went white in light mode and hid the chip text.
         let fill: AnyShapeStyle = isToday
             ? AnyShapeStyle(LinearGradient(
-                colors: [WeatherV3.auroraB.opacity(0.16), palette.bgCard],
+                colors: [WeatherV3.auroraB.opacity(0.30), WeatherV3.cardInk],
                 startPoint: .top, endPoint: .bottom))
-            : AnyShapeStyle(palette.bgCard)
-        let stroke = isToday ? WeatherV3.auroraB.opacity(0.55) : Color.white.opacity(0.07)
+            : AnyShapeStyle(WeatherV3.cardInk)
+        let stroke = isToday ? WeatherV3.auroraB.opacity(0.55) : Color.white.opacity(0.10)
         return VStack(spacing: 6) {
             Text(isToday ? "Today" : day.dayLabel)
                 .font(.system(size: 11, weight: .heavy))
@@ -878,7 +904,7 @@ struct PerLoadWeatherCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
-        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(palette.bgCard))
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(WeatherV3.cardInk))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
             .strokeBorder(Color.white.opacity(0.07), lineWidth: 1))
     }
@@ -921,7 +947,7 @@ struct PerLoadWeatherCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 20).padding(.horizontal, 16)
-        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(palette.bgCard))
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(WeatherV3.cardInk))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
             .strokeBorder(Color.white.opacity(0.07), lineWidth: 1))
         .accessibilityElement(children: .combine)
@@ -946,7 +972,7 @@ struct PerLoadWeatherCard: View {
             }
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(palette.bgCard))
+        .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(WeatherV3.cardInk))
         .overlay(RoundedRectangle(cornerRadius: 26, style: .continuous)
             .strokeBorder(Color.white.opacity(0.07), lineWidth: 1))
     }
@@ -966,4 +992,30 @@ private extension Array {
     subscript(safe index: Int) -> Element? {
         indices.contains(index) ? self[index] : nil
     }
+}
+
+// MARK: - Previews
+//
+// The card is store-driven (live tRPC), so previews land on the honest
+// loading placeholder — which is exactly the surface the light-mode ink
+// fix must lock: the card is an ALWAYS-DARK sky surface in both schemes.
+
+#Preview("Per-load weather · Dark") {
+    ScrollView {
+        PerLoadWeatherCard(loadId: "1077", isActive: true)
+            .padding()
+    }
+    .background(Color(red: 0.04, green: 0.04, blue: 0.06))
+    .environment(\.palette, Theme.dark)
+    .preferredColorScheme(.dark)
+}
+
+#Preview("Per-load weather · Light") {
+    ScrollView {
+        PerLoadWeatherCard(loadId: "1077", isActive: true)
+            .padding()
+    }
+    .background(Theme.light.bgPage)
+    .environment(\.palette, Theme.light)
+    .preferredColorScheme(.light)
 }

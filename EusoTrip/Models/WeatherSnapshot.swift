@@ -33,8 +33,10 @@ struct WeatherSnapshot: Hashable, Codable {
     let tempF: Int
     /// Numeric wind speed in mph.
     let windMph: Int
-    /// Visibility in whole miles.
-    let visibilityMi: Int
+    /// Visibility in whole miles. Nil when the source omitted a reading —
+    /// renders "—" (em-dash doctrine; the old fabricated 10-mile default
+    /// could suppress the LOW VIS adaptation on a genuinely foggy read).
+    let visibilityMi: Int?
     /// Short human phrase — "Partly cloudy".
     let condition: String
     /// SF Symbol glyph that pairs with the condition (cloud.sun.fill etc.).
@@ -376,8 +378,12 @@ struct WeatherSnapshot: Hashable, Codable {
         case weatherKit   // Apple WeatherKit
         case nws          // api.weather.gov
         case openMeteo    // open-meteo.com
-        case here         // HERE Destination Weather (lane points)
+        case openWeather  // server byLatLon "openweather" degraded envelope
         case unknown
+
+        /// HERE Destination Weather (lane points). HERE never appears in
+        /// user-facing copy — attribution reads the branded network name.
+        case here
 
         /// The attribution string shown on the expanded card's source
         /// line. Apple WeatherKit is the v2 backbone; every other provider
@@ -388,7 +394,8 @@ struct WeatherSnapshot: Hashable, Codable {
             case .weatherKit: return "Apple Weather"
             case .nws:        return "NWS"
             case .openMeteo:  return "Open-Meteo"
-            case .here:       return "HERE"
+            case .openWeather: return "OpenWeather"
+            case .here:       return "EusoTrip Network"
             case .unknown:    return "live source"
             }
         }
@@ -630,9 +637,9 @@ struct WeatherSnapshot: Hashable, Codable {
         return "\(windMph) mph"
     }
 
-    /// "12 mph · 9 mi vis"
+    /// "12 mph · 9 mi vis" — visibility clause reads "—" when unreported.
     var metaDisplay: String {
-        "\(windMph) mph · \(visibilityMi) mi vis"
+        "\(windMph) mph · \(visibilityMi.map(String.init) ?? "—") mi vis"
     }
 
     /// Highest-severity active alert — drives the ribbon.
@@ -654,8 +661,11 @@ struct WeatherSnapshot: Hashable, Codable {
         return "\(p)%"
     }
 
-    /// Visibility "10 mi".
-    var visibilityDisplay: String { "\(visibilityMi) mi" }
+    /// Visibility "10 mi" — "—" when the source omitted a reading.
+    var visibilityDisplay: String {
+        guard let v = visibilityMi else { return "—" }
+        return "\(v) mi"
+    }
 
     /// "Rain chance 60% near 5 PM" / "Precip likely this hour · 70%" /
     /// alert title. Derived only from live current/hourly/alert fields.
@@ -795,8 +805,12 @@ struct WeatherSnapshot: Hashable, Codable {
         return wintry && tempF <= 34
     }
 
-    /// Visibility ≤ 2 mi — CMV slow-down territory.
-    var visibilityHazard: Bool { visibilityMi <= 2 }
+    /// Visibility ≤ 2 mi — CMV slow-down territory. Gated on a REAL
+    /// reading: an unreported visibility never fires (or suppresses) it.
+    var visibilityHazard: Bool {
+        guard let v = visibilityMi else { return false }
+        return v <= 2
+    }
 
     // ── Sky-engine geometry (time-of-day · season · moon) ───────────
     //

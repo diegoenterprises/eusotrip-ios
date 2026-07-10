@@ -954,7 +954,15 @@ struct DriverHome: View {
                         // own fetch + honest empty states so it never
                         // disappears. Lane-aware: passes the active load's
                         // HERE lane weather through to the card's lane strip.
-                        HomeWeatherWidget(lane: vm.laneWeather)
+                        // Destination-hero policy: while a load is active,
+                        // vm.weather carries the HERE destination snapshot
+                        // (refreshWeatherForUpcomingLoad) — pass it as the
+                        // preferred hero so the card adapts to where the
+                        // truck is GOING, not where it's parked.
+                        HomeWeatherWidget(
+                            lane: vm.laneWeather,
+                            preferredSnapshot: vm.laneWeather != nil ? vm.weather : nil
+                        )
                         // Pre-trip DVIR status — 49 CFR 396.11. Only
                         // surfaces when the driver actually has an
                         // upcoming / active load assigned, since a
@@ -2302,7 +2310,7 @@ struct WeatherAlertsWidget: View {
                 HStack(spacing: 12) {
                     Label(s.windDisplay, systemImage: "wind")
                         .foregroundStyle(s.windHazard ? Brand.warning : palette.textSecondary)
-                    Label("\(s.visibilityMi) mi", systemImage: "eye")
+                    Label(s.visibilityDisplay, systemImage: "eye")
                         .foregroundStyle(s.visibilityHazard ? Brand.warning : palette.textSecondary)
                     Label(s.humidityDisplay, systemImage: "humidity")
                         .foregroundStyle(palette.textSecondary)

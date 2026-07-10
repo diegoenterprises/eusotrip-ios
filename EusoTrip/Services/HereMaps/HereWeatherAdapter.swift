@@ -31,9 +31,13 @@ extension WeatherSnapshot {
     /// have a clean display string (the load's delivery-city field)
     /// and HERE's address block skips over state short-codes for
     /// some international addresses.
+    /// `latitude` is the queried coordinate's latitude (the caller has the
+    /// pickup/delivery lat at the call site) — threads the sky-engine
+    /// geometry so the destination scene picks the right season/hemisphere.
     static func fromHereWeather(
         _ place: HereWeatherPlace,
-        city: String
+        city: String,
+        latitude: Double? = nil
     ) -> WeatherSnapshot? {
         guard let obs = place.observations?.current else { return nil }
         // A partial HERE payload can carry an observation block with a NULL
@@ -70,12 +74,10 @@ extension WeatherSnapshot {
             return 0
         }()
 
-        // Visibility — HERE returns miles in en-US, km otherwise.
-        let visibilityMi: Int = {
-            guard let v = obs.visibility else { return 0 }
-            // Assume US payloads return miles; everything else km.
-            return Int(v.rounded())
-        }()
+        // Visibility — HERE returns miles in en-US, km otherwise. Nil when
+        // the observation omitted it (em-dash doctrine — a fabricated 0
+        // falsely tripped the LOW VIS hazard).
+        let visibilityMi: Int? = obs.visibility.map { Int($0.rounded()) }
 
         // Condition + SF Symbol pairing. HERE doesn't ship SF
         // Symbols directly — we map the icon id / description string
@@ -126,7 +128,7 @@ extension WeatherSnapshot {
             if alerts.contains(where: { $0.severity >= .severe }) {
                 return .warn
             }
-            if windMph >= 25 || visibilityMi <= 2 {
+            if windMph >= 25 || (visibilityMi ?? .max) <= 2 {
                 return .watch
             }
             return .calm
@@ -221,7 +223,7 @@ extension WeatherSnapshot {
             return out
         }()
 
-        return WeatherSnapshot(
+        var snap = WeatherSnapshot(
             city: city,
             tempF: tempF,
             windMph: windMph,
@@ -237,6 +239,17 @@ extension WeatherSnapshot {
             hourly: hourly,
             alerts: alerts
         )
+        // Adaptive-card wiring (weather-audit 2026-07-09): without these the
+        // hero card went NON-adaptive exactly when a load was active — the
+        // glyph/sky engine key off `weatherCode` (0 = unknown-cloud), the
+        // attribution read "live source", "updated Nm ago" vanished, and the
+        // sky scene lost its season/hemisphere geometry. Mirrors the NWS
+        // composer's tail.
+        snap.weatherCode = WeatherIcons.code(forSymbol: symbol)
+        snap.dataSource = .here
+        snap.observedAt = Date()
+        snap.latitude = latitude
+        return snap
     }
 
     // MARK: - Symbol mapping

@@ -17,11 +17,13 @@
 //      low visibility, reefer ambient extremes.
 //    • Flip side           — 6-day look-ahead + full alert detail.
 //
-//  Backdrop changes by time of day (stars + moon vs sun + atmosphere)
-//  and condition (clear / cloudy / rain / thunder / snow / fog). All
-//  motion is TimelineView + Canvas over pre-seeded particle arrays —
-//  no per-frame allocation — and every animated layer collapses to a
-//  single static frame under Reduce Motion.
+//  Backdrop: the build-751 continuous animated sky engine
+//  (`WeatherSkyEngine.swift` — `SkyStageHeroLive` on the full card,
+//  `WeatherSkyView` on the compact row). It keys the scene off the live
+//  `weatherCode` + sky-geometry fields (latitude / sun pair / day-part)
+//  and collapses to a single static frame under Reduce Motion. The
+//  pre-engine `SkyBackdrop` particle stack that used to live in this file
+//  was superseded and has been deleted.
 //
 //  Size tiers: `.full` (hero card, flip-enabled) and `.compact`
 //  (single-row glance for half-tier widget slots).
@@ -86,17 +88,6 @@ struct WeatherCard: View {
         return false
     }
 
-    private var condition: SkyCondition {
-        let s = snapshot.condition.lowercased()
-        let sym = snapshot.symbol.lowercased()
-        if s.contains("thunder") || sym.contains("bolt") { return .thunder }
-        if s.contains("snow") || sym.contains("snow") || sym.contains("snowflake") { return .snow }
-        if s.contains("rain") || s.contains("shower") || s.contains("drizzle") || sym.contains("rain") { return .rain }
-        if s.contains("fog") || s.contains("haze") || s.contains("smoke") || sym.contains("fog") { return .fog }
-        if s.contains("cloud") || sym.contains("cloud") { return .cloudy }
-        return .clear
-    }
-
     var body: some View {
         switch style {
         case .compact: compactBody
@@ -132,7 +123,7 @@ struct WeatherCard: View {
         var parts: [String] = [
             "Weather, \(snapshot.city), \(snapshot.condition), \(snapshot.tempDisplay)",
             "feels like \(snapshot.feelsLikeDisplay)",
-            "wind \(snapshot.windDisplay), visibility \(snapshot.visibilityMi) miles"
+            "wind \(snapshot.windDisplay), visibility \(snapshot.visibilityDisplay)"
         ]
         if let a = snapshot.heroAlert {
             parts.append("Active alert: \(a.title), severity \(a.severity.label)")
@@ -322,10 +313,113 @@ struct WeatherCard: View {
             // between the hero stage and the operational Lane Impact.
             hairline.padding(.horizontal, 16)
             laneImpactPanel
+            laneStrip
             dayChips
             sourceLine
         }
         .transition(.opacity)
+    }
+
+    // MARK: Expanded — HERE lane strip (active load pickup → delivery)
+
+    /// Route-aware lane weather for the ACTIVE load — live conditions at
+    /// each end of the lane + the freight flags derived strictly from live
+    /// readings (high-profile wind, chain-law ice/snow, low visibility,
+    /// reefer ambient extremes). Renders ONLY when the caller passed a
+    /// non-empty `lane` (driver home with an active load); collapses
+    /// otherwise. This is the render half of the `lane:` parameter — the
+    /// data pipeline (HERE Destination Weather → `LaneWeather`) already
+    /// existed but was never drawn.
+    @ViewBuilder
+    private var laneStrip: some View {
+        if let lane, !lane.isEmpty {
+            VStack(alignment: .leading, spacing: 11) {
+                HStack(spacing: 8) {
+                    WeatherIcons.utility(.route, size: 15, tint: WeatherV3.nodeOrigin)
+                    Text("ACTIVE LOAD · LANE")
+                        .font(.system(size: 11, weight: .heavy)).tracking(0.6)
+                        .foregroundStyle(.white.opacity(0.7))
+                    Spacer(minLength: 0)
+                }
+
+                // pickup → delivery live-condition cells
+                HStack(spacing: 9) {
+                    ForEach(Array(lane.points.enumerated()), id: \.offset) { idx, point in
+                        if idx > 0 {
+                            WeatherIcons.utility(.chev, size: 12, tint: .white.opacity(0.45))
+                                .rotationEffect(.degrees(-90))
+                        }
+                        HStack(spacing: 7) {
+                            WeatherIcons.symbolView(for: point.snapshot.weatherCode, size: 24)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(point.role)
+                                    .font(.system(size: 9, weight: .heavy)).tracking(0.5)
+                                    .foregroundStyle(.white.opacity(0.55))
+                                Text("\(point.city) \(point.snapshot.tempDisplay)")
+                                    .font(.system(size: 12, weight: .heavy))
+                                    .monospacedDigit()
+                                    .foregroundStyle(.white)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+
+                // freight flags — the same threshold capsules the
+                // WeatherAlertsWidget row draws, on the in-house glyph set.
+                if !lane.flags.isEmpty {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(lane.flags) { flag in
+                            HStack(spacing: 5) {
+                                WeatherIcons.utility(flagGlyph(flag), size: 11,
+                                                     tint: flag.accent.color)
+                                Text(flag.label)
+                                    .font(.system(size: 9, weight: .heavy)).tracking(0.4)
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(flag.accent.color)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Capsule().fill(flag.accent.color.opacity(0.14)))
+                            .overlay(Capsule().strokeBorder(flag.accent.color.opacity(0.4),
+                                                            lineWidth: 0.5))
+                        }
+                    }
+                }
+            }
+            .padding(15)
+            .background(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(WeatherV3.cardInk)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(laneStripAccessibility(lane))
+        }
+    }
+
+    /// Map a freight flag onto the in-house glyph corpus (zero SF Symbols
+    /// on the weather card, per the bespoke doctrine).
+    private func flagGlyph(_ flag: LaneWeather.FreightFlag) -> WeatherIcons.Utility {
+        switch flag.id {
+        case "wind":  return .wind
+        case "vis":   return .eye
+        case "chains": return .precip
+        default:      return .alert   // reefer-hot / reefer-cold
+        }
+    }
+
+    private func laneStripAccessibility(_ lane: LaneWeather) -> String {
+        var parts = ["Active load lane weather"]
+        for p in lane.points {
+            parts.append("\(p.role.lowercased()) \(p.city), \(p.snapshot.condition), \(p.snapshot.tempDisplay)")
+        }
+        for f in lane.flags { parts.append(f.label.lowercased()) }
+        return parts.joined(separator: ", ")
     }
 
     /// The v3 sky-stage hero — the bespoke `SkyStageHero` (aurora ribbon
@@ -902,7 +996,7 @@ struct WeatherCard: View {
                         .font(.system(size: 12, weight: .bold, design: .rounded))
                         .foregroundStyle(contentPrimary)
                         .lineLimit(1)
-                    Text("\(snapshot.windDisplay) · \(snapshot.visibilityMi) mi")
+                    Text("\(snapshot.windDisplay) · \(snapshot.visibilityDisplay)")
                         .font(.system(size: 9, weight: .semibold, design: .rounded))
                         .foregroundStyle(contentSecondary)
                         .lineLimit(1)
@@ -1066,509 +1160,6 @@ private struct WeatherMetricTile: View {
         if !reduceMotion { UIImpactFeedbackGenerator(style: .soft).impactOccurred(intensity: 0.6) }
         #endif
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.13) { pressed = false }
-    }
-}
-
-// MARK: - Sky scene
-
-enum SkyCondition {
-    case clear
-    case cloudy
-    case rain
-    case thunder
-    case snow
-    case fog
-}
-
-/// Animated sky backdrop. A stack of:
-///   • atmosphere gradient (night vs day, tinted by condition)
-///   • celestial body (moon + stars, or sun + haze)
-///   • drifting clouds (condition-dependent density)
-///   • precipitation particles (rain / snow / thunder flashes)
-///
-/// `animated == false` (Reduce Motion) renders each layer as a single
-/// static frame — same composition, zero TimelineView ticks.
-private struct SkyBackdrop: View {
-    let isNight: Bool
-    let condition: SkyCondition
-    let accent: Color
-    var animated: Bool = true
-
-    var body: some View {
-        ZStack {
-            atmosphereGradient
-            celestialLayer
-            cloudLayer
-            precipitationLayer
-            // Subtle vignette so the top reads sky and the bottom reads horizon.
-            LinearGradient(
-                colors: [
-                    Color.black.opacity(isNight ? 0.0 : 0.0),
-                    Color.black.opacity(isNight ? 0.25 : 0.15)
-                ],
-                startPoint: .top, endPoint: .bottom
-            )
-            .blendMode(.multiply)
-        }
-    }
-
-    // MARK: Atmosphere gradient
-
-    private var atmosphereGradient: some View {
-        let colors: [Color]
-        switch (isNight, condition) {
-        case (true, .clear):
-            colors = [
-                Color(red: 0.04, green: 0.06, blue: 0.20),   // deep navy
-                Color(red: 0.10, green: 0.09, blue: 0.32),   // indigo
-                Color(red: 0.20, green: 0.12, blue: 0.40)    // plum twilight
-            ]
-        case (true, .cloudy), (true, .fog):
-            colors = [
-                Color(red: 0.06, green: 0.08, blue: 0.17),
-                Color(red: 0.12, green: 0.14, blue: 0.23),
-                Color(red: 0.22, green: 0.22, blue: 0.32)
-            ]
-        case (true, .rain), (true, .thunder):
-            colors = [
-                Color(red: 0.03, green: 0.05, blue: 0.13),
-                Color(red: 0.08, green: 0.10, blue: 0.22),
-                Color(red: 0.15, green: 0.18, blue: 0.35)
-            ]
-        case (true, .snow):
-            colors = [
-                Color(red: 0.08, green: 0.12, blue: 0.28),
-                Color(red: 0.18, green: 0.22, blue: 0.42),
-                Color(red: 0.34, green: 0.38, blue: 0.58)
-            ]
-        case (false, .clear):
-            colors = [
-                Color(red: 0.14, green: 0.55, blue: 0.92),   // sky blue
-                Color(red: 0.40, green: 0.74, blue: 0.98),
-                Color(red: 0.78, green: 0.89, blue: 0.99)    // soft horizon
-            ]
-        case (false, .cloudy), (false, .fog):
-            colors = [
-                Color(red: 0.40, green: 0.52, blue: 0.66),
-                Color(red: 0.62, green: 0.72, blue: 0.82),
-                Color(red: 0.82, green: 0.86, blue: 0.90)
-            ]
-        case (false, .rain), (false, .thunder):
-            colors = [
-                Color(red: 0.22, green: 0.30, blue: 0.42),
-                Color(red: 0.36, green: 0.46, blue: 0.58),
-                Color(red: 0.56, green: 0.64, blue: 0.72)
-            ]
-        case (false, .snow):
-            colors = [
-                Color(red: 0.66, green: 0.74, blue: 0.85),
-                Color(red: 0.82, green: 0.88, blue: 0.94),
-                Color(red: 0.94, green: 0.96, blue: 0.99)
-            ]
-        }
-        return LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
-    }
-
-    // MARK: Celestial layer (moon + stars, or sun + halo)
-
-    @ViewBuilder
-    private var celestialLayer: some View {
-        if isNight {
-            StarsField(density: condition == .clear ? 1.0 : (condition == .cloudy || condition == .fog ? 0.25 : 0.55),
-                       animated: animated)
-            if condition == .clear || condition == .snow {
-                Moon()
-            }
-        } else {
-            if condition == .clear || condition == .snow {
-                Sun(accent: accent, animated: animated)
-            }
-        }
-    }
-
-    // MARK: Clouds
-
-    @ViewBuilder
-    private var cloudLayer: some View {
-        switch condition {
-        case .clear:
-            DriftingClouds(density: isNight ? 0.16 : 0.22, tint: Color.white.opacity(isNight ? 0.08 : 0.30), animated: animated)
-        case .cloudy, .fog:
-            DriftingClouds(density: 0.48, tint: Color.white.opacity(isNight ? 0.16 : 0.36), animated: animated)
-        case .rain, .thunder:
-            DriftingClouds(density: 0.46, tint: Color.white.opacity(isNight ? 0.14 : 0.32), animated: animated)
-        case .snow:
-            DriftingClouds(density: 0.42, tint: Color.white.opacity(isNight ? 0.18 : 0.38), animated: animated)
-        }
-    }
-
-    // MARK: Precipitation
-
-    @ViewBuilder
-    private var precipitationLayer: some View {
-        switch condition {
-        case .rain:
-            RainStreaks(intensity: 0.85, animated: animated)
-        case .thunder:
-            ZStack {
-                RainStreaks(intensity: 1.0, animated: animated)
-                if animated {
-                    LightningFlash()
-                }
-            }
-        case .snow:
-            SnowField(intensity: 0.8, animated: animated)
-        default:
-            EmptyView()
-        }
-    }
-}
-
-// MARK: Star field — twinkling points rendered in Canvas.
-
-private struct StarsField: View {
-    let density: Double  // 0…1
-    var animated: Bool = true
-
-    // Pre-seeded star positions so layout is stable across frames.
-    private let stars: [Star] = (0..<70).map { i in
-        var rng = SeededRNG(seed: UInt64(0x5EED + i * 17))
-        return Star(
-            x: rng.next01(),
-            y: rng.next01() * 0.72,       // bias upward
-            radius: 0.4 + rng.next01() * 1.6,
-            phase: rng.next01() * .pi * 2,
-            speed: 0.8 + rng.next01() * 1.6
-        )
-    }
-
-    var body: some View {
-        if animated {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                frame(t: context.date.timeIntervalSinceReferenceDate)
-            }
-        } else {
-            frame(t: 0)
-        }
-    }
-
-    private func frame(t: TimeInterval) -> some View {
-        Canvas { ctx, size in
-            let keepCount = Int(Double(stars.count) * density)
-            for star in stars.prefix(keepCount) {
-                let twinkle = (sin(t * star.speed + star.phase) + 1) / 2     // 0…1
-                let alpha = 0.35 + twinkle * 0.65
-                let r = star.radius * (0.85 + 0.3 * twinkle)
-                let cx = star.x * size.width
-                let cy = star.y * size.height
-                let rect = CGRect(x: cx - r, y: cy - r, width: r * 2, height: r * 2)
-                ctx.fill(Path(ellipseIn: rect), with: .color(.white.opacity(alpha)))
-                // Crisp cross glint on the 3 largest stars for a little magic.
-                if r > 1.4 {
-                    var cross = Path()
-                    cross.move(to: CGPoint(x: cx - r * 3, y: cy))
-                    cross.addLine(to: CGPoint(x: cx + r * 3, y: cy))
-                    cross.move(to: CGPoint(x: cx, y: cy - r * 3))
-                    cross.addLine(to: CGPoint(x: cx, y: cy + r * 3))
-                    ctx.stroke(cross, with: .color(.white.opacity(alpha * 0.35)), lineWidth: 0.4)
-                }
-            }
-        }
-    }
-
-    private struct Star {
-        let x: Double
-        let y: Double
-        let radius: Double
-        let phase: Double
-        let speed: Double
-    }
-}
-
-// MARK: Moon — subtle disc with halo.
-
-private struct Moon: View {
-    var body: some View {
-        GeometryReader { geo in
-            let r: CGFloat = 22
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color.white.opacity(0.18), Color.white.opacity(0.0)],
-                            center: .center, startRadius: 0, endRadius: r * 2.8
-                        )
-                    )
-                    .frame(width: r * 5.6, height: r * 5.6)
-                    .blur(radius: 6)
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.95), Color(red: 0.92, green: 0.93, blue: 0.99)],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: r * 2, height: r * 2)
-                    .overlay(
-                        Circle()
-                            .fill(Color.black.opacity(0.08))
-                            .frame(width: r * 0.7, height: r * 0.7)
-                            .offset(x: 4, y: -3)
-                            .blur(radius: 2)
-                    )
-                    .shadow(color: .white.opacity(0.4), radius: 8)
-            }
-            .position(x: geo.size.width * 0.82, y: geo.size.height * 0.38)
-        }
-    }
-}
-
-// MARK: Sun — warm disc with breathing halo.
-
-private struct Sun: View {
-    let accent: Color
-    var animated: Bool = true
-
-    var body: some View {
-        if animated {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                disc(t: context.date.timeIntervalSinceReferenceDate)
-            }
-        } else {
-            disc(t: 0)
-        }
-    }
-
-    private func disc(t: TimeInterval) -> some View {
-        let pulse = 1 + 0.05 * sin(t * 1.6)
-        return GeometryReader { geo in
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color.white.opacity(0.55),
-                                Color(red: 1.0, green: 0.86, blue: 0.45).opacity(0.25),
-                                Color.clear
-                            ],
-                            center: .center, startRadius: 0, endRadius: 90
-                        )
-                    )
-                    .frame(width: 180, height: 180)
-                    .blur(radius: 8)
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color(red: 1.0, green: 0.98, blue: 0.82),
-                                Color(red: 1.0, green: 0.84, blue: 0.42)
-                            ],
-                            center: .center, startRadius: 0, endRadius: 28
-                        )
-                    )
-                    .frame(width: 44 * pulse, height: 44 * pulse)
-                    .shadow(color: Color(red: 1.0, green: 0.84, blue: 0.42).opacity(0.55), radius: 14)
-            }
-            .position(x: geo.size.width * 0.82, y: geo.size.height * 0.38)
-        }
-    }
-}
-
-// MARK: Drifting clouds — soft blobs moving horizontally.
-
-private struct DriftingClouds: View {
-    let density: Double
-    let tint: Color
-    var animated: Bool = true
-
-    private let clouds: [CloudPuff] = (0..<5).map { i in
-        var rng = SeededRNG(seed: UInt64(0xC100 + i * 31))
-        return CloudPuff(
-            y: 0.12 + rng.next01() * 0.46,
-            width: 0.24 + rng.next01() * 0.34,
-            speed: 0.008 + rng.next01() * 0.012,
-            phase: rng.next01(),
-            opacity: 0.45 + rng.next01() * 0.28
-        )
-    }
-
-    var body: some View {
-        if animated {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                frame(t: context.date.timeIntervalSinceReferenceDate)
-            }
-        } else {
-            frame(t: 0)
-        }
-    }
-
-    private func frame(t: TimeInterval) -> some View {
-        let visible = max(1, Int(Double(clouds.count) * density))
-        return Canvas { ctx, size in
-            for puff in clouds.prefix(visible) {
-                let travel = (t * puff.speed + puff.phase).truncatingRemainder(dividingBy: 1.2) - 0.1
-                let cx = CGFloat(travel) * size.width
-                let cy = CGFloat(puff.y) * size.height
-                let w = CGFloat(puff.width) * size.width
-                drawCloud(ctx: ctx, center: CGPoint(x: cx, y: cy), width: w, tint: tint.opacity(puff.opacity))
-            }
-        }
-    }
-
-    private func drawCloud(ctx: GraphicsContext, center: CGPoint, width: CGFloat, tint: Color) {
-        let h = width * 0.28
-        let base = CGRect(x: center.x - width / 2, y: center.y - h / 2, width: width, height: h)
-        // 3-lobe blob.
-        let r1 = h * 0.9
-        let r2 = h * 1.1
-        let r3 = h * 0.8
-        var path = Path()
-        path.addEllipse(in: CGRect(x: base.minX, y: base.midY - r1, width: r1 * 2, height: r1 * 2))
-        path.addEllipse(in: CGRect(x: base.midX - r2, y: base.midY - r2 * 1.15, width: r2 * 2, height: r2 * 2))
-        path.addEllipse(in: CGRect(x: base.maxX - r3 * 2, y: base.midY - r3, width: r3 * 2, height: r3 * 2))
-        ctx.fill(path, with: .color(tint))
-    }
-
-    private struct CloudPuff {
-        let y: Double
-        let width: Double
-        let speed: Double
-        let phase: Double
-        let opacity: Double
-    }
-}
-
-// MARK: Rain streaks.
-
-private struct RainStreaks: View {
-    let intensity: Double
-    var animated: Bool = true
-
-    private let drops: [Drop] = (0..<60).map { i in
-        var rng = SeededRNG(seed: UInt64(0xDEAD + i * 23))
-        return Drop(
-            x: rng.next01(),
-            len: 8 + rng.next01() * 14,
-            speed: 140 + rng.next01() * 120,
-            phase: rng.next01()
-        )
-    }
-
-    var body: some View {
-        if animated {
-            TimelineView(.animation(minimumInterval: 1.0 / 45.0)) { context in
-                frame(t: context.date.timeIntervalSinceReferenceDate)
-            }
-        } else {
-            frame(t: 0)
-        }
-    }
-
-    private func frame(t: TimeInterval) -> some View {
-        let count = Int(Double(drops.count) * intensity)
-        return Canvas { ctx, size in
-            for drop in drops.prefix(count) {
-                let travel = (t * drop.speed / Double(size.height) + drop.phase).truncatingRemainder(dividingBy: 1.0)
-                let y = CGFloat(travel) * size.height
-                let x = CGFloat(drop.x) * size.width
-                var p = Path()
-                p.move(to: CGPoint(x: x, y: y))
-                p.addLine(to: CGPoint(x: x + 2, y: y + drop.len))
-                ctx.stroke(p, with: .color(.white.opacity(0.55)), lineWidth: 1.1)
-            }
-        }
-    }
-
-    private struct Drop {
-        let x: Double
-        let len: Double
-        let speed: Double
-        let phase: Double
-    }
-}
-
-// MARK: Snow field.
-
-private struct SnowField: View {
-    let intensity: Double
-    var animated: Bool = true
-
-    private let flakes: [Flake] = (0..<55).map { i in
-        var rng = SeededRNG(seed: UInt64(0xF10A + i * 19))
-        return Flake(
-            x: rng.next01(),
-            size: 1.2 + rng.next01() * 2.4,
-            speed: 18 + rng.next01() * 30,
-            sway: 4 + rng.next01() * 10,
-            phase: rng.next01()
-        )
-    }
-
-    var body: some View {
-        if animated {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                frame(t: context.date.timeIntervalSinceReferenceDate)
-            }
-        } else {
-            frame(t: 0)
-        }
-    }
-
-    private func frame(t: TimeInterval) -> some View {
-        let count = Int(Double(flakes.count) * intensity)
-        return Canvas { ctx, size in
-            for flake in flakes.prefix(count) {
-                let travel = (t * flake.speed / Double(size.height) + flake.phase).truncatingRemainder(dividingBy: 1.0)
-                let y = CGFloat(travel) * size.height
-                let sway = sin(t * 1.2 + flake.phase * .pi * 2) * flake.sway
-                let x = CGFloat(flake.x) * size.width + CGFloat(sway)
-                let r = CGFloat(flake.size)
-                ctx.fill(
-                    Path(ellipseIn: CGRect(x: x - r / 2, y: y - r / 2, width: r, height: r)),
-                    with: .color(.white.opacity(0.85))
-                )
-            }
-        }
-    }
-
-    private struct Flake {
-        let x: Double
-        let size: Double
-        let speed: Double
-        let sway: Double
-        let phase: Double
-    }
-}
-
-// MARK: Lightning flash — slow deterministic strobe (animated paths only).
-
-private struct LightningFlash: View {
-    var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
-            let t = context.date.timeIntervalSinceReferenceDate
-            // Deterministic strobe: fire a flash every 3.2 s, 120 ms wide.
-            let cycle = t.truncatingRemainder(dividingBy: 3.2)
-            let intensity: Double = cycle < 0.12 ? (1 - cycle / 0.12) : 0
-            Rectangle()
-                .fill(Color.white.opacity(intensity * 0.5))
-                .blendMode(.plusLighter)
-        }
-    }
-}
-
-// MARK: - Tiny seeded RNG so star/cloud layouts are stable.
-
-private struct SeededRNG {
-    var state: UInt64
-    init(seed: UInt64) { state = seed == 0 ? 0xDEADBEEF : seed }
-    mutating func next() -> UInt64 {
-        state ^= state << 13
-        state ^= state >> 7
-        state ^= state << 17
-        return state
-    }
-    mutating func next01() -> Double {
-        Double(next() & 0xFFFFFFFF) / Double(UInt32.max)
     }
 }
 

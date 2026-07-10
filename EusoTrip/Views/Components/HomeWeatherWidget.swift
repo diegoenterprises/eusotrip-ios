@@ -45,6 +45,14 @@ struct HomeWeatherWidget: View {
     /// dashboard passes this through); nil on every other role.
     var lane: LaneWeather? = nil
 
+    /// Destination-hero policy (user direction 2026-04-24): while a load is
+    /// active the hero shows the DESTINATION conditions (HERE Destination
+    /// Weather), not the parked-here reading. The driver dashboard passes
+    /// its resolved destination snapshot here; when non-nil it wins over
+    /// the widget's own local fetch. Nil (every other role / between
+    /// loads) → the widget's own local snapshot renders as before.
+    var preferredSnapshot: WeatherSnapshot? = nil
+
     @Environment(\.palette) private var palette
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openURL) private var openURL
@@ -77,11 +85,13 @@ struct HomeWeatherWidget: View {
     /// the skeleton — no multi-minute lingering loads.
     private let firstLoadCeiling: UInt64 = 9 * 1_000_000_000
 
-    init(lane: LaneWeather? = nil) {
+    init(lane: LaneWeather? = nil, preferredSnapshot: WeatherSnapshot? = nil) {
         self.lane = lane
+        self.preferredSnapshot = preferredSnapshot
         // Seed from the last-good cache so the widget is NEVER blank on a
         // return visit — it shows the most recent REAL reading instantly
-        // and refreshes in the background.
+        // (even a stale one, with its honest "updated Nh ago" line) and
+        // refreshes in the background.
         let cached = WeatherService.cachedSnapshot
         _phase = State(initialValue: cached.map { Phase.data($0) } ?? .loading)
         _hasLoadedOnce = State(initialValue: cached != nil)
@@ -119,7 +129,9 @@ struct HomeWeatherWidget: View {
     @ViewBuilder private var content: some View {
         switch phase {
         case .data(let snap):
-            WeatherCard(snapshot: snap, lane: lane)
+            // Destination-hero policy: the caller's active-load destination
+            // snapshot wins over the local reading while a load is active.
+            WeatherCard(snapshot: preferredSnapshot ?? snap, lane: lane)
         case .loading:
             HomeWeatherSkeleton()
         case .needsLocation:
@@ -161,9 +173,14 @@ struct HomeWeatherWidget: View {
         if let cache, !hasLoadedOnce {
             phase = .data(cache)
             hasLoadedOnce = true
-        } else if force || !hasLoadedOnce {
-            // No cache at all (brand-new install) → the only time we show
-            // the loading placeholder.
+        } else if !hasLoadedOnce {
+            // No cache at all (brand-new install) → the ONLY time we show
+            // the loading placeholder. `force` deliberately does NOT reach
+            // this branch: a force-refresh (auth-change notification fires
+            // on every process start) used to drop a VALID on-screen card
+            // to the skeleton mid-session — force is purely a fetch
+            // trigger now, and the .needsLocation → granted transition
+            // still recovers because the fetch result sets `.data`.
             phase = .loading
         }
 
