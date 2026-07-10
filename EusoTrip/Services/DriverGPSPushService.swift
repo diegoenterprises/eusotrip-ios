@@ -70,7 +70,7 @@ final class DriverGPSPushService: NSObject, ObservableObject,
     // live pin. The persisted TRAIL — behind replay / mileage / deviation /
     // detention proof + The Haul territory coverage — comes from batching
     // fixes to the existing `location.telemetry.locationBatch`. We buffer
-    // every accepted fix (one per 50 m via `distanceFilter`) and flush ≤25 at
+    // every accepted fix (one per 50 m via `distanceFilter`) and flush ≤200 at
     // a time on 20 buffered / 60 s / stop(). The 15 s updateLocation loop is
     // untouched. Gated by the `breadcrumbsEnabled` flag (default on;
     // kill-switch — the buffer simply never flushes when off).
@@ -162,6 +162,11 @@ final class DriverGPSPushService: NSObject, ObservableObject,
         let age = -fix.timestamp.timeIntervalSinceNow
         guard age < 60 else { return }
         Task { @MainActor [weak self] in
+            // L13-2: mirror EVERY accepted fix into DriverLocationResolver
+            // BEFORE the 15 s push throttle — the turn-by-turn navigator
+            // consumes `$lastLocation` and needs the full 50 m-filtered
+            // cadence for maneuver advance / voice gates / deviation.
+            DriverLocationResolver.shared.ingest(externalFix: fix)
             self?.maybePush(fix: fix)
             self?.bufferCrumb(fix)
         }
@@ -272,16 +277,24 @@ final class DriverGPSPushService: NSObject, ObservableObject,
         }
     }
 
-    /// Flush ≤25 buffered fixes to `location.telemetry.locationBatch` and feed
+    /// Flush ≤200 buffered fixes to `location.telemetry.locationBatch` and feed
     /// the same points to `HereHaulBridge.recordCoverage` (its first real
-    /// caller — lights up `hereMaps.locationAnalytics` territory events). On
-    /// failure the batch is re-buffered for the next flush (buffer capped at
-    /// 200 so a long offline stretch never grows unbounded).
+    /// caller — lights up `hereMaps.locationAnalytics` territory events).
+    ///
+    /// Cap raised 25→200 (adversarial-verify 2026-07-09): the server schema
+    /// allows `.max(200)` and the buffer is capped at 200, so any backlog
+    /// drains in ONE request — structurally avoiding the server's 2 s
+    /// per-driver rate limiter during catch-up. A rate-limited ack now
+    /// THROWS from `locationBatch` (the server persisted nothing), so the
+    /// catch re-buffers the batch AND skips `recordCoverage` — Haul territory
+    /// / XP is only ever credited for confirmed-persisted points. On failure
+    /// the batch is re-buffered for the next flush (buffer capped at 200 so a
+    /// long offline stretch never grows unbounded).
     @MainActor
     private func flushCrumbs() {
         guard breadcrumbsEnabled, !crumbBuffer.isEmpty else { return }
-        let batch = Array(crumbBuffer.prefix(25))
-        crumbBuffer.removeFirst(min(25, crumbBuffer.count))
+        let batch = Array(crumbBuffer.prefix(200))
+        crumbBuffer.removeFirst(min(200, crumbBuffer.count))
         lastCrumbFlushAt = Date()
         let loadId = activeLoadId
 
@@ -304,10 +317,13 @@ final class DriverGPSPushService: NSObject, ObservableObject,
                 _ = try await EusoTripAPI.shared.locationBatch(locations: points, loadId: loadId)
                 await HereHaulBridge.shared.recordCoverage(breadcrumbs: coverage)
             } catch {
-                // Re-buffer for retry; cap at 200 (drop oldest overflow).
+                // Re-buffer for retry; cap at 200. The trim drops the OLDEST
+                // crumbs (front of the array) so the persisted trail always
+                // keeps the most recent ~10 km up to reconnection — the
+                // operationally relevant segment for detention/mileage proof.
                 self.crumbBuffer.insert(contentsOf: batch, at: 0)
                 if self.crumbBuffer.count > 200 {
-                    self.crumbBuffer.removeLast(self.crumbBuffer.count - 200)
+                    self.crumbBuffer.removeFirst(self.crumbBuffer.count - 200)
                 }
                 self.lastError = "locationBatch: \(error.localizedDescription)"
             }

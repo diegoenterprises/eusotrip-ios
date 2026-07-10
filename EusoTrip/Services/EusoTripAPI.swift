@@ -1621,27 +1621,43 @@ final class EusoTripAPI: ObservableObject {
     /// `ingestBreadcrumbs` (writes the `location_breadcrumbs` trail) +
     /// `emitTrackingEvent`. Distinct from `drivers.updateLocation` (latest-
     /// position UPSERT for the live dispatcher pin) — this is the persisted
-    /// trail behind replay / mileage / deviation / detention proof. Returns
-    /// the inserted count (0 when the 2 s per-driver rate limit skipped it).
+    /// trail behind replay / mileage / deviation / detention proof.
+    ///
+    /// The server's 2 s per-driver rate limiter does NOT throw — it returns
+    /// `{inserted: 0, skipped: N, rateLimited: true}` (location.ts) while the
+    /// true success path returns `{ingested, flagged}` (ingestBreadcrumbs).
+    /// We decode BOTH shapes and throw a retryable error on the rate-limited
+    /// ack so the caller re-buffers the batch instead of silently destroying
+    /// it (and never credits Haul coverage for unpersisted points). Returns
+    /// the persisted count.
     @discardableResult
     func locationBatch(locations: [LocationBatchPoint], loadId: Int?) async throws -> Int {
         struct Input: Encodable {
             let locations: [LocationBatchPoint]
             let loadId: Int?
         }
-        struct BatchAck: Decodable { let inserted: Int? }
+        struct BatchAck: Decodable {
+            let ingested: Int?      // success-path field
+            let inserted: Int?      // rate-limited-path field (always 0 there)
+            let rateLimited: Bool?
+        }
         let ack: BatchAck = try await mutation(
             "location.telemetry.locationBatch",
             input: Input(locations: locations, loadId: loadId)
         )
-        return ack.inserted ?? 0
+        if ack.rateLimited == true {
+            // Retryable: the server persisted NOTHING from this batch.
+            throw EusoTripAPIError.trpcError(
+                "Location sync is catching up — your route trail will retry shortly.")
+        }
+        return ack.ingested ?? ack.inserted ?? 0
     }
 
     // MARK: Offline-outbox eligibility
     //
     // Maps a tRPC mutation path to its OfflineQueue enqueue, decoding the
     // payload from the already-encoded `{"json": <input>}` request body.
-    // ONLY the five idempotent driver mutations are eligible — reads never
+    // ONLY the six idempotent driver mutations are eligible — reads never
     // reach this `mutation` path at all, and money mutations (payout /
     // escrow / P2P transfer) are deliberately ABSENT from the table so a
     // debit can never be silently replayed hours later out of the user's
@@ -1705,6 +1721,24 @@ final class EusoTripAPI: ObservableObject {
             struct In: Decodable { let loadId: String }
             guard let p = try? dec.decode(Env<In>.self, from: body).json else { return false }
             OfflineQueue.shared.enqueueAcceptLoad(loadId: p.loadId)
+            return true
+
+        case "location.telemetry.geofenceEvent":
+            // L13-4 adversarial-verify: a metal-building dead zone at the dock
+            // must not permanently lose the ON-SITE / departed flip — the fence
+            // crossing replays on the next network edge. Idempotent server-side
+            // (the FSM transition guard makes a re-applied flip a no-op).
+            struct LatLng: Decodable { let lat: Double; let lng: Double }
+            struct In: Decodable {
+                let geofenceId: Int; let action: String; let location: LatLng
+                let timestamp: String; let loadId: Int?; let geofenceType: String?
+            }
+            guard let p = try? dec.decode(Env<In>.self, from: body).json else { return false }
+            OfflineQueue.shared.enqueueGeofenceEvent(
+                geofenceId: p.geofenceId, action: p.action,
+                lat: p.location.lat, lng: p.location.lng,
+                timestamp: p.timestamp, loadId: p.loadId, geofenceType: p.geofenceType
+            )
             return true
 
         default:
@@ -14853,6 +14887,93 @@ struct TrackingGeofencesAPI {
     /// Raw id-preserving read of `tracking.getGeofences`.
     func identifiedList() async throws -> [IdentifiedGeofenceRow] {
         try await api.queryNoInput("tracking.getGeofences")
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Load-scoped fence resolution (adversarial-verify 2026-07-09).
+    //
+    // `tracking.getGeofences` is COMPANY-scoped (tracking.ts filters
+    // eq(geofences.companyId, ctx.user.companyId || 0)) — fences auto-created
+    // by `location.geofences.createForLoad` for older loads landed with
+    // companyId NULL, which that filter can never match. The loadId-scoped
+    // `location.geofences.getForLoad` read has no company filter and returns
+    // every active fence row for the load (id / type / shape / center /
+    // radiusMeters), so the geofence loop closes even for legacy NULL-company
+    // rows. This is the read `GeofenceService.resolveAndRegisterServerFences`
+    // uses.
+    // ─────────────────────────────────────────────────────────────────────
+
+    /// One `location.geofences.getForLoad` row. `type` is the real fence kind
+    /// (PICKUP_FACILITY / DELIVERY_FACILITY / PICKUP_APPROACH /
+    /// DELIVERY_APPROACH / WAYPOINT), `shape` is "circle" | "polygon".
+    /// Tolerant decode — the id may serialize as a number or string.
+    struct LoadFenceRow: Decodable {
+        let id: Int?
+        let name: String?
+        let type: String?
+        let shape: String?
+        let center: GeofenceCenter?
+        let radiusMeters: Double?
+
+        enum CodingKeys: String, CodingKey { case id, name, type, shape, center, radiusMeters }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            if let i = try? c.decode(Int.self, forKey: .id) { id = i }
+            else if let s = try? c.decode(String.self, forKey: .id), let i = Int(s) { id = i }
+            else { id = nil }
+            name = try? c.decode(String.self, forKey: .name)
+            type = try? c.decode(String.self, forKey: .type)
+            shape = try? c.decode(String.self, forKey: .shape)
+            center = try? c.decode(GeofenceCenter.self, forKey: .center)
+            if let d = try? c.decode(Double.self, forKey: .radiusMeters) { radiusMeters = d }
+            else if let i = try? c.decode(Int.self, forKey: .radiusMeters) { radiusMeters = Double(i) }
+            else if let s = try? c.decode(String.self, forKey: .radiusMeters) { radiusMeters = Double(s) }
+            else { radiusMeters = nil }
+        }
+    }
+
+    /// Active fence rows for ONE load via `location.geofences.getForLoad`.
+    func fencesForLoad(_ loadId: Int) async throws -> [LoadFenceRow] {
+        struct In: Encodable { let loadId: Int }
+        return try await api.query("location.geofences.getForLoad", input: In(loadId: loadId))
+    }
+
+    /// Resolve the tight FACILITY fence (with numeric id) for one leg of a
+    /// load from the loadId-scoped rows. Prefers the exact typed row
+    /// (`PICKUP_FACILITY` / `DELIVERY_FACILITY`); legacy rows without a usable
+    /// type fall back to the smallest-radius circle covering the facility
+    /// coordinate (facility ~150 m vs approach 8 047 m — the radius separates
+    /// them). Returns nil when no usable row exists (honest degrade).
+    static func facilityFence(
+        in rows: [LoadFenceRow], kind: String,
+        near coord: (lat: Double, lng: Double)?
+    ) -> IdentifiedFence? {
+        let wantedType = kind == "delivery" ? "DELIVERY_FACILITY" : "PICKUP_FACILITY"
+        let usable: [IdentifiedFence] = rows.compactMap { row in
+            guard let id = row.id,
+                  row.shape != "polygon",
+                  let c = row.center,
+                  let cLat = c.lat, let cLng = c.lng,
+                  cLat.isFinite, cLng.isFinite,
+                  !(cLat == 0 && cLng == 0),
+                  let r = row.radiusMeters, r.isFinite, r > 0
+            else { return nil }
+            return IdentifiedFence(id: id, center: HereLatLng(cLat, cLng),
+                                   radiusMeters: r, name: row.name, type: row.type)
+        }
+        // 1. Exact type match — smallest radius wins (the tight facility ring).
+        if let typed = usable.filter({ $0.type == wantedType })
+            .min(by: { $0.radiusMeters < $1.radiusMeters }) {
+            return typed
+        }
+        // 2. Legacy fallback: nearest small-radius circle covering the coord.
+        guard let p = coord, p.lat.isFinite, p.lng.isFinite,
+              !(p.lat == 0 && p.lng == 0) else { return nil }
+        return usable
+            .filter { $0.radiusMeters < 5_000 }
+            .filter { haversineMeters(p.lat, p.lng, $0.center.lat, $0.center.lng)
+                        <= Swift.max($0.radiusMeters, 1_500) }
+            .min(by: { $0.radiusMeters < $1.radiusMeters })
     }
 
     /// Resolves the nearest active circular fence row (with id) covering each

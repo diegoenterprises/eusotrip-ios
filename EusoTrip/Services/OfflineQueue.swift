@@ -15,6 +15,9 @@
 //      • submitPOD         — proof of delivery at the receiver
 //      • executeTransition — load lifecycle flip (arrived / picked up / …)
 //      • acceptLoad        — driver takes ownership of an offered load
+//      • geofenceEvent     — facility fence ENTER/EXIT (ON-SITE / departed
+//                            flip + detention clock; dead zones at the dock
+//                            must not lose it)
 //
 //  What NEVER goes in the queue:
 //
@@ -74,6 +77,13 @@ enum QueuedAction: Codable, Equatable {
     case executeTransition(loadId: String, transitionId: String, at: Date, key: String)
     /// Driver takes ownership of an offered load.
     case acceptLoad(loadId: String, at: Date, key: String)
+    /// Facility geofence crossing (ENTER/EXIT) — carries the original fix +
+    /// timestamp so a dead-zone crossing replays with its true wall-clock
+    /// time. Naturally idempotent: the server FSM transition guard makes a
+    /// re-applied status flip a no-op.
+    case geofenceEvent(geofenceId: Int, action: String, lat: Double, lng: Double,
+                       timestamp: String, loadId: Int?, geofenceType: String?,
+                       at: Date, key: String)
 
     /// Stable idempotency key — generated at enqueue, persisted, and
     /// echoed to the server so a re-send collapses instead of duplicating.
@@ -84,6 +94,7 @@ enum QueuedAction: Codable, Equatable {
         case .submitPOD(_, _, _, _, _, _, let k):    return k
         case .executeTransition(_, _, _, let k):     return k
         case .acceptLoad(_, _, let k):               return k
+        case .geofenceEvent(_, _, _, _, _, _, _, _, let k): return k
         }
     }
 
@@ -95,6 +106,7 @@ enum QueuedAction: Codable, Equatable {
         case .submitPOD(_, _, _, _, _, let at, _):    return at
         case .executeTransition(_, _, let at, _):     return at
         case .acceptLoad(_, let at, _):               return at
+        case .geofenceEvent(_, _, _, _, _, _, _, let at, _): return at
         }
     }
 
@@ -106,6 +118,7 @@ enum QueuedAction: Codable, Equatable {
         case .submitPOD:         return "Proof of delivery"
         case .executeTransition: return "Load update"
         case .acceptLoad:        return "Load accept"
+        case .geofenceEvent:     return "Arrival update"
         }
     }
 }
@@ -203,6 +216,16 @@ final class OfflineQueue: ObservableObject {
     func enqueueAcceptLoad(loadId: String) -> String {
         let k = key()
         append(.acceptLoad(loadId: loadId, at: Date(), key: k))
+        return k
+    }
+
+    @discardableResult
+    func enqueueGeofenceEvent(geofenceId: Int, action: String, lat: Double, lng: Double,
+                              timestamp: String, loadId: Int?, geofenceType: String?) -> String {
+        let k = key()
+        append(.geofenceEvent(geofenceId: geofenceId, action: action, lat: lat, lng: lng,
+                              timestamp: timestamp, loadId: loadId, geofenceType: geofenceType,
+                              at: Date(), key: k))
         return k
     }
 
@@ -354,6 +377,14 @@ final class OfflineQueue: ObservableObject {
             )
         case .acceptLoad(let loadId, _, let key):
             _ = try await api.drivers.acceptLoad(loadId: loadId, idempotencyKey: key)
+        case .geofenceEvent(let geofenceId, let action, let lat, let lng,
+                            let timestamp, let loadId, let geofenceType, _, _):
+            // Replays with the ORIGINAL crossing timestamp so detention math
+            // stays honest. Naturally idempotent server-side (FSM guard).
+            try await api.trackingGeofences.postGeofenceEvent(
+                geofenceId: geofenceId, action: action, lat: lat, lng: lng,
+                timestamp: timestamp, loadId: loadId,
+                geofenceType: geofenceType, facilityName: nil)
         }
     }
 

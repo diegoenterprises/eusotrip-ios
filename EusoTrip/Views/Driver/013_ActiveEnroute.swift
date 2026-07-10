@@ -280,24 +280,29 @@ struct ActiveEnroute: View {
             }
             let coords = HereRoutingClient.polyline(for: section)
             routePolyline = coords.count >= 2 ? coords.map { HereLatLng($0) } : []
-            // L13-3: seed turn-by-turn from the same resolved section (decodes
-            // the polyline + forwards HERE `actions`). No-op cost when the flag
-            // is off — the banner only mounts when tbtEnabled && a maneuver exists.
-            if tbtEnabled { navigator.start(section: section) }
+            // L13-3 adversarial-verify: the navigator is deliberately NOT
+            // seeded here. This screen is the drive-to-PICKUP phase — seeding
+            // from the pickup→delivery corridor put every pre-pickup driver
+            // 30 mi "off route", tripping deviation → a reroute straight to
+            // delivery. Turn-by-turn seeds from the fix→pickup section in
+            // `refreshLiveNav`; this geometry is the static base-map corridor.
         } catch {
             routePolyline = []
         }
     }
 
-    /// L13-3 deviation reroute — the driver left the corridor (nav raised
-    /// `isRerouting`). Re-request a truck-aware route from the live fix to the
-    /// active destination and restart the navigator on the new geometry, which
-    /// clears the rerouting state. On any failure we clear it so the banner
-    /// doesn't stick on "Rerouting…". Destination is delivery (post-pickup) or
-    /// pickup (pre-pickup) mirrored off the same coords the HUD already uses.
+    /// L13-3 deviation reroute — the driver left the guided leg (nav raised
+    /// `isRerouting`). 013 is exclusively the drive-to-PICKUP phase, so the
+    /// reroute destination is ALWAYS the pickup (the old
+    /// `deliveryLocation ?? pickupLocation` coalesce sent every off-route
+    /// pre-pickup driver straight to delivery, skipping the pickup). The new
+    /// fix→pickup geometry restarts the navigator (clearing the rerouting
+    /// state) and deliberately does NOT touch `routePolyline` — that stays
+    /// the static pickup→delivery corridor on the base map. On any failure we
+    /// clear the state so the banner doesn't stick on "Rerouting…".
     @MainActor
     private func rerouteFrom(_ fix: CLLocation, load: Load) async {
-        let dest = load.deliveryLocation ?? load.pickupLocation
+        let dest = load.pickupLocation
         guard let d = dest, !(d.lat == 0 && d.lng == 0) else {
             navigator.clearRerouting(); return
         }
@@ -312,8 +317,6 @@ struct ActiveEnroute: View {
                 navigator.clearRerouting(); return
             }
             navigator.start(section: section)   // clears isRerouting
-            let coords = HereRoutingClient.polyline(for: section)
-            routePolyline = coords.count >= 2 ? coords.map { HereLatLng($0) } : routePolyline
         } catch {
             navigator.clearRerouting()
         }
@@ -361,6 +364,12 @@ struct ActiveEnroute: View {
             remainingMeters = Double(summary.length)
             remainingSeconds = Double(summary.duration)
             etaISO = section.arrival.time
+            // L13-3 adversarial-verify: seed turn-by-turn from THIS fix→pickup
+            // section — the leg the driver is actually on — not the
+            // pickup→delivery corridor `refreshRoutePolyline` paints. Seeding
+            // from the corridor put every pre-pickup driver miles "off route"
+            // and the deviation reroute then guided them straight to delivery.
+            if tbtEnabled { navigator.start(section: section) }
             // Honest live traffic delay = traffic-aware duration − free-flow
             // base. Nil when HERE ships no base or there's no delay.
             if let base = summary.baseDuration, summary.duration > base {
