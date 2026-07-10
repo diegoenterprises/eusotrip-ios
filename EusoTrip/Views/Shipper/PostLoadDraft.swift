@@ -558,6 +558,10 @@ final class PostLoadDraft: ObservableObject {
             // shipper can't accidentally post UN-coded freight to a
             // non-hazmat catalyst.
             let resolvedHazmatAuth = hazmatAuthRequired || cargoType == .hazmat
+            // L09-1 · reefer band is only meaningful on the refrigerated
+            // path — matches composedNotes()'s `[REEFER]` gate so a dry-van
+            // post never ships a temperature band.
+            let isReefer = cargoType == .refrigerated
 
             struct In: Encodable {
                 let origin: String; let destination: String; let cargoType: String
@@ -606,6 +610,20 @@ final class PostLoadDraft: ObservableObject {
                 // at DELIVERED. Auto-true for cross-border / hazmat /
                 // rate > $5k / heavy-haul; shipper can override.
                 let ePodLockEnabled:      Bool?
+                // L09-1 · 2026-07-09 — reefer setpoint band (web PR #144:
+                // `shippers.create` now persists the temperature band).
+                // STRUCTURED fields alongside the existing `[REEFER]`
+                // composedNotes() line, not a replacement. Sent ONLY on the
+                // refrigerated cargo path (mirrors composedNotes()'s
+                // `cargoType == .refrigerated` gate); nil on every other path
+                // so a dry-van / hazmat / tanker post omits them. `tempUnit`
+                // is "F" — the wizard captures setpoints in °F (composedNotes
+                // renders "°F"); the server accepts 'F' | 'C'.
+                let tempMin:              Double?
+                let tempMax:              Double?
+                let tempUnit:             String?
+                let preCoolRequired:      Bool?
+                let continuousMonitoring: Bool?
             }
             struct Out: Decodable {
                 let success: Bool; let id: Int; let loadNumber: String
@@ -643,7 +661,12 @@ final class PostLoadDraft: ObservableObject {
                     trailer:               trailer?.rawValue,
                     vertical:              vertical?.rawValue,
                     attachedDocuments:     attachedDocuments.isEmpty ? nil : attachedDocuments.map(\.rawValue),
-                    ePodLockEnabled:       ePodLockEnabled ? true : nil
+                    ePodLockEnabled:       ePodLockEnabled ? true : nil,
+                    tempMin:               isReefer ? reeferTempLow  : nil,
+                    tempMax:               isReefer ? reeferTempHigh : nil,
+                    tempUnit:              isReefer ? "F" : nil,
+                    preCoolRequired:       isReefer ? preCoolRequired : nil,
+                    continuousMonitoring:  isReefer ? continuousMode : nil
                 )
             )
             postedLoadNumber = result.loadNumber
