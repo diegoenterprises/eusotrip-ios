@@ -990,6 +990,14 @@
 		QRIV2026051800000011A1 /* QRImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = QRIV2026051800000012A1 /* QRImageView.swift */; };
 		R6392026060200000011A1 /* 639_RailYardDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = R6392026060200000012A1 /* 639_RailYardDirectory.swift */; };
 		R6562026060200000011A1 /* 656_RailClaimPayments.swift in Sources */ = {isa = PBXBuildFile; fileRef = R6562026060200000012A1 /* 656_RailClaimPayments.swift */; };
+		EB659B000000000000000000 /* 659_RailClaimsAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB659F000000000000000000 /* 659_RailClaimsAnalytics.swift */; };
+		EB660B000000000000000000 /* 660_RailClaimReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB660F000000000000000000 /* 660_RailClaimReport.swift */; };
+		EB661B000000000000000000 /* 661_RailDemurrageChargeGeneration.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB661F000000000000000000 /* 661_RailDemurrageChargeGeneration.swift */; };
+		EB662B000000000000000000 /* 662_RailDemurrageChargeApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB662F000000000000000000 /* 662_RailDemurrageChargeApproval.swift */; };
+		EB663B000000000000000000 /* 663_RailGateCheckIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB663F000000000000000000 /* 663_RailGateCheckIn.swift */; };
+		EB664B000000000000000000 /* 664_RailTrailerDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB664F000000000000000000 /* 664_RailTrailerDetail.swift */; };
+		EB665B000000000000000000 /* 665_RailYardSlotInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB665F000000000000000000 /* 665_RailYardSlotInventory.swift */; };
+		EB666B000000000000000000 /* 666_RailIntermodalBooking.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB666F000000000000000000 /* 666_RailIntermodalBooking.swift */; };
 		R6692026060200000011A1 /* 669_RailOverchargeRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = R6692026060200000012A1 /* 669_RailOverchargeRecovery.swift */; };
 		R6702026060200000011A1 /* 670_RailShortageClaims.swift in Sources */ = {isa = PBXBuildFile; fileRef = R6702026060200000012A1 /* 670_RailShortageClaims.swift */; };
 		R6712026060200000011A1 /* 671_RailClaimTemplates.swift in Sources */ = {isa = PBXBuildFile; fileRef = R6712026060200000012A1 /* 671_RailClaimTemplates.swift */; };
@@ -2154,6 +2162,14 @@
 		QRIV2026051800000012A1 /* QRImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = QRImageView.swift; path = EusoTrip/Views/Components/QRImageView.swift; sourceTree = SOURCE_ROOT; };
 		R6392026060200000012A1 /* 639_RailYardDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 639_RailYardDirectory.swift; path = EusoTrip/Views/Rail/639_RailYardDirectory.swift; sourceTree = SOURCE_ROOT; };
 		R6562026060200000012A1 /* 656_RailClaimPayments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 656_RailClaimPayments.swift; path = EusoTrip/Views/Rail/656_RailClaimPayments.swift; sourceTree = SOURCE_ROOT; };
+		EB659F000000000000000000 /* 659_RailClaimsAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 659_RailClaimsAnalytics.swift; path = EusoTrip/Views/Rail/659_RailClaimsAnalytics.swift; sourceTree = SOURCE_ROOT; };
+		EB660F000000000000000000 /* 660_RailClaimReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 660_RailClaimReport.swift; path = EusoTrip/Views/Rail/660_RailClaimReport.swift; sourceTree = SOURCE_ROOT; };
+		EB661F000000000000000000 /* 661_RailDemurrageChargeGeneration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 661_RailDemurrageChargeGeneration.swift; path = EusoTrip/Views/Rail/661_RailDemurrageChargeGeneration.swift; sourceTree = SOURCE_ROOT; };
+		EB662F000000000000000000 /* 662_RailDemurrageChargeApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 662_RailDemurrageChargeApproval.swift; path = EusoTrip/Views/Rail/662_RailDemurrageChargeApproval.swift; sourceTree = SOURCE_ROOT; };
+		EB663F000000000000000000 /* 663_RailGateCheckIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 663_RailGateCheckIn.swift; path = EusoTrip/Views/Rail/663_RailGateCheckIn.swift; sourceTree = SOURCE_ROOT; };
+		EB664F000000000000000000 /* 664_RailTrailerDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 664_RailTrailerDetail.swift; path = EusoTrip/Views/Rail/664_RailTrailerDetail.swift; sourceTree = SOURCE_ROOT; };
+		EB665F000000000000000000 /* 665_RailYardSlotInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 665_RailYardSlotInventory.swift; path = EusoTrip/Views/Rail/665_RailYardSlotInventory.swift; sourceTree = SOURCE_ROOT; };
+		EB666F000000000000000000 /* 666_RailIntermodalBooking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 666_RailIntermodalBooking.swift; path = EusoTrip/Views/Rail/666_RailIntermodalBooking.swift; sourceTree = SOURCE_ROOT; };
 		R6692026060200000012A1 /* 669_RailOverchargeRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 669_RailOverchargeRecovery.swift; path = EusoTrip/Views/Rail/669_RailOverchargeRecovery.swift; sourceTree = SOURCE_ROOT; };
 		R6702026060200000012A1 /* 670_RailShortageClaims.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 670_RailShortageClaims.swift; path = EusoTrip/Views/Rail/670_RailShortageClaims.swift; sourceTree = SOURCE_ROOT; };
 		R6712026060200000012A1 /* 671_RailClaimTemplates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 671_RailClaimTemplates.swift; path = EusoTrip/Views/Rail/671_RailClaimTemplates.swift; sourceTree = SOURCE_ROOT; };
@@ -3213,6 +3229,14 @@
 				R6702026060200000012A1 /* 670_RailShortageClaims.swift */,
 				R6692026060200000012A1 /* 669_RailOverchargeRecovery.swift */,
 				R6562026060200000012A1 /* 656_RailClaimPayments.swift */,
+				EB659F000000000000000000 /* 659_RailClaimsAnalytics.swift */,
+				EB660F000000000000000000 /* 660_RailClaimReport.swift */,
+				EB661F000000000000000000 /* 661_RailDemurrageChargeGeneration.swift */,
+				EB662F000000000000000000 /* 662_RailDemurrageChargeApproval.swift */,
+				EB663F000000000000000000 /* 663_RailGateCheckIn.swift */,
+				EB664F000000000000000000 /* 664_RailTrailerDetail.swift */,
+				EB665F000000000000000000 /* 665_RailYardSlotInventory.swift */,
+				EB666F000000000000000000 /* 666_RailIntermodalBooking.swift */,
 				V8162026060200000012A1 /* 816_VesselTopShippers.swift */,
 				V7822026060200000012A1 /* 782_VesselDwellAnalysis.swift */,
 				V7702026060200000012A1 /* 770_VesselETAPrediction.swift */,
@@ -4138,6 +4162,14 @@
 				R6702026060200000011A1 /* 670_RailShortageClaims.swift in Sources */,
 				R6692026060200000011A1 /* 669_RailOverchargeRecovery.swift in Sources */,
 				R6562026060200000011A1 /* 656_RailClaimPayments.swift in Sources */,
+				EB659B000000000000000000 /* 659_RailClaimsAnalytics.swift in Sources */,
+				EB660B000000000000000000 /* 660_RailClaimReport.swift in Sources */,
+				EB661B000000000000000000 /* 661_RailDemurrageChargeGeneration.swift in Sources */,
+				EB662B000000000000000000 /* 662_RailDemurrageChargeApproval.swift in Sources */,
+				EB663B000000000000000000 /* 663_RailGateCheckIn.swift in Sources */,
+				EB664B000000000000000000 /* 664_RailTrailerDetail.swift in Sources */,
+				EB665B000000000000000000 /* 665_RailYardSlotInventory.swift in Sources */,
+				EB666B000000000000000000 /* 666_RailIntermodalBooking.swift in Sources */,
 				V8162026060200000011A1 /* 816_VesselTopShippers.swift in Sources */,
 				V7822026060200000011A1 /* 782_VesselDwellAnalysis.swift in Sources */,
 				V7702026060200000011A1 /* 770_VesselETAPrediction.swift in Sources */,

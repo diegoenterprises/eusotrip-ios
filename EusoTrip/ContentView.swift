@@ -2290,6 +2290,15 @@ enum ScreenRegistry {
             .init(id: "Rail628", title: "Rail Engineer · Yard Map",             role: .railEngineer) { p in AnyView(RailYardMapScreen(theme: p)) },
             .init(id: "Rail629", title: "Rail Engineer · Trailer Pool Detail",  role: .railEngineer) { p in AnyView(RailTrailerPoolDetailScreen(theme: p)) },
             .init(id: "Rail630", title: "Rail Engineer · Cross-Dock Ops",       role: .railEngineer) { p in AnyView(RailCrossDockOperationsScreen(theme: p)) },
+            // Phase — Rail claims-analytics / demurrage-charge / gate / equipment / yard / intermodal ports (659–666).
+            .init(id: "Rail659", title: "Rail Engineer · Claims Analytics",        role: .railEngineer) { p in AnyView(RailClaimsAnalyticsScreen(theme: p)) },
+            .init(id: "Rail660", title: "Rail Engineer · Claim Report",            role: .railEngineer) { p in AnyView(RailClaimReportScreen(theme: p)) },
+            .init(id: "Rail661", title: "Rail Engineer · Demurrage Charge Gen",    role: .railEngineer) { p in AnyView(RailDemurrageChargeGenerationScreen(theme: p)) },
+            .init(id: "Rail662", title: "Rail Engineer · Demurrage Charge Approval",role: .railEngineer) { p in AnyView(RailDemurrageChargeApprovalScreen(theme: p)) },
+            .init(id: "Rail663", title: "Rail Engineer · Gate Check-In",           role: .railEngineer) { p in AnyView(RailGateCheckInScreen(theme: p)) },
+            .init(id: "Rail664", title: "Rail Engineer · Trailer Detail",          role: .railEngineer) { p in AnyView(RailTrailerDetailScreen(theme: p)) },
+            .init(id: "Rail665", title: "Rail Engineer · Yard Slot Inventory",     role: .railEngineer) { p in AnyView(RailYardSlotInventoryScreen(theme: p)) },
+            .init(id: "Rail666", title: "Rail Engineer · Intermodal Booking",      role: .railEngineer) { p in AnyView(RailIntermodalBookingScreen(theme: p)) },
         ])
 
         // Vessel Operator surface (Vesl650–652 tab roots; Vesl659 drill-in leaf).
