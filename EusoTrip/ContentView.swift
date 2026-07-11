@@ -2311,6 +2311,16 @@ enum ScreenRegistry {
             .init(id: "Rail628", title: "Rail Engineer · Yard Map",             role: .railEngineer) { p in AnyView(RailYardMapScreen(theme: p)) },
             .init(id: "Rail629", title: "Rail Engineer · Trailer Pool Detail",  role: .railEngineer) { p in AnyView(RailTrailerPoolDetailScreen(theme: p)) },
             .init(id: "Rail630", title: "Rail Engineer · Cross-Dock Ops",       role: .railEngineer) { p in AnyView(RailCrossDockOperationsScreen(theme: p)) },
+            // Rail tender/order-capture + equipment ports (682–689) — shipper-side RFP/failover/history/
+            // waybill/STCC/rate-source moat band + carrier-side consist board + UMLER equipment spec-sheet.
+            .init(id: "Rail682", title: "Rail Shipper · RFP Multi-Carrier",     role: .shipper)      { p in AnyView(RailRFPMultiCarrierScreen(theme: p)) },
+            .init(id: "Rail683", title: "Rail Shipper · Tender Failover Queue",  role: .shipper)      { p in AnyView(RailTenderFailoverQueueScreen(theme: p)) },
+            .init(id: "Rail684", title: "Rail Shipper · Tender History",         role: .shipper)      { p in AnyView(RailTenderHistoryScreen(theme: p)) },
+            .init(id: "Rail685", title: "Rail Shipper · EDI 417 Waybill Receipt",role: .shipper)      { p in AnyView(RailEDI417WaybillReceiptScreen(theme: p)) },
+            .init(id: "Rail686", title: "Rail Shipper · STCC Validation",        role: .shipper)      { p in AnyView(RailSTCCCommodityValidationScreen(theme: p)) },
+            .init(id: "Rail687", title: "Rail Shipper · Rate-Card vs Spot",      role: .shipper)      { p in AnyView(RailRateCardVsSpotScreen(theme: p)) },
+            .init(id: "Rail688", title: "Rail Engineer · Consist Board",         role: .railEngineer) { p in AnyView(RailConsistBoardAssemblyScreen(theme: p)) },
+            .init(id: "Rail689", title: "Rail Engineer · Equipment Spec",        role: .railEngineer) { p in AnyView(RailEquipmentSpecSheetScreen(theme: p)) },
             // Phase — Rail claims-analytics / demurrage-charge / gate / equipment / yard / intermodal ports (659–666).
             .init(id: "Rail659", title: "Rail Engineer · Claims Analytics",        role: .railEngineer) { p in AnyView(RailClaimsAnalyticsScreen(theme: p)) },
             .init(id: "Rail660", title: "Rail Engineer · Claim Report",            role: .railEngineer) { p in AnyView(RailClaimReportScreen(theme: p)) },
