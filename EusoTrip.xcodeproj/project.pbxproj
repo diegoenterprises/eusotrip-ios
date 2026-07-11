@@ -1100,6 +1100,15 @@
 		EF6810711000000000000001 /* 681_RailInterchangeDwellSLA.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6810711000000000000002 /* 681_RailInterchangeDwellSLA.swift */; };
 		RL7052026070300000000001 /* 705_RailScacMarkCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = RL7052026070300000000002 /* 705_RailScacMarkCheck.swift */; };
 		RL7062026070300000000001 /* 706_RailTagSwapScan.swift in Sources */ = {isa = PBXBuildFile; fileRef = RL7062026070300000000002 /* 706_RailTagSwapScan.swift */; };
+		EN7051105690000000000001 /* 690_RailAEITagTrail.swift in Sources */ = {isa = PBXBuildFile; fileRef = EN7051105690000000000002 /* 690_RailAEITagTrail.swift */; };
+		EN7051105691000000000001 /* 691_RailLiveTelematics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EN7051105691000000000002 /* 691_RailLiveTelematics.swift */; };
+		EN7051105692000000000001 /* 692_RailClearanceCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = EN7051105692000000000002 /* 692_RailClearanceCheck.swift */; };
+		EN7051105693000000000001 /* 693_RailSlowOrders.swift in Sources */ = {isa = PBXBuildFile; fileRef = EN7051105693000000000002 /* 693_RailSlowOrders.swift */; };
+		EN7051105695000000000001 /* 695_RailAtInterchangeNotification.swift in Sources */ = {isa = PBXBuildFile; fileRef = EN7051105695000000000002 /* 695_RailAtInterchangeNotification.swift */; };
+		EN7051105696000000000001 /* 696_RailJunctionDetentionBilling.swift in Sources */ = {isa = PBXBuildFile; fileRef = EN7051105696000000000002 /* 696_RailJunctionDetentionBilling.swift */; };
+		EN7051105698000000000001 /* 698_RailInterlineSettlementReconciliation.swift in Sources */ = {isa = PBXBuildFile; fileRef = EN7051105698000000000002 /* 698_RailInterlineSettlementReconciliation.swift */; };
+		EN7051105707000000000001 /* 707_RailVerifiedReceiverGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = EN7051105707000000000002 /* 707_RailVerifiedReceiverGate.swift */; };
+		EN7051105708000000000001 /* 708_RailSealHashCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = EN7051105708000000000002 /* 708_RailSealHashCheck.swift */; };
 		RLLN2026051700000011A1 /* RailLane.swift in Sources */ = {isa = PBXBuildFile; fileRef = RLLN2026051700000012A1 /* RailLane.swift */; };
 		RRM20260804609BUILD01A1 /* 609_RailReeferMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = RRM20260804609FREF001A1 /* 609_RailReeferMonitor.swift */; };
 		RS082026060300000011A1 /* 008_RailShipperTenderWorkflow.swift in Sources */ = {isa = PBXBuildFile; fileRef = RS082026060300000012A1 /* 008_RailShipperTenderWorkflow.swift */; };
@@ -2350,6 +2359,15 @@
 		EF6810711000000000000002 /* 681_RailInterchangeDwellSLA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 681_RailInterchangeDwellSLA.swift; sourceTree = "<group>"; };
 		RL7052026070300000000002 /* 705_RailScacMarkCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 705_RailScacMarkCheck.swift; sourceTree = "<group>"; };
 		RL7062026070300000000002 /* 706_RailTagSwapScan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 706_RailTagSwapScan.swift; sourceTree = "<group>"; };
+		EN7051105690000000000002 /* 690_RailAEITagTrail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 690_RailAEITagTrail.swift; sourceTree = "<group>"; };
+		EN7051105691000000000002 /* 691_RailLiveTelematics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 691_RailLiveTelematics.swift; sourceTree = "<group>"; };
+		EN7051105692000000000002 /* 692_RailClearanceCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 692_RailClearanceCheck.swift; sourceTree = "<group>"; };
+		EN7051105693000000000002 /* 693_RailSlowOrders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 693_RailSlowOrders.swift; sourceTree = "<group>"; };
+		EN7051105695000000000002 /* 695_RailAtInterchangeNotification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 695_RailAtInterchangeNotification.swift; sourceTree = "<group>"; };
+		EN7051105696000000000002 /* 696_RailJunctionDetentionBilling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 696_RailJunctionDetentionBilling.swift; sourceTree = "<group>"; };
+		EN7051105698000000000002 /* 698_RailInterlineSettlementReconciliation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 698_RailInterlineSettlementReconciliation.swift; sourceTree = "<group>"; };
+		EN7051105707000000000002 /* 707_RailVerifiedReceiverGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 707_RailVerifiedReceiverGate.swift; sourceTree = "<group>"; };
+		EN7051105708000000000002 /* 708_RailSealHashCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 708_RailSealHashCheck.swift; sourceTree = "<group>"; };
 		RLLN2026051700000012A1 /* RailLane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RailLane.swift; path = EusoTrip/Models/RailLane.swift; sourceTree = SOURCE_ROOT; };
 		RRM20260804609FREF001A1 /* 609_RailReeferMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 609_RailReeferMonitor.swift; path = EusoTrip/Views/Rail/609_RailReeferMonitor.swift; sourceTree = SOURCE_ROOT; };
 		RS082026060300000012A1 /* 008_RailShipperTenderWorkflow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 008_RailShipperTenderWorkflow.swift; path = EusoTrip/Views/Rail/008_RailShipperTenderWorkflow.swift; sourceTree = SOURCE_ROOT; };
@@ -3677,6 +3695,15 @@
 				EF6810711000000000000002 /* 681_RailInterchangeDwellSLA.swift */,
 				RL7052026070300000000002 /* 705_RailScacMarkCheck.swift */,
 				RL7062026070300000000002 /* 706_RailTagSwapScan.swift */,
+				EN7051105690000000000002 /* 690_RailAEITagTrail.swift */,
+				EN7051105691000000000002 /* 691_RailLiveTelematics.swift */,
+				EN7051105692000000000002 /* 692_RailClearanceCheck.swift */,
+				EN7051105693000000000002 /* 693_RailSlowOrders.swift */,
+				EN7051105695000000000002 /* 695_RailAtInterchangeNotification.swift */,
+				EN7051105696000000000002 /* 696_RailJunctionDetentionBilling.swift */,
+				EN7051105698000000000002 /* 698_RailInterlineSettlementReconciliation.swift */,
+				EN7051105707000000000002 /* 707_RailVerifiedReceiverGate.swift */,
+				EN7051105708000000000002 /* 708_RailSealHashCheck.swift */,
 				FE5C0E070000000000000000 /* 002_RailShipmentDetail.swift */,
 				FE5C0E080000000000000000 /* 570_RailDemurrageDispute.swift */,
 				FBA000000000000000000000 /* 559_RailYardOperations.swift */,
@@ -4439,6 +4466,15 @@
 				EF6810711000000000000001 /* 681_RailInterchangeDwellSLA.swift in Sources */,
 				RL7052026070300000000001 /* 705_RailScacMarkCheck.swift in Sources */,
 				RL7062026070300000000001 /* 706_RailTagSwapScan.swift in Sources */,
+				EN7051105690000000000001 /* 690_RailAEITagTrail.swift in Sources */,
+				EN7051105691000000000001 /* 691_RailLiveTelematics.swift in Sources */,
+				EN7051105692000000000001 /* 692_RailClearanceCheck.swift in Sources */,
+				EN7051105693000000000001 /* 693_RailSlowOrders.swift in Sources */,
+				EN7051105695000000000001 /* 695_RailAtInterchangeNotification.swift in Sources */,
+				EN7051105696000000000001 /* 696_RailJunctionDetentionBilling.swift in Sources */,
+				EN7051105698000000000001 /* 698_RailInterlineSettlementReconciliation.swift in Sources */,
+				EN7051105707000000000001 /* 707_RailVerifiedReceiverGate.swift in Sources */,
+				EN7051105708000000000001 /* 708_RailSealHashCheck.swift in Sources */,
 				V7082026060200000011A1 /* 708_VesselShipmentCO2.swift in Sources */,
 				V6702026060200000011A1 /* 670_VesselBunkerPrices.swift in Sources */,
 				V8122026060200000011A1 /* 812_VesselClaimTemplates.swift in Sources */,
