@@ -888,6 +888,14 @@
 		FDAA44B12FFC92BB008BFF57 /* VesselLandfallComplianceRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDAA44B02FFC92BB008BFF57 /* VesselLandfallComplianceRouter.swift */; };
 		FDCA0D262F96F83F0057AC19 /* EusoTrip Pulse Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = FDCA0D062F96F83E0057AC19 /* EusoTrip Pulse Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FDE000000000000000000000 /* 598_RailEquipmentSpecs.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF000000000000000000000 /* 598_RailEquipmentSpecs.swift */; };
+		EK682B000000000000000682 /* 682_RailRFPMultiCarrierSolicitation.swift in Sources */ = {isa = PBXBuildFile; fileRef = EK682A000000000000000682 /* 682_RailRFPMultiCarrierSolicitation.swift */; };
+		EK683B000000000000000683 /* 683_RailTenderFailoverQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = EK683A000000000000000683 /* 683_RailTenderFailoverQueue.swift */; };
+		EK684B000000000000000684 /* 684_RailTenderHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = EK684A000000000000000684 /* 684_RailTenderHistory.swift */; };
+		EK685B000000000000000685 /* 685_RailEDI417WaybillReceipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = EK685A000000000000000685 /* 685_RailEDI417WaybillReceipt.swift */; };
+		EK686B000000000000000686 /* 686_RailSTCCCommodityValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = EK686A000000000000000686 /* 686_RailSTCCCommodityValidation.swift */; };
+		EK687B000000000000000687 /* 687_RailRateCardVsSpot.swift in Sources */ = {isa = PBXBuildFile; fileRef = EK687A000000000000000687 /* 687_RailRateCardVsSpot.swift */; };
+		EK688B000000000000000688 /* 688_RailConsistBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = EK688A000000000000000688 /* 688_RailConsistBoard.swift */; };
+		EK689B000000000000000689 /* 689_RailEquipmentSpec.swift in Sources */ = {isa = PBXBuildFile; fileRef = EK689A000000000000000689 /* 689_RailEquipmentSpec.swift */; };
 		FDE010000000000000000000 /* 599_RailFreightBillAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDF010000000000000000000 /* 599_RailFreightBillAudit.swift */; };
 		FBCC01000000000000000000 /* 003_RailLiveTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBDD01000000000000000000 /* 003_RailLiveTracking.swift */; };
 		FBCC02000000000000000000 /* 004_RailDemurrageDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = FBDD02000000000000000000 /* 004_RailDemurrageDetail.swift */; };
@@ -2105,6 +2113,14 @@
 		FDCA0D122F96F83F0057AC19 /* EusoTrip Pulse Watch AppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "EusoTrip Pulse Watch AppTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FDCA0D1C2F96F83F0057AC19 /* EusoTrip Pulse Watch AppUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "EusoTrip Pulse Watch AppUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		FDF000000000000000000000 /* 598_RailEquipmentSpecs.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 598_RailEquipmentSpecs.swift; sourceTree = "<group>"; };
+		EK682A000000000000000682 /* 682_RailRFPMultiCarrierSolicitation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 682_RailRFPMultiCarrierSolicitation.swift; sourceTree = "<group>"; };
+		EK683A000000000000000683 /* 683_RailTenderFailoverQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 683_RailTenderFailoverQueue.swift; sourceTree = "<group>"; };
+		EK684A000000000000000684 /* 684_RailTenderHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 684_RailTenderHistory.swift; sourceTree = "<group>"; };
+		EK685A000000000000000685 /* 685_RailEDI417WaybillReceipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 685_RailEDI417WaybillReceipt.swift; sourceTree = "<group>"; };
+		EK686A000000000000000686 /* 686_RailSTCCCommodityValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 686_RailSTCCCommodityValidation.swift; sourceTree = "<group>"; };
+		EK687A000000000000000687 /* 687_RailRateCardVsSpot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 687_RailRateCardVsSpot.swift; sourceTree = "<group>"; };
+		EK688A000000000000000688 /* 688_RailConsistBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 688_RailConsistBoard.swift; sourceTree = "<group>"; };
+		EK689A000000000000000689 /* 689_RailEquipmentSpec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 689_RailEquipmentSpec.swift; sourceTree = "<group>"; };
 		FDF010000000000000000000 /* 599_RailFreightBillAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 599_RailFreightBillAudit.swift; sourceTree = "<group>"; };
 		FBDD01000000000000000000 /* 003_RailLiveTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 003_RailLiveTracking.swift; sourceTree = "<group>"; };
 		FBDD02000000000000000000 /* 004_RailDemurrageDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 004_RailDemurrageDetail.swift; sourceTree = "<group>"; };
@@ -3629,6 +3645,14 @@
 				ECH060000000000000000000 /* 654_RailClaimWorkflow.swift */,
 				ECH070000000000000000000 /* 655_RailLossPrevention.swift */,
 				FDF000000000000000000000 /* 598_RailEquipmentSpecs.swift */,
+				EK682A000000000000000682 /* 682_RailRFPMultiCarrierSolicitation.swift */,
+				EK683A000000000000000683 /* 683_RailTenderFailoverQueue.swift */,
+				EK684A000000000000000684 /* 684_RailTenderHistory.swift */,
+				EK685A000000000000000685 /* 685_RailEDI417WaybillReceipt.swift */,
+				EK686A000000000000000686 /* 686_RailSTCCCommodityValidation.swift */,
+				EK687A000000000000000687 /* 687_RailRateCardVsSpot.swift */,
+				EK688A000000000000000688 /* 688_RailConsistBoard.swift */,
+				EK689A000000000000000689 /* 689_RailEquipmentSpec.swift */,
 				FDF010000000000000000000 /* 599_RailFreightBillAudit.swift */,
 				FBDD01000000000000000000 /* 003_RailLiveTracking.swift */,
 				FBDD02000000000000000000 /* 004_RailDemurrageDetail.swift */,
@@ -4802,6 +4826,14 @@
 				ECG060000000000000000000 /* 654_RailClaimWorkflow.swift in Sources */,
 				ECG070000000000000000000 /* 655_RailLossPrevention.swift in Sources */,
 				FDE000000000000000000000 /* 598_RailEquipmentSpecs.swift in Sources */,
+				EK682B000000000000000682 /* 682_RailRFPMultiCarrierSolicitation.swift in Sources */,
+				EK683B000000000000000683 /* 683_RailTenderFailoverQueue.swift in Sources */,
+				EK684B000000000000000684 /* 684_RailTenderHistory.swift in Sources */,
+				EK685B000000000000000685 /* 685_RailEDI417WaybillReceipt.swift in Sources */,
+				EK686B000000000000000686 /* 686_RailSTCCCommodityValidation.swift in Sources */,
+				EK687B000000000000000687 /* 687_RailRateCardVsSpot.swift in Sources */,
+				EK688B000000000000000688 /* 688_RailConsistBoard.swift in Sources */,
+				EK689B000000000000000689 /* 689_RailEquipmentSpec.swift in Sources */,
 				FDE010000000000000000000 /* 599_RailFreightBillAudit.swift in Sources */,
 				FBCC01000000000000000000 /* 003_RailLiveTracking.swift in Sources */,
 				FBCC02000000000000000000 /* 004_RailDemurrageDetail.swift in Sources */,
