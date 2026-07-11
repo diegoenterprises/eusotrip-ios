@@ -2502,6 +2502,16 @@ enum ScreenRegistry {
             .init(id: "Vesl750", title: "Vessel · Cross-Border Ports",        role: .vesselOperator) { p in AnyView(VesselCrossBorderPortsScreen(theme: p)) },
             .init(id: "Vesl751", title: "Vessel · ISF Requirements",          role: .vesselOperator) { p in AnyView(VesselISFRequirementsScreen(theme: p)) },
             .init(id: "Vesl752", title: "Vessel · Container Move Entry",      role: .vesselOperator) { p in AnyView(VesselContainerMoveEntryScreen(theme: p)) },
+            // 2026-07-11 — port-vessel-7: eight Vessel Operator analytics + booking screens
+            // (verbatim native ports of the canonical Dark-SVGs 753–761).
+            .init(id: "Vesl753", title: "Vessel · Transit Time Comparison",   role: .vesselOperator) { p in AnyView(VesselTransitTimeComparisonScreen(theme: p)) },
+            .init(id: "Vesl754", title: "Vessel · Cost by Mode",              role: .vesselOperator) { p in AnyView(VesselCostByModeScreen(theme: p)) },
+            .init(id: "Vesl755", title: "Vessel · Multimodal Analytics",      role: .vesselOperator) { p in AnyView(VesselMultimodalAnalyticsScreen(theme: p)) },
+            .init(id: "Vesl756", title: "Vessel · Transshipment Transfers",   role: .vesselOperator) { p in AnyView(VesselTransshipmentTransfersScreen(theme: p)) },
+            .init(id: "Vesl758", title: "Vessel · Accessorial Analytics",     role: .vesselOperator) { p in AnyView(VesselAccessorialAnalyticsScreen(theme: p)) },
+            .init(id: "Vesl759", title: "Vessel · Trusted Trader Fast-Lane",  role: .vesselOperator) { p in AnyView(VesselTrustedTraderFastLaneScreen(theme: p)) },
+            .init(id: "Vesl760", title: "Vessel · Agentic Booking",           role: .vesselOperator) { p in AnyView(VesselAgenticBookingScreen(theme: p)) },
+            .init(id: "Vesl761", title: "Vessel · Rate Validity Lock",        role: .vesselOperator) { p in AnyView(VesselRateValidityLockScreen(theme: p)) },
         ])
 
         return list
