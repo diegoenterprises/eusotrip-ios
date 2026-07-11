@@ -364,6 +364,9 @@
 		CWL020260521000001 /* 319_CatalystWallet.swift in Sources */ = {isa = PBXBuildFile; fileRef = CWL020260521000002 /* 319_CatalystWallet.swift */; };
 		CYH020260521000001 /* CV327_CatalystQuarterlyHistoryPair.swift in Sources */ = {isa = PBXBuildFile; fileRef = CYH020260521000002 /* CV327_CatalystQuarterlyHistoryPair.swift */; };
 		D114000000000000000007B1 /* 114_DriverDvirCompositeS13S14AckedPickupRoll.swift in Sources */ = {isa = PBXBuildFile; fileRef = D114000000000000000007B2 /* 114_DriverDvirCompositeS13S14AckedPickupRoll.swift */; };
+		FC0150000000000000B0A150 /* 150_DriverPretripDVIRM05.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0150000000000000B0A151 /* 150_DriverPretripDVIRM05.swift */; };
+		FC0167000000000000B0A167 /* 167_DriverReeferTemp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0167000000000000B0A168 /* 167_DriverReeferTemp.swift */; };
+		FC0168000000000000B0A169 /* 168_DriverTankerMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0168000000000000B0A170 /* 168_DriverTankerMonitor.swift */; };
 		D145000000000000000007C1 /* 145_DriverPickupDepartedCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D145000000000000000007C2 /* 145_DriverPickupDepartedCelM04.swift */; };
 		D146000000000000000007D1 /* 146_DriverInTransitCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D146000000000000000007D2 /* 146_DriverInTransitCelM04.swift */; };
 		D147000000000000000007E1 /* 147_DriverAtDeliveryArrivalCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D147000000000000000007E2 /* 147_DriverAtDeliveryArrivalCelM04.swift */; };
@@ -1434,6 +1437,9 @@
 		CWL020260521000002 /* 319_CatalystWallet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 319_CatalystWallet.swift; path = EusoTrip/Views/Catalyst/319_CatalystWallet.swift; sourceTree = SOURCE_ROOT; };
 		CYH020260521000002 /* CV327_CatalystQuarterlyHistoryPair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CV327_CatalystQuarterlyHistoryPair.swift; path = EusoTrip/Views/Catalyst/CV327_CatalystQuarterlyHistoryPair.swift; sourceTree = SOURCE_ROOT; };
 		D114000000000000000007B2 /* 114_DriverDvirCompositeS13S14AckedPickupRoll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 114_DriverDvirCompositeS13S14AckedPickupRoll.swift; sourceTree = "<group>"; };
+		FC0150000000000000B0A151 /* 150_DriverPretripDVIRM05.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 150_DriverPretripDVIRM05.swift; sourceTree = "<group>"; };
+		FC0167000000000000B0A168 /* 167_DriverReeferTemp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 167_DriverReeferTemp.swift; sourceTree = "<group>"; };
+		FC0168000000000000B0A170 /* 168_DriverTankerMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 168_DriverTankerMonitor.swift; sourceTree = "<group>"; };
 		D145000000000000000007C2 /* 145_DriverPickupDepartedCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 145_DriverPickupDepartedCelM04.swift; sourceTree = "<group>"; };
 		D146000000000000000007D2 /* 146_DriverInTransitCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 146_DriverInTransitCelM04.swift; sourceTree = "<group>"; };
 		D147000000000000000007E2 /* 147_DriverAtDeliveryArrivalCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 147_DriverAtDeliveryArrivalCelM04.swift; sourceTree = "<group>"; };
@@ -2384,6 +2390,9 @@
 				A54D0FA1CE1A4B7E0000D002 /* 054_HaulPaySettlement.swift */,
 				D149000000000000000004A2 /* 149_DriverClosedPaidReceiptCelM04.swift */,
 				D114000000000000000007B2 /* 114_DriverDvirCompositeS13S14AckedPickupRoll.swift */,
+				FC0150000000000000B0A151 /* 150_DriverPretripDVIRM05.swift */,
+				FC0167000000000000B0A168 /* 167_DriverReeferTemp.swift */,
+				FC0168000000000000B0A170 /* 168_DriverTankerMonitor.swift */,
 				D145000000000000000007C2 /* 145_DriverPickupDepartedCelM04.swift */,
 				D146000000000000000007D2 /* 146_DriverInTransitCelM04.swift */,
 				D147000000000000000007E2 /* 147_DriverAtDeliveryArrivalCelM04.swift */,
@@ -3799,6 +3808,9 @@
 				A54D0FA1CE1A4B7E0000D001 /* 054_HaulPaySettlement.swift in Sources */,
 				D149000000000000000004A1 /* 149_DriverClosedPaidReceiptCelM04.swift in Sources */,
 				D114000000000000000007B1 /* 114_DriverDvirCompositeS13S14AckedPickupRoll.swift in Sources */,
+				FC0150000000000000B0A150 /* 150_DriverPretripDVIRM05.swift in Sources */,
+				FC0167000000000000B0A167 /* 167_DriverReeferTemp.swift in Sources */,
+				FC0168000000000000B0A169 /* 168_DriverTankerMonitor.swift in Sources */,
 				D145000000000000000007C1 /* 145_DriverPickupDepartedCelM04.swift in Sources */,
 				D146000000000000000007D1 /* 146_DriverInTransitCelM04.swift in Sources */,
 				D147000000000000000007E1 /* 147_DriverAtDeliveryArrivalCelM04.swift in Sources */,
