@@ -2437,6 +2437,15 @@ enum ScreenRegistry {
             .init(id: "Vesl718", title: "Vessel Operator · Cargo Release",          role: .vesselOperator) { p in AnyView(VesselCargoReleaseScreen(theme: p)) },
             .init(id: "Vesl719", title: "Vessel Operator · DCSA eBL",               role: .vesselOperator) { p in AnyView(VesselEBLScreen(theme: p)) },
             .init(id: "Vesl720", title: "Vessel Operator · PGA Holds",              role: .vesselOperator) { p in AnyView(VesselPGAHoldsScreen(theme: p)) },
+            // Port wave — Vessel operator NEW screens 721/723/725/726/727/728/729/733 (native SwiftUI ports).
+            .init(id: "Vesl721", title: "Vessel Operator · EU ETS & FuelEU",        role: .vesselOperator) { p in AnyView(VesselEUETSFuelEUScreen(theme: p)) },
+            .init(id: "Vesl723", title: "Vessel Operator · Allocation & MQC",        role: .vesselOperator) { p in AnyView(VesselAllocationMQCScreen(theme: p)) },
+            .init(id: "Vesl725", title: "Vessel Operator · Ocean Factoring",         role: .vesselOperator) { p in AnyView(VesselOceanFactoringScreen(theme: p)) },
+            .init(id: "Vesl726", title: "Vessel Operator · DCSA Feed Health",        role: .vesselOperator) { p in AnyView(VesselFeedHealthScreen(theme: p)) },
+            .init(id: "Vesl727", title: "Vessel Operator · MARPOL Record Book",      role: .vesselOperator) { p in AnyView(VesselMarpolRecordBookScreen(theme: p)) },
+            .init(id: "Vesl728", title: "Vessel Operator · Three-Way Match",         role: .vesselOperator) { p in AnyView(VesselThreeWayMatchScreen(theme: p)) },
+            .init(id: "Vesl729", title: "Vessel Operator · HS Dual-Use Screening",   role: .vesselOperator) { p in AnyView(VesselDualUseScreeningScreen(theme: p)) },
+            .init(id: "Vesl733", title: "Vessel Operator · Cargo Insurance",         role: .vesselOperator) { p in AnyView(VesselCargoInsuranceScreen(theme: p)) },
         ])
 
         return list
