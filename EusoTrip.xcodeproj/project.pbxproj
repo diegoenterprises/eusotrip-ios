@@ -1205,6 +1205,15 @@
 		V7722026060200000011A1 /* 772_VesselDemurrageAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7722026060200000012A1 /* 772_VesselDemurrageAnalytics.swift */; };
 		V7822026060200000011A1 /* 782_VesselDwellAnalysis.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7822026060200000012A1 /* 782_VesselDwellAnalysis.swift */; };
 		V7842026060200000011A1 /* 784_VesselDetentionTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7842026060200000012A1 /* 784_VesselDetentionTracking.swift */; };
+		ES07109999BF000000000000 /* VesselDetentionKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES07109999FR000000000000 /* VesselDetentionKit.swift */; };
+		ES07100783BF000000000000 /* 783_VesselCFSWarehouseReceipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES07100783FR000000000000 /* 783_VesselCFSWarehouseReceipt.swift */; };
+		ES07100785BF000000000000 /* 785_VesselDemurrageTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES07100785FR000000000000 /* 785_VesselDemurrageTracking.swift */; };
+		ES07100786BF000000000000 /* 786_VesselAccessorialDisputes.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES07100786FR000000000000 /* 786_VesselAccessorialDisputes.swift */; };
+		ES07100787BF000000000000 /* 787_VesselDetentionBillingBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES07100787FR000000000000 /* 787_VesselDetentionBillingBatch.swift */; };
+		ES07100788BF000000000000 /* 788_VesselAutoDetentionRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES07100788FR000000000000 /* 788_VesselAutoDetentionRules.swift */; };
+		ES07100790BF000000000000 /* 790_VesselDetentionDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES07100790FR000000000000 /* 790_VesselDetentionDashboard.swift */; };
+		ES07100791BF000000000000 /* 791_VesselActiveDetentions.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES07100791FR000000000000 /* 791_VesselActiveDetentions.swift */; };
+		ES07100793BF000000000000 /* 793_VesselDetentionByFacility.swift in Sources */ = {isa = PBXBuildFile; fileRef = ES07100793FR000000000000 /* 793_VesselDetentionByFacility.swift */; };
 		V7892026060200000011A1 /* 789_VesselCustomsStatusUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7892026060200000012A1 /* 789_VesselCustomsStatusUpdate.swift */; };
 		V7922026060200000011A1 /* 792_VesselDemurrageCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7922026060200000012A1 /* 792_VesselDemurrageCalculator.swift */; };
 		EG721V4000000000000000B1 /* 721_VesselEUETSFuelEU.swift in Sources */ = {isa = PBXBuildFile; fileRef = EG721V4000000000000000F2 /* 721_VesselEUETSFuelEU.swift */; };
@@ -2501,6 +2510,15 @@
 		V7722026060200000012A1 /* 772_VesselDemurrageAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 772_VesselDemurrageAnalytics.swift; path = EusoTrip/Views/Vessel/772_VesselDemurrageAnalytics.swift; sourceTree = SOURCE_ROOT; };
 		V7822026060200000012A1 /* 782_VesselDwellAnalysis.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 782_VesselDwellAnalysis.swift; path = EusoTrip/Views/Vessel/782_VesselDwellAnalysis.swift; sourceTree = SOURCE_ROOT; };
 		V7842026060200000012A1 /* 784_VesselDetentionTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 784_VesselDetentionTracking.swift; path = EusoTrip/Views/Vessel/784_VesselDetentionTracking.swift; sourceTree = SOURCE_ROOT; };
+		ES07109999FR000000000000 /* VesselDetentionKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VesselDetentionKit.swift; path = EusoTrip/Views/Vessel/VesselDetentionKit.swift; sourceTree = SOURCE_ROOT; };
+		ES07100783FR000000000000 /* 783_VesselCFSWarehouseReceipt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 783_VesselCFSWarehouseReceipt.swift; path = EusoTrip/Views/Vessel/783_VesselCFSWarehouseReceipt.swift; sourceTree = SOURCE_ROOT; };
+		ES07100785FR000000000000 /* 785_VesselDemurrageTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 785_VesselDemurrageTracking.swift; path = EusoTrip/Views/Vessel/785_VesselDemurrageTracking.swift; sourceTree = SOURCE_ROOT; };
+		ES07100786FR000000000000 /* 786_VesselAccessorialDisputes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 786_VesselAccessorialDisputes.swift; path = EusoTrip/Views/Vessel/786_VesselAccessorialDisputes.swift; sourceTree = SOURCE_ROOT; };
+		ES07100787FR000000000000 /* 787_VesselDetentionBillingBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 787_VesselDetentionBillingBatch.swift; path = EusoTrip/Views/Vessel/787_VesselDetentionBillingBatch.swift; sourceTree = SOURCE_ROOT; };
+		ES07100788FR000000000000 /* 788_VesselAutoDetentionRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 788_VesselAutoDetentionRules.swift; path = EusoTrip/Views/Vessel/788_VesselAutoDetentionRules.swift; sourceTree = SOURCE_ROOT; };
+		ES07100790FR000000000000 /* 790_VesselDetentionDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 790_VesselDetentionDashboard.swift; path = EusoTrip/Views/Vessel/790_VesselDetentionDashboard.swift; sourceTree = SOURCE_ROOT; };
+		ES07100791FR000000000000 /* 791_VesselActiveDetentions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 791_VesselActiveDetentions.swift; path = EusoTrip/Views/Vessel/791_VesselActiveDetentions.swift; sourceTree = SOURCE_ROOT; };
+		ES07100793FR000000000000 /* 793_VesselDetentionByFacility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 793_VesselDetentionByFacility.swift; path = EusoTrip/Views/Vessel/793_VesselDetentionByFacility.swift; sourceTree = SOURCE_ROOT; };
 		V7892026060200000012A1 /* 789_VesselCustomsStatusUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 789_VesselCustomsStatusUpdate.swift; path = EusoTrip/Views/Vessel/789_VesselCustomsStatusUpdate.swift; sourceTree = SOURCE_ROOT; };
 		V7922026060200000012A1 /* 792_VesselDemurrageCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 792_VesselDemurrageCalculator.swift; path = EusoTrip/Views/Vessel/792_VesselDemurrageCalculator.swift; sourceTree = SOURCE_ROOT; };
 		EG721V4000000000000000F2 /* 721_VesselEUETSFuelEU.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 721_VesselEUETSFuelEU.swift; path = EusoTrip/Views/Vessel/721_VesselEUETSFuelEU.swift; sourceTree = SOURCE_ROOT; };
@@ -3533,6 +3551,15 @@
 				V8112026060200000012A1 /* 811_VesselClaimsAnalytics.swift */,
 				V8102026060200000012A1 /* 810_VesselDisputeMediation.swift */,
 				V7842026060200000012A1 /* 784_VesselDetentionTracking.swift */,
+				ES07109999FR000000000000 /* VesselDetentionKit.swift */,
+				ES07100783FR000000000000 /* 783_VesselCFSWarehouseReceipt.swift */,
+				ES07100785FR000000000000 /* 785_VesselDemurrageTracking.swift */,
+				ES07100786FR000000000000 /* 786_VesselAccessorialDisputes.swift */,
+				ES07100787FR000000000000 /* 787_VesselDetentionBillingBatch.swift */,
+				ES07100788FR000000000000 /* 788_VesselAutoDetentionRules.swift */,
+				ES07100790FR000000000000 /* 790_VesselDetentionDashboard.swift */,
+				ES07100791FR000000000000 /* 791_VesselActiveDetentions.swift */,
+				ES07100793FR000000000000 /* 793_VesselDetentionByFacility.swift */,
 				V6962026060200000012A1 /* 696_VesselSettlementBatch.swift */,
 				V6742026060200000012A1 /* 674_VesselCostBreakdown.swift */,
 				V6612026060200000012A1 /* 661_VesselPortCalls.swift */,
@@ -4592,6 +4619,15 @@
 				V8112026060200000011A1 /* 811_VesselClaimsAnalytics.swift in Sources */,
 				V8102026060200000011A1 /* 810_VesselDisputeMediation.swift in Sources */,
 				V7842026060200000011A1 /* 784_VesselDetentionTracking.swift in Sources */,
+				ES07109999BF000000000000 /* VesselDetentionKit.swift in Sources */,
+				ES07100783BF000000000000 /* 783_VesselCFSWarehouseReceipt.swift in Sources */,
+				ES07100785BF000000000000 /* 785_VesselDemurrageTracking.swift in Sources */,
+				ES07100786BF000000000000 /* 786_VesselAccessorialDisputes.swift in Sources */,
+				ES07100787BF000000000000 /* 787_VesselDetentionBillingBatch.swift in Sources */,
+				ES07100788BF000000000000 /* 788_VesselAutoDetentionRules.swift in Sources */,
+				ES07100790BF000000000000 /* 790_VesselDetentionDashboard.swift in Sources */,
+				ES07100791BF000000000000 /* 791_VesselActiveDetentions.swift in Sources */,
+				ES07100793BF000000000000 /* 793_VesselDetentionByFacility.swift in Sources */,
 				V6962026060200000011A1 /* 696_VesselSettlementBatch.swift in Sources */,
 				V6742026060200000011A1 /* 674_VesselCostBreakdown.swift in Sources */,
 				V6612026060200000011A1 /* 661_VesselPortCalls.swift in Sources */,
