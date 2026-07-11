@@ -2031,6 +2031,14 @@ enum ScreenRegistry {
             .init(id: "534",     title: "Dispatch · Dock Coordination",     role: .dispatch) { p in AnyView(DispatcherDockCoordinationScreen(theme: p)) },
             .init(id: "535",     title: "Dispatch · Driver Availability",   role: .dispatch) { p in AnyView(DispatcherDriverAvailabilityScreen(theme: p)) },
             .init(id: "537",     title: "Dispatch · Opportunities Board",   role: .dispatch) { p in AnyView(DispatcherOpportunitiesBoardScreen(theme: p)) },
+            // 2026-07-11 — Dispatcher revenue-assurance band ports 538/540-545 (native, honest-wired · completes the role).
+            .init(id: "538",     title: "Dispatch · Cash & Factoring",       role: .dispatch) { p in AnyView(DispatcherCashAndFactoringScreen(theme: p)) },
+            .init(id: "540",     title: "Dispatch · Accessorial Recovery",   role: .dispatch) { p in AnyView(DispatcherAccessorialRecoveryScreen(theme: p)) },
+            .init(id: "541",     title: "Dispatch · Margin Bridge",          role: .dispatch) { p in AnyView(DispatcherMarginBridgeScreen(theme: p)) },
+            .init(id: "542",     title: "Dispatch · Credentials Watchtower", role: .dispatch) { p in AnyView(DispatcherCredentialsWatchtowerScreen(theme: p)) },
+            .init(id: "543",     title: "Dispatch · Rate Negotiation",       role: .dispatch) { p in AnyView(DispatcherRateNegotiationScreen(theme: p)) },
+            .init(id: "544",     title: "Dispatch · Demand Map",             role: .dispatch) { p in AnyView(DispatcherDemandMapScreen(theme: p)) },
+            .init(id: "545",     title: "Dispatch · Maintenance Due",        role: .dispatch) { p in AnyView(DispatcherMaintenanceDueScreen(theme: p)) },
             // 2026-05-21 — Catalyst Vehicle B-variant deep-drill octet (SVG 330B-337B).
             .init(id: "CV330B", title: "Catalyst · Vehicle Score Axis",   role: .catalyst) { p in AnyView(CatalystVehicleScoreAxisScreen(theme: p)) },
             // 2026-05-31 — Rescue land: bespoke pixel-faithful 330B scorecard axis detail (full port).

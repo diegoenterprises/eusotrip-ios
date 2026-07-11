@@ -920,6 +920,14 @@
 		C5882EC78DA9AF535DAAE129 /* 535_DispatcherDriverAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFD006144E64038DF8E9900 /* 535_DispatcherDriverAvailability.swift */; };
 		F72481F1933E47A13C9B19E9 /* 537_DispatcherOpportunitiesBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ED6D5CBCFB0F9C80EDE9FF7 /* 537_DispatcherOpportunitiesBoard.swift */; };
 		FE410000000000000000539B /* 539_DispatcherCarrierScorecard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000539F /* 539_DispatcherCarrierScorecard.swift */; };
+		EHD20000000000000000000B /* _DispatcherPortKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = EHD20000000000000000000F /* _DispatcherPortKit.swift */; };
+		EHD20000000000000000001B /* 538_DispatcherCashAndFactoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = EHD20000000000000000001F /* 538_DispatcherCashAndFactoring.swift */; };
+		EHD20000000000000000002B /* 540_DispatcherAccessorialRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = EHD20000000000000000002F /* 540_DispatcherAccessorialRecovery.swift */; };
+		EHD20000000000000000003B /* 541_DispatcherMarginBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = EHD20000000000000000003F /* 541_DispatcherMarginBridge.swift */; };
+		EHD20000000000000000004B /* 542_DispatcherCredentialsWatchtower.swift in Sources */ = {isa = PBXBuildFile; fileRef = EHD20000000000000000004F /* 542_DispatcherCredentialsWatchtower.swift */; };
+		EHD20000000000000000005B /* 543_DispatcherRateNegotiation.swift in Sources */ = {isa = PBXBuildFile; fileRef = EHD20000000000000000005F /* 543_DispatcherRateNegotiation.swift */; };
+		EHD20000000000000000006B /* 544_DispatcherDemandMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = EHD20000000000000000006F /* 544_DispatcherDemandMap.swift */; };
+		EHD20000000000000000007B /* 545_DispatcherMaintenanceDue.swift in Sources */ = {isa = PBXBuildFile; fileRef = EHD20000000000000000007F /* 545_DispatcherMaintenanceDue.swift */; };
 		FEB000000000000000000000 /* 686_VesselPortDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA000000000000000000000 /* 686_VesselPortDirectory.swift */; };
 		FEB010000000000000000000 /* 666_VesselContainerTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA010000000000000000000 /* 666_VesselContainerTimeline.swift */; };
 		FEB020000000000000000000 /* 667_VesselChainOfCustody.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA020000000000000000000 /* 667_VesselChainOfCustody.swift */; };
@@ -2121,6 +2129,14 @@
 		CAFD006144E64038DF8E9900 /* 535_DispatcherDriverAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 535_DispatcherDriverAvailability.swift; path = EusoTrip/Views/Dispatch/535_DispatcherDriverAvailability.swift; sourceTree = SOURCE_ROOT; };
 		2ED6D5CBCFB0F9C80EDE9FF7 /* 537_DispatcherOpportunitiesBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 537_DispatcherOpportunitiesBoard.swift; path = EusoTrip/Views/Dispatch/537_DispatcherOpportunitiesBoard.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000539F /* 539_DispatcherCarrierScorecard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 539_DispatcherCarrierScorecard.swift; path = EusoTrip/Views/Dispatch/539_DispatcherCarrierScorecard.swift; sourceTree = SOURCE_ROOT; };
+		EHD20000000000000000000F /* _DispatcherPortKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = _DispatcherPortKit.swift; path = EusoTrip/Views/Dispatch/_DispatcherPortKit.swift; sourceTree = SOURCE_ROOT; };
+		EHD20000000000000000001F /* 538_DispatcherCashAndFactoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 538_DispatcherCashAndFactoring.swift; path = EusoTrip/Views/Dispatch/538_DispatcherCashAndFactoring.swift; sourceTree = SOURCE_ROOT; };
+		EHD20000000000000000002F /* 540_DispatcherAccessorialRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 540_DispatcherAccessorialRecovery.swift; path = EusoTrip/Views/Dispatch/540_DispatcherAccessorialRecovery.swift; sourceTree = SOURCE_ROOT; };
+		EHD20000000000000000003F /* 541_DispatcherMarginBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 541_DispatcherMarginBridge.swift; path = EusoTrip/Views/Dispatch/541_DispatcherMarginBridge.swift; sourceTree = SOURCE_ROOT; };
+		EHD20000000000000000004F /* 542_DispatcherCredentialsWatchtower.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 542_DispatcherCredentialsWatchtower.swift; path = EusoTrip/Views/Dispatch/542_DispatcherCredentialsWatchtower.swift; sourceTree = SOURCE_ROOT; };
+		EHD20000000000000000005F /* 543_DispatcherRateNegotiation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 543_DispatcherRateNegotiation.swift; path = EusoTrip/Views/Dispatch/543_DispatcherRateNegotiation.swift; sourceTree = SOURCE_ROOT; };
+		EHD20000000000000000006F /* 544_DispatcherDemandMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 544_DispatcherDemandMap.swift; path = EusoTrip/Views/Dispatch/544_DispatcherDemandMap.swift; sourceTree = SOURCE_ROOT; };
+		EHD20000000000000000007F /* 545_DispatcherMaintenanceDue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 545_DispatcherMaintenanceDue.swift; path = EusoTrip/Views/Dispatch/545_DispatcherMaintenanceDue.swift; sourceTree = SOURCE_ROOT; };
 		FE5C0E010000000000000000 /* 327B_CatalystDriverQuarterDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 327B_CatalystDriverQuarterDetail.swift; path = EusoTrip/Views/Catalyst/327B_CatalystDriverQuarterDetail.swift; sourceTree = SOURCE_ROOT; };
 		FE5C0E020000000000000000 /* 330B_CatalystVehicleScorecardAxisDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 330B_CatalystVehicleScorecardAxisDetail.swift; path = EusoTrip/Views/Catalyst/330B_CatalystVehicleScorecardAxisDetail.swift; sourceTree = SOURCE_ROOT; };
 		FE5C0E030000000000000000 /* 400_DispatcherHome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 400_DispatcherHome.swift; path = EusoTrip/Views/Dispatch/400_DispatcherHome.swift; sourceTree = SOURCE_ROOT; };
@@ -3099,6 +3115,14 @@
 				CAFD006144E64038DF8E9900 /* 535_DispatcherDriverAvailability.swift */,
 				2ED6D5CBCFB0F9C80EDE9FF7 /* 537_DispatcherOpportunitiesBoard.swift */,
 				FE410000000000000000539F /* 539_DispatcherCarrierScorecard.swift */,
+				EHD20000000000000000000F /* _DispatcherPortKit.swift */,
+				EHD20000000000000000001F /* 538_DispatcherCashAndFactoring.swift */,
+				EHD20000000000000000002F /* 540_DispatcherAccessorialRecovery.swift */,
+				EHD20000000000000000003F /* 541_DispatcherMarginBridge.swift */,
+				EHD20000000000000000004F /* 542_DispatcherCredentialsWatchtower.swift */,
+				EHD20000000000000000005F /* 543_DispatcherRateNegotiation.swift */,
+				EHD20000000000000000006F /* 544_DispatcherDemandMap.swift */,
+				EHD20000000000000000007F /* 545_DispatcherMaintenanceDue.swift */,
 				FE5C0E010000000000000000 /* 327B_CatalystDriverQuarterDetail.swift */,
 				FE5C0E020000000000000000 /* 330B_CatalystVehicleScorecardAxisDetail.swift */,
 				FE5C0E030000000000000000 /* 400_DispatcherHome.swift */,
@@ -3997,6 +4021,14 @@
 				C5882EC78DA9AF535DAAE129 /* 535_DispatcherDriverAvailability.swift in Sources */,
 				F72481F1933E47A13C9B19E9 /* 537_DispatcherOpportunitiesBoard.swift in Sources */,
 				FE410000000000000000539B /* 539_DispatcherCarrierScorecard.swift in Sources */,
+				EHD20000000000000000000B /* _DispatcherPortKit.swift in Sources */,
+				EHD20000000000000000001B /* 538_DispatcherCashAndFactoring.swift in Sources */,
+				EHD20000000000000000002B /* 540_DispatcherAccessorialRecovery.swift in Sources */,
+				EHD20000000000000000003B /* 541_DispatcherMarginBridge.swift in Sources */,
+				EHD20000000000000000004B /* 542_DispatcherCredentialsWatchtower.swift in Sources */,
+				EHD20000000000000000005B /* 543_DispatcherRateNegotiation.swift in Sources */,
+				EHD20000000000000000006B /* 544_DispatcherDemandMap.swift in Sources */,
+				EHD20000000000000000007B /* 545_DispatcherMaintenanceDue.swift in Sources */,
 				A144AC1DCD36EDC1A2891416 /* EusoTripApp.swift in Sources */,
 				A189C8A4865293C026FBA23C /* DesignSystem.swift in Sources */,
 				A1978D143BA29D29AC175E7B /* Glass.swift in Sources */,
