@@ -497,6 +497,17 @@
 		ELB283000000000000000001 /* 283_ShipperPickupOnSiteEchoM06.swift in Sources */ = {isa = PBXBuildFile; fileRef = ELF283000000000000000001 /* 283_ShipperPickupOnSiteEchoM06.swift */; };
 		ELB284000000000000000001 /* 284_ShipperInTransitEchoM06.swift in Sources */ = {isa = PBXBuildFile; fileRef = ELF284000000000000000001 /* 284_ShipperInTransitEchoM06.swift */; };
 		ELB285000000000000000001 /* 285_ShipperAtDeliveryPODEchoM06.swift in Sources */ = {isa = PBXBuildFile; fileRef = ELF285000000000000000001 /* 285_ShipperAtDeliveryPODEchoM06.swift */; };
+		EOB286000000000000000001 /* 286_ShipperPaperworkEchoM06.swift in Sources */ = {isa = PBXBuildFile; fileRef = EOF286000000000000000001 /* 286_ShipperPaperworkEchoM06.swift */; };
+		EOB287000000000000000001 /* 287_ShipperClosedSettlementPaidEchoM06.swift in Sources */ = {isa = PBXBuildFile; fileRef = EOF287000000000000000001 /* 287_ShipperClosedSettlementPaidEchoM06.swift */; };
+		EOB288000000000000000001 /* 288_ShipperFreshMatrixPostedM07.swift in Sources */ = {isa = PBXBuildFile; fileRef = EOF288000000000000000001 /* 288_ShipperFreshMatrixPostedM07.swift */; };
+		EOB289000000000000000001 /* 289_ShipperBidReviewM07.swift in Sources */ = {isa = PBXBuildFile; fileRef = EOF289000000000000000001 /* 289_ShipperBidReviewM07.swift */; };
+		EOB290000000000000000001 /* 290_ShipperAwardAuroraM07.swift in Sources */ = {isa = PBXBuildFile; fileRef = EOF290000000000000000001 /* 290_ShipperAwardAuroraM07.swift */; };
+		EOB291000000000000000001 /* 291_ShipperPickupOnSiteEchoM07.swift in Sources */ = {isa = PBXBuildFile; fileRef = EOF291000000000000000001 /* 291_ShipperPickupOnSiteEchoM07.swift */; };
+		EOB292000000000000000001 /* 292_ShipperInTransitEchoM07.swift in Sources */ = {isa = PBXBuildFile; fileRef = EOF292000000000000000001 /* 292_ShipperInTransitEchoM07.swift */; };
+		EOB293000000000000000001 /* 293_ShipperAtDeliveryPODEchoM07.swift in Sources */ = {isa = PBXBuildFile; fileRef = EOF293000000000000000001 /* 293_ShipperAtDeliveryPODEchoM07.swift */; };
+		EOB294000000000000000001 /* 294_ShipperPaperworkEchoM07.swift in Sources */ = {isa = PBXBuildFile; fileRef = EOF294000000000000000001 /* 294_ShipperPaperworkEchoM07.swift */; };
+		EOB298B00000000000000000 /* 298B_ShipperDetentionAutoClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = EOF298B00000000000000000 /* 298B_ShipperDetentionAutoClock.swift */; };
+		EOB299000000000000000001 /* 299_ShipperTankInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = EOF299000000000000000001 /* 299_ShipperTankInventory.swift */; };
 		D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */; };
 		D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */; };
 		D2263000000000000AB0007 /* 263_PickupApproaching.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2263000000000000AC0007 /* 263_PickupApproaching.swift */; };
@@ -1711,6 +1722,17 @@
 		ELF283000000000000000001 /* 283_ShipperPickupOnSiteEchoM06.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 283_ShipperPickupOnSiteEchoM06.swift; path = EusoTrip/Views/Shipper/283_ShipperPickupOnSiteEchoM06.swift; sourceTree = SOURCE_ROOT; };
 		ELF284000000000000000001 /* 284_ShipperInTransitEchoM06.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 284_ShipperInTransitEchoM06.swift; path = EusoTrip/Views/Shipper/284_ShipperInTransitEchoM06.swift; sourceTree = SOURCE_ROOT; };
 		ELF285000000000000000001 /* 285_ShipperAtDeliveryPODEchoM06.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 285_ShipperAtDeliveryPODEchoM06.swift; path = EusoTrip/Views/Shipper/285_ShipperAtDeliveryPODEchoM06.swift; sourceTree = SOURCE_ROOT; };
+		EOF286000000000000000001 /* 286_ShipperPaperworkEchoM06.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 286_ShipperPaperworkEchoM06.swift; path = EusoTrip/Views/Shipper/286_ShipperPaperworkEchoM06.swift; sourceTree = SOURCE_ROOT; };
+		EOF287000000000000000001 /* 287_ShipperClosedSettlementPaidEchoM06.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 287_ShipperClosedSettlementPaidEchoM06.swift; path = EusoTrip/Views/Shipper/287_ShipperClosedSettlementPaidEchoM06.swift; sourceTree = SOURCE_ROOT; };
+		EOF288000000000000000001 /* 288_ShipperFreshMatrixPostedM07.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 288_ShipperFreshMatrixPostedM07.swift; path = EusoTrip/Views/Shipper/288_ShipperFreshMatrixPostedM07.swift; sourceTree = SOURCE_ROOT; };
+		EOF289000000000000000001 /* 289_ShipperBidReviewM07.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 289_ShipperBidReviewM07.swift; path = EusoTrip/Views/Shipper/289_ShipperBidReviewM07.swift; sourceTree = SOURCE_ROOT; };
+		EOF290000000000000000001 /* 290_ShipperAwardAuroraM07.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 290_ShipperAwardAuroraM07.swift; path = EusoTrip/Views/Shipper/290_ShipperAwardAuroraM07.swift; sourceTree = SOURCE_ROOT; };
+		EOF291000000000000000001 /* 291_ShipperPickupOnSiteEchoM07.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 291_ShipperPickupOnSiteEchoM07.swift; path = EusoTrip/Views/Shipper/291_ShipperPickupOnSiteEchoM07.swift; sourceTree = SOURCE_ROOT; };
+		EOF292000000000000000001 /* 292_ShipperInTransitEchoM07.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 292_ShipperInTransitEchoM07.swift; path = EusoTrip/Views/Shipper/292_ShipperInTransitEchoM07.swift; sourceTree = SOURCE_ROOT; };
+		EOF293000000000000000001 /* 293_ShipperAtDeliveryPODEchoM07.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 293_ShipperAtDeliveryPODEchoM07.swift; path = EusoTrip/Views/Shipper/293_ShipperAtDeliveryPODEchoM07.swift; sourceTree = SOURCE_ROOT; };
+		EOF294000000000000000001 /* 294_ShipperPaperworkEchoM07.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 294_ShipperPaperworkEchoM07.swift; path = EusoTrip/Views/Shipper/294_ShipperPaperworkEchoM07.swift; sourceTree = SOURCE_ROOT; };
+		EOF298B00000000000000000 /* 298B_ShipperDetentionAutoClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 298B_ShipperDetentionAutoClock.swift; path = EusoTrip/Views/Shipper/298B_ShipperDetentionAutoClock.swift; sourceTree = SOURCE_ROOT; };
+		EOF299000000000000000001 /* 299_ShipperTankInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 299_ShipperTankInventory.swift; path = EusoTrip/Views/Shipper/299_ShipperTankInventory.swift; sourceTree = SOURCE_ROOT; };
 		D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 261_BiddingLiveFeed.swift; path = EusoTrip/Views/Shipper/261_BiddingLiveFeed.swift; sourceTree = SOURCE_ROOT; };
 		D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 262_AwardedPrePickup.swift; path = EusoTrip/Views/Shipper/262_AwardedPrePickup.swift; sourceTree = SOURCE_ROOT; };
 		D2263000000000000AC0007 /* 263_PickupApproaching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 263_PickupApproaching.swift; path = EusoTrip/Views/Shipper/263_PickupApproaching.swift; sourceTree = SOURCE_ROOT; };
@@ -3006,6 +3028,17 @@
 				ELF283000000000000000001 /* 283_ShipperPickupOnSiteEchoM06.swift */,
 				ELF284000000000000000001 /* 284_ShipperInTransitEchoM06.swift */,
 				ELF285000000000000000001 /* 285_ShipperAtDeliveryPODEchoM06.swift */,
+				EOF286000000000000000001 /* 286_ShipperPaperworkEchoM06.swift */,
+				EOF287000000000000000001 /* 287_ShipperClosedSettlementPaidEchoM06.swift */,
+				EOF288000000000000000001 /* 288_ShipperFreshMatrixPostedM07.swift */,
+				EOF289000000000000000001 /* 289_ShipperBidReviewM07.swift */,
+				EOF290000000000000000001 /* 290_ShipperAwardAuroraM07.swift */,
+				EOF291000000000000000001 /* 291_ShipperPickupOnSiteEchoM07.swift */,
+				EOF292000000000000000001 /* 292_ShipperInTransitEchoM07.swift */,
+				EOF293000000000000000001 /* 293_ShipperAtDeliveryPODEchoM07.swift */,
+				EOF294000000000000000001 /* 294_ShipperPaperworkEchoM07.swift */,
+				EOF298B00000000000000000 /* 298B_ShipperDetentionAutoClock.swift */,
+				EOF299000000000000000001 /* 299_ShipperTankInventory.swift */,
 				D2261000000000000AC0005 /* 261_BiddingLiveFeed.swift */,
 				D2262000000000000AC0006 /* 262_AwardedPrePickup.swift */,
 				D2263000000000000AC0007 /* 263_PickupApproaching.swift */,
@@ -5089,6 +5122,17 @@
 				ELB283000000000000000001 /* 283_ShipperPickupOnSiteEchoM06.swift in Sources */,
 				ELB284000000000000000001 /* 284_ShipperInTransitEchoM06.swift in Sources */,
 				ELB285000000000000000001 /* 285_ShipperAtDeliveryPODEchoM06.swift in Sources */,
+				EOB286000000000000000001 /* 286_ShipperPaperworkEchoM06.swift in Sources */,
+				EOB287000000000000000001 /* 287_ShipperClosedSettlementPaidEchoM06.swift in Sources */,
+				EOB288000000000000000001 /* 288_ShipperFreshMatrixPostedM07.swift in Sources */,
+				EOB289000000000000000001 /* 289_ShipperBidReviewM07.swift in Sources */,
+				EOB290000000000000000001 /* 290_ShipperAwardAuroraM07.swift in Sources */,
+				EOB291000000000000000001 /* 291_ShipperPickupOnSiteEchoM07.swift in Sources */,
+				EOB292000000000000000001 /* 292_ShipperInTransitEchoM07.swift in Sources */,
+				EOB293000000000000000001 /* 293_ShipperAtDeliveryPODEchoM07.swift in Sources */,
+				EOB294000000000000000001 /* 294_ShipperPaperworkEchoM07.swift in Sources */,
+				EOB298B00000000000000000 /* 298B_ShipperDetentionAutoClock.swift in Sources */,
+				EOB299000000000000000001 /* 299_ShipperTankInventory.swift in Sources */,
 				D2261000000000000AB0005 /* 261_BiddingLiveFeed.swift in Sources */,
 				D2262000000000000AB0006 /* 262_AwardedPrePickup.swift in Sources */,
 				D2263000000000000AB0007 /* 263_PickupApproaching.swift in Sources */,
