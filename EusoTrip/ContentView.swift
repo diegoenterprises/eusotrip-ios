@@ -2451,6 +2451,17 @@ enum ScreenRegistry {
             .init(id: "Vesl703", title: "Vessel Operator · Port Lineup",              role: .vesselOperator) { p in AnyView(VesselPortLineupScreen(theme: p)) },
             .init(id: "Vesl704", title: "Vessel Operator · Bay Plan",                 role: .vesselOperator) { p in AnyView(VesselBayPlanScreen(theme: p)) },
             .init(id: "Vesl707", title: "Vessel Operator · Container Movement Log",   role: .vesselOperator) { p in AnyView(VesselContainerMovementLogScreen(theme: p)) },
+            // 2026-07-11 — 06 Vessel trade/terminal band (ios/port-vessel-9): 771/773/774/775/776/777/780/781.
+            // Purpose-built to the golden bar from real router blueprints (loadConsolidation · vesselShipments
+            // cross-border/duty/clearance/port · yardManagement). Shared chrome in VesselTradeKit.swift.
+            .init(id: "Vesl771", title: "Vessel Operator · Consolidation Suggestions", role: .vesselOperator) { p in AnyView(VesselConsolidationSuggestionsScreen(theme: p)) },
+            .init(id: "Vesl773", title: "Vessel Operator · Trade Agreements",          role: .vesselOperator) { p in AnyView(VesselTradeAgreementsScreen(theme: p)) },
+            .init(id: "Vesl774", title: "Vessel Operator · Clearance Estimate",        role: .vesselOperator) { p in AnyView(VesselClearanceEstimateScreen(theme: p)) },
+            .init(id: "Vesl775", title: "Vessel Operator · Port Intelligence",         role: .vesselOperator) { p in AnyView(VesselPortIntelligenceScreen(theme: p)) },
+            .init(id: "Vesl776", title: "Vessel Operator · Trade Lane Docs · CA",      role: .vesselOperator) { p in AnyView(VesselTradeLaneDocumentsCAImportScreen(theme: p)) },
+            .init(id: "Vesl777", title: "Vessel Operator · Trade Lane Docs · MX",      role: .vesselOperator) { p in AnyView(VesselTradeLaneDocumentsMXImportScreen(theme: p)) },
+            .init(id: "Vesl780", title: "Vessel Operator · Terminal Move Queue",       role: .vesselOperator) { p in AnyView(VesselTerminalMoveQueueScreen(theme: p)) },
+            .init(id: "Vesl781", title: "Vessel Operator · Drop Yard Operations",      role: .vesselOperator) { p in AnyView(VesselDropYardOperationsScreen(theme: p)) },
             // Phase B wave 2 — Vessel operator NEW screens (verbatim ports). Required ids defaulted for registry construction.
             .init(id: "Vesl662", title: "Vessel Operator · Exceptions & Holds",     role: .vesselOperator) { p in AnyView(VesselExceptionsHoldsScreen(theme: p)) },
             .init(id: "Vesl663", title: "Vessel Operator · CBP Entry Detail",       role: .vesselOperator) { p in AnyView(VesselCBPEntryDetailScreen(theme: p, entryNumber: "", importerId: "")) },
