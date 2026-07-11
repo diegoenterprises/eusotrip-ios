@@ -2252,6 +2252,15 @@ enum ScreenRegistry {
             // Phase B wave 6 — Rail engineer + ramp-ops NEW screens (verbatim ports, theme-only inits).
             .init(id: "Rail598", title: "Rail Engineer · Equipment Specs",      role: .railEngineer) { p in AnyView(RailEquipmentSpecsScreen(theme: p)) },
             .init(id: "Rail599", title: "Rail Engineer · Freight Bill Audit",   role: .railEngineer) { p in AnyView(RailFreightBillAuditScreen(theme: p)) },
+            // 2026-07-10 — Rail wireframe ports 003/004/009/010 (shipper) + 614/615/657/658 (rail engineer).
+            .init(id: "Rail003", title: "Rail Shipper · Live Tracking",       role: .shipper)      { p in AnyView(RailLiveTrackingShipperScreen(theme: p, shipmentId: 48217)) },
+            .init(id: "Rail004", title: "Rail Shipper · Demurrage Detail",    role: .shipper)      { p in AnyView(RailDemurrageDetailScreen(theme: p, shipmentId: 39044)) },
+            .init(id: "Rail009", title: "Rail Shipper · Intermodal Journey",  role: .shipper)      { p in AnyView(RailIntermodalJourneyScreen(theme: p, shipmentId: 50418)) },
+            .init(id: "Rail010", title: "Rail Shipper · Freight Bill Audit",  role: .shipper)      { p in AnyView(RailFreightBillAuditShipperScreen(theme: p)) },
+            .init(id: "Rail614", title: "Rail Engineer · Intermodal Segment Board", role: .railEngineer) { p in AnyView(RailIntermodalSegmentBoardScreen(theme: p, shipmentId: 50418)) },
+            .init(id: "Rail615", title: "Rail Engineer · Cross-Dock Plan",    role: .railEngineer) { p in AnyView(RailCrossDockPlanScreen(theme: p)) },
+            .init(id: "Rail657", title: "Rail Engineer · Dispute Resolution", role: .railEngineer) { p in AnyView(RailDisputeResolutionScreen(theme: p)) },
+            .init(id: "Rail658", title: "Rail Engineer · Dispute Mediation",  role: .railEngineer) { p in AnyView(RailDisputeMediationScreen(theme: p)) },
             .init(id: "Rail600", title: "Rail Engineer · Ramp Ops Console",     role: .railEngineer) { p in AnyView(RailRampOperationsConsoleScreen(theme: p)) },
             .init(id: "Rail601", title: "Rail Engineer · Chassis Pool",         role: .railEngineer) { p in AnyView(RailChassisPoolScreen(theme: p)) },
             .init(id: "Rail602", title: "Rail Engineer · Detention Tracking",   role: .railEngineer) { p in AnyView(RailDetentionTrackingScreen(theme: p)) },
