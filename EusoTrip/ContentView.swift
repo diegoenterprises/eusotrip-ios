@@ -2012,6 +2012,11 @@ enum ScreenRegistry {
             // 2026-05-30 — the-oath §44/§50 dispatcher ports.
             .init(id: "533",     title: "Dispatch · AI Dispatch Assist",   role: .dispatch) { p in AnyView(DispatcherAIDispatchAssistScreen(theme: p)) },
             .init(id: "539",     title: "Dispatch · Carrier Scorecard",     role: .dispatch) { p in AnyView(DispatcherCarrierScorecardScreen(theme: p)) },
+            // 2026-07-10 — Dispatcher wireframe ports 410/534/535/537 (native, honest-wired).
+            .init(id: "410",     title: "Dispatch · Exception Triage",      role: .dispatch) { p in AnyView(DispatcherExceptionTriageScreen(theme: p)) },
+            .init(id: "534",     title: "Dispatch · Dock Coordination",     role: .dispatch) { p in AnyView(DispatcherDockCoordinationScreen(theme: p)) },
+            .init(id: "535",     title: "Dispatch · Driver Availability",   role: .dispatch) { p in AnyView(DispatcherDriverAvailabilityScreen(theme: p)) },
+            .init(id: "537",     title: "Dispatch · Opportunities Board",   role: .dispatch) { p in AnyView(DispatcherOpportunitiesBoardScreen(theme: p)) },
             // 2026-05-21 — Catalyst Vehicle B-variant deep-drill octet (SVG 330B-337B).
             .init(id: "CV330B", title: "Catalyst · Vehicle Score Axis",   role: .catalyst) { p in AnyView(CatalystVehicleScoreAxisScreen(theme: p)) },
             // 2026-05-31 — Rescue land: bespoke pixel-faithful 330B scorecard axis detail (full port).

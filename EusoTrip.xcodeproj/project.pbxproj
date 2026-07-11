@@ -877,6 +877,10 @@
 		FE410000000000000000297B /* 297_ShipperCargoInsurance.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */; };
 		FE410000000000000000298B /* 298_ShipperDetentionExposure.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */; };
 		FE410000000000000000533B /* 533_DispatcherAIDispatchAssist.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */; };
+		7E7EA971CBE8A8DB5FDA7EB3 /* 410_DispatcherExceptionTriage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D19DF8D6AEA3C1CA0D7609C8 /* 410_DispatcherExceptionTriage.swift */; };
+		0AAAC65AEB0C8F18743BF612 /* 534_DispatcherDockCoordination.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1261395685993761FAFE79A4 /* 534_DispatcherDockCoordination.swift */; };
+		C5882EC78DA9AF535DAAE129 /* 535_DispatcherDriverAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAFD006144E64038DF8E9900 /* 535_DispatcherDriverAvailability.swift */; };
+		F72481F1933E47A13C9B19E9 /* 537_DispatcherOpportunitiesBoard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ED6D5CBCFB0F9C80EDE9FF7 /* 537_DispatcherOpportunitiesBoard.swift */; };
 		FE410000000000000000539B /* 539_DispatcherCarrierScorecard.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE410000000000000000539F /* 539_DispatcherCarrierScorecard.swift */; };
 		FEB000000000000000000000 /* 686_VesselPortDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA000000000000000000000 /* 686_VesselPortDirectory.swift */; };
 		FEB010000000000000000000 /* 666_VesselContainerTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA010000000000000000000 /* 666_VesselContainerTimeline.swift */; };
@@ -1988,6 +1992,10 @@
 		FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 297_ShipperCargoInsurance.swift; path = EusoTrip/Views/Shipper/297_ShipperCargoInsurance.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 298_ShipperDetentionExposure.swift; path = EusoTrip/Views/Shipper/298_ShipperDetentionExposure.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 533_DispatcherAIDispatchAssist.swift; path = EusoTrip/Views/Dispatch/533_DispatcherAIDispatchAssist.swift; sourceTree = SOURCE_ROOT; };
+		D19DF8D6AEA3C1CA0D7609C8 /* 410_DispatcherExceptionTriage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 410_DispatcherExceptionTriage.swift; path = EusoTrip/Views/Dispatch/410_DispatcherExceptionTriage.swift; sourceTree = SOURCE_ROOT; };
+		1261395685993761FAFE79A4 /* 534_DispatcherDockCoordination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 534_DispatcherDockCoordination.swift; path = EusoTrip/Views/Dispatch/534_DispatcherDockCoordination.swift; sourceTree = SOURCE_ROOT; };
+		CAFD006144E64038DF8E9900 /* 535_DispatcherDriverAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 535_DispatcherDriverAvailability.swift; path = EusoTrip/Views/Dispatch/535_DispatcherDriverAvailability.swift; sourceTree = SOURCE_ROOT; };
+		2ED6D5CBCFB0F9C80EDE9FF7 /* 537_DispatcherOpportunitiesBoard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 537_DispatcherOpportunitiesBoard.swift; path = EusoTrip/Views/Dispatch/537_DispatcherOpportunitiesBoard.swift; sourceTree = SOURCE_ROOT; };
 		FE410000000000000000539F /* 539_DispatcherCarrierScorecard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 539_DispatcherCarrierScorecard.swift; path = EusoTrip/Views/Dispatch/539_DispatcherCarrierScorecard.swift; sourceTree = SOURCE_ROOT; };
 		FE5C0E010000000000000000 /* 327B_CatalystDriverQuarterDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 327B_CatalystDriverQuarterDetail.swift; path = EusoTrip/Views/Catalyst/327B_CatalystDriverQuarterDetail.swift; sourceTree = SOURCE_ROOT; };
 		FE5C0E020000000000000000 /* 330B_CatalystVehicleScorecardAxisDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 330B_CatalystVehicleScorecardAxisDetail.swift; path = EusoTrip/Views/Catalyst/330B_CatalystVehicleScorecardAxisDetail.swift; sourceTree = SOURCE_ROOT; };
@@ -2884,6 +2892,10 @@
 				FE410000000000000000297F /* 297_ShipperCargoInsurance.swift */,
 				FE410000000000000000298F /* 298_ShipperDetentionExposure.swift */,
 				FE410000000000000000533F /* 533_DispatcherAIDispatchAssist.swift */,
+				D19DF8D6AEA3C1CA0D7609C8 /* 410_DispatcherExceptionTriage.swift */,
+				1261395685993761FAFE79A4 /* 534_DispatcherDockCoordination.swift */,
+				CAFD006144E64038DF8E9900 /* 535_DispatcherDriverAvailability.swift */,
+				2ED6D5CBCFB0F9C80EDE9FF7 /* 537_DispatcherOpportunitiesBoard.swift */,
 				FE410000000000000000539F /* 539_DispatcherCarrierScorecard.swift */,
 				FE5C0E010000000000000000 /* 327B_CatalystDriverQuarterDetail.swift */,
 				FE5C0E020000000000000000 /* 330B_CatalystVehicleScorecardAxisDetail.swift */,
@@ -3722,6 +3734,10 @@
 				FE410000000000000000297B /* 297_ShipperCargoInsurance.swift in Sources */,
 				FE410000000000000000298B /* 298_ShipperDetentionExposure.swift in Sources */,
 				FE410000000000000000533B /* 533_DispatcherAIDispatchAssist.swift in Sources */,
+				7E7EA971CBE8A8DB5FDA7EB3 /* 410_DispatcherExceptionTriage.swift in Sources */,
+				0AAAC65AEB0C8F18743BF612 /* 534_DispatcherDockCoordination.swift in Sources */,
+				C5882EC78DA9AF535DAAE129 /* 535_DispatcherDriverAvailability.swift in Sources */,
+				F72481F1933E47A13C9B19E9 /* 537_DispatcherOpportunitiesBoard.swift in Sources */,
 				FE410000000000000000539B /* 539_DispatcherCarrierScorecard.swift in Sources */,
 				A144AC1DCD36EDC1A2891416 /* EusoTripApp.swift in Sources */,
 				A189C8A4865293C026FBA23C /* DesignSystem.swift in Sources */,
