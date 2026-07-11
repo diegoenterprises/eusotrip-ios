@@ -965,6 +965,15 @@
 		EHD20000000000000000006B /* 544_DispatcherDemandMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = EHD20000000000000000006F /* 544_DispatcherDemandMap.swift */; };
 		EHD20000000000000000007B /* 545_DispatcherMaintenanceDue.swift in Sources */ = {isa = PBXBuildFile; fileRef = EHD20000000000000000007F /* 545_DispatcherMaintenanceDue.swift */; };
 		FEB000000000000000000000 /* 686_VesselPortDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA000000000000000000000 /* 686_VesselPortDirectory.swift */; };
+		ER7710000000000000000B01 /* 771_VesselConsolidationSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = ER7710000000000000000F01 /* 771_VesselConsolidationSuggestions.swift */; };
+		ER7730000000000000000B01 /* 773_VesselTradeAgreements.swift in Sources */ = {isa = PBXBuildFile; fileRef = ER7730000000000000000F01 /* 773_VesselTradeAgreements.swift */; };
+		ER7740000000000000000B01 /* 774_VesselClearanceEstimate.swift in Sources */ = {isa = PBXBuildFile; fileRef = ER7740000000000000000F01 /* 774_VesselClearanceEstimate.swift */; };
+		ER7750000000000000000B01 /* 775_VesselPortIntelligence.swift in Sources */ = {isa = PBXBuildFile; fileRef = ER7750000000000000000F01 /* 775_VesselPortIntelligence.swift */; };
+		ER7760000000000000000B01 /* 776_VesselTradeLaneDocumentsCAImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = ER7760000000000000000F01 /* 776_VesselTradeLaneDocumentsCAImport.swift */; };
+		ER7770000000000000000B01 /* 777_VesselTradeLaneDocumentsMXImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = ER7770000000000000000F01 /* 777_VesselTradeLaneDocumentsMXImport.swift */; };
+		ER7800000000000000000B01 /* 780_VesselTerminalMoveQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = ER7800000000000000000F01 /* 780_VesselTerminalMoveQueue.swift */; };
+		ER7810000000000000000B01 /* 781_VesselDropYardOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = ER7810000000000000000F01 /* 781_VesselDropYardOperations.swift */; };
+		ER7720000000000000000B01 /* VesselTradeKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = ER7720000000000000000F01 /* VesselTradeKit.swift */; };
 		FEB010000000000000000000 /* 666_VesselContainerTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA010000000000000000000 /* 666_VesselContainerTimeline.swift */; };
 		FEB020000000000000000000 /* 667_VesselChainOfCustody.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA020000000000000000000 /* 667_VesselChainOfCustody.swift */; };
 		FEB030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift */; };
@@ -2265,6 +2274,15 @@
 		FE5C0E120000000000000000 /* 002_VesselBookingDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 002_VesselBookingDetail.swift; sourceTree = "<group>"; };
 		FE5C0E130000000000000000 /* 003_VesselLiveTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 003_VesselLiveTracking.swift; sourceTree = "<group>"; };
 		FEA000000000000000000000 /* 686_VesselPortDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 686_VesselPortDirectory.swift; sourceTree = "<group>"; };
+		ER7710000000000000000F01 /* 771_VesselConsolidationSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 771_VesselConsolidationSuggestions.swift; sourceTree = "<group>"; };
+		ER7730000000000000000F01 /* 773_VesselTradeAgreements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 773_VesselTradeAgreements.swift; sourceTree = "<group>"; };
+		ER7740000000000000000F01 /* 774_VesselClearanceEstimate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 774_VesselClearanceEstimate.swift; sourceTree = "<group>"; };
+		ER7750000000000000000F01 /* 775_VesselPortIntelligence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 775_VesselPortIntelligence.swift; sourceTree = "<group>"; };
+		ER7760000000000000000F01 /* 776_VesselTradeLaneDocumentsCAImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 776_VesselTradeLaneDocumentsCAImport.swift; sourceTree = "<group>"; };
+		ER7770000000000000000F01 /* 777_VesselTradeLaneDocumentsMXImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 777_VesselTradeLaneDocumentsMXImport.swift; sourceTree = "<group>"; };
+		ER7800000000000000000F01 /* 780_VesselTerminalMoveQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 780_VesselTerminalMoveQueue.swift; sourceTree = "<group>"; };
+		ER7810000000000000000F01 /* 781_VesselDropYardOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 781_VesselDropYardOperations.swift; sourceTree = "<group>"; };
+		ER7720000000000000000F01 /* VesselTradeKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VesselTradeKit.swift; sourceTree = "<group>"; };
 		FEA010000000000000000000 /* 666_VesselContainerTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 666_VesselContainerTimeline.swift; sourceTree = "<group>"; };
 		FEA020000000000000000000 /* 667_VesselChainOfCustody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 667_VesselChainOfCustody.swift; sourceTree = "<group>"; };
 		FEA030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 668_VesselIMDGHazmatManifest.swift; sourceTree = "<group>"; };
@@ -3917,6 +3935,15 @@
 				FE5C0E130000000000000000 /* 003_VesselLiveTracking.swift */,
 				VOTMFREF1 /* VesselOceanTrackMap.swift */,
 				FEA000000000000000000000 /* 686_VesselPortDirectory.swift */,
+				ER7710000000000000000F01 /* 771_VesselConsolidationSuggestions.swift */,
+				ER7730000000000000000F01 /* 773_VesselTradeAgreements.swift */,
+				ER7740000000000000000F01 /* 774_VesselClearanceEstimate.swift */,
+				ER7750000000000000000F01 /* 775_VesselPortIntelligence.swift */,
+				ER7760000000000000000F01 /* 776_VesselTradeLaneDocumentsCAImport.swift */,
+				ER7770000000000000000F01 /* 777_VesselTradeLaneDocumentsMXImport.swift */,
+				ER7800000000000000000F01 /* 780_VesselTerminalMoveQueue.swift */,
+				ER7810000000000000000F01 /* 781_VesselDropYardOperations.swift */,
+				ER7720000000000000000F01 /* VesselTradeKit.swift */,
 				FEA010000000000000000000 /* 666_VesselContainerTimeline.swift */,
 				FEA020000000000000000000 /* 667_VesselChainOfCustody.swift */,
 				FEA030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift */,
@@ -4673,6 +4700,15 @@
 				FD97CECB2FC1D5120016DF5F /* 650_VesselOperatorHome.swift in Sources */,
 				VOTMBUILD1 /* VesselOceanTrackMap.swift in Sources */,
 				FEB000000000000000000000 /* 686_VesselPortDirectory.swift in Sources */,
+				ER7710000000000000000B01 /* 771_VesselConsolidationSuggestions.swift in Sources */,
+				ER7730000000000000000B01 /* 773_VesselTradeAgreements.swift in Sources */,
+				ER7740000000000000000B01 /* 774_VesselClearanceEstimate.swift in Sources */,
+				ER7750000000000000000B01 /* 775_VesselPortIntelligence.swift in Sources */,
+				ER7760000000000000000B01 /* 776_VesselTradeLaneDocumentsCAImport.swift in Sources */,
+				ER7770000000000000000B01 /* 777_VesselTradeLaneDocumentsMXImport.swift in Sources */,
+				ER7800000000000000000B01 /* 780_VesselTerminalMoveQueue.swift in Sources */,
+				ER7810000000000000000B01 /* 781_VesselDropYardOperations.swift in Sources */,
+				ER7720000000000000000B01 /* VesselTradeKit.swift in Sources */,
 				FEB010000000000000000000 /* 666_VesselContainerTimeline.swift in Sources */,
 				FEB020000000000000000000 /* 667_VesselChainOfCustody.swift in Sources */,
 				FEB030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift in Sources */,
