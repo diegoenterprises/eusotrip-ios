@@ -2371,6 +2371,17 @@ enum ScreenRegistry {
             // 2026-07-03 — 06 Vessel freshest trio: 675 Carrier Scorecard (LEAGUE/COMPARISON).
             .init(id: "Vesl675", title: "Vessel Operator · Carrier League",        role: .vesselOperator) { p in AnyView(VesselCarrierScorecard_675(theme: p)) },
             .init(id: "Vesl683", title: "Vessel Operator · Fleet Health",          role: .vesselOperator) { p in AnyView(VesselFleetHealthScreen(theme: p)) },
+            // 2026-07-11 — 06 Vessel port-batch (ios/port-vessel-2): 692/693/694/695/699/703/704/707.
+            // 692·693·699·707 are 1:1 ports of their Dark-SVGs; 694·695·703·704 are purpose-built to
+            // the golden bar (their catalog SVGs ship empty) from the real router blueprints.
+            .init(id: "Vesl692", title: "Vessel Operator · Transshipment Connection", role: .vesselOperator) { p in AnyView(VesselTransshipmentConnectionScreen(theme: p)) },
+            .init(id: "Vesl693", title: "Vessel Operator · Document Ingest",          role: .vesselOperator) { p in AnyView(VesselDocumentIngestScreen(theme: p)) },
+            .init(id: "Vesl694", title: "Vessel Operator · Consignee Tracking Link",  role: .vesselOperator) { p in AnyView(VesselConsigneeTrackingLinkScreen(theme: p)) },
+            .init(id: "Vesl695", title: "Vessel Operator · Forwarder Portal",         role: .vesselOperator) { p in AnyView(VesselForwarderPortalScreen(theme: p)) },
+            .init(id: "Vesl699", title: "Vessel Operator · Vessel Particulars",       role: .vesselOperator) { p in AnyView(VesselParticularsScreen(theme: p)) },
+            .init(id: "Vesl703", title: "Vessel Operator · Port Lineup",              role: .vesselOperator) { p in AnyView(VesselPortLineupScreen(theme: p)) },
+            .init(id: "Vesl704", title: "Vessel Operator · Bay Plan",                 role: .vesselOperator) { p in AnyView(VesselBayPlanScreen(theme: p)) },
+            .init(id: "Vesl707", title: "Vessel Operator · Container Movement Log",   role: .vesselOperator) { p in AnyView(VesselContainerMovementLogScreen(theme: p)) },
             // Phase B wave 2 — Vessel operator NEW screens (verbatim ports). Required ids defaulted for registry construction.
             .init(id: "Vesl662", title: "Vessel Operator · Exceptions & Holds",     role: .vesselOperator) { p in AnyView(VesselExceptionsHoldsScreen(theme: p)) },
             .init(id: "Vesl663", title: "Vessel Operator · CBP Entry Detail",       role: .vesselOperator) { p in AnyView(VesselCBPEntryDetailScreen(theme: p, entryNumber: "", importerId: "")) },
