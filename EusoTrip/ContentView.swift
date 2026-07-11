@@ -983,6 +983,12 @@ enum ScreenRegistry {
         // 2026-05-30 — the-oath §46/§52 shipper ports (id-prefixed; bare 297/298 are taken above).
         list.append(.init(id: "Ship297Ins", title: "Shipper · Cargo Insurance",  role: .shipper) { p in AnyView(ShipperCargoInsurance().environment(\.palette, p)) })
         list.append(.init(id: "Ship298Det", title: "Shipper · Detention Exposure", role: .shipper) { p in AnyView(ShipperDetentionExposureScreen(theme: p)) })
+        // ios/port-shipper-4 — the final eleven Shipper wireframes (286-294 echo
+        // family reuse ShipperEchoKit & route through shipperEchoNavSwap; the two
+        // standalone boards register id-prefixed like the Ship297/298 precedent
+        // since bare 298B/299 numeric ids are taken above).
+        list.append(.init(id: "Ship298BDet", title: "Shipper · Detention Auto-Clock", role: .shipper) { p in AnyView(ShipperDetentionAutoClockScreen(theme: p)) })
+        list.append(.init(id: "Ship299Tank", title: "Shipper · Tank Inventory",       role: .shipper) { p in AnyView(ShipperTankInventoryScreen(theme: p)) })
 
         // 360-369 — Platform / permissions / error states. These are
         // mostly transient surfaces presented over the role surface
