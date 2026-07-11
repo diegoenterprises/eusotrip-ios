@@ -376,6 +376,15 @@
 		EC0178000000000000B0A007 /* 178_DriverDrugTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0178000000000000F0A007 /* 178_DriverDrugTest.swift */; };
 		EC0179000000000000B0A008 /* 179_DriverFuelEconomy.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0179000000000000F0A008 /* 179_DriverFuelEconomy.swift */; };
 		EC017C000000000000B0A009 /* DriverUtilityKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC017C000000000000F0A009 /* DriverUtilityKit.swift */; };
+		EJ0C00000000000000B0A001 /* DriverComplianceKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = EJ0C00000000000000F0A001 /* DriverComplianceKit.swift */; };
+		EJ0190000000000000B0A001 /* 190_DriverItinerary.swift in Sources */ = {isa = PBXBuildFile; fileRef = EJ0190000000000000F0A001 /* 190_DriverItinerary.swift */; };
+		EJ0194000000000000B0A001 /* 194_DriverLivestock28HourLaw.swift in Sources */ = {isa = PBXBuildFile; fileRef = EJ0194000000000000F0A001 /* 194_DriverLivestock28HourLaw.swift */; };
+		EJ0195000000000000B0A001 /* 195_DriverHhgChainOfCustody.swift in Sources */ = {isa = PBXBuildFile; fileRef = EJ0195000000000000F0A001 /* 195_DriverHhgChainOfCustody.swift */; };
+		EJ0196000000000000B0A001 /* 196_DriverAutoTransportVinDamage.swift in Sources */ = {isa = PBXBuildFile; fileRef = EJ0196000000000000F0A001 /* 196_DriverAutoTransportVinDamage.swift */; };
+		EJ0197000000000000B0A001 /* 197_DriverHeavyHaulBridgeClearance.swift in Sources */ = {isa = PBXBuildFile; fileRef = EJ0197000000000000F0A001 /* 197_DriverHeavyHaulBridgeClearance.swift */; };
+		EJ0198000000000000B0A001 /* 198_DriverAtGateIdentityBind.swift in Sources */ = {isa = PBXBuildFile; fileRef = EJ0198000000000000F0A001 /* 198_DriverAtGateIdentityBind.swift */; };
+		EJ198B000000000000B0A001 /* 198B_DriverLivenessChallenge.swift in Sources */ = {isa = PBXBuildFile; fileRef = EJ198B000000000000F0A001 /* 198B_DriverLivenessChallenge.swift */; };
+		EJ199B000000000000B0A001 /* 199B_DriverLumperReceiptReimbursement.swift in Sources */ = {isa = PBXBuildFile; fileRef = EJ199B000000000000F0A001 /* 199B_DriverLumperReceiptReimbursement.swift */; };
 		D145000000000000000007C1 /* 145_DriverPickupDepartedCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D145000000000000000007C2 /* 145_DriverPickupDepartedCelM04.swift */; };
 		D146000000000000000007D1 /* 146_DriverInTransitCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D146000000000000000007D2 /* 146_DriverInTransitCelM04.swift */; };
 		D147000000000000000007E1 /* 147_DriverAtDeliveryArrivalCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D147000000000000000007E2 /* 147_DriverAtDeliveryArrivalCelM04.swift */; };
@@ -1548,6 +1557,15 @@
 		EC0178000000000000F0A007 /* 178_DriverDrugTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 178_DriverDrugTest.swift; path = EusoTrip/Views/Driver/178_DriverDrugTest.swift; sourceTree = SOURCE_ROOT; };
 		EC0179000000000000F0A008 /* 179_DriverFuelEconomy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 179_DriverFuelEconomy.swift; path = EusoTrip/Views/Driver/179_DriverFuelEconomy.swift; sourceTree = SOURCE_ROOT; };
 		EC017C000000000000F0A009 /* DriverUtilityKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverUtilityKit.swift; path = EusoTrip/Views/Driver/DriverUtilityKit.swift; sourceTree = SOURCE_ROOT; };
+		EJ0C00000000000000F0A001 /* DriverComplianceKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverComplianceKit.swift; path = EusoTrip/Views/Driver/DriverComplianceKit.swift; sourceTree = SOURCE_ROOT; };
+		EJ0190000000000000F0A001 /* 190_DriverItinerary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 190_DriverItinerary.swift; path = EusoTrip/Views/Driver/190_DriverItinerary.swift; sourceTree = SOURCE_ROOT; };
+		EJ0194000000000000F0A001 /* 194_DriverLivestock28HourLaw.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 194_DriverLivestock28HourLaw.swift; path = EusoTrip/Views/Driver/194_DriverLivestock28HourLaw.swift; sourceTree = SOURCE_ROOT; };
+		EJ0195000000000000F0A001 /* 195_DriverHhgChainOfCustody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 195_DriverHhgChainOfCustody.swift; path = EusoTrip/Views/Driver/195_DriverHhgChainOfCustody.swift; sourceTree = SOURCE_ROOT; };
+		EJ0196000000000000F0A001 /* 196_DriverAutoTransportVinDamage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 196_DriverAutoTransportVinDamage.swift; path = EusoTrip/Views/Driver/196_DriverAutoTransportVinDamage.swift; sourceTree = SOURCE_ROOT; };
+		EJ0197000000000000F0A001 /* 197_DriverHeavyHaulBridgeClearance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 197_DriverHeavyHaulBridgeClearance.swift; path = EusoTrip/Views/Driver/197_DriverHeavyHaulBridgeClearance.swift; sourceTree = SOURCE_ROOT; };
+		EJ0198000000000000F0A001 /* 198_DriverAtGateIdentityBind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 198_DriverAtGateIdentityBind.swift; path = EusoTrip/Views/Driver/198_DriverAtGateIdentityBind.swift; sourceTree = SOURCE_ROOT; };
+		EJ198B000000000000F0A001 /* 198B_DriverLivenessChallenge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 198B_DriverLivenessChallenge.swift; path = EusoTrip/Views/Driver/198B_DriverLivenessChallenge.swift; sourceTree = SOURCE_ROOT; };
+		EJ199B000000000000F0A001 /* 199B_DriverLumperReceiptReimbursement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 199B_DriverLumperReceiptReimbursement.swift; path = EusoTrip/Views/Driver/199B_DriverLumperReceiptReimbursement.swift; sourceTree = SOURCE_ROOT; };
 		D145000000000000000007C2 /* 145_DriverPickupDepartedCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 145_DriverPickupDepartedCelM04.swift; sourceTree = "<group>"; };
 		D146000000000000000007D2 /* 146_DriverInTransitCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 146_DriverInTransitCelM04.swift; sourceTree = "<group>"; };
 		D147000000000000000007E2 /* 147_DriverAtDeliveryArrivalCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 147_DriverAtDeliveryArrivalCelM04.swift; sourceTree = "<group>"; };
@@ -2600,6 +2618,15 @@
 				EC0178000000000000F0A007 /* 178_DriverDrugTest.swift */,
 				EC0179000000000000F0A008 /* 179_DriverFuelEconomy.swift */,
 				EC017C000000000000F0A009 /* DriverUtilityKit.swift */,
+				EJ0C00000000000000F0A001 /* DriverComplianceKit.swift */,
+				EJ0190000000000000F0A001 /* 190_DriverItinerary.swift */,
+				EJ0194000000000000F0A001 /* 194_DriverLivestock28HourLaw.swift */,
+				EJ0195000000000000F0A001 /* 195_DriverHhgChainOfCustody.swift */,
+				EJ0196000000000000F0A001 /* 196_DriverAutoTransportVinDamage.swift */,
+				EJ0197000000000000F0A001 /* 197_DriverHeavyHaulBridgeClearance.swift */,
+				EJ0198000000000000F0A001 /* 198_DriverAtGateIdentityBind.swift */,
+				EJ198B000000000000F0A001 /* 198B_DriverLivenessChallenge.swift */,
+				EJ199B000000000000F0A001 /* 199B_DriverLumperReceiptReimbursement.swift */,
 				D145000000000000000007C2 /* 145_DriverPickupDepartedCelM04.swift */,
 				D146000000000000000007D2 /* 146_DriverInTransitCelM04.swift */,
 				D147000000000000000007E2 /* 147_DriverAtDeliveryArrivalCelM04.swift */,
@@ -4125,6 +4152,15 @@
 				EC0178000000000000B0A007 /* 178_DriverDrugTest.swift in Sources */,
 				EC0179000000000000B0A008 /* 179_DriverFuelEconomy.swift in Sources */,
 				EC017C000000000000B0A009 /* DriverUtilityKit.swift in Sources */,
+				EJ0C00000000000000B0A001 /* DriverComplianceKit.swift in Sources */,
+				EJ0190000000000000B0A001 /* 190_DriverItinerary.swift in Sources */,
+				EJ0194000000000000B0A001 /* 194_DriverLivestock28HourLaw.swift in Sources */,
+				EJ0195000000000000B0A001 /* 195_DriverHhgChainOfCustody.swift in Sources */,
+				EJ0196000000000000B0A001 /* 196_DriverAutoTransportVinDamage.swift in Sources */,
+				EJ0197000000000000B0A001 /* 197_DriverHeavyHaulBridgeClearance.swift in Sources */,
+				EJ0198000000000000B0A001 /* 198_DriverAtGateIdentityBind.swift in Sources */,
+				EJ198B000000000000B0A001 /* 198B_DriverLivenessChallenge.swift in Sources */,
+				EJ199B000000000000B0A001 /* 199B_DriverLumperReceiptReimbursement.swift in Sources */,
 				D145000000000000000007C1 /* 145_DriverPickupDepartedCelM04.swift in Sources */,
 				D146000000000000000007D1 /* 146_DriverInTransitCelM04.swift in Sources */,
 				D147000000000000000007E1 /* 147_DriverAtDeliveryArrivalCelM04.swift in Sources */,
