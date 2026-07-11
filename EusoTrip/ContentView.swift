@@ -721,6 +721,20 @@ enum ScreenRegistry {
         list.append(.init(id: "225", title: "Shipper · Hot Zones",       role: .shipper) { p in AnyView(MarketHubScreen(theme: p, initialTab: .hotZones)) })
         list.append(.init(id: "226", title: "Shipper · Document Center", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperDocumentCenter() }) })
         list.append(.init(id: "227", title: "Shipper · Settlement Detail", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperSettlementDetail() }) })
+        // 2026-07-10 — Commodity + cross-border post-load addenda ports
+        // (204D/E/F/G/H · 216C/E/G). Off-ring detail surfaces drilled from
+        // the load (204·205) / cross-border (216B) context; registered so
+        // the Shipper surface + ESANG/deep-link nav can route to each.
+        // currentSlot: .none — none of the four bottom-nav slots is active
+        // on an off-ring detail (same pattern as 227 Settlement Detail).
+        list.append(.init(id: "204D", title: "Shipper · Oversize Permit & Escort",     role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperOversizePermitEscort() }) })
+        list.append(.init(id: "204E", title: "Shipper · Livestock 28-Hour Clock",      role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperLivestock28HourClock() }) })
+        list.append(.init(id: "204F", title: "Shipper · Auto-Transport VIN & Condition", role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperAutoTransportVINCondition() }) })
+        list.append(.init(id: "204G", title: "Shipper · HHG Chain of Custody",         role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperHHGChainOfCustody() }) })
+        list.append(.init(id: "204H", title: "Shipper · Flatbed Cargo Securement",     role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperFlatbedCargoSecurement() }) })
+        list.append(.init(id: "216C", title: "Shipper · Carta Porte CFDI",             role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperCartaPorteCFDI() }) })
+        list.append(.init(id: "216E", title: "Shipper · VUCEM Pedimento",              role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperVUCEMPedimento() }) })
+        list.append(.init(id: "216G", title: "Shipper · MX Landed Cost",               role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .none) { ShipperMXLandedCost() }) })
         list.append(.init(id: "228", title: "Shipper · BOLs",            role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .me) { ShipperBOLs() }) })
         list.append(.init(id: "229", title: "Shipper · Allocations",     role: .shipper) { p in AnyView(wrapShipperScreen(palette: p, currentSlot: .loads) { ShipperAllocations() }) })
         // 2026-06-09 registry dedup: Market Intelligence was registered as

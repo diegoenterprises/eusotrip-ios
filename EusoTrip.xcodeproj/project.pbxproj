@@ -472,6 +472,15 @@
 		D2268000000000000AB000C /* 268_InTransitHosPause.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2268000000000000AC000C /* 268_InTransitHosPause.swift */; };
 		D2269000000000000AB000D /* 269_InTransitException.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2269000000000000AC000D /* 269_InTransitException.swift */; };
 		D2270000000000000027CB /* 227_ShipperSettlementDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2270000000000000027CA /* 227_ShipperSettlementDetail.swift */; };
+		FE0D0A11B0F1A2C3D4E5F601 /* 204D_ShipperOversizePermitEscort.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0D0A22B0F1A2C3D4E5F602 /* 204D_ShipperOversizePermitEscort.swift */; };
+		FE0E0B11B0F1A2C3D4E5F603 /* 204E_ShipperLivestock28HourClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0E0B22B0F1A2C3D4E5F604 /* 204E_ShipperLivestock28HourClock.swift */; };
+		FE0F0C11B0F1A2C3D4E5F605 /* 204F_ShipperAutoTransportVINCondition.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0F0C22B0F1A2C3D4E5F606 /* 204F_ShipperAutoTransportVINCondition.swift */; };
+		FE1A0D11B0F1A2C3D4E5F607 /* 204G_ShipperHHGChainOfCustody.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE1A0D22B0F1A2C3D4E5F608 /* 204G_ShipperHHGChainOfCustody.swift */; };
+		FE1B0E11B0F1A2C3D4E5F609 /* 204H_ShipperFlatbedCargoSecurement.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE1B0E22B0F1A2C3D4E5F60A /* 204H_ShipperFlatbedCargoSecurement.swift */; };
+		FE2C0F11B0F1A2C3D4E5F60B /* 216C_ShipperCartaPorteCFDI.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE2C0F22B0F1A2C3D4E5F60C /* 216C_ShipperCartaPorteCFDI.swift */; };
+		FE3D1011B0F1A2C3D4E5F60D /* 216E_ShipperVUCEMPedimento.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE3D1022B0F1A2C3D4E5F60E /* 216E_ShipperVUCEMPedimento.swift */; };
+		FE4E1111B0F1A2C3D4E5F60F /* 216G_ShipperMXLandedCost.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE4E1122B0F1A2C3D4E5F610 /* 216G_ShipperMXLandedCost.swift */; };
+		FE5F1211B0F1A2C3D4E5F611 /* ShipperCommodityKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE5F1222B0F1A2C3D4E5F612 /* ShipperCommodityKit.swift */; };
 		D2270000000000000AB000E /* 270_DeliveryApproaching.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2270000000000000AC000E /* 270_DeliveryApproaching.swift */; };
 		D2271000000000000AB000F /* 271_DeliveryAtReceiver.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2271000000000000AC000F /* 271_DeliveryAtReceiver.swift */; };
 		D2272000000000000AB0010 /* 272_DeliveryPodSigned.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2272000000000000AC0010 /* 272_DeliveryPodSigned.swift */; };
@@ -1545,6 +1554,15 @@
 		D2268000000000000AC000C /* 268_InTransitHosPause.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 268_InTransitHosPause.swift; path = EusoTrip/Views/Shipper/268_InTransitHosPause.swift; sourceTree = SOURCE_ROOT; };
 		D2269000000000000AC000D /* 269_InTransitException.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 269_InTransitException.swift; path = EusoTrip/Views/Shipper/269_InTransitException.swift; sourceTree = SOURCE_ROOT; };
 		D2270000000000000027CA /* 227_ShipperSettlementDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 227_ShipperSettlementDetail.swift; path = EusoTrip/Views/Shipper/227_ShipperSettlementDetail.swift; sourceTree = SOURCE_ROOT; };
+		FE0D0A22B0F1A2C3D4E5F602 /* 204D_ShipperOversizePermitEscort.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 204D_ShipperOversizePermitEscort.swift; path = EusoTrip/Views/Shipper/204D_ShipperOversizePermitEscort.swift; sourceTree = SOURCE_ROOT; };
+		FE0E0B22B0F1A2C3D4E5F604 /* 204E_ShipperLivestock28HourClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 204E_ShipperLivestock28HourClock.swift; path = EusoTrip/Views/Shipper/204E_ShipperLivestock28HourClock.swift; sourceTree = SOURCE_ROOT; };
+		FE0F0C22B0F1A2C3D4E5F606 /* 204F_ShipperAutoTransportVINCondition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 204F_ShipperAutoTransportVINCondition.swift; path = EusoTrip/Views/Shipper/204F_ShipperAutoTransportVINCondition.swift; sourceTree = SOURCE_ROOT; };
+		FE1A0D22B0F1A2C3D4E5F608 /* 204G_ShipperHHGChainOfCustody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 204G_ShipperHHGChainOfCustody.swift; path = EusoTrip/Views/Shipper/204G_ShipperHHGChainOfCustody.swift; sourceTree = SOURCE_ROOT; };
+		FE1B0E22B0F1A2C3D4E5F60A /* 204H_ShipperFlatbedCargoSecurement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 204H_ShipperFlatbedCargoSecurement.swift; path = EusoTrip/Views/Shipper/204H_ShipperFlatbedCargoSecurement.swift; sourceTree = SOURCE_ROOT; };
+		FE2C0F22B0F1A2C3D4E5F60C /* 216C_ShipperCartaPorteCFDI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 216C_ShipperCartaPorteCFDI.swift; path = EusoTrip/Views/Shipper/216C_ShipperCartaPorteCFDI.swift; sourceTree = SOURCE_ROOT; };
+		FE3D1022B0F1A2C3D4E5F60E /* 216E_ShipperVUCEMPedimento.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 216E_ShipperVUCEMPedimento.swift; path = EusoTrip/Views/Shipper/216E_ShipperVUCEMPedimento.swift; sourceTree = SOURCE_ROOT; };
+		FE4E1122B0F1A2C3D4E5F610 /* 216G_ShipperMXLandedCost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 216G_ShipperMXLandedCost.swift; path = EusoTrip/Views/Shipper/216G_ShipperMXLandedCost.swift; sourceTree = SOURCE_ROOT; };
+		FE5F1222B0F1A2C3D4E5F612 /* ShipperCommodityKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ShipperCommodityKit.swift; path = EusoTrip/Views/Shipper/ShipperCommodityKit.swift; sourceTree = SOURCE_ROOT; };
 		D2270000000000000AC000E /* 270_DeliveryApproaching.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 270_DeliveryApproaching.swift; path = EusoTrip/Views/Shipper/270_DeliveryApproaching.swift; sourceTree = SOURCE_ROOT; };
 		D2271000000000000AC000F /* 271_DeliveryAtReceiver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 271_DeliveryAtReceiver.swift; path = EusoTrip/Views/Shipper/271_DeliveryAtReceiver.swift; sourceTree = SOURCE_ROOT; };
 		D2272000000000000AC0010 /* 272_DeliveryPodSigned.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 272_DeliveryPodSigned.swift; path = EusoTrip/Views/Shipper/272_DeliveryPodSigned.swift; sourceTree = SOURCE_ROOT; };
@@ -2723,6 +2741,15 @@
 				D2250000000000000025CA /* 225_ShipperHotZones.swift */,
 				D2260000000000000026CA /* 226_ShipperDocumentCenter.swift */,
 				D2270000000000000027CA /* 227_ShipperSettlementDetail.swift */,
+				FE0D0A22B0F1A2C3D4E5F602 /* 204D_ShipperOversizePermitEscort.swift */,
+				FE0E0B22B0F1A2C3D4E5F604 /* 204E_ShipperLivestock28HourClock.swift */,
+				FE0F0C22B0F1A2C3D4E5F606 /* 204F_ShipperAutoTransportVINCondition.swift */,
+				FE1A0D22B0F1A2C3D4E5F608 /* 204G_ShipperHHGChainOfCustody.swift */,
+				FE1B0E22B0F1A2C3D4E5F60A /* 204H_ShipperFlatbedCargoSecurement.swift */,
+				FE2C0F22B0F1A2C3D4E5F60C /* 216C_ShipperCartaPorteCFDI.swift */,
+				FE3D1022B0F1A2C3D4E5F60E /* 216E_ShipperVUCEMPedimento.swift */,
+				FE4E1122B0F1A2C3D4E5F610 /* 216G_ShipperMXLandedCost.swift */,
+				FE5F1222B0F1A2C3D4E5F612 /* ShipperCommodityKit.swift */,
 				D2280000000000000028CA /* 228_ShipperBOLs.swift */,
 				D2280000000000000028DA /* 228_ShipperRFPDetail.swift */,
 				D2290000000000000029CA /* 229_ShipperAllocations.swift */,
@@ -4568,6 +4595,15 @@
 				D2250000000000000025CB /* 225_ShipperHotZones.swift in Sources */,
 				D2260000000000000026CB /* 226_ShipperDocumentCenter.swift in Sources */,
 				D2270000000000000027CB /* 227_ShipperSettlementDetail.swift in Sources */,
+				FE0D0A11B0F1A2C3D4E5F601 /* 204D_ShipperOversizePermitEscort.swift in Sources */,
+				FE0E0B11B0F1A2C3D4E5F603 /* 204E_ShipperLivestock28HourClock.swift in Sources */,
+				FE0F0C11B0F1A2C3D4E5F605 /* 204F_ShipperAutoTransportVINCondition.swift in Sources */,
+				FE1A0D11B0F1A2C3D4E5F607 /* 204G_ShipperHHGChainOfCustody.swift in Sources */,
+				FE1B0E11B0F1A2C3D4E5F609 /* 204H_ShipperFlatbedCargoSecurement.swift in Sources */,
+				FE2C0F11B0F1A2C3D4E5F60B /* 216C_ShipperCartaPorteCFDI.swift in Sources */,
+				FE3D1011B0F1A2C3D4E5F60D /* 216E_ShipperVUCEMPedimento.swift in Sources */,
+				FE4E1111B0F1A2C3D4E5F60F /* 216G_ShipperMXLandedCost.swift in Sources */,
+				FE5F1211B0F1A2C3D4E5F611 /* ShipperCommodityKit.swift in Sources */,
 				D2280000000000000028CB /* 228_ShipperBOLs.swift in Sources */,
 				D2280000000000000028DB /* 228_ShipperRFPDetail.swift in Sources */,
 				D2290000000000000029CB /* 229_ShipperAllocations.swift in Sources */,
