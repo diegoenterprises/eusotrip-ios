@@ -1164,6 +1164,15 @@
 		EI07431100000000000000B1 /* 743_VesselColdChainFSMAAttestation.swift in Sources */ = {isa = PBXBuildFile; fileRef = EI07431200000000000000B1 /* 743_VesselColdChainFSMAAttestation.swift */; };
 		EI07441100000000000000B1 /* 744_VesselTerminalGateLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = EI07441200000000000000B1 /* 744_VesselTerminalGateLog.swift */; };
 		V7322026060200000011A1 /* 732_VesselCargoClaim.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7322026060200000012A1 /* 732_VesselCargoClaim.swift */; };
+		EQVDOCKITVESSEL8BUILD001 /* VesselDocKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQVDOCKITVESSEL8FILER001 /* VesselDocKit.swift */; };
+		EQ762VESSEL8BUILD0000001 /* 762_VesselSurchargeTransparency.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQ762VESSEL8FILER0000001 /* 762_VesselSurchargeTransparency.swift */; };
+		EQ763VESSEL8BUILD0000001 /* 763_VesselBLDuplicateDetection.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQ763VESSEL8FILER0000001 /* 763_VesselBLDuplicateDetection.swift */; };
+		EQ764VESSEL8BUILD0000001 /* 764_VesselReeferPlugRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQ764VESSEL8FILER0000001 /* 764_VesselReeferPlugRequest.swift */; };
+		EQ765VESSEL8BUILD0000001 /* 765_VesselLetterOfCredit.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQ765VESSEL8FILER0000001 /* 765_VesselLetterOfCredit.swift */; };
+		EQ766VESSEL8BUILD0000001 /* 766_VesselLetterOfIndemnity.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQ766VESSEL8FILER0000001 /* 766_VesselLetterOfIndemnity.swift */; };
+		EQ767VESSEL8BUILD0000001 /* 767_VesselSeaWaybill.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQ767VESSEL8FILER0000001 /* 767_VesselSeaWaybill.swift */; };
+		EQ768VESSEL8BUILD0000001 /* 768_VesselMasterHouseBL.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQ768VESSEL8FILER0000001 /* 768_VesselMasterHouseBL.swift */; };
+		EQ769VESSEL8BUILD0000001 /* 769_VesselNVOCCFMCTariffBond.swift in Sources */ = {isa = PBXBuildFile; fileRef = EQ769VESSEL8FILER0000001 /* 769_VesselNVOCCFMCTariffBond.swift */; };
 		V7352026060200000011A1 /* 735_VesselDemurrageAlerts.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7352026060200000012A1 /* 735_VesselDemurrageAlerts.swift */; };
 		V7372026060200000011A1 /* 737_VesselDrayageOrders.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7372026060200000012A1 /* 737_VesselDrayageOrders.swift */; };
 		EM745B071126000000000000 /* 745_VesselCFSTransloadInventory.swift in Sources */ = {isa = PBXBuildFile; fileRef = EM745F071126000000000000 /* 745_VesselCFSTransloadInventory.swift */; };
@@ -2442,6 +2451,15 @@
 		EI07431200000000000000B1 /* 743_VesselColdChainFSMAAttestation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 743_VesselColdChainFSMAAttestation.swift; path = EusoTrip/Views/Vessel/743_VesselColdChainFSMAAttestation.swift; sourceTree = SOURCE_ROOT; };
 		EI07441200000000000000B1 /* 744_VesselTerminalGateLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 744_VesselTerminalGateLog.swift; path = EusoTrip/Views/Vessel/744_VesselTerminalGateLog.swift; sourceTree = SOURCE_ROOT; };
 		V7322026060200000012A1 /* 732_VesselCargoClaim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 732_VesselCargoClaim.swift; path = EusoTrip/Views/Vessel/732_VesselCargoClaim.swift; sourceTree = SOURCE_ROOT; };
+		EQVDOCKITVESSEL8FILER001 /* VesselDocKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = VesselDocKit.swift; path = EusoTrip/Views/Vessel/VesselDocKit.swift; sourceTree = SOURCE_ROOT; };
+		EQ762VESSEL8FILER0000001 /* 762_VesselSurchargeTransparency.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 762_VesselSurchargeTransparency.swift; path = EusoTrip/Views/Vessel/762_VesselSurchargeTransparency.swift; sourceTree = SOURCE_ROOT; };
+		EQ763VESSEL8FILER0000001 /* 763_VesselBLDuplicateDetection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 763_VesselBLDuplicateDetection.swift; path = EusoTrip/Views/Vessel/763_VesselBLDuplicateDetection.swift; sourceTree = SOURCE_ROOT; };
+		EQ764VESSEL8FILER0000001 /* 764_VesselReeferPlugRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 764_VesselReeferPlugRequest.swift; path = EusoTrip/Views/Vessel/764_VesselReeferPlugRequest.swift; sourceTree = SOURCE_ROOT; };
+		EQ765VESSEL8FILER0000001 /* 765_VesselLetterOfCredit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 765_VesselLetterOfCredit.swift; path = EusoTrip/Views/Vessel/765_VesselLetterOfCredit.swift; sourceTree = SOURCE_ROOT; };
+		EQ766VESSEL8FILER0000001 /* 766_VesselLetterOfIndemnity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 766_VesselLetterOfIndemnity.swift; path = EusoTrip/Views/Vessel/766_VesselLetterOfIndemnity.swift; sourceTree = SOURCE_ROOT; };
+		EQ767VESSEL8FILER0000001 /* 767_VesselSeaWaybill.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 767_VesselSeaWaybill.swift; path = EusoTrip/Views/Vessel/767_VesselSeaWaybill.swift; sourceTree = SOURCE_ROOT; };
+		EQ768VESSEL8FILER0000001 /* 768_VesselMasterHouseBL.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 768_VesselMasterHouseBL.swift; path = EusoTrip/Views/Vessel/768_VesselMasterHouseBL.swift; sourceTree = SOURCE_ROOT; };
+		EQ769VESSEL8FILER0000001 /* 769_VesselNVOCCFMCTariffBond.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 769_VesselNVOCCFMCTariffBond.swift; path = EusoTrip/Views/Vessel/769_VesselNVOCCFMCTariffBond.swift; sourceTree = SOURCE_ROOT; };
 		V7352026060200000012A1 /* 735_VesselDemurrageAlerts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 735_VesselDemurrageAlerts.swift; path = EusoTrip/Views/Vessel/735_VesselDemurrageAlerts.swift; sourceTree = SOURCE_ROOT; };
 		V7372026060200000012A1 /* 737_VesselDrayageOrders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 737_VesselDrayageOrders.swift; path = EusoTrip/Views/Vessel/737_VesselDrayageOrders.swift; sourceTree = SOURCE_ROOT; };
 		EM745F071126000000000000 /* 745_VesselCFSTransloadInventory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 745_VesselCFSTransloadInventory.swift; path = EusoTrip/Views/Vessel/745_VesselCFSTransloadInventory.swift; sourceTree = SOURCE_ROOT; };
@@ -3544,6 +3562,15 @@
 				V8142026060200000012A1 /* 814_VesselCustomsEntryFiling.swift */,
 				V0062026060200000012A1 /* 006_VesselCustomsISF.swift */,
 				V7322026060200000012A1 /* 732_VesselCargoClaim.swift */,
+				EQVDOCKITVESSEL8FILER001 /* VesselDocKit.swift */,
+				EQ762VESSEL8FILER0000001 /* 762_VesselSurchargeTransparency.swift */,
+				EQ763VESSEL8FILER0000001 /* 763_VesselBLDuplicateDetection.swift */,
+				EQ764VESSEL8FILER0000001 /* 764_VesselReeferPlugRequest.swift */,
+				EQ765VESSEL8FILER0000001 /* 765_VesselLetterOfCredit.swift */,
+				EQ766VESSEL8FILER0000001 /* 766_VesselLetterOfIndemnity.swift */,
+				EQ767VESSEL8FILER0000001 /* 767_VesselSeaWaybill.swift */,
+				EQ768VESSEL8FILER0000001 /* 768_VesselMasterHouseBL.swift */,
+				EQ769VESSEL8FILER0000001 /* 769_VesselNVOCCFMCTariffBond.swift */,
 				V8082026060200000012A1 /* 808_VesselClaimWorkflow.swift */,
 				V8012026060200000012A1 /* 801_VesselClaimsList.swift */,
 				V8002026060200000012A1 /* 800_VesselClaimsDashboard.swift */,
@@ -4585,6 +4612,15 @@
 				V8142026060200000011A1 /* 814_VesselCustomsEntryFiling.swift in Sources */,
 				V0062026060200000011A1 /* 006_VesselCustomsISF.swift in Sources */,
 				V7322026060200000011A1 /* 732_VesselCargoClaim.swift in Sources */,
+				EQVDOCKITVESSEL8BUILD001 /* VesselDocKit.swift in Sources */,
+				EQ762VESSEL8BUILD0000001 /* 762_VesselSurchargeTransparency.swift in Sources */,
+				EQ763VESSEL8BUILD0000001 /* 763_VesselBLDuplicateDetection.swift in Sources */,
+				EQ764VESSEL8BUILD0000001 /* 764_VesselReeferPlugRequest.swift in Sources */,
+				EQ765VESSEL8BUILD0000001 /* 765_VesselLetterOfCredit.swift in Sources */,
+				EQ766VESSEL8BUILD0000001 /* 766_VesselLetterOfIndemnity.swift in Sources */,
+				EQ767VESSEL8BUILD0000001 /* 767_VesselSeaWaybill.swift in Sources */,
+				EQ768VESSEL8BUILD0000001 /* 768_VesselMasterHouseBL.swift in Sources */,
+				EQ769VESSEL8BUILD0000001 /* 769_VesselNVOCCFMCTariffBond.swift in Sources */,
 				V8082026060200000011A1 /* 808_VesselClaimWorkflow.swift in Sources */,
 				V8012026060200000011A1 /* 801_VesselClaimsList.swift in Sources */,
 				V8002026060200000011A1 /* 800_VesselClaimsDashboard.swift in Sources */,
