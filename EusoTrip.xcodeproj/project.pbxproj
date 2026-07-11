@@ -1104,6 +1104,14 @@
 		V7842026060200000011A1 /* 784_VesselDetentionTracking.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7842026060200000012A1 /* 784_VesselDetentionTracking.swift */; };
 		V7892026060200000011A1 /* 789_VesselCustomsStatusUpdate.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7892026060200000012A1 /* 789_VesselCustomsStatusUpdate.swift */; };
 		V7922026060200000011A1 /* 792_VesselDemurrageCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = V7922026060200000012A1 /* 792_VesselDemurrageCalculator.swift */; };
+		EG721V4000000000000000B1 /* 721_VesselEUETSFuelEU.swift in Sources */ = {isa = PBXBuildFile; fileRef = EG721V4000000000000000F2 /* 721_VesselEUETSFuelEU.swift */; };
+		EG723V4000000000000000B1 /* 723_VesselAllocationMQC.swift in Sources */ = {isa = PBXBuildFile; fileRef = EG723V4000000000000000F2 /* 723_VesselAllocationMQC.swift */; };
+		EG725V4000000000000000B1 /* 725_VesselOceanFactoring.swift in Sources */ = {isa = PBXBuildFile; fileRef = EG725V4000000000000000F2 /* 725_VesselOceanFactoring.swift */; };
+		EG726V4000000000000000B1 /* 726_VesselFeedHealth.swift in Sources */ = {isa = PBXBuildFile; fileRef = EG726V4000000000000000F2 /* 726_VesselFeedHealth.swift */; };
+		EG727V4000000000000000B1 /* 727_VesselMarpolRecordBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = EG727V4000000000000000F2 /* 727_VesselMarpolRecordBook.swift */; };
+		EG728V4000000000000000B1 /* 728_VesselThreeWayMatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = EG728V4000000000000000F2 /* 728_VesselThreeWayMatch.swift */; };
+		EG729V4000000000000000B1 /* 729_VesselDualUseScreening.swift in Sources */ = {isa = PBXBuildFile; fileRef = EG729V4000000000000000F2 /* 729_VesselDualUseScreening.swift */; };
+		EG733V4000000000000000B1 /* 733_VesselCargoInsurance.swift in Sources */ = {isa = PBXBuildFile; fileRef = EG733V4000000000000000F2 /* 733_VesselCargoInsurance.swift */; };
 		V8002026060200000011A1 /* 800_VesselClaimsDashboard.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8002026060200000012A1 /* 800_VesselClaimsDashboard.swift */; };
 		V8012026060200000011A1 /* 801_VesselClaimsList.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8012026060200000012A1 /* 801_VesselClaimsList.swift */; };
 		V8022026060200000011A1 /* 802_VesselClaimPayments.swift in Sources */ = {isa = PBXBuildFile; fileRef = V8022026060200000012A1 /* 802_VesselClaimPayments.swift */; };
@@ -2289,6 +2297,14 @@
 		V7842026060200000012A1 /* 784_VesselDetentionTracking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 784_VesselDetentionTracking.swift; path = EusoTrip/Views/Vessel/784_VesselDetentionTracking.swift; sourceTree = SOURCE_ROOT; };
 		V7892026060200000012A1 /* 789_VesselCustomsStatusUpdate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 789_VesselCustomsStatusUpdate.swift; path = EusoTrip/Views/Vessel/789_VesselCustomsStatusUpdate.swift; sourceTree = SOURCE_ROOT; };
 		V7922026060200000012A1 /* 792_VesselDemurrageCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 792_VesselDemurrageCalculator.swift; path = EusoTrip/Views/Vessel/792_VesselDemurrageCalculator.swift; sourceTree = SOURCE_ROOT; };
+		EG721V4000000000000000F2 /* 721_VesselEUETSFuelEU.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 721_VesselEUETSFuelEU.swift; path = EusoTrip/Views/Vessel/721_VesselEUETSFuelEU.swift; sourceTree = SOURCE_ROOT; };
+		EG723V4000000000000000F2 /* 723_VesselAllocationMQC.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 723_VesselAllocationMQC.swift; path = EusoTrip/Views/Vessel/723_VesselAllocationMQC.swift; sourceTree = SOURCE_ROOT; };
+		EG725V4000000000000000F2 /* 725_VesselOceanFactoring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 725_VesselOceanFactoring.swift; path = EusoTrip/Views/Vessel/725_VesselOceanFactoring.swift; sourceTree = SOURCE_ROOT; };
+		EG726V4000000000000000F2 /* 726_VesselFeedHealth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 726_VesselFeedHealth.swift; path = EusoTrip/Views/Vessel/726_VesselFeedHealth.swift; sourceTree = SOURCE_ROOT; };
+		EG727V4000000000000000F2 /* 727_VesselMarpolRecordBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 727_VesselMarpolRecordBook.swift; path = EusoTrip/Views/Vessel/727_VesselMarpolRecordBook.swift; sourceTree = SOURCE_ROOT; };
+		EG728V4000000000000000F2 /* 728_VesselThreeWayMatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 728_VesselThreeWayMatch.swift; path = EusoTrip/Views/Vessel/728_VesselThreeWayMatch.swift; sourceTree = SOURCE_ROOT; };
+		EG729V4000000000000000F2 /* 729_VesselDualUseScreening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 729_VesselDualUseScreening.swift; path = EusoTrip/Views/Vessel/729_VesselDualUseScreening.swift; sourceTree = SOURCE_ROOT; };
+		EG733V4000000000000000F2 /* 733_VesselCargoInsurance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 733_VesselCargoInsurance.swift; path = EusoTrip/Views/Vessel/733_VesselCargoInsurance.swift; sourceTree = SOURCE_ROOT; };
 		V8002026060200000012A1 /* 800_VesselClaimsDashboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 800_VesselClaimsDashboard.swift; path = EusoTrip/Views/Vessel/800_VesselClaimsDashboard.swift; sourceTree = SOURCE_ROOT; };
 		V8012026060200000012A1 /* 801_VesselClaimsList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 801_VesselClaimsList.swift; path = EusoTrip/Views/Vessel/801_VesselClaimsList.swift; sourceTree = SOURCE_ROOT; };
 		V8022026060200000012A1 /* 802_VesselClaimPayments.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 802_VesselClaimPayments.swift; path = EusoTrip/Views/Vessel/802_VesselClaimPayments.swift; sourceTree = SOURCE_ROOT; };
@@ -3319,6 +3335,14 @@
 				V8002026060200000012A1 /* 800_VesselClaimsDashboard.swift */,
 				V7092026060200000012A1 /* 709_VesselBidBoard.swift */,
 				V7922026060200000012A1 /* 792_VesselDemurrageCalculator.swift */,
+				EG721V4000000000000000F2 /* 721_VesselEUETSFuelEU.swift */,
+				EG723V4000000000000000F2 /* 723_VesselAllocationMQC.swift */,
+				EG725V4000000000000000F2 /* 725_VesselOceanFactoring.swift */,
+				EG726V4000000000000000F2 /* 726_VesselFeedHealth.swift */,
+				EG727V4000000000000000F2 /* 727_VesselMarpolRecordBook.swift */,
+				EG728V4000000000000000F2 /* 728_VesselThreeWayMatch.swift */,
+				EG729V4000000000000000F2 /* 729_VesselDualUseScreening.swift */,
+				EG733V4000000000000000F2 /* 733_VesselCargoInsurance.swift */,
 				V7722026060200000012A1 /* 772_VesselDemurrageAnalytics.swift */,
 				V7372026060200000012A1 /* 737_VesselDrayageOrders.swift */,
 				V7062026060200000012A1 /* 706_VesselRebookingSuggestions.swift */,
@@ -4269,6 +4293,14 @@
 				V8002026060200000011A1 /* 800_VesselClaimsDashboard.swift in Sources */,
 				V7092026060200000011A1 /* 709_VesselBidBoard.swift in Sources */,
 				V7922026060200000011A1 /* 792_VesselDemurrageCalculator.swift in Sources */,
+				EG721V4000000000000000B1 /* 721_VesselEUETSFuelEU.swift in Sources */,
+				EG723V4000000000000000B1 /* 723_VesselAllocationMQC.swift in Sources */,
+				EG725V4000000000000000B1 /* 725_VesselOceanFactoring.swift in Sources */,
+				EG726V4000000000000000B1 /* 726_VesselFeedHealth.swift in Sources */,
+				EG727V4000000000000000B1 /* 727_VesselMarpolRecordBook.swift in Sources */,
+				EG728V4000000000000000B1 /* 728_VesselThreeWayMatch.swift in Sources */,
+				EG729V4000000000000000B1 /* 729_VesselDualUseScreening.swift in Sources */,
+				EG733V4000000000000000B1 /* 733_VesselCargoInsurance.swift in Sources */,
 				V7722026060200000011A1 /* 772_VesselDemurrageAnalytics.swift in Sources */,
 				V7372026060200000011A1 /* 737_VesselDrayageOrders.swift in Sources */,
 				V7062026060200000011A1 /* 706_VesselRebookingSuggestions.swift in Sources */,
