@@ -2473,6 +2473,15 @@ enum ScreenRegistry {
             .init(id: "Vesl728", title: "Vessel Operator · Three-Way Match",         role: .vesselOperator) { p in AnyView(VesselThreeWayMatchScreen(theme: p)) },
             .init(id: "Vesl729", title: "Vessel Operator · HS Dual-Use Screening",   role: .vesselOperator) { p in AnyView(VesselDualUseScreeningScreen(theme: p)) },
             .init(id: "Vesl733", title: "Vessel Operator · Cargo Insurance",         role: .vesselOperator) { p in AnyView(VesselCargoInsuranceScreen(theme: p)) },
+            // Vessel wave 6 — cross-border + CFS suite (verbatim native ports of the canonical Dark-SVGs 745–752).
+            .init(id: "Vesl745", title: "Vessel · CFS Transload Inventory",  role: .vesselOperator) { p in AnyView(VesselCFSTransloadInventoryScreen(theme: p)) },
+            .init(id: "Vesl746", title: "Vessel · CFS Deconsolidation Plan",  role: .vesselOperator) { p in AnyView(VesselCFSDeconsolidationPlanScreen(theme: p)) },
+            .init(id: "Vesl747", title: "Vessel · Cabotage Rules",            role: .vesselOperator) { p in AnyView(VesselCabotageRulesScreen(theme: p)) },
+            .init(id: "Vesl748", title: "Vessel · Cross-Border Clearance",    role: .vesselOperator) { p in AnyView(VesselCrossBorderClearanceScreen(theme: p)) },
+            .init(id: "Vesl749", title: "Vessel · Trade Lane Documents",      role: .vesselOperator) { p in AnyView(VesselTradeLaneDocumentsScreen(theme: p)) },
+            .init(id: "Vesl750", title: "Vessel · Cross-Border Ports",        role: .vesselOperator) { p in AnyView(VesselCrossBorderPortsScreen(theme: p)) },
+            .init(id: "Vesl751", title: "Vessel · ISF Requirements",          role: .vesselOperator) { p in AnyView(VesselISFRequirementsScreen(theme: p)) },
+            .init(id: "Vesl752", title: "Vessel · Container Move Entry",      role: .vesselOperator) { p in AnyView(VesselContainerMoveEntryScreen(theme: p)) },
         ])
 
         return list
