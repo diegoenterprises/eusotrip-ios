@@ -61,6 +61,22 @@ private struct CreateResult562: Decodable {
     let createdAt: String?
 }
 
+// MARK: - Rail service cutoff (L02-23)
+//
+// railGate.getCutoffs → the yard's rail_service_cutoffs for a service date: the
+// ingate cutoff timestamp + the train symbol it belongs to. A gate slot that
+// lands AFTER the ingate cutoff misses that train, so it is flagged + disabled
+// (honest — surfaced, never hidden). Decoded leniently — an absent cutoff time
+// leaves every slot open.
+private struct RailCutoff562: Decodable {
+    let id: Int?
+    let yardId: Int?
+    let trainSymbol: String?
+    let serviceDate: String?
+    let gateCutoffAt: String?
+    let departureAt: String?
+}
+
 // MARK: - Body
 
 private struct RailGateAppointmentBody: View {
@@ -71,6 +87,9 @@ private struct RailGateAppointmentBody: View {
     let shipmentId: String
 
     @State private var slots: [AvailableSlot562] = []
+    /// The applicable ingate cutoff for the selected service date (earliest on
+    /// that date). Nil when the yard has none — slots then behave normally.
+    @State private var ingateCutoff: RailCutoff562? = nil
     @State private var selectedTime: String? = nil
     @State private var selectedDate: Date = {
         var c = Calendar.current; c.timeZone = TimeZone(identifier: "America/Chicago")!
@@ -197,6 +216,7 @@ private struct RailGateAppointmentBody: View {
                 Spacer()
                 Text(displayDate).font(EType.caption).foregroundStyle(palette.textSecondary)
             }
+            cutoffBanner
             if loading {
                 LifecycleCard {
                     Text("Loading slots…").font(EType.caption).foregroundStyle(palette.textSecondary)
@@ -209,47 +229,71 @@ private struct RailGateAppointmentBody: View {
         }
     }
 
+    /// Honest banner naming the ingate cutoff a slot is measured against — shown
+    /// only when the yard has a cutoff on this service date.
+    @ViewBuilder
+    private var cutoffBanner: some View {
+        if let c = ingateCutoff, let at = cutoffDisplay {
+            HStack(spacing: 8) {
+                Image(systemName: "clock.badge.exclamationmark")
+                    .font(.system(size: 12, weight: .bold)).foregroundStyle(Brand.warning)
+                Text(c.trainSymbol.map { "Ingate cutoff \(at) CT · train \($0)" } ?? "Ingate cutoff \(at) CT")
+                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+                .fill(Brand.warning.opacity(0.10))
+                .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Brand.warning.opacity(0.30))))
+        }
+    }
+
     private func slotTile(_ s: AvailableSlot562) -> some View {
+        let isPast     = isPastIngateCutoff(s.time)   // lands after the ingate cutoff
         let isFull     = !s.available
+        let disabled   = isFull || isPast
         let isSelected = selectedTime == s.time
+        let timeTint: AnyShapeStyle =
+            isSelected ? AnyShapeStyle(LinearGradient.diagonal)
+            : (isPast ? AnyShapeStyle(Brand.warning)
+               : (isFull ? AnyShapeStyle(palette.textTertiary) : AnyShapeStyle(palette.textPrimary)))
+        let labelTint: Color =
+            isPast ? Brand.warning
+            : (isFull ? palette.textTertiary : (isSelected ? Brand.info : Brand.success))
         return Button {
-            guard s.available else { return }
+            guard !disabled else { return }
             selectedTime = s.time
         } label: {
             VStack(alignment: .leading, spacing: 4) {
-                Group {
-                    if isSelected {
-                        Text(s.time).foregroundStyle(LinearGradient.diagonal)
-                    } else if isFull {
-                        Text(s.time).foregroundStyle(palette.textTertiary)
-                    } else {
-                        Text(s.time).foregroundStyle(palette.textPrimary)
-                    }
-                }
-                .font(.system(size: 16, weight: .bold)).monospacedDigit()
-                Text(slotLabel(s))
+                Text(s.time).foregroundStyle(timeTint)
+                    .font(.system(size: 16, weight: .bold)).monospacedDigit()
+                Text(slotLabel(s, isPast: isPast))
                     .font(.system(size: 10, weight: isSelected ? .bold : .regular))
-                    .foregroundStyle(isFull ? palette.textTertiary : isSelected ? Brand.info : Brand.success)
+                    .foregroundStyle(labelTint)
+                    .lineLimit(1).minimumScaleFactor(0.7)
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
             .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-                    .fill(isFull ? palette.bgCardSoft.opacity(0.5) : palette.bgCard)
+                    .fill(disabled ? palette.bgCardSoft.opacity(0.5) : palette.bgCard)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
                     .strokeBorder(
-                        isSelected ? AnyShapeStyle(LinearGradient.diagonal) : AnyShapeStyle(palette.borderFaint),
+                        isSelected ? AnyShapeStyle(LinearGradient.diagonal)
+                        : (isPast ? AnyShapeStyle(Brand.warning.opacity(0.5)) : AnyShapeStyle(palette.borderFaint)),
                         lineWidth: isSelected ? 1.5 : 1
                     )
             )
         }
         .buttonStyle(.plain)
-        .disabled(isFull)
+        .disabled(disabled)
     }
 
-    private func slotLabel(_ s: AvailableSlot562) -> String {
+    private func slotLabel(_ s: AvailableSlot562, isPast: Bool) -> String {
+        if isPast { return "past cutoff" }
         guard s.available else { return "full · \(s.booked) of \(s.capacity)" }
         if selectedTime == s.time { return "selected · \(s.capacity - s.booked) of \(s.capacity)" }
         return "open · \(s.booked) of \(s.capacity)"
@@ -336,7 +380,25 @@ private struct RailGateAppointmentBody: View {
         } catch {
             self.slots = []
         }
+        await loadIngateCutoff()
+        // Drop a selection that the (re)loaded cutoff now pushes past the ingate.
+        if let prev = selectedTime, isPastIngateCutoff(prev) { selectedTime = nil }
         loading = false
+    }
+
+    /// railGate.getCutoffs → the yard's rail_service_cutoffs. Non-fatal: a
+    /// non-numeric facility id or a failed/absent cutoff simply leaves every
+    /// slot open (the appointment grid still works).
+    private func loadIngateCutoff() async {
+        guard let yardId = Int(facilityId) else { ingateCutoff = nil; return }
+        struct CutoffsIn: Encodable { let yardId: Int; let from: String }
+        let rows: [RailCutoff562] = (try? await EusoTripAPI.shared.query(
+            "railGate.getCutoffs", input: CutoffsIn(yardId: yardId, from: dateString))) ?? []
+        // The applicable reference is the earliest ingate cutoff on this service
+        // date (a slot after it misses that train). Fall back to nil when none.
+        ingateCutoff = rows
+            .filter { ($0.serviceDate ?? "") == dateString && $0.gateCutoffAt != nil }
+            .min { ($0.gateCutoffAt ?? "") < ($1.gateCutoffAt ?? "") }
     }
 
     private func reserve() async {
@@ -367,6 +429,45 @@ private struct RailGateAppointmentBody: View {
             errorText = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
         submitting = false
+    }
+
+    // MARK: Ingate-cutoff helpers
+
+    /// The ingate cutoff as an absolute instant (from gateCutoffAt ISO).
+    private var cutoffDate: Date? {
+        guard let iso = ingateCutoff?.gateCutoffAt else { return nil }
+        let f1 = ISO8601DateFormatter(); f1.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f1.date(from: iso) { return d }
+        let f2 = ISO8601DateFormatter(); f2.formatOptions = [.withInternetDateTime]
+        return f2.date(from: iso)
+    }
+
+    /// Cutoff clock label in the yard's CT service-day frame (banner display).
+    private var cutoffDisplay: String? {
+        guard let d = cutoffDate else { return nil }
+        let out = DateFormatter(); out.dateFormat = "HH:mm"
+        out.timeZone = TimeZone(identifier: "America/Chicago")
+        return out.string(from: d)
+    }
+
+    /// True when a slot time on the selected service date lands after the ingate
+    /// cutoff. Honest-conservative: unparseable time or no cutoff → not past.
+    private func isPastIngateCutoff(_ slotTime: String) -> Bool {
+        guard let cutoff = cutoffDate, let slotInstant = slotInstant(for: slotTime) else { return false }
+        return slotInstant > cutoff
+    }
+
+    /// Combine the selected service date + a slot clock string ("HH:mm" or
+    /// "h:mm a") into an absolute instant in America/Chicago.
+    private func slotInstant(for slotTime: String) -> Date? {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "America/Chicago")
+        for fmt in ["yyyy-MM-dd HH:mm", "yyyy-MM-dd h:mm a"] {
+            f.dateFormat = fmt
+            if let d = f.date(from: "\(dateString) \(slotTime)") { return d }
+        }
+        return nil
     }
 
     // MARK: Helpers

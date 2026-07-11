@@ -84,6 +84,30 @@ private struct RecordMovementOut: Decodable {
     let success: Bool
 }
 
+// MARK: - Transshipment legs (L03-16)
+//
+// getVesselShipmentDetail now spreads a `transshipmentLegs` array (ordered by
+// sequence). Each leg is an onward hop through a hub port on a connecting
+// vessel/voyage. Decoded leniently — an absent field renders em-dash; when the
+// booking has no onward legs the array is empty and NO leg is fabricated.
+
+private struct TransshipmentLeg666: Decodable, Identifiable {
+    let id: Int
+    let sequence: Int?
+    let hubPortId: Int?
+    let onwardVesselId: Int?
+    let onwardVoyageNumber: String?
+    let etaHub: String?
+    let etdHub: String?
+    let status: String?     // planned | arrived_hub | loaded_onward | departed_hub
+}
+
+/// Minimal decode of getVesselShipmentDetail — only the onward legs are needed
+/// here (the box timeline owns the rest of the payload via getContainerTracking).
+private struct ShipmentDetailLegs666: Decodable {
+    let transshipmentLegs: [TransshipmentLeg666]?
+}
+
 // MARK: - Node model (canonical 7-node chain from the SVG)
 
 /// A node in the vertical event chain. The done/current/future state drives
@@ -105,6 +129,7 @@ private struct VesselContainerTimelineBody: View {
     let containerNumber: String
 
     @State private var tracking: ContainerTrackingResponse? = nil
+    @State private var legs: [TransshipmentLeg666] = []
     @State private var loading = true
     @State private var loadError: String? = nil
 
@@ -126,6 +151,7 @@ private struct VesselContainerTimelineBody: View {
                 VStack(alignment: .leading, spacing: Space.s4) {
                     summaryHero
                     eventChainSection
+                    transshipmentSection
                     ctaPair
                     Color.clear.frame(height: 96)
                 }
@@ -334,6 +360,109 @@ private struct VesselContainerTimelineBody: View {
         return out.string(from: date)
     }
 
+    // MARK: - Transshipment (onward legs) section
+
+    /// Renders the booking's onward transshipment legs as timeline segments —
+    /// hub port, onward vessel/voyage, ETA/ETD at the hub, and leg status.
+    /// Absent entirely when the booking has no onward legs (no fabricated hop).
+    @ViewBuilder
+    private var transshipmentSection: some View {
+        if !legs.isEmpty {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                Text("TRANSSHIPMENT · \(legs.count) ONWARD LEG\(legs.count == 1 ? "" : "S")")
+                    .font(.system(size: 9, weight: .heavy)).tracking(1.0)
+                    .foregroundStyle(palette.textTertiary)
+
+                VStack(spacing: 0) {
+                    ForEach(Array(legs.enumerated()), id: \.element.id) { idx, leg in
+                        if idx > 0 {
+                            Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                        }
+                        legRow(leg)
+                    }
+                }
+                .padding(Space.s4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(hex: 0x1C2128))
+                .overlay(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+            }
+        }
+    }
+
+    private func legRow(_ leg: TransshipmentLeg666) -> some View {
+        let (statusText, statusColor) = legStatusStyle(leg.status)
+        return HStack(alignment: .top, spacing: Space.s3) {
+            // Sequence chip.
+            ZStack {
+                Circle().fill(Brand.info.opacity(0.14)).frame(width: 34, height: 34)
+                Text("\(leg.sequence ?? 0)")
+                    .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                    .foregroundStyle(Brand.info)
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(onwardLine(leg))
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(palette.textPrimary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Text(hubLine(leg))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced)).tracking(0.3)
+                    .foregroundStyle(palette.textSecondary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                if let timing = timingLine(leg) {
+                    Text(timing)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(palette.textTertiary)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                }
+            }
+            Spacer(minLength: 8)
+            Text(statusText)
+                .font(.system(size: 10, weight: .heavy)).tracking(0.4)
+                .foregroundStyle(statusColor)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Capsule().fill(statusColor.opacity(0.16)))
+        }
+        .padding(.vertical, Space.s3)
+    }
+
+    /// Onward vessel/voyage line — em-dash when the leg carries neither.
+    private func onwardLine(_ leg: TransshipmentLeg666) -> String {
+        var parts: [String] = []
+        if let v = leg.onwardVoyageNumber, !v.isEmpty { parts.append("Voyage \(v)") }
+        if let vid = leg.onwardVesselId { parts.append("vessel #\(vid)") }
+        return parts.isEmpty ? "Onward vessel to be nominated" : parts.joined(separator: " · ")
+    }
+
+    /// Hub port reference — the legs carry only the hub port id (no joined name),
+    /// surfaced as a mono ref matching this screen's SHIPMENT/BOX id idiom.
+    private func hubLine(_ leg: TransshipmentLeg666) -> String {
+        leg.hubPortId.map { "Hub · port #\($0)" } ?? "Hub · —"
+    }
+
+    private func timingLine(_ leg: TransshipmentLeg666) -> String? {
+        let eta = leg.etaHub.flatMap { prettyTimestamp($0) == $0 ? nil : prettyTimestamp($0) }
+        let etd = leg.etdHub.flatMap { prettyTimestamp($0) == $0 ? nil : prettyTimestamp($0) }
+        switch (eta, etd) {
+        case let (a?, d?): return "ETA \(a) · ETD \(d)"
+        case let (a?, nil): return "ETA \(a)"
+        case let (nil, d?): return "ETD \(d)"
+        default: return nil
+        }
+    }
+
+    private func legStatusStyle(_ raw: String?) -> (String, Color) {
+        switch (raw ?? "").lowercased() {
+        case "planned":        return ("Planned", Brand.info)
+        case "arrived_hub":    return ("Arrived at hub", Brand.warning)
+        case "loaded_onward":  return ("Loaded onward", Brand.blue)
+        case "departed_hub":   return ("Departed hub", Brand.success)
+        case "":               return ("—", palette.textTertiary)
+        default:               return (raw!.replacingOccurrences(of: "_", with: " ").capitalized, Brand.info)
+        }
+    }
+
     // MARK: - CTA pair (Add event · Share link)
 
     private var ctaPair: some View {
@@ -398,6 +527,21 @@ private struct VesselContainerTimelineBody: View {
                 "vesselShipments.getContainerTracking",
                 input: TrackingIn(containerNumber: liveContainerNumber.replacingOccurrences(of: " ", with: "")))
             self.tracking = res
+
+            // L03-16: when the box is assigned to a booking, pull that booking's
+            // onward transshipment legs. A leg-fetch failure is non-fatal — the
+            // box timeline still renders; the onward section just stays empty.
+            if let sid = res.container?.assignedShipmentId {
+                struct DetailIn: Encodable { let id: Int }
+                if let detail: ShipmentDetailLegs666 = try? await EusoTripAPI.shared.query(
+                    "vesselShipments.getVesselShipmentDetail", input: DetailIn(id: sid)) {
+                    self.legs = detail.transshipmentLegs ?? []
+                } else {
+                    self.legs = []
+                }
+            } else {
+                self.legs = []
+            }
         } catch {
             loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
