@@ -1048,6 +1048,14 @@
 		RL7022026070300000000001 /* 702_RailWaysideDetectors.swift in Sources */ = {isa = PBXBuildFile; fileRef = RL7022026070300000000002 /* 702_RailWaysideDetectors.swift */; };
 		RL7032026070300000000001 /* 703_RailHazmatIncidentEReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = RL7032026070300000000002 /* 703_RailHazmatIncidentEReport.swift */; };
 		RL7042026070300000000001 /* 704_RailTrustVerdict.swift in Sources */ = {isa = PBXBuildFile; fileRef = RL7042026070300000000002 /* 704_RailTrustVerdict.swift */; };
+		EF6740711000000000000001 /* 674_RailConsistMassDynamicBrake.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6740711000000000000002 /* 674_RailConsistMassDynamicBrake.swift */; };
+		EF6750711000000000000001 /* 675_RailAirBrakeTestLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6750711000000000000002 /* 675_RailAirBrakeTestLog.swift */; };
+		EF6760711000000000000001 /* 676_RailPTCRouteQualification.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6760711000000000000002 /* 676_RailPTCRouteQualification.swift */; };
+		EF6770711000000000000001 /* 677_RailBadOrderTagging.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6770711000000000000002 /* 677_RailBadOrderTagging.swift */; };
+		EF6780711000000000000001 /* 678_RailDeadheadPositioning.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6780711000000000000002 /* 678_RailDeadheadPositioning.swift */; };
+		EF6790711000000000000001 /* 679_RailFRAPart228HOSAudit.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6790711000000000000002 /* 679_RailFRAPart228HOSAudit.swift */; };
+		EF6800711000000000000001 /* 680_RailLocomotiveHPPerTon.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6800711000000000000002 /* 680_RailLocomotiveHPPerTon.swift */; };
+		EF6810711000000000000001 /* 681_RailInterchangeDwellSLA.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF6810711000000000000002 /* 681_RailInterchangeDwellSLA.swift */; };
 		RL7052026070300000000001 /* 705_RailScacMarkCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = RL7052026070300000000002 /* 705_RailScacMarkCheck.swift */; };
 		RL7062026070300000000001 /* 706_RailTagSwapScan.swift in Sources */ = {isa = PBXBuildFile; fileRef = RL7062026070300000000002 /* 706_RailTagSwapScan.swift */; };
 		RLLN2026051700000011A1 /* RailLane.swift in Sources */ = {isa = PBXBuildFile; fileRef = RLLN2026051700000012A1 /* RailLane.swift */; };
@@ -2224,6 +2232,14 @@
 		RL7022026070300000000002 /* 702_RailWaysideDetectors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 702_RailWaysideDetectors.swift; sourceTree = "<group>"; };
 		RL7032026070300000000002 /* 703_RailHazmatIncidentEReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 703_RailHazmatIncidentEReport.swift; sourceTree = "<group>"; };
 		RL7042026070300000000002 /* 704_RailTrustVerdict.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 704_RailTrustVerdict.swift; sourceTree = "<group>"; };
+		EF6740711000000000000002 /* 674_RailConsistMassDynamicBrake.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 674_RailConsistMassDynamicBrake.swift; sourceTree = "<group>"; };
+		EF6750711000000000000002 /* 675_RailAirBrakeTestLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 675_RailAirBrakeTestLog.swift; sourceTree = "<group>"; };
+		EF6760711000000000000002 /* 676_RailPTCRouteQualification.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 676_RailPTCRouteQualification.swift; sourceTree = "<group>"; };
+		EF6770711000000000000002 /* 677_RailBadOrderTagging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 677_RailBadOrderTagging.swift; sourceTree = "<group>"; };
+		EF6780711000000000000002 /* 678_RailDeadheadPositioning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 678_RailDeadheadPositioning.swift; sourceTree = "<group>"; };
+		EF6790711000000000000002 /* 679_RailFRAPart228HOSAudit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 679_RailFRAPart228HOSAudit.swift; sourceTree = "<group>"; };
+		EF6800711000000000000002 /* 680_RailLocomotiveHPPerTon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 680_RailLocomotiveHPPerTon.swift; sourceTree = "<group>"; };
+		EF6810711000000000000002 /* 681_RailInterchangeDwellSLA.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 681_RailInterchangeDwellSLA.swift; sourceTree = "<group>"; };
 		RL7052026070300000000002 /* 705_RailScacMarkCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 705_RailScacMarkCheck.swift; sourceTree = "<group>"; };
 		RL7062026070300000000002 /* 706_RailTagSwapScan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 706_RailTagSwapScan.swift; sourceTree = "<group>"; };
 		RLLN2026051700000012A1 /* RailLane.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = RailLane.swift; path = EusoTrip/Models/RailLane.swift; sourceTree = SOURCE_ROOT; };
@@ -3461,6 +3477,14 @@
 				RL7022026070300000000002 /* 702_RailWaysideDetectors.swift */,
 				RL7032026070300000000002 /* 703_RailHazmatIncidentEReport.swift */,
 				RL7042026070300000000002 /* 704_RailTrustVerdict.swift */,
+				EF6740711000000000000002 /* 674_RailConsistMassDynamicBrake.swift */,
+				EF6750711000000000000002 /* 675_RailAirBrakeTestLog.swift */,
+				EF6760711000000000000002 /* 676_RailPTCRouteQualification.swift */,
+				EF6770711000000000000002 /* 677_RailBadOrderTagging.swift */,
+				EF6780711000000000000002 /* 678_RailDeadheadPositioning.swift */,
+				EF6790711000000000000002 /* 679_RailFRAPart228HOSAudit.swift */,
+				EF6800711000000000000002 /* 680_RailLocomotiveHPPerTon.swift */,
+				EF6810711000000000000002 /* 681_RailInterchangeDwellSLA.swift */,
 				RL7052026070300000000002 /* 705_RailScacMarkCheck.swift */,
 				RL7062026070300000000002 /* 706_RailTagSwapScan.swift */,
 				FE5C0E070000000000000000 /* 002_RailShipmentDetail.swift */,
@@ -4190,6 +4214,14 @@
 				RL7022026070300000000001 /* 702_RailWaysideDetectors.swift in Sources */,
 				RL7032026070300000000001 /* 703_RailHazmatIncidentEReport.swift in Sources */,
 				RL7042026070300000000001 /* 704_RailTrustVerdict.swift in Sources */,
+				EF6740711000000000000001 /* 674_RailConsistMassDynamicBrake.swift in Sources */,
+				EF6750711000000000000001 /* 675_RailAirBrakeTestLog.swift in Sources */,
+				EF6760711000000000000001 /* 676_RailPTCRouteQualification.swift in Sources */,
+				EF6770711000000000000001 /* 677_RailBadOrderTagging.swift in Sources */,
+				EF6780711000000000000001 /* 678_RailDeadheadPositioning.swift in Sources */,
+				EF6790711000000000000001 /* 679_RailFRAPart228HOSAudit.swift in Sources */,
+				EF6800711000000000000001 /* 680_RailLocomotiveHPPerTon.swift in Sources */,
+				EF6810711000000000000001 /* 681_RailInterchangeDwellSLA.swift in Sources */,
 				RL7052026070300000000001 /* 705_RailScacMarkCheck.swift in Sources */,
 				RL7062026070300000000001 /* 706_RailTagSwapScan.swift in Sources */,
 				V7082026060200000011A1 /* 708_VesselShipmentCO2.swift in Sources */,

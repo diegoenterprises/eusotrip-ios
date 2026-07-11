@@ -2190,6 +2190,19 @@ enum ScreenRegistry {
             .init(id: "Rail704", title: "Rail Engineer · Trust Verdict", role: .railEngineer) { p in AnyView(RailTrustVerdictScreen(theme: p, loadId: "0")) },  // loadId accepts "1077" or "load_1077"; pass the real tender id when opened from a shipment context
             .init(id: "Rail705", title: "Rail Engineer · SCAC Mark Check", role: .railEngineer) { p in AnyView(RailScacMarkCheckScreen(theme: p)) },  // optional enteredMark: pre-fills the mark when opened from a tender
             .init(id: "Rail706", title: "Rail Engineer · Tag-Swap Scan", role: .railEngineer) { p in AnyView(RailTagSwapScanScreen(theme: p)) },
+            // 2026-07-11 — 05 Rail port-batch (ios/port-rail-3): 674-681, the
+            // carrier-side departure-readiness + movement-planning band
+            // (consist mass · air-brake · PTC · bad-order · deadhead · Part 228
+            // HOS · hp/ton · interchange dwell). Ids "Rail674"…"Rail681" are
+            // collision-free; the Vessel 679 uses "Vesl679" + a distinct type.
+            .init(id: "Rail674", title: "Rail Engineer · Consist Mass & Dynamic-Brake", role: .railEngineer) { p in AnyView(RailConsistMassDynamicBrakeScreen(theme: p)) },
+            .init(id: "Rail675", title: "Rail Engineer · Air-Brake Test Log", role: .railEngineer) { p in AnyView(RailAirBrakeTestLogScreen(theme: p)) },
+            .init(id: "Rail676", title: "Rail Engineer · PTC Route Qualification", role: .railEngineer) { p in AnyView(RailPTCRouteQualificationScreen(theme: p)) },
+            .init(id: "Rail677", title: "Rail Engineer · Bad-Order Tagging", role: .railEngineer) { p in AnyView(RailBadOrderTaggingScreen(theme: p)) },
+            .init(id: "Rail678", title: "Rail Engineer · Deadhead Positioning", role: .railEngineer) { p in AnyView(RailDeadheadPositioningScreen(theme: p)) },
+            .init(id: "Rail679", title: "Rail Engineer · FRA Part 228 HOS Audit", role: .railEngineer) { p in AnyView(RailFRAPart228HOSAuditScreen(theme: p)) },
+            .init(id: "Rail680", title: "Rail Engineer · Locomotive HP-per-Ton", role: .railEngineer) { p in AnyView(RailLocomotiveHPPerTonScreen(theme: p)) },
+            .init(id: "Rail681", title: "Rail Engineer · Interchange Dwell-SLA", role: .railEngineer) { p in AnyView(RailInterchangeDwellSLAScreen(theme: p)) },
             .init(id: "Rail639", title: "Rail Engineer · Yard Directory", role: .railEngineer) { p in AnyView(RailYardDirectoryScreen(theme: p)) },
             .init(id: "Rail672", title: "Rail Engineer · Layover Tracking", role: .railEngineer) { p in AnyView(RailLayoverTrackingScreen(theme: p)) },
             .init(id: "Rail568", title: "Rail Engineer · Equipment Lease", role: .railEngineer) { p in AnyView(RailEquipmentLeaseScreen(theme: p)) },
