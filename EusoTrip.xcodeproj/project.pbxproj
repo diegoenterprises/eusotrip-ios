@@ -367,6 +367,15 @@
 		FC0150000000000000B0A150 /* 150_DriverPretripDVIRM05.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0150000000000000B0A151 /* 150_DriverPretripDVIRM05.swift */; };
 		FC0167000000000000B0A167 /* 167_DriverReeferTemp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0167000000000000B0A168 /* 167_DriverReeferTemp.swift */; };
 		FC0168000000000000B0A169 /* 168_DriverTankerMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC0168000000000000B0A170 /* 168_DriverTankerMonitor.swift */; };
+		EC0169000000000000B0A001 /* 169_DriverTollsPrePass.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0169000000000000F0A001 /* 169_DriverTollsPrePass.swift */; };
+		EC0170000000000000B0A002 /* 170_DriverWeighStationBypass.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0170000000000000F0A002 /* 170_DriverWeighStationBypass.swift */; };
+		EC0170B00000000000B0A003 /* 170B_DriverAxleScaleWeigh.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0170B00000000000F0A003 /* 170B_DriverAxleScaleWeigh.swift */; };
+		EC0171000000000000B0A004 /* 171_DriverTruckParking.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0171000000000000F0A004 /* 171_DriverTruckParking.swift */; };
+		EC0173000000000000B0A005 /* 173_DriverClearinghouseStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0173000000000000F0A005 /* 173_DriverClearinghouseStatus.swift */; };
+		EC0177000000000000B0A006 /* 177_DriverCashAdvance.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0177000000000000F0A006 /* 177_DriverCashAdvance.swift */; };
+		EC0178000000000000B0A007 /* 178_DriverDrugTest.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0178000000000000F0A007 /* 178_DriverDrugTest.swift */; };
+		EC0179000000000000B0A008 /* 179_DriverFuelEconomy.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC0179000000000000F0A008 /* 179_DriverFuelEconomy.swift */; };
+		EC017C000000000000B0A009 /* DriverUtilityKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC017C000000000000F0A009 /* DriverUtilityKit.swift */; };
 		D145000000000000000007C1 /* 145_DriverPickupDepartedCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D145000000000000000007C2 /* 145_DriverPickupDepartedCelM04.swift */; };
 		D146000000000000000007D1 /* 146_DriverInTransitCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D146000000000000000007D2 /* 146_DriverInTransitCelM04.swift */; };
 		D147000000000000000007E1 /* 147_DriverAtDeliveryArrivalCelM04.swift in Sources */ = {isa = PBXBuildFile; fileRef = D147000000000000000007E2 /* 147_DriverAtDeliveryArrivalCelM04.swift */; };
@@ -1481,6 +1490,15 @@
 		FC0150000000000000B0A151 /* 150_DriverPretripDVIRM05.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 150_DriverPretripDVIRM05.swift; sourceTree = "<group>"; };
 		FC0167000000000000B0A168 /* 167_DriverReeferTemp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 167_DriverReeferTemp.swift; sourceTree = "<group>"; };
 		FC0168000000000000B0A170 /* 168_DriverTankerMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 168_DriverTankerMonitor.swift; sourceTree = "<group>"; };
+		EC0169000000000000F0A001 /* 169_DriverTollsPrePass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 169_DriverTollsPrePass.swift; path = EusoTrip/Views/Driver/169_DriverTollsPrePass.swift; sourceTree = SOURCE_ROOT; };
+		EC0170000000000000F0A002 /* 170_DriverWeighStationBypass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 170_DriverWeighStationBypass.swift; path = EusoTrip/Views/Driver/170_DriverWeighStationBypass.swift; sourceTree = SOURCE_ROOT; };
+		EC0170B00000000000F0A003 /* 170B_DriverAxleScaleWeigh.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 170B_DriverAxleScaleWeigh.swift; path = EusoTrip/Views/Driver/170B_DriverAxleScaleWeigh.swift; sourceTree = SOURCE_ROOT; };
+		EC0171000000000000F0A004 /* 171_DriverTruckParking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 171_DriverTruckParking.swift; path = EusoTrip/Views/Driver/171_DriverTruckParking.swift; sourceTree = SOURCE_ROOT; };
+		EC0173000000000000F0A005 /* 173_DriverClearinghouseStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 173_DriverClearinghouseStatus.swift; path = EusoTrip/Views/Driver/173_DriverClearinghouseStatus.swift; sourceTree = SOURCE_ROOT; };
+		EC0177000000000000F0A006 /* 177_DriverCashAdvance.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 177_DriverCashAdvance.swift; path = EusoTrip/Views/Driver/177_DriverCashAdvance.swift; sourceTree = SOURCE_ROOT; };
+		EC0178000000000000F0A007 /* 178_DriverDrugTest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 178_DriverDrugTest.swift; path = EusoTrip/Views/Driver/178_DriverDrugTest.swift; sourceTree = SOURCE_ROOT; };
+		EC0179000000000000F0A008 /* 179_DriverFuelEconomy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = 179_DriverFuelEconomy.swift; path = EusoTrip/Views/Driver/179_DriverFuelEconomy.swift; sourceTree = SOURCE_ROOT; };
+		EC017C000000000000F0A009 /* DriverUtilityKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DriverUtilityKit.swift; path = EusoTrip/Views/Driver/DriverUtilityKit.swift; sourceTree = SOURCE_ROOT; };
 		D145000000000000000007C2 /* 145_DriverPickupDepartedCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 145_DriverPickupDepartedCelM04.swift; sourceTree = "<group>"; };
 		D146000000000000000007D2 /* 146_DriverInTransitCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 146_DriverInTransitCelM04.swift; sourceTree = "<group>"; };
 		D147000000000000000007E2 /* 147_DriverAtDeliveryArrivalCelM04.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 147_DriverAtDeliveryArrivalCelM04.swift; sourceTree = "<group>"; };
@@ -2475,6 +2493,15 @@
 				FC0150000000000000B0A151 /* 150_DriverPretripDVIRM05.swift */,
 				FC0167000000000000B0A168 /* 167_DriverReeferTemp.swift */,
 				FC0168000000000000B0A170 /* 168_DriverTankerMonitor.swift */,
+				EC0169000000000000F0A001 /* 169_DriverTollsPrePass.swift */,
+				EC0170000000000000F0A002 /* 170_DriverWeighStationBypass.swift */,
+				EC0170B00000000000F0A003 /* 170B_DriverAxleScaleWeigh.swift */,
+				EC0171000000000000F0A004 /* 171_DriverTruckParking.swift */,
+				EC0173000000000000F0A005 /* 173_DriverClearinghouseStatus.swift */,
+				EC0177000000000000F0A006 /* 177_DriverCashAdvance.swift */,
+				EC0178000000000000F0A007 /* 178_DriverDrugTest.swift */,
+				EC0179000000000000F0A008 /* 179_DriverFuelEconomy.swift */,
+				EC017C000000000000F0A009 /* DriverUtilityKit.swift */,
 				D145000000000000000007C2 /* 145_DriverPickupDepartedCelM04.swift */,
 				D146000000000000000007D2 /* 146_DriverInTransitCelM04.swift */,
 				D147000000000000000007E2 /* 147_DriverAtDeliveryArrivalCelM04.swift */,
@@ -3934,6 +3961,15 @@
 				FC0150000000000000B0A150 /* 150_DriverPretripDVIRM05.swift in Sources */,
 				FC0167000000000000B0A167 /* 167_DriverReeferTemp.swift in Sources */,
 				FC0168000000000000B0A169 /* 168_DriverTankerMonitor.swift in Sources */,
+				EC0169000000000000B0A001 /* 169_DriverTollsPrePass.swift in Sources */,
+				EC0170000000000000B0A002 /* 170_DriverWeighStationBypass.swift in Sources */,
+				EC0170B00000000000B0A003 /* 170B_DriverAxleScaleWeigh.swift in Sources */,
+				EC0171000000000000B0A004 /* 171_DriverTruckParking.swift in Sources */,
+				EC0173000000000000B0A005 /* 173_DriverClearinghouseStatus.swift in Sources */,
+				EC0177000000000000B0A006 /* 177_DriverCashAdvance.swift in Sources */,
+				EC0178000000000000B0A007 /* 178_DriverDrugTest.swift in Sources */,
+				EC0179000000000000B0A008 /* 179_DriverFuelEconomy.swift in Sources */,
+				EC017C000000000000B0A009 /* DriverUtilityKit.swift in Sources */,
 				D145000000000000000007C1 /* 145_DriverPickupDepartedCelM04.swift in Sources */,
 				D146000000000000000007D1 /* 146_DriverInTransitCelM04.swift in Sources */,
 				D147000000000000000007E1 /* 147_DriverAtDeliveryArrivalCelM04.swift in Sources */,
