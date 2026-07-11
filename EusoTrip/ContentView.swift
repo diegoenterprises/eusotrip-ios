@@ -2198,6 +2198,20 @@ enum ScreenRegistry {
             .init(id: "Rail704", title: "Rail Engineer · Trust Verdict", role: .railEngineer) { p in AnyView(RailTrustVerdictScreen(theme: p, loadId: "0")) },  // loadId accepts "1077" or "load_1077"; pass the real tender id when opened from a shipment context
             .init(id: "Rail705", title: "Rail Engineer · SCAC Mark Check", role: .railEngineer) { p in AnyView(RailScacMarkCheckScreen(theme: p)) },  // optional enteredMark: pre-fills the mark when opened from a tender
             .init(id: "Rail706", title: "Rail Engineer · Tag-Swap Scan", role: .railEngineer) { p in AnyView(RailTagSwapScanScreen(theme: p)) },
+            // 2026-07-11 — 05 Rail port-batch (ios/port-rail-5): 690-708, the
+            // carrier-side movement / fraud-trust / money band that COMPLETES the
+            // Rail role. Ids "Rail690"…"Rail708" are collision-free; the numbers
+            // 691/692/707/708 that clash with Vessel screens carry Rail-specific
+            // type names (RailLiveTelematicsScreen etc.), so no type collision.
+            .init(id: "Rail690", title: "Rail Engineer · AEI Tag Trail", role: .railEngineer) { p in AnyView(RailAEITagTrailScreen(theme: p)) },  // railcarNumber pre-fills when opened from a car context
+            .init(id: "Rail691", title: "Rail Engineer · Live Telematics", role: .railEngineer) { p in AnyView(RailLiveTelematicsScreen(theme: p)) },
+            .init(id: "Rail692", title: "Rail Engineer · Clearance Check", role: .railEngineer) { p in AnyView(RailClearanceCheckScreen(theme: p, shipmentId: 0)) },  // pass the real shipmentId to gate its route legs
+            .init(id: "Rail693", title: "Rail Engineer · Slow Orders", role: .railEngineer) { p in AnyView(RailSlowOrdersScreen(theme: p, shipmentId: 0)) },
+            .init(id: "Rail695", title: "Rail Engineer · At-Interchange Notify", role: .railEngineer) { p in AnyView(RailAtInterchangeNotifyScreen(theme: p, shipmentId: 0, shipmentNumber: "")) },  // shipmentNumber drives the consignee preview; shipmentId drives the send
+            .init(id: "Rail696", title: "Rail Engineer · Junction Detention Billing", role: .railEngineer) { p in AnyView(RailJunctionDetentionBillingScreen(theme: p, yardId: 0)) },  // yardId scopes the interchange junction
+            .init(id: "Rail698", title: "Rail Engineer · Interline Settlement", role: .railEngineer) { p in AnyView(RailInterlineSettlementScreen(theme: p, shipmentId: 0, shipmentNumber: "")) },
+            .init(id: "Rail707", title: "Rail Engineer · Verified Receiver Gate", role: .railEngineer) { p in AnyView(RailVerifiedReceiverGateScreen(theme: p)) },  // PIH car/UN/consignee/shipmentId pre-fill from the hazmat context
+            .init(id: "Rail708", title: "Rail Engineer · Seal Hash Check", role: .railEngineer) { p in AnyView(RailSealHashCheckScreen(theme: p)) },  // railcarNumber pre-fills when opened from a car context
             // 2026-07-11 — 05 Rail port-batch (ios/port-rail-3): 674-681, the
             // carrier-side departure-readiness + movement-planning band
             // (consist mass · air-brake · PTC · bad-order · deadhead · Part 228
