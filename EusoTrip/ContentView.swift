@@ -2415,6 +2415,15 @@ enum ScreenRegistry {
             .init(id: "Vesl711", title: "Vessel Operator · Crew Rest Hours",  role: .vesselOperator) { p in AnyView(VesselCrewRestHoursScreen(theme: p)) },
             .init(id: "Vesl712", title: "Vessel Operator · Financial Summary",role: .vesselOperator) { p in AnyView(VesselFinancialSummaryScreen(theme: p)) },
             .init(id: "Vesl659", title: "Vessel Operator · Bunker FSC", role: .vesselOperator) { p in AnyView(VesselBunkerFSCScreen(theme: p)) },
+            // Vessel operator wave — booking/documentation + fraud/GA + release/eBL/PGA (verbatim ports 713–720).
+            .init(id: "Vesl713", title: "Vessel Operator · Multi-Carrier RFQ",      role: .vesselOperator) { p in AnyView(VesselMultiCarrierRFQScreen(theme: p)) },
+            .init(id: "Vesl714", title: "Vessel Operator · Shipping Instructions",  role: .vesselOperator) { p in AnyView(VesselShippingInstructionsScreen(theme: p)) },
+            .init(id: "Vesl715", title: "Vessel Operator · B/L Draft Approval",     role: .vesselOperator) { p in AnyView(VesselBLDraftApprovalScreen(theme: p)) },
+            .init(id: "Vesl716", title: "Vessel Operator · AIS Integrity",          role: .vesselOperator) { p in AnyView(VesselAisIntegrityScreen(theme: p)) },
+            .init(id: "Vesl717", title: "Vessel Operator · General Average",        role: .vesselOperator) { p in AnyView(VesselGeneralAverageScreen(theme: p)) },
+            .init(id: "Vesl718", title: "Vessel Operator · Cargo Release",          role: .vesselOperator) { p in AnyView(VesselCargoReleaseScreen(theme: p)) },
+            .init(id: "Vesl719", title: "Vessel Operator · DCSA eBL",               role: .vesselOperator) { p in AnyView(VesselEBLScreen(theme: p)) },
+            .init(id: "Vesl720", title: "Vessel Operator · PGA Holds",              role: .vesselOperator) { p in AnyView(VesselPGAHoldsScreen(theme: p)) },
         ])
 
         return list
