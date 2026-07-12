@@ -2549,6 +2549,15 @@ enum ScreenRegistry {
             .init(id: "Vesl759", title: "Vessel · Trusted Trader Fast-Lane",  role: .vesselOperator) { p in AnyView(VesselTrustedTraderFastLaneScreen(theme: p)) },
             .init(id: "Vesl760", title: "Vessel · Agentic Booking",           role: .vesselOperator) { p in AnyView(VesselAgenticBookingScreen(theme: p)) },
             .init(id: "Vesl761", title: "Vessel · Rate Validity Lock",        role: .vesselOperator) { p in AnyView(VesselRateValidityLockScreen(theme: p)) },
+            // Vessel port-12 (2026-07-11) — hazmat/reefer/claim/risk/empties triad ports.
+            .init(id: "Vesl813", title: "Vessel · Claim Report",              role: .vesselOperator) { p in AnyView(VesselClaimReportScreen(theme: p)) },
+            .init(id: "Vesl817", title: "Vessel · Hazmat Bay Assignment",     role: .vesselOperator) { p in AnyView(VesselHazmatBayAssignmentScreen(theme: p)) },
+            .init(id: "Vesl818", title: "Vessel · Reefer Manual Reading",     role: .vesselOperator) { p in AnyView(VesselReeferManualReadingScreen(theme: p)) },
+            .init(id: "Vesl819", title: "Vessel · Container Decon Schedule",  role: .vesselOperator) { p in AnyView(VesselContainerDeconScheduleScreen(theme: p)) },
+            .init(id: "Vesl822", title: "Vessel · DG Segregation",            role: .vesselOperator) { p in AnyView(VesselDGSegregationScreen(theme: p)) },
+            .init(id: "Vesl823", title: "Vessel · Reefer IoT Live Feed",      role: .vesselOperator) { p in AnyView(VesselReeferIoTLiveFeedScreen(theme: p)) },
+            .init(id: "Vesl824", title: "Vessel · Risk Profile",              role: .vesselOperator) { p in AnyView(VesselRiskProfileScreen(theme: p)) },
+            .init(id: "Vesl825", title: "Vessel · Empty Repositioning",       role: .vesselOperator) { p in AnyView(VesselEmptyRepositioningScreen(theme: p)) },
         ])
 
         return list
