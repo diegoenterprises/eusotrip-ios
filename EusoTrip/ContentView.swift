@@ -2503,6 +2503,15 @@ enum ScreenRegistry {
             .init(id: "Vesl711", title: "Vessel Operator · Crew Rest Hours",  role: .vesselOperator) { p in AnyView(VesselCrewRestHoursScreen(theme: p)) },
             .init(id: "Vesl712", title: "Vessel Operator · Financial Summary",role: .vesselOperator) { p in AnyView(VesselFinancialSummaryScreen(theme: p)) },
             .init(id: "Vesl659", title: "Vessel Operator · Bunker FSC", role: .vesselOperator) { p in AnyView(VesselBunkerFSCScreen(theme: p)) },
+            // ios/port-vessel-11 — 06 Vessel accessorial/compliance octet (verbatim ports of the canonical Dark-SVGs).
+            .init(id: "Vesl794", title: "Vessel Operator · Accessorial Rate Config", role: .vesselOperator) { p in AnyView(VesselAccessorialRateConfigScreen(theme: p)) },
+            .init(id: "Vesl795", title: "Vessel Operator · Detention History",       role: .vesselOperator) { p in AnyView(VesselDetentionHistoryScreen(theme: p)) },
+            .init(id: "Vesl796", title: "Vessel Operator · Detention by Customer",    role: .vesselOperator) { p in AnyView(VesselDetentionByCustomerScreen(theme: p)) },
+            .init(id: "Vesl797", title: "Vessel Operator · Fuel Surcharge Tracking",  role: .vesselOperator) { p in AnyView(VesselFuelSurchargeTrackingScreen(theme: p)) },
+            .init(id: "Vesl798", title: "Vessel Operator · Multimodal CO2",           role: .vesselOperator) { p in AnyView(VesselMultimodalCO2Screen(theme: p)) },
+            .init(id: "Vesl799", title: "Vessel Operator · Reefer Temp Log",          role: .vesselOperator) { p in AnyView(VesselReeferTempLogScreen(theme: p)) },
+            .init(id: "Vesl803", title: "Vessel Operator · Freight Audit",            role: .vesselOperator) { p in AnyView(VesselFreightAuditScreen(theme: p)) },
+            .init(id: "Vesl806", title: "Vessel Operator · Tank Container Monitor",   role: .vesselOperator) { p in AnyView(VesselTankContainerMonitorScreen(theme: p)) },
             // Vessel operator wave — booking/documentation + fraud/GA + release/eBL/PGA (verbatim ports 713–720).
             .init(id: "Vesl713", title: "Vessel Operator · Multi-Carrier RFQ",      role: .vesselOperator) { p in AnyView(VesselMultiCarrierRFQScreen(theme: p)) },
             .init(id: "Vesl714", title: "Vessel Operator · Shipping Instructions",  role: .vesselOperator) { p in AnyView(VesselShippingInstructionsScreen(theme: p)) },
