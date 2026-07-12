@@ -2512,6 +2512,22 @@ enum ScreenRegistry {
             .init(id: "Vesl799", title: "Vessel Operator · Reefer Temp Log",          role: .vesselOperator) { p in AnyView(VesselReeferTempLogScreen(theme: p)) },
             .init(id: "Vesl803", title: "Vessel Operator · Freight Audit",            role: .vesselOperator) { p in AnyView(VesselFreightAuditScreen(theme: p)) },
             .init(id: "Vesl806", title: "Vessel Operator · Tank Container Monitor",   role: .vesselOperator) { p in AnyView(VesselTankContainerMonitorScreen(theme: p)) },
+            // 2026-07-11 — ios/port-vessel-13: 06 Vessel customs / booking octet
+            // (826–833). Native SwiftUI ports of the canonical Dark-SVGs; shared
+            // chrome in VesselCustomsKit.swift. Honest binding to the REAL
+            // adjacent procs (blankSailing.dashboard · getVesselShipmentDetail ·
+            // getVesselCompliance · getCBPEntryStatus · getCBPAlerts ·
+            // oceanDocIngest.recentIngestions); the specialized customs models
+            // (slot/OOG/FTZ/in-bond/GO/CES/reconcile/securing) are STUB, surfaced
+            // in-UI via VesselGapNote and handed to the-oath.
+            .init(id: "Vesl826", title: "Vessel Operator · VSA Slot Allocation",      role: .vesselOperator) { p in AnyView(VesselSlotAllocationScreen(theme: p)) },
+            .init(id: "Vesl827", title: "Vessel Operator · Out-of-Gauge Booking",     role: .vesselOperator) { p in AnyView(VesselOutOfGaugeBookingScreen(theme: p)) },
+            .init(id: "Vesl828", title: "Vessel Operator · Bonded Warehouse FTZ",     role: .vesselOperator) { p in AnyView(VesselBondedWarehouseFTZScreen(theme: p)) },
+            .init(id: "Vesl829", title: "Vessel Operator · In-Bond Movement",         role: .vesselOperator) { p in AnyView(VesselInBondMovementScreen(theme: p)) },
+            .init(id: "Vesl830", title: "Vessel Operator · General Order",            role: .vesselOperator) { p in AnyView(VesselGeneralOrderScreen(theme: p)) },
+            .init(id: "Vesl831", title: "Vessel Operator · CBP Cargo Exam Station",   role: .vesselOperator) { p in AnyView(VesselCBPExamStationScreen(theme: p)) },
+            .init(id: "Vesl832", title: "Vessel Operator · Three-Way Match Ingest",   role: .vesselOperator) { p in AnyView(VesselThreeWayMatchAutoIngestScreen(theme: p)) },
+            .init(id: "Vesl833", title: "Vessel Operator · Lashing & Securing Plan",  role: .vesselOperator) { p in AnyView(VesselLashingSecuringPlanScreen(theme: p)) },
             // Vessel operator wave — booking/documentation + fraud/GA + release/eBL/PGA (verbatim ports 713–720).
             .init(id: "Vesl713", title: "Vessel Operator · Multi-Carrier RFQ",      role: .vesselOperator) { p in AnyView(VesselMultiCarrierRFQScreen(theme: p)) },
             .init(id: "Vesl714", title: "Vessel Operator · Shipping Instructions",  role: .vesselOperator) { p in AnyView(VesselShippingInstructionsScreen(theme: p)) },

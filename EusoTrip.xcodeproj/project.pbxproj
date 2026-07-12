@@ -974,6 +974,15 @@
 		ER7800000000000000000B01 /* 780_VesselTerminalMoveQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = ER7800000000000000000F01 /* 780_VesselTerminalMoveQueue.swift */; };
 		ER7810000000000000000B01 /* 781_VesselDropYardOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = ER7810000000000000000F01 /* 781_VesselDropYardOperations.swift */; };
 		ER7720000000000000000B01 /* VesselTradeKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = ER7720000000000000000F01 /* VesselTradeKit.swift */; };
+		EV0826000000000000000B01 /* 826_VesselSlotAllocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = EV0826000000000000000F01 /* 826_VesselSlotAllocation.swift */; };
+		EV0827000000000000000B01 /* 827_VesselOutOfGaugeBooking.swift in Sources */ = {isa = PBXBuildFile; fileRef = EV0827000000000000000F01 /* 827_VesselOutOfGaugeBooking.swift */; };
+		EV0828000000000000000B01 /* 828_VesselBondedWarehouseFTZ.swift in Sources */ = {isa = PBXBuildFile; fileRef = EV0828000000000000000F01 /* 828_VesselBondedWarehouseFTZ.swift */; };
+		EV0829000000000000000B01 /* 829_VesselInBondMovement.swift in Sources */ = {isa = PBXBuildFile; fileRef = EV0829000000000000000F01 /* 829_VesselInBondMovement.swift */; };
+		EV0830000000000000000B01 /* 830_VesselGeneralOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = EV0830000000000000000F01 /* 830_VesselGeneralOrder.swift */; };
+		EV0831000000000000000B01 /* 831_VesselCBPExamStation.swift in Sources */ = {isa = PBXBuildFile; fileRef = EV0831000000000000000F01 /* 831_VesselCBPExamStation.swift */; };
+		EV0832000000000000000B01 /* 832_VesselThreeWayMatchAutoIngest.swift in Sources */ = {isa = PBXBuildFile; fileRef = EV0832000000000000000F01 /* 832_VesselThreeWayMatchAutoIngest.swift */; };
+		EV0833000000000000000B01 /* 833_VesselLashingSecuringPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = EV0833000000000000000F01 /* 833_VesselLashingSecuringPlan.swift */; };
+		EV0900000000000000000B01 /* VesselCustomsKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = EV0900000000000000000F01 /* VesselCustomsKit.swift */; };
 		FEB010000000000000000000 /* 666_VesselContainerTimeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA010000000000000000000 /* 666_VesselContainerTimeline.swift */; };
 		FEB020000000000000000000 /* 667_VesselChainOfCustody.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA020000000000000000000 /* 667_VesselChainOfCustody.swift */; };
 		FEB030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEA030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift */; };
@@ -2308,6 +2317,15 @@
 		ER7800000000000000000F01 /* 780_VesselTerminalMoveQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 780_VesselTerminalMoveQueue.swift; sourceTree = "<group>"; };
 		ER7810000000000000000F01 /* 781_VesselDropYardOperations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 781_VesselDropYardOperations.swift; sourceTree = "<group>"; };
 		ER7720000000000000000F01 /* VesselTradeKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VesselTradeKit.swift; sourceTree = "<group>"; };
+		EV0826000000000000000F01 /* 826_VesselSlotAllocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 826_VesselSlotAllocation.swift; sourceTree = "<group>"; };
+		EV0827000000000000000F01 /* 827_VesselOutOfGaugeBooking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 827_VesselOutOfGaugeBooking.swift; sourceTree = "<group>"; };
+		EV0828000000000000000F01 /* 828_VesselBondedWarehouseFTZ.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 828_VesselBondedWarehouseFTZ.swift; sourceTree = "<group>"; };
+		EV0829000000000000000F01 /* 829_VesselInBondMovement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 829_VesselInBondMovement.swift; sourceTree = "<group>"; };
+		EV0830000000000000000F01 /* 830_VesselGeneralOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 830_VesselGeneralOrder.swift; sourceTree = "<group>"; };
+		EV0831000000000000000F01 /* 831_VesselCBPExamStation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 831_VesselCBPExamStation.swift; sourceTree = "<group>"; };
+		EV0832000000000000000F01 /* 832_VesselThreeWayMatchAutoIngest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 832_VesselThreeWayMatchAutoIngest.swift; sourceTree = "<group>"; };
+		EV0833000000000000000F01 /* 833_VesselLashingSecuringPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 833_VesselLashingSecuringPlan.swift; sourceTree = "<group>"; };
+		EV0900000000000000000F01 /* VesselCustomsKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VesselCustomsKit.swift; sourceTree = "<group>"; };
 		FEA010000000000000000000 /* 666_VesselContainerTimeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 666_VesselContainerTimeline.swift; sourceTree = "<group>"; };
 		FEA020000000000000000000 /* 667_VesselChainOfCustody.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 667_VesselChainOfCustody.swift; sourceTree = "<group>"; };
 		FEA030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = 668_VesselIMDGHazmatManifest.swift; sourceTree = "<group>"; };
@@ -4019,6 +4037,15 @@
 				ER7800000000000000000F01 /* 780_VesselTerminalMoveQueue.swift */,
 				ER7810000000000000000F01 /* 781_VesselDropYardOperations.swift */,
 				ER7720000000000000000F01 /* VesselTradeKit.swift */,
+				EV0900000000000000000F01 /* VesselCustomsKit.swift */,
+				EV0826000000000000000F01 /* 826_VesselSlotAllocation.swift */,
+				EV0827000000000000000F01 /* 827_VesselOutOfGaugeBooking.swift */,
+				EV0828000000000000000F01 /* 828_VesselBondedWarehouseFTZ.swift */,
+				EV0829000000000000000F01 /* 829_VesselInBondMovement.swift */,
+				EV0830000000000000000F01 /* 830_VesselGeneralOrder.swift */,
+				EV0831000000000000000F01 /* 831_VesselCBPExamStation.swift */,
+				EV0832000000000000000F01 /* 832_VesselThreeWayMatchAutoIngest.swift */,
+				EV0833000000000000000F01 /* 833_VesselLashingSecuringPlan.swift */,
 				FEA010000000000000000000 /* 666_VesselContainerTimeline.swift */,
 				FEA020000000000000000000 /* 667_VesselChainOfCustody.swift */,
 				FEA030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift */,
@@ -4809,6 +4836,15 @@
 				ER7800000000000000000B01 /* 780_VesselTerminalMoveQueue.swift in Sources */,
 				ER7810000000000000000B01 /* 781_VesselDropYardOperations.swift in Sources */,
 				ER7720000000000000000B01 /* VesselTradeKit.swift in Sources */,
+				EV0900000000000000000B01 /* VesselCustomsKit.swift in Sources */,
+				EV0826000000000000000B01 /* 826_VesselSlotAllocation.swift in Sources */,
+				EV0827000000000000000B01 /* 827_VesselOutOfGaugeBooking.swift in Sources */,
+				EV0828000000000000000B01 /* 828_VesselBondedWarehouseFTZ.swift in Sources */,
+				EV0829000000000000000B01 /* 829_VesselInBondMovement.swift in Sources */,
+				EV0830000000000000000B01 /* 830_VesselGeneralOrder.swift in Sources */,
+				EV0831000000000000000B01 /* 831_VesselCBPExamStation.swift in Sources */,
+				EV0832000000000000000B01 /* 832_VesselThreeWayMatchAutoIngest.swift in Sources */,
+				EV0833000000000000000B01 /* 833_VesselLashingSecuringPlan.swift in Sources */,
 				FEB010000000000000000000 /* 666_VesselContainerTimeline.swift in Sources */,
 				FEB020000000000000000000 /* 667_VesselChainOfCustody.swift in Sources */,
 				FEB030000000000000000000 /* 668_VesselIMDGHazmatManifest.swift in Sources */,
