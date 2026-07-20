@@ -43,6 +43,14 @@ struct ConnectedAppsScreen: View {
 
 // MARK: - Wire DTOs (byte-identical to the server contract)
 
+private struct IntegrationInputField: Decodable, Hashable {
+    let key: String
+    let label: String
+    let inputType: String
+    let required: Bool
+    let secret: Bool
+}
+
 /// `userIntegrations.listCatalog` row — role/mode-scoped provider.
 private struct IntegrationProvider: Decodable, Identifiable, Hashable {
     let id: String
@@ -55,43 +63,18 @@ private struct IntegrationProvider: Decodable, Identifiable, Hashable {
     let status: String?
     let capabilities: [String]?
     let requiresCredentials: Bool?
+    let credentialFields: [IntegrationInputField]
+    let configurationFields: [IntegrationInputField]
+    let connectable: Bool
+    let blockedReason: String?
     let supportsSync: Bool?
     let syncIntervalMinutes: Int?
     let journey: IntegrationProviderJourney?
 
     enum CodingKeys: String, CodingKey {
         case id, displayName, vendor, category, description, docsUrl, authType, status
-        case capabilities, requiresCredentials, supportsSync, syncIntervalMinutes, journey
-    }
-
-    init(
-        id: String,
-        displayName: String,
-        vendor: String?,
-        category: String?,
-        description: String?,
-        docsUrl: String?,
-        authType: String?,
-        status: String?,
-        capabilities: [String]?,
-        requiresCredentials: Bool?,
-        supportsSync: Bool? = nil,
-        syncIntervalMinutes: Int? = nil,
-        journey: IntegrationProviderJourney?
-    ) {
-        self.id = id
-        self.displayName = displayName
-        self.vendor = vendor
-        self.category = category
-        self.description = description
-        self.docsUrl = docsUrl
-        self.authType = authType
-        self.status = status
-        self.capabilities = capabilities
-        self.requiresCredentials = requiresCredentials
-        self.supportsSync = supportsSync
-        self.syncIntervalMinutes = syncIntervalMinutes
-        self.journey = journey
+        case capabilities, requiresCredentials, credentialFields, configurationFields
+        case connectable, blockedReason, supportsSync, syncIntervalMinutes, journey
     }
 
     init(from decoder: Decoder) throws {
@@ -105,6 +88,10 @@ private struct IntegrationProvider: Decodable, Identifiable, Hashable {
         authType = try c.decodeIfPresent(String.self, forKey: .authType)
         status = try c.decodeIfPresent(String.self, forKey: .status)
         requiresCredentials = try c.decodeIfPresent(Bool.self, forKey: .requiresCredentials)
+        credentialFields = try c.decodeIfPresent([IntegrationInputField].self, forKey: .credentialFields) ?? []
+        configurationFields = try c.decodeIfPresent([IntegrationInputField].self, forKey: .configurationFields) ?? []
+        connectable = try c.decodeIfPresent(Bool.self, forKey: .connectable) ?? false
+        blockedReason = try c.decodeIfPresent(String.self, forKey: .blockedReason)
         supportsSync = try c.decodeIfPresent(Bool.self, forKey: .supportsSync)
         syncIntervalMinutes = try c.decodeIfPresent(Int.self, forKey: .syncIntervalMinutes)
         journey = try c.decodeIfPresent(IntegrationProviderJourney.self, forKey: .journey)
@@ -492,7 +479,7 @@ private struct ConnectedAppsBody: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if usedRegistryFallback {
-                Text("Live catalog is temporarily unavailable. Showing the role map only; retry the catalog before connecting a new provider.")
+                Text("Live provider catalog is temporarily unavailable.")
                     .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let reason = catalogUnavailableReason, !reason.isEmpty {
@@ -504,8 +491,14 @@ private struct ConnectedAppsBody: View {
             }
 
             if providers.isEmpty {
-                Text("No providers are mapped to your role yet.")
-                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                if usedRegistryFallback {
+                    pillButton(title: "Retry catalog", filled: false, busy: loading) {
+                        Task { await load() }
+                    }
+                } else {
+                    Text("No providers are mapped to your role yet.")
+                        .font(EType.caption).foregroundStyle(palette.textSecondary)
+                }
             } else {
                 ForEach(providers) { providerRow($0) }
             }
@@ -539,6 +532,19 @@ private struct ConnectedAppsBody: View {
                         Text(cleanLabel(desc)).font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(2)
                     }
                     providerJourneySummary(p)
+                    if !p.connectable, let reason = p.blockedReason, !reason.isEmpty {
+                        Text(cleanLabel(reason))
+                            .font(EType.mono(.micro))
+                            .foregroundStyle(palette.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let url = providerDocsURL(from: p.docsUrl) {
+                            Link(destination: url) {
+                                Label("Provider details", systemImage: "safari")
+                                    .font(.system(size: 9, weight: .semibold))
+                                    .foregroundStyle(Brand.blue)
+                            }
+                        }
+                    }
                     if conn != nil {
                         connectedStatusLine(conn)
                     }
@@ -624,19 +630,18 @@ private struct ConnectedAppsBody: View {
                     Task { await disconnect(conn) }
                 }
             } else {
-                if usedRegistryFallback {
-                    pillButton(title: "Retry catalog", filled: false, busy: busy) {
-                        Task { await load() }
-                    }
-                    } else {
+                if !p.connectable {
+                    pillButton(title: "Setup required", filled: false, busy: false) {}
+                        .disabled(true)
+                } else {
                     pillButton(title: isExpanded ? "Cancel" : "Connect", filled: !isExpanded, busy: false) {
                         if isExpanded {
                             expandedProvider = nil
-                        } else if (p.requiresCredentials ?? false) {
+                        } else if !p.credentialFields.isEmpty || !p.configurationFields.isEmpty {
                             expandedProvider = p.id
                         } else {
                             // Public provider — connect with no credentials.
-                            Task { await connect(p, credentials: nil) }
+                            Task { await connect(p, credentials: nil, configuration: [:]) }
                         }
                     }
                 }
@@ -654,8 +659,22 @@ private struct ConnectedAppsBody: View {
 
             providerJourneyDisclosure(p)
 
-            ForEach(credentialFields(for: p), id: \.self) { field in
-                credField(provider: p.id, field: field)
+            if !p.credentialFields.isEmpty {
+                Text("CREDENTIALS")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            ForEach(p.credentialFields, id: \.self) { field in
+                providerInputField(provider: p.id, kind: "credential", field: field)
+            }
+
+            if !p.configurationFields.isEmpty {
+                Text("CONNECTION SETTINGS")
+                    .font(.system(size: 8, weight: .heavy)).tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+            }
+            ForEach(p.configurationFields, id: \.self) { field in
+                providerInputField(provider: p.id, kind: "configuration", field: field)
             }
 
             // Provider reference. The role catalog stores verified provider
@@ -682,11 +701,16 @@ private struct ConnectedAppsBody: View {
                 pillButton(title: busy ? "Connecting…" : "Connect provider", filled: true, busy: busy) {
                     Task {
                         var creds: [String: String] = [:]
-                        for field in credentialFields(for: p) {
-                            let v = credInputs["\(p.id).\(field.key)"] ?? ""
+                        for field in p.credentialFields {
+                            let v = credInputs[inputKey(provider: p.id, kind: "credential", field: field.key)] ?? ""
                             if !v.isEmpty { creds[field.key] = v }
                         }
-                        await connect(p, credentials: creds.isEmpty ? nil : creds)
+                        var configuration: [String: String] = [:]
+                        for field in p.configurationFields {
+                            let v = credInputs[inputKey(provider: p.id, kind: "configuration", field: field.key)] ?? ""
+                            if !v.isEmpty { configuration[field.key] = v }
+                        }
+                        await connect(p, credentials: creds.isEmpty ? nil : creds, configuration: configuration)
                     }
                 }
                 .disabled(!connectFormReady(p) || busy)
@@ -732,19 +756,19 @@ private struct ConnectedAppsBody: View {
         }
     }
 
-    private func credField(provider: String, field: CredentialField) -> some View {
-        let bindingKey = "\(provider).\(field.key)"
+    private func providerInputField(provider: String, kind: String, field: IntegrationInputField) -> some View {
+        let bindingKey = inputKey(provider: provider, kind: kind, field: field.key)
         return VStack(alignment: .leading, spacing: 3) {
-            Text(field.label.uppercased())
+            Text((field.required ? field.label : "\(field.label) · OPTIONAL").uppercased())
                 .font(.system(size: 8, weight: .heavy)).tracking(0.6)
                 .foregroundStyle(palette.textTertiary)
             Group {
-                if field.secure {
-                    SecureField(field.placeholder, text: Binding(
+                if field.secret || field.inputType == "secret" || field.inputType == "private_key" {
+                    SecureField(field.label, text: Binding(
                         get: { credInputs[bindingKey] ?? "" },
                         set: { credInputs[bindingKey] = $0 }))
                 } else {
-                    TextField(field.placeholder, text: Binding(
+                    TextField(field.label, text: Binding(
                         get: { credInputs[bindingKey] ?? "" },
                         set: { credInputs[bindingKey] = $0 }))
                     .textInputAutocapitalization(.never)
@@ -988,32 +1012,8 @@ private struct ConnectedAppsBody: View {
             liveAdaptation = adaptation
         }
 
-        if catalog.isEmpty && roleOwnsIntegrations {
-            // Honest fallback: surface the doc-verified registry catalog for the
-            // role so an integration-owning user is never shown a blank screen.
-            providers = RoleIntegrationRegistry.providers(for: role).map { reg in
-                IntegrationProvider(
-                    id: reg.slug,
-                    displayName: reg.name,
-                    vendor: reg.function,
-                    category: reg.category.rawValue,
-                    description: reg.function,
-                    docsUrl: reg.docs,
-                    authType: "credentials",
-                    status: nil,
-                    capabilities: nil,
-                    requiresCredentials: true,
-                    journey: IntegrationJourneyPlanner.fallbackJourney(
-                        providerName: reg.name,
-                        category: reg.category.rawValue,
-                        roleLabel: roleLabel,
-                        requiresCredentials: true))
-            }
-            usedRegistryFallback = !providers.isEmpty
-        } else {
-            providers = catalog
-            usedRegistryFallback = false
-        }
+        providers = catalog
+        usedRegistryFallback = catalog.isEmpty && catalogUnavailableReason != nil
 
         loading = false
     }
@@ -1026,7 +1026,11 @@ private struct ConnectedAppsBody: View {
         }
     }
 
-    private func connect(_ p: IntegrationProvider, credentials: [String: String]?) async {
+    private func connect(
+        _ p: IntegrationProvider,
+        credentials: [String: String]?,
+        configuration: [String: String]
+    ) async {
         busyProvider = p.id; actionError = nil
         struct In: Encodable { let providerId: String; let config: [String: String]; let credentials: [String: String]? }
         // Tolerant: provider.connect() return shapes vary by provider, so we
@@ -1035,10 +1039,15 @@ private struct ConnectedAppsBody: View {
         do {
             let _: Out = try await EusoTripAPI.shared.mutation(
                 "userIntegrations.connect",
-                input: In(providerId: p.id, config: [:], credentials: credentials))
+                input: In(providerId: p.id, config: configuration, credentials: credentials))
             expandedProvider = nil
             // Clear typed credentials from memory once submitted.
-            for field in credentialFields(for: p) { credInputs["\(p.id).\(field.key)"] = nil }
+            for field in p.credentialFields {
+                credInputs[inputKey(provider: p.id, kind: "credential", field: field.key)] = nil
+            }
+            for field in p.configurationFields {
+                credInputs[inputKey(provider: p.id, kind: "configuration", field: field.key)] = nil
+            }
             await refreshConnections()
             await refreshProfileAdaptation()
         } catch let e as EusoTripAPIError {
@@ -1238,61 +1247,22 @@ private struct ConnectedAppsBody: View {
         return map[raw] ?? prettyToken(raw)
     }
 
-    // MARK: Credential field inference
+    // MARK: Server-issued provider fields
 
-    private struct CredentialField: Hashable {
-        let key: String
-        let label: String
-        let placeholder: String
-        let secure: Bool
-    }
-
-    /// Best-effort credential prompt set per provider auth type. The server's
-    /// provider.connect() is the authority on what it needs; this surfaces the
-    /// common shapes (API key / OAuth client / basic) so the user can supply
-    /// real credentials in-app rather than being told to "use the web."
-    private func credentialFields(for p: IntegrationProvider) -> [CredentialField] {
-        switch (p.authType ?? "credentials").lowercased() {
-        case "public", "none":
-            return []
-        case "oauth", "oauth1", "oauth2":
-            return [
-                .init(key: "clientId", label: "Client ID", placeholder: "Client ID", secure: false),
-                .init(key: "clientSecret", label: "Client secret", placeholder: "Client secret", secure: true),
-            ]
-        case "basic", "basic_auth":
-            return [
-                .init(key: "username", label: "Username", placeholder: "Username", secure: false),
-                .init(key: "password", label: "Password", placeholder: "Password", secure: true),
-            ]
-        case "bearer_token":
-            return [
-                .init(key: "token", label: "Bearer token", placeholder: "Paste bearer token", secure: true),
-            ]
-        case "mtls":
-            return [
-                .init(key: "clientCertificate", label: "Client certificate", placeholder: "PEM certificate", secure: true),
-                .init(key: "privateKey", label: "Private key", placeholder: "PEM private key", secure: true),
-            ]
-        case "edi":
-            return [
-                .init(key: "partnerId", label: "Partner ID", placeholder: "Trading partner ID", secure: false),
-                .init(key: "ediToken", label: "EDI token", placeholder: "EDI credential token", secure: true),
-            ]
-        case "api_key", "credentials":
-            return [
-                .init(key: "apiKey", label: "API key", placeholder: "Paste your API key", secure: true),
-            ]
-        default:
-            return [
-                .init(key: "apiKey", label: "\(prettyToken(p.authType ?? "Provider")) credential", placeholder: "Paste credential", secure: true),
-            ]
-        }
+    private func inputKey(provider: String, kind: String, field: String) -> String {
+        "\(provider).\(kind).\(field)"
     }
 
     private func connectFormReady(_ p: IntegrationProvider) -> Bool {
-        for field in credentialFields(for: p) {
-            if (credInputs["\(p.id).\(field.key)"] ?? "").isEmpty { return false }
+        for field in p.credentialFields where field.required {
+            if (credInputs[inputKey(provider: p.id, kind: "credential", field: field.key)] ?? "").isEmpty {
+                return false
+            }
+        }
+        for field in p.configurationFields where field.required {
+            if (credInputs[inputKey(provider: p.id, kind: "configuration", field: field.key)] ?? "").isEmpty {
+                return false
+            }
         }
         return true
     }
