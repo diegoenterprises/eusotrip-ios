@@ -55,11 +55,13 @@ private struct IntegrationProvider: Decodable, Identifiable, Hashable {
     let status: String?
     let capabilities: [String]?
     let requiresCredentials: Bool?
+    let supportsSync: Bool?
+    let syncIntervalMinutes: Int?
     let journey: IntegrationProviderJourney?
 
     enum CodingKeys: String, CodingKey {
         case id, displayName, vendor, category, description, docsUrl, authType, status
-        case capabilities, requiresCredentials, journey
+        case capabilities, requiresCredentials, supportsSync, syncIntervalMinutes, journey
     }
 
     init(
@@ -73,6 +75,8 @@ private struct IntegrationProvider: Decodable, Identifiable, Hashable {
         status: String?,
         capabilities: [String]?,
         requiresCredentials: Bool?,
+        supportsSync: Bool? = nil,
+        syncIntervalMinutes: Int? = nil,
         journey: IntegrationProviderJourney?
     ) {
         self.id = id
@@ -85,6 +89,8 @@ private struct IntegrationProvider: Decodable, Identifiable, Hashable {
         self.status = status
         self.capabilities = capabilities
         self.requiresCredentials = requiresCredentials
+        self.supportsSync = supportsSync
+        self.syncIntervalMinutes = syncIntervalMinutes
         self.journey = journey
     }
 
@@ -99,6 +105,8 @@ private struct IntegrationProvider: Decodable, Identifiable, Hashable {
         authType = try c.decodeIfPresent(String.self, forKey: .authType)
         status = try c.decodeIfPresent(String.self, forKey: .status)
         requiresCredentials = try c.decodeIfPresent(Bool.self, forKey: .requiresCredentials)
+        supportsSync = try c.decodeIfPresent(Bool.self, forKey: .supportsSync)
+        syncIntervalMinutes = try c.decodeIfPresent(Int.self, forKey: .syncIntervalMinutes)
         journey = try c.decodeIfPresent(IntegrationProviderJourney.self, forKey: .journey)
 
         if let arr = try? c.decodeIfPresent([String].self, forKey: .capabilities) {
@@ -155,7 +163,35 @@ private struct IntegrationConnection: Decodable, Identifiable, Hashable {
     let status: String?
     let lastSyncedAt: String?
     let lastError: String?
+    let lastErrorAt: String?
     let enabledAt: String?
+    let disabledAt: String?
+    let updatedAt: String?
+    let feedState: String?
+    let feedStateReason: String?
+    let syncMode: String?
+    let syncIntervalMinutes: Int?
+    let nextEligibleAt: String?
+    let staleAt: String?
+    let lastSuccessfulSyncAt: String?
+    let lastAttemptAt: String?
+    let syncAgeSeconds: Int?
+    let credentialState: String?
+    let isUsable: Bool?
+
+    var effectiveFeedState: String {
+        if let feedState, !feedState.isEmpty { return feedState.lowercased() }
+        switch (status ?? "").lowercased() {
+        case "connected": return "live"
+        case "pending_credentials": return "credentials_required"
+        default: return (status ?? "disabled").lowercased()
+        }
+    }
+
+    var isOperational: Bool {
+        if let isUsable { return isUsable }
+        return ["live", "on_demand"].contains(effectiveFeedState)
+    }
 }
 
 /// `devPortal.apiKeys.list` row.
@@ -448,7 +484,7 @@ private struct ConnectedAppsBody: View {
         LifecycleCard {
             LifecycleSection(label: "CONNECTED APPS", icon: "rectangle.connected.to.line.below")
 
-            let connectedCount = connections.filter { ($0.status ?? "").lowercased() != "disabled" }.count
+            let connectedCount = connections.filter(\.isOperational).count
             Text(connectedCount == 0
                  ? "No integrations connected yet. Pick a provider below to connect."
                  : "\(connectedCount) connected · \(providers.count) available for your role")
@@ -479,7 +515,7 @@ private struct ConnectedAppsBody: View {
     @ViewBuilder
     private func providerRow(_ p: IntegrationProvider) -> some View {
         let conn = connections.first { $0.providerId == p.id && ($0.status ?? "").lowercased() != "disabled" }
-        let isConnected = conn != nil
+        let isConnected = conn.map { ["live", "stale", "on_demand", "connecting"].contains($0.effectiveFeedState) } ?? false
         let isExpanded = expandedProvider == p.id
         let busy = busyProvider == p.id
 
@@ -503,7 +539,7 @@ private struct ConnectedAppsBody: View {
                         Text(cleanLabel(desc)).font(EType.caption).foregroundStyle(palette.textSecondary).lineLimit(2)
                     }
                     providerJourneySummary(p)
-                    if isConnected {
+                    if conn != nil {
                         connectedStatusLine(conn)
                     }
                 }
@@ -554,15 +590,20 @@ private struct ConnectedAppsBody: View {
 
     @ViewBuilder
     private func connectedStatusLine(_ conn: IntegrationConnection?) -> some View {
-        let status = (conn?.status ?? "active").lowercased()
-        let isError = status == "error" || (conn?.lastError?.isEmpty == false)
+        let state = conn?.effectiveFeedState ?? "disabled"
+        let isError = state == "error"
+        let isWarning = state == "stale" || state == "credentials_required"
+        let color = isError ? Brand.danger : isWarning ? Brand.warning : state == "connecting" ? Brand.blue : Brand.success
         HStack(spacing: 5) {
-            Circle().fill(isError ? Brand.danger : Brand.success).frame(width: 6, height: 6)
-            Text(isError ? "Connected · sync error" : "Connected")
+            Circle().fill(color).frame(width: 6, height: 6)
+            Text(feedStateLabel(state))
                 .font(.system(size: 10, weight: .heavy)).tracking(0.4)
-                .foregroundStyle(isError ? Brand.danger : Brand.success)
-            if let synced = conn?.lastSyncedAt, !synced.isEmpty {
-                Text("· last sync \(humanISO(synced))").font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                .foregroundStyle(color)
+            if let cadence = conn?.syncIntervalMinutes, conn?.syncMode == "scheduled" {
+                Text("· every \(cadence)m").font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+            }
+            if let synced = conn?.lastSuccessfulSyncAt ?? conn?.lastSyncedAt, !synced.isEmpty {
+                Text("· \(humanISO(synced))").font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
             }
         }
         if isError, let e = conn?.lastError, !e.isEmpty {
@@ -574,8 +615,10 @@ private struct ConnectedAppsBody: View {
     private func providerActions(_ p: IntegrationProvider, isConnected: Bool, conn: IntegrationConnection?, isExpanded: Bool, busy: Bool) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
             if isConnected {
-                pillButton(title: busy ? "Syncing…" : "Sync", filled: false, busy: busy) {
-                    Task { await sync(conn) }
+                if p.supportsSync == true && conn?.effectiveFeedState != "connecting" {
+                    pillButton(title: busy ? "Syncing…" : "Sync", filled: false, busy: busy) {
+                        Task { await sync(conn) }
+                    }
                 }
                 pillButton(title: busy ? "…" : "Disconnect", filled: false, danger: true, busy: false) {
                     Task { await disconnect(conn) }
@@ -1132,6 +1175,19 @@ private struct ConnectedAppsBody: View {
     private func prettyToken(_ s: String) -> String {
         let spaced = s.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ")
         return spaced.split(separator: " ").map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }.joined(separator: " ")
+    }
+
+    private func feedStateLabel(_ state: String) -> String {
+        switch state {
+        case "live": return "Live"
+        case "stale": return "Stale"
+        case "on_demand": return "Ready on demand"
+        case "error": return "Sync error"
+        case "connecting": return "Connecting"
+        case "credentials_required": return "Credentials needed"
+        case "disabled": return "Disabled"
+        default: return prettyToken(state)
+        }
     }
 
     /// Human label for an integration category slug.
