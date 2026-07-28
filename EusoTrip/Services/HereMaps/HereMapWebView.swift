@@ -454,9 +454,13 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
           var dark = \(isDark ? "true" : "false");
           var cameraTilt = \(tilt);
           var lastRouteSignature = "";
+          // Deliberately does NOT say "check your connection". The base-layer
+          // path fails on a provider-contract change far more often than on a
+          // dead network, and telling someone with working signal to check
+          // their connection sends them to debug the wrong thing.
           function showError(){
             var el=document.getElementById("map");
-            if(el){ el.innerHTML='<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#fff;opacity:.72;font:12px -apple-system;text-align:center;padding:18px">Map unavailable. Check your connection and try again.</div>'; }
+            if(el){ el.innerHTML='<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#fff;opacity:.72;font:12px -apple-system;text-align:center;padding:18px">Map unavailable. Everything else on this screen still works.</div>'; }
           }
           // Animated map fx (fence pulses / breach exitPulse / pilot-ground
           // dashoffset) — one shared timer, rebuilt on every __applyLayers.
@@ -471,18 +475,46 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             }, 80);
           }
 
+          // createDefaultLayers is called through a ladder of progressively
+          // plainer option sets instead of once with a bespoke config.
+          //
+          // The scripts above load from js.api.here.com/v3/3.1/ WITHOUT a patch
+          // pin, so HERE ships changes into "3.1" under us. A single call with
+          // {tileSize:512, ppi:200} therefore had two ways to take every map in
+          // the app down at once, with no change on our side: ppi 200 is not one
+          // of HERE's documented values (72/250/320/500) and only ever worked
+          // because this account tolerated it, and dl.raster.normal.mapnight has
+          // been reshaped across 3.1 releases. Either one throws or returns
+          // undefined, buildBase returned null, and every surface rendered
+          // "Map unavailable. Check your connection" — which blamed the network
+          // for a provider-contract change.
+          //
+          // Each rung is tried in turn and the failure reason is logged, so the
+          // hzLog handler names the real cause instead of the generic banner.
           function buildBase(d){
-            try{
-              var dl=platform.createDefaultLayers({tileSize:512,ppi:200});
-              if(d && dl.raster && dl.raster.normal && dl.raster.normal.mapnight){
-                return dl.raster.normal.mapnight;
-              }
-              if(dl.vector && dl.vector.normal && dl.vector.normal.map){
-                return dl.vector.normal.map;
-              }
-              if(dl.raster && dl.raster.normal){ return dl.raster.normal.map; }
-              return null;
-            }catch(e){ log("base err "+e); return null; }
+            var rungs = [
+              ["tileSize+ppi", function(){ return platform.createDefaultLayers({tileSize:512,ppi:200}); }],
+              ["tileSize",     function(){ return platform.createDefaultLayers({tileSize:512}); }],
+              ["defaults",     function(){ return platform.createDefaultLayers(); }]
+            ];
+            for(var i=0;i<rungs.length;i++){
+              var name = rungs[i][0];
+              try{
+                var dl = rungs[i][1]();
+                if(!dl){ log("base "+name+": no layers"); continue; }
+                if(d && dl.raster && dl.raster.normal && dl.raster.normal.mapnight){
+                  return dl.raster.normal.mapnight;
+                }
+                if(dl.vector && dl.vector.normal && dl.vector.normal.map){
+                  return dl.vector.normal.map;
+                }
+                if(dl.raster && dl.raster.normal && dl.raster.normal.map){
+                  return dl.raster.normal.map;
+                }
+                log("base "+name+": layers present but no usable base");
+              }catch(e){ log("base "+name+" err "+e); }
+            }
+            return null;
           }
 
           try{

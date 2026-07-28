@@ -479,12 +479,22 @@ struct ShipperControlTower: View {
             (.rail,   overview.rail.active + overview.rail.inTransit),
             (.vessel, overview.vessel.active + overview.vessel.inTransit)
         ]
-        HStack(spacing: 6) {
-            ForEach(chips, id: \.0) { (mode, count) in
-                modeChip(mode: mode, count: count)
+        // Horizontally scrollable. As a plain HStack the four chips
+        // ("All · N", "Truck · N", "Rail · N", "Vessel · N") exceed the width
+        // this row actually gets — it is overlaid on the map inside a padded
+        // VStack — so SwiftUI squeezed them into each other and the labels
+        // collided. A Spacer cannot help once the content is already too wide;
+        // it only donates space it does not have. Scrolling also keeps the row
+        // correct if a mode is added later.
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(chips, id: \.0) { (mode, count) in
+                    modeChip(mode: mode, count: count)
+                }
             }
-            Spacer(minLength: 0)
+            .padding(.trailing, Space.s3)
         }
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
     }
 
     @ViewBuilder

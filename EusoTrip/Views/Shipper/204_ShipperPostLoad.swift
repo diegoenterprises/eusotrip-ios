@@ -2337,9 +2337,11 @@ struct ShipperPostLoad: View {
         if isRouting {
             return "Computing distance + ETA via ESANG…"
         }
-        if let err = routingError {
-            return "Route unavailable: \(err)"
-        }
+        // Mode-specific status comes FIRST. `routingError` only ever describes a
+        // HERE *truck* routing outcome, so showing it while Rail/Vessel/Barge is
+        // selected made the banner read "Route unavailable ... switch to
+        // rail/vessel" even after the user had switched — advice the screen
+        // could never satisfy, because this branch was unreachable behind it.
         if transportMode != .truck, endpointsResolved {
             switch transportMode {
             case .rail:
@@ -2351,6 +2353,9 @@ struct ShipperPostLoad: View {
             case .truck:
                 break
             }
+        }
+        if let err = routingError {
+            return "Route unavailable: \(err)"
         }
         if let meters = routeDistanceMeters, let secs = routeDurationSeconds {
             let miles = Double(meters) / 1609.34
@@ -2470,7 +2475,16 @@ struct ShipperPostLoad: View {
             } catch {
                 await MainActor.run {
                     guard self.lastRoutedKey == key else { return }
-                    self.routingError = humanRouteMessage(for: error)
+                    // `ensureResolved` runs ABOVE the `requestedMode == .truck`
+                    // guard, so a geocode failure landed here for every mode and
+                    // humanRouteMessage(_:) falls through to the truck-routing
+                    // copy ("switch to rail/vessel…") for any unrecognised error.
+                    // That is why switching mode never cleared the banner. Only
+                    // truck mode owns a routing error; for the other modes the
+                    // coordinate-based `endpointsResolved` gate is what decides.
+                    self.routingError = requestedMode == .truck
+                        ? humanRouteMessage(for: error)
+                        : nil
                     self.isRouting = false
                 }
             }
@@ -2492,11 +2506,17 @@ struct ShipperPostLoad: View {
         guard hasAddresses,
               countrySelectionIsValid,
               endpointsResolved,
-              !isRouting,
-              routingError == nil else {
+              !isRouting else {
             return false
         }
+        // `routingError` describes a HERE TRUCK routing outcome only. It used to
+        // sit in the guard above, which made the non-truck early return below
+        // unreachable: a truck-routing failure blocked posting in Rail, Vessel
+        // and Barge too, even though those modes never needed truck geometry.
+        // `endpointsResolved` above is the real gate for them — it is
+        // coordinate-based, so a genuine geocode failure still blocks posting.
         guard transportMode == .truck else { return true }
+        guard routingError == nil else { return false }
         return (routeDistanceMeters ?? 0) > 0 && (routeDurationSeconds ?? 0) > 0
     }
 
