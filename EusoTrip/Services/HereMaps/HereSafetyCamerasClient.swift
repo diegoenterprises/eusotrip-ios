@@ -1,6 +1,6 @@
 //
 //  HereSafetyCamerasClient.swift
-//  EusoTrip — REST client for HERE Safety Cameras.
+//  EusoTrip — authenticated backend client for HERE Safety Cameras.
 //
 //  Endpoint:
 //      GET https://browse.search.hereapi.com/v1/browse
@@ -16,7 +16,7 @@
 //      at=<lat>,<lng>  OR  in=corridor:<flexible-polyline>;w=<meters>
 //      categories=900-9300-0001
 //
-//  Auth: Bearer via HereBearerFetch.
+//  Provider credentials and entitlement checks stay on the EusoTrip server.
 //
 //  Powered by ESANG AI™.
 //
@@ -50,9 +50,6 @@ struct HereSafetyCamerasResponse: Decodable {
 final class HereSafetyCamerasClient {
     static let shared = HereSafetyCamerasClient()
 
-    private let session: URLSession
-    private let decoder = JSONDecoder()
-
     /// HERE category id for Speed Camera / Safety Camera POIs.
     ///
     /// 2026-06-09 reality check (live-probed ATL / DC / CDMX / London):
@@ -65,7 +62,7 @@ final class HereSafetyCamerasClient {
     static let categoryIdSafetyCamera = "900-9300-0001"
 
     init(session: URLSession = .shared) {
-        self.session = session
+        _ = session
     }
 
     /// Safety cameras near a point. Default radius via the Browse
@@ -75,19 +72,60 @@ final class HereSafetyCamerasClient {
         center: CLLocationCoordinate2D,
         limit: Int = 40
     ) async throws -> [HereSafetyCameraItem] {
-        var comps = URLComponents(string: "https://browse.search.hereapi.com/v1/browse")!
-        comps.queryItems = [
-            URLQueryItem(name: "at", value: "\(center.latitude),\(center.longitude)"),
-            URLQueryItem(name: "categories", value: Self.categoryIdSafetyCamera),
-            URLQueryItem(name: "limit", value: String(limit)),
-        ]
-        guard let url = comps.url else { throw HereMapsError.badURL }
+        let status: BackendStatus = try await EusoTripAPI.shared.queryNoInput(
+            "hereMaps.status"
+        )
+        guard status.products.safetyCameras else {
+            throw HereMapsError.providerError(
+                "HERE Safety Cameras is not licensed for this account."
+            )
+        }
+        let rows: [BackendCamera] = try await EusoTripAPI.shared.query(
+            "hereMaps.safetyCamerasAt",
+            input: BackendRequest(
+                at: BackendCoord(lat: center.latitude, lng: center.longitude),
+                radiusMeters: 30_000
+            )
+        )
+        return Array(rows.prefix(min(200, max(1, limit)))).map { row in
+            HereSafetyCameraItem(
+                id: row.id,
+                title: row.roadName ?? "Safety camera",
+                address: nil,
+                position: HerePosition(latitude: row.lat, longitude: row.lng),
+                distance: row.distanceMeters,
+                categories: nil,
+                speedLimit: row.speedLimitMph,
+                cameraType: row.type
+            )
+        }
+    }
 
-        let data = try await HereBearerFetch.data(for: url, session: session)
-        do {
-            return try decoder.decode(HereSafetyCamerasResponse.self, from: data).items
-        } catch {
-            throw HereMapsError.decoding(String(describing: error))
+    private struct BackendCoord: Encodable {
+        let lat: Double
+        let lng: Double
+    }
+
+    private struct BackendRequest: Encodable {
+        let at: BackendCoord
+        let radiusMeters: Int
+    }
+
+    private struct BackendCamera: Decodable {
+        let id: String
+        let type: String
+        let lat: Double
+        let lng: Double
+        let speedLimitMph: Double?
+        let distanceMeters: Int?
+        let roadName: String?
+    }
+
+    private struct BackendStatus: Decodable {
+        let products: Products
+
+        struct Products: Decodable {
+            let safetyCameras: Bool
         }
     }
 }

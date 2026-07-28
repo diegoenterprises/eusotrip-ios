@@ -75,12 +75,14 @@ struct PerLoadWeatherCard: View {
     /// `weatherCode` (so Drizzle/Rain/Heavy-Rain/Thunderstorm each animate
     /// distinctly) and scales precipitation/wind/fog/visibility by the live
     /// numbers.
-    private func heroSkySnapshot(_ card: WeatherForLoad) -> WeatherSnapshot {
+    private func heroSkySnapshot(_ card: WeatherForLoad) -> WeatherSnapshot? {
         let rt = card.origin?.realtime
+        guard let temperature = rt?.temperature,
+              let windSpeed = rt?.windSpeedMph else { return nil }
         var snap = WeatherSnapshot(
             city: card.origin?.name ?? "",
-            tempF: Int((rt?.temperature ?? 0).rounded()),
-            windMph: Int((rt?.windSpeedMph ?? 0).rounded()),
+            tempF: Int(temperature.rounded()),
+            windMph: Int(windSpeed.rounded()),
             // Honest nil when the realtime block omitted visibility —
             // the sky engine treats nil as no choke (em-dash doctrine).
             visibilityMi: rt?.visibilityMi.map { Int($0.rounded()) },
@@ -226,10 +228,12 @@ struct PerLoadWeatherCard: View {
         ZStack(alignment: .bottomLeading) {
             // build-751: the continuous animated sky engine behind the
             // per-load hero, driven by this lane's live origin weather.
-            SkyStageHeroLive(snapshot: heroSkySnapshot(card),
-                             animated: !reduceMotion, compact: true)
-                .frame(height: 150)
-                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            if let snapshot = heroSkySnapshot(card) {
+                SkyStageHeroLive(snapshot: snapshot,
+                                 animated: !reduceMotion, compact: true)
+                    .frame(height: 150)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            }
 
             VStack(alignment: .leading, spacing: 0) {
                 Spacer(minLength: 0)
@@ -284,10 +288,12 @@ struct PerLoadWeatherCard: View {
             ZStack(alignment: .topLeading) {
                 // build-751: the full continuous animated sky engine behind
                 // the expanded per-load hero, driven by live origin weather.
-                SkyStageHeroLive(snapshot: heroSkySnapshot(card),
-                                 animated: !reduceMotion)
-                    .frame(height: 220)
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                if let snapshot = heroSkySnapshot(card) {
+                    SkyStageHeroLive(snapshot: snapshot,
+                                     animated: !reduceMotion)
+                        .frame(height: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                }
 
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 2) {

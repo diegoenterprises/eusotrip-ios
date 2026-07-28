@@ -512,7 +512,7 @@ enum LegalDocCopy {
             DOT Hazmat (49 CFR Subpart B)
             ─────────────────────────────────────────────
 
-            • Hazmat classification (§172.101) - every load with hazmat designation surfaces UN number, Proper Shipping Name, Hazard Class, Packing Group, ERG Guide and required placard. Source: PHMSA Emergency Response Guidebook (ERG 2024), refreshed quarterly.
+            • Hazmat classification (§172.101) - UN number, Proper Shipping Name, Hazard Class and Packing Group require competent evidence such as an SDS, shipper master data, a verified provider or an applicable regulatory classification lookup. ERG 2024 is linked separately as an incident-response reference and is never accepted as classification evidence.
             • Hazmat segregation (§177.848) - multi-compartment tanker loads run through our segregation table; the iOS Post-a-Load wizard blocks incompatible combos before submit.
             • Trailer compatibility (49 CFR Part 173) - every shipper-posted hazmat load validates trailer type against TRAILER_HAZMAT_ALLOWED.
             • CHEMTREC integration - available for hazmat carriers; the emergency-response phone field is required on every hazmat BOL.

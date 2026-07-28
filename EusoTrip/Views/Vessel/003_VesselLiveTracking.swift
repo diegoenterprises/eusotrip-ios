@@ -223,21 +223,7 @@ private struct VesselLiveTrackingBody: View {
         return Self.hhmm.string(from: d)
     }
 
-    // MARK: Map card (SVG y=178, 400×300 great-circle · live AIS ocean track)
-    //
-    // The static schematic (hand-drawn quad-curve + status-derived marker
-    // fraction) is replaced by `VesselOceanTrackMap` — the in-house native
-    // ocean register fed the booking's live AIS feed (keyed by the vessel
-    // imoNumber) over the great-circle origin→destination arc. The orb,
-    // solid/dashed route split, and the speed/heading/coords chip are now the
-    // REAL position, not a status guess. Same card chrome (ocean fill, faint
-    // border, 300pt height, .xl clip) so the design is unchanged.
-    //
-    // Origin / destination coordinates resolve in order: the aggregator's port
-    // join (originLat/Lng…) → the PortDirectory catalog (UN/LOCODE) → the live
-    // AIS fix (so the arc at least anchors on the real vessel). When no IMO and
-    // no coordinates can be resolved at all, the authored schematic is kept so
-    // the lane is never blank.
+    // MARK: Live ocean map
 
     private var mapCard: some View {
         ZStack {
@@ -246,16 +232,30 @@ private struct VesselLiveTrackingBody: View {
             RoundedRectangle(cornerRadius: Radius.xl, style: .continuous)
                 .fill(Brand.blue.opacity(0.06))
 
-            if let imo = vesselImo, let o = originCoord, let d = destinationCoord {
-                VesselOceanTrackMap(
-                    imoNumber: imo,
-                    origin: o,
-                    destination: d,
-                    originLabel: originLabel,
-                    destinationLabel: destinationLabel
-                )
+            if let o = originCoord, let d = destinationCoord {
+                if let imo = vesselImo {
+                    VesselOceanTrackMap(
+                        imoNumber: imo,
+                        origin: o,
+                        destination: d,
+                        originLabel: originLabel,
+                        destinationLabel: destinationLabel
+                    )
+                } else {
+                    HereVectorMapView(
+                        center: HereLatLng((o.lat + d.lat) / 2, (o.lng + d.lng) / 2),
+                        zoom: 4,
+                        interactive: true,
+                        tilt: 0,
+                        layers: [.markers([
+                            HereMarker(at: o, kind: .pickup, label: originLabel),
+                            HereMarker(at: d, kind: .delivery, label: destinationLabel)
+                        ])],
+                        styleHint: .ocean
+                    )
+                }
             } else {
-                mapSchematicFallback
+                mapLocationUnavailable
             }
         }
         .frame(height: 300)
@@ -264,37 +264,20 @@ private struct VesselLiveTrackingBody: View {
             .strokeBorder(palette.borderFaint))
     }
 
-    /// Authored great-circle schematic — kept ONLY as the no-coordinates / no-IMO
-    /// fallback so the lane is never blank when the AIS feed can't be located.
-    private var mapSchematicFallback: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            ZStack(alignment: .topLeading) {
-                // latitude grid
-                ForEach(1..<4) { i in
-                    Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
-                        .offset(y: h * CGFloat(i) / 4)
-                }
-                // gradient great-circle (origin → vessel) + dashed remaining
-                VesselRoutePath().stroke(LinearGradient.primary,
-                    style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
-                VesselRemainingPath().stroke(Color.white.opacity(0.14),
-                    style: StrokeStyle(lineWidth: 3.5, lineCap: .round, dash: [2, 7]))
-
-                // origin node (gradient ring) — bottom-left of the arc
-                routeNode(x: w * 0.13, y: h * 0.24,
-                          label: originLabel, gradient: true)
-                // destination node (grey ring)
-                routeNode(x: w * 0.93, y: h * 0.77,
-                          label: destinationLabel, gradient: false)
-
-                // vessel marker w/ glow at progress fraction along the arc
-                vesselMarker(at: markerPoint(w: w, h: h))
-                // position chip
-                positionChip
-                    .position(x: w * 0.72, y: h * 0.42)
-            }
+    private var mapLocationUnavailable: some View {
+        VStack(spacing: Space.s3) {
+            Image(systemName: "location.slash")
+                .font(.system(size: 28, weight: .semibold))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("Vessel location unavailable")
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+            Text("The live map will appear when verified port coordinates are available.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .multilineTextAlignment(.center)
         }
+        .padding(.horizontal, 48)
     }
 
     // MARK: Origin / destination / IMO resolution for the live ocean map
@@ -335,76 +318,6 @@ private struct VesselLiveTrackingBody: View {
     private var livePositionCoord: HereLatLng? {
         guard let p = board?.position, let lat = p.lat, let lng = p.lng else { return nil }
         return HereLatLng(lat, lng)
-    }
-
-    private func routeNode(x: CGFloat, y: CGFloat, label: String, gradient: Bool) -> some View {
-        ZStack {
-            Circle().fill(palette.bgPrimary).frame(width: 12, height: 12)
-                .overlay(
-                    Circle().strokeBorder(
-                        gradient ? AnyShapeStyle(LinearGradient.primary)
-                                 : AnyShapeStyle(palette.textTertiary),
-                        lineWidth: 3)
-                )
-            Text(label)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(gradient ? palette.textPrimary : palette.textSecondary)
-                .fixedSize()
-                .offset(y: gradient ? -16 : 18)
-        }
-        .position(x: x, y: y)
-    }
-
-    /// Equipment-true vessel model (Wave B, 2026-06-10). 003 tracks
-    /// `vessel_bookings` rows — a container-liner contract by shape
-    /// (numberOfContainers / containerCount are the row's own fields),
-    /// so the container ship is the honest floor. The service-route
-    /// string rides the shared matcher FIRST so an LNG / RoRo / tanker
-    /// service resolves its real hull instead of a hardcoded container
-    /// ship.
-    private var markerKind003: EquipmentKind {
-        EquipmentKind.resolve(
-            from: board?.booking?.serviceRoute,
-            modality: .vessel
-        )
-    }
-
-    private func vesselMarker(at p: CGPoint) -> some View {
-        // Live vessel-position marker — the canonical equipment-true model from
-        // the EusoTrip Animation Design System, rendered through the in-house
-        // native SVG engine and pinned at the position fraction along the
-        // great-circle arc. Replaces the hand-drawn ferry-glyph orb with the
-        // founder-approved equipment lockup so the live vessel reads as the
-        // booking's real hull. Mirrors the 643 marker pattern.
-        ZStack {
-            // Soft magenta wake-glow under the hull (keeps the original orb's halo).
-            Circle().fill(Brand.magenta.opacity(0.22)).frame(width: 40, height: 40).blur(radius: 6)
-            if let vesselSVG = EquipmentAnimationCache.shared.svg(for: markerKind003) {
-                NativeSVGView(svgString: vesselSVG)
-                    .frame(width: 64, height: 26)   // ~2.5:1 vessel model
-            } else {
-                // Fallback to the gradient ferry orb if the model can't load.
-                Circle().fill(LinearGradient.diagonal).frame(width: 22, height: 22)
-                    .overlay(
-                        Image(systemName: "ferry.fill")
-                            .font(.system(size: 10, weight: .bold)).foregroundStyle(.white)
-                    )
-            }
-        }
-        .position(x: p.x, y: p.y)
-    }
-
-    private var positionChip: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(positionTitle)
-                .font(.system(size: 9, weight: .heavy)).foregroundStyle(palette.textTertiary)
-            Text(positionDetail)
-                .font(.system(size: 11, weight: .bold)).foregroundStyle(palette.textPrimary)
-        }
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
-            .fill(palette.bgCardSoft))
-        .fixedSize()
     }
 
     // MARK: ETA + remaining strip (SVG y=494, two 192×64 boxes)
@@ -530,20 +443,6 @@ private struct VesselLiveTrackingBody: View {
         return "\(nmStr) NM"
     }
 
-    private var positionTitle: String {
-        guard let p = board?.position, let lng = p.lng else { return "AWAITING FIX" }
-        let hemi = lng >= 0 ? "E" : "W"
-        return String(format: "%.1f°%@", abs(lng), hemi)
-    }
-
-    private var positionDetail: String {
-        guard let p = board?.position else { return "no live position" }
-        var parts: [String] = []
-        if let s = p.speedKn { parts.append(String(format: "%.1f kn", s)) }
-        if let h = p.headingDeg { parts.append(String(format: "hdg %03d°", Int(h.rounded()))) }
-        return parts.isEmpty ? "position only" : parts.joined(separator: " · ")
-    }
-
     private func eventLabel(_ e: OceanTrackBoard.TrackEvent) -> String {
         if let d = e.description, !d.isEmpty { return d }
         if let loc = e.location, !loc.isEmpty { return loc }
@@ -556,38 +455,6 @@ private struct VesselLiveTrackingBody: View {
         if Calendar.current.isDateInToday(d) { return Self.hhmm.string(from: d) }
         return Self.mmdd.string(from: d)
     }
-
-    /// Marker fraction along the arc, derived from booking status (schematic).
-    private func markerPoint(w: CGFloat, h: CGFloat) -> CGPoint {
-        let t = progressFraction
-        // Quadratic Bézier matching VesselRoutePath: p0=(.13,.24) c=(.53,.07) p1=(.93,.77)
-        let p0 = CGPoint(x: 0.13, y: 0.24), c = CGPoint(x: 0.53, y: 0.07), p1 = CGPoint(x: 0.93, y: 0.77)
-        let mt = 1 - t
-        let x = mt*mt*p0.x + 2*mt*t*c.x + t*t*p1.x
-        let y = mt*mt*p0.y + 2*mt*t*c.y + t*t*p1.y
-        return CGPoint(x: x * w, y: y * h)
-    }
-
-    private var progressFraction: CGFloat {
-        switch (board?.booking?.status ?? "").lowercased() {
-        case "booking_requested", "booking_confirmed", "documentation": return 0.04
-        case "container_released", "gate_in", "loaded_on_vessel":       return 0.10
-        case "departed":                                                return 0.18
-        case "in_transit", "transshipment":                             return 0.55
-        case "arrived", "customs_hold", "customs_cleared":              return 0.92
-        case "discharged", "gate_out", "delivered":                     return 0.98
-        default:
-            // Zero-fallback doctrine (E2E audit §4 · 2026-06-09): an
-            // unmapped booking status must not fabricate a mid-ocean
-            // marker. Surface the gap loudly in DEBUG; render the honest
-            // origin-side floor (0.04 — the pre-departure fraction) in
-            // release until the status is mapped above. Same ramp
-            // contract as LoadAnimationContext.progressPercent.
-            assertionFailure("VesselLiveTracking.progressFraction: unmapped booking status '\(board?.booking?.status ?? "nil")' — add it to the ramp")
-            return 0.04
-        }
-    }
-
     // MARK: - Chrome
 
     private var loadingState: some View {
@@ -671,32 +538,6 @@ private struct VesselLiveTrackingBody: View {
     private static let mmdd: DateFormatter = { let f = DateFormatter(); f.dateFormat = "MM-dd"; f.timeZone = TimeZone(identifier: "UTC"); return f }()
     private static let hhmm: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm"; f.timeZone = TimeZone(identifier: "UTC"); return f }()
     private static let grouped: NumberFormatter = { let f = NumberFormatter(); f.numberStyle = .decimal; f.maximumFractionDigits = 0; return f }()
-}
-
-// MARK: - Stylized great-circle paths (Shanghai → Long Beach schematic)
-
-/// Origin → current vessel position arc (gradient stroke).
-private struct VesselRoutePath: Shape {
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let w = rect.width, h = rect.height
-        p.move(to: CGPoint(x: w * 0.13, y: h * 0.24))
-        p.addQuadCurve(to: CGPoint(x: w * 0.93, y: h * 0.77),
-                       control: CGPoint(x: w * 0.53, y: h * 0.07))
-        return p
-    }
-}
-
-/// Remaining leg (dashed faint white), mid-route → destination.
-private struct VesselRemainingPath: Shape {
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        let w = rect.width, h = rect.height
-        p.move(to: CGPoint(x: w * 0.53, y: h * 0.34))
-        p.addQuadCurve(to: CGPoint(x: w * 0.93, y: h * 0.77),
-                       control: CGPoint(x: w * 0.73, y: h * 0.45))
-        return p
-    }
 }
 
 #Preview("003 · Vessel Live Tracking · Night") {

@@ -1,11 +1,8 @@
 //
 //  VesselOceanTrackMap.swift
-//  EusoTrip — the live great-circle ocean-tracking map for 003 Vessel Live
-//  Tracking. Renders the native bespoke OCEAN register (`BespokeMapCanvas`
-//  style: .ocean / .lightOcean) over a LIVE AIS track:
+//  EusoTrip — live AIS ocean-tracking map for 003 Vessel Live Tracking.
 //
-//    • great-circle polyline interpolated (slerp) origin → destination, so the
-//      ocean route arcs correctly under Mercator,
+//    • ordered historical AIS positions as the only route geometry,
 //    • the live AIS vessel marker dropped at the real position from
 //      `vesselShipments.liveVesselPosition` (the route splits solid/traveled →
 //      dashed/remaining at THIS coordinate inside the canvas),
@@ -18,9 +15,8 @@
 //    getVesselTrack(imoNumber)      (historical track; used to bias the live
 //                                    split when the AIS fix is momentarily nil)
 //
-//  When the AIS feed is unavailable (server returns null), the map still draws
-//  the authored origin→dest great circle so the lane is never blank; the orb +
-//  chip simply omit until a fix arrives.
+//  When the AIS feed is unavailable, the labeled basemap and real booking-port
+//  markers remain visible without inventing a marine route.
 //
 //  Powered by ESANG AI™.
 //
@@ -106,13 +102,19 @@ struct VesselOceanTrackMap: View {
         return HereLatLng(p.lat, p.lng)
     }
 
-    /// The great-circle route polyline interpolated (slerp) origin→dest. The
-    /// canvas splits this solid(traveled)→dashed(remaining) at the live AIS
-    /// position, so we hand it the full arc — NOT a pre-split one. Empty when
-    /// the authored endpoints aren't real coordinates (null-island gate).
+    /// Ordered historical AIS fixes. No great-circle or endpoint interpolation:
+    /// when the provider has no track, the map is marker-only.
     private var routePolyline: [HereLatLng] {
         guard endpointsValid else { return [] }
-        return BespokeMapProjection.greatCircle(from: origin, to: destination, count: 64)
+        var points = store.track.compactMap { fix -> HereLatLng? in
+            guard validFix(fix.lat, fix.lng) else { return nil }
+            return HereLatLng(fix.lat, fix.lng)
+        }
+        if let live = aisCoord,
+           points.last.map({ $0.lat != live.lat || $0.lng != live.lng }) ?? true {
+            points.append(live)
+        }
+        return points.count >= 2 ? points : []
     }
 
     /// The callout chip text: speed / heading on line 1, coords on line 2 —
@@ -125,10 +127,15 @@ struct VesselOceanTrackMap: View {
         return "\(kn) · \(hdg)\n\(coords)"
     }
 
-    /// Map layers: the great-circle route + (when live) the AIS marker pinned
-    /// at the real position carrying the speed/heading/coords callout.
+    /// Map layers: real booking ports, the reported AIS trail, and the current
+    /// AIS position when available.
     private var layers: [HereMapLayer] {
-        var out: [HereMapLayer] = []
+        var out: [HereMapLayer] = [
+            .markers([
+                HereMarker(at: origin, kind: .pickup, label: originLabel),
+                HereMarker(at: destination, kind: .delivery, label: destinationLabel)
+            ])
+        ]
         let poly = routePolyline
         if !poly.isEmpty {
             out.append(.route(polyline: poly, colorHex: "#1473FF"))
@@ -141,29 +148,26 @@ struct VesselOceanTrackMap: View {
         return out
     }
 
-    /// Camera center: the live AIS fix when present, else the midpoint of the
-    /// authored great-circle arc. Index-safe (D-maps-basemap 2026-06-01): the
-    /// polyline is `greatCircle(count:64)` which guarantees ≥2 points, but we
-    /// guard the subscript rather than trust the producer — falls back to the
-    /// origin if the arc is ever degenerate so the canvas never crashes.
+    /// Camera center: live AIS, then reported-track midpoint, then the booking
+    /// endpoint midpoint. The midpoint is camera framing only, never route data.
     private var cameraCenter: HereLatLng {
         if let ais = aisCoord { return ais }
         let poly = routePolyline
-        guard !poly.isEmpty else { return origin }
-        return poly[poly.count / 2]
+        if !poly.isEmpty { return poly[poly.count / 2] }
+        return HereLatLng((origin.lat + destination.lat) / 2,
+                          (origin.lng + destination.lng) / 2)
     }
 
     var body: some View {
         Group {
             if endpointsValid {
-                BespokeMapCanvas(
+                HereVectorMapView(
                     center: cameraCenter,
                     zoom: 4,
                     interactive: true,
                     tilt: 0,
-                    isDark: colorScheme == .dark,
                     layers: layers,
-                    style: .ocean
+                    styleHint: .ocean
                 )
             } else {
                 // Honest seam (matches Escort 602's `mapAwaitingSeam`): when the
@@ -193,7 +197,7 @@ struct VesselOceanTrackMap: View {
                 Text("Awaiting port coordinates")
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
-                Text("The ocean route draws the origin→destination great circle and the live AIS vessel position once the booking's ports are geocoded and a fix arrives. Pull to refresh.")
+                Text("The map appears once the booking's ports are geocoded. AIS route geometry appears only after the vessel provider reports positions.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

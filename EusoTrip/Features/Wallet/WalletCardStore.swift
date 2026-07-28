@@ -30,9 +30,20 @@ import PassKit
 @MainActor
 final class WalletCardStore: ObservableObject {
 
+    struct PreviewLoad: Equatable {
+        let loadNumber: String
+        let origin: String
+        let destination: String
+        let eta: String
+        let equipment: String
+        let carrier: String
+    }
+
     @Published private(set) var themes: [WalletCardTheme] = WalletCardTheme.fallback
     @Published private(set) var selectedId: String
+    @Published private(set) var previewLoad: PreviewLoad?
     @Published private(set) var isSyncing = false
+    @Published private(set) var canRetryThemeSync = false
     @Published var errorMessage: String?
 
     private let api: EusoTripAPI
@@ -52,17 +63,44 @@ final class WalletCardStore: ObservableObject {
     }
 
     // MARK: Load — server is the source of truth; cache/default cover offline + first launch.
-    func load() async {
-        if let serverThemes = try? await api.listWalletThemes(), !serverThemes.isEmpty {
+    func load(loadId: String? = nil) async {
+        do {
+            let serverThemes = try await api.listWalletThemes()
+            guard !serverThemes.isEmpty else {
+                throw EusoTripAPIError.empty
+            }
             themes = serverThemes
-        }
-        if let ref = try? await api.getWalletTheme(), themes.contains(where: { $0.id == ref.themeId }) {
+            let ref = try await api.getWalletTheme()
+            guard themes.contains(where: { $0.id == ref.themeId }) else {
+                throw EusoTripAPIError.empty
+            }
             selectedId = ref.themeId
             persist(ref.themeId)
-        } else if !themes.contains(where: { $0.id == selectedId }) {
-            // cached id no longer exists (retired theme) → snap to default
-            selectedId = themes.first?.id ?? WalletCardTheme.defaultId
-            persist(selectedId)
+        } catch {
+            if !themes.contains(where: { $0.id == selectedId }) {
+                selectedId = themes.first?.id ?? WalletCardTheme.defaultId
+                persist(selectedId)
+            }
+            canRetryThemeSync = true
+            errorMessage = "Couldn't refresh Wallet styles: \(error.localizedDescription)"
+        }
+
+        guard let loadId else { return }
+        do {
+            guard let detail = try await api.loads.getDetail(id: Self.numericLoadId(from: loadId)) else {
+                previewLoad = nil
+                return
+            }
+            previewLoad = PreviewLoad(
+                loadNumber: detail.loadNumber,
+                origin: Self.place(detail.pickupLocation, fallback: detail.origin),
+                destination: Self.place(detail.deliveryLocation, fallback: detail.destination),
+                eta: Self.displayDate(detail.estimatedDeliveryDate ?? detail.deliveryDate),
+                equipment: Self.nonEmpty(detail.equipmentType) ?? Self.nonEmpty(detail.cargoType) ?? "—",
+                carrier: Self.nonEmpty(detail.catalyst?.companyName) ?? Self.nonEmpty(detail.catalyst?.name) ?? "—"
+            )
+        } catch {
+            previewLoad = nil
         }
     }
 
@@ -73,8 +111,13 @@ final class WalletCardStore: ObservableObject {
         let previous = selectedId
         selectedId = id                                                // 3. optimistic
         persist(id)                                                    //    cache instantly
+        canRetryThemeSync = false
         errorMessage = nil
 
+        startSync(id: id, rollbackTo: previous)
+    }
+
+    private func startSync(id: String, rollbackTo previous: String) {
         syncTask?.cancel()                                             // 4. coalesce taps
         syncTask = Task { [weak self] in
             guard let self else { return }
@@ -83,23 +126,30 @@ final class WalletCardStore: ObservableObject {
             do {
                 try Task.checkCancellation()
                 _ = try await self.api.setWalletTheme(id)              // 5. commit (source of truth)
+                self.canRetryThemeSync = false
             } catch is CancellationError {
                 // superseded by a newer tap — the newer task owns the final state
             } catch {
                 guard self.selectedId == id else { return }            // a newer tap already moved on
                 self.selectedId = previous                             // 6. roll back on failure
                 self.persist(previous)
+                self.canRetryThemeSync = true
                 self.errorMessage = "Couldn't save your card style. Check your connection and try again."
             }
         }
     }
 
     /// Retry after a failed sync without changing the visible selection.
-    func retrySync() { let id = selectedId; selectedId = "__"; select(id) }
+    func retrySync() {
+        canRetryThemeSync = false
+        errorMessage = nil
+        startSync(id: selectedId, rollbackTo: selectedId)
+    }
 
     // MARK: Add to Apple Wallet — themed pass for a specific load.
     func addToWallet(loadId: String, present: (PKAddPassesViewController) -> Void) async {
         await syncTask?.value                                          // ensure the choice is committed
+        canRetryThemeSync = false
         do {
             // Server keys on a numeric load id (`parseInt(loadId)`); normalize a
             // display id ("LD-1039" / "load_1039") to its digits so the mint
@@ -142,6 +192,7 @@ final class WalletCardStore: ObservableObject {
     // code (posted via `.eusoAccessFallbackToInlineQR`), never a fabricated pass.
     func addAccessCardToWallet(present: (PKAddPassesViewController) -> Void) async {
         await syncTask?.value                                          // ensure the choice is committed
+        canRetryThemeSync = false
         do {
             let cred = try await api.createStaffAccessCredential(themeId: selectedId, expiresInHours: 24)
 
@@ -183,7 +234,33 @@ final class WalletCardStore: ObservableObject {
         return digits.isEmpty ? trimmed : digits
     }
 
+    private static func nonEmpty(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func place(_ primary: LoadsAPI.LoadCityState?, fallback: LoadsAPI.LoadAddress?) -> String {
+        if let cityState = nonEmpty(primary?.cityState) { return cityState }
+        return [fallback?.city, fallback?.state]
+            .compactMap(nonEmpty)
+            .joined(separator: ", ")
+            .nilIfEmpty ?? "—"
+    }
+
+    private static func displayDate(_ iso: String?) -> String {
+        guard let iso = nonEmpty(iso) else { return "—" }
+        let precise = ISO8601DateFormatter()
+        precise.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = precise.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        guard let date else { return "—" }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
     private func persist(_ id: String) { defaults.set(id, forKey: key) }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 extension Notification.Name {

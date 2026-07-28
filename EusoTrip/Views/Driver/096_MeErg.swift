@@ -3,10 +3,9 @@
 //  EusoTrip 2027 UI — Wave 7 (driver · Me · ERG Hazmat Lookup)
 //
 //  Screen 096 · Me · ERG Lookup — the driver's in-app Emergency
-//  Response Guidebook. 49 CFR 172.604 requires the ERG to be in
-//  the cab whenever hazardous materials are being transported;
-//  this is the EusoTrip-native copy drivers can tap instead of
-//  fumbling through the paper book at a scale.
+//  Response Guidebook. This digital lookup supplements required
+//  emergency-response information; PHMSA does not permit an
+//  electronic ERG to replace the required hard-copy document.
 //
 //  Flow:
 //    1. Emergency contact strip — CHEMTREC + National Response
@@ -46,6 +45,7 @@ struct MeErg: View {
     @StateObject private var store = ErgStore()
 
     @State private var detailPresented: String?
+    @AppStorage("ergIncidentCountry") private var incidentCountry = ""
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -60,8 +60,13 @@ struct MeErg: View {
             .padding(.top, Space.s4)
             .padding(.bottom, Space.s8)
         }
-        .task { await store.refresh() }
-        .refreshable { await store.refresh() }
+        .task { await refreshContacts() }
+        .refreshable {
+            await store.refresh(
+                countryCode: selectedIncidentCountry,
+                force: true
+            )
+        }
         .sheet(
             isPresented: Binding(
                 get: { detailPresented != nil },
@@ -83,7 +88,7 @@ struct MeErg: View {
                 Text("ERG Lookup")
                     .font(EType.h1)
                     .foregroundStyle(LinearGradient.diagonal)
-                Text("49 CFR 172.604 · Emergency Response Guidebook")
+                Text("ERG 2024 · Emergency response reference")
                     .font(EType.caption)
                     .foregroundStyle(palette.textTertiary)
             }
@@ -128,42 +133,114 @@ struct MeErg: View {
 
     @ViewBuilder
     private var emergencyStrip: some View {
-        if let c = store.contacts {
-            VStack(alignment: .leading, spacing: Space.s2) {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            HStack {
                 Text("EMERGENCY CONTACTS")
                     .font(EType.micro)
                     .tracking(1.3)
                     .foregroundStyle(palette.textTertiary)
-                chemtrecCard(c.chemtrec)
+                Spacer()
+                incidentCountryPicker
+            }
+
+            if store.isLoading && store.contacts == nil {
                 HStack(spacing: Space.s2) {
-                    contactTile(c.national, icon: "drop")
-                    contactTile(c.poison, icon: "testtube.2")
+                    ProgressView()
+                    Text("Loading verified contacts…")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
                 }
-                HStack(spacing: Space.s2) {
-                    contactTile(c.emergency, icon: "phone.fill.arrow.up.right")
-                    Spacer()
+                .padding(Space.s3)
+            } else if let response = store.contacts {
+                if response.status == "available" {
+                    if let phone = response.localEmergencyServices.phone {
+                        localEmergencyCard(
+                            response.localEmergencyServices,
+                            phone: phone
+                        )
+                    }
+                    ForEach(response.contacts) { contact in
+                        contactCard(contact)
+                    }
+                } else {
+                    EusoEmptyState(
+                        systemImage: "globe.americas.fill",
+                        title: "Select the incident country",
+                        subtitle: "Emergency references are jurisdiction-specific."
+                    )
+                }
+
+                Text(response.warning)
+                    .font(EType.micro)
+                    .foregroundStyle(palette.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Space.s1)
+            } else if let error = store.lastError {
+                VStack(alignment: .leading, spacing: Space.s2) {
+                    Text(error.localizedDescription)
+                        .font(EType.caption)
+                        .foregroundStyle(Brand.danger)
+                    Button {
+                        Task {
+                            await store.refresh(
+                                countryCode: selectedIncidentCountry,
+                                force: true
+                            )
+                        }
+                    } label: {
+                        Label("Retry contacts", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
                 }
             }
         }
     }
 
-    private func chemtrecCard(_ c: ErgAPI.EmergencyContact) -> some View {
-        Button { callNumber(c.phone) } label: {
+    private var incidentCountryPicker: some View {
+        Picker(
+            "Incident country",
+            selection: Binding(
+                get: { incidentCountry },
+                set: { country in
+                    incidentCountry = country
+                    Task {
+                        await store.refresh(
+                            countryCode: country.isEmpty ? nil : country,
+                            force: true
+                        )
+                    }
+                }
+            )
+        ) {
+            Text("Select").tag("")
+            Text("US").tag("US")
+            Text("Canada").tag("CA")
+            Text("México").tag("MX")
+        }
+        .pickerStyle(.menu)
+        .font(EType.caption)
+    }
+
+    private func localEmergencyCard(
+        _ contact: ErgAPI.LocalEmergencyServices,
+        phone: String
+    ) -> some View {
+        Button { callNumber(phone) } label: {
             HStack(spacing: Space.s3) {
-                Image(systemName: "flame")
+                Image(systemName: "phone.fill.arrow.up.right")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(.white)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(c.name)
+                    Text(contact.name)
                         .font(EType.bodyStrong)
                         .foregroundStyle(.white)
-                    Text(c.description)
+                    Text("Police · Fire · EMS")
                         .font(EType.caption)
                         .foregroundStyle(.white.opacity(0.85))
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text(c.phone)
+                    Text(phone)
                         .font(EType.bodyStrong)
                         .foregroundStyle(.white)
                         .monospacedDigit()
@@ -183,34 +260,70 @@ struct MeErg: View {
         .buttonStyle(.plain)
     }
 
-    private func contactTile(_ c: ErgAPI.EmergencyContact, icon: String) -> some View {
-        Button { callNumber(c.phone) } label: {
-            HStack(spacing: Space.s2) {
-                Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(palette.textSecondary)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(c.name)
-                        .font(EType.caption)
-                        .foregroundStyle(palette.textPrimary)
-                    Text(c.phone)
+    private func contactCard(_ contact: ErgAPI.EmergencyContact) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Button { callNumber(contact.phone) } label: {
+                HStack(spacing: Space.s2) {
+                    Image(systemName: "phone.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(LinearGradient.diagonal)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(contact.name)
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Text(contact.description)
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                            .multilineTextAlignment(.leading)
+                        Text(([contact.phone] + contact.alternatePhones).joined(separator: " · "))
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textPrimary)
+                            .monospacedDigit()
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "phone.arrow.up.right")
+                        .foregroundStyle(palette.textTertiary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if let restriction = contact.usageRestriction {
+                Text(restriction)
+                    .font(EType.micro)
+                    .foregroundStyle(Brand.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let source = URL(string: contact.sourceUrl) {
+                Link(destination: source) {
+                    Label("Official source · verified \(contact.verifiedAt)", systemImage: "checkmark.seal")
                         .font(EType.micro)
                         .foregroundStyle(palette.textTertiary)
-                        .monospacedDigit()
                 }
-                Spacer(minLength: 0)
             }
-            .padding(Space.s3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .eusoCard(radius: Radius.md)
         }
-        .buttonStyle(.plain)
+        .padding(Space.s3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .eusoCard(radius: Radius.md)
     }
 
     private func callNumber(_ phone: String) {
         let digits = phone.filter { $0.isNumber || $0 == "+" }
         guard !digits.isEmpty, let url = URL(string: "tel:\(digits)") else { return }
         openURL(url)
+    }
+
+    @MainActor
+    private func refreshContacts() async {
+        await store.refresh(countryCode: selectedIncidentCountry)
+        if incidentCountry.isEmpty, let resolved = store.contacts?.countryCode {
+            incidentCountry = resolved
+        }
+    }
+
+    private var selectedIncidentCountry: String? {
+        let normalized = incidentCountry.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
     }
 
     // MARK: Results
@@ -233,7 +346,6 @@ struct MeErg: View {
                     ForEach(store.results) { hit in
                         Button {
                             detailPresented = hit.unNumber
-                            Task { await store.loadDetail(unNumber: hit.unNumber) }
                         } label: {
                             resultRow(hit)
                         }
@@ -247,7 +359,7 @@ struct MeErg: View {
                     .font(EType.micro)
                     .tracking(1.3)
                     .foregroundStyle(palette.textTertiary)
-                Text("Search the full ERG database by UN number or material name. The guidebook is required in-cab under 49 CFR 172.604; this is your tap-to-find copy.")
+                Text("Search the official ERG 2024 response reference by UN number or material name. Verify legal classification and required shipping-paper information from the controlling transport documents.")
                     .font(EType.caption)
                     .foregroundStyle(palette.textSecondary)
                     .padding(Space.s3)
@@ -278,13 +390,23 @@ struct MeErg: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
-                HStack(spacing: 4) {
-                    Text("Class \(hit.hazardClass)")
-                    Text("·")
-                    Text(hit.placardName)
+                if hit.classificationEvidence?.eligibleAsClassificationSource == true,
+                   let hazardClass = hit.hazardClass,
+                   !hazardClass.isEmpty {
+                    HStack(spacing: 4) {
+                        Text("Class \(hazardClass)")
+                        if let placardName = hit.placardName, !placardName.isEmpty {
+                            Text("·")
+                            Text(placardName)
+                        }
+                    }
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textTertiary)
+                } else {
+                    Text("Response reference only · classification verified separately")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textTertiary)
                 }
-                .font(EType.caption)
-                .foregroundStyle(palette.textTertiary)
             }
             Spacer()
             VStack(alignment: .trailing, spacing: 2) {
@@ -320,7 +442,7 @@ struct MeErg: View {
             Text("WR · Dangerous When Wet")
                 .font(EType.micro)
                 .foregroundStyle(palette.textTertiary)
-            Text("This in-app ERG satisfies 49 CFR 172.604's \"accessible in the cab\" requirement when your device is powered + reachable.")
+            Text("Digital ERG is supplemental. Keep the required printed emergency-response information with the shipping paper.")
                 .font(EType.caption)
                 .foregroundStyle(palette.textTertiary)
                 .multilineTextAlignment(.center)
@@ -362,13 +484,10 @@ private struct ErgDetailSheet: View {
                         if let pd = d.protectiveDistance {
                             protectiveSection(pd)
                         }
-                    } else if store.detail == nil {
-                        // Single seamless loading state — auto-retries
-                        // every 4s while detail is nil so a transient
-                        // network hiccup self-heals without surfacing
-                        // an error UI. Founder mandate 2026-05-05:
-                        // "i dont want to see any error anything."
+                    } else if store.isDetailLoading {
                         loadingState
+                    } else if let error = store.lastError {
+                        detailErrorState(error)
                     } else {
                         EusoEmptyState(
                             systemImage: "questionmark.circle",
@@ -387,6 +506,11 @@ private struct ErgDetailSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .task(id: unNumber) {
+                if store.detail == nil && !store.isDetailLoading {
+                    await store.loadDetail(unNumber: unNumber)
+                }
+            }
         }
     }
 
@@ -394,7 +518,7 @@ private struct ErgDetailSheet: View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(d.name ?? "(Unknown)")
+                    Text(d.name ?? "UN\(unNumber)")
                         .font(EType.title)
                         .foregroundStyle(palette.textPrimary)
                     if let alt = d.alternateNames, !alt.isEmpty {
@@ -418,10 +542,13 @@ private struct ErgDetailSheet: View {
                 }
             }
             HStack(spacing: Space.s2) {
-                if let cls = d.hazardClass {
+                if d.classificationEvidence?.eligibleAsClassificationSource == true,
+                   let cls = d.hazardClass {
                     chip("Class \(cls)", color: palette.textSecondary, stroked: true)
                 }
-                if let placard = d.placard, placard != "Unknown" {
+                if d.classificationEvidence?.eligibleAsClassificationSource == true,
+                   let placard = d.placard,
+                   !placard.isEmpty {
                     chip(placard, color: palette.textSecondary, stroked: true)
                 }
                 if d.isTIH == true {
@@ -437,19 +564,6 @@ private struct ErgDetailSheet: View {
         .eusoCard(radius: Radius.lg)
     }
 
-    /// Bounded loading state — fires up to N retries with exponential
-    /// backoff while `store.detail` is nil. After exhausting retries
-    /// we stop and let the user pull-to-refresh or back out.
-    ///
-    /// Was: an unbounded `while store.detail == nil` loop with a fixed
-    /// 4s cadence. That hammered the same endpoint indefinitely when
-    /// the UN number wasn't on the server, and after ~8 minutes of
-    /// repeated `URLSession.data(for:)` calls CFNetwork's per-request
-    /// dispatch sources started colliding inside
-    /// `_dispatch_source_set_runloop_timer_4CF` and the app crashed
-    /// (EXC_BAD_ACCESS / SIGSEGV at offset 0x1d). Surfaced via TestFlight
-    /// crash report on build 201, 2026-05-05 — `EusoTripAPI.swift:963`
-    /// trace originating from this view.
     @ViewBuilder
     private var loadingState: some View {
         VStack(spacing: Space.s3) {
@@ -463,27 +577,29 @@ private struct ErgDetailSheet: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Space.s5)
-        .task {
-            // First attempt fires immediately so the spinner doesn't
-            // sit empty for 2s on a fresh open.
-            await store.loadDetail(unNumber: unNumber)
-            // Up to 4 backoff retries (2s, 4s, 8s, 16s = 30s total)
-            // before we give up. Honors task cancellation so backing
-            // out of the sheet drops the loop instead of leaking
-            // requests into a zombie URLSession context — the
-            // exact precondition of the build-201 CFNetwork crash.
-            var delayNs: UInt64 = 2_000_000_000
-            for _ in 0..<4 {
-                if Task.isCancelled { return }
-                if store.detail != nil { return }
-                do { try await Task.sleep(nanoseconds: delayNs) }
-                catch { return }
-                if Task.isCancelled { return }
-                if store.detail != nil { return }
-                await store.loadDetail(unNumber: unNumber)
-                delayNs &*= 2
+    }
+
+    private func detailErrorState(_ error: Error) -> some View {
+        VStack(spacing: Space.s3) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 24, weight: .bold))
+                .foregroundStyle(Brand.warning)
+            Text("ERG lookup unavailable")
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+            Text(error.localizedDescription)
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .multilineTextAlignment(.center)
+            Button {
+                Task { await store.loadDetail(unNumber: unNumber) }
+            } label: {
+                Label("Retry", systemImage: "arrow.clockwise")
             }
+            .buttonStyle(.borderedProminent)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Space.s5)
     }
 
     // MARK: - Full ERG handbook sections
@@ -783,34 +899,37 @@ private struct ErgDetailSheet: View {
 
     @ViewBuilder
     private func protectiveSection(_ pd: ErgAPI.ProtectiveDistance) -> some View {
-        if pd.smallSpill != nil || pd.largeSpill != nil {
-            VStack(alignment: .leading, spacing: Space.s2) {
-                Text("PROTECTIVE DISTANCES (TIH)")
-                    .font(EType.micro)
-                    .tracking(1.3)
-                    .foregroundStyle(palette.textTertiary)
-                if let s = pd.smallSpill {
-                    protectiveRow(label: "Small spill", row: s)
-                }
-                if let l = pd.largeSpill {
-                    protectiveRow(label: "Large spill", row: l)
-                }
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("PROTECTIVE DISTANCES (TIH)")
+                .font(EType.micro)
+                .tracking(1.3)
+                .foregroundStyle(palette.textTertiary)
+            protectiveRow(label: "Small spill", row: pd.smallSpill)
+            if pd.refTable3 == true {
+                Text("Large spill distances require the actual Table 3 container type and current wind conditions.")
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.warning)
+                    .padding(Space.s3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .eusoCard(radius: Radius.md)
+            } else {
+                protectiveRow(label: "Large spill", row: pd.largeSpill)
             }
         }
     }
 
     private func protectiveRow(
         label: String,
-        row: ErgAPI.ProtectiveDistance.PDRow
+        row: ErgAPI.ProtectiveDistance.SpillRow
     ) -> some View {
         VStack(alignment: .leading, spacing: Space.s1) {
             Text(label)
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
             HStack(spacing: Space.s3) {
-                pdValue(title: "ISOLATE",       value: row.isolate)
-                pdValue(title: "DAY DOWNWIND",  value: row.downwindDay)
-                pdValue(title: "NIGHT DOWNWIND", value: row.downwindNight)
+                pdValue(title: "ISOLATE", value: "\(row.day.isolateMeters) m")
+                pdValue(title: "DAY DOWNWIND", value: formatProtectiveDistance(row.day))
+                pdValue(title: "NIGHT DOWNWIND", value: formatProtectiveDistance(row.night))
             }
         }
         .padding(Space.s3)
@@ -818,13 +937,22 @@ private struct ErgDetailSheet: View {
         .eusoCard(radius: Radius.md)
     }
 
-    private func pdValue(title: String, value: String?) -> some View {
+    private func formatProtectiveDistance(
+        _ value: ErgAPI.ProtectiveDistance.DistanceValue
+    ) -> String {
+        let kilometers = value.protectKm.formatted(
+            .number.precision(.fractionLength(0...1))
+        )
+        return "\(kilometers)\(value.mayBeLarger == true ? "+" : "") km"
+    }
+
+    private func pdValue(title: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(EType.micro)
                 .tracking(1.1)
                 .foregroundStyle(palette.textTertiary)
-            Text(value ?? "-")
+            Text(value)
                 .font(EType.bodyStrong)
                 .foregroundStyle(palette.textPrimary)
         }

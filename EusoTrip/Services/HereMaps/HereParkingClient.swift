@@ -1,6 +1,6 @@
 //
 //  HereParkingClient.swift
-//  EusoTrip — REST client for HERE Parking.
+//  EusoTrip — authenticated backend client for HERE Parking.
 //
 //  Endpoint:
 //      GET https://browse.search.hereapi.com/v1/browse
@@ -21,7 +21,7 @@
 //      at=<lat>,<lng>
 //      categories=<comma-separated ids>
 //
-//  Auth: Bearer via HereBearerFetch.
+//  Provider credentials stay on the EusoTrip server.
 //
 //  Powered by ESANG AI™.
 //
@@ -58,9 +58,6 @@ struct HereParkingPrice: Decodable, Hashable {
 final class HereParkingClient {
     static let shared = HereParkingClient()
 
-    private let session: URLSession
-    private let decoder = JSONDecoder()
-
     /// Canonical HERE category ids for off-street parking + truck
     /// parking. 2026-06-09: the previous ids (800-8400-*, 400-4100-0199)
     /// belong to retired families — Browse answers them with a silent
@@ -75,7 +72,7 @@ final class HereParkingClient {
     ]
 
     init(session: URLSession = .shared) {
-        self.session = session
+        _ = session
     }
 
     /// Off-street parking + truck stops near a point. Defaults are
@@ -86,20 +83,31 @@ final class HereParkingClient {
         categories: [String] = HereParkingClient.defaultCategories,
         limit: Int = 30
     ) async throws -> [HereBrowseParkingItem] {
-        var comps = URLComponents(string: "https://browse.search.hereapi.com/v1/browse")!
-        comps.queryItems = [
-            URLQueryItem(name: "at", value: "\(center.latitude),\(center.longitude)"),
-            URLQueryItem(name: "categories", value: categories.joined(separator: ",")),
-            URLQueryItem(name: "limit", value: String(limit)),
-        ]
-        guard let url = comps.url else { throw HereMapsError.badURL }
+        _ = categories
+        let rows: [BackendRow] = try await EusoTripAPI.shared.query(
+            "hereMaps.parkingNearby",
+            input: BackendRequest(
+                at: BackendCoord(lat: center.latitude, lng: center.longitude),
+                radiusMeters: 40_000,
+                truckOnly: true
+            )
+        )
+        return Array(rows.compactMap(\.raw).prefix(min(50, max(1, limit))))
+    }
 
-        let data = try await HereBearerFetch.data(for: url, session: session)
-        do {
-            return try decoder.decode(HereBrowseParkingResponse.self, from: data).items
-        } catch {
-            throw HereMapsError.decoding(String(describing: error))
-        }
+    private struct BackendCoord: Encodable {
+        let lat: Double
+        let lng: Double
+    }
+
+    private struct BackendRequest: Encodable {
+        let at: BackendCoord
+        let radiusMeters: Int
+        let truckOnly: Bool
+    }
+
+    private struct BackendRow: Decodable {
+        let raw: HereBrowseParkingItem?
     }
 }
 

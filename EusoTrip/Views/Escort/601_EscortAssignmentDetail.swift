@@ -289,11 +289,14 @@ struct EscortAssignmentDetail: View {
             if let coords = corridorCoords, coords.isRoutable {
                 let pickup = HereLatLng(coords.originLat, coords.originLng)
                 let delivery = HereLatLng(coords.destLat, coords.destLng)
-                // Prefer the decoded HERE Routing v8 section polyline (real
-                // road geometry fetched in `refreshRoutePolyline`); fall
-                // back to the straight origin→destination line only until
-                // it lands — never a fabricated path.
-                let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : [pickup, delivery]
+                let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : []
+                let markerLayer = HereMapLayer.markers([
+                    HereMarker(at: pickup, kind: .pickup, label: d.origin.isEmpty ? nil : d.origin),
+                    HereMarker(at: delivery, kind: .delivery, label: d.destination.isEmpty ? nil : d.destination)
+                ])
+                let mapLayers: [HereMapLayer] = line.count >= 2
+                    ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
+                    : [markerLayer]
                 HereLiveMapView(
                     center: HereLatLng(
                         (coords.originLat + coords.destLat) / 2,
@@ -302,13 +305,7 @@ struct EscortAssignmentDetail: View {
                     zoom: 6,
                     interactive: false,
                     route: line,
-                    baseLayers: [
-                        .route(polyline: line, colorHex: "#1473FF"),
-                        .markers([
-                            HereMarker(at: pickup, kind: .pickup, label: d.origin.isEmpty ? nil : d.origin),
-                            HereMarker(at: delivery, kind: .delivery, label: d.destination.isEmpty ? nil : d.destination)
-                        ])
-                    ],
+                    baseLayers: mapLayers,
                     addOns: .shipperTracking,
                     showTicker: false
                 )
@@ -1050,8 +1047,7 @@ struct EscortAssignmentDetail: View {
     /// is a heavy-haul road route). Depends on `corridorCoords` already
     /// being resolved, so it runs after `loadCorridorCoords()`. On any
     /// failure (no coords, null-island endpoint, HERE error) the polyline
-    /// stays empty and the preview keeps the straight origin→destination
-    /// base line — never a fabricated path.
+    /// stays empty and the preview remains marker-only.
     @MainActor
     private func refreshRoutePolyline() async {
         guard let coords = corridorCoords, coords.isRoutable else {

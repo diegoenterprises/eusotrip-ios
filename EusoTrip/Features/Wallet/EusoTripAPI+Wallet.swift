@@ -20,8 +20,8 @@
 //   • createPickupCredential → { loadId, loadNumber, accessToken, shortCode,
 //                                pkpassUrl (null until PassKit configured),
 //                                expiresAt }.
-//  Every field is decoded defensively (optional / tolerant) so a renamed or
-//  missing server field can NEVER throw a decode error and blank the surface.
+//  Required credential and theme fields decode strictly so a contract drift
+//  cannot be mistaken for a successful empty credential.
 //
 
 import Foundation
@@ -29,13 +29,13 @@ import Foundation
 extension EusoTripAPI {
 
     /// `{ themeId }` — current choice (getWalletTheme). `resolveTheme()` on the
-    /// server guarantees a valid id, but decode tolerantly regardless.
+    /// server guarantees a valid id.
     struct WalletThemeRef: Decodable {
         let themeId: String
         private enum CodingKeys: String, CodingKey { case themeId }
         init(from decoder: Decoder) throws {
-            let c = try? decoder.container(keyedBy: CodingKeys.self)
-            themeId = (try? c?.decodeIfPresent(String.self, forKey: .themeId)) ?? WalletCardTheme.defaultId
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            themeId = try c.decode(String.self, forKey: .themeId)
         }
     }
 
@@ -45,9 +45,9 @@ extension EusoTripAPI {
         let themeId: String
         private enum CodingKeys: String, CodingKey { case ok, themeId }
         init(from decoder: Decoder) throws {
-            let c = try? decoder.container(keyedBy: CodingKeys.self)
-            ok      = (try? c?.decodeIfPresent(Bool.self, forKey: .ok)) ?? true
-            themeId = (try? c?.decodeIfPresent(String.self, forKey: .themeId)) ?? WalletCardTheme.defaultId
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            ok      = try c.decode(Bool.self, forKey: .ok)
+            themeId = try c.decode(String.self, forKey: .themeId)
         }
     }
 
@@ -67,13 +67,13 @@ extension EusoTripAPI {
             case loadId, loadNumber, accessToken, shortCode, pkpassUrl, expiresAt
         }
         init(from decoder: Decoder) throws {
-            let c = try? decoder.container(keyedBy: CodingKeys.self)
-            loadId      = (try? c?.decodeIfPresent(String.self, forKey: .loadId)) ?? ""
-            loadNumber  = (try? c?.decodeIfPresent(String.self, forKey: .loadNumber)) ?? nil
-            accessToken = (try? c?.decodeIfPresent(String.self, forKey: .accessToken)) ?? ""
-            shortCode   = (try? c?.decodeIfPresent(String.self, forKey: .shortCode)) ?? ""
-            pkpassUrl   = (try? c?.decodeIfPresent(String.self, forKey: .pkpassUrl)) ?? nil
-            expiresAt   = (try? c?.decodeIfPresent(String.self, forKey: .expiresAt)) ?? nil
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            loadId      = try c.decode(String.self, forKey: .loadId)
+            loadNumber  = try c.decodeIfPresent(String.self, forKey: .loadNumber)
+            accessToken = try c.decode(String.self, forKey: .accessToken)
+            shortCode   = try c.decode(String.self, forKey: .shortCode)
+            pkpassUrl   = try c.decodeIfPresent(String.self, forKey: .pkpassUrl)
+            expiresAt   = try c.decodeIfPresent(String.self, forKey: .expiresAt)
         }
     }
 

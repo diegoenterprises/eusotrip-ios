@@ -125,15 +125,18 @@ struct ShipperLoadDetail: View {
     /// listing flow accessible from the chip's tap.
     @State private var listingTrust: ListingTrust? = nil
 
-    /// Real road geometry for the hero map's pickup→delivery corridor,
-    /// decoded from HERE Routing v8. Empty until the route resolves (or
-    /// on any failure / vessel leg), in which case the map falls back to
-    /// the straight pickup→delivery base line — never a fabricated path.
+    /// Real road geometry for a truck load's pickup-to-delivery corridor.
+    /// Non-road loads remain marker-only until a mode-specific provider
+    /// supplies real route geometry.
     /// Loaded by `refreshRoutePolyline()` from `.task`/`refreshAll`.
     @State private var routePolyline: [HereLatLng] = []
 
     private var lifecycleVertical: TripVertical {
-        TripVertical(role: session.user?.role)
+        TripVertical(
+            transportMode: liveDetail?.transportMode,
+            equipmentType: liveDetail?.equipmentType,
+            role: session.user?.role
+        )
     }
 
     private var lifecycleProduct: TripProduct {
@@ -1166,14 +1169,23 @@ struct ShipperLoadDetail: View {
                 // renderer the plan serves. Pickup/delivery pins + a route
                 // connector layered on the vector basemap; dark/light native.
                 //
-                // 2026-06-13: the connector now follows the REAL road network
-                // (HERE Routing v8, decoded into `routePolyline`) instead of a
-                // straight pickup→delivery segment. Falls back to the straight
-                // 2-point line only while the real route is unavailable
-                // (loading, HERE error, or a vessel great-circle leg).
-                let routeLine: [HereLatLng] = routePolyline.count >= 2
+                // Only paint verified HERE road geometry for truck loads.
+                // Rail and marine loads keep their real endpoint markers but
+                // never imply a continental road path or road traffic feed.
+                let routeLine: [HereLatLng] = lifecycleVertical == .truck && routePolyline.count >= 2
                     ? routePolyline
-                    : [.init(lane.pickup), .init(lane.delivery)]
+                    : []
+                let layers: [HereMapLayer] = {
+                    var result: [HereMapLayer] = []
+                    if routeLine.count >= 2 {
+                        result.append(.route(polyline: routeLine, colorHex: "#1473FF"))
+                    }
+                    result.append(.markers([
+                        .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
+                        .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
+                    ]))
+                    return result
+                }()
                 HereLiveMapView(
                     center: .init(
                         (lane.pickup.latitude + lane.delivery.latitude) / 2,
@@ -1181,20 +1193,8 @@ struct ShipperLoadDetail: View {
                     ),
                     zoom: 6,
                     route: routeLine,
-                    baseLayers: [
-                        .route(
-                            polyline: routeLine,
-                            colorHex: "#1473FF"
-                        ),
-                        .markers([
-                            .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
-                            .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
-                        ])
-                    ],
-                    // Shipper situational awareness along the lane: weather +
-                    // traffic incidents + sponsored ad-zones (no driver-only
-                    // gamification pins).
-                    addOns: .shipperTracking
+                    baseLayers: layers,
+                    addOns: lifecycleVertical == .truck ? .shipperTracking : .weather
                 )
             } else {
                 // Detail is live but coords haven't been geocoded yet —
@@ -1299,13 +1299,11 @@ struct ShipperLoadDetail: View {
     /// its section polyline into `routePolyline` — the real curved road
     /// geometry, not a straight 2-point segment. Truck-aware via the default
     /// `.standardUSSemiLoaded` profile. On any failure (missing lane, HERE
-    /// error, <2 decoded points) the polyline stays empty and the hero map
-    /// keeps the straight pickup→delivery base line — never a fabricated
-    /// path. Vessel mode is skipped entirely (an ocean leg is a great
-    /// circle, not a road route), matching LifecycleScaffold.
+    /// error, or fewer than two decoded points) the polyline stays empty and
+    /// the hero map remains marker-only. Rail and marine modes are skipped.
     @MainActor
     private func refreshRoutePolyline() async {
-        guard lifecycleVertical != .vessel, let lane = laneForMap else {
+        guard lifecycleVertical == .truck, let lane = laneForMap else {
             routePolyline = []
             return
         }
@@ -1323,13 +1321,13 @@ struct ShipperLoadDetail: View {
             let decoded = HereRoutingClient.polyline(for: section)
             routePolyline = decoded.count >= 2 ? decoded.map { HereLatLng($0) } : []
         } catch {
-            // Make the straight-line fallback DIAGNOSABLE. HERE Routing v8 uses
+            // Make route failure diagnosable. HERE Routing v8 uses
             // the OAuth2 Bearer credential (HERE access key id/secret via
-            // HEREAuthService) — a DIFFERENT credential from the JS apiKey that
+            // the authenticated HERE server proxy) — separate from the JS apiKey that
             // renders the map tiles. So the basemap can draw while the route
             // 401/403s and collapses to a straight pickup→delivery line. This
             // was previously swallowed silently; surface the real reason.
-            print("[LoadDetail] HERE route fetch failed → straight fallback — \((error as? HereMapsError)?.errorDescription ?? String(describing: error))")
+            print("[LoadDetail] HERE route fetch failed; showing endpoints only: \((error as? HereMapsError)?.errorDescription ?? String(describing: error))")
             routePolyline = []
         }
     }
@@ -2306,7 +2304,7 @@ struct ShipperLoadDetail: View {
         }
         // Detail (and thus laneForMap coords) is now resolved — fetch the
         // real road geometry for the hero map. Skips vessel legs and folds
-        // any failure to the straight-line fallback inside the loader.
+        // any failure to the marker-only state inside the loader.
         await refreshRoutePolyline()
     }
 

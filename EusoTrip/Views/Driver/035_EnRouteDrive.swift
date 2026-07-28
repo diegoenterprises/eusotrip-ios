@@ -154,7 +154,6 @@ struct EnRouteDrive: View {
     private var turnHeadline: String         { "Awaiting live route" }
     private var turnSubhead: String          { "TURN-BY-TURN PENDING" }
     private var thenPillText: String         { "THEN" }
-    private var waypointShield: String       { "-" }
 
     /// Hazmat reroute callout — ctx-driven. Returns empty for
     /// non-hazmat loads so the band hides. Empty when no live load
@@ -185,8 +184,6 @@ struct EnRouteDrive: View {
     }
 
     // Ping position, normalized to the map frame
-    private var pingX: CGFloat { register == .dark ? 0.50 : 0.48 }
-    private var pingY: CGFloat { register == .dark ? 0.68 : 0.66 }
 
     // MARK: §3 weather — live or honest-empty (Waves 1-3b-server)
     //
@@ -920,11 +917,16 @@ struct EnRouteDrive: View {
            let delivery = load.deliveryLocation,
            !(pickup.lat == 0 && pickup.lng == 0),
            !(delivery.lat == 0 && delivery.lng == 0) {
-            // Prefer the decoded HERE section polyline (real road geometry);
-            // fall back to the straight pickup→delivery line until it lands.
-            let line: [HereLatLng] = routePolyline.count >= 2
-                ? routePolyline
-                : [HereLatLng(pickup.lat, pickup.lng), HereLatLng(delivery.lat, delivery.lng)]
+            let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : []
+            let markerLayer = HereMapLayer.markers([
+                .init(at: .init(pickup.lat, pickup.lng), kind: .pickup,
+                      label: pickup.optionalMapDisplayLabel),
+                .init(at: .init(delivery.lat, delivery.lng), kind: .delivery,
+                      label: delivery.optionalMapDisplayLabel)
+            ])
+            let routeLayers: [HereMapLayer] = line.count >= 2
+                ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
+                : [markerLayer]
             // §3c receiver fence at the corridor terminus — ONLY when a
             // real `tracking.getGeofences` row covers the receiver
             // (resolveReceiverFence). Absent row ⇒ absent layer.
@@ -939,15 +941,7 @@ struct EnRouteDrive: View {
                 zoom: 7,
                 firstPerson: true,
                 route: line,
-                baseLayers: [
-                    .route(polyline: line, colorHex: "#1473FF"),
-                    .markers([
-                        .init(at: .init(pickup.lat, pickup.lng), kind: .pickup,
-                              label: pickup.optionalMapDisplayLabel),
-                        .init(at: .init(delivery.lat, delivery.lng), kind: .delivery,
-                              label: delivery.optionalMapDisplayLabel)
-                    ])
-                ] + fenceLayers,
+                baseLayers: routeLayers + fenceLayers,
                 addOns: .driverEnRoute
             )
         } else {
@@ -955,139 +949,17 @@ struct EnRouteDrive: View {
         }
     }
 
-    /// Neutral-grid placeholder shown only when no live load with real
-    /// coordinates is on file (previews + first-run). It carries NO
-    /// business data and paints NO route — just the register backdrop,
-    /// the faint street grid, em-dash labels, and an honest "awaiting
-    /// route" seam (W13 hygiene · E2E audit §4 · 2026-06-10; the prior
-    /// decorative corridor + arrowheads read as a live route).
+    /// Operational empty state shown when the active load has no verified
+    /// pickup and delivery coordinates. It contains no route, road, waypoint,
+    /// or position graphics that could be mistaken for live navigation data.
     private var mapPlaceholder: some View {
-        ZStack {
-            // Backdrop — register-specific ground color
-            Rectangle()
-                .fill(register == .dark
-                      ? AnyShapeStyle(
-                        RadialGradient(
-                            colors: [Color(hex: "#0C1322"), Color(hex: "#080B13"), Color(hex: "#05060A")],
-                            center: .init(x: 0.55, y: 0.45),
-                            startRadius: 80, endRadius: 720
-                        )
-                      )
-                      : AnyShapeStyle(
-                        LinearGradient(
-                            colors: [Color(hex: "#EEE7DC"), Color(hex: "#F1EBE1"), Color(hex: "#F5F1E8")],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                      )
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // Faint street grid — horizontal + vertical streets
-            Canvas { ctx, size in
-                let strokeColor: Color = register == .dark
-                    ? Color.white.opacity(0.035)
-                    : Color.black.opacity(0.05)
-                let step: CGFloat = 52
-                var x: CGFloat = 0
-                while x < size.width {
-                    ctx.stroke(Path { $0.move(to: .init(x: x, y: 0)); $0.addLine(to: .init(x: x, y: size.height)) },
-                               with: .color(strokeColor), lineWidth: 1)
-                    x += step
-                }
-                var y: CGFloat = 0
-                while y < size.height {
-                    ctx.stroke(Path { $0.move(to: .init(x: 0, y: y)); $0.addLine(to: .init(x: size.width, y: y)) },
-                               with: .color(strokeColor), lineWidth: 1)
-                    y += step
-                }
-            }
-
-            // Cross-street labels scattered across the placeholder grid.
-            // M2 cleanup (97th firing): register-keyed fixtures (e.g. "West Aire Rd"/"Old Lincoln Hwy")
-            // were inherited Figma vignettes — replaced with em-dash neutrals until HERE Routing
-            // turn-by-turn cross-street labels land for this screen. The four positions are
-            // preserved so the placeholder keeps its visual rhythm.
-            GeometryReader { geo in
-                crossStreetLabel(text: "-",
-                                 at: .init(x: geo.size.width * 0.18, y: geo.size.height * 0.18))
-                crossStreetLabel(text: "-",
-                                 at: .init(x: geo.size.width * 0.78, y: geo.size.height * 0.40))
-                crossStreetLabel(text: "-",
-                                 at: .init(x: geo.size.width * 0.20, y: geo.size.height * 0.56))
-                crossStreetLabel(text: "-",
-                                 at: .init(x: geo.size.width * 0.78, y: geo.size.height * 0.64))
-            }
-
-            // W13 hygiene (E2E audit §4 maps · 2026-06-10): the decorative
-            // fake route corridor (iridescent hairlines + direction
-            // arrowheads) is gone — a placeholder must never paint
-            // something that reads as a live route (zero-fallback
-            // doctrine, matches 018's honest-seam treatment). The neutral
-            // grid above stays; an honest "awaiting route" seam below
-            // says exactly why there is no corridor yet.
-            GeometryReader { geo in
-                HStack(spacing: 5) {
-                    Image(systemName: "mappin.slash")
-                        .font(.system(size: 9, weight: .bold))
-                    Text("AWAITING ROUTE")
-                        .font(EType.mono(.micro)).tracking(0.6)
-                }
-                .foregroundStyle(palette.textTertiary)
-                .padding(.horizontal, 9).padding(.vertical, 4)
-                .background(.ultraThinMaterial)
-                .overlay(Capsule().strokeBorder(palette.borderFaint))
-                .clipShape(Capsule())
-                .position(x: geo.size.width * 0.50, y: geo.size.height * 0.46)
-                .accessibilityLabel("Awaiting route — the live corridor appears once this load's coordinates are on file")
-            }
-
-            // Interstate shield waypoint pill (center of the map)
-            GeometryReader { geo in
-                Text(waypointShield)
-                    .font(.system(size: 12, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Color.black)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Color.white)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 4)
-                            .strokeBorder(Color.black.opacity(0.4), lineWidth: 2)
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 4))
-                    .shadow(color: .black.opacity(0.3), radius: 4, y: 1)
-                    .position(x: geo.size.width * 0.50, y: geo.size.height * 0.30)
-            }
-
-            // Current-position ping
-            GeometryReader { geo in
-                ZStack {
-                    Circle()
-                        .fill(LinearGradient.diagonal.opacity(0.25))
-                        .frame(width: 42, height: 42)
-                    Circle()
-                        .fill(LinearGradient.diagonal)
-                        .frame(width: 20, height: 20)
-                        .overlay(
-                            Circle().strokeBorder(
-                                register == .dark ? palette.bgPage : Color.white,
-                                lineWidth: 2.5)
-                        )
-                        .shadow(color: Brand.blue.opacity(register == .dark ? 0.55 : 0.30), radius: 12)
-                    // Heading chevron
-                    Image(systemName: "arrowtriangle.up.fill")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(Color.white)
-                }
-                .position(x: geo.size.width * pingX, y: geo.size.height * pingY)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func crossStreetLabel(text: String, at point: CGPoint) -> some View {
-        Text(text)
-            .font(EType.mono(.micro)).tracking(0.3)
-            .foregroundStyle(palette.textTertiary)
-            .position(point)
+        EusoEmptyState(
+            systemImage: "mappin.slash",
+            title: "Awaiting route coordinates",
+            subtitle: "Live navigation will appear after verified pickup and delivery coordinates are available."
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(palette.bgCard)
     }
 }
 

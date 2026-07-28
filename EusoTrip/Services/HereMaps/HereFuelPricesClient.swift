@@ -1,6 +1,6 @@
 //
 //  HereFuelPricesClient.swift
-//  EusoTrip — REST client for HERE Fuel Prices API v3.
+//  EusoTrip — authenticated backend client for HERE Fuel Prices API v3.
 //
 //  Endpoint:
 //      GET https://fuel.hereapi.com/v3/stations
@@ -14,15 +14,9 @@
 //                            Omit to return every fuel type at each
 //                            station.
 //
-//  Auth: we reuse the same OAuth Bearer token minted by
-//  `HEREAuthService` that the Routing / Matrix / Geocoding / Tile
-//  clients use. HERE accepts the Bearer across every REST product in
-//  their Platform Portal, so no new credential is required beyond
-//  what's already in `EusoTrip.xcconfig`. If the bearer is
-//  unavailable, `HereMapsConfig.requireBearerToken()` throws and the
-//  caller surfaces a neutral empty state — the existing doctrine on
-//  "no fake data" applies here too: when HERE can't answer, the
-//  fuel strip hides itself.
+//  Provider credentials stay on the EusoTrip server. The app calls the typed
+//  `hereMaps.fuelPricesNearby` procedure. When HERE cannot answer, callers
+//  receive an honest empty set; no station or price is synthesized.
 //
 //  Docs: https://docs.here.com/fuel-prices/docs/
 //        Fuel type codes: https://docs.here.com/fuel-prices/docs/fuel-types-mapping
@@ -173,14 +167,8 @@ struct HereFuelPrice: Decodable, Hashable {
 final class HereFuelPricesClient {
     static let shared = HereFuelPricesClient()
 
-    private let session: URLSession
-    private let decoder: JSONDecoder = {
-        let d = JSONDecoder()
-        return d
-    }()
-
     init(session: URLSession = .shared) {
-        self.session = session
+        _ = session
     }
 
     /// `GET /v3/stations?in=circle:<lat>,<lng>;r=<radius>` — stations
@@ -200,72 +188,91 @@ final class HereFuelPricesClient {
         radiusMeters: Int = 40_000,
         fuelTypes: [String] = Array(HereFuelStation.dieselFuelCodes)
     ) async throws -> [HereFuelStation] {
-        var comps = URLComponents(string: "https://fuel.hereapi.com/v3/stations")!
-
-        var items: [URLQueryItem] = [
-            URLQueryItem(
-                name: "in",
-                value: "circle:\(center.latitude),\(center.longitude);r=\(radiusMeters)"
+        let rows: [BackendStation] = try await EusoTripAPI.shared.query(
+            "hereMaps.fuelPricesNearby",
+            input: BackendRequest(
+                at: BackendCoord(lat: center.latitude, lng: center.longitude),
+                radiusMeters: min(200_000, max(500, radiusMeters)),
+                fuelTypes: Self.backendFuelTypes(fuelTypes)
             )
-        ]
-        if !fuelTypes.isEmpty {
-            items.append(URLQueryItem(name: "fuelType", value: fuelTypes.joined(separator: ",")))
-        }
-        comps.queryItems = items
-
-        guard let url = comps.url else { throw HereMapsError.badURL }
-
-        let data = try await authorizedData(for: url)
-        do {
-            return try decoder.decode(HereFuelStationsResponse.self, from: data).fuelStations
-        } catch {
-            throw HereMapsError.decoding(String(describing: error))
-        }
+        )
+        return rows.compactMap(\.nativeStation)
     }
 
-    // MARK: - Bearer auth with 401 retry (mirrors HereRoutingClient)
+    private static func backendFuelTypes(_ codes: [String]) -> [String]? {
+        guard !codes.isEmpty else { return nil }
+        var types = Set<String>()
+        if !Set(codes).isDisjoint(with: HereFuelStation.dieselFuelCodes) {
+            types.insert("diesel")
+        }
+        if codes.contains(where: { ["2", "3", "4"].contains($0) }) {
+            types.insert("gasoline")
+        }
+        if codes.contains("5") { types.insert("e85") }
+        return types.isEmpty ? ["diesel"] : types.sorted()
+    }
 
-    /// RATE-LIMIT GATE: fuel-prices has its own 401 recipe (bypasses
-    /// `HereBearerFetch`), so it pages through `HereRateLimiter.shared`
-    /// directly for the same paced slot + deterministic 429 backoff.
-    /// Fuel is part of the add-on fan-out, so pacing it here keeps a
-    /// map move from spiking the basic-tier ceiling.
-    private func authorizedData(for url: URL) async throws -> Data {
-        let lastRetryAfter = FuelRetryAfterBox()
+    private struct BackendCoord: Encodable {
+        let lat: Double
+        let lng: Double
+    }
 
-        return try await HereRateLimiter.shared.runData(
-            retryAfterFor: { _ in lastRetryAfter.seconds }
-        ) { [session] in
-            func attempt() async throws -> (Data, HTTPURLResponse) {
-                let token = try await HereMapsConfig.requireBearerToken()
-                var req = URLRequest(url: url)
-                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                let (data, resp) = try await session.data(for: req)
-                guard let http = resp as? HTTPURLResponse else {
-                    throw HereMapsError.providerError("No HTTP response")
-                }
-                return (data, http)
-            }
+    private struct BackendRequest: Encodable {
+        let at: BackendCoord
+        let radiusMeters: Int
+        let fuelTypes: [String]?
+    }
 
-            var (data, http) = try await attempt()
-            if http.statusCode == 401 {
-                await HEREAuthService.shared.invalidate()
-                (data, http) = try await attempt()
+    private struct BackendStation: Decodable {
+        let id: String
+        let brand: String?
+        let name: String
+        let address: String?
+        let lat: Double
+        let lng: Double
+        let distanceMeters: Int?
+        let dieselPrice: Double?
+        let currency: String
+        let updatedAt: String?
+        let raw: HereFuelStation?
+
+        var nativeStation: HereFuelStation? {
+            if let raw, HereGeocodingClient.isSane(
+                raw.position.latitude,
+                raw.position.longitude
+            ) {
+                return raw
             }
-            guard (200..<300).contains(http.statusCode) else {
-                if http.statusCode == 429 {
-                    lastRetryAfter.seconds = HereRateLimiter.retryAfterSeconds(from: http)
-                }
-                let body = String(data: data, encoding: .utf8) ?? ""
-                throw HereMapsError.http(http.statusCode, body)
+            guard HereGeocodingClient.isSane(lat, lng) else { return nil }
+            let prices = dieselPrice.map {
+                [HereFuelPrice(
+                    price: $0,
+                    fuelType: "1",
+                    currency: currency,
+                    lastUpdateTimestamp: updatedAt
+                )]
             }
-            return data
+            return HereFuelStation(
+                id: id,
+                name: name,
+                brand: brand,
+                brandIcon: nil,
+                position: HerePosition(latitude: lat, longitude: lng),
+                address: address.map {
+                    HereFuelAddress(
+                        city: nil,
+                        street: $0,
+                        streetNumber: nil,
+                        postalCode: nil,
+                        countryCode: nil,
+                        state: nil
+                    )
+                },
+                distance: distanceMeters,
+                open24x7: nil,
+                fuelPrice: prices,
+                lastUpdateTimestamp: updatedAt
+            )
         }
     }
-}
-
-/// Carries a 429 `Retry-After` out of one gated fuel fetch into the
-/// limiter's backoff hook. Confined to a single `runData` call.
-private final class FuelRetryAfterBox: @unchecked Sendable {
-    var seconds: TimeInterval?
 }

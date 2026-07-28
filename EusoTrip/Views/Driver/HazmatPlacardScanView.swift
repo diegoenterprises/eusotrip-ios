@@ -11,14 +11,14 @@
 //    2. `ERGLookupService.scanPlacard(image:vehicleId:loadId:)`
 //       posts to `astraDvir.placardScan`. Server runs Gemini Vision
 //       OCR tuned for placards, JOINs with the local ERG database,
-//       Ed25519-signs the canonical payload, writes the audit
-//       chain entry (and a `HazmatOverlay.placardsAffixed` overlay
-//       row when readable + UN-resolved), and returns the bundle.
+//       Ed25519-signs the canonical observation, writes its audit
+//       entry, and returns the ERG response-reference bundle.
+//       One image never advances the all-sides placarding overlay.
 //    3. iOS verifies the signature locally; rejects on mismatch.
 //    4. `ESangTTSPlayer.shared.speak(response.spokenReply, ...)`
 //       reads the result aloud in the driver's preferred dialect
 //       (P0-4 wiring inherits automatically).
-//    5. UI renders the structured guide (UN/class/guide/isolation
+//    5. UI renders the structured guide (UN/index/guide/isolation
 //       distance/protective clothing/emergency response) below
 //       the photo with a follow-up text field for multi-turn
 //       ERG questions ("can I haul with class 3?" → server
@@ -34,7 +34,7 @@ public struct HazmatPlacardScanView: View {
     let vehicleId: String?
     let loadId: String?
     /// Optional hook fired the instant a placard scan succeeds — hands the
-    /// verified `PlacardScanResponse` (UN / hazard class / ERG guide) back to
+    /// verified `PlacardScanResponse` (observed UN / ERG guide) back to
     /// the presenting screen (e.g. driver 013 En-Route) so it can reflect the
     /// scan without re-fetching. nil for standalone / Siri-shortcut opens.
     let onScanComplete: ((PlacardScanResponse) -> Void)?
@@ -59,8 +59,8 @@ public struct HazmatPlacardScanView: View {
 
     // Document-intelligence spine pass (documentRouter.classifyAndRoute).
     // Runs ALONGSIDE the ERG placard upload so the capture point KNOWS
-    // exactly what was photographed (classify + extract the UN number /
-    // hazard class / proper shipping name) instead of trusting a raw
+    // what may have been photographed (classify + extract visible UN /
+    // class markings / shipping-name text) instead of trusting a raw
     // image. CRITICAL for hazmat compliance — surfaced honestly: low
     // confidence or `unknown` is reported as "couldn't confidently
     // identify", never claimed as a placard it isn't.
@@ -180,22 +180,22 @@ public struct HazmatPlacardScanView: View {
             HStack(spacing: 10) {
                 Text(r.ocr.unNumber.map { "UN \($0)" } ?? "UN -")
                     .font(.title3.bold())
-                if let cls = r.material?.hazardClass ?? r.ocr.hazardClassNumber {
-                    Text("Class \(cls)")
+                if let cls = r.ocr.hazardClassNumber {
+                    Text("Observed marking \(cls)")
                         .font(.caption.bold())
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(.orange, in: Capsule())
                         .foregroundStyle(.white)
                 }
-                if r.placardsAffixed {
-                    Label("Overlay signed", systemImage: "checkmark.shield.fill")
+                if r.auditId != nil {
+                    Label("Signed observation", systemImage: "checkmark.shield.fill")
                         .font(.caption.bold())
                         .foregroundStyle(.green)
                 }
                 Spacer(minLength: 0)
             }
             if let name = r.material?.name {
-                Text(name)
+                Text("ERG response reference: \(name)")
                     .font(.headline)
             }
             if let guideNo = r.material?.guideNumber {
@@ -206,6 +206,13 @@ public struct HazmatPlacardScanView: View {
             Text(r.spokenReply)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
+            if let evidence = r.classificationEvidence,
+               !evidence.eligibleAsClassificationSource {
+                Label(evidence.warning, systemImage: "doc.text.magnifyingglass")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack {
                 Button {
                     Task { await ESangTTSPlayer.shared.speak(r.spokenReply, serverAudioBase64: nil) }
@@ -235,7 +242,7 @@ public struct HazmatPlacardScanView: View {
     //
     // Renders the REAL classifier result honestly. The capture point now
     // KNOWS what it photographed: detected document type + confidence,
-    // plus the extracted UN number / hazard class / proper shipping name.
+    // plus extracted UN, class-marking and shipping-name text.
     // If the type is `unknown` or confidence is low, it says so plainly
     // and asks the driver to confirm — it never claims a placard it isn't.
     @ViewBuilder
@@ -285,15 +292,19 @@ public struct HazmatPlacardScanView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Extracted hazmat identifiers — only render what was actually
-            // returned; missing fields show an honest dash, never invented.
+            // OCR observations only. They accelerate inspection but do not
+            // establish the regulated classification.
             if un != nil || hazardClass != nil || shippingName != nil {
                 VStack(alignment: .leading, spacing: 6) {
-                    if let un { fieldRow(label: "UN number", value: "UN \(un)") }
-                    if let hazardClass { fieldRow(label: "Hazard class", value: hazardClass) }
-                    if let shippingName { fieldRow(label: "Proper shipping name", value: shippingName) }
+                    if let un { fieldRow(label: "Observed UN", value: "UN \(un)") }
+                    if let hazardClass { fieldRow(label: "Class marking", value: hazardClass) }
+                    if let shippingName { fieldRow(label: "Observed name", value: shippingName) }
                 }
                 .padding(.top, 2)
+                Text("Confirm these observations against the shipping paper before completing hazmat compliance.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("No UN number, hazard class or proper shipping name could be read off this frame.")
                     .font(.caption)
@@ -406,12 +417,10 @@ public struct HazmatPlacardScanView: View {
         defer { isScanning = false }
 
         // Fire the document-intelligence classify pass ALONGSIDE the ERG
-        // placard upload (not in place of it). The ERG bundle stays the
-        // compliance source of truth; the classifier independently
-        // confirms what the camera actually saw (UN # / hazard class /
-        // proper shipping name) so a mis-aimed or non-placard frame is
-        // caught honestly instead of being uploaded as-if it were a real
-        // placard.
+        // placard upload (not in place of it). Both are observations; legal
+        // classification remains grounded in the shipping paper and the
+        // applicable transport rules. The second pass helps catch a
+        // mis-aimed or non-placard frame honestly.
         async let _classify: Void = runClassifyPass(image: image)
 
         do {
@@ -435,7 +444,8 @@ public struct HazmatPlacardScanView: View {
     /// Document-intelligence spine pass — classifies the captured frame
     /// via `documentRouter.classifyAndRoute` with a `hazmat_placard`
     /// caller hint. Pure read: surfaces the detected type + extracted
-    /// UN / class / proper shipping name. Never claims a type it isn't —
+    /// visible UN / class marking / shipping-name text. Never claims a
+    /// regulated classification —
     /// low confidence or `unknown` is reported neutrally by the banner.
     @MainActor
     private func runClassifyPass(image: UIImage) async {

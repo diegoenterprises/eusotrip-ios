@@ -805,7 +805,13 @@ struct ShipperHome: View {
                 }
             }
             .font(.system(size: valueSize, weight: .semibold).monospacedDigit())
-            Text(trail).font(EType.caption).foregroundStyle(trailColor).lineLimit(1)
+            .lineLimit(1)
+            .minimumScaleFactor(0.52)
+            Text(trail)
+                .font(EType.caption)
+                .foregroundStyle(trailColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
         }
         .padding(Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)

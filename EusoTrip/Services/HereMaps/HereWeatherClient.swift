@@ -1,20 +1,9 @@
 //
 //  HereWeatherClient.swift
-//  EusoTrip — REST client for HERE Destination Weather v3.
+//  EusoTrip — authenticated backend client for HERE Destination Weather v3.
 //
-//  Endpoint:
-//      GET https://weather.hereapi.com/v3/report
-//
-//  Required params:
-//      - location=<lat>,<lng>
-//      - products=<comma-separated list>
-//                 observation | forecastHourly | forecastDaily
-//                 | forecast7days | nwsAlerts | radar
-//
-//  Auth: `Authorization: Bearer <token>` via HEREAuthService (same
-//        bearer that all HERE REST clients in this codebase share).
-//        HERE accepts either apiKey query or Bearer; we standardise
-//        on Bearer across the fleet.
+//  Provider credentials stay on the EusoTrip server. The app calls the typed
+//  `hereMaps.weatherAt` procedure and decodes its preserved provider payload.
 //
 //  Powered by ESANG AI™.
 //
@@ -284,11 +273,8 @@ enum HereWeatherProduct: String, CaseIterable {
 final class HereWeatherClient {
     static let shared = HereWeatherClient()
 
-    private let session: URLSession
-    private let decoder = JSONDecoder()
-
     init(session: URLSession = .shared) {
-        self.session = session
+        _ = session
     }
 
     /// Fetches a weather report at `center`. Defaults to the four
@@ -300,26 +286,42 @@ final class HereWeatherClient {
         at center: CLLocationCoordinate2D,
         products: [HereWeatherProduct] = [.observation, .forecastHourly, .forecast7days, .nwsAlerts]
     ) async throws -> HereWeatherPlace {
-        var comps = URLComponents(string: "https://weather.hereapi.com/v3/report")!
-        comps.queryItems = [
-            URLQueryItem(name: "location", value: "\(center.latitude),\(center.longitude)"),
-            URLQueryItem(name: "products", value: products.map(\.rawValue).joined(separator: ",")),
-            URLQueryItem(name: "units", value: "imperial")
-        ]
-        guard let url = comps.url else { throw HereMapsError.badURL }
-
-        let data = try await HereBearerFetch.data(for: url, session: session)
-        do {
-            let report = try decoder.decode(HereWeatherReport.self, from: data)
-            guard let place = HereWeatherPlace.merged(from: report.places) else {
-                throw HereMapsError.emptyResponse
+        let supported = products.compactMap { product -> String? in
+            switch product {
+            case .observation, .forecastHourly, .forecastDaily, .forecast7days, .nwsAlerts:
+                return product.rawValue
+            case .radar:
+                return nil
             }
-            return place
-        } catch let e as HereMapsError {
-            throw e
-        } catch {
-            throw HereMapsError.decoding(String(describing: error))
         }
+        let response: BackendResponse? = try await EusoTripAPI.shared.query(
+            "hereMaps.weatherAt",
+            input: BackendRequest(
+                at: BackendCoord(lat: center.latitude, lng: center.longitude),
+                units: "imperial",
+                products: supported.isEmpty ? ["observation"] : supported
+            )
+        )
+        guard let report = response?.raw,
+              let place = HereWeatherPlace.merged(from: report.places) else {
+            throw HereMapsError.emptyResponse
+        }
+        return place
+    }
+
+    private struct BackendCoord: Encodable {
+        let lat: Double
+        let lng: Double
+    }
+
+    private struct BackendRequest: Encodable {
+        let at: BackendCoord
+        let units: String
+        let products: [String]
+    }
+
+    private struct BackendResponse: Decodable {
+        let raw: HereWeatherReport?
     }
 }
 

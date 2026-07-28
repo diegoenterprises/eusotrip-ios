@@ -1,239 +1,627 @@
 //
 //  425_PortIntelligence.swift
-//  EusoTrip — Shipper · Port intelligence (ports / refineries / terminals by product grade).
+//  EusoTrip
 //
-//  Emergency Wave I2 (2026-06-11) — root causes closed:
-//    • `init(product:)` lands the 424→425 handoff: SpectraMatch
-//      pushes this screen with the matched grade pre-filled and the
-//      search auto-fires. Default nil keeps the bare registry
-//      registration compiling regardless of merge order.
-//    • Post-search `[]` previously rendered IDENTICALLY to the
-//      never-searched prompt ("Enter a product grade…"), so the
-//      founder couldn't tell "no results" from "didn't run".
-//      `hasSearched`/`lastQuery` now drive a distinct, explicit
-//      `No ports found for "<query>"` card.
-//    • Explicit Search button mirroring 424's ctaRow — `.onSubmit`
-//      was the only trigger before.
-//    • Destination-intelligence wire: alongside the observed-traffic
-//      `portIntelligence.findByProduct` history query, the search
-//      consults `spectraMatch.getDestinationIntelligence` (627
-//      facilities + 542 ports, capability-matched) so a real grade
-//      like "WTI 0.4% sulfur" resolves rows even when no vessel
-//      shipment in the 90-day window mentions it verbatim. The two
-//      sources render under separate, honestly-labeled sections —
-//      observed traffic vs capability — nothing is fabricated.
+//  Evidence-backed cargo, facility, and route compatibility assessment.
 //
 
 import SwiftUI
 
 struct PortIntelligenceScreen: View {
     let theme: Theme.Palette
-    /// Product grade handed off by 424_SpectraMatch ("the matched
-    /// grade pre-filled"). nil = bare open from the registry / nav.
     var product: String? = nil
 
     var body: some View {
-        Shell(theme: theme) { PortIntelBody(initialProduct: product) } nav: { shipperLifecycleNav() }
+        Shell(theme: theme) {
+            PortIntelligenceBody(initialProduct: product)
+        } nav: {
+            shipperLifecycleNav()
+        }
     }
 }
 
-private struct PortRow: Decodable, Identifiable, Hashable {
-    let id: String
-    let name: String
-    let country: String?
-    let acceptedProducts: [String]?
-    let utilizationPct: Int?
-    let avgDwellHours: Double?
+private enum PortIntelMode: String, CaseIterable, Identifiable {
+    case truck
+    case rail
+    case vessel
+    case barge
+
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
 }
 
-private struct PortIntelBody: View {
+private enum PortIntelUnit: String, CaseIterable, Identifiable {
+    case metricTons = "mt"
+    case barrels = "bbl"
+    case gallons = "gal"
+    case kilograms = "kg"
+    case pounds = "lb"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .metricTons: "Metric tons"
+        case .barrels: "Barrels"
+        case .gallons: "Gallons"
+        case .kilograms: "Kilograms"
+        case .pounds: "Pounds"
+        }
+    }
+}
+
+private enum PortIntelPhysicalState: String, CaseIterable, Identifiable {
+    case unspecified = ""
+    case liquid
+    case gas
+    case solid
+
+    var id: String { rawValue }
+    var title: String { rawValue.isEmpty ? "Not specified" : rawValue.capitalized }
+}
+
+struct PortIntelAssessmentInput: Encodable {
+    let requestKey: String
+    let title: String
+    let draft: Draft
+
+    struct Draft: Encodable {
+        let productName: String
+        let category: String?
+        let physicalState: String?
+        let unNumber: String?
+        let hazmatClass: String?
+        let transportMode: String
+        let quantity: Double
+        let quantityUnit: String
+        let origin: String
+        let destination: String
+        let originCountry: String
+        let destinationCountry: String
+        let equipment: String?
+        let vesselClass: String?
+        let multiVehicleCount: Int?
+        let pickupDate: String?
+        let specialPermit: String?
+    }
+}
+
+struct PortIntelAssessment: Decodable {
+    let publicId: String
+    let engineVersion: String
+    let preflight: Preflight
+    let strategies: [Strategy]
+    let evidence: [Evidence]
+
+    struct Preflight: Decodable {
+        let gate: String
+        let counts: Counts
+    }
+
+    struct Counts: Decodable {
+        let viable: Int
+        let conditional: Int
+        let insufficientEvidence: Int
+        let blocked: Int
+
+        enum CodingKeys: String, CodingKey {
+            case viable
+            case conditional
+            case insufficientEvidence = "insufficient_evidence"
+            case blocked
+        }
+    }
+
+    struct DecisionReason: Decodable, Hashable {
+        let code: String
+        let message: String
+        let subjectType: String
+        let subjectId: Int?
+        let evidenceId: Int?
+    }
+
+    struct Leg: Decodable, Hashable {
+        let edgeId: Int
+        let fromNodeId: Int
+        let toNodeId: Int
+        let mode: String
+        let edgeType: String
+        let parcelCount: Int?
+        let status: String
+        let hardFailures: [DecisionReason]
+        let unknowns: [DecisionReason]
+        let warnings: [DecisionReason]
+        let evidenceIds: [Int]
+    }
+
+    struct Strategy: Decodable, Identifiable, Hashable {
+        let id: Int
+        let rank: Int
+        let strategyType: String
+        let status: String
+        let destinationNodeId: Int
+        let destinationName: String?
+        let destinationCity: String?
+        let destinationCountryCode: String?
+        let destinationSubdivisionCode: String?
+        let destinationLatitude: Double?
+        let destinationLongitude: Double?
+        let legs: [Leg]
+        let hardFailures: [DecisionReason]
+        let unknowns: [DecisionReason]
+        let warnings: [DecisionReason]
+        let confirmations: [DecisionReason]
+        let knownCostAmount: Double?
+        let knownCostCurrency: String?
+        let missingCostElements: [String]
+        let evidenceIds: [Int]
+    }
+
+    struct Evidence: Decodable, Identifiable, Hashable {
+        let id: Int
+        let sourceKey: String
+        let sourceName: String
+        let evidenceKind: String
+        let sourceUrl: String?
+        let verificationStatus: String
+        let confidence: Double?
+    }
+}
+
+private struct PortIntelligenceBody: View {
     @Environment(\.palette) private var palette
+
     @State private var product: String
-    @State private var ports: [PortRow] = []
-    /// Capability-matched facilities from the destination-intelligence
-    /// layer — the SpectraMatch↔PortIntelligence connection.
-    @State private var capabilityMatches: [SpectraMatchAPI.DestinationMatch] = []
+    @State private var category = ""
+    @State private var physicalState: PortIntelPhysicalState = .unspecified
+    @State private var origin = ""
+    @State private var originCountry = ""
+    @State private var destination = ""
+    @State private var destinationCountry = ""
+    @State private var mode: PortIntelMode = .vessel
+    @State private var quantity = ""
+    @State private var unit: PortIntelUnit = .metricTons
+    @State private var equipment = ""
+    @State private var assessment: PortIntelAssessment?
     @State private var loading = false
-    @State private var loadError: String? = nil
-    /// True once a search round-trip has completed — drives the
-    /// explicit no-results card (distinct from the pre-search prompt).
-    @State private var hasSearched = false
-    /// The query the latest completed search ran with, echoed in the
-    /// no-results copy so the user sees exactly what found nothing.
-    @State private var lastQuery = ""
-    /// Auto-search trigger for the 424 handoff (fires once).
-    private let autoSearch: Bool
+    @State private var loadError: String?
 
     init(initialProduct: String?) {
-        let pre = initialProduct?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        _product = State(initialValue: pre)
-        autoSearch = !pre.isEmpty
+        _product = State(initialValue: initialProduct?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
     }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Space.s4) {
+            LazyVStack(alignment: .leading, spacing: Space.s4) {
                 header
-                productInput
-                searchButton
-                content
+                assessmentForm
+                assessButton
+                resultContent
                 Color.clear.frame(height: 96)
             }
-            .padding(.horizontal, 14).padding(.top, 56)
-        }
-        .task {
-            // 424 handoff: matched grade arrives pre-filled →
-            // auto-run the search exactly once on mount.
-            if autoSearch && !hasSearched && !loading {
-                await search()
-            }
+            .padding(.horizontal, 14)
+            .padding(.top, 56)
         }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                Image(systemName: "ferry.fill").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
-                Text("SHIPPER · PORT INTELLIGENCE").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+                    .font(.system(size: 10, weight: .heavy))
+                Text("SHIPPER · PORT INTELLIGENCE")
+                    .font(.system(size: 9, weight: .heavy))
+                    .tracking(1)
             }
-            Text("Ports + terminals by product").font(.system(size: 22, weight: .heavy)).foregroundStyle(palette.textPrimary)
+            .foregroundStyle(LinearGradient.diagonal)
+
+            Text("Cargo route intelligence")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundStyle(palette.textPrimary)
         }
     }
 
-    private var productInput: some View {
-        TextField("Product grade (e.g. 'WTI 0.4% sulfur')", text: $product)
-            .textFieldStyle(.plain)
-            .padding(.horizontal, 12).padding(.vertical, 10)
-            .background(palette.bgCard)
-            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(palette.borderFaint, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .onSubmit { Task { await search() } }
+    private var assessmentForm: some View {
+        LifecycleCard {
+            LifecycleSection(label: "CARGO", icon: "shippingbox")
+            field("Product or grade", text: $product)
+
+            HStack(spacing: 10) {
+                field("Category", text: $category)
+                menuField("State", value: physicalState.title) {
+                    ForEach(PortIntelPhysicalState.allCases) { state in
+                        Button(state.title) { physicalState = state }
+                    }
+                }
+            }
+
+            LifecycleSection(label: "MOVEMENT", icon: "arrow.triangle.swap")
+            Picker("Mode", selection: $mode) {
+                ForEach(PortIntelMode.allCases) { item in
+                    Text(item.title).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            HStack(spacing: 10) {
+                field("Quantity", text: $quantity, keyboard: .decimalPad)
+                menuField("Unit", value: unit.title) {
+                    ForEach(PortIntelUnit.allCases) { item in
+                        Button(item.title) { unit = item }
+                    }
+                }
+            }
+
+            field("Equipment or vessel class", text: $equipment)
+
+            LifecycleSection(label: "ROUTE", icon: "map")
+            routeRow(label: "Origin", location: $origin, country: $originCountry)
+            routeRow(label: "Destination", location: $destination, country: $destinationCountry)
+        }
     }
 
-    /// Explicit Search CTA — mirrors 424's ctaRow grammar so the two
-    /// halves of the SpectraMatch→ports flow read as one system.
-    private var searchButton: some View {
-        Button { Task { await search() } } label: {
-            HStack(spacing: 6) {
-                if loading { ProgressView().tint(.white) }
-                Text(loading ? "Searching…" : "Search").font(.system(size: 13, weight: .heavy)).tracking(0.4).foregroundStyle(.white)
+    private func field(
+        _ title: String,
+        text: Binding<String>,
+        keyboard: UIKeyboardType = .default
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title.uppercased())
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(palette.textTertiary)
+            TextField(title, text: text)
+                .keyboardType(keyboard)
+                .textInputAutocapitalization(.words)
+                .autocorrectionDisabled()
+                .font(EType.body)
+                .foregroundStyle(palette.textPrimary)
+                .padding(.horizontal, 10)
+                .frame(height: 40)
+                .background(palette.bgElev)
+                .overlay {
+                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func menuField<MenuContent: View>(
+        _ title: String,
+        value: String,
+        @ViewBuilder content: () -> MenuContent
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title.uppercased())
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(palette.textTertiary)
+            Menu(content: content) {
+                HStack {
+                    Text(value)
+                        .font(EType.body)
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 40)
+                .background(palette.bgElev)
+                .overlay {
+                    RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                        .strokeBorder(palette.borderFaint, lineWidth: 1)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 12)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func routeRow(
+        label: String,
+        location: Binding<String>,
+        country: Binding<String>
+    ) -> some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            field(label, text: location)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("ISO")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(palette.textTertiary)
+                TextField("US", text: country)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .font(EType.bodyStrong)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(palette.textPrimary)
+                    .padding(.horizontal, 6)
+                    .frame(width: 58, height: 40)
+                    .background(palette.bgElev)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
+                            .strokeBorder(palette.borderFaint, lineWidth: 1)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
+                    .onChange(of: country.wrappedValue) { _, value in
+                        country.wrappedValue = String(value.uppercased().prefix(2))
+                    }
+            }
+        }
+    }
+
+    private var assessButton: some View {
+        Button {
+            Task { await assess() }
+        } label: {
+            HStack(spacing: 7) {
+                if loading {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: "sparkle.magnifyingglass")
+                }
+                Text(loading ? "Assessing" : "Assess route")
+                    .font(.system(size: 13, weight: .heavy))
+                    .tracking(0.4)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
             .background(LinearGradient.diagonal)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .buttonStyle(.plain)
-        .disabled(loading || product.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        .accessibilityLabel("Search ports and facilities for \(product)")
+        .disabled(loading)
+        .accessibilityLabel("Assess cargo route compatibility")
     }
 
     @ViewBuilder
-    private var content: some View {
-        if loading { LifecycleCard { Text("Searching…").font(EType.caption).foregroundStyle(palette.textSecondary) } }
-        else if let err = loadError { LifecycleCard(accentDanger: true) { Text(err).font(EType.caption).foregroundStyle(Brand.danger) } }
-        else if !hasSearched {
-            LifecycleCard { Text("Enter a product grade to find ports / refineries / terminals that accept it.").font(EType.caption).foregroundStyle(palette.textSecondary).fixedSize(horizontal: false, vertical: true) }
-        }
-        else if ports.isEmpty && capabilityMatches.isEmpty {
-            noResultsCard
-        }
-        else {
-            if !ports.isEmpty {
-                LifecycleSection(label: "PORTS · OBSERVED TRAFFIC", icon: "ferry")
-                ForEach(ports) { p in portCard(p) }
+    private var resultContent: some View {
+        if let loadError {
+            LifecycleCard(accentDanger: true) {
+                LifecycleSection(label: "ASSESSMENT FAILED", icon: "exclamationmark.triangle")
+                Text(loadError)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            if !capabilityMatches.isEmpty {
-                LifecycleSection(label: "FACILITIES · CAPABILITY MATCH", icon: "building.2")
-                ForEach(capabilityMatches) { m in capabilityCard(m) }
+        } else if let assessment {
+            gateCard(assessment)
+            if assessment.strategies.isEmpty {
+                LifecycleCard(accentWarning: true) {
+                    LifecycleSection(label: "NO EVIDENCED STRATEGY", icon: "questionmark.diamond")
+                    Text("No compatible destination strategy is present in the current evidence set.")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            } else {
+                LifecycleSection(label: "RANKED STRATEGIES", icon: "list.number")
+                ForEach(assessment.strategies.prefix(25)) { strategy in
+                    strategyCard(strategy)
+                }
+            }
+
+            if !assessment.evidence.isEmpty {
+                LifecycleSection(label: "EVIDENCE", icon: "checkmark.seal")
+                ForEach(assessment.evidence.prefix(10)) { evidence in
+                    evidenceRow(evidence)
+                }
             }
         }
     }
 
-    /// Explicit, distinct no-results state — never the pre-search
-    /// prompt. Echoes the exact query so "found nothing" is
-    /// unambiguous.
-    private var noResultsCard: some View {
-        LifecycleCard(accentWarning: true) {
-            LifecycleSection(label: "NO MATCHES", icon: "magnifyingglass")
-            Text("No ports found for \"\(lastQuery)\".")
-                .font(EType.bodyStrong).foregroundStyle(palette.textPrimary)
-            Text("No vessel traffic in the last 90 days matches this grade and no capability match resolved. Try a broader term (e.g. \"crude\" or the grade family name).")
-                .font(EType.caption).foregroundStyle(palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+    private func gateCard(_ assessment: PortIntelAssessment) -> some View {
+        let gate = assessment.preflight.gate
+        let icon = gate == "ready"
+            ? "checkmark.seal.fill"
+            : gate == "blocked"
+                ? "xmark.octagon.fill"
+                : "exclamationmark.triangle.fill"
+        let color = gate == "ready"
+            ? Brand.success
+            : gate == "blocked"
+                ? Brand.danger
+                : Brand.warning
+
+        return LifecycleCard(accentDanger: gate == "blocked", accentWarning: gate == "acknowledgement_required") {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: icon)
+                    .foregroundStyle(color)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(gate.replacingOccurrences(of: "_", with: " ").uppercased())
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text("\(assessment.preflight.counts.viable) viable · \(assessment.preflight.counts.conditional) conditional · \(assessment.preflight.counts.insufficientEvidence) unresolved · \(assessment.preflight.counts.blocked) blocked")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    Text("Engine \(assessment.engineVersion) · \(assessment.evidence.count) evidence records")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(palette.textTertiary)
+                }
+                Spacer()
+            }
         }
     }
 
-    private func portCard(_ p: PortRow) -> some View {
+    private func strategyCard(_ strategy: PortIntelAssessment.Strategy) -> some View {
+        LifecycleCard(accentDanger: strategy.status == "blocked", accentWarning: strategy.status == "conditional" || strategy.status == "insufficient_evidence") {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(strategy.destinationName ?? "Facility \(strategy.destinationNodeId)")
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(strategyLocation(strategy))
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+                Spacer()
+                statusBadge(strategy.status)
+            }
+
+            LifecycleRow(
+                label: "Strategy",
+                value: strategy.strategyType.replacingOccurrences(of: "_", with: " ").capitalized
+            )
+            LifecycleRow(label: "Modes", value: strategyModes(strategy))
+            if let amount = strategy.knownCostAmount, let currency = strategy.knownCostCurrency {
+                LifecycleRow(label: "Known cost", value: "\(currency) \(amount.formatted(.number.precision(.fractionLength(2))))")
+            }
+            if let reason = primaryReason(strategy) {
+                LifecycleRow(label: reason.0, value: reason.1)
+            }
+            LifecycleRow(label: "Evidence", value: "\(strategy.evidenceIds.count) records")
+        }
+    }
+
+    private func evidenceRow(_ evidence: PortIntelAssessment.Evidence) -> some View {
         LifecycleCard {
-            LifecycleSection(label: p.name.uppercased(), icon: "ferry")
-            LifecycleRow(label: "Country",     value: dashIfEmpty(p.country))
-            LifecycleRow(label: "Utilization", value: p.utilizationPct.map { "\($0)%" } ?? "-")
-            LifecycleRow(label: "Avg dwell",   value: p.avgDwellHours.map { String(format: "%.1f hr", $0) } ?? "-")
-            LifecycleRow(label: "Accepts",     value: (p.acceptedProducts ?? []).joined(separator: ", ").isEmpty ? "-" : (p.acceptedProducts ?? []).joined(separator: ", "))
-        }
-    }
-
-    /// Capability rows are honestly labeled as such (the facility can
-    /// HANDLE the grade per its profile — distinct from observed
-    /// shipment traffic).
-    private func capabilityCard(_ m: SpectraMatchAPI.DestinationMatch) -> some View {
-        LifecycleCard {
-            LifecycleSection(label: m.facilityName.uppercased(), icon: "building.2")
-            LifecycleRow(label: "Type",     value: dashIfEmpty((m.facilityType ?? "").replacingOccurrences(of: "_", with: " ").capitalized))
-            LifecycleRow(label: "Location", value: capabilityPlace(m))
-            LifecycleRow(label: "Operator", value: dashIfEmpty(m.operatorName))
-            if let score = m.compatibilityScore {
-                LifecycleRow(label: "Compatibility", value: "\(Int(min(100, max(0, score)).rounded()))%")
-            }
-            if let reasons = m.matchReasons, !reasons.isEmpty {
-                LifecycleRow(label: "Why", value: reasons.prefix(2).joined(separator: " · "))
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: evidence.verificationStatus == "verified" ? "checkmark.seal.fill" : "doc.text.magnifyingglass")
+                    .foregroundStyle(evidence.verificationStatus == "verified" ? Brand.success : Brand.warning)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(evidence.sourceName)
+                        .font(EType.bodyStrong)
+                        .foregroundStyle(palette.textPrimary)
+                    Text(evidence.evidenceKind.replacingOccurrences(of: "_", with: " ").capitalized)
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                    if let confidence = evidence.confidence {
+                        Text("Confidence \(Int((confidence * 100).rounded()))%")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(palette.textTertiary)
+                    }
+                }
+                Spacer()
+                Text(evidence.verificationStatus.replacingOccurrences(of: "_", with: " ").uppercased())
+                    .font(.system(size: 8, weight: .heavy))
+                    .foregroundStyle(palette.textTertiary)
             }
         }
     }
 
-    private func capabilityPlace(_ m: SpectraMatchAPI.DestinationMatch) -> String {
-        let parts = [m.location?.city, m.location?.state, m.location?.country]
-            .compactMap { $0 }.filter { !$0.isEmpty }
-        return parts.isEmpty ? "-" : parts.joined(separator: ", ")
+    private func statusBadge(_ status: String) -> some View {
+        let color = status == "viable"
+            ? Brand.success
+            : status == "blocked"
+                ? Brand.danger
+                : Brand.warning
+        return Text(status.replacingOccurrences(of: "_", with: " ").uppercased())
+            .font(.system(size: 8, weight: .heavy))
+            .foregroundStyle(color)
+            .padding(.horizontal, 7)
+            .frame(height: 22)
+            .overlay {
+                Capsule().strokeBorder(color.opacity(0.45), lineWidth: 1)
+            }
     }
 
-    private func search() async {
-        let query = product.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return }
-        loading = true; loadError = nil
-        struct In: Encodable { let product: String }
-        // Two real sources, queried concurrently:
-        //   • portIntelligence.findByProduct — observed vessel traffic
-        //   • spectraMatch.getDestinationIntelligence — capability
-        //     match over the facility/port network (the SpectraMatch
-        //     connection the founder demanded)
-        // The capability call folds transport failures to empty so a
-        // single-source outage never hides the other source's truth.
-        async let observed: [PortRow] = EusoTripAPI.shared.query(
-            "portIntelligence.findByProduct",
-            input: In(product: query)
+    private func strategyLocation(_ strategy: PortIntelAssessment.Strategy) -> String {
+        let values = [
+            strategy.destinationCity,
+            strategy.destinationSubdivisionCode,
+            strategy.destinationCountryCode,
+        ].compactMap { $0 }.filter { !$0.isEmpty }
+        return values.isEmpty ? "Location not evidenced" : values.joined(separator: ", ")
+    }
+
+    private func strategyModes(_ strategy: PortIntelAssessment.Strategy) -> String {
+        let values = strategy.legs.map(\.mode)
+        return values.isEmpty ? "Facility match" : values.joined(separator: " → ")
+    }
+
+    private func primaryReason(_ strategy: PortIntelAssessment.Strategy) -> (String, String)? {
+        if let reason = strategy.hardFailures.first { return ("Blocker", reason.message) }
+        if let reason = strategy.unknowns.first { return ("Unknown", reason.message) }
+        if let reason = strategy.warnings.first { return ("Warning", reason.message) }
+        if let reason = strategy.confirmations.first { return ("Confirmed", reason.message) }
+        return nil
+    }
+
+    @MainActor
+    private func assess() async {
+        loadError = nil
+        assessment = nil
+
+        let normalizedProduct = product.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedOrigin = origin.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedDestination = destination.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedOriginCountry = originCountry.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let normalizedDestinationCountry = destinationCountry.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        let parsedQuantity = Double(quantity.replacingOccurrences(of: ",", with: ""))
+
+        guard !normalizedProduct.isEmpty else {
+            loadError = "Product or grade is required."
+            return
+        }
+        guard normalizedOrigin.count >= 2, normalizedDestination.count >= 2 else {
+            loadError = "Origin and destination are required."
+            return
+        }
+        guard normalizedOriginCountry.count == 2, normalizedDestinationCountry.count == 2 else {
+            loadError = "Origin and destination require two-letter country codes."
+            return
+        }
+        if mode == .truck || mode == .rail {
+            let supported = Set(["US", "CA", "MX"])
+            guard supported.contains(normalizedOriginCountry), supported.contains(normalizedDestinationCountry) else {
+                loadError = "Truck and rail assessments are limited to the United States, Canada, and Mexico."
+                return
+            }
+        }
+        guard let parsedQuantity, parsedQuantity > 0 else {
+            loadError = "A positive quantity is required."
+            return
+        }
+
+        loading = true
+        defer { loading = false }
+
+        let request = PortIntelAssessmentInput(
+            requestKey: UUID().uuidString,
+            title: "\(normalizedProduct) · \(normalizedOrigin) to \(normalizedDestination)",
+            draft: .init(
+                productName: normalizedProduct,
+                category: category.nilIfBlank,
+                physicalState: physicalState.rawValue.nilIfBlank,
+                unNumber: nil,
+                hazmatClass: nil,
+                transportMode: mode.rawValue,
+                quantity: parsedQuantity,
+                quantityUnit: unit.rawValue,
+                origin: normalizedOrigin,
+                destination: normalizedDestination,
+                originCountry: normalizedOriginCountry,
+                destinationCountry: normalizedDestinationCountry,
+                equipment: equipment.nilIfBlank,
+                vesselClass: nil,
+                multiVehicleCount: nil,
+                pickupDate: nil,
+                specialPermit: nil
+            )
         )
-        async let capability: SpectraMatchAPI.DestinationIntelligence? =
-            (try? await EusoTripAPI.shared.spectraMatch.getDestinationIntelligence(productName: query))
+
         do {
-            ports = try await observed
-            capabilityMatches = (await capability)?.topDestinations ?? []
-            lastQuery = query
-            hasSearched = true
+            let result: PortIntelAssessment = try await EusoTripAPI.shared.mutation(
+                "portIntelligence.assessLoadDraft",
+                input: request
+            )
+            assessment = result
         } catch {
-            // findByProduct failed transport-level — surface the error,
-            // but still show capability rows if that source resolved.
-            ports = []
-            capabilityMatches = (await capability)?.topDestinations ?? []
-            if capabilityMatches.isEmpty {
-                loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
-            }
-            lastQuery = query
-            hasSearched = true
+            loadError = (error as? EusoTripAPIError)?.errorDescription ?? error.localizedDescription
         }
-        loading = false
     }
 }
 
-#Preview("425 · Port intel · Night") { PortIntelligenceScreen(theme: Theme.dark).environmentObject(EusoTripSession()).preferredColorScheme(.dark) }
-#Preview("425 · Port intel · Afternoon") { PortIntelligenceScreen(theme: Theme.light).environmentObject(EusoTripSession()).preferredColorScheme(.light) }
+private extension String {
+    var nilIfBlank: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+}
+
+#Preview("425 · Port intelligence") {
+    PortIntelligenceScreen(theme: Theme.dark, product: "LPG 30/70 C3/C4")
+        .environmentObject(EusoTripSession())
+        .preferredColorScheme(.dark)
+}

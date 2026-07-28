@@ -9,10 +9,9 @@
 //  Both endpoints accept a base64 JPEG + load context and return
 //  a structured observation + verdict + Ed25519 signature. iOS
 //  verifies the signature locally (handled inside AstraVisionService)
-//  before the verdict surfaces in the UI. When the server writes an
-//  overlay row (REEFER.TEMP_LOG_SEALED on a pass, CARGO.OSD_CLAIM on
-//  a claim_filed) the sheet shows an "auto-overlay written" badge so
-//  the driver knows the audit chain captured it.
+//  before the observation surfaces in the UI. These scans never seal
+//  a cold-chain record or file a freight claim automatically; those
+//  remain explicit user attestations in their dedicated workflows.
 //
 //  Driver-facing screens (013-051 lifecycle, 011_PretripDVIR,
 //  receiver-paperwork) present this sheet at the moment the
@@ -71,15 +70,15 @@ private enum AstraCaptureResult: Equatable {
         switch self {
         case .reefer(let r):
             switch r.verdict {
-            case .pass:        return "PASS"
-            case .fail:        return "FAIL"
-            case .needsReview: return "NEEDS REVIEW"
+            case .pass:        return "CAPTURE WITHIN RANGE"
+            case .fail:        return "EXCEPTION OBSERVED"
+            case .needsReview: return "REVIEW REQUIRED"
             }
         case .osd(let r):
             switch r.verdict {
-            case .clean:                  return "CLEAN"
+            case .clean:                  return "NO EXCEPTION OBSERVED"
             case .inspectionRecommended:  return "INSPECTION RECOMMENDED"
-            case .claimFiled:             return "CLAIM FILED"
+            case .exceptionObserved:      return "EXCEPTION OBSERVED"
             }
         }
     }
@@ -96,16 +95,13 @@ private enum AstraCaptureResult: Equatable {
             switch r.verdict {
             case .clean:                  return .green
             case .inspectionRecommended:  return .orange
-            case .claimFiled:             return .red
+            case .exceptionObserved:      return .red
             }
         }
     }
 
-    var overlayBadge: String? {
-        switch self {
-        case .reefer(let r): return r.tempLogSealedEligible ? "TEMP-LOG SEALED" : nil
-        case .osd(let r):    return r.claimOverlayWritten ? "OS&D CLAIM FILED" : nil
-        }
+    var evidenceBadge: String? {
+        auditId == nil ? nil : "SIGNED OBSERVATION"
     }
 
     var auditId: Int? {
@@ -265,7 +261,7 @@ public struct AstraCaptureSheet: View {
                     .font(.headline)
                     .foregroundStyle(r.verdictColor)
                 Spacer()
-                if let badge = r.overlayBadge {
+                if let badge = r.evidenceBadge {
                     Text(badge)
                         .font(.caption2.weight(.bold))
                         .tracking(0.8)

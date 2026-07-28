@@ -25,6 +25,21 @@ import SwiftUI
 fileprivate typealias FeeCountry = Country
 fileprivate typealias FeeTransportMode = TransportMode
 
+struct IndustryWorkflowHandoff {
+    let sectorId: String
+    let ruleSetId: Int
+    let workflowId: String
+    let productName: String?
+    let cargoType: String?
+    let trailerCode: String?
+    let requiredEndorsements: [String]
+    let specialEquipment: [String]
+    let accessorialAllowList: [String]
+    let hazmatAuthRequired: Bool
+    let preCoolRequired: Bool
+    let continuousMonitoring: Bool
+}
+
 @MainActor
 final class PostLoadDraft: ObservableObject {
 
@@ -142,6 +157,15 @@ final class PostLoadDraft: ObservableObject {
     /// Selected industry vertical (12 canonical buckets). Drives the
     /// trailer filter on Step 2 and the document requirements on Step 4.
     @Published var vertical: Vertical? = nil
+    @Published var industrySectorId: String? = nil
+    @Published var industryRuleSetId: Int? = nil
+    @Published var industryAssessmentId: String? = nil
+    @Published var industryAssessmentStatus: String? = nil
+    @Published var industryAssessmentWarnings: [String] = []
+    @Published var industryAssessmentError: String? = nil
+    @Published var isAssessingIndustry: Bool = false
+    @Published var industryReviewAcknowledged: Bool = false
+    private var industryAssessmentRequestId = UUID()
     /// Selected trailer code. When set, `equipmentType` is kept synced
     /// to `trailer.rawValue` so legacy server-side parsers keep working.
     /// Server payload `shippers.create.trailer` reads this when present.
@@ -296,6 +320,11 @@ final class PostLoadDraft: ObservableObject {
         originLat = nil; originLng = nil; destLat = nil; destLng = nil
         stops = []; cargoType = .general; equipmentType = ""
         vertical = nil; trailer = nil
+        industrySectorId = nil; industryRuleSetId = nil
+        industryAssessmentId = nil; industryAssessmentStatus = nil
+        industryAssessmentWarnings = []; industryAssessmentError = nil
+        isAssessingIndustry = false; industryReviewAcknowledged = false
+        industryAssessmentRequestId = UUID()
         attachedDocuments = []
         reportingMarks = ""; aarClass = ""
         bicCode = ""; isoCode = ""; imoNumber = ""; mmsi = ""
@@ -321,6 +350,38 @@ final class PostLoadDraft: ObservableObject {
         isPosting = false; postError = nil
         postedLoadNumber = nil; postedLoadId = nil
         isHydratingDraft = false; hydrateError = nil; hydratedDraftId = nil
+    }
+
+    func applyIndustryWorkflow(_ handoff: IndustryWorkflowHandoff) {
+        industrySectorId = handoff.sectorId
+        industryRuleSetId = handoff.ruleSetId
+        industryAssessmentId = nil
+        industryAssessmentStatus = nil
+        industryAssessmentWarnings = []
+        industryAssessmentError = nil
+        industryReviewAcknowledged = false
+        industryAssessmentRequestId = UUID()
+
+        vertical = Vertical(rawValue: handoff.workflowId)
+        if let rawCargo = handoff.cargoType,
+           let resolvedCargo = CargoType(rawValue: rawCargo) {
+            cargoType = resolvedCargo
+        }
+        if let rawTrailer = handoff.trailerCode,
+           let resolvedTrailer = TrailerCode(rawValue: rawTrailer) {
+            trailer = resolvedTrailer
+            equipmentType = resolvedTrailer.rawValue
+        }
+        if let productName = handoff.productName?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !productName.isEmpty {
+            commodity = productName
+        }
+        requiredEndorsements = handoff.requiredEndorsements
+        specialEquipment = handoff.specialEquipment
+        accessorialsAllowed = handoff.accessorialAllowList
+        hazmatAuthRequired = handoff.hazmatAuthRequired
+        preCoolRequired = handoff.preCoolRequired
+        continuousMode = handoff.continuousMonitoring
     }
 
     struct ServerDraft: Decodable {
@@ -533,6 +594,136 @@ final class PostLoadDraft: ObservableObject {
 
     // MARK: - Submit
 
+    private struct IndustryAssessmentInput: Encodable {
+        let clientRequestId: String
+        let sectorId: String
+        let ruleSetId: Int
+        let workflowId: String
+        let transportMode: String
+        let originCountryCode: String
+        let destinationCountryCode: String
+        let productName: String?
+        let cargoType: String
+        let unNumber: String?
+        let hazmatClass: String?
+        let temperatureMin: Double?
+        let temperatureMax: Double?
+        let temperatureUnit: String?
+    }
+
+    private struct IndustryAssessmentOutput: Decodable {
+        struct Result: Decodable {
+            let requiredInputs: [String]
+            let blockingReasons: [String]
+            let warnings: [String]
+        }
+
+        let assessmentId: String
+        let status: String
+        let result: Result
+    }
+
+    private func exactCountryCode(_ country: Country) -> String? {
+        switch country {
+        case .US: return "US"
+        case .CA: return "CA"
+        case .MX: return "MX"
+        case .UK: return "GB"
+        case .EU, .Asia: return nil
+        }
+    }
+
+    private func refreshIndustryAssessment(requireReviewAcknowledgement: Bool = true) async throws {
+        guard let sectorId = industrySectorId,
+              let ruleSetId = industryRuleSetId,
+              let workflowId = vertical?.rawValue else {
+            industryAssessmentId = nil
+            industryAssessmentStatus = nil
+            industryAssessmentWarnings = []
+            return
+        }
+        guard let originCode = exactCountryCode(originCountry),
+              let destinationCode = exactCountryCode(destinationCountry) else {
+            throw NSError(
+                domain: "EusoTrip.IndustryVertical",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Choose an exact origin and destination country before applying this industry workflow."
+                ]
+            )
+        }
+
+        let product = commodity.trimmingCharacters(in: .whitespacesAndNewlines)
+        let response: IndustryAssessmentOutput = try await EusoTripAPI.shared.mutation(
+            "industryVerticals.assessDraft",
+            input: IndustryAssessmentInput(
+                clientRequestId: industryAssessmentRequestId.uuidString.lowercased(),
+                sectorId: sectorId,
+                ruleSetId: ruleSetId,
+                workflowId: workflowId,
+                transportMode: mode.rawValue,
+                originCountryCode: originCode,
+                destinationCountryCode: destinationCode,
+                productName: product.isEmpty ? nil : product,
+                cargoType: cargoType.rawValue,
+                unNumber: unNumber.isEmpty ? nil : unNumber,
+                hazmatClass: hazmatClass.isEmpty ? nil : hazmatClass,
+                temperatureMin: reeferTempLow,
+                temperatureMax: reeferTempHigh,
+                temperatureUnit: (reeferTempLow != nil || reeferTempHigh != nil) ? "F" : nil
+            )
+        )
+
+        industryAssessmentId = response.assessmentId
+        industryAssessmentStatus = response.status
+        industryAssessmentWarnings = response.result.warnings
+        if response.status == "blocked" {
+            let detail = response.result.blockingReasons.joined(separator: " ")
+            throw NSError(
+                domain: "EusoTrip.IndustryVertical",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: detail.isEmpty ? "This industry workflow is blocked." : detail]
+            )
+        }
+        if response.status == "needs_input" {
+            let fields = response.result.requiredInputs.joined(separator: ", ")
+            throw NSError(
+                domain: "EusoTrip.IndustryVertical",
+                code: 3,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        fields.isEmpty ? "Complete the industry workflow inputs." : "Complete: \(fields)."
+                ]
+            )
+        }
+        if requireReviewAcknowledgement
+            && response.status == "requires_review"
+            && !industryReviewAcknowledged {
+            throw NSError(
+                domain: "EusoTrip.IndustryVertical",
+                code: 4,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Review and acknowledge the jurisdiction coverage before posting."
+                ]
+            )
+        }
+    }
+
+    func prepareIndustryAssessmentForReview() async {
+        guard industrySectorId != nil else { return }
+        isAssessingIndustry = true
+        industryAssessmentError = nil
+        do {
+            try await refreshIndustryAssessment(requireReviewAcknowledgement: false)
+        } catch {
+            industryAssessmentError = (error as? EusoTripAPIError)?.errorDescription
+                ?? error.localizedDescription
+        }
+        isAssessingIndustry = false
+    }
+
     func submit() async {
         do {
             try validate()
@@ -543,6 +734,7 @@ final class PostLoadDraft: ObservableObject {
         }
         isPosting = true; postError = nil
         do {
+            try await refreshIndustryAssessment()
             let iso = ISO8601DateFormatter()
             iso.formatOptions = [.withInternetDateTime]
             // Hit `shippers.create` directly with a strict Zod payload.
@@ -561,7 +753,14 @@ final class PostLoadDraft: ObservableObject {
 
             struct In: Encodable {
                 let origin: String; let destination: String; let cargoType: String
+                let productName: String?; let category: String?
+                let unNumber: String?; let hazmatClass: String?
+                let tempMin: Double?; let tempMax: Double?; let tempUnit: String?
+                let preCoolRequired: Bool?; let continuousMonitoring: Bool?
                 let rate: Double?; let weight: Double?; let notes: String?; let pickupDate: String?
+                let transportMode: String?
+                let originCountry: String?; let destinationCountry: String?
+                let isCrossBorder: Bool?
                 let originLat: Double?; let originLng: Double?
                 let destLat:   Double?; let destLng:   Double?
                 // Web-parity catalyst requirements (`LoadCreationWizard.tsx` step 4)
@@ -594,6 +793,9 @@ final class PostLoadDraft: ObservableObject {
                 // every consumer migrates.
                 let trailer:              String?
                 let vertical:             String?
+                let industrySectorId:     String?
+                let industryVerticalAssessmentId: String?
+                let industryVerticalReviewAcknowledged: Bool?
                 // T-009 · 2026-05-20 — attached document set as raw values.
                 // Server stores against the load row + uses them as the
                 // initial "documents on file" set; future doc uploads
@@ -616,10 +818,29 @@ final class PostLoadDraft: ObservableObject {
                     origin: origin,
                     destination: destination,
                     cargoType: cargoType.rawValue,
+                    productName: commodity.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? nil
+                        : commodity.trimmingCharacters(in: .whitespacesAndNewlines),
+                    category: industrySectorId ?? vertical?.rawValue,
+                    unNumber: unNumber.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? nil
+                        : unNumber.trimmingCharacters(in: .whitespacesAndNewlines),
+                    hazmatClass: hazmatClass.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        ? nil
+                        : hazmatClass.trimmingCharacters(in: .whitespacesAndNewlines),
+                    tempMin: reeferTempLow,
+                    tempMax: reeferTempHigh,
+                    tempUnit: (reeferTempLow != nil || reeferTempHigh != nil) ? "F" : nil,
+                    preCoolRequired: preCoolRequired ? true : nil,
+                    continuousMonitoring: continuousMode ? true : nil,
                     rate: rate,
                     weight: weight,
                     notes: composedNotes().isEmpty ? nil : composedNotes(),
                     pickupDate: pickupDate.map { iso.string(from: $0) },
+                    transportMode: mode.rawValue,
+                    originCountry: exactCountryCode(originCountry),
+                    destinationCountry: exactCountryCode(destinationCountry),
+                    isCrossBorder: isCrossBorder ? true : nil,
                     originLat: originLat, originLng: originLng,
                     destLat:   destLat,   destLng:   destLng,
                     requiresEscort:        requiresEscort ? true : nil,
@@ -642,6 +863,12 @@ final class PostLoadDraft: ObservableObject {
                     equipmentType:         equipmentType.isEmpty ? nil : equipmentType,
                     trailer:               trailer?.rawValue,
                     vertical:              vertical?.rawValue,
+                    industrySectorId:      industrySectorId,
+                    industryVerticalAssessmentId: industryAssessmentId,
+                    industryVerticalReviewAcknowledged:
+                        industryAssessmentStatus == "requires_review"
+                            ? industryReviewAcknowledged
+                            : nil,
                     attachedDocuments:     attachedDocuments.isEmpty ? nil : attachedDocuments.map(\.rawValue),
                     ePodLockEnabled:       ePodLockEnabled ? true : nil
                 )

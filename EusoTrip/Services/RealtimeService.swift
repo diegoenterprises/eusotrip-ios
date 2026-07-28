@@ -329,6 +329,15 @@ final class RealtimeService: ObservableObject {
             nc.post(name: .eusoLoadPosted, object: nil, userInfo: info)
             nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
 
+        // ─── Live data-source refresh fan-out ───
+        // Government/provider fetchers and the platform hot-zone pulse emit
+        // this only after a successful database write. Screens already
+        // observe `.esangRefreshSurface`, so one event refreshes the visible
+        // role journey without adding a separate polling loop per provider.
+        case "data:refreshed",
+             "DATA_REFRESHED":
+            nc.post(name: .esangRefreshSurface, object: event, userInfo: info)
+
         // Driver-initiated transitions echoed back to the shipper /
         // dispatcher web surfaces — also relevant on iOS for the
         // currently-viewed load detail. `load:status_changed` and its

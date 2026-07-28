@@ -1,9 +1,9 @@
 //
 //  HereRoutingClient.swift
-//  EusoTrip — REST client for HERE Routing API v8 (truck-aware)
+//  EusoTrip — authenticated backend client for HERE Routing API v8
 //
-//  Endpoint:
-//    GET https://router.hereapi.com/v8/routes
+//  Provider credentials stay on the EusoTrip server. The app calls the typed
+//  `hereMaps.route` tRPC procedure and decodes the preserved HERE v8 payload.
 //
 //  Minimum params:
 //    - transportMode=truck
@@ -12,9 +12,6 @@
 //    - return=polyline,summary,actions,tolls
 //    - spans=maxSpeed,functionalClass,truckAttributes (separate param; not a
 //      `return` value)
-//
-//  Auth: `Authorization: Bearer <token>` header (OAuth2 client-credentials
-//  via HEREAuthService). No apikey query string.
 //
 //  Plus every field from TruckProfile.asRoutingQueryItems() (weight / axles /
 //  hazmat / tunnel category).
@@ -190,12 +187,11 @@ actor HereRoutingClient {
 
     static let shared = HereRoutingClient()
 
-    private let session: URLSession
-    private let decoder: JSONDecoder
-
     init(session: URLSession = .shared) {
-        self.session = session
-        self.decoder = JSONDecoder()
+        // Keep the injectable signature source-compatible with existing tests.
+        // Network transport is owned by EusoTripAPI so auth/session refresh and
+        // provider credentials remain centralized.
+        _ = session
     }
 
     // MARK: - Main call
@@ -206,130 +202,30 @@ actor HereRoutingClient {
         profile: TruckProfile,
         options: HereRoutingOptions = HereRoutingOptions()
     ) async throws -> HereRoutesResponse {
-        var items: [URLQueryItem] = [
-            URLQueryItem(name: "transportMode",    value: "truck"),
-            URLQueryItem(name: "origin",           value: Self.fmt(stops.origin)),
-            URLQueryItem(name: "destination",      value: Self.fmt(stops.destination)),
-            URLQueryItem(name: "return",           value: options.returnFields.joined(separator: ",")),
-        ]
-
-        if options.returnFields.contains("polyline"), !options.spanFields.isEmpty {
-            items.append(URLQueryItem(name: "spans", value: options.spanFields.joined(separator: ",")))
+        let response: BackendResponse = try await EusoTripAPI.shared.query(
+            "hereMaps.route",
+            input: BackendRequest(
+                origin: BackendCoord(stops.origin),
+                destination: BackendCoord(stops.destination),
+                via: stops.via.isEmpty ? nil : stops.via.map(BackendCoord.init),
+                transportMode: "truck",
+                truck: BackendTruck(profile),
+                avoid: Self.backendAvoidFeatures(options.avoidFeatures),
+                avoidAreas: options.avoidAreas.isEmpty
+                    ? nil
+                    : options.avoidAreas.compactMap(BackendAvoidArea.init),
+                departureTime: options.departureTime,
+                alternatives: options.alternatives > 0 ? options.alternatives : nil,
+                lang: options.language,
+                returnPolyline: options.returnFields.contains("polyline")
+            )
+        )
+        guard response.ok, let raw = response.raw, !raw.routes.isEmpty else {
+            throw HereMapsError.providerError(
+                response.error ?? response.summary ?? "HERE returned no route."
+            )
         }
-
-        for v in stops.via {
-            items.append(URLQueryItem(name: "via", value: Self.fmt(v)))
-        }
-
-        if let dep = options.departureTime {
-            items.append(URLQueryItem(name: "departureTime", value: dep))
-        }
-        if options.alternatives > 0 {
-            items.append(URLQueryItem(name: "alternatives", value: String(options.alternatives)))
-        }
-        if let lang = options.language {
-            items.append(URLQueryItem(name: "lang", value: lang))
-        }
-        if !options.avoidFeatures.isEmpty {
-            items.append(URLQueryItem(name: "avoid[features]",
-                                      value: options.avoidFeatures.joined(separator: ",")))
-        }
-        // Weather-hazard reroute: each hazard → a bbox/polygon/corridor spec,
-        // pipe-separated. The reroute loop drops these in so HERE actually
-        // routes the truck AROUND the cell instead of estimating a synthetic
-        // +15% miles — the one missing primitive in the symbiotic loop.
-        let areaSpecs = options.avoidAreas.compactMap { $0.spec() }
-        if !areaSpecs.isEmpty {
-            items.append(URLQueryItem(name: "avoid[areas]",
-                                      value: areaSpecs.joined(separator: "|")))
-        }
-
-        items += profile.asRoutingQueryItems()
-
-        // HERE Routing v8 accepts percent-encoded `%5B`/`%5D` for
-        // bracket params — confirmed by re-reading 2026-05-16
-        // logs: the original "Malformed request · Error while
-        // parsing" rejections were caused by two bad VALUES
-        // (`vehicle[type]=semiTrailer` not in the v8 enum, and
-        // `vehicle[emissionType]=epa` not in the euro1–6 enum),
-        // NOT by bracket encoding. Both bad fields are now dropped
-        // in `TruckProfile.asRoutingQueryItems()`.
-        //
-        // Earlier in-flight 2026-05-17 attempt used
-        // `URLComponents.percentEncodedQuery` with raw brackets to
-        // preserve them — that crashed TestFlight 259 with
-        // EXC_BREAKPOINT (the setter fatalErrors on RFC-3986-invalid
-        // chars). Reverted to the simple, proven `queryItems` path.
-        var comps = URLComponents(url: HereMapsConfig.routingBaseURL, resolvingAgainstBaseURL: false)!
-        comps.queryItems = items
-        guard let url = comps.url else { throw HereMapsError.badURL }
-
-        // Bearer-authenticated fetch with a single 401 retry: if the
-        // cached token was revoked mid-session, drop it and re-exchange
-        // once before surfacing the error.
-        let data: Data
-        do {
-            data = try await authorizedData(for: url)
-        } catch {
-            // Founder-flagged 2026-05-17: surface the full failing URL
-            // to the console so the next round of HERE-rejection
-            // debugging doesn't require re-instrumenting. Only fires
-            // in DEBUG so we don't leak Bearer tokens (URL has none —
-            // token rides in the Authorization header — but keeping
-            // the gate in case the contract changes).
-            #if DEBUG
-            print("[HereRouting] request failed for url=\(url.absoluteString) — \(error)")
-            #endif
-            throw error
-        }
-        do {
-            return try decoder.decode(HereRoutesResponse.self, from: data)
-        } catch {
-            throw HereMapsError.decoding(String(describing: error))
-        }
-    }
-
-    /// GET `url` with `Authorization: Bearer <token>`. On HTTP 401, invalidate
-    /// the cached token and retry exactly once. Throws `HereMapsError.http`
-    /// for any non-2xx response after the retry.
-    ///
-    /// RATE-LIMIT GATE: routing bypasses `HereBearerFetch` (it has its
-    /// own 401 recipe), so it pages through `HereRateLimiter.shared`
-    /// directly — same paced slot + deterministic 429 backoff/cooldown
-    /// as every other HERE call. After the backoff budget is spent the
-    /// 429 surfaces and the caller serves last-good route state.
-    private func authorizedData(for url: URL) async throws -> Data {
-        let lastRetryAfter = RoutingRetryAfterBox()
-
-        return try await HereRateLimiter.shared.runData(
-            retryAfterFor: { _ in lastRetryAfter.seconds }
-        ) { [session] in
-            func attempt() async throws -> (Data, HTTPURLResponse) {
-                let token = try await HereMapsConfig.requireBearerToken()
-                var req = URLRequest(url: url)
-                req.timeoutInterval = 20  // app-wide no-lingering-load bound
-                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                let (data, resp) = try await session.data(for: req)
-                guard let http = resp as? HTTPURLResponse else {
-                    throw HereMapsError.providerError("No HTTP response")
-                }
-                return (data, http)
-            }
-
-            var (data, http) = try await attempt()
-            if http.statusCode == 401 {
-                await HEREAuthService.shared.invalidate()
-                (data, http) = try await attempt()
-            }
-            guard (200..<300).contains(http.statusCode) else {
-                if http.statusCode == 429 {
-                    lastRetryAfter.seconds = HereRateLimiter.retryAfterSeconds(from: http)
-                }
-                let body = String(data: data, encoding: .utf8) ?? ""
-                throw HereMapsError.http(http.statusCode, body)
-            }
-            return data
-        }
+        return raw
     }
 
     /// Convenience: computes a route for a Load (pickup → delivery) using a
@@ -361,11 +257,132 @@ actor HereRoutingClient {
     static func polyline(for route: HereRoute) -> [CLLocationCoordinate2D] {
         route.sections.flatMap { polyline(for: $0) }
     }
-}
 
-/// Carries a 429 `Retry-After` out of one gated routing fetch into the
-/// limiter's backoff hook. Confined to a single `runData` call, hence
-/// `@unchecked Sendable`.
-private final class RoutingRetryAfterBox: @unchecked Sendable {
-    var seconds: TimeInterval?
+    private static func backendAvoidFeatures(_ values: [String]) -> [String]? {
+        let supported = Set([
+            "tollRoad",
+            "controlledAccessHighway",
+            "ferry",
+            "tunnel",
+            "dirtRoad",
+            "difficultTurns",
+        ])
+        let normalized = values.compactMap { value -> String? in
+            if value == "motorway" { return "controlledAccessHighway" }
+            return supported.contains(value) ? value : nil
+        }
+        return normalized.isEmpty ? nil : Array(Set(normalized)).sorted()
+    }
+
+    private struct BackendCoord: Encodable {
+        let lat: Double
+        let lng: Double
+
+        init(_ coordinate: CLLocationCoordinate2D) {
+            lat = coordinate.latitude
+            lng = coordinate.longitude
+        }
+    }
+
+    private struct BackendTruck: Encodable {
+        let grossWeightKg: Int?
+        let weightPerAxleKg: Int?
+        let heightCm: Int?
+        let widthCm: Int?
+        let lengthCm: Int?
+        let axleCount: Int?
+        let trailerCount: Int?
+        let shippedHazardousGoods: [String]?
+        let tunnelCategory: String?
+
+        init(_ profile: TruckProfile) {
+            grossWeightKg = profile.grossWeightKg
+            weightPerAxleKg = profile.weightPerAxleKg
+            heightCm = profile.heightCm
+            widthCm = profile.widthCm
+            lengthCm = profile.lengthCm
+            axleCount = profile.axleCount
+            trailerCount = profile.trailerCount
+            let goods = profile.shippedHazardousGoods.map { good in
+                good == .radioactive ? "radioActive" : good.hereValue
+            }.sorted()
+            shippedHazardousGoods = goods.isEmpty ? nil : goods
+            tunnelCategory = profile.tunnelCategory?.hereValue
+        }
+    }
+
+    private struct BackendAvoidArea: Encodable {
+        let kind: String
+        let west: Double?
+        let south: Double?
+        let east: Double?
+        let north: Double?
+        let points: [BackendCoord]?
+        let path: [BackendCoord]?
+        let radiusMeters: Int?
+
+        init?(_ area: HereAvoidArea) {
+            switch area {
+            case let .bbox(west, south, east, north):
+                guard east > west, north > south else { return nil }
+                kind = "bbox"
+                self.west = west
+                self.south = south
+                self.east = east
+                self.north = north
+                points = nil
+                path = nil
+                radiusMeters = nil
+            case let .polygon(coordinates):
+                let coordinates = HereAvoidArea.cap(
+                    HereAvoidArea.simplify(coordinates),
+                    to: HereAvoidArea.maxVertices
+                )
+                guard coordinates.count >= 3 else { return nil }
+                kind = "polygon"
+                west = nil
+                south = nil
+                east = nil
+                north = nil
+                points = coordinates.map(BackendCoord.init)
+                path = nil
+                radiusMeters = nil
+            case let .corridor(coordinates, radius):
+                let coordinates = HereAvoidArea.cap(
+                    HereAvoidArea.simplify(coordinates),
+                    to: HereAvoidArea.maxVertices
+                )
+                guard coordinates.count >= 2, radius >= 25 else { return nil }
+                kind = "corridor"
+                west = nil
+                south = nil
+                east = nil
+                north = nil
+                points = nil
+                path = coordinates.map(BackendCoord.init)
+                radiusMeters = radius
+            }
+        }
+    }
+
+    private struct BackendRequest: Encodable {
+        let origin: BackendCoord
+        let destination: BackendCoord
+        let via: [BackendCoord]?
+        let transportMode: String
+        let truck: BackendTruck
+        let avoid: [String]?
+        let avoidAreas: [BackendAvoidArea]?
+        let departureTime: String?
+        let alternatives: Int?
+        let lang: String?
+        let returnPolyline: Bool
+    }
+
+    private struct BackendResponse: Decodable {
+        let ok: Bool
+        let summary: String?
+        let error: String?
+        let raw: HereRoutesResponse?
+    }
 }

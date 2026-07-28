@@ -118,7 +118,6 @@ final class LifecycleGeocodeStore: ObservableObject {
         //    but the published `coords` dict updates when HERE returns.
         let trimmed = addressLine.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty,
-              HereMapsConfig.hasBearerCredentials,
               !inflight.contains(key) else { return nil }
 
         inflight.insert(key)

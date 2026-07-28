@@ -3,20 +3,17 @@
 //  Hazmat placard scan + ERG multi-turn — IO 2026 P0-7.
 //
 //  Wraps two server endpoints with iOS-friendly response types:
-//    - `astraDvir.placardScan` — Gemini Vision OCR + ERG database
-//      JOIN + Ed25519-signed audit chain entry. Returns the
-//      structured material + guide + a TTS-ready spokenReply.
+//    - `astraDvir.placardScan` — Gemini Vision OCR + official ERG
+//      response-reference lookup + Ed25519-signed audit chain entry.
+//      ERG never supplies or attests legal dangerous-goods classification.
 //    - `erg.askFollowUp` — multi-turn ERG conversation grounded
-//      in the canonical guide content. Maintains a thought-signature
-//      cache so a chain of follow-up questions resumes the model's
-//      reasoning state cheaply (P0-3 pattern).
+//      in the canonical guide content. Sends bounded explicit history;
+//      no opaque reasoning state is fabricated or trusted.
 //
-//  Foundation binding: every placard scan that resolves to a UN
-//  number AND has `isReadable == true` ALSO writes a
-//  `HazmatOverlay.placardsAffixed` audit entry server-side, which
-//  the iOS LoadStateFSM can read back to advance the overlay set
-//  to `placardsAffixed`. The audit signature anchors the overlay
-//  to a verified photo — no manual override.
+//  A scan writes a signed observation only. One camera frame cannot
+//  prove all required vehicle sides or establish legal dangerous-goods
+//  classification, so it never advances `placardsAffixed`. That overlay
+//  is completed by the dedicated compliance attestation workflow.
 //
 //  Drop into: EusoTrip/Services/ERGLookupService.swift
 //
@@ -39,7 +36,7 @@ public struct PlacardOCR: Codable, Hashable, Sendable {
 public struct ERGMaterial: Codable, Hashable, Sendable {
     public let unNumber: String
     public let name: String
-    public let hazardClass: String
+    public let hazardClass: String?
     public let guideNumber: Int
     public let isTIH: Bool
     public let isWR: Bool
@@ -72,44 +69,63 @@ public struct PlacardScanResponse: Decodable, Hashable, Sendable {
     public let auditId: Int?
     public let overlayAuditId: Int?
     public let placardsAffixed: Bool
+    public let classificationEvidence: ERGClassificationEvidence?
     public let signature: AstraSignatureBlock
+}
+
+public struct ERGClassificationEvidence: Decodable, Hashable, Sendable {
+    public let eligibleAsClassificationSource: Bool
+    public let source: String
+    public let warning: String
 }
 
 public struct ERGFollowUpResponse: Decodable, Hashable, Sendable {
     public let answer: String
     public let modelUsed: String?
     public let thoughtSignature: String?
+    public let continuityMode: String?
     public let unNumber: String
     public let guideNumber: Int?
     public let hazardClass: String?
+    public let classificationEvidence: ERGClassificationEvidence?
 }
 
-// MARK: - Multi-turn signature cache
+public struct ERGConversationMessage: Codable, Hashable, Sendable {
+    public let role: String
+    public let content: String
+}
 
-/// Per-UN-number thought-signature cache. 5-minute TTL matches the
-/// canonical ESang thought-signature cache (P0-3). Lets a driver
-/// chain ERG follow-ups ("what if it spills?", "with class 3?",
-/// "nearest hazmat dump?") without the model re-reasoning each turn.
-public actor ERGThoughtSignatureCache {
-    private var byUN: [String: String] = [:]
+// MARK: - Multi-turn conversation cache
+
+/// Per-UN bounded conversation history. Only the latest six messages
+/// are sent, and every turn is re-grounded against the official guide.
+public actor ERGConversationCache {
+    private var byUN: [String: [ERGConversationMessage]] = [:]
     private var lastUpdate: [String: Date] = [:]
     private let ttl: TimeInterval = 5 * 60
 
     public init() {}
 
-    public func remember(_ signature: String, for unNumber: String) {
-        byUN[unNumber] = signature
-        lastUpdate[unNumber] = Date()
-    }
-
-    public func recall(for unNumber: String) -> String? {
-        guard let stamp = lastUpdate[unNumber] else { return nil }
+    public func recall(for unNumber: String) -> [ERGConversationMessage] {
+        guard let stamp = lastUpdate[unNumber] else { return [] }
         if Date().timeIntervalSince(stamp) > ttl {
             byUN.removeValue(forKey: unNumber)
             lastUpdate.removeValue(forKey: unNumber)
-            return nil
+            return []
         }
-        return byUN[unNumber]
+        return byUN[unNumber] ?? []
+    }
+
+    public func append(
+        question: String,
+        answer: String,
+        for unNumber: String
+    ) {
+        var messages = byUN[unNumber] ?? []
+        messages.append(.init(role: "user", content: question))
+        messages.append(.init(role: "assistant", content: answer))
+        byUN[unNumber] = Array(messages.suffix(6))
+        lastUpdate[unNumber] = Date()
     }
 
     public func forget(_ unNumber: String) {
@@ -123,7 +139,7 @@ public actor ERGThoughtSignatureCache {
 public final class ERGLookupService: @unchecked Sendable {
     public static let shared = ERGLookupService()
 
-    private let signatureCache = ERGThoughtSignatureCache()
+    private let conversationCache = ERGConversationCache()
     private let astra = AstraVisionService.shared
 
     public init() {}
@@ -159,9 +175,9 @@ public final class ERGLookupService: @unchecked Sendable {
             "astraDvir.placardScan",
             input: payload
         )
-        // Verify the Ed25519 signature locally before trusting any
-        // observation — a tampered network hop must fail before the
-        // HazmatOverlay.placardsAffixed UI commits.
+        // Verify the Ed25519 signature locally before presenting the
+        // observation. This does not convert the image into a legal
+        // classification or an all-sides placarding attestation.
         if !verifySignature(response.signature) {
             throw AstraError.signatureVerificationFailed
         }
@@ -169,38 +185,40 @@ public final class ERGLookupService: @unchecked Sendable {
     }
 
     /// Ask a follow-up question grounded in a previously-scanned
-    /// material. Uses the thought-signature cache for multi-turn
-    /// continuity so chained questions are cheap.
+    /// material. Sends bounded explicit history so chained questions
+    /// have real continuity without exposing or fabricating model state.
     public func askFollowUp(
         unNumber: String,
         question: String
     ) async throws -> ERGFollowUpResponse {
         let dialect = await MainActor.run { UserVoicePreference.shared.current.rawValue }
-        let prevSignature = await signatureCache.recall(for: unNumber)
+        let conversation = await conversationCache.recall(for: unNumber)
         struct In: Encodable {
             let unNumber: String
             let question: String
-            let prevThoughtSignature: String?
+            let conversation: [ERGConversationMessage]
             let dialect: String?
         }
         let payload = In(
             unNumber: unNumber,
             question: question,
-            prevThoughtSignature: prevSignature,
+            conversation: conversation,
             dialect: dialect
         )
         let response: ERGFollowUpResponse = try await EusoTripAPI.shared.mutation(
             "erg.askFollowUp",
             input: payload
         )
-        if let sig = response.thoughtSignature {
-            await signatureCache.remember(sig, for: unNumber)
-        }
+        await conversationCache.append(
+            question: question,
+            answer: response.answer,
+            for: unNumber
+        )
         return response
     }
 
-    public func forgetSignature(for unNumber: String) async {
-        await signatureCache.forget(unNumber)
+    public func forgetConversation(for unNumber: String) async {
+        await conversationCache.forget(unNumber)
     }
 
     // MARK: - Signature verification

@@ -560,11 +560,8 @@ private struct VesselSailingScheduleBody: View {
     }
 
     private func sailingMapCard(calls: [ResolvedPortCall688]) -> some View {
-        // Port pins: hollow ocean port markers (kind .stop) at each real call;
-        // the first call is the live origin (kind .pickup) so the ocean
-        // register draws its gradient origin ring. Voyage legs: a single route
-        // polyline through the consecutive real port coords — the canvas paints
-        // it as the great-circle leg chain under Mercator.
+        // Port pins at each real call. A schedule sequence is not a plotted
+        // marine route, so no connector is drawn without provider geometry.
         let coords: [HereLatLng] = calls.map { HereLatLng($0.lat, $0.lng) }
         let pins: [HereMarker] = calls.enumerated().map { idx, c in
             HereMarker(
@@ -573,24 +570,19 @@ private struct VesselSailingScheduleBody: View {
                 label: c.unlocode,
                 id: c.id)              // schedule-row id → tappable handler pin
         }
-        var layers: [HereMapLayer] = []
-        if coords.count >= 2 {
-            layers.append(.route(polyline: coords, colorHex: "#1473FF"))
-        }
-        layers.append(.markers(pins))
+        let layers: [HereMapLayer] = [.markers(pins)]
 
         // Camera: center on the leg-chain midpoint (or the single port).
         let center = coords[coords.count / 2]
 
         return VStack(alignment: .leading, spacing: 0) {
-            BespokeMapCanvas(
+            HereVectorMapView(
                 center: center,
                 zoom: coords.count >= 2 ? 3 : 5,
                 interactive: true,
                 tilt: 0,
-                isDark: colorScheme == .dark,
                 layers: layers,
-                style: .ocean,
+                styleHint: .ocean,
                 onSelectMarker: { _ in /* pin tap → branded port detail card */ }
             )
             .frame(height: 240)

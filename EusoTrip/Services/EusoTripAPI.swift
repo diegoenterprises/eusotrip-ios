@@ -876,8 +876,10 @@ final class EusoTripAPI: ObservableObject {
     /// for the cycle-phase chip on Home + Wallet.
     lazy var adaptiveFee: AdaptiveFeeAPI = AdaptiveFeeAPI(api: self)
 
-    /// `ergRouter` — Emergency Response Guidebook hazmat lookup
-    /// (49 CFR 172.604). MCP-verified at
+    /// `ergRouter` — Emergency Response Guidebook response-reference
+    /// lookup. It does not classify dangerous goods or replace the
+    /// printed emergency-response information required in transport.
+    /// MCP-verified at
     /// `frontend/server/routers/erg.ts` (procs `search`,
     /// `searchByUN`, `getGuidePage`, `getEmergencyContacts`).
     /// Added in the 89th firing (brick port 096 Me · ERG).
@@ -13965,11 +13967,11 @@ struct LoadBiddingAPI {
 // MARK: - ergRouter (096 Me · ERG Hazmat Lookup)
 //
 // Mirrors `frontend/server/routers/erg.ts`. This is the driver's
-// wrist + phone copy of the Emergency Response Guidebook that
-// 49 CFR 172.604 requires to be in the cab whenever hazardous
-// materials are being transported. The server is backed by the
-// canonical ERG material tables + guide pages; iOS renders the
-// lookup + guide detail + emergency contact strip.
+// supplemental Emergency Response Guidebook reference. The server
+// is backed by the official current material tables + guide pages;
+// iOS renders the lookup, guide detail, and emergency-contact strip.
+// This surface does not classify dangerous goods or replace required
+// printed emergency-response information.
 //
 // Procs surfaced today:
 //   - `search`                — typeahead by name or UN
@@ -13985,11 +13987,12 @@ struct ErgAPI {
         let unNumber: String
         let name: String
         let guide: Int
-        let hazardClass: String
+        let hazardClass: String?
         let isTIH: Bool?
         let isWR: Bool?
         let alternateNames: [String]?
-        let placardName: String
+        let placardName: String?
+        let classificationEvidence: ClassificationEvidence?
 
         var id: String { unNumber }
     }
@@ -14016,14 +14019,24 @@ struct ErgAPI {
     // MARK: - Full detail
 
     struct ProtectiveDistance: Decodable, Equatable {
-        let smallSpill: PDRow?
-        let largeSpill: PDRow?
+        let smallSpill: SpillRow
+        let largeSpill: SpillRow
+        let refTable3: Bool?
 
-        struct PDRow: Decodable, Equatable {
-            let isolate: String?
-            let downwindDay: String?
-            let downwindNight: String?
+        struct SpillRow: Decodable, Equatable {
+            let day: DistanceValue
+            let night: DistanceValue
         }
+
+        struct DistanceValue: Decodable, Equatable {
+            let isolateMeters: Int
+            let protectKm: Double
+            let mayBeLarger: Bool?
+        }
+    }
+
+    struct ClassificationEvidence: Decodable, Equatable {
+        let eligibleAsClassificationSource: Bool
     }
 
     struct GuideDetail: Decodable, Equatable {
@@ -14047,6 +14060,7 @@ struct ErgAPI {
         let guide: GuideDetail?
         let guideFull: GuideFull?
         let protectiveDistance: ProtectiveDistance?
+        let classificationEvidence: ClassificationEvidence?
     }
 
     /// Full structured ERG handbook data — every field the canonical
@@ -14085,25 +14099,53 @@ struct ErgAPI {
 
     // MARK: - Emergency contacts
 
-    struct EmergencyContact: Decodable, Equatable {
+    struct EmergencyContact: Decodable, Equatable, Identifiable {
+        let key: String
         let name: String
         let phone: String
+        let alternatePhones: [String]
         let description: String
-        let international: String?
+        let availability: String
+        let usageRestriction: String?
+        let sourceUrl: String
+        let verifiedAt: String
+
+        var id: String { key }
+    }
+
+    struct LocalEmergencyServices: Decodable, Equatable {
+        let name: String
+        let phone: String?
+        let phoneStatus: String
+        let sourceUrl: String?
+        let verifiedAt: String?
+    }
+
+    struct EmergencyContactSource: Decodable, Equatable {
+        let edition: String
+        let bundledSourcePath: String
+        let contactVerificationDate: String
+        let contactSources: [String]
     }
 
     struct EmergencyContactsResponse: Decodable, Equatable {
-        let chemtrec: EmergencyContact
-        let national: EmergencyContact
-        let poison: EmergencyContact
-        let emergency: EmergencyContact
+        let countryCode: String?
+        let status: String
+        let localEmergencyServices: LocalEmergencyServices
+        let contacts: [EmergencyContact]
+        let source: EmergencyContactSource
+        let warning: String
     }
 
-    /// `erg.getEmergencyContacts` — CHEMTREC + National Response
-    /// Center + Poison Control + 911. Drivers hauling hazmat
-    /// should have these at a tap, per §172.704.
-    func getEmergencyContacts() async throws -> EmergencyContactsResponse {
-        try await api.queryNoInput("erg.getEmergencyContacts")
+    /// `erg.getEmergencyContacts` — current, source-attributed references
+    /// for the explicit incident country. When nil, the server uses the
+    /// authenticated user's persisted country and never guesses another.
+    func getEmergencyContacts(countryCode: String? = nil) async throws -> EmergencyContactsResponse {
+        struct Input: Encodable { let countryCode: String? }
+        return try await api.query(
+            "erg.getEmergencyContacts",
+            input: Input(countryCode: countryCode)
+        )
     }
 }
 
@@ -16868,6 +16910,7 @@ struct ShipperAPI {
             let unNumber: String?
             let ergGuide: Int?
             let equipmentType: String?
+            let transportMode: String?
             let rate: Double?
             let weight: Double?
             let distance: Double?
@@ -17086,8 +17129,14 @@ struct ShipperAPI {
         let origin: String
         let destination: String
         let cargoType: CargoType
+        let productName: String?
+        let category: String?
+        let physicalState: String?
+        let unNumber: String?
+        let hazmatClass: String?
         let rate: Double?
         let weight: Double?
+        let weightUnit: String?
         let notes: String?
         /// ISO-8601 date string (no time) — backend coerces to
         /// `Date` via `new Date(input.pickupDate)` for the Drizzle
@@ -17101,6 +17150,8 @@ struct ShipperAPI {
         let originLng: Double?
         let destLat: Double?
         let destLng: Double?
+        let originCountry: String?
+        let destinationCountry: String?
         // ─── 2026-05-17 · Multi-modal payload ─────────────────────────
         // Lands the Step-1 mode picker + Step-2/3 multi-modal payload
         // into `loads.transport_mode` + the columns added in migration
@@ -17112,6 +17163,8 @@ struct ShipperAPI {
         let permitType: String?
         let originPort: String?
         let destPort: String?
+        let originTerminalId: Int?
+        let destinationTerminalId: Int?
         let worldscalePct: Double?
         let worldscaleFlat: Double?
         let rateUnit: String?
@@ -17120,6 +17173,8 @@ struct ShipperAPI {
         /// arbitrary JSON; backend stores in `mode_route_payload`.
         let modeRoutePayload: AnyEncodable?
         let equipmentType: String?
+        let portIntelligenceAssessmentId: String?
+        let portIntelligenceAcknowledged: Bool
     }
 
     /// Acknowledgement envelope returned by `shippers.create`.
@@ -17155,14 +17210,22 @@ struct ShipperAPI {
         origin: String,
         destination: String,
         cargoType: CargoType = .general,
+        productName: String? = nil,
+        category: String? = nil,
+        physicalState: String? = nil,
+        unNumber: String? = nil,
+        hazmatClass: String? = nil,
         rate: Double? = nil,
         weight: Double? = nil,
+        weightUnit: String? = nil,
         notes: String? = nil,
         pickupDate: String? = nil,
         originLat: Double? = nil,
         originLng: Double? = nil,
         destLat: Double? = nil,
         destLng: Double? = nil,
+        originCountry: String? = nil,
+        destinationCountry: String? = nil,
         // ─── 2026-05-17 · Multi-modal payload ───
         transportMode: String? = nil,
         vesselClass: String? = nil,
@@ -17170,11 +17233,15 @@ struct ShipperAPI {
         permitType: String? = nil,
         originPort: String? = nil,
         destPort: String? = nil,
+        originTerminalId: Int? = nil,
+        destinationTerminalId: Int? = nil,
         worldscalePct: Double? = nil,
         worldscaleFlat: Double? = nil,
         rateUnit: String? = nil,
         modeRoutePayload: [String: Any]? = nil,
-        equipmentType: String? = nil
+        equipmentType: String? = nil,
+        portIntelligenceAssessmentId: String? = nil,
+        portIntelligenceAcknowledged: Bool = false
     ) async throws -> PostLoadAck {
         // Wrap the heterogenous [String: Any] payload into an
         // AnyEncodable that round-trips through JSONSerialization —
@@ -17213,25 +17280,37 @@ struct ShipperAPI {
                 origin: origin,
                 destination: destination,
                 cargoType: cargoType,
+                productName: productName,
+                category: category,
+                physicalState: physicalState,
+                unNumber: unNumber,
+                hazmatClass: hazmatClass,
                 rate: rate,
                 weight: weight,
+                weightUnit: weightUnit,
                 notes: notes,
                 pickupDate: pickupDate,
                 originLat: originLat,
                 originLng: originLng,
                 destLat: destLat,
                 destLng: destLng,
+                originCountry: originCountry,
+                destinationCountry: destinationCountry,
                 transportMode: transportMode,
                 vesselClass: vesselClass,
                 multiVehicleCount: wireMultiVehicleCount,
                 permitType: permitType,
                 originPort: originPort,
                 destPort: destPort,
+                originTerminalId: originTerminalId,
+                destinationTerminalId: destinationTerminalId,
                 worldscalePct: worldscalePct,
                 worldscaleFlat: worldscaleFlat,
                 rateUnit: rateUnit,
                 modeRoutePayload: encodablePayload,
-                equipmentType: equipmentType
+                equipmentType: equipmentType,
+                portIntelligenceAssessmentId: portIntelligenceAssessmentId,
+                portIntelligenceAcknowledged: portIntelligenceAcknowledged
             )
         )
     }
@@ -24984,18 +25063,17 @@ struct XRChecklistAPI {
     unowned let api: EusoTripAPI
 
     /// `xrChecklist.dockWorkerPodCapture` — counter-party POD sign-off
-    /// for the receiver's dock worker. Server chains the audit row
-    /// off the driver's existing `load.pod_captured` block when one
-    /// exists; returns `chainedToDriverPod: true` in that case.
+    /// for the receiver's dock worker. The server restricts signing
+    /// to the destination terminal, appends through the canonical
+    /// audit chain, and binds a live driver POD document when present.
     func dockWorkerPodCapture(input: DockWorkerPodInput) async throws -> DockWorkerPodResponse {
         try await api.mutation("xrChecklist.dockWorkerPodCapture", input: input)
     }
 
     /// `xrChecklist.usmcaFilingAssistant` — Tier 3 #11.
-    /// 2-child Cortex fanout (perception + guardian) + a synthesis
-    /// pass returning the next filing step with citations and a
-    /// driver-spoken instruction. Played through ESangTTSPlayer
-    /// from the sheet so the driver's eyes stay on the road.
+    /// Returns broker-gated decision support grounded in official
+    /// CBP, CBSA, and ANAM sources. It never certifies origin or
+    /// treats reported carrier FAST status as lane authorization.
     func usmcaFilingAssistant(input: USMCAFilingInput) async throws -> USMCAFilingResponse {
         try await api.mutation("xrChecklist.usmcaFilingAssistant", input: input)
     }

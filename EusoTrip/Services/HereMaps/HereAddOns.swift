@@ -214,6 +214,14 @@ public final class HereAddOnsModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
+        guard center.isUsableCoordinate else {
+            layers = []
+            legend = []
+            details = [:]
+            return
+        }
+
+        let usableRoute = route.filter(\.isUsableCoordinate)
         let coord = CLLocationCoordinate2D(latitude: center.lat, longitude: center.lng)
 
         // Independent fetches, concurrent. Explicit AddOnFetch type so the
@@ -239,7 +247,7 @@ public final class HereAddOnsModel: ObservableObject {
                 ? Self.fetchDiscover(center, "weigh station", .weigh, categoryIds: HereDiscoverCategories.weighStations)
                 : AddOnFetch()
         async let adZones: AddOnFetch =
-            enabled.contains(.adZones)       ? Self.fetchAdZones(center, route)               : AddOnFetch()
+            enabled.contains(.adZones)       ? Self.fetchAdZones(center, usableRoute)         : AddOnFetch()
         async let isa: AddOnFetch =
             enabled.contains(.isa)           ? Self.fetchISA(center)                          : AddOnFetch()
 
@@ -257,10 +265,14 @@ public final class HereAddOnsModel: ObservableObject {
         var allTrafficSegments: [HereTrafficSegment] = []
 
         for p in parts {
-            allMarkers.append(contentsOf: p.markers)
-            allPolys.append(contentsOf: p.polygons)
-            allTrafficSegments.append(contentsOf: p.trafficSegments)
-            for d in p.details { newDetails[d.id] = d }
+            allMarkers.append(contentsOf: p.markers.filter(\.at.isUsableCoordinate))
+            allPolys.append(contentsOf: p.polygons.filter {
+                $0.ring.filter(\.isUsableCoordinate).count >= 3
+            })
+            allTrafficSegments.append(contentsOf: p.trafficSegments.filter {
+                $0.polyline.filter(\.isUsableCoordinate).count >= 2
+            })
+            for d in p.details where d.at.isUsableCoordinate { newDetails[d.id] = d }
             if let chip = p.chip { newLegend.append(chip) }
         }
 
@@ -271,7 +283,7 @@ public final class HereAddOnsModel: ObservableObject {
         // Missions — caller-supplied geo pins, get ids + details too.
         if enabled.contains(.missions), !missionPins.isEmpty {
             var mp: [HereMarker] = []
-            for (i, m) in missionPins.enumerated() {
+            for (i, m) in missionPins.filter(\.at.isUsableCoordinate).enumerated() {
                 let id = (m.id?.isEmpty == false) ? m.id! : "mission:\(i)"
                 mp.append(HereMarker(at: m.at, kind: .mission, label: m.label, id: id))
                 newDetails[id] = HereAddOnDetail(
@@ -772,8 +784,41 @@ public struct HereLiveMapView: View {
             // issue the fan-out. A cancelled sleep throws → we bail silently.
             do { try await Task.sleep(nanoseconds: 350_000_000) } catch { return }
             guard !Task.isCancelled else { return }
-            await model.load(center: center, route: route, enabled: addOns, missionPins: missionPins)
+            guard let addOnCenter else { return }
+            await model.load(
+                center: addOnCenter,
+                route: route,
+                enabled: addOns,
+                missionPins: missionPins
+            )
         }
+    }
+
+    /// Add-ons need a real geographic anchor. If a partial payload omitted
+    /// the requested camera, recover from real route or marker geometry;
+    /// otherwise do not call a location provider at all.
+    private var addOnCenter: HereLatLng? {
+        if center.isUsableCoordinate { return center }
+        if let point = route.first(where: \.isUsableCoordinate) { return point }
+        for layer in baseLayers {
+            switch layer {
+            case .heatmap(let points), .route(let points, _):
+                if let point = points.first(where: \.isUsableCoordinate) { return point }
+            case .markers(let markers), .missionPins(let markers):
+                if let point = markers.map(\.at).first(where: \.isUsableCoordinate) { return point }
+            case .adZones(let polygons):
+                if let point = polygons.lazy.flatMap(\.ring).first(where: \.isUsableCoordinate) {
+                    return point
+                }
+            case .geofenceRing(let center, _, _, _):
+                if center.isUsableCoordinate { return center }
+            case .trafficFlow(let segments):
+                if let point = segments.lazy.flatMap(\.polyline).first(where: \.isUsableCoordinate) {
+                    return point
+                }
+            }
+        }
+        return nil
     }
 
     /// Grid cell (degrees) the live anchor is snapped to before keying the
@@ -788,6 +833,9 @@ public struct HereLiveMapView: View {
     /// moves a few meters keeps the SAME key (no re-fetch); only crossing a
     /// cell boundary — or a real add-on/route/pin change — re-keys.
     private var reloadKey: String {
+        guard let center = addOnCenter else {
+            return "invalid|\(addOns.rawValue)|\(route.count)|\(missionPins.count)|\(firstPerson)"
+        }
         let cell = Self.reloadGridCell
         let snapLat = (center.lat / cell).rounded() * cell
         let snapLng = (center.lng / cell).rounded() * cell
@@ -805,7 +853,7 @@ public struct HereLiveMapView: View {
         for layer in baseLayers {
             if case .markers(let ms) = layer {
                 var newMs: [HereMarker] = []
-                for (i, m) in ms.enumerated() {
+                for (i, m) in ms.filter(\.at.isUsableCoordinate).enumerated() {
                     let hadID = (m.id?.isEmpty == false)
                     let id = hadID ? m.id! : "pin:\(m.kind.rawValue):\(i)"
                     newMs.append(HereMarker(at: m.at, kind: m.kind, label: m.label, id: id))

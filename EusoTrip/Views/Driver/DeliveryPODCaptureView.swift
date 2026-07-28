@@ -628,9 +628,9 @@ struct DeliveryPODCaptureView: View {
 
     /// Inline strip showing Astra's parsed observation: verdict pill,
     /// seal number, pallet count, damage summary. Verdict color
-    /// matches the server-side gating (green = pass / red = fail /
-    /// orange = needs_review). The `podSignedEligible` flag drives
-    /// whether the FSM overlay row was already written server-side.
+    /// reflects only what the image review observed. The signed
+    /// observation can pre-fill POD details, but the receiver's
+    /// separate signature and Submit POD action remain mandatory.
     @ViewBuilder
     private func astraObservationStrip(_ pod: AstraPodResponse) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -643,8 +643,8 @@ struct DeliveryPODCaptureView: View {
                     .foregroundStyle(palette.textTertiary)
                 Spacer(minLength: 0)
                 verdictPill(pod.verdict)
-                if pod.podSignedEligible {
-                    Label("Overlay signed", systemImage: "checkmark.shield.fill")
+                if pod.auditId != nil {
+                    Label("Signed observation", systemImage: "checkmark.shield.fill")
                         .labelStyle(.iconOnly)
                         .foregroundStyle(.green)
                         .font(.caption)
@@ -689,9 +689,9 @@ struct DeliveryPODCaptureView: View {
     private func verdictPill(_ verdict: AstraPodVerdict) -> some View {
         let (label, color): (String, Color) = {
             switch verdict {
-            case .pass:        return ("PASS", .green)
-            case .fail:        return ("FAIL", .red)
-            case .needsReview: return ("NEEDS REVIEW", .orange)
+            case .pass:        return ("NO EXCEPTION OBSERVED", .green)
+            case .fail:        return ("EXCEPTION OBSERVED", .red)
+            case .needsReview: return ("REVIEW REQUIRED", .orange)
             }
         }()
         Text(label)

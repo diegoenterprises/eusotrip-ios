@@ -41,8 +41,13 @@ struct WalletCardPickerView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                WalletCardPreview(theme: store.selected, full: true, kindLabel: previewKindLabel)
-                    .frame(width: 290, height: 384)
+                WalletCardPreview(
+                    theme: store.selected,
+                    full: true,
+                    kindLabel: previewKindLabel,
+                    load: store.previewLoad
+                )
+                    .frame(width: 300, height: 440)
                     .padding(.top, 6)
 
                 HStack {
@@ -98,7 +103,7 @@ struct WalletCardPickerView: View {
         .overlay(alignment: .top) {
             if store.isSyncing { ProgressView().padding(8) }
         }
-        .task { await store.load() }
+        .task { await store.load(loadId: mode == .pickup ? loadId : nil) }
         .onReceive(NotificationCenter.default.publisher(for: .eusoAccessFallbackToInlineQR)) { note in
             guard mode == .staffAccess else { return }
             let code = note.userInfo?["accessCode"] as? String ?? ""
@@ -113,7 +118,9 @@ struct WalletCardPickerView: View {
         }
         .alert("Heads up", isPresented: .constant(store.errorMessage != nil), actions: {
             Button("OK") { store.errorMessage = nil }
-            Button("Retry") { store.retrySync() }
+            if store.canRetryThemeSync {
+                Button("Retry") { store.retrySync() }
+            }
         }, message: { Text(store.errorMessage ?? "") })
     }
 
@@ -150,6 +157,7 @@ struct WalletCardPreview: View {
     /// callers (the load pickup pass) are unchanged; the access surface passes
     /// "ACCESS PASS".
     var kindLabel: String = "PICKUP PASS"
+    var load: WalletCardStore.PreviewLoad? = nil
 
     /// True when this preview is for the staff access card (drives the body
     /// fields: identity + clearance rather than a lane).
@@ -157,58 +165,64 @@ struct WalletCardPreview: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            // Real bundled art when present (WalletCardBackgrounds.xcassets,
-            // imageset name == theme.id), else the solid color + accent wash.
-            if UIImage(named: theme.id) != nil {
-                Color.clear.overlay { Image(theme.id).resizable().scaledToFill() }.clipped()
+            // Apple Wallet uses background.png for art themes and applies a
+            // crop + blur on non-poster event tickets. Mirror that behavior in
+            // the full preview; solid boarding-pass themes stay color-only.
+            if theme.isArt, UIImage(named: theme.id) != nil {
+                Color.clear.overlay {
+                    Image(theme.id)
+                        .resizable()
+                        .scaledToFill()
+                        .scaleEffect(full ? 1.08 : 1.02)
+                        .blur(radius: full ? 6 : 1.5)
+                }
+                .clipped()
             } else {
                 theme.bg
-                // a hint of the art themes via an accent wash at the top
-                if theme.isArt {
-                    LinearGradient(colors: [theme.accent.opacity(0.35), .clear],
-                                   startPoint: .topTrailing, endPoint: .center)
-                }
             }
             VStack(alignment: .leading, spacing: full ? 10 : 4) {
-                // HEADER — the identity that peeks in a Wallet stack
                 HStack(alignment: .top) {
                     HStack(spacing: 6) {
                         Image("EusoTripLogo").resizable().scaledToFit()
                             .frame(width: full ? 22 : 14, height: full ? 22 : 14)
                             .padding(full ? 5 : 3).background(Circle().fill(.white))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("EUSOTRIP").font(.system(size: full ? 13 : 8, weight: .heavy)).kerning(1.2)
-                            Text(kindLabel).font(.system(size: full ? 8 : 5, weight: .bold))
-                                .kerning(1.5).foregroundStyle(theme.accent)
-                        }
+                        Text(isAccess ? "EusoTrip · Access" : "EusoTrip · Pickup")
+                            .font(.system(size: full ? 13 : 8, weight: .bold))
                     }
                     Spacer()
                     if full {
                         VStack(alignment: .trailing, spacing: 2) {
                             Text(isAccess ? "STAFF" : "LOAD").font(.system(size: 7, weight: .bold)).opacity(0.6)
-                            Text(isAccess ? "TERMINAL" : "SHP-MQESP8…").font(.system(size: 10, weight: .heavy))
+                            Text(isAccess ? "—" : (load?.loadNumber ?? "—"))
+                                .font(.system(size: 10, weight: .heavy))
                         }
                     }
                 }
-                Rectangle().frame(height: 2)
-                    .foregroundStyle(theme.accent).opacity(0.9)
                 if full {
                     if isAccess {
-                        // Access card body — identity + clearance, not a lane.
                         HStack(alignment: .bottom) {
-                            field("HOLDER", "Staff member"); Spacer()
-                            field("ACCESS", "TEMPORARY", trailing: true)
+                            field("STAFF", "—"); Spacer()
+                            field("ROLE", "—", trailing: true)
                         }
                         Spacer()
-                        HStack { field("CODE", "••• •••"); Spacer(); field("VALID", "24 H", trailing: true) }
+                        HStack { field("FACILITY", "—"); Spacer(); field("GATE CODE", "—", trailing: true) }
                     } else {
                         HStack(alignment: .bottom) {
-                            field("FROM", "Austin, TX"); Spacer()
+                            field("FROM", load?.origin ?? "—"); Spacer()
                             Image(systemName: "arrow.right").foregroundStyle(theme.accent); Spacer()
-                            field("TO", "San Antonio, TX", trailing: true)
+                            field("TO", load?.destination ?? "—", trailing: true)
                         }
                         Spacer()
-                        HStack { field("EQUIPMENT", "HAZMAT"); Spacer(); field("GATE", "92602", trailing: true) }
+                        HStack {
+                            field("ETA", load?.eta ?? "—")
+                            Spacer()
+                            field("GATE CODE", "—", trailing: true)
+                        }
+                        HStack {
+                            field("EQUIPMENT", load?.equipment ?? "—")
+                            Spacer()
+                            field("CARRIER", load?.carrier ?? "—", trailing: true)
+                        }
                     }
                 }
             }
@@ -222,6 +236,8 @@ struct WalletCardPreview: View {
         VStack(alignment: trailing ? .trailing : .leading, spacing: 1) {
             Text(label).font(.system(size: 7, weight: .bold)).opacity(0.6)
             Text(value).font(.system(size: 14, weight: .bold))
+                .lineLimit(2)
+                .minimumScaleFactor(0.72)
         }
     }
 }

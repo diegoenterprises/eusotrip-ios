@@ -51,12 +51,17 @@ const swiftCat = (t) => {
   if (/^Bool$/.test(s)) return "boolean";
   return "other"; // enums/structs/Date/etc — don't flag (too ambiguous)
 };
-const zodCat = (base) => {
+const zodCat = (base, expression = "") => {
   if (base === "string") return "string";
   if (base === "number") return "number";
   if (base === "boolean") return "boolean";
   if (base === "array") return "array";
-  if (base === "enum" || base === "literal" || base === "nativeEnum") return "string";
+  if (base === "literal") {
+    if (/z\.literal\(\s*(?:true|false)\s*\)/.test(expression)) return "boolean";
+    if (/z\.literal\(\s*-?\d+(?:\.\d+)?\s*\)/.test(expression)) return "number";
+    return "string";
+  }
+  if (base === "enum" || base === "nativeEnum") return "string";
   if (base === "object" || base === "record") return "object";
   if (base === "coerce") return "coerce"; // z.coerce.* accepts string|number — never flag
   return "other"; // union/any/unknown/lazy/instanceof — don't flag
@@ -177,7 +182,7 @@ function parseZod() {
           continue;
         }
         const opt = /\.optional\(|\.nullish\(|\.nullable\(|\.default\(/.test(line);
-        fields[fm[1]] = { cat: zodCat(fm[2]), optional: opt };
+        fields[fm[1]] = { cat: zodCat(fm[2], line), optional: opt };
       }
       byProc[key] = { fields, strict, passthrough, partial, merged };
     }

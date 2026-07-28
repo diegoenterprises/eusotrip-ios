@@ -365,12 +365,11 @@ private struct RailIntermodalTransferBody: View {
                     subtitle: "Transfers recorded with a yard/ramp location plot their interchange node here."
                 )
             } else {
-                BespokeMapCanvas(
+                HereVectorMapView(
                     center: mapCenter,
                     zoom: mapZoom,
                     interactive: true,
                     tilt: 0,
-                    isDark: colorScheme == .dark,
                     layers: mapLayers,
                     onSelectMarker: { _ in }
                 )
@@ -392,20 +391,14 @@ private struct RailIntermodalTransferBody: View {
     /// + a pin per transfer node, each tappable-id'd by transfer id.
     private var mapLayers: [HereMapLayer] {
         let nodes = mappableTransfers
-        let leg = nodes.compactMap { $0.nodeFix }
-        var out: [HereMapLayer] = []
-        if leg.count >= 2 {
-            out.append(.route(polyline: leg, colorHex: "#1473FF"))
-        }
-        out.append(.markers(nodes.compactMap { t in
+        return [.markers(nodes.compactMap { t in
             guard let fix = t.nodeFix else { return nil }
             return HereMarker(
                 at: fix,
                 kind: nodeKind(t),
                 label: t.facilityName ?? transferTypeLabel(t),
                 id: "\(t.id)")
-        }))
-        return out
+        })]
     }
 
     // MARK: - Transfer list

@@ -2,19 +2,16 @@
 //  HereMapView.swift
 //  EusoTrip — SwiftUI map wrapper (legacy raster API surface).
 //
-//  2026-05-29 — MAP ENGINE SWAP. This view's *public API* is unchanged
+//  This view's public API is unchanged
 //  (same `HereMapView(...)` memberwise init, same nested `Lane` /
 //  `LoadMarker` types, same stored properties), but the rendering engine
-//  is now the in-house native `BespokeMapCanvas` (SwiftUI Canvas) instead
-//  of `MKMapView` + a HERE raster-tile overlay. The HERE plan tier never
-//  served raster tiles (every request came back empty → blank grid), and
-//  the whole app is consolidating onto the single bespoke renderer.
+//  while its production renderer delegates to `HereVectorMapView`, the
+//  app-wide live HERE OMV map with labeled road and place cartography.
 //
 //  The legacy inputs are mapped onto the canonical `[HereMapLayer]`
 //  contract (HereMapWebView.swift):
 //    • `stops` (first = Pickup, last = Delivery, middle = stops)  → markers
-//    • `lanes` (pickup→delivery pairs)                            → route +
-//                                                                   pickup/
+//    • `lanes` (pickup→delivery pairs)                            → pickup/
 //                                                                   delivery
 //                                                                   markers
 //    • `markers` (one pin per load at pickup)                     → markers
@@ -24,7 +21,7 @@
 //  Camera center is derived from the data (or the supplied
 //  `initialRegion`), and dark/light follows `@Environment(\.colorScheme)`
 //  exactly as before. `onSelectMarker` is forwarded straight through to
-//  the canvas, which hit-tests taps against the marker pins.
+//  the live map, which hit-tests taps against the marker pins.
 //
 //  Only this file changed — the 022_DockAssigned yardmap caller and every
 //  other call site keep their existing `HereMapView(...)` calls verbatim.
@@ -128,15 +125,14 @@ struct HereMapView: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    // MARK: - Body (native renderer)
+    // MARK: - Body
 
     var body: some View {
-        BespokeMapCanvas(
+        HereVectorMapView(
             center: derivedCenter,
             zoom: derivedZoom,
             interactive: true,
             tilt: 0,
-            isDark: colorScheme == .dark,
             layers: buildLayers(),
             onSelectMarker: onSelectMarker
         )
@@ -182,7 +178,9 @@ struct HereMapView: View {
                 layers.append(.markers(pins))
             }
         } else {
-            // Lanes → per-lane route polyline + pickup/delivery pins.
+            // Lanes → pickup/delivery pins. Endpoints are not a route:
+            // drawing a straight segment through land or water fabricates
+            // geometry. A real decoded provider route is rendered above.
             // (Mirrors the legacy guard: lanes are only drawn when the public
             //  board `markers` surface isn't in use.)
             // Skip any lane with an un-geocoded (0,0) pickup or delivery so a
@@ -190,11 +188,6 @@ struct HereMapView: View {
             for lane in lanes {
                 let pickupOK   = !Self.isNullIsland(lane.pickup.latitude, lane.pickup.longitude)
                 let deliveryOK = !Self.isNullIsland(lane.delivery.latitude, lane.delivery.longitude)
-                if pickupOK && deliveryOK {
-                    layers.append(.route(
-                        polyline: [HereLatLng(lane.pickup), HereLatLng(lane.delivery)],
-                        colorHex: "#1473FF"))
-                }
                 var pins: [HereMarker] = []
                 if pickupOK {
                     pins.append(HereMarker(at: HereLatLng(lane.pickup),

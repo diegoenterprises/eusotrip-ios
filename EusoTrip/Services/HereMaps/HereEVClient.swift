@@ -1,6 +1,6 @@
 //
 //  HereEVClient.swift
-//  EusoTrip — REST client for HERE EV Charge Points.
+//  EusoTrip — authenticated backend client for HERE EV Charge Points.
 //
 //  Endpoint:
 //      GET https://browse.search.hereapi.com/v1/browse
@@ -24,7 +24,7 @@
 //      limit=<N>
 //      in=circle:<lat>,<lng>;r=<meters>
 //
-//  Auth: Bearer via HereBearerFetch.
+//  Provider credentials stay on the EusoTrip server.
 //
 //  Powered by ESANG AI™.
 //
@@ -146,14 +146,11 @@ struct HereChargingPoint: Decodable, Hashable {
 final class HereEVClient {
     static let shared = HereEVClient()
 
-    private let session: URLSession
-    private let decoder = JSONDecoder()
-
     /// HERE category id for EV Charging Station.
     static let categoryIdEVCharging = "700-7600-0322"
 
     init(session: URLSession = .shared) {
-        self.session = session
+        _ = session
     }
 
     func chargingStations(
@@ -161,21 +158,38 @@ final class HereEVClient {
         limit: Int = 30,
         radiusMeters: Int = 25_000
     ) async throws -> [HereBrowseItem] {
-        var comps = URLComponents(string: "https://browse.search.hereapi.com/v1/browse")!
-        comps.queryItems = [
-            URLQueryItem(name: "at", value: "\(center.latitude),\(center.longitude)"),
-            URLQueryItem(name: "in", value: "circle:\(center.latitude),\(center.longitude);r=\(radiusMeters)"),
-            URLQueryItem(name: "categories", value: Self.categoryIdEVCharging),
-            URLQueryItem(name: "show", value: "ev"),
-            URLQueryItem(name: "limit", value: String(limit)),
-        ]
-        guard let url = comps.url else { throw HereMapsError.badURL }
-
-        let data = try await HereBearerFetch.data(for: url, session: session)
-        do {
-            return try decoder.decode(HereBrowseResponse.self, from: data).items
-        } catch {
-            throw HereMapsError.decoding(String(describing: error))
+        let rows: [BackendRow] = try await EusoTripAPI.shared.query(
+            "hereMaps.evChargers",
+            input: BackendRequest(
+                at: BackendCoord(lat: center.latitude, lng: center.longitude),
+                radiusMeters: min(100_000, max(500, radiusMeters)),
+                connectorType: nil,
+                minPowerKw: nil,
+                onlyAvailable: nil,
+                limit: min(200, max(1, limit))
+            )
+        )
+        return rows.compactMap(\.raw).filter { item in
+            guard let position = item.position else { return false }
+            return HereGeocodingClient.isSane(position.latitude, position.longitude)
         }
+    }
+
+    private struct BackendCoord: Encodable {
+        let lat: Double
+        let lng: Double
+    }
+
+    private struct BackendRequest: Encodable {
+        let at: BackendCoord
+        let radiusMeters: Int
+        let connectorType: String?
+        let minPowerKw: Double?
+        let onlyAvailable: Bool?
+        let limit: Int
+    }
+
+    private struct BackendRow: Decodable {
+        let raw: HereBrowseItem?
     }
 }

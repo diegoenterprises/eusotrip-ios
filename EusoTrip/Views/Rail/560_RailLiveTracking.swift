@@ -156,7 +156,6 @@ private struct AnyCodingKey: CodingKey {
 
 private struct RailLiveTrackingBody: View {
     @Environment(\.palette) private var palette
-    @Environment(\.colorScheme) private var colorScheme
     let shipmentId: Int
     @State private var detail: RailShipmentDetail560? = nil
     @State private var tracking: RailTracking560? = nil
@@ -189,8 +188,6 @@ private struct RailLiveTrackingBody: View {
     }
 
     /// True when the AEI chain has at least one real coordinate to plot.
-    /// When false the card falls back to the decorative `RouteArc560`
-    /// (honest: no live geographic fix on file yet).
     private var hasLiveGeo: Bool { liveCarPoint != nil || !liveTrailPoints.isEmpty }
 
     private var originLabel: String {
@@ -265,17 +262,6 @@ private struct RailLiveTrackingBody: View {
             assertionFailure("RailLiveTracking.journeyProgress: unmapped consist status '\(detail?.status ?? "nil")' — add it to the ramp")
             return 0.04
         }
-    }
-
-    /// Equipment-true marker model (Wave B, 2026-06-10) — resolves the
-    /// shipment's REAL carType via the shared matcher; boxcar only as
-    /// the honest rail floor when the row carries no car type.
-    private var markerKind560: EquipmentKind {
-        EquipmentKind.resolve(
-            from: detail?.carType,
-            hazmat: (detail?.hazmatClass?.isEmpty == false),
-            modality: .rail
-        )
     }
 
     /// Latest position fix with real coordinates — the live AEI fix
@@ -381,8 +367,7 @@ private struct RailLiveTrackingBody: View {
         }
     }
 
-    // MARK: Route Arc Card — completed gradient arc + dashed continuation,
-    // bound to real journeyProgress (origin → live position → destination).
+    // MARK: Route map
 
     private var routeArcCard: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
@@ -397,25 +382,18 @@ private struct RailLiveTrackingBody: View {
                             .strokeBorder(palette.borderFaint, lineWidth: 1)
                     )
                 if hasLiveGeo {
-                    // Real AEI geography on the in-house HERE map: the scan
-                    // trail as a route line, each scan as a stop pin, and the
-                    // live car fix as the truck puck. Mirrors Vessel 003's
-                    // live-position map — real coords only, never a fabricated
-                    // arc. (Origin/destination yards carry no coordinates in
-                    // the tracking contract, so they stay as text labels below
-                    // rather than invented pins.)
                     railLiveMap
                 } else {
-                    RouteArc560(progress: journeyProgress,
-                                kind: markerKind560,
-                                palette: palette)
+                    railLocationPending
                 }
                 // Overlay chips + labels
                 VStack(alignment: .leading) {
                     HStack {
                         HStack(spacing: 6) {
-                            Circle().fill(Brand.success).frame(width: 7, height: 7)
-                            Text("LIVE · \(currentPositionLabel)")
+                            Circle()
+                                .fill(hasLiveGeo ? Brand.success : palette.textTertiary)
+                                .frame(width: 7, height: 7)
+                            Text(hasLiveGeo ? "LIVE · \(currentPositionLabel)" : "LOCATION PENDING")
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(palette.textPrimary)
                         }
@@ -443,6 +421,23 @@ private struct RailLiveTrackingBody: View {
         }
     }
 
+    private var railLocationPending: some View {
+        VStack(spacing: Space.s2) {
+            Image(systemName: "location.slash")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(LinearGradient.diagonal)
+            Text("Awaiting a verified rail location")
+                .font(EType.bodyStrong)
+                .foregroundStyle(palette.textPrimary)
+            Text("The live map will appear when the next location is reported.")
+                .font(EType.caption)
+                .foregroundStyle(palette.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(.horizontal, 48)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
     /// In-house HERE map of the live AEI position. The scan trail (events with
     /// real coords) draws as the route line; the live car fix is the truck
     /// puck. Built only when `hasLiveGeo` — every coordinate is server-real
@@ -459,12 +454,11 @@ private struct RailLiveTrackingBody: View {
         var layers: [HereMapLayer] = []
         if line.count >= 2 { layers.append(.route(polyline: line, colorHex: "#1473FF")) }
         layers.append(.markers(markers))
-        return BespokeMapCanvas(
+        return HereVectorMapView(
             center: center,
             zoom: trail.count >= 2 || car != nil ? 6 : 9,
             interactive: true,
             tilt: 0,
-            isDark: colorScheme == .dark,
             layers: layers
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
@@ -649,155 +643,6 @@ private struct RailLiveTrackingBody: View {
         let out = DateFormatter()
         out.dateFormat = "MM/dd HH:mm"
         return out.string(from: date)
-    }
-}
-
-// MARK: - Route Arc (completed gradient + dashed continuation), AAA
-
-/// The route canvas: one continuous bezier from the origin pin to the
-/// destination pin. The completed portion (origin → live position) is drawn as a
-/// solid brand-gradient stroke trimmed to the **real** `progress` fraction; the
-/// remaining portion (live position → destination) is a dashed continuation.
-/// The live marker sits exactly on the path at the progress boundary.
-///
-/// Motion:
-///   • Completed arc draws on with a decelerating spring on appear / on data
-///     change (transform-free, GPU-friendly trim animation).
-///   • Dashed remainder marches continuously and LINEARLY (a true loop — the
-///     correct case for linear), seamless via a phase that wraps the dash period.
-///   • The live marker's halo breathes gently (ambient ease-in-out loop).
-///   • Reduce-motion: final static state — arc fully drawn to `progress`, no
-///     march, no breathing.
-private struct RouteArc560: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// Real origin→destination fraction (0…1) from the data model.
-    let progress: Double
-    /// Equipment-true marker model (Wave B, 2026-06-10) — resolved by
-    /// the caller from the shipment's REAL carType via the shared
-    /// `EquipmentKind.resolve(from:)`; boxcar only as the honest rail
-    /// floor when the row carries no car type.
-    var kind: EquipmentKind = .railBoxcar
-    let palette: Theme.Palette
-
-    /// The fraction the completed arc currently animates toward; starts at 0 so
-    /// the route draws on from the origin into its true live position.
-    @State private var shown: Double = 0
-    /// Continuous marching-ants phase for the dashed remainder.
-    @State private var march = false
-    /// Ambient halo breathing.
-    @State private var breathing = false
-
-    // Dash geometry — pattern period drives the seamless march distance.
-    private let dash: [CGFloat] = [4, 5]
-    private var dashPeriod: CGFloat { dash.reduce(0, +) } // 9pt — one full cycle
-
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
-            // Anchor points in canvas space.
-            let origin = CGPoint(x: 0.10 * w, y: 0.78 * h)
-            let dest   = CGPoint(x: 0.90 * w, y: 0.58 * h)
-            // Single continuous route path origin → destination.
-            let route = Path { p in
-                p.move(to: origin)
-                p.addCurve(to: dest,
-                           control1: CGPoint(x: 0.34 * w, y: 0.34 * h),
-                           control2: CGPoint(x: 0.66 * w, y: 0.36 * h))
-            }
-            // Exact live-marker point on the path at the current shown fraction.
-            let livePoint = pointOnPath(route, at: shown) ?? origin
-
-            ZStack(alignment: .topLeading) {
-                // Dashed remainder: live position → destination (the "to go").
-                route
-                    .trim(from: shown, to: 1)
-                    .stroke(palette.textTertiary.opacity(0.5),
-                            style: StrokeStyle(lineWidth: 2, lineCap: .round,
-                                               dash: dash,
-                                               dashPhase: march ? -dashPeriod : 0))
-
-                // Completed segment: origin → live position, real progress.
-                route
-                    .trim(from: 0, to: shown)
-                    .stroke(LinearGradient.primary,
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round))
-
-                // Origin pin (filled — departed).
-                Circle().fill(LinearGradient.diagonal)
-                    .frame(width: 11, height: 11)
-                    .position(origin)
-
-                // Destination pin (hollow — pending arrival).
-                Circle().strokeBorder(palette.textTertiary, lineWidth: 2)
-                    .frame(width: 11, height: 11)
-                    .position(dest)
-
-                // Live position — breathing halo + canonical rail BOXCAR model.
-                // The car-position marker is the EusoTrip Animation Design
-                // System boxcar (Resources/Animations/Equipment/02_Rail/
-                // ..._rail_boxcar_anim.svg), rendered through the in-house
-                // native SVG engine and ridden along the route arc at the real
-                // live fraction. Replaces the plain gradient dot with the
-                // founder-approved equipment lockup so the live vehicle reads
-                // as a real rail car. The ambient halo still breathes beneath.
-                Circle().fill(LinearGradient.diagonal)
-                    .opacity(breathing ? 0.30 : 0.16)
-                    .frame(width: breathing ? 26 : 20, height: breathing ? 26 : 20)
-                    .position(livePoint)
-                Group {
-                    if let carSVG = EquipmentAnimationCache.shared.svg(for: kind) {
-                        NativeSVGView(svgString: carSVG)
-                            .frame(width: 58, height: 24)
-                    } else {
-                        // Fallback to the gradient dot if the model can't load.
-                        Circle().fill(LinearGradient.diagonal)
-                            .frame(width: 12, height: 12)
-                    }
-                }
-                .position(livePoint)
-            }
-        }
-        .onAppear { settle(); startLoops() }
-        .onChange(of: progress) { _, _ in settle() }
-        .onChange(of: reduceMotion) { _, _ in settle(); startLoops() }
-    }
-
-    /// Settle the completed arc to its real fraction.
-    private func settle() {
-        if reduceMotion {
-            shown = progress
-            return
-        }
-        // Decelerating spring — the route draws on into its true live position.
-        withAnimation(.spring(response: 0.70, dampingFraction: 0.85)) {
-            shown = progress
-        }
-    }
-
-    /// Start (or stop) the continuous ambient loops.
-    private func startLoops() {
-        guard !reduceMotion else {
-            march = false
-            breathing = false
-            return
-        }
-        // Marching ants — continuous, linear, seamless (wraps one dash period).
-        march = false
-        withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) {
-            march = true
-        }
-        // Ambient halo breathing — gentle ease-in-out, autoreverses.
-        breathing = false
-        withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
-            breathing = true
-        }
-    }
-
-    /// Exact point on `path` at fraction `t` (0…1) using a trimmed sub-path.
-    private func pointOnPath(_ path: Path, at t: Double) -> CGPoint? {
-        let clamped = min(max(t, 0.0001), 1)
-        return path.trimmedPath(from: 0, to: CGFloat(clamped)).currentPoint
     }
 }
 

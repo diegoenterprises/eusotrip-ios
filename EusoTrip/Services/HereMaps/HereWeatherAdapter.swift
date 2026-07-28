@@ -61,18 +61,12 @@ extension WeatherSnapshot {
 
         // Wind — with `units=imperial`, live v3 reports mph in
         // `windSpeed` and often omits `windSpeedMph`.
-        let windMph: Int = {
-            if let mph = obs.windSpeedMph {
-                return Int(mph.rounded())
-            }
-            if let mph = obs.windSpeed {
-                return Int(mph.rounded())
-            }
-            if let kmh = obs.windSpeedKmh {
-                return Int((kmh * 0.621371).rounded())
-            }
-            return 0
-        }()
+        guard let windMph: Int = {
+            if let mph = obs.windSpeedMph { return Int(mph.rounded()) }
+            if let mph = obs.windSpeed { return Int(mph.rounded()) }
+            if let kmh = obs.windSpeedKmh { return Int((kmh * 0.621371).rounded()) }
+            return nil
+        }() else { return nil }
 
         // Visibility — HERE returns miles in en-US, km otherwise. Nil when
         // the observation omitted it (em-dash doctrine — a fabricated 0

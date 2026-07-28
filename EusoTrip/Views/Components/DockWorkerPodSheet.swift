@@ -8,10 +8,10 @@
 //  own role surface); the worker enters their name + title +
 //  seal verification + optional notes and submits.
 //
-//  The server (`xrChecklist.dockWorkerPodCapture`) chains the
-//  resulting audit row off the driver's existing `load.pod_captured`
-//  block when one exists. The sheet surfaces `chainedToDriverPod`
-//  so the worker sees "✓ matched to driver POD" inline.
+//  The server (`xrChecklist.dockWorkerPodCapture`) restricts the
+//  action to the destination terminal, binds the live driver POD
+//  document when one exists, and appends the signed receipt to the
+//  canonical load audit chain.
 //
 //  Powered by ESANG AI™.
 //
@@ -27,13 +27,15 @@ struct DockWorkerPodInput: Encodable {
     let sealVerified: Bool
     let osdReportRef: String?
     let notes: String?
+    let attestationAccepted: Bool
 }
 
 public struct DockWorkerPodResponse: Decodable, Hashable {
     public let loadId: Int
-    public let auditId: Int?
+    public let auditId: Int
     public let observedAt: String
     public let chainedToDriverPod: Bool
+    public let driverPodDocumentId: Int?
     public let signature: XRSignatureBlock
 }
 
@@ -55,8 +57,8 @@ public struct DockWorkerPodSheet: View {
     /// from a recent OS&D capture so this POD row chains to
     /// both the driver POD and the OS&D evidence in one tree.
     public let osdReportRef: String?
-    /// Called when the audit row lands so the parent screen can
-    /// dismiss + flip its FSM gate.
+    /// Called when the receipt audit row lands so the parent can
+    /// refresh its delivery evidence.
     public let onSigned: ((DockWorkerPodResponse) -> Void)?
 
     public init(
@@ -75,6 +77,7 @@ public struct DockWorkerPodSheet: View {
     @State private var workerTitle: String = ""
     @State private var sealVerified: Bool = false
     @State private var notes: String = ""
+    @State private var attestationAccepted: Bool = false
     @State private var submitting: Bool = false
     @State private var result: DockWorkerPodResponse?
     @State private var error: String?
@@ -88,6 +91,7 @@ public struct DockWorkerPodSheet: View {
                     titleField
                     sealToggle
                     notesField
+                    attestationToggle
                     if let result {
                         verdictCard(result)
                     }
@@ -112,7 +116,11 @@ public struct DockWorkerPodSheet: View {
 
     private var canSubmit: Bool {
         let trimmed = workerName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.count >= 2 && trimmed.count <= 120 && !submitting && result == nil
+        return trimmed.count >= 2
+            && trimmed.count <= 120
+            && attestationAccepted
+            && !submitting
+            && result == nil
     }
 
     // MARK: subviews
@@ -127,7 +135,7 @@ public struct DockWorkerPodSheet: View {
                     .tracking(0.8)
             }
             .foregroundStyle(.secondary)
-            Text("Confirm load \(loadId) was received. This signature chains off the driver's POD on the audit ledger.")
+            Text("Confirm load \(loadId) was received. Your signed receipt is recorded on the load audit ledger and linked to the driver's POD when one exists.")
                 .font(.callout)
                 .foregroundStyle(.primary)
         }
@@ -187,6 +195,23 @@ public struct DockWorkerPodSheet: View {
         }
     }
 
+    private var attestationToggle: some View {
+        Toggle(isOn: $attestationAccepted) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("I am authorized to sign for the receiver")
+                    .font(.callout.weight(.semibold))
+                Text("I attest that the name, seal result, and receipt details entered above are accurate.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color(.secondarySystemBackground))
+        )
+    }
+
     private var submitButton: some View {
         Button {
             Task { await submit() }
@@ -210,7 +235,7 @@ public struct DockWorkerPodSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: "checkmark.seal.fill")
                     .foregroundStyle(Color.green)
-                Text("POD signed")
+                Text("Receiver receipt signed")
                     .font(.headline)
                     .foregroundStyle(Color.green)
                 Spacer()
@@ -230,11 +255,9 @@ public struct DockWorkerPodSheet: View {
                         .foregroundStyle(Color.orange)
                 }
             }
-            if let id = resp.auditId {
-                Text("Audit row #\(id) · Ed25519 verified")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.tertiary)
-            }
+            Text("Audit row #\(resp.auditId) · Ed25519 verified")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.tertiary)
         }
         .padding(12)
         .background(
@@ -261,7 +284,8 @@ public struct DockWorkerPodSheet: View {
             sealVerified: sealVerified,
             osdReportRef: osdReportRef,
             notes: notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                ? nil : notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                ? nil : notes.trimmingCharacters(in: .whitespacesAndNewlines),
+            attestationAccepted: true
         )
         do {
             let resp: DockWorkerPodResponse = try await EusoTripAPI.shared

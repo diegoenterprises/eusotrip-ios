@@ -292,11 +292,10 @@ private struct RailBorderCrossingETABody: View {
                     .foregroundStyle(palette.textSecondary)
                     .lineLimit(1).minimumScaleFactor(0.7)
             }
-            BespokeMapCanvas(
+            HereVectorMapView(
                 center: node,
                 zoom: 9,
                 tilt: 0,
-                isDark: colorScheme == .dark,
                 layers: [
                     .markers([
                         HereMarker(at: node, kind: .stop,

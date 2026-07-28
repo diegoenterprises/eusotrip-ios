@@ -386,28 +386,24 @@ struct CatalystMatchDetail: View {
         if let coords = laneCoords(l) {
             let midLat = (coords.pickupLat + coords.deliveryLat) / 2
             let midLng = (coords.pickupLng + coords.deliveryLng) / 2
-            let straight: [HereLatLng] = [
-                .init(coords.pickupLat, coords.pickupLng),
-                .init(coords.deliveryLat, coords.deliveryLng)
-            ]
-            // Prefer the decoded HERE Routing v8 section polyline (real
-            // road geometry fetched in `refreshRoutePolyline`); fall back
-            // to the straight pickup→delivery line only until it lands.
-            let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : straight
+            let mode = TransportMode(rawValue: l.transportMode ?? "truck") ?? .truck
+            let line: [HereLatLng] = mode == .truck && routePolyline.count >= 2
+                ? routePolyline : []
+            let markerLayer = HereMapLayer.markers([
+                .init(at: .init(coords.pickupLat, coords.pickupLng),
+                      kind: .pickup, label: coords.originTitle),
+                .init(at: .init(coords.deliveryLat, coords.deliveryLng),
+                      kind: .delivery, label: coords.destinationTitle)
+            ])
+            let mapLayers: [HereMapLayer] = line.count >= 2
+                ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
+                : [markerLayer]
             HereLiveMapView(
                 center: .init(midLat, midLng),
                 zoom: 6,
                 route: line,
-                baseLayers: [
-                    .route(polyline: line, colorHex: "#1473FF"),
-                    .markers([
-                        .init(at: .init(coords.pickupLat, coords.pickupLng),
-                              kind: .pickup, label: coords.originTitle),
-                        .init(at: .init(coords.deliveryLat, coords.deliveryLng),
-                              kind: .delivery, label: coords.destinationTitle)
-                    ])
-                ],
-                addOns: .shipperTracking
+                baseLayers: mapLayers,
+                addOns: mode == .truck ? .shipperTracking : .weather
             )
             .frame(height: 200)
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
@@ -473,9 +469,8 @@ struct CatalystMatchDetail: View {
     /// `.standardUSSemiLoaded` profile (this surface holds a
     /// `LoadDetail`, the same default `HereRoutingClient` applies). On
     /// any failure (missing coords, HERE error) the polyline stays empty
-    /// and the map keeps the straight pickup→delivery base line — never
-    /// a fabricated path. Water modes (vessel / barge) are skipped: an
-    /// ocean leg is a great circle, not a road route.
+    /// and the map remains marker-only. Rail and water modes are skipped;
+    /// they require their own routing providers.
     @MainActor
     private func refreshRoutePolyline() async {
         guard let live = detailStore.state.value ?? nil else {
@@ -483,7 +478,7 @@ struct CatalystMatchDetail: View {
             return
         }
         let mode = TransportMode(rawValue: live.transportMode ?? "truck") ?? .truck
-        guard mode != .vessel, mode != .barge,
+        guard mode == .truck,
               let coords = laneCoords(live) else {
             routePolyline = []
             return

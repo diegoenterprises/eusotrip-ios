@@ -456,7 +456,12 @@ private struct MeHomeBody: View {
         LifecycleCard(accentGradient: true) {
             LifecycleSection(label: "TIER", icon: "rosette")
             LifecycleRow(label: "Total loads",        value: "\(s.totalLoads)")
-            LifecycleRow(label: "Total spend",        value: "$\(s.totalSpend)")
+            LifecycleRow(
+                label: "Total spend",
+                value: s.totalSpend.formatted(
+                    .currency(code: "USD").precision(.fractionLength(0))
+                )
+            )
             LifecycleRow(label: "On-time delivery",   value: "\(s.onTimeDeliveryRate)%")
             LifecycleRow(label: "Preferred catalysts", value: "\(s.preferredCatalysts)")
         }

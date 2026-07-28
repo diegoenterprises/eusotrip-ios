@@ -109,8 +109,7 @@ struct LoadDetailSheet: View {
     /// REAL curved road geometry (pickup→delivery via the actual highway
     /// network), not the straight 2-point segment that used to render.
     /// `[]` until `refreshRoutePolyline()` resolves, on any HERE error, or
-    /// on a water leg (vessel/barge) — in which cases the map honestly
-    /// falls back to the straight pickup→delivery base line. Mirrors the
+    /// on a non-truck leg — in which cases the map remains marker-only. Mirrors the
     /// LifecycleScaffold `refreshRoutePolyline` pattern. Because this is a
     /// SHARED component, every surface that presents `LoadDetailSheet` now
     /// gets road-following polylines.
@@ -405,15 +404,14 @@ struct LoadDetailSheet: View {
     /// barge) — an ocean / river leg is a great circle, not a road route —
     /// and gated behind the same `routeCoordinatesAreReal` honesty check the
     /// map uses, so a centroid-miss lane never fires a malformed request. On
-    /// any failure the polyline stays empty and the map keeps the straight
-    /// pickup→delivery base line.
+    /// any failure the polyline stays empty and the map remains marker-only.
     @MainActor
     private func refreshRoutePolyline() async {
         let detail = routeDetailLoad
         let routeMode = TransportMode(rawValue: detail.transportMode ?? "truck") ?? .truck
-        // Water legs (vessel / barge) are great-circle, not road routes —
-        // skip the HERE truck-routing fetch entirely, like LifecycleScaffold.
-        guard routeMode != .vessel, routeMode != .barge else {
+        // Rail and water legs require their own routing providers; never
+        // disguise truck geometry as a rail or marine route.
+        guard routeMode == .truck else {
             routePolyline = []
             return
         }
@@ -630,14 +628,16 @@ struct LoadDetailSheet: View {
             // and center the camera on a fake midpoint. Gate it out and show
             // a placeholder instead of a confident-but-fake route.
             if routeCoordinatesAreReal(pickup: lane.pickup, delivery: lane.delivery) {
-                // Feed the REAL decoded HERE corridor when it's resolved
-                // (≥2 pts); fall back to the straight pickup→delivery
-                // segment ONLY while the route is still loading / a water
-                // leg / HERE was unavailable. Honest: the straight line is
-                // a fallback, never the default.
-                let line: [HereLatLng] = routePolyline.count >= 2
-                    ? routePolyline
-                    : [.init(lane.pickup), .init(lane.delivery)]
+                let routeMode = TransportMode(rawValue: detail.transportMode ?? "truck") ?? .truck
+                let line: [HereLatLng] = routeMode == .truck && routePolyline.count >= 2
+                    ? routePolyline : []
+                let markerLayer = HereMapLayer.markers([
+                    .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
+                    .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
+                ])
+                let mapLayers: [HereMapLayer] = line.count >= 2
+                    ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
+                    : [markerLayer]
                 ZStack(alignment: .bottomLeading) {
                     // 2026-05-22: migrated off the legacy raster HereMapView onto
                     // the OMV vector renderer + live add-on layer (HereLiveMapView),
@@ -651,17 +651,8 @@ struct LoadDetailSheet: View {
                         ),
                         zoom: 6,
                         route: line,
-                        baseLayers: [
-                            .route(
-                                polyline: line,
-                                colorHex: "#1473FF"
-                            ),
-                            .markers([
-                                .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
-                                .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
-                            ])
-                        ],
-                        addOns: .shipperTracking
+                        baseLayers: mapLayers,
+                        addOns: routeMode == .truck ? .shipperTracking : .weather
                     )
                         .frame(height: 200)
                         .clipShape(RoundedRectangle(cornerRadius: Radius.md,

@@ -1,14 +1,9 @@
 //
 //  HereGeocodingClient.swift
-//  EusoTrip — REST client for HERE Geocoding & Search v7
+//  EusoTrip — authenticated backend client for HERE Geocoding & Search v7
 //
-//  Endpoints:
-//    GET https://geocode.search.hereapi.com/v1/geocode?q=<address>
-//    GET https://revgeocode.search.hereapi.com/v1/revgeocode?at=<lat,lng>
-//    GET https://autosuggest.search.hereapi.com/v1/autosuggest?q=<partial>&at=<lat,lng>
-//
-//  Auth: `Authorization: Bearer <token>` (OAuth2 via HEREAuthService).
-//  No apikey query string.
+//  Provider credentials stay on the EusoTrip server. The app calls the typed
+//  hereMaps.geocode / reverseGeocode / autosuggest procedures.
 //
 //  Docs: https://developer.here.com/documentation/geocoding-search-api/
 //
@@ -22,12 +17,8 @@ actor HereGeocodingClient {
 
     static let shared = HereGeocodingClient()
 
-    private let session: URLSession
-    private let decoder: JSONDecoder
-
     init(session: URLSession = .shared) {
-        self.session = session
-        self.decoder = JSONDecoder()
+        _ = session
     }
 
     // MARK: - Forward geocoding (address → lat/lng)
@@ -39,42 +30,30 @@ actor HereGeocodingClient {
     func geocode(query: String,
                  near: CLLocationCoordinate2D? = nil,
                  limit: Int = 5) async throws -> [HereGeocodeItem] {
-        var comps = URLComponents(url: HereMapsConfig.geocodeBaseURL, resolvingAgainstBaseURL: false)!
-        var items: [URLQueryItem] = [
-            URLQueryItem(name: "q",      value: query),
-            URLQueryItem(name: "limit",  value: String(limit)),
-        ]
-        if let near {
-            items.append(URLQueryItem(name: "at", value: HereRoutingClient.fmt(near)))
-        }
-        comps.queryItems = items
-
-        guard let url = comps.url else { throw HereMapsError.badURL }
-        let data = try await authorizedData(for: url)
-        do {
-            return try decoder.decode(HereGeocodeResponse.self, from: data).items
-        } catch {
-            throw HereMapsError.decoding(String(describing: error))
-        }
+        let response: BackendGeocodeResponse = try await EusoTripAPI.shared.query(
+            "hereMaps.geocode",
+            input: BackendGeocodeInput(
+                query: query,
+                at: near.map(BackendCoord.init),
+                country: nil,
+                limit: min(20, max(1, limit))
+            )
+        )
+        guard response.ok else { return [] }
+        return response.items ?? []
     }
 
     // MARK: - Reverse geocoding (lat/lng → address)
 
     func reverseGeocode(at coordinate: CLLocationCoordinate2D,
                         limit: Int = 1) async throws -> [HereGeocodeItem] {
-        var comps = URLComponents(url: HereMapsConfig.reverseGeocodeBaseURL,
-                                  resolvingAgainstBaseURL: false)!
-        comps.queryItems = [
-            URLQueryItem(name: "at",     value: HereRoutingClient.fmt(coordinate)),
-            URLQueryItem(name: "limit",  value: String(limit)),
-        ]
-        guard let url = comps.url else { throw HereMapsError.badURL }
-        let data = try await authorizedData(for: url)
-        do {
-            return try decoder.decode(HereGeocodeResponse.self, from: data).items
-        } catch {
-            throw HereMapsError.decoding(String(describing: error))
-        }
+        _ = limit
+        let response: BackendGeocodeResponse = try await EusoTripAPI.shared.query(
+            "hereMaps.reverseGeocode",
+            input: BackendCoord(coordinate)
+        )
+        guard response.ok else { return [] }
+        return response.items ?? []
     }
 
     // MARK: - Autosuggest (address picker)
@@ -83,20 +62,16 @@ actor HereGeocodingClient {
     func autosuggest(query: String,
                      near: CLLocationCoordinate2D,
                      limit: Int = 8) async throws -> [HereGeocodeItem] {
-        var comps = URLComponents(url: HereMapsConfig.autosuggestBaseURL,
-                                  resolvingAgainstBaseURL: false)!
-        comps.queryItems = [
-            URLQueryItem(name: "q",      value: query),
-            URLQueryItem(name: "at",     value: HereRoutingClient.fmt(near)),
-            URLQueryItem(name: "limit",  value: String(limit)),
-        ]
-        guard let url = comps.url else { throw HereMapsError.badURL }
-        let data = try await authorizedData(for: url)
-        do {
-            return try decoder.decode(HereGeocodeResponse.self, from: data).items
-        } catch {
-            throw HereMapsError.decoding(String(describing: error))
-        }
+        let items: [HereGeocodeItem] = try await EusoTripAPI.shared.query(
+            "hereMaps.autosuggest",
+            input: BackendAutosuggestInput(
+                query: query,
+                anchor: BackendCoord(near),
+                country: nil,
+                limit: min(20, max(1, limit))
+            )
+        )
+        return items
     }
 
     // MARK: - Confirming resolve (lock real coords to the chosen place)
@@ -316,53 +291,34 @@ actor HereGeocodingClient {
         return r * 2 * atan2(sqrt(h), sqrt(1 - h))
     }
 
-    // MARK: - Helpers
+    private struct BackendCoord: Encodable {
+        let lat: Double
+        let lng: Double
 
-    /// GET `url` with `Authorization: Bearer <token>`. On HTTP 401, invalidate
-    /// the cached token and retry once before surfacing the error.
-    ///
-    /// RATE-LIMIT GATE: geocoding has its own 401 recipe (bypasses
-    /// `HereBearerFetch`), so it pages through `HereRateLimiter.shared`
-    /// directly for the same paced slot + deterministic 429 backoff.
-    private func authorizedData(for url: URL) async throws -> Data {
-        let lastRetryAfter = GeocodeRetryAfterBox()
-
-        return try await HereRateLimiter.shared.runData(
-            retryAfterFor: { _ in lastRetryAfter.seconds }
-        ) { [session] in
-            func attempt() async throws -> (Data, HTTPURLResponse) {
-                let token = try await HereMapsConfig.requireBearerToken()
-                var req = URLRequest(url: url)
-                req.timeoutInterval = 20  // app-wide no-lingering-load bound
-                req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-                let (data, resp) = try await session.data(for: req)
-                guard let http = resp as? HTTPURLResponse else {
-                    throw HereMapsError.providerError("No HTTP response")
-                }
-                return (data, http)
-            }
-
-            var (data, http) = try await attempt()
-            if http.statusCode == 401 {
-                await HEREAuthService.shared.invalidate()
-                (data, http) = try await attempt()
-            }
-            guard (200..<300).contains(http.statusCode) else {
-                if http.statusCode == 429 {
-                    lastRetryAfter.seconds = HereRateLimiter.retryAfterSeconds(from: http)
-                }
-                let body = String(data: data, encoding: .utf8) ?? ""
-                throw HereMapsError.http(http.statusCode, body)
-            }
-            return data
+        init(_ coordinate: CLLocationCoordinate2D) {
+            lat = coordinate.latitude
+            lng = coordinate.longitude
         }
     }
-}
 
-/// Carries a 429 `Retry-After` out of one gated geocode fetch into the
-/// limiter's backoff hook. Confined to a single `runData` call.
-private final class GeocodeRetryAfterBox: @unchecked Sendable {
-    var seconds: TimeInterval?
+    private struct BackendGeocodeInput: Encodable {
+        let query: String
+        let at: BackendCoord?
+        let country: String?
+        let limit: Int?
+    }
+
+    private struct BackendAutosuggestInput: Encodable {
+        let query: String
+        let anchor: BackendCoord
+        let country: String?
+        let limit: Int?
+    }
+
+    private struct BackendGeocodeResponse: Decodable {
+        let ok: Bool
+        let items: [HereGeocodeItem]?
+    }
 }
 
 // MARK: - Bridge to LoadLocation

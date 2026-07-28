@@ -17,10 +17,10 @@
 //      `js.api.here.com` (HERE's own CDN, which is not whitelisted and
 //      403'd every tile → blank map).
 //
-//   2. DARK MODE. Picks `normal.night` vs `normal.day` OMV style from the
-//      SwiftUI color scheme. The old "night returns 403, use day for both"
-//      hack was a symptom of the referrer bug — with the referrer fixed,
-//      night tiles return 200.
+//   2. SUPPORTED BASE LAYERS. Uses `Platform.createDefaultLayers`, matching
+//      HERE's maintained JavaScript examples. Day uses the labeled vector
+//      layer; dark uses the labeled raster night layer at this account's
+//      verified `ppi=200`. No private style URL or hand-built OMV provider.
 //
 //  Layer model: a screen declares what it wants via `[HereMapLayer]`
 //  (heatmap / markers / route polyline / ad-zone polygons / mission pins /
@@ -56,6 +56,15 @@ public struct HereLatLng: Hashable, Codable, Sendable {
     }
     public init(_ c: CLLocationCoordinate2D, weight: Double? = nil) {
         self.lat = c.latitude; self.lng = c.longitude; self.weight = weight
+    }
+
+    /// Only real WGS-84 coordinates may reach the map renderer. `(0,0)` is
+    /// treated as the platform's missing-geocode sentinel, never a place.
+    var isUsableCoordinate: Bool {
+        lat.isFinite && lng.isFinite
+            && (-90...90).contains(lat)
+            && (-180...180).contains(lng)
+            && !(lat == 0 && lng == 0)
     }
 }
 
@@ -121,16 +130,9 @@ public enum HereMapLayer: Hashable {
 
 // MARK: - SwiftUI entry point
 
-/// The OMV **vector** HERE map every surface should use.
-///
-/// Named `HereVectorMapView` (NOT `HereMapView`) deliberately: the legacy
-/// `Views/Components/HereMapView.swift` is an MKMapView + HERE **raster**
-/// tile overlay, and the EusoTrip HERE plan does NOT serve raster tiles
-/// (Maps Tile API v3) — every raster request comes back empty, which is
-/// the blank grid on Live Tracking / Control Tower. This component renders
-/// the SAME OMV vector tiles the web platform uses (which the plan DOES
-/// serve) via the JS SDK, with the referrer fix + native dark/light.
-/// Migrate call sites off the raster `HereMapView` onto this.
+/// The live labeled HERE map every surface should use. Its public name is
+/// retained for source compatibility; the supported HERE default layer stack
+/// selects vector day or raster night cartography by appearance.
 ///
 /// ```swift
 /// HereVectorMapView(
@@ -148,10 +150,8 @@ public struct HereVectorMapView: View {
     let interactive: Bool
     let tilt: Double
     let layers: [HereMapLayer]
-    /// Cartography register hint forwarded to `BespokeMapCanvas`. Defaults to
-    /// `.auto` so every existing caller compiles + renders unchanged; a screen
-    /// passes `.geothermal` to turn its `.heatmap(points:)` layer into the
-    /// continuous blue→red geothermal field (Hot Zones demand surfaces).
+    /// Cartography hint retained for non-UIKit previews. Production iOS uses
+    /// HERE's base layer plus the declared live overlays.
     let styleHint: BespokeMapStyleHint
     let onSelectMarker: ((String) -> Void)?
 
@@ -174,16 +174,24 @@ public struct HereVectorMapView: View {
     }
 
     public var body: some View {
-        // 2026-05-29: map engine swapped WKWebView → the in-house native
-        // `BespokeMapCanvas` (SwiftUI Canvas, no WebKit). The public init +
-        // stored props are unchanged, so every one of the 16 caller screens
-        // keeps working verbatim — only the renderer behind `body` changed.
-        // The legacy `HereMapWebViewRepresentable` + `buildHTML` are kept
-        // below (now private/unused) for reference and quick rollback.
-        // `styleHint` flows into the hinted BespokeMapCanvas init so a
-        // `.geothermal` request lights up the continuous heat field.
+        #if canImport(UIKit)
+        // Live HERE OMV is the production renderer. It supplies the road,
+        // highway, street, city, state, and country labels that an abstract
+        // canvas cannot truthfully reproduce from route endpoints alone.
+        HereMapWebViewRepresentable(
+            center: resolvedCenter,
+            zoom: zoom,
+            interactive: interactive,
+            tilt: tilt,
+            isDark: colorScheme == .dark,
+            layers: layers,
+            onSelectMarker: onSelectMarker
+        )
+        #else
+        // SwiftUI previews on hosts without UIKit retain the deterministic
+        // native renderer; production iOS never takes this branch.
         BespokeMapCanvas(
-            center: center,
+            center: resolvedCenter,
             zoom: zoom,
             interactive: interactive,
             tilt: tilt,
@@ -192,18 +200,39 @@ public struct HereVectorMapView: View {
             style: styleHint,
             onSelectMarker: onSelectMarker
         )
+        #endif
+    }
+
+    /// Prefer the caller's real camera, then the first usable layer point.
+    /// The final value is a neutral world frame, not a fabricated asset
+    /// location, and still renders HERE's labeled global cartography.
+    private var resolvedCenter: HereLatLng {
+        if center.isUsableCoordinate { return center }
+        for layer in layers {
+            switch layer {
+            case .heatmap(let points), .route(let points, _):
+                if let point = points.first(where: \.isUsableCoordinate) { return point }
+            case .markers(let markers), .missionPins(let markers):
+                if let point = markers.map(\.at).first(where: \.isUsableCoordinate) { return point }
+            case .adZones(let polygons):
+                if let point = polygons.lazy.flatMap(\.ring).first(where: \.isUsableCoordinate) {
+                    return point
+                }
+            case .geofenceRing(let center, _, _, _):
+                if center.isUsableCoordinate { return center }
+            case .trafficFlow(let segments):
+                if let point = segments.lazy.flatMap(\.polyline).first(where: \.isUsableCoordinate) {
+                    return point
+                }
+            }
+        }
+        return HereLatLng(20, 0)
     }
 }
 
 #if canImport(UIKit)
 
-// MARK: - UIViewRepresentable bridge (LEGACY — no longer wired)
-//
-// 2026-05-29: `HereVectorMapView.body` now renders `BespokeMapCanvas`
-// (native SwiftUI Canvas) instead of this WKWebView bridge. The type is
-// kept (marked `private`, unreferenced) for reference + fast rollback;
-// it intentionally has no remaining call sites. Delete freely once the
-// native renderer has soaked in production.
+// MARK: - UIViewRepresentable bridge
 
 private struct HereMapWebViewRepresentable: UIViewRepresentable {
     let center: HereLatLng
@@ -233,6 +262,9 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         webView.backgroundColor = .clear
         webView.scrollView.isScrollEnabled = interactive
         context.coordinator.webView = webView
+        context.coordinator.lastIsDark = isDark
+        context.coordinator.lastCameraKey = Self.cameraKey(
+            center: center, zoom: zoom, tilt: tilt)
 
         let html = Self.buildHTML(
             apiKey: HereMapsConfig.jsApiKey,
@@ -255,6 +287,15 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             context.coordinator.lastIsDark = isDark
             webView.evaluateJavaScript("window.__setDark && window.__setDark(\(isDark ? "true" : "false"));")
         }
+        let cameraKey = Self.cameraKey(center: center, zoom: zoom, tilt: tilt)
+        if context.coordinator.lastCameraKey != cameraKey {
+            context.coordinator.lastCameraKey = cameraKey
+            let cameraJS = "window.__setCamera && window.__setCamera(\(center.lat),\(center.lng),\(zoom),\(tilt));"
+            context.coordinator.pendingCameraJS = cameraJS
+            if context.coordinator.mapReady {
+                webView.evaluateJavaScript(cameraJS)
+            }
+        }
         // Push layer data once the map signals ready (or immediately if it is).
         let payload = Self.encodeLayers(layers)
         context.coordinator.pendingLayerJSON = payload
@@ -273,6 +314,8 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         weak var webView: WKWebView?
         var mapReady = false
         var lastIsDark: Bool?
+        var lastCameraKey: String?
+        var pendingCameraJS: String?
         var pendingLayerJSON = "{}"
         var onSelectMarker: ((String) -> Void)?
 
@@ -280,6 +323,9 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             switch message.name {
             case "mapReady":
                 mapReady = true
+                if let pendingCameraJS {
+                    webView?.evaluateJavaScript(pendingCameraJS)
+                }
                 webView?.evaluateJavaScript("window.__applyLayers && window.__applyLayers(\(pendingLayerJSON));")
             case "markerTap":
                 if let id = message.body as? String, !id.isEmpty {
@@ -292,6 +338,10 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             default: break
             }
         }
+    }
+
+    private static func cameraKey(center: HereLatLng, zoom: Int, tilt: Double) -> String {
+        "\(center.lat),\(center.lng),\(zoom),\(tilt)"
     }
 
     // MARK: Layer JSON
@@ -307,9 +357,11 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         for layer in layers {
             switch layer {
             case .heatmap(let pts):
-                heatmap = pts.map { ["lat": $0.lat, "lng": $0.lng, "value": $0.weight ?? 1.0] }
+                heatmap = pts
+                    .filter(\.isUsableCoordinate)
+                    .map { ["lat": $0.lat, "lng": $0.lng, "value": $0.weight ?? 1.0] }
             case .markers(let ms), .missionPins(let ms):
-                markers.append(contentsOf: ms.map { m in
+                markers.append(contentsOf: ms.filter(\.at.isUsableCoordinate).map { m in
                     // Every pin is tappable: synthesize a stable id when the
                     // caller didn't supply one (kind + rounded coords).
                     let mid = (m.id?.isEmpty == false)
@@ -319,21 +371,38 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                             "label": m.label ?? "", "id": mid]
                 })
             case .route(let poly, let hex):
-                routes.append(["color": hex, "pts": poly.map { ["lat": $0.lat, "lng": $0.lng] }])
+                let points = poly.filter(\.isUsableCoordinate)
+                if points.count >= 2 {
+                    routes.append(["color": hex, "pts": points.map { ["lat": $0.lat, "lng": $0.lng] }])
+                }
             case .adZones(let polys):
-                polygons.append(contentsOf: polys.map { p in
-                    ["fill": p.fillHex, "opacity": p.opacity, "label": p.label ?? "",
-                     "ring": p.ring.map { ["lat": $0.lat, "lng": $0.lng] }]
+                polygons.append(contentsOf: polys.compactMap { p in
+                    let ring = p.ring.filter(\.isUsableCoordinate)
+                    guard ring.count >= 3 else { return nil }
+                    return [
+                        "fill": p.fillHex,
+                        "opacity": p.opacity,
+                        "label": p.label ?? "",
+                        "ring": ring.map { ["lat": $0.lat, "lng": $0.lng] },
+                    ]
                 })
             case .geofenceRing(let center, let radius, let kind, let breach):
+                guard center.isUsableCoordinate, radius.isFinite, radius > 0 else { continue }
                 var f: [String: Any] = ["lat": center.lat, "lng": center.lng,
                                         "radius": radius, "kind": kind.rawValue]
-                if let b = breach { f["breachLat"] = b.lat; f["breachLng"] = b.lng }
+                if let b = breach, b.isUsableCoordinate {
+                    f["breachLat"] = b.lat
+                    f["breachLng"] = b.lng
+                }
                 fences.append(f)
             case .trafficFlow(let segs):
-                traffic.append(contentsOf: segs.map { s in
-                    ["severity": s.severity.rawValue,
-                     "pts": s.polyline.map { ["lat": $0.lat, "lng": $0.lng] }]
+                traffic.append(contentsOf: segs.compactMap { s in
+                    let points = s.polyline.filter(\.isUsableCoordinate)
+                    guard points.count >= 2 else { return nil }
+                    return [
+                        "severity": s.severity.rawValue,
+                        "pts": points.map { ["lat": $0.lat, "lng": $0.lng] },
+                    ]
                 })
             }
         }
@@ -377,15 +446,18 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
         <script src="https://js.api.here.com/v3/3.1/mapsjs-service.js"></script>
         <script src="https://js.api.here.com/v3/3.1/mapsjs-ui.js"></script>
         <script src="https://js.api.here.com/v3/3.1/mapsjs-data.js"></script>
-        <!-- HARP engine module (3.1). REQUIRED for OMV vector tiles to render
-             their full style INCLUDING place LABELS (state / city / street).
-             Without HARP the default engine drew geometry but no text. -->
-        <script src="https://js.api.here.com/v3/3.1/mapsjs-harp.js"></script>
+        <script src="https://js.api.here.com/v3/3.1/mapsjs-mapevents.js"></script>
         </head><body><div id="map"></div><script>
         (function(){
           function log(m){ try{ window.webkit.messageHandlers.hzLog.postMessage(String(m)); }catch(e){} }
           var map, behavior, platform, heatLayer=null, objLayer=null;
           var dark = \(isDark ? "true" : "false");
+          var cameraTilt = \(tilt);
+          var lastRouteSignature = "";
+          function showError(){
+            var el=document.getElementById("map");
+            if(el){ el.innerHTML='<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#fff;opacity:.72;font:12px -apple-system;text-align:center;padding:18px">Map unavailable. Check your connection and try again.</div>'; }
+          }
           // Animated map fx (fence pulses / breach exitPulse / pilot-ground
           // dashoffset) — one shared timer, rebuilt on every __applyLayers.
           var fx = [], fxTimer = null;
@@ -399,46 +471,28 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             }, 80);
           }
 
-          function styleUrl(d){
-            return d ? "https://js.api.here.com/v3/3.1/styles/omv/normal.night.yaml"
-                     : "https://js.api.here.com/v3/3.1/styles/omv/normal.day.yaml";
-          }
           function buildBase(d){
             try{
-              var omv = platform.getOMVService({ path: "v2/vectortiles/core/mc" });
-              var style = new H.map.render.Style(styleUrl(d));
-              var prov = new H.service.omv.Provider(omv, style);
-              return new H.map.layer.TileLayer(prov, { tileSize: 512 });
-            }catch(e){ log("base err "+e);
-              try{ var dl=platform.createDefaultLayers({tileSize:512,ppi:400});
-                   return (d&&dl.vector.normal.mapnight)?dl.vector.normal.mapnight:dl.vector.normal.map; }
-              catch(e2){ return null; } }
+              var dl=platform.createDefaultLayers({tileSize:512,ppi:200});
+              if(d && dl.raster && dl.raster.normal && dl.raster.normal.mapnight){
+                return dl.raster.normal.mapnight;
+              }
+              if(dl.vector && dl.vector.normal && dl.vector.normal.map){
+                return dl.vector.normal.map;
+              }
+              if(dl.raster && dl.raster.normal){ return dl.raster.normal.map; }
+              return null;
+            }catch(e){ log("base err "+e); return null; }
           }
 
           try{
             platform = new H.service.Platform({ apikey: "\(apiKey)" });
             var base = buildBase(dark);
-            if(!base){ document.getElementById("map").innerHTML='<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#fff;opacity:.5;font:11px -apple-system">basemap unavailable</div>'; return; }
+            if(!base){ showError(); return; }
 
-            // HARP is the ONLY 3.1 engine that renders OMV vector labels
-            // (state / city / street). The OMV provider + H.map.render.Style
-            // stack already renders geometry, so it is HARP-compatible; we just
-            // had no engine selected, so text never drew. Double-guarded: only
-            // request HARP when the module loaded, AND if HARP map creation
-            // throws, retry with the default engine so maps NEVER go blank.
             var baseOpts = { center:{lat:\(centerLat),lng:\(centerLng)}, zoom:\(zoom), pixelRatio: window.devicePixelRatio||1 };
             var el = document.getElementById("map");
-            if (H.Map.EngineType && H.Map.EngineType.HARP) {
-              try {
-                var harpOpts = { center: baseOpts.center, zoom: baseOpts.zoom, pixelRatio: baseOpts.pixelRatio, engineType: H.Map.EngineType.HARP };
-                map = new H.Map(el, base, harpOpts);
-              } catch(eh) {
-                log("harp engine failed, default fallback: "+eh);
-                map = new H.Map(el, base, baseOpts);
-              }
-            } else {
-              map = new H.Map(el, base, baseOpts);
-            }
+            map = new H.Map(el, base, baseOpts);
             window.addEventListener("resize", function(){ map.getViewPort().resize(); });
             behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
             \(dragFlags)
@@ -450,6 +504,15 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             // Dark/light flip without reload — swap the base layer's style.
             window.__setDark = function(d){
               try{ dark=d; var nb=buildBase(d); if(nb){ map.setBaseLayer(nb); } }catch(e){ log("setDark "+e); }
+            };
+
+            window.__setCamera = function(lat,lng,z,t){
+              try{
+                cameraTilt = Number(t)||0;
+                map.setCenter({lat:Number(lat),lng:Number(lng)}, true);
+                map.setZoom(Number(z), true);
+                if(map.getViewModel){ map.getViewModel().setLookAtData({tilt:cameraTilt}); }
+              }catch(e){ log("setCamera "+e); }
             };
 
             function clearObjects(){ if(objLayer){ map.removeObjects(map.getObjects()); } }
@@ -543,6 +606,25 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
                   }catch(e){ grp.addObject(new H.map.Marker({lat:m.lat,lng:m.lng})); }
                 });
                 if(grp.getObjects().length){ map.addObject(grp); }
+
+                // Fit a newly supplied route once. Add-on refreshes reuse the
+                // same signature, so they do not keep stealing the camera
+                // after the user pans or zooms. First-person navigation keeps
+                // its authored camera instead of fitting the whole trip.
+                var routeSig = "";
+                if(L.routes && L.routes.length){
+                  routeSig = L.routes.map(function(r){
+                    var p=r.pts||[], a=p[0]||{}, b=p[p.length-1]||{};
+                    return p.length+":"+a.lat+","+a.lng+":"+b.lat+","+b.lng;
+                  }).join("|");
+                }
+                if(routeSig && routeSig!==lastRouteSignature && cameraTilt<=1){
+                  lastRouteSignature=routeSig;
+                  try{
+                    var bounds=grp.getBoundingBox();
+                    if(bounds){ map.getViewModel().setLookAtData({bounds:bounds}); }
+                  }catch(e){ log("fit route "+e); }
+                }
                 startFx();
               }catch(e){ log("applyLayers "+e); }
             };
@@ -722,7 +804,7 @@ private struct HereMapWebViewRepresentable: UIViewRepresentable {
             }
 
             try{ window.webkit.messageHandlers.mapReady.postMessage("ok"); }catch(e){}
-          }catch(err){ log("init "+err); }
+          }catch(err){ showError(); log("init "+err); }
         })();
         </script></body></html>
         """

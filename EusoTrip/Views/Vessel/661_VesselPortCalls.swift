@@ -494,14 +494,13 @@ private struct VesselPortCallsBody: View {
             .padding(.bottom, 10)
 
             if let center = vm.mapCenter, vm.hasMappablePorts {
-                BespokeMapCanvas(
+                HereVectorMapView(
                     center: center,
                     zoom: vm.mapZoom,
                     interactive: true,
                     tilt: 0,
-                    isDark: colorScheme == .dark,
                     layers: rotationLayers,
-                    style: .ocean,
+                    styleHint: .ocean,
                     onSelectMarker: { _ in }     // informational pins — no handler nav
                 )
                 .frame(height: 230)
@@ -530,21 +529,15 @@ private struct VesselPortCallsBody: View {
         }
     }
 
-    /// Ocean-register layers: the call-sequence polyline (resolved ports, in
-    /// rotation order) + hollow port pins. Departed calls render as the grey
+    /// Ocean-register layers: real port-call pins only. Call order is not
+    /// navigational route geometry. Departed calls render as the grey
     /// `.delivery` ring; active / upcoming calls as the primary `.pickup` ring.
     private var rotationLayers: [HereMapLayer] {
-        let line = vm.mappableCalls.compactMap { $0.coord }
-        var layers: [HereMapLayer] = []
-        if line.count >= 2 {
-            layers.append(.route(polyline: line, colorHex: "#1473FF"))
-        }
-        layers.append(.markers(vm.mappableCalls.compactMap { call in
+        [.markers(vm.mappableCalls.compactMap { call in
             guard let at = call.coord else { return nil }
             let kind: HereMarker.Kind = (call.state == .departed) ? .delivery : .pickup
             return HereMarker(at: at, kind: kind, label: call.port, id: call.unlocode)
-        }))
-        return layers
+        })]
     }
 
     // MARK: CALL SCHEDULE · GEOFENCE-DRIVEN STATUS

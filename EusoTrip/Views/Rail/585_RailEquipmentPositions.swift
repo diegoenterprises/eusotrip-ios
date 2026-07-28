@@ -543,10 +543,9 @@ private struct RailEquipmentPositionsBody: View {
 
             ZStack {
                 if let center = mapCenter {
-                    BespokeMapCanvas(
+                    HereVectorMapView(
                         center: center,
                         zoom: 6,
-                        isDark: colorScheme == .dark,
                         layers: [.markers(positionMarkers)],
                         onSelectMarker: { id in selectedCarId = id }
                     )

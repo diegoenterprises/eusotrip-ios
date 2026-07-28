@@ -78,6 +78,8 @@ struct ShipperPostLoad: View {
     @State private var originLng: Double? = nil
     @State private var destLat: Double? = nil
     @State private var destLng: Double? = nil
+    @State private var originCountryCode: String = "US"
+    @State private var destinationCountryCode: String = "US"
     @State private var cargoType: ShipperAPI.CargoType = .general
     @State private var hasPickupDate: Bool = false
     @State private var pickupDate: Date = Date()
@@ -194,6 +196,29 @@ struct ShipperPostLoad: View {
     @State private var weightUnit: MeasurementUnit = .pounds
 
     @State private var lastSuccess: ShipperAPI.PostLoadAck? = nil
+
+    // A completed Port Intelligence draft assessment is one-use and bound to
+    // the exact cargo/lane fingerprint on the server. Keep its local signature
+    // so any edit makes the result visibly stale before the user can post.
+    @State private var portIntelligenceAssessment: PortIntelAssessment? = nil
+    @State private var portIntelligenceAssessmentSignature: String? = nil
+    @State private var portIntelligenceAcknowledged: Bool = false
+    @State private var isAssessingPortIntelligence: Bool = false
+    @State private var portIntelligenceError: String? = nil
+
+    private struct PostLoadCountry: Identifiable {
+        let code: String
+        let name: String
+        var id: String { code }
+    }
+
+    private static let postLoadCountries: [PostLoadCountry] = Locale.isoRegionCodes
+        .filter { $0.count == 2 }
+        .compactMap { code in
+            guard let name = Locale.current.localizedString(forRegionCode: code) else { return nil }
+            return PostLoadCountry(code: code.uppercased(), name: name)
+        }
+        .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
 
     // F-ANIMATION (2026-06-14) — founder ask: a bespoke professional
     // "Load posted" celebration, then a return to a fresh Step-1. On a
@@ -728,6 +753,7 @@ struct ShipperPostLoad: View {
         // text inline.
         .onChange(of: origin)      { _, _ in recomputeETAIfReady() }
         .onChange(of: destination) { _, _ in recomputeETAIfReady() }
+        .onChange(of: transportMode) { _, _ in recomputeETAIfReady() }
         // Rate compare fires when posted rate or cargo type changes —
         // independent of routing, so the meter updates without
         // re-geocoding.
@@ -897,10 +923,17 @@ struct ShipperPostLoad: View {
                     .font(EType.bodyStrong)
                     .foregroundStyle(palette.textPrimary)
                     .lineLimit(2)
-                Text("Class \(hit.hazardClass) · \(hit.placardName)")
-                    .font(EType.caption)
-                    .foregroundStyle(palette.textSecondary)
-                    .lineLimit(1)
+                if let placardName = hit.placardName, !placardName.isEmpty {
+                    Text("Response placard reference · \(placardName)")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                } else {
+                    Text("ERG response reference · verify classification separately")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right")
@@ -1538,6 +1571,8 @@ struct ShipperPostLoad: View {
         var originLng: Double? = nil
         var destLat: Double? = nil
         var destLng: Double? = nil
+        var originCountryCode: String? = nil
+        var destinationCountryCode: String? = nil
         var cargoTypeRaw: String = "general"
         var equipmentTypeRaw: String = "dry_van"
         var hasPickupDate: Bool = false
@@ -1587,6 +1622,8 @@ struct ShipperPostLoad: View {
         s += originLng.map { String($0) } ?? ""; s += "|"
         s += destLat.map { String($0) } ?? ""; s += "|"
         s += destLng.map { String($0) } ?? ""; s += "|"
+        s += originCountryCode; s += "|"
+        s += destinationCountryCode; s += "|"
         s += cargoType.rawValue; s += "|"
         s += equipmentType.rawValue; s += "|"
         s += String(hasPickupDate); s += "|"
@@ -1647,6 +1684,8 @@ struct ShipperPostLoad: View {
             destination: destination,
             originLat: originLat, originLng: originLng,
             destLat: destLat, destLng: destLng,
+            originCountryCode: originCountryCode,
+            destinationCountryCode: destinationCountryCode,
             cargoTypeRaw: cargoType.rawValue,
             equipmentTypeRaw: equipmentType.rawValue,
             hasPickupDate: hasPickupDate,
@@ -1721,6 +1760,8 @@ struct ShipperPostLoad: View {
         destination = snap.destination
         originLat = snap.originLat; originLng = snap.originLng
         destLat = snap.destLat; destLng = snap.destLng
+        originCountryCode = snap.originCountryCode ?? "US"
+        destinationCountryCode = snap.destinationCountryCode ?? "US"
         cargoType = ShipperAPI.CargoType(rawValue: snap.cargoTypeRaw) ?? .general
         equipmentType = EquipmentChoice(rawValue: snap.equipmentTypeRaw) ?? .dryVan
         hasPickupDate = snap.hasPickupDate
@@ -2105,12 +2146,14 @@ struct ShipperPostLoad: View {
                               text: $origin,
                               lat: $originLat,
                               lng: $originLng,
+                              countryCode: $originCountryCode,
                               placeholder: "City, ST or lat,lng · e.g. Houston, TX")
                     laneConnector
                     laneField(label: "DESTINATION",
                               text: $destination,
                               lat: $destLat,
                               lng: $destLng,
+                              countryCode: $destinationCountryCode,
                               placeholder: "City, ST or lat,lng · e.g. Dallas, TX")
                 }
                 .padding(Space.s4)
@@ -2140,6 +2183,7 @@ struct ShipperPostLoad: View {
         text: Binding<String>,
         lat: Binding<Double?>,
         lng: Binding<Double?>,
+        countryCode: Binding<String>,
         placeholder: String
     ) -> some View {
         HStack(alignment: .top, spacing: Space.s3) {
@@ -2160,8 +2204,18 @@ struct ShipperPostLoad: View {
                     text: text,
                     lat: lat,
                     lng: lng,
-                    placeholder: placeholder
+                    placeholder: placeholder,
+                    country: hereCountryFilter(countryCode.wrappedValue)
                 )
+                .disabled(isSubmitting)
+                Picker("Country", selection: countryCode) {
+                    ForEach(Self.postLoadCountries) { country in
+                        Text("\(country.code) · \(country.name)").tag(country.code)
+                    }
+                }
+                .pickerStyle(.menu)
+                .font(EType.caption)
+                .tint(palette.textSecondary)
                 .disabled(isSubmitting)
             }
             Spacer(minLength: 0)
@@ -2200,9 +2254,30 @@ struct ShipperPostLoad: View {
 
     private func swapEndpoints() {
         withAnimation(.spring(response: 0.22, dampingFraction: 0.85)) {
-            let tmp = origin
+            let previousOrigin = origin
+            let previousOriginLat = originLat
+            let previousOriginLng = originLng
+            let previousOriginState = originStateCode
+            let previousOriginCountry = originCountryCode
             origin = destination
-            destination = tmp
+            originLat = destLat
+            originLng = destLng
+            originStateCode = destStateCode
+            originCountryCode = destinationCountryCode
+            destination = previousOrigin
+            destLat = previousOriginLat
+            destLng = previousOriginLng
+            destStateCode = previousOriginState
+            destinationCountryCode = previousOriginCountry
+        }
+    }
+
+    private func hereCountryFilter(_ alpha2: String) -> String? {
+        switch alpha2.uppercased() {
+        case "US": return "USA"
+        case "CA": return "CAN"
+        case "MX": return "MEX"
+        default: return nil
         }
     }
 
@@ -2232,6 +2307,19 @@ struct ShipperPostLoad: View {
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
+            if routingError != nil {
+                Button {
+                    lastRoutedKey = ""
+                    recomputeETAIfReady()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(palette.textPrimary)
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Retry route validation")
+            }
         }
         .padding(.horizontal, Space.s4).padding(.vertical, 10)
         .background(LinearGradient(colors: [Brand.blue.opacity(0.06),
@@ -2252,40 +2340,25 @@ struct ShipperPostLoad: View {
         if let err = routingError {
             return "Route unavailable: \(err)"
         }
+        if transportMode != .truck, endpointsResolved {
+            switch transportMode {
+            case .rail:
+                return "Endpoints verified - rail geometry requires a connected rail routing provider"
+            case .vessel:
+                return "Ports verified - voyage geometry requires a connected marine routing provider"
+            case .barge:
+                return "Terminals verified - waterway geometry requires a connected barge routing provider"
+            case .truck:
+                break
+            }
+        }
         if let meters = routeDistanceMeters, let secs = routeDurationSeconds {
             let miles = Double(meters) / 1609.34
-            // Mode-aware ETA + profile label. HERE Routing v8 only
-            // serves the truck path; for rail / vessel / barge we
-            // re-derive transit time from a mode-appropriate avg
-            // speed because there's no national multi-modal router.
-            // Numbers come from industry rule-of-thumbs that the
-            // founder can override per-load in Step 3 pricing.
-            //   • Rail intermodal: 28 mph avg incl. ramp dwell
-            //     (BNSF / UP cross-country mainline)
-            //   • Vessel feeder: 15 knots ≈ 17.3 mph
-            //   • ATB barge tow: 7 knots ≈ 8.1 mph
-            // HERE's `secs` value is reused as the truck-equivalent
-            // hours; for the other modes we recompute from `miles`.
-            let hours: Double = {
-                switch transportMode {
-                case .truck:  return Double(secs) / 3600.0
-                case .rail:   return miles / 28.0
-                case .vessel: return miles / 17.3
-                case .barge:  return miles / 8.1
-                }
-            }()
-            let profile: String = {
-                switch transportMode {
-                case .truck:  return "standard US semi"
-                case .rail:   return "UP / BNSF intermodal (28 mph avg)"
-                case .vessel: return "feeder vessel (15 kn)"
-                case .barge:  return "ATB barge tow (7 kn)"
-                }
-            }()
+            let hours = Double(secs) / 3600.0
             let etaStr: String = hours > 48
                 ? String(format: "%.1f days", hours / 24.0)
                 : String(format: "%.1f hr", hours)
-            return String(format: "%.0f mi · %@ · %@ · ESANG-routed", miles, etaStr, profile)
+            return String(format: "%.0f mi · %@ · standard US semi · HERE-routed", miles, etaStr)
         }
         // Both addresses present and `recomputeETAIfReady` is in flight.
         return "Estimating distance · ETA · best-route via ESANG"
@@ -2307,9 +2380,13 @@ struct ShipperPostLoad: View {
         guard !oTrim.isEmpty, !dTrim.isEmpty else {
             routeDistanceMeters = nil
             routeDurationSeconds = nil
+            routingError = nil
+            isRouting = false
+            lastRoutedKey = ""
             return
         }
-        let key = "\(originLat ?? .nan),\(originLng ?? .nan)|\(destLat ?? .nan),\(destLng ?? .nan)|\(oTrim)|\(dTrim)"
+        let requestedMode = transportMode
+        let key = "\(requestedMode.rawValue)|\(originLat ?? .nan),\(originLng ?? .nan)|\(destLat ?? .nan),\(destLng ?? .nan)|\(oTrim)|\(dTrim)"
         guard key != lastRoutedKey else { return }
         lastRoutedKey = key
         isRouting = true
@@ -2331,7 +2408,8 @@ struct ShipperPostLoad: View {
                 // codes without a second geocode round-trip. The
                 // state codes also feed the ESANG rate compare on
                 // step 3.
-                await MainActor.run {
+                let stillCurrent = await MainActor.run { () -> Bool in
+                    guard self.lastRoutedKey == key else { return false }
                     if originLat == nil { originLat = originResolved.coord.latitude }
                     if originLng == nil { originLng = originResolved.coord.longitude }
                     if destLat == nil   { destLat   = destResolved.coord.latitude   }
@@ -2339,6 +2417,20 @@ struct ShipperPostLoad: View {
                     self.originStateCode = originResolved.stateCode
                     self.destStateCode   = destResolved.stateCode
                     self.recomputeRateCompareIfReady()
+                    return true
+                }
+                guard stillCurrent else { return }
+
+                guard requestedMode == .truck else {
+                    await MainActor.run {
+                        guard self.lastRoutedKey == key else { return }
+                        self.routeDistanceMeters = nil
+                        self.routeDurationSeconds = nil
+                        self.routingError = nil
+                        self.isRouting = false
+                        self.recomputeRateCompareIfReady()
+                    }
+                    return
                 }
                 let resp = try await HereRoutingClient.shared.route(
                     stops: HereStops(origin: originResolved.coord,
@@ -2348,6 +2440,7 @@ struct ShipperPostLoad: View {
                 let totalDuration = resp.routes.first?.sections.reduce(0) { $0 + ($1.summary?.duration ?? 0) } ?? 0
                 let totalLength   = resp.routes.first?.sections.reduce(0) { $0 + ($1.summary?.length ?? 0) }   ?? 0
                 await MainActor.run {
+                    guard self.lastRoutedKey == key else { return }
                     // Founder report 2026-06-01: every mode rendered
                     // "0 mi · 0.0 hr" for a Houston Port → LA Port
                     // lane because HERE truck routing returns an empty
@@ -2376,6 +2469,7 @@ struct ShipperPostLoad: View {
                 }
             } catch {
                 await MainActor.run {
+                    guard self.lastRoutedKey == key else { return }
                     self.routingError = humanRouteMessage(for: error)
                     self.isRouting = false
                 }
@@ -2385,6 +2479,187 @@ struct ShipperPostLoad: View {
 
     private var routeUnavailableMessage: String {
         "Try a city-level address or switch to rail/vessel if the lane is not truck-routable."
+    }
+
+    private var endpointsResolved: Bool {
+        validCoordinate(lat: originLat, lng: originLng)
+            && validCoordinate(lat: destLat, lng: destLng)
+    }
+
+    private var laneReadyForPosting: Bool {
+        let hasAddresses = !origin.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !destination.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard hasAddresses,
+              countrySelectionIsValid,
+              endpointsResolved,
+              !isRouting,
+              routingError == nil else {
+            return false
+        }
+        guard transportMode == .truck else { return true }
+        return (routeDistanceMeters ?? 0) > 0 && (routeDurationSeconds ?? 0) > 0
+    }
+
+    private var countrySelectionIsValid: Bool {
+        let originCode = originCountryCode.uppercased()
+        let destinationCode = destinationCountryCode.uppercased()
+        guard originCode.count == 2, destinationCode.count == 2 else { return false }
+        if transportMode == .truck || transportMode == .rail {
+            let northAmerica = Set(["US", "CA", "MX"])
+            return northAmerica.contains(originCode) && northAmerica.contains(destinationCode)
+        }
+        return true
+    }
+
+    private var portIntelligenceIsRequired: Bool {
+        transportMode != .truck
+    }
+
+    private var portIntelligenceProductName: String {
+        properShippingName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var portIntelligencePhysicalState: String {
+        switch cargoType {
+        case .gas:
+            return "gas"
+        case .liquid, .petroleum, .chemicals:
+            return "liquid"
+        default:
+            return "solid"
+        }
+    }
+
+    private var portIntelligenceVehicleCount: Int? {
+        multiVehicleEstimate
+            .map(\.vehicleCount)
+            .flatMap { (1...999).contains($0) ? $0 : nil }
+    }
+
+    private var portIntelligencePermit: String? {
+        guard equipmentType == .oversized
+                || equipmentType == .flatbed
+                || equipmentType == .stepDeck
+                || equipmentType == .conestoga,
+              permitType != .none else {
+            return nil
+        }
+        return permitType.rawValue
+    }
+
+    private var currentPortIntelligenceSignature: String {
+        [
+            portIntelligenceProductName,
+            commodityMatch?.category ?? cargoType.rawValue,
+            portIntelligencePhysicalState,
+            unNumber.trimmingCharacters(in: .whitespacesAndNewlines),
+            hazmatClass.trimmingCharacters(in: .whitespacesAndNewlines),
+            transportMode.rawValue,
+            parseDouble(weightText).map { String($0) } ?? "",
+            weightUnit.rawValue,
+            origin.trimmingCharacters(in: .whitespacesAndNewlines),
+            destination.trimmingCharacters(in: .whitespacesAndNewlines),
+            originCountryCode.uppercased(),
+            destinationCountryCode.uppercased(),
+            equipmentType.rawValue,
+            portIntelligenceVehicleCount.map { String($0) } ?? "",
+            hasPickupDate ? isoDate(pickupDate) : "",
+            portIntelligencePermit ?? "",
+        ].joined(separator: "\u{1F}")
+    }
+
+    private var hasCurrentPortIntelligenceAssessment: Bool {
+        portIntelligenceAssessment != nil
+            && portIntelligenceAssessmentSignature == currentPortIntelligenceSignature
+    }
+
+    private var portIntelligenceAllowsPosting: Bool {
+        guard portIntelligenceIsRequired else {
+            guard hasCurrentPortIntelligenceAssessment, let assessment = portIntelligenceAssessment else {
+                return true
+            }
+            if assessment.preflight.gate == "blocked" { return false }
+            return assessment.preflight.gate != "acknowledgement_required"
+                || portIntelligenceAcknowledged
+        }
+        guard hasCurrentPortIntelligenceAssessment, let assessment = portIntelligenceAssessment else {
+            return false
+        }
+        switch assessment.preflight.gate {
+        case "ready":
+            return true
+        case "acknowledgement_required":
+            return portIntelligenceAcknowledged
+        default:
+            return false
+        }
+    }
+
+    @MainActor
+    private func assessPortIntelligence() async {
+        portIntelligenceError = nil
+        portIntelligenceAcknowledged = false
+
+        guard laneReadyForPosting else {
+            portIntelligenceError = "Resolve the route and both countries before running Port Intelligence."
+            return
+        }
+        guard !portIntelligenceProductName.isEmpty else {
+            portIntelligenceError = "Select or enter the exact commodity or product before assessment."
+            return
+        }
+        guard let quantity = parseDouble(weightText), quantity > 0 else {
+            portIntelligenceError = "Enter a positive cargo quantity before assessment."
+            return
+        }
+
+        isAssessingPortIntelligence = true
+        defer { isAssessingPortIntelligence = false }
+
+        let request = PortIntelAssessmentInput(
+            requestKey: UUID().uuidString,
+            title: "\(portIntelligenceProductName) · \(shortAddress(origin)) to \(shortAddress(destination))",
+            draft: .init(
+                productName: portIntelligenceProductName,
+                category: commodityMatch?.category ?? cargoType.rawValue,
+                physicalState: portIntelligencePhysicalState,
+                unNumber: nonBlank(unNumber),
+                hazmatClass: nonBlank(hazmatClass),
+                transportMode: transportMode.rawValue,
+                quantity: quantity,
+                quantityUnit: weightUnit.rawValue,
+                origin: origin.trimmingCharacters(in: .whitespacesAndNewlines),
+                destination: destination.trimmingCharacters(in: .whitespacesAndNewlines),
+                originCountry: originCountryCode.uppercased(),
+                destinationCountry: destinationCountryCode.uppercased(),
+                equipment: equipmentType.rawValue,
+                vesselClass: nil,
+                multiVehicleCount: portIntelligenceVehicleCount,
+                pickupDate: hasPickupDate ? isoDate(pickupDate) : nil,
+                specialPermit: portIntelligencePermit
+            )
+        )
+
+        do {
+            let result: PortIntelAssessment = try await EusoTripAPI.shared.mutation(
+                "portIntelligence.assessLoadDraft",
+                input: request
+            )
+            portIntelligenceAssessment = result
+            portIntelligenceAssessmentSignature = currentPortIntelligenceSignature
+        } catch {
+            portIntelligenceAssessment = nil
+            portIntelligenceAssessmentSignature = nil
+            portIntelligenceError = (error as? EusoTripAPIError)?.errorDescription
+                ?? error.localizedDescription
+        }
+    }
+
+    private func validCoordinate(lat: Double?, lng: Double?) -> Bool {
+        guard let lat, let lng,
+              (-90.0...90.0).contains(lat),
+              (-180.0...180.0).contains(lng) else { return false }
+        return !(lat == 0 && lng == 0)
     }
 
     private func humanRouteMessage(for error: Error) -> String {
@@ -2569,12 +2844,8 @@ struct ShipperPostLoad: View {
                     self.isLookingUpERG = false
                     if detail.found {
                         self.ergMatch = detail
-                        // Auto-populate ONLY when the user hasn't
-                        // already typed a value — never overwrite
-                        // explicit entry.
-                        if hazmatClass.isEmpty, let cls = detail.hazardClass {
-                            hazmatClass = cls
-                        }
+                        // ERG is an emergency-response reference, not
+                        // legal dangerous-goods classification evidence.
                         if let name = detail.name,
                            shouldReplaceProperShippingName(with: name) {
                             properShippingName = name
@@ -2593,13 +2864,14 @@ struct ShipperPostLoad: View {
         }
     }
 
-    /// Apply a search-hit selection from the ERG search sheet —
-    /// prefills UN + class + shipping name; the subsequent
-    /// `erg.searchByUN` finishes hydrating the full match.
+    /// Apply a search-hit selection from the ERG response-reference
+    /// sheet. UN + material name may accelerate entry, but ERG never
+    /// writes the legally controlled hazmat-class field.
     private func applyERGHit(_ hit: ErgAPI.SearchHit) {
         unNumber = hit.unNumber
-        hazmatClass = hit.hazardClass
-        properShippingName = hit.name.isEmpty ? hit.placardName : hit.name
+        if !hit.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            properShippingName = hit.name
+        }
         showErgSearchSheet = false
     }
 
@@ -5842,6 +6114,7 @@ struct ShipperPostLoad: View {
         VStack(alignment: .leading, spacing: Space.s5) {
             eusoTicketTypeBanner
             reviewSummaryCard
+            portIntelligenceReviewCard
             equipmentReviewCard
             esangMarketReviewCard
             saveAsTemplateCTA
@@ -6022,6 +6295,128 @@ struct ShipperPostLoad: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.xl)
                     .strokeBorder(LinearGradient.diagonal, lineWidth: 1.5))
         .clipShape(RoundedRectangle(cornerRadius: Radius.xl))
+    }
+
+    private var portIntelligenceReviewCard: some View {
+        VStack(alignment: .leading, spacing: Space.s3) {
+            HStack(spacing: 8) {
+                Image(systemName: "point.3.connected.trianglepath.dotted")
+                    .font(.system(size: 13, weight: .heavy))
+                    .foregroundStyle(LinearGradient.diagonal)
+                Text("PORT INTELLIGENCE")
+                    .font(EType.micro)
+                    .tracking(0.6)
+                    .foregroundStyle(palette.textTertiary)
+                Spacer(minLength: 0)
+                if portIntelligenceIsRequired {
+                    Text("REQUIRED")
+                        .font(.system(size: 8, weight: .heavy))
+                        .foregroundStyle(Brand.warning)
+                }
+            }
+
+            if isAssessingPortIntelligence {
+                HStack(spacing: 8) {
+                    ProgressView().tint(LinearGradient.diagonal)
+                    Text("Assessing live facility, route, evidence, and restriction records…")
+                        .font(EType.caption)
+                        .foregroundStyle(palette.textSecondary)
+                }
+            } else if let error = portIntelligenceError {
+                Text(error)
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let assessment = portIntelligenceAssessment, hasCurrentPortIntelligenceAssessment {
+                let gate = assessment.preflight.gate
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: portIntelligenceGateIcon(gate))
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(portIntelligenceGateColor(gate))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(gate.replacingOccurrences(of: "_", with: " ").uppercased())
+                            .font(EType.bodyStrong)
+                            .foregroundStyle(palette.textPrimary)
+                        Text("\(assessment.preflight.counts.viable) viable · \(assessment.preflight.counts.conditional) conditional · \(assessment.preflight.counts.insufficientEvidence) unresolved · \(assessment.preflight.counts.blocked) blocked")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textSecondary)
+                        if let strategy = assessment.strategies.first {
+                            Text(strategy.destinationName ?? "Evidence-backed route strategy")
+                                .font(EType.caption)
+                                .foregroundStyle(palette.textSecondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                if gate == "acknowledgement_required" {
+                    Toggle(isOn: $portIntelligenceAcknowledged) {
+                        Text("I acknowledge the documented evidence gaps")
+                            .font(EType.caption)
+                            .foregroundStyle(palette.textPrimary)
+                    }
+                    .tint(Brand.warning)
+                }
+            } else if portIntelligenceAssessment != nil {
+                Text("Cargo or route details changed. Refresh the assessment before posting.")
+                    .font(EType.caption)
+                    .foregroundStyle(Brand.warning)
+            } else {
+                Text(portIntelligenceIsRequired
+                     ? "No current assessment is bound to this draft."
+                     : "No assessment has been run for this truck lane.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+            }
+
+            Button {
+                Task { await assessPortIntelligence() }
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: "sparkle.magnifyingglass")
+                    Text(hasCurrentPortIntelligenceAssessment ? "Refresh assessment" : "Assess route")
+                }
+                .font(.system(size: 12, weight: .heavy))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 42)
+                .background(LinearGradient.diagonal)
+                .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(isAssessingPortIntelligence || isSubmitting)
+        }
+        .padding(Space.s3)
+        .background(palette.bgCard)
+        .overlay {
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(
+                    portIntelligenceAssessment?.preflight.gate == "blocked"
+                        && hasCurrentPortIntelligenceAssessment
+                        ? Brand.danger
+                        : palette.borderFaint,
+                    lineWidth: 1
+                )
+        }
+        .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
+    }
+
+    private func portIntelligenceGateIcon(_ gate: String) -> String {
+        switch gate {
+        case "ready": return "checkmark.seal.fill"
+        case "blocked": return "xmark.octagon.fill"
+        default: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func portIntelligenceGateColor(_ gate: String) -> Color {
+        switch gate {
+        case "ready": return Brand.success
+        case "blocked": return Brand.danger
+        default: return Brand.warning
+        }
     }
 
     /// Shows the equipment-specific subform fields only when the
@@ -6492,9 +6887,7 @@ struct ShipperPostLoad: View {
         if isSubmitting { return false }
         switch step {
         case .lane:
-            let oTrim = origin.trimmingCharacters(in: .whitespacesAndNewlines)
-            let dTrim = destination.trimmingCharacters(in: .whitespacesAndNewlines)
-            return !oTrim.isEmpty && !dTrim.isEmpty
+            return laneReadyForPosting
         case .equipment:
             // 2026-05-17 — Gate the equipment step on hazmat compliance
             // (49 CFR 173). If the user picked a hazmat class that's
@@ -6546,8 +6939,10 @@ struct ShipperPostLoad: View {
             // LN2", not an invalid load). Surfaced as a warning on the reefer
             // sub-form; never blocks Continue.
             return true
-        case .pricing, .review:
-            return true
+        case .pricing:
+            return laneReadyForPosting
+        case .review:
+            return laneReadyForPosting && portIntelligenceAllowsPosting
         }
     }
 
@@ -6575,6 +6970,20 @@ struct ShipperPostLoad: View {
     }
 
     private func submit() async {
+        guard laneReadyForPosting else {
+            if routingError == nil {
+                routingError = transportMode == .truck
+                    ? "A verified truck route is required before this load can be posted."
+                    : "Both endpoints must be verified before this load can be posted."
+            }
+            return
+        }
+        guard portIntelligenceAllowsPosting else {
+            portIntelligenceError = portIntelligenceIsRequired
+                ? "Complete the current Port Intelligence gate before posting this load."
+                : "Resolve the current Port Intelligence result before posting this load."
+            return
+        }
         let pickupISO = hasPickupDate ? isoDate(pickupDate) : nil
         let weight    = parseDouble(weightText)
         let rate      = parseDouble(rateText)
@@ -6612,18 +7021,29 @@ struct ShipperPostLoad: View {
             ? parseDouble(worldscaleFlatText)
             : nil
         let rateForWire: Double? = worldscaleWire == nil ? rate : nil
+        let currentAssessment = hasCurrentPortIntelligenceAssessment
+            ? portIntelligenceAssessment
+            : nil
         await store.submit(
             origin: origin,
             destination: destination,
             cargoType: cargoType,
+            productName: nonBlank(properShippingName),
+            category: commodityMatch?.category ?? cargoType.rawValue,
+            physicalState: portIntelligencePhysicalState,
+            unNumber: nonBlank(unNumber),
+            hazmatClass: nonBlank(hazmatClass),
             rate: rateForWire,
             weight: weight,
+            weightUnit: weightUnit.rawValue,
             notes: composedNotes,
             pickupDate: pickupISO,
             originLat: originLat,
             originLng: originLng,
             destLat: destLat,
             destLng: destLng,
+            originCountry: originCountryCode.uppercased(),
+            destinationCountry: destinationCountryCode.uppercased(),
             transportMode: transportMode,
             // F-ANIMATION root-cause fix (2026-06-14): the server schema is
             // `multiVehicleCount: z.number().int().min(1).max(999).optional()`
@@ -6643,7 +7063,9 @@ struct ShipperPostLoad: View {
             worldscalePct: worldscaleWire,
             worldscaleFlat: worldscaleFlatWire,
             rateUnit: rateUnitWireValue,
-            equipmentType: equipmentType.rawValue
+            equipmentType: equipmentType.rawValue,
+            portIntelligenceAssessmentId: currentAssessment?.publicId,
+            portIntelligenceAcknowledged: portIntelligenceAcknowledged
         )
         if case .success(let ack) = store.phase {
             self.lastSuccess = ack
@@ -6778,6 +7200,8 @@ struct ShipperPostLoad: View {
         destination = ""
         originLat = nil; originLng = nil
         destLat   = nil; destLng   = nil
+        originCountryCode = "US"
+        destinationCountryCode = "US"
         cargoType = .general
         equipmentType = .dryVan
         hasPickupDate = false
@@ -6811,6 +7235,10 @@ struct ShipperPostLoad: View {
         routeDistanceMeters = nil
         routeDurationSeconds = nil
         routingError = nil
+        portIntelligenceAssessment = nil
+        portIntelligenceAssessmentSignature = nil
+        portIntelligenceAcknowledged = false
+        portIntelligenceError = nil
         // Catalyst requirements — reset every mode's gate to default so
         // the next post doesn't carry a prior load's eligibility set.
         catalystMinSafetyScore = 80
@@ -6827,6 +7255,11 @@ struct ShipperPostLoad: View {
         if trimmed.isEmpty { return nil }
         let cleaned = trimmed.replacingOccurrences(of: ",", with: "")
         return Double(cleaned)
+    }
+
+    private func nonBlank(_ raw: String) -> String? {
+        let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 
     private func isoDate(_ date: Date) -> String {

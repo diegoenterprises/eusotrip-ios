@@ -412,12 +412,11 @@ private struct RailYardOperationsBody: View {
             .padding(.top, 12)
             .padding(.bottom, 10)
 
-            BespokeMapCanvas(
+            HereVectorMapView(
                 center: mapCenter,
                 zoom: 4,
                 interactive: true,
                 tilt: 0,
-                isDark: colorScheme == .dark,
                 layers: [
                     .markers(mappedYards.compactMap { y in
                         guard let c = y.coordinates else { return nil }

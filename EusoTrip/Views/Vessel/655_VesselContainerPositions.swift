@@ -311,14 +311,13 @@ private struct VesselContainerPositionsBody: View {
             Text("POSITIONS · live feed")
                 .font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(palette.textTertiary)
             if let center = positionCenter {
-                BespokeMapCanvas(
+                HereVectorMapView(
                     center: center,
                     zoom: 3,
                     interactive: true,
                     tilt: 0,
-                    isDark: colorScheme == .dark,
                     layers: [.markers(positionMarkers)],
-                    style: .ocean
+                    styleHint: .ocean
                 )
                 .frame(height: 240)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))

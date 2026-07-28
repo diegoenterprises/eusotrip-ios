@@ -552,17 +552,17 @@ struct TerminalHome: View {
 
     private var facilityLocatorMap: some View {
         let yards = mappableYards
-        return BespokeMapCanvas(
+        return HereVectorMapView(
             center: yardMapCenter,
             zoom: yardMapZoom,
             interactive: true,
             tilt: 0,
-            isDark: colorScheme == .dark,
             layers: [
                 .adZones(yards.map(yardFootprint(for:))),
-                .markers(yards.map { y in
-                    HereMarker(
-                        at: HereLatLng(y.lat ?? 0, y.lng ?? 0),
+                .markers(yards.compactMap { y in
+                    guard let lat = y.lat, let lng = y.lng else { return nil }
+                    return HereMarker(
+                        at: HereLatLng(lat, lng),
                         kind: .pickup,
                         label: y.name.flatMap { $0.isEmpty ? nil : $0 } ?? "Yard",
                         id: y.id)

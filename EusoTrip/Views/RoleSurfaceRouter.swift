@@ -417,6 +417,7 @@ struct ShipperSurface: View {
                 pushOrTab: pushOrTab,
                 popOne: popOne,
                 resetPostLoadDraft: { postLoadDraft.reset() },
+                applyIndustryWorkflow: { postLoadDraft.applyIndustryWorkflow($0) },
                 handleMeAction: handleShipperMeAction
             ))
             .photosPicker(isPresented: $avatarPickerOpen,
@@ -881,6 +882,7 @@ private struct ShipperNotificationListeners: ViewModifier {
     let pushOrTab: (String) -> Void
     let popOne: () -> Void
     let resetPostLoadDraft: () -> Void
+    let applyIndustryWorkflow: (IndustryWorkflowHandoff) -> Void
     let handleMeAction: (String, [AnyHashable: Any]) -> Void
 
     func body(content: Content) -> some View {
@@ -896,7 +898,8 @@ private struct ShipperNotificationListeners: ViewModifier {
                 pushedDetail: $pushedDetail,
                 pushOrTab: pushOrTab,
                 popOne: popOne,
-                resetPostLoadDraft: resetPostLoadDraft
+                resetPostLoadDraft: resetPostLoadDraft,
+                applyIndustryWorkflow: applyIndustryWorkflow
             ))
             .modifier(ShipperLoadReceivers(
                 screenStack: $screenStack,
@@ -923,6 +926,7 @@ private struct ShipperNavReceivers: ViewModifier {
     let pushOrTab: (String) -> Void
     let popOne: () -> Void
     let resetPostLoadDraft: () -> Void
+    let applyIndustryWorkflow: (IndustryWorkflowHandoff) -> Void
 
     private static let postLoadWizardIds: Set<String> = [
         "250", "251", "252", "253", "254", "255", "256", "257", "258", "259",
@@ -974,7 +978,11 @@ private struct ShipperNavReceivers: ViewModifier {
                 }
                 if id == "250" {
                     let lastScreen = screenStack.last
-                    if let rawDraftId = note.userInfo?["draftId"] as? String,
+                    if let handoff = note.userInfo?["industryWorkflow"] as? IndustryWorkflowHandoff {
+                        activePostLoadDraftId = nil
+                        resetPostLoadDraft()
+                        applyIndustryWorkflow(handoff)
+                    } else if let rawDraftId = note.userInfo?["draftId"] as? String,
                        !rawDraftId.isEmpty {
                         if activePostLoadDraftId != rawDraftId {
                             resetPostLoadDraft()

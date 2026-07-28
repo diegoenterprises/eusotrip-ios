@@ -653,12 +653,14 @@ struct ActiveEnroute: View {
             // fuel / EV / weather / traffic / sponsored ad-zones. The route +
             // pickup/delivery are the base layers; HereLiveMapView fetches the
             // add-ons around the lane and overlays them with a corner legend.
-            // Prefer the decoded HERE section polyline (real curved road
-            // geometry); fall back to the straight pickup→delivery line until
-            // the route resolves — never a fabricated path.
-            let line: [HereLatLng] = routePolyline.count >= 2
-                ? routePolyline
-                : [HereLatLng(pickup.lat, pickup.lng), HereLatLng(delivery.lat, delivery.lng)]
+            let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : []
+            let markerLayer = HereMapLayer.markers([
+                .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: destinationFacility),
+                .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: nil)
+            ])
+            let routeLayers: [HereMapLayer] = line.count >= 2
+                ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
+                : [markerLayer]
             // §3c receiver fence at the corridor terminus — ONLY when a
             // real `tracking.getGeofences` row covers the receiver
             // (resolveReceiverFence). Absent row ⇒ absent layer.
@@ -679,13 +681,7 @@ struct ActiveEnroute: View {
                 zoom: 7,
                 firstPerson: true,
                 route: line,
-                baseLayers: [
-                    .route(polyline: line, colorHex: "#1473FF"),
-                    .markers([
-                        .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: destinationFacility),
-                        .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: nil)
-                    ])
-                ] + fenceLayers + isolineLayers,
+                baseLayers: routeLayers + fenceLayers + isolineLayers,
                 addOns: .driverEnRoute
             )
         } else {
@@ -693,49 +689,16 @@ struct ActiveEnroute: View {
         }
     }
 
-    /// Stylized ghost-grid canvas shown only when no active load
-    /// is on file (previews + first-run). It carries NO business
-    /// data — it's a neutral on-brand backdrop, not a fabricated
-    /// route.
+    /// Operational empty state shown until the active load has verified route
+    /// coordinates. It deliberately contains no authored roads or route line.
     private var mapPlaceholder: some View {
-        ZStack {
-            palette.bgPage.ignoresSafeArea()
-            Canvas { ctx, size in
-                let stroke = palette.borderFaint.opacity(0.6)
-                let step: CGFloat = 48
-                var x: CGFloat = 0
-                while x < size.width {
-                    var path = Path()
-                    path.move(to: .init(x: x, y: 0))
-                    path.addLine(to: .init(x: x, y: size.height))
-                    ctx.stroke(path, with: .color(stroke), lineWidth: 0.5)
-                    x += step
-                }
-                var y: CGFloat = 0
-                while y < size.height {
-                    var path = Path()
-                    path.move(to: .init(x: 0, y: y))
-                    path.addLine(to: .init(x: size.width, y: y))
-                    ctx.stroke(path, with: .color(stroke), lineWidth: 0.5)
-                    y += step
-                }
-            }
-            GeometryReader { geo in
-                let w = geo.size.width
-                let h = geo.size.height
-                Path { p in
-                    p.move(to: .init(x: w * 0.72, y: h * 0.92))
-                    p.addQuadCurve(to: .init(x: w * 0.68, y: h * 0.65),
-                                   control: .init(x: w * 0.82, y: h * 0.78))
-                    p.addQuadCurve(to: .init(x: w * 0.55, y: h * 0.35),
-                                   control: .init(x: w * 0.58, y: h * 0.50))
-                    p.addQuadCurve(to: .init(x: w * 0.62, y: h * 0.02),
-                                   control: .init(x: w * 0.52, y: h * 0.18))
-                }
-                .stroke(LinearGradient.diagonal,
-                        style: StrokeStyle(lineWidth: 6, lineCap: .round))
-            }
-        }
+        EusoEmptyState(
+            systemImage: "mappin.slash",
+            title: "Awaiting route coordinates",
+            subtitle: "Live navigation will appear after verified pickup and delivery coordinates are available."
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(palette.bgCard)
     }
 
     // MARK: - Top maneuver card

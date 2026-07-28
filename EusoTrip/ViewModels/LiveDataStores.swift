@@ -3018,8 +3018,8 @@ final class RatingsStore: ObservableObject, DynamicStore {
 // MARK: - ErgStore — ERG search + full material detail + contacts
 //
 // Drives brick 096 Me · ERG. Holds the latest search results, the
-// currently-selected UN detail, and the emergency contact strip
-// pulled once on first appear (contacts are static server-side).
+// currently-selected UN detail, and the jurisdiction-aware emergency
+// contact strip pulled once on first appear.
 // Search debounces at 300ms so three-letter typeaheads don't
 // stampede the server.
 //
@@ -3034,18 +3034,34 @@ final class ErgStore: ObservableObject, DynamicStore {
     @Published private(set) var contacts: ErgAPI.EmergencyContactsResponse?
 
     @Published private(set) var isLoading: Bool = false
+    @Published private(set) var isDetailLoading: Bool = false
     @Published private(set) var lastError: Error?
 
     private var searchTask: Task<Void, Never>?
 
+    func refresh() async {
+        await refresh(countryCode: nil, force: false)
+    }
+
     /// Initial fetch — contacts only. Drivers see the contact strip
     /// at a glance before they type anything.
-    func refresh() async {
+    func refresh(countryCode: String? = nil, force: Bool = false) async {
         isLoading = true
         lastError = nil
         defer { isLoading = false }
+        if force {
+            contacts = nil
+        }
         if contacts == nil {
-            contacts = try? await EusoTripAPI.shared.erg.getEmergencyContacts()
+            do {
+                contacts = try await EusoTripAPI.shared.erg.getEmergencyContacts(
+                    countryCode: countryCode
+                )
+            } catch {
+                if !DynamicStoreUtil.isTransientCancellation(error) {
+                    lastError = error
+                }
+            }
         }
     }
 
@@ -3079,6 +3095,10 @@ final class ErgStore: ObservableObject, DynamicStore {
     /// Load full detail for a UN number — typically invoked from a
     /// tap on a search result.
     func loadDetail(unNumber: String) async {
+        isDetailLoading = true
+        lastError = nil
+        detail = nil
+        defer { isDetailLoading = false }
         do {
             detail = try await EusoTripAPI.shared.erg.searchByUN(unNumber)
         } catch {
@@ -3088,7 +3108,11 @@ final class ErgStore: ObservableObject, DynamicStore {
         }
     }
 
-    func clearDetail() { detail = nil }
+    func clearDetail() {
+        detail = nil
+        isDetailLoading = false
+        lastError = nil
+    }
 }
 
 // MARK: - RateIntelStore — `rates.getTrends`
@@ -4072,14 +4096,22 @@ final class ShipperPostLoadStore: ObservableObject {
         origin: String,
         destination: String,
         cargoType: ShipperAPI.CargoType,
+        productName: String? = nil,
+        category: String? = nil,
+        physicalState: String? = nil,
+        unNumber: String? = nil,
+        hazmatClass: String? = nil,
         rate: Double?,
         weight: Double?,
+        weightUnit: String? = nil,
         notes: String?,
         pickupDate: String?,
         originLat: Double? = nil,
         originLng: Double? = nil,
         destLat: Double? = nil,
         destLng: Double? = nil,
+        originCountry: String? = nil,
+        destinationCountry: String? = nil,
         // 2026-05-17 — multi-modal payload. All optional with
         // pre-multi-modal defaults so the existing callers keep
         // working unchanged.
@@ -4089,11 +4121,15 @@ final class ShipperPostLoadStore: ObservableObject {
         permitType: String? = nil,
         originPort: String? = nil,
         destPort: String? = nil,
+        originTerminalId: Int? = nil,
+        destinationTerminalId: Int? = nil,
         worldscalePct: Double? = nil,
         worldscaleFlat: Double? = nil,
         rateUnit: String? = nil,
         modeRoutePayload: [String: Any]? = nil,
-        equipmentType: String? = nil
+        equipmentType: String? = nil,
+        portIntelligenceAssessmentId: String? = nil,
+        portIntelligenceAcknowledged: Bool = false
     ) async {
         let trimOrigin = origin.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimDest   = destination.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4107,8 +4143,14 @@ final class ShipperPostLoadStore: ObservableObject {
                 origin: trimOrigin,
                 destination: trimDest,
                 cargoType: cargoType,
+                productName: productName,
+                category: category,
+                physicalState: physicalState,
+                unNumber: unNumber,
+                hazmatClass: hazmatClass,
                 rate: rate,
                 weight: weight,
+                weightUnit: weightUnit,
                 notes: (notes?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap {
                     $0.isEmpty ? nil : $0
                 },
@@ -4119,17 +4161,23 @@ final class ShipperPostLoadStore: ObservableObject {
                 originLng: originLng,
                 destLat: destLat,
                 destLng: destLng,
+                originCountry: originCountry,
+                destinationCountry: destinationCountry,
                 transportMode: transportMode?.rawValue,
                 vesselClass: vesselClass,
                 multiVehicleCount: multiVehicleCount,
                 permitType: permitType,
                 originPort: originPort,
                 destPort: destPort,
+                originTerminalId: originTerminalId,
+                destinationTerminalId: destinationTerminalId,
                 worldscalePct: worldscalePct,
                 worldscaleFlat: worldscaleFlat,
                 rateUnit: rateUnit,
                 modeRoutePayload: modeRoutePayload,
-                equipmentType: equipmentType
+                equipmentType: equipmentType,
+                portIntelligenceAssessmentId: portIntelligenceAssessmentId,
+                portIntelligenceAcknowledged: portIntelligenceAcknowledged
             )
             self.phase = .success(ack)
         } catch let api as EusoTripAPIError {

@@ -11,10 +11,9 @@
 //    • CONNECTED APPS  → `userIntegrations.listCatalog` (role + primaryMode
 //      scoped provider catalog) + `userIntegrations.listConnections` (the
 //      user's own connection state). Connect / disconnect / sync run in-app
-//      via `userIntegrations.connect` / `.disconnect` / `.sync`. When the
-//      server catalog is empty/unreachable we fall back to the doc-verified
-//      `RoleIntegrationRegistry` so an integration-owning role is NEVER shown
-//      a blank "go to the web page" dead-end — it sees the real provider list.
+//      via `userIntegrations.connect` / `.disconnect` / `.sync`. Provider rows
+//      always come from the live server catalog. The local registry is used
+//      only to identify integration-owning roles when the catalog is offline.
 //
 //    • API TOKENS      → `devPortal.apiKeys.list` / `.create` / `.revoke`,
 //      with scopes from `devPortal.mcpTools.getScopes`. Tokens are issued
@@ -239,16 +238,19 @@ private struct ConnectedAppsBody: View {
     @State private var providers: [IntegrationProvider] = []
     @State private var connections: [IntegrationConnection] = []
     @State private var liveAdaptation: ProfileAdaptation? = nil
-    @State private var usedRegistryFallback = false
     @State private var catalogUnavailableReason: String? = nil
+    @State private var connectionsUnavailableReason: String? = nil
+    @State private var adaptationUnavailableReason: String? = nil
 
     // API tokens (the developer portal).
     @State private var apiKeys: [ApiKeyRow] = []
     @State private var scopes: [ApiScope] = []
+    @State private var tokensUnavailableReason: String? = nil
+    @State private var scopesUnavailableReason: String? = nil
 
     @State private var loading = true
-    @State private var loadError: String? = nil
     @State private var actionError: String? = nil
+    @State private var actionNotice: String? = nil
 
     // Per-provider connect form state.
     @State private var expandedProvider: String? = nil
@@ -269,6 +271,8 @@ private struct ConnectedAppsBody: View {
         let r = role.uppercased()
         if r.isEmpty { return false }
         if r == "ADMIN" || r == "SUPER_ADMIN" { return true }
+        if !providers.isEmpty || !connections.isEmpty { return true }
+        if catalogUnavailableReason != nil || connectionsUnavailableReason != nil { return true }
         return !RoleIntegrationRegistry.providers(for: r).isEmpty
     }
 
@@ -283,14 +287,15 @@ private struct ConnectedAppsBody: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
+                if let notice = actionNotice {
+                    LifecycleCard {
+                        Text(notice).font(EType.caption).foregroundStyle(Brand.success)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
 
                 if loading {
                     LifecycleCard { Text("Loading your integrations…").font(EType.caption).foregroundStyle(palette.textSecondary) }
-                } else if let err = loadError {
-                    LifecycleCard(accentDanger: true) {
-                        Text(err).font(EType.caption).foregroundStyle(Brand.danger)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
                 } else if !roleOwnsIntegrations {
                     nonIntegrationRoleCard
                 } else {
@@ -335,10 +340,21 @@ private struct ConnectedAppsBody: View {
 
     @ViewBuilder
     private var integrationJourneySection: some View {
-        let impacts = IntegrationJourneyPlanner.impacts(for: providers, connections: connections)
-        let adoptionSignals = IntegrationJourneyPlanner.adoptionSignals(for: providers, connections: connections)
-        let networkBenefits = IntegrationJourneyPlanner.networkBenefits(for: providers, connections: connections)
-        if !impacts.isEmpty || !adoptionSignals.isEmpty || !networkBenefits.isEmpty {
+        if let reason = connectionsUnavailableReason {
+            LifecycleCard(accentDanger: true) {
+                LifecycleSection(label: "RIOS ADOPTION MAP", icon: "point.3.connected.trianglepath.dotted")
+                Text("Connection state could not be loaded, so RIOS will not infer adoption progress.")
+                    .font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(reason)
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                    .lineLimit(2)
+            }
+        } else {
+            let impacts = IntegrationJourneyPlanner.impacts(for: providers, connections: connections)
+            let adoptionSignals = IntegrationJourneyPlanner.adoptionSignals(for: providers, connections: connections)
+            let networkBenefits = IntegrationJourneyPlanner.networkBenefits(for: providers, connections: connections)
+            if !impacts.isEmpty || !adoptionSignals.isEmpty || !networkBenefits.isEmpty {
             LifecycleCard {
                 LifecycleSection(label: "RIOS ADOPTION MAP", icon: "point.3.connected.trianglepath.dotted")
 
@@ -368,6 +384,7 @@ private struct ConnectedAppsBody: View {
                         journeyImpactRow(impact)
                     }
                 }
+            }
             }
         }
     }
@@ -471,27 +488,36 @@ private struct ConnectedAppsBody: View {
         LifecycleCard {
             LifecycleSection(label: "CONNECTED APPS", icon: "rectangle.connected.to.line.below")
 
-            let connectedCount = connections.filter(\.isOperational).count
-            Text(connectedCount == 0
-                 ? "No integrations connected yet. Pick a provider below to connect."
-                 : "\(connectedCount) connected · \(providers.count) available for your role")
-                .font(EType.caption).foregroundStyle(palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if usedRegistryFallback {
-                Text("Live provider catalog is temporarily unavailable.")
-                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+            if let reason = connectionsUnavailableReason {
+                Text("Connection state is unavailable. Connect, sync, and disconnect actions are locked until it is recovered.")
+                    .font(EType.caption).foregroundStyle(Brand.danger)
                     .fixedSize(horizontal: false, vertical: true)
-                if let reason = catalogUnavailableReason, !reason.isEmpty {
-                    Text(reason)
-                        .font(EType.mono(.micro))
-                        .foregroundStyle(palette.textTertiary)
-                        .lineLimit(2)
+                Text(reason)
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                    .lineLimit(2)
+                pillButton(title: "Retry connection state", filled: false, busy: false) {
+                    Task { await refreshConnections() }
                 }
+            } else {
+                let connectedCount = connections.filter(\.isOperational).count
+                Text(connectedCount == 0
+                     ? "No integrations connected yet. Pick a provider below to connect."
+                     : "\(connectedCount) connected · \(providers.count) available for your role")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if let reason = catalogUnavailableReason {
+                Text("Live provider catalog is temporarily unavailable.")
+                    .font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(reason)
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                    .lineLimit(2)
             }
 
             if providers.isEmpty {
-                if usedRegistryFallback {
+                if catalogUnavailableReason != nil {
                     pillButton(title: "Retry catalog", filled: false, busy: loading) {
                         Task { await load() }
                     }
@@ -620,7 +646,10 @@ private struct ConnectedAppsBody: View {
     @ViewBuilder
     private func providerActions(_ p: IntegrationProvider, isConnected: Bool, conn: IntegrationConnection?, isExpanded: Bool, busy: Bool) -> some View {
         VStack(alignment: .trailing, spacing: 6) {
-            if isConnected {
+            if connectionsUnavailableReason != nil {
+                pillButton(title: "State unavailable", filled: false, busy: false) {}
+                    .disabled(true)
+            } else if isConnected {
                 if p.supportsSync == true && conn?.effectiveFeedState != "connecting" {
                     pillButton(title: busy ? "Syncing…" : "Sync", filled: false, busy: busy) {
                         Task { await sync(conn) }
@@ -767,6 +796,13 @@ private struct ConnectedAppsBody: View {
                     SecureField(field.label, text: Binding(
                         get: { credInputs[bindingKey] ?? "" },
                         set: { credInputs[bindingKey] = $0 }))
+                } else if field.inputType == "json" || field.inputType == "certificate" {
+                    TextEditor(text: Binding(
+                        get: { credInputs[bindingKey] ?? "" },
+                        set: { credInputs[bindingKey] = $0 }))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .frame(minHeight: 132)
                 } else {
                     TextField(field.label, text: Binding(
                         get: { credInputs[bindingKey] ?? "" },
@@ -791,9 +827,20 @@ private struct ConnectedAppsBody: View {
         let items = adaptation?.menuItems ?? []
         let caps = adaptation?.capabilities ?? []
         let surfaces = adaptation?.roleSurfaces ?? []
-        if !items.isEmpty || !caps.isEmpty || !surfaces.isEmpty {
+        if adaptationUnavailableReason != nil || !items.isEmpty || !caps.isEmpty || !surfaces.isEmpty {
             LifecycleCard {
                 LifecycleSection(label: "INTEGRATION UNLOCKS", icon: "puzzlepiece.extension")
+                if let reason = adaptationUnavailableReason {
+                    Text("Live integration unlocks could not be refreshed. Any items below are from the current authenticated session.")
+                        .font(EType.caption).foregroundStyle(Brand.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(reason)
+                        .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                        .lineLimit(2)
+                    pillButton(title: "Retry unlocks", filled: false, busy: false) {
+                        Task { await refreshProfileAdaptation() }
+                    }
+                }
                 ForEach(items) { item in
                     HStack(spacing: 8) {
                         Image(systemName: item.icon.isEmpty ? "arrow.right.circle" : item.icon)
@@ -845,7 +892,17 @@ private struct ConnectedAppsBody: View {
                 issueForm
             }
 
-            if apiKeys.isEmpty {
+            if let reason = tokensUnavailableReason {
+                Text("API token state could not be loaded. Existing tokens are not assumed absent.")
+                    .font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(reason)
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                    .lineLimit(2)
+                pillButton(title: "Retry token state", filled: false, busy: false) {
+                    Task { await refreshApiKeys() }
+                }
+            } else if apiKeys.isEmpty {
                 Text("No API tokens issued yet. Tap Issue token to create one — programmatic access to your loads, tracking, and documents.")
                     .font(EType.caption).foregroundStyle(palette.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -898,8 +955,19 @@ private struct ConnectedAppsBody: View {
             }
 
             Text("SCOPES").font(.system(size: 8, weight: .heavy)).tracking(0.6).foregroundStyle(palette.textTertiary)
-            if scopes.isEmpty {
-                Text("Scope catalog unavailable right now.").font(EType.caption).foregroundStyle(palette.textSecondary)
+            if let reason = scopesUnavailableReason {
+                Text("Scope catalog could not be loaded. Token creation is locked until valid scopes are available.")
+                    .font(EType.caption).foregroundStyle(Brand.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(reason)
+                    .font(EType.mono(.micro)).foregroundStyle(palette.textTertiary)
+                    .lineLimit(2)
+                pillButton(title: "Retry scopes", filled: false, busy: false) {
+                    Task { await refreshScopes() }
+                }
+            } else if scopes.isEmpty {
+                Text("No token scopes are available for this role.")
+                    .font(EType.caption).foregroundStyle(palette.textSecondary)
             } else {
                 FlowScopes(scopes: scopes, selected: $selectedScopes, palette: palette)
             }
@@ -985,35 +1053,64 @@ private struct ConnectedAppsBody: View {
     // MARK: - Load + actions
 
     private func load() async {
-        loading = true; loadError = nil; catalogUnavailableReason = nil
+        loading = true
+        catalogUnavailableReason = nil
+        connectionsUnavailableReason = nil
+        tokensUnavailableReason = nil
+        scopesUnavailableReason = nil
+        adaptationUnavailableReason = nil
         let api = EusoTripAPI.shared
 
         async let cat: Result<[IntegrationProvider], Error> = capture {
             try await api.queryNoInput("userIntegrations.listCatalog")
         }
-        async let cons: [IntegrationConnection] = api.queryNoInput("userIntegrations.listConnections")
-        async let keys: [ApiKeyRow] = api.queryNoInput("devPortal.apiKeys.list")
-        async let scopeRows: [ApiScope] = api.queryNoInput("devPortal.mcpTools.getScopes")
-        async let adaptationEnvelope = refreshProfileAdaptationEnvelope()
+        async let cons: Result<[IntegrationConnection], Error> = capture {
+            try await api.queryNoInput("userIntegrations.listConnections")
+        }
+        async let keys: Result<[ApiKeyRow], Error> = capture {
+            try await api.queryNoInput("devPortal.apiKeys.list")
+        }
+        async let scopeRows: Result<[ApiScope], Error> = capture {
+            try await api.queryNoInput("devPortal.mcpTools.getScopes")
+        }
+        async let adaptationEnvelope: Result<ProfileAdaptation, Error> = capture {
+            try await api.queryNoInput("userIntegrations.profileAdaptation")
+        }
 
-        let catalogResult = await cat
-        let catalog: [IntegrationProvider]
-        switch catalogResult {
+        switch await cat {
         case .success(let rows):
-            catalog = rows
+            providers = rows
         case .failure(let error):
-            catalog = []
-            catalogUnavailableReason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            providers = []
+            catalogUnavailableReason = errorMessage(error)
         }
-        connections = (try? await cons) ?? []
-        apiKeys = (try? await keys) ?? []
-        scopes = (try? await scopeRows) ?? []
-        if let adaptation = await adaptationEnvelope {
+        switch await cons {
+        case .success(let rows):
+            connections = rows
+        case .failure(let error):
+            connections = []
+            connectionsUnavailableReason = errorMessage(error)
+        }
+        switch await keys {
+        case .success(let rows):
+            apiKeys = rows
+        case .failure(let error):
+            apiKeys = []
+            tokensUnavailableReason = errorMessage(error)
+        }
+        switch await scopeRows {
+        case .success(let rows):
+            scopes = rows
+        case .failure(let error):
+            scopes = []
+            scopesUnavailableReason = errorMessage(error)
+        }
+        switch await adaptationEnvelope {
+        case .success(let adaptation):
             liveAdaptation = adaptation
+        case .failure(let error):
+            adaptationUnavailableReason = errorMessage(error)
         }
-
-        providers = catalog
-        usedRegistryFallback = catalog.isEmpty && catalogUnavailableReason != nil
 
         loading = false
     }
@@ -1031,25 +1128,31 @@ private struct ConnectedAppsBody: View {
         credentials: [String: String]?,
         configuration: [String: String]
     ) async {
-        busyProvider = p.id; actionError = nil
+        busyProvider = p.id
+        actionError = nil
+        actionNotice = nil
         struct In: Encodable { let providerId: String; let config: [String: String]; let credentials: [String: String]? }
-        // Tolerant: provider.connect() return shapes vary by provider, so we
-        // only need a successful round-trip, not a specific field.
-        struct Out: Decodable {}
+        struct Out: Decodable {
+            let status: String
+            let scopes: [String]?
+            let error: String?
+            let verification: String?
+            let connectionPreserved: Bool?
+        }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation(
+            let out: Out = try await EusoTripAPI.shared.mutation(
                 "userIntegrations.connect",
                 input: In(providerId: p.id, config: configuration, credentials: credentials))
-            expandedProvider = nil
-            // Clear typed credentials from memory once submitted.
-            for field in p.credentialFields {
-                credInputs[inputKey(provider: p.id, kind: "credential", field: field.key)] = nil
-            }
-            for field in p.configurationFields {
-                credInputs[inputKey(provider: p.id, kind: "configuration", field: field.key)] = nil
-            }
+            clearSubmittedValues(for: p)
             await refreshConnections()
-            await refreshProfileAdaptation()
+            if out.status.lowercased() == "connected" {
+                expandedProvider = nil
+                actionNotice = "\(cleanLabel(p.displayName)) connected and verified."
+                await refreshProfileAdaptation()
+            } else {
+                let preserved = out.connectionPreserved == true ? " Your existing verified connection remains active." : ""
+                actionError = (out.error ?? "\(cleanLabel(p.displayName)) requires additional authorization.") + preserved
+            }
         } catch let e as EusoTripAPIError {
             actionError = e.errorDescription ?? "Couldn't connect \(cleanLabel(p.displayName))."
         } catch {
@@ -1060,13 +1163,20 @@ private struct ConnectedAppsBody: View {
 
     private func disconnect(_ conn: IntegrationConnection?) async {
         guard let conn else { return }
-        busyProvider = conn.providerId; actionError = nil
+        busyProvider = conn.providerId
+        actionError = nil
+        actionNotice = nil
         struct In: Encodable { let connectionId: Int }
-        struct Out: Decodable {}
+        struct Out: Decodable { let ok: Bool }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation("userIntegrations.disconnect", input: In(connectionId: conn.id))
-            await refreshConnections()
-            await refreshProfileAdaptation()
+            let out: Out = try await EusoTripAPI.shared.mutation("userIntegrations.disconnect", input: In(connectionId: conn.id))
+            if out.ok {
+                actionNotice = "Integration disconnected and its stored credential retired."
+                await refreshConnections()
+                await refreshProfileAdaptation()
+            } else {
+                actionError = "The server did not confirm the disconnect."
+            }
         } catch let e as EusoTripAPIError {
             actionError = e.errorDescription ?? "Couldn't disconnect."
         } catch {
@@ -1077,11 +1187,29 @@ private struct ConnectedAppsBody: View {
 
     private func sync(_ conn: IntegrationConnection?) async {
         guard let conn else { return }
-        busyProvider = conn.providerId; actionError = nil
+        busyProvider = conn.providerId
+        actionError = nil
+        actionNotice = nil
         struct In: Encodable { let connectionId: Int }
-        struct Out: Decodable {}
+        struct Out: Decodable {
+            let status: String
+            let nextEligibleAt: String?
+            let recordsIngested: Int?
+            let observationsInserted: Int?
+            let observationDuplicates: Int?
+        }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation("userIntegrations.sync", input: In(connectionId: conn.id))
+            let out: Out = try await EusoTripAPI.shared.mutation("userIntegrations.sync", input: In(connectionId: conn.id))
+            if out.status == "synced" {
+                let records = out.recordsIngested ?? 0
+                let observations = out.observationsInserted ?? 0
+                actionNotice = "Provider sync completed: \(records) records received, \(observations) new observations stored."
+            } else if out.status == "skipped_cadence" {
+                let next = out.nextEligibleAt.map { humanISO($0) } ?? "the provider's next eligible window"
+                actionNotice = "No sync was run. The provider is next eligible \(next)."
+            } else {
+                actionError = "The provider returned an unsupported sync state: \(out.status)."
+            }
             await refreshConnections()
             await refreshProfileAdaptation()
         } catch let e as EusoTripAPIError {
@@ -1093,7 +1221,10 @@ private struct ConnectedAppsBody: View {
     }
 
     private func issueToken() async {
-        issuing = true; actionError = nil; freshlyIssuedKey = nil
+        issuing = true
+        actionError = nil
+        actionNotice = nil
+        freshlyIssuedKey = nil
         struct In: Encodable { let name: String; let scopes: [String]; let expiresInDays: Int }
         struct Out: Decodable { let success: Bool; let apiKey: String?; let error: String? }
         do {
@@ -1118,12 +1249,19 @@ private struct ConnectedAppsBody: View {
     }
 
     private func revoke(_ keyId: String) async {
-        revokingKey = keyId; actionError = nil
+        revokingKey = keyId
+        actionError = nil
+        actionNotice = nil
         struct In: Encodable { let keyId: String }
         struct Out: Decodable { let success: Bool }
         do {
-            let _: Out = try await EusoTripAPI.shared.mutation("devPortal.apiKeys.revoke", input: In(keyId: keyId))
-            await refreshApiKeys()
+            let out: Out = try await EusoTripAPI.shared.mutation("devPortal.apiKeys.revoke", input: In(keyId: keyId))
+            if out.success {
+                actionNotice = "API token revoked."
+                await refreshApiKeys()
+            } else {
+                actionError = "The server did not confirm the token revocation."
+            }
         } catch let e as EusoTripAPIError {
             actionError = e.errorDescription ?? "Couldn't revoke the token."
         } catch {
@@ -1133,21 +1271,56 @@ private struct ConnectedAppsBody: View {
     }
 
     private func refreshConnections() async {
-        connections = (try? await EusoTripAPI.shared.queryNoInput("userIntegrations.listConnections")) ?? connections
-    }
-
-    private func refreshProfileAdaptation() async {
-        if let adaptation = await refreshProfileAdaptationEnvelope() {
-            liveAdaptation = adaptation
+        do {
+            let rows: [IntegrationConnection] = try await EusoTripAPI.shared.queryNoInput("userIntegrations.listConnections")
+            connections = rows
+            connectionsUnavailableReason = nil
+        } catch {
+            connectionsUnavailableReason = errorMessage(error)
         }
     }
 
-    private func refreshProfileAdaptationEnvelope() async -> ProfileAdaptation? {
-        try? await EusoTripAPI.shared.queryNoInput("userIntegrations.profileAdaptation")
+    private func refreshProfileAdaptation() async {
+        do {
+            let adaptation: ProfileAdaptation = try await EusoTripAPI.shared.queryNoInput("userIntegrations.profileAdaptation")
+            liveAdaptation = adaptation
+            adaptationUnavailableReason = nil
+        } catch {
+            adaptationUnavailableReason = errorMessage(error)
+        }
     }
 
     private func refreshApiKeys() async {
-        apiKeys = (try? await EusoTripAPI.shared.queryNoInput("devPortal.apiKeys.list")) ?? apiKeys
+        do {
+            let rows: [ApiKeyRow] = try await EusoTripAPI.shared.queryNoInput("devPortal.apiKeys.list")
+            apiKeys = rows
+            tokensUnavailableReason = nil
+        } catch {
+            tokensUnavailableReason = errorMessage(error)
+        }
+    }
+
+    private func refreshScopes() async {
+        do {
+            let rows: [ApiScope] = try await EusoTripAPI.shared.queryNoInput("devPortal.mcpTools.getScopes")
+            scopes = rows
+            scopesUnavailableReason = nil
+        } catch {
+            scopesUnavailableReason = errorMessage(error)
+        }
+    }
+
+    private func clearSubmittedValues(for provider: IntegrationProvider) {
+        for field in provider.credentialFields {
+            credInputs[inputKey(provider: provider.id, kind: "credential", field: field.key)] = nil
+        }
+        for field in provider.configurationFields {
+            credInputs[inputKey(provider: provider.id, kind: "configuration", field: field.key)] = nil
+        }
+    }
+
+    private func errorMessage(_ error: Error) -> String {
+        (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
     }
 
     // MARK: - Helpers

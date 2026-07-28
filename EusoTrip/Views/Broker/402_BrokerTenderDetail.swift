@@ -438,13 +438,16 @@ struct BrokerTenderDetail: View {
             sectionHeader("LANE", icon: "map")
             ZStack {
                 if let lane = laneForMap(d) {
-                    // Prefer the decoded HERE section polyline (real curved
-                    // road geometry from `refreshRoutePolyline`); fall back
-                    // to the straight pickup→delivery base line only until
-                    // that resolves (or for vessel legs / missing coords).
-                    let line: [HereLatLng] = routePolyline.count >= 2
-                        ? routePolyline
-                        : [.init(lane.pickup), .init(lane.delivery)]
+                    let mode = (d.transportMode ?? "truck").lowercased()
+                    let line: [HereLatLng] = mode == "truck" && routePolyline.count >= 2
+                        ? routePolyline : []
+                    let markerLayer = HereMapLayer.markers([
+                        .init(at: .init(lane.pickup), kind: .pickup, label: lane.originTitle),
+                        .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
+                    ])
+                    let mapLayers: [HereMapLayer] = line.count >= 2
+                        ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
+                        : [markerLayer]
                     HereLiveMapView(
                         center: .init(
                             (lane.pickup.latitude + lane.delivery.latitude) / 2,
@@ -452,17 +455,8 @@ struct BrokerTenderDetail: View {
                         ),
                         zoom: 6,
                         route: line,
-                        baseLayers: [
-                            .route(
-                                polyline: line,
-                                colorHex: "#1473FF"
-                            ),
-                            .markers([
-                                .init(at: .init(lane.pickup),   kind: .pickup,   label: lane.originTitle),
-                                .init(at: .init(lane.delivery), kind: .delivery, label: lane.destinationTitle)
-                            ])
-                        ],
-                        addOns: .shipperTracking
+                        baseLayers: mapLayers,
+                        addOns: mode == "truck" ? .shipperTracking : .weather
                     )
                 } else {
                     // SEAM: no geocoded coords on the tender yet. Honest
@@ -962,18 +956,18 @@ struct BrokerTenderDetail: View {
     /// same geocoded coords the lane map uses (`laneForMap`). Truck-aware
     /// via the default `.standardUSSemiLoaded` profile (this surface holds
     /// a `LoadDetail`, not the full `Load`). Vessel mode is skipped — an
-    /// ocean leg is a great circle, not a road route — and on any failure
-    /// (missing coords, HERE error) the polyline stays empty and the map
-    /// keeps the straight pickup→delivery fallback. Never a fabricated path.
+    /// ocean or rail leg is not a road route — and on any failure (missing
+    /// coords, HERE error) the polyline stays empty and the map remains
+    /// marker-only.
     @MainActor
     private func refreshRoutePolyline() async {
         guard let detail = detailStore.state.value ?? nil else {
             routePolyline = []
             return
         }
-        // Vessel legs are great-circle, not road routes — skip the fetch.
+        // Rail, vessel, and barge legs require their own routing providers.
         let mode = (detail.transportMode ?? "truck").lowercased()
-        guard mode != "vessel", let lane = laneForMap(detail) else {
+        guard mode == "truck", let lane = laneForMap(detail) else {
             routePolyline = []
             return
         }

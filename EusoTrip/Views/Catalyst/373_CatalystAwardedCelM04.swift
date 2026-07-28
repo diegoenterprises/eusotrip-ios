@@ -705,37 +705,32 @@ private struct CatalystAwardedCelM04Body: View {
     /// Real HERE map of the awarded lane (replaces the former decorative
     /// Canvas bezier). Renders ONLY when the server provided real
     /// pickup/delivery coords; otherwise an honest "awaiting coords"
-    /// placeholder — never a fabricated route. The route line prefers the
-    /// decoded HERE Routing v8 section polyline (curved road geometry,
-    /// fetched in `refreshRoutePolyline`) and falls back to the straight
-    /// pickup→delivery base line until that resolves (mirrors Driver 013).
+    /// placeholder — never a fabricated route. The route line appears only
+    /// after decoded truck-road geometry resolves.
     @ViewBuilder
     private var laneMap: some View {
         if let coords = laneCoords {
             let midLat = (coords.pickupLat + coords.deliveryLat) / 2
             let midLng = (coords.pickupLng + coords.deliveryLng) / 2
-            let straight: [HereLatLng] = [
-                HereLatLng(coords.pickupLat, coords.pickupLng),
-                HereLatLng(coords.deliveryLat, coords.deliveryLng)
-            ]
-            // Prefer the decoded HERE section polyline (real road geometry);
-            // fall back to the straight pickup→delivery line until it lands.
-            let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : straight
+            let mode = TransportMode(rawValue: load?.transportMode ?? "truck") ?? .truck
+            let line: [HereLatLng] = mode == .truck && routePolyline.count >= 2
+                ? routePolyline : []
+            let markerLayer = HereMapLayer.markers([
+                .init(at: .init(coords.pickupLat, coords.pickupLng),
+                      kind: .pickup, label: originPinLabel),
+                .init(at: .init(coords.deliveryLat, coords.deliveryLng),
+                      kind: .delivery, label: destPinLabel)
+            ])
+            let mapLayers: [HereMapLayer] = line.count >= 2
+                ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
+                : [markerLayer]
             ZStack(alignment: .topLeading) {
                 HereLiveMapView(
                     center: .init(midLat, midLng),
                     zoom: 6,
                     route: line,
-                    baseLayers: [
-                        .route(polyline: line, colorHex: "#1473FF"),
-                        .markers([
-                            .init(at: .init(coords.pickupLat, coords.pickupLng),
-                                  kind: .pickup, label: originPinLabel),
-                            .init(at: .init(coords.deliveryLat, coords.deliveryLng),
-                                  kind: .delivery, label: destPinLabel)
-                        ])
-                    ],
-                    addOns: .shipperTracking
+                    baseLayers: mapLayers,
+                    addOns: mode == .truck ? .shipperTracking : .weather
                 )
                 .frame(height: 120)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
@@ -1358,7 +1353,8 @@ private struct CatalystAwardedCelM04Body: View {
     /// line — never a fabricated path.
     @MainActor
     private func refreshRoutePolyline() async {
-        guard let coords = laneCoords else {
+        let mode = TransportMode(rawValue: load?.transportMode ?? "truck") ?? .truck
+        guard mode == .truck, let coords = laneCoords else {
             routePolyline = []
             return
         }

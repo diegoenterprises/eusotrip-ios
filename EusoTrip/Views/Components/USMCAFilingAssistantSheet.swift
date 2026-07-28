@@ -3,16 +3,15 @@
 //  EusoTrip — IO 2026 Tier 3 #11 · XR USMCA Filing Assistant
 //
 //  Driver approaches a US-MX or US-CA crossing. Caller passes the
-//  cert + commodity + lane + carrier fields; the assistant runs a
-//  2-child Cortex fanout server-side (perception parses the cert,
-//  guardian emits the filing next-step verdict) and synthesises a
-//  1-2 sentence spoken instruction.
+//  certification metadata + commodity + lane + carrier fields; the
+//  server returns deterministic, agency-sourced readiness guidance.
+//  Customs-broker confirmation remains mandatory.
 //
 //  The sheet:
 //    1. Renders the form (cert number / lane / HS code / criterion /
 //       invoice total / FAST toggle).
 //    2. Submits to `xrChecklist.usmcaFilingAssistant`.
-//    3. Surfaces the verdict + plays the spoken instruction through
+//    3. Surfaces the advisory + plays the spoken instruction through
 //       ESangTTSPlayer (P0-4 dialect-aware) so the driver hears the
 //       guidance at the border without needing to read the screen.
 //
@@ -38,12 +37,28 @@ struct USMCAFilingInput: Encodable {
 }
 
 struct USMCAFilingResponse: Decodable, Hashable {
+    struct OfficialSource: Decodable, Hashable, Identifiable {
+        let title: String
+        let url: String
+        var id: String { url }
+    }
+
+    /// Compatibility field. The server intentionally never verifies
+    /// origin through this metadata-only endpoint.
     let certComplete: Bool
+    let metadataComplete: Bool
+    let certificationVerified: Bool
     let missingFields: [String]
     let nextStep: String         // PARS_filing | PAPS_filing | FAST_lane | broker_handoff | hold_for_correction
     let stepDetail: String
     let brokerContactNeeded: Bool
+    let brokerConfirmationRequired: Bool
+    let recommendedReleaseProcess: String
+    let fastEligibilityStatus: String
+    let advisoryOnly: Bool
+    let loadBound: Bool
     let citations: [String]
+    let officialSources: [OfficialSource]
     let spokenInstruction: String
     let auditId: Int?
     let observedAt: String
@@ -125,12 +140,12 @@ public struct USMCAFilingAssistantSheet: View {
             HStack(spacing: 6) {
                 Image(systemName: "checkmark.shield.fill")
                     .font(.caption.weight(.bold))
-                Text("ESANG · USMCA FILING ASSIST")
+                Text("ESANG · USMCA READINESS ASSIST")
                     .font(.caption2.weight(.bold))
                     .tracking(0.8)
             }
             .foregroundStyle(.secondary)
-            Text("Fill in the cert + lane + commodity. ESANG parses, validates and tells you the next filing step, out loud.")
+            Text("Check shipment metadata against the cross-border handoff path. This does not certify origin or replace your customs broker.")
                 .font(.callout)
                 .foregroundStyle(.primary)
         }
@@ -208,8 +223,8 @@ public struct USMCAFilingAssistantSheet: View {
     private var fastToggle: some View {
         Toggle(isOn: $fastEligible) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Carrier is FAST-eligible").font(.callout.weight(.semibold))
-                Text("Enables the FAST lane recommendation when the cert is clean.")
+                Text("Carrier reports FAST approval").font(.callout.weight(.semibold))
+                Text("Carrier status is one factor only. The broker and border program must confirm the whole shipment is eligible.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -247,8 +262,8 @@ public struct USMCAFilingAssistantSheet: View {
                     .font(.headline.weight(.bold))
                     .foregroundStyle(color)
                 Spacer()
-                if r.brokerContactNeeded {
-                    Text("BROKER NEEDED")
+                if r.brokerConfirmationRequired {
+                    Text("BROKER CONFIRMATION REQUIRED")
                         .font(.caption2.weight(.bold))
                         .tracking(0.8)
                         .padding(.horizontal, 8).padding(.vertical, 4)
@@ -264,17 +279,22 @@ public struct USMCAFilingAssistantSheet: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
-            if !r.certComplete {
-                Label("Cert incomplete: \(r.missingFields.joined(separator: ", "))",
+            if !r.metadataComplete {
+                Label("Metadata incomplete: \(r.missingFields.joined(separator: ", "))",
                       systemImage: "exclamationmark.triangle.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.orange)
             }
-            if !r.citations.isEmpty {
+            if !r.officialSources.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CITATIONS").font(.caption2.weight(.bold)).tracking(0.8).foregroundStyle(.tertiary)
-                    ForEach(r.citations, id: \.self) { c in
-                        Text("• \(c)").font(.caption2).foregroundStyle(.secondary)
+                    Text("OFFICIAL SOURCES").font(.caption2.weight(.bold)).tracking(0.8).foregroundStyle(.tertiary)
+                    ForEach(r.officialSources) { source in
+                        if let url = URL(string: source.url) {
+                            Link(destination: url) {
+                                Label(source.title, systemImage: "arrow.up.right.square")
+                                    .font(.caption2)
+                            }
+                        }
                     }
                 }
             }
@@ -282,7 +302,14 @@ public struct USMCAFilingAssistantSheet: View {
                 Text("Audit row #\(id) · Ed25519 verified")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.tertiary)
+            } else {
+                Text("General advisory · not written to a load audit ledger")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.tertiary)
             }
+            Text("Origin qualification, tariff treatment, release status, and FAST-lane use require confirmation by the responsible customs broker and agency systems.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
         .padding(14)
         .background(

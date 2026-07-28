@@ -215,7 +215,7 @@ struct ApproachingPickup: View {
                             .font(.system(size: 9, weight: .heavy))
                             .tracking(0.8)
                             .foregroundStyle(palette.textTertiary)
-                        Text("Hands-free hazmat checklist")
+                        Text("Hands-free pre-haul checklist")
                             .font(EType.body.weight(.semibold))
                             .foregroundStyle(palette.textPrimary)
                         Text("Reads each step aloud, say the confirm phrase to advance.")
@@ -707,15 +707,15 @@ private struct XRPreHaulSessionSheet: View {
         if let list = bridge.checklist {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("\(list.confirmedCount + (bridge.currentItemIndex > list.confirmedCount ? bridge.currentItemIndex - list.confirmedCount : 0)) of \(list.totalCount) confirmed")
+                    Text("\(bridge.confirmedCount) of \(list.totalCount) confirmed")
                         .font(.caption).foregroundStyle(.secondary)
                     Spacer(minLength: 0)
-                    if list.requiredRemaining > 0 {
-                        Text("\(list.requiredRemaining) required remaining")
+                    if bridge.requiredRemaining > 0 {
+                        Text("\(bridge.requiredRemaining) required remaining")
                             .font(.caption.bold())
                             .foregroundStyle(.orange)
                     } else {
-                        Label("Ready to depart", systemImage: "checkmark.seal.fill")
+                        Label("Checklist complete", systemImage: "checkmark.seal.fill")
                             .font(.caption.bold())
                             .foregroundStyle(.green)
                     }
@@ -729,7 +729,7 @@ private struct XRPreHaulSessionSheet: View {
                                 startPoint: .leading, endPoint: .trailing
                             ))
                             .frame(width: list.totalCount > 0
-                                   ? geo.size.width * CGFloat(bridge.currentItemIndex) / CGFloat(list.totalCount)
+                                   ? geo.size.width * CGFloat(bridge.confirmedCount) / CGFloat(list.totalCount)
                                    : 0)
                     }
                 }
@@ -753,7 +753,7 @@ private struct XRPreHaulSessionSheet: View {
                 Label("Pre-haul checklist complete.", systemImage: "checkmark.seal.fill")
                     .foregroundStyle(.green)
                     .font(.body.bold())
-                Text("You're cleared to depart pickup. The audit chain has been signed.")
+                Text("Required checklist attestations are signed. Review the remaining load gates before departure.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -787,14 +787,23 @@ private struct XRPreHaulSessionSheet: View {
 
     @ViewBuilder
     private var controlsRow: some View {
-        if case .complete = bridge.phase {
-            EmptyView()
-        } else {
+        if case .prompting = bridge.phase {
+            checklistControls
+        } else if case .awaitingConfirmation = bridge.phase {
+            checklistControls
+        }
+    }
+
+    @ViewBuilder
+    private var checklistControls: some View {
+        if let list = bridge.checklist,
+           bridge.currentItemIndex < list.items.count {
+            let item = list.items[bridge.currentItemIndex]
             HStack(spacing: 12) {
                 Button {
                     Task { await bridge.confirmCurrentItemManually() }
                 } label: {
-                    Label("Confirm", systemImage: "checkmark.circle.fill")
+                    Label("Attest complete", systemImage: "checkmark.circle.fill")
                         .font(.body.bold())
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -806,15 +815,17 @@ private struct XRPreHaulSessionSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
-                Button {
-                    Task { await bridge.skipCurrentItem() }
-                } label: {
-                    Text("Skip")
-                        .font(.body)
-                        .padding(.horizontal, 18).padding(.vertical, 12)
-                        .background(.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                if !item.required {
+                    Button {
+                        Task { await bridge.skipCurrentItem() }
+                    } label: {
+                        Text("Skip")
+                            .font(.body)
+                            .padding(.horizontal, 18).padding(.vertical, 12)
+                            .background(.gray.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
     }

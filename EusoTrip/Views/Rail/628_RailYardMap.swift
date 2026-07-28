@@ -243,17 +243,18 @@ private struct RailYardMapBody: View {
                 }
                 .padding(.bottom, Space.s3)
 
-                BespokeMapCanvas(
+                HereVectorMapView(
                     center: mapCenter,
                     zoom: mapZoom,
                     interactive: true,
                     tilt: 0,
-                    isDark: colorScheme == .dark,
                     layers: [
                         .adZones(mapped.map(yardFootprint(for:))),
-                        .markers(mapped.map { y in
-                            HereMarker(
-                                at: HereLatLng(y.coordinates?.lat ?? 0, y.coordinates?.lng ?? 0),
+                        .markers(mapped.compactMap { y in
+                            guard let lat = y.coordinates?.lat,
+                                  let lng = y.coordinates?.lng else { return nil }
+                            return HereMarker(
+                                at: HereLatLng(lat, lng),
                                 kind: .pickup,
                                 label: y.name,
                                 id: String(y.id))

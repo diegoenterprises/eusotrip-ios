@@ -106,15 +106,6 @@ struct ActiveEnrouteLoaded: View {
         }
         return "-"
     }
-    /// Accessibility label for the destination flag — derives from the
-    /// same live binding as `destFlagText` so VoiceOver and visual
-    /// stay in lockstep. Em-dash collapses to "Destination pending"
-    /// for spoken clarity.
-    private var destFlagA11y: String {
-        let label = destFlagText
-        return label == "-" ? "Destination pending" : "Destination: \(label)"
-    }
-
     // MARK: - Live/fallback computed overrides
 
     private var loadID: String {
@@ -277,15 +268,6 @@ struct ActiveEnrouteLoaded: View {
         outFmt.dateFormat = "HH:mm"
         return "· 30-min break due at \(outFmt.string(from: d))"
     }
-    /// Em-dash until HERE reverse-geocoding of the live fix lands;
-    /// HereCurrentLocationChip already paints the live cross-street
-    /// strip outside this card.
-    private var waypointText: String { "-" }
-
-    // Ping position, normalized to map frame
-    private var pingX: CGFloat { register == .night ? 0.40 : 0.32 }
-    private var pingY: CGFloat { register == .night ? 0.54 : 0.60 }
-
     var body: some View {
         ZStack(alignment: .top) {
             // Map canvas — fills behind everything
@@ -490,12 +472,14 @@ struct ActiveEnrouteLoaded: View {
            // honest placeholder until the next read lands coords.
            !(pickup.lat == 0 && pickup.lng == 0),
            !(delivery.lat == 0 && delivery.lng == 0) {
-            // Prefer the decoded HERE section polyline (real curved road
-            // geometry); fall back to the straight pickup→delivery line until
-            // the route resolves — never a fabricated path.
-            let line: [HereLatLng] = routePolyline.count >= 2
-                ? routePolyline
-                : [HereLatLng(pickup.lat, pickup.lng), HereLatLng(delivery.lat, delivery.lng)]
+            let line: [HereLatLng] = routePolyline.count >= 2 ? routePolyline : []
+            let markerLayer = HereMapLayer.markers([
+                .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: originName),
+                .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: destFlagText)
+            ])
+            let routeLayers: [HereMapLayer] = line.count >= 2
+                ? [.route(polyline: line, colorHex: "#1473FF"), markerLayer]
+                : [markerLayer]
             // §3c receiver fence at the corridor terminus — ONLY when a
             // real `tracking.getGeofences` row covers the receiver
             // (resolveReceiverFence). Absent row ⇒ absent layer.
@@ -510,13 +494,7 @@ struct ActiveEnrouteLoaded: View {
                 zoom: 7,
                 firstPerson: true,
                 route: line,
-                baseLayers: [
-                    .route(polyline: line, colorHex: "#1473FF"),
-                    .markers([
-                        .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: originName),
-                        .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: destFlagText)
-                    ])
-                ] + fenceLayers,
+                baseLayers: routeLayers + fenceLayers,
                 addOns: .driverEnRoute
             )
         } else {
@@ -524,197 +502,16 @@ struct ActiveEnrouteLoaded: View {
         }
     }
 
-    /// Stylized ghost-grid backdrop shown only when no active load with
-    /// real coords is on file (previews + first-run + pre-geocode). It
-    /// carries NO business data — a neutral on-brand backdrop, not a
-    /// fabricated route.
+    /// Operational empty state shown until the active load has verified route
+    /// coordinates. It contains no authored roads, scale, waypoint, or live puck.
     private var mapPlaceholder: some View {
-        ZStack {
-            // Backdrop
-            Rectangle()
-                .fill(register == .night
-                      ? AnyShapeStyle(
-                        RadialGradient(
-                            colors: [Color(hex: "#0F1626"), Color(hex: "#0B0F17"), Color(hex: "#07090D")],
-                            center: .init(x: 0.58, y: 0.42),
-                            startRadius: 60, endRadius: 700
-                        )
-                      )
-                      : AnyShapeStyle(
-                        LinearGradient(
-                            colors: [Color(hex: "#E9F0F8"), Color(hex: "#EFF3F7"), Color(hex: "#F2F4F6")],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                      )
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // Grid
-            Canvas { ctx, size in
-                let strokeColor: Color = register == .night
-                    ? Color.white.opacity(0.05)
-                    : Color.black.opacity(0.05)
-                let step: CGFloat = 44
-                var x: CGFloat = 0
-                while x < size.width {
-                    ctx.stroke(Path { $0.move(to: .init(x: x, y: 0)); $0.addLine(to: .init(x: x, y: size.height)) },
-                               with: .color(strokeColor), lineWidth: 1)
-                    x += step
-                }
-                var y: CGFloat = 0
-                while y < size.height {
-                    ctx.stroke(Path { $0.move(to: .init(x: 0, y: y)); $0.addLine(to: .init(x: size.width, y: y)) },
-                               with: .color(strokeColor), lineWidth: 1)
-                    y += step
-                }
-            }
-
-            // Route polyline — the iridescent hairline (§4.3)
-            GeometryReader { geo in
-                let w = geo.size.width
-                let h = geo.size.height
-
-                if register == .night {
-                    // Traveled: Meridian (26, 500) → current (176, 360), normalized
-                    Path { p in
-                        p.move(to: .init(x: w * 0.059, y: h * 0.625))
-                        p.addQuadCurve(to: .init(x: w * 0.295, y: h * 0.55),
-                                       control: .init(x: w * 0.205, y: h * 0.588))
-                        p.addQuadCurve(to: .init(x: w * 0.40, y: h * 0.45),
-                                       control: .init(x: w * 0.364, y: h * 0.525))
-                    }
-                    .stroke(LinearGradient.diagonal,
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round))
-
-                    // Remaining: current → Hope Mills (400, 110)
-                    Path { p in
-                        p.move(to: .init(x: w * 0.40, y: h * 0.45))
-                        p.addQuadCurve(to: .init(x: w * 0.568, y: h * 0.375),
-                                       control: .init(x: w * 0.477, y: h * 0.40))
-                        p.addQuadCurve(to: .init(x: w * 0.773, y: h * 0.275),
-                                       control: .init(x: w * 0.682, y: h * 0.35))
-                        p.addQuadCurve(to: .init(x: w * 0.909, y: h * 0.138),
-                                       control: .init(x: w * 0.864, y: h * 0.213))
-                    }
-                    .stroke(LinearGradient.diagonal.opacity(0.7),
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [2, 8]))
-                } else {
-                    // Afternoon register: less progress along the same geometry
-                    Path { p in
-                        p.move(to: .init(x: w * 0.059, y: h * 0.625))
-                        p.addQuadCurve(to: .init(x: w * 0.261, y: h * 0.563),
-                                       control: .init(x: w * 0.182, y: h * 0.60))
-                        p.addQuadCurve(to: .init(x: w * 0.323, y: h * 0.49),
-                                       control: .init(x: w * 0.307, y: h * 0.538))
-                    }
-                    .stroke(LinearGradient.diagonal,
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round))
-
-                    Path { p in
-                        p.move(to: .init(x: w * 0.323, y: h * 0.49))
-                        p.addQuadCurve(to: .init(x: w * 0.523, y: h * 0.40),
-                                       control: .init(x: w * 0.409, y: h * 0.438))
-                        p.addQuadCurve(to: .init(x: w * 0.773, y: h * 0.275),
-                                       control: .init(x: w * 0.659, y: h * 0.363))
-                        p.addQuadCurve(to: .init(x: w * 0.909, y: h * 0.138),
-                                       control: .init(x: w * 0.864, y: h * 0.213))
-                    }
-                    .stroke(LinearGradient.diagonal.opacity(0.75),
-                            style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: [2, 8]))
-                }
-
-                // Origin marker
-                Circle()
-                    .fill(register == .night
-                          ? Color.white.opacity(0.3)
-                          : Color.black.opacity(0.28))
-                    .frame(width: 6, height: 6)
-                    .position(x: w * 0.059, y: h * 0.625)
-            }
-
-            // Ping (current location)
-            GeometryReader { geo in
-                Circle()
-                    .fill(LinearGradient.diagonal)
-                    .frame(width: 18, height: 18)
-                    .overlay(Circle().strokeBorder(
-                        register == .night ? palette.bgPage : Color.white,
-                        lineWidth: 2))
-                    .shadow(color: Color(hex: "#1473FF").opacity(register == .night ? 0.55 : 0.28), radius: 14)
-                    .position(x: geo.size.width * pingX, y: geo.size.height * pingY)
-            }
-
-            // Origin flag (subdued, passed)
-            GeometryReader { geo in
-                VStack(spacing: 3) {
-                    Text(originName)
-                        .font(EType.mono(.micro)).tracking(0.4)
-                        .foregroundStyle(palette.textTertiary)
-                        .padding(.horizontal, 7).padding(.vertical, 3)
-                        .background(.ultraThinMaterial)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.pill).strokeBorder(palette.borderFaint))
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.pill))
-                    Circle()
-                        .fill(register == .night
-                              ? Color.white.opacity(0.35)
-                              : Color.black.opacity(0.28))
-                        .frame(width: 7, height: 7)
-                }
-                .position(x: geo.size.width * 0.06, y: geo.size.height * 0.6)
-                .accessibilityLabel("Origin: \(originName)")
-            }
-
-            // Waypoint pill (interstate marker mid-route)
-            GeometryReader { geo in
-                Text(waypointText)
-                    .font(EType.mono(.micro)).tracking(0.4)
-                    .foregroundStyle(palette.textSecondary)
-                    .padding(.horizontal, 7).padding(.vertical, 3)
-                    .background(.ultraThinMaterial)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.pill).strokeBorder(palette.borderFaint))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.pill))
-                    .position(x: geo.size.width * (register == .night ? 0.50 : 0.44),
-                              y: geo.size.height * (register == .night ? 0.42 : 0.48))
-            }
-
-            // Destination flag (future, prominent) — Cohort B M2 retrofit
-            // (110th firing): the prior fabricated big-box-retailer DC
-            // literal + city/state pair was excised. Pill copy + a11y
-            // both bind to the same live `destFlagText` getter that
-            // derives from `activeLoad.deliveryLocation.cityState`.
-            // Renders em-dash until the load hydrates so production
-            // never shows a fabricated brand on the map.
-            GeometryReader { geo in
-                VStack(spacing: 3) {
-                    Text(destFlagText)
-                        .font(EType.mono(.micro)).tracking(0.4)
-                        .foregroundStyle(palette.textPrimary)
-                        .padding(.horizontal, 8).padding(.vertical, 4)
-                        .background(.ultraThinMaterial)
-                        .overlay(RoundedRectangle(cornerRadius: Radius.pill).strokeBorder(palette.borderSoft))
-                        .clipShape(RoundedRectangle(cornerRadius: Radius.pill))
-                    Rectangle()
-                        .fill(LinearGradient.diagonal)
-                        .frame(width: 12, height: 12)
-                        .rotationEffect(.degrees(-45))
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                }
-                .position(x: geo.size.width * 0.90, y: geo.size.height * 0.13)
-                .accessibilityLabel(destFlagA11y)
-            }
-
-            // Scale
-            GeometryReader { geo in
-                Text("50 mi")
-                    .font(EType.mono(.micro)).tracking(0.4)
-                    .foregroundStyle(palette.textSecondary)
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(.ultraThinMaterial)
-                    .overlay(RoundedRectangle(cornerRadius: Radius.md).strokeBorder(palette.borderSoft))
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-                    .position(x: geo.size.width - 40, y: 110)
-            }
-        }
+        EusoEmptyState(
+            systemImage: "mappin.slash",
+            title: "Awaiting route coordinates",
+            subtitle: "Live navigation will appear after verified pickup and delivery coordinates are available."
+        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(palette.bgCard)
     }
 
     // MARK: Bottom sheet (glass)

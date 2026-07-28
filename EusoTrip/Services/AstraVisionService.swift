@@ -295,6 +295,7 @@ public struct AstraReeferTempLogResponse: Decodable, Hashable, Sendable {
     public let auditId: Int?
     public let overlayAuditId: Int?
     public let tempLogSealedEligible: Bool
+    public let observationReadyForReview: Bool?
     public let signature: AstraSignatureBlock
 }
 
@@ -303,7 +304,7 @@ public struct AstraReeferTempLogResponse: Decodable, Hashable, Sendable {
 public enum AstraOSDVerdict: String, Codable, Hashable, Sendable {
     case clean
     case inspectionRecommended = "inspection_recommended"
-    case claimFiled            = "claim_filed"
+    case exceptionObserved     = "exception_observed"
 }
 
 public struct AstraOSDExpectedItem: Encodable, Hashable, Sendable {
@@ -323,6 +324,7 @@ public struct AstraOSDReportResponse: Decodable, Hashable, Sendable {
     public let auditId: Int?
     public let overlayAuditId: Int?
     public let claimOverlayWritten: Bool
+    public let observationReadyForReview: Bool?
     public let signature: AstraSignatureBlock
 }
 
@@ -370,10 +372,9 @@ public extension AstraVisionService {
 
     /// Tier 3 #19 — Astra OS&D (Overage / Shortage / Damage) scan.
     /// Caller supplies an expected-items list from the BOL; server
-    /// reconciles the photo against it and returns a verdict. On
-    /// `claim_filed` the server writes a CARGO.OSD_CLAIM overlay
-    /// chained to the observation digest — iOS reads
-    /// `claimOverlayWritten` to surface the "Claim Auto-Filed" badge.
+    /// reconciles the photo against it and returns a signed observation.
+    /// It never files a freight claim; the user reviews the evidence
+    /// and uses the dedicated claim workflow explicitly.
     func osdReport(
         image: UIImage,
         expectedItems: [AstraOSDExpectedItem] = [],
@@ -464,6 +465,7 @@ public struct AstraPodResponse: Decodable, Hashable, Sendable {
     public let auditId: Int?
     public let overlayAuditId: Int?
     public let podSignedEligible: Bool
+    public let observationReadyForReview: Bool?
     public let signature: AstraSignatureBlock
 }
 

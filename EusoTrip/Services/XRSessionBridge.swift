@@ -59,6 +59,8 @@ public struct XRChecklistResponse: Decodable, Hashable, Sendable {
     public let totalCount: Int
     public let requiredCount: Int
     public let requiredRemaining: Int
+    public let regulatoryJurisdiction: String?
+    public let regulatoryStatus: String?
 }
 
 public struct XRConfirmResponse: Decodable, Hashable, Sendable {
@@ -91,9 +93,21 @@ public final class XRSessionBridge: ObservableObject {
     @Published public private(set) var phase: XRSessionPhase = .idle
     @Published public private(set) var checklist: XRChecklistResponse? = nil
     @Published public private(set) var currentItemIndex: Int = 0
+    @Published public private(set) var confirmedItemIds: Set<String> = []
     @Published public private(set) var lastError: String? = nil
 
     public init() {}
+
+    public var confirmedCount: Int {
+        confirmedItemIds.count
+    }
+
+    public var requiredRemaining: Int {
+        guard let checklist else { return 0 }
+        return checklist.items.filter {
+            $0.required && !confirmedItemIds.contains($0.itemId)
+        }.count
+    }
 
     /// Start (or resume) the pre-haul XR session for a load. Reads
     /// each item aloud in the driver's preferred dialect.
@@ -106,6 +120,16 @@ public final class XRSessionBridge: ObservableObject {
                 "xrChecklist.getChecklist", input: In(loadId: loadId)
             )
             checklist = response
+            confirmedItemIds = Set(
+                response.items.filter(\.confirmed).map(\.itemId)
+            )
+            if response.regulatoryStatus == "jurisdiction_required",
+               response.items.contains(where: { $0.category == "hazmat" }) {
+                lastError = "The controlling dangerous-goods jurisdiction must be assigned before this checklist can run."
+                phase = .error(lastError!)
+                await speak(lastError!)
+                return
+            }
             // Resume at the first un-confirmed item.
             let firstPending = response.items.firstIndex(where: { !$0.confirmed }) ?? response.items.count
             currentItemIndex = firstPending
@@ -122,8 +146,10 @@ public final class XRSessionBridge: ObservableObject {
         guard let list = checklist,
               currentItemIndex < list.items.count else { return }
         let item = list.items[currentItemIndex]
-        let normalised = transcript.lowercased()
-        let matched = item.confirmPhrases.contains(where: { normalised.contains($0.lowercased()) })
+        let normalised = normaliseConfirmation(transcript)
+        let matched = item.confirmPhrases.contains {
+            normalised == normaliseConfirmation($0)
+        }
         if !matched {
             // Re-read the current prompt — user might have said
             // something else. Keep audio context alive.
@@ -133,8 +159,8 @@ public final class XRSessionBridge: ObservableObject {
         await confirmCurrentItem(source: "voice", transcript: transcript)
     }
 
-    /// Manual confirmation — phone-side tap. Same audit chain entry
-    /// (with `source: "manual"`) as the voice path.
+    /// Manual confirmation — an explicit phone-side attestation.
+    /// Same audit chain entry (with `source: "manual"`) as voice.
     public func confirmCurrentItemManually() async {
         await confirmCurrentItem(source: "manual", transcript: nil)
     }
@@ -142,6 +168,13 @@ public final class XRSessionBridge: ObservableObject {
     /// Skip the current item. Doesn't write any audit row; pre-haul
     /// gate (required items remaining) still surfaces it later.
     public func skipCurrentItem() async {
+        guard let list = checklist,
+              currentItemIndex < list.items.count else { return }
+        if list.items[currentItemIndex].required {
+            lastError = "Required checklist items cannot be skipped."
+            await speak("This item is required and cannot be skipped.")
+            return
+        }
         currentItemIndex += 1
         await advanceToCurrent()
     }
@@ -157,7 +190,13 @@ public final class XRSessionBridge: ObservableObject {
     private func advanceToCurrent() async {
         guard let list = checklist else { return }
         if currentItemIndex >= list.items.count {
-            await speak("Pre-haul checklist complete. You're cleared to depart pickup.")
+            guard requiredRemaining == 0 else {
+                lastError = "Required checklist items remain unconfirmed."
+                phase = .error(lastError!)
+                await speak(lastError!)
+                return
+            }
+            await speak("Pre-haul checklist complete. Review the remaining load gates before departure.")
             phase = .complete
             return
         }
@@ -176,12 +215,14 @@ public final class XRSessionBridge: ObservableObject {
             let itemId: String
             let transcript: String?
             let source: String
+            let attestationAccepted: Bool
         }
         let payload = In(
             loadId: list.loadNumber,
             itemId: item.itemId,
             transcript: transcript,
-            source: source
+            source: source,
+            attestationAccepted: true
         )
         do {
             let result: XRConfirmResponse = try await EusoTripAPI.shared.mutation(
@@ -198,6 +239,7 @@ public final class XRSessionBridge: ObservableObject {
                 ? " Overlay \(result.overlayState!) recorded."
                 : ""
             await speak("Confirmed.\(overlayLine)")
+            confirmedItemIds.insert(item.itemId)
             currentItemIndex += 1
             await advanceToCurrent()
         } catch {
@@ -208,6 +250,15 @@ public final class XRSessionBridge: ObservableObject {
 
     private func speak(_ text: String) async {
         await ESangTTSPlayer.shared.speak(text, serverAudioBase64: nil)
+    }
+
+    private func normaliseConfirmation(_ value: String) -> String {
+        value
+            .precomposedStringWithCompatibilityMapping
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     private nonisolated func verifySignature(_ sig: AstraSignatureBlock) -> Bool {

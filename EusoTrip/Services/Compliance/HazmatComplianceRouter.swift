@@ -1,7 +1,8 @@
 //
 //  HazmatComplianceRouter.swift
 //  T-027 (2026-05-20) — Hazmat compliance router.
-//  49 CFR 172 (ERG) · 49 CFR 172.504 (placards) · 49 CFR 177.848 (segregation)
+//  Jurisdiction-neutral client prompts. The live server checklist binds
+//  US / Canadian / Mexican citations from the load's origin country.
 //
 
 import Foundation
@@ -33,8 +34,8 @@ public enum HazmatComplianceRouter: ComplianceRouter {
                     routerKey: key,
                     severity: .blocker,
                     title: "ERG verification required",
-                    body: "Look up the UN number in ERG 2024 and confirm the emergency response info before posting.",
-                    regulatoryRef: "49 CFR 172.602 / ERG 2024",
+                    body: "Confirm the shipping-paper UN number, then open its ERG 2024 response guide before posting. ERG is not classification evidence.",
+                    regulatoryRef: "ERG 2024 response reference; controlling jurisdiction required",
                     documentTypes: [.ergInfo, .shippingPapers]
                 ))
             }
@@ -47,8 +48,8 @@ public enum HazmatComplianceRouter: ComplianceRouter {
                     routerKey: key,
                     severity: .blocker,
                     title: "Placards not affixed",
-                    body: "Affix placards on all four sides + verify class number, UN number, and PSN are legible before departure.",
-                    regulatoryRef: "49 CFR 172.504",
+                    body: "Compare the shipping-paper classification with every required placard and inspect every position required by the controlling jurisdiction before departure.",
+                    regulatoryRef: "Controlling-jurisdiction dangerous-goods placarding rules",
                     documentTypes: [.hazmatManifest]
                 ))
             }
@@ -58,8 +59,8 @@ public enum HazmatComplianceRouter: ComplianceRouter {
                     routerKey: key,
                     severity: .blocker,
                     title: "Segregation table not verified",
-                    body: "Cross-check loaded materials against 49 CFR 177.848 to ensure no incompatible classes share the trailer.",
-                    regulatoryRef: "49 CFR 177.848",
+                    body: "Cross-check every loaded dangerous good against the controlling jurisdiction's compatibility and segregation requirements.",
+                    regulatoryRef: "Controlling-jurisdiction compatibility and segregation rules",
                     documentTypes: [.segregationVerification]
                 ))
             }
@@ -69,8 +70,8 @@ public enum HazmatComplianceRouter: ComplianceRouter {
                     routerKey: key,
                     severity: .warning,
                     title: "Emergency response info not staged",
-                    body: "Confirm shipping papers + CHEMTREC contact are within driver's reach.",
-                    regulatoryRef: "49 CFR 172.602",
+                    body: "Confirm the shipping document and shipment-specific emergency contact information are staged as required for the route.",
+                    regulatoryRef: "Controlling-jurisdiction emergency-information rules",
                     documentTypes: [.shippingPapers]
                 ))
             }

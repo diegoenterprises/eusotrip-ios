@@ -192,12 +192,7 @@ private struct RailShipmentDetail: View {
     @State private var loading = true
     @State private var loadError: String? = nil
 
-    // W13 hygiene (E2E audit §4 animations · 2026-06-10): the lifecycle
-    // strip + train pin were fully static. `shownProgress` lets the pin
-    // settle along the route curve to its real fraction (560's settle
-    // pattern); `pinBreathing` drives the ambient halo + current-stage
-    // pulse. Both honor Reduce Motion.
-    @State private var shownProgress: Double = 0
+    // Drives the current lifecycle-stage pulse and honors Reduce Motion.
     @State private var pinBreathing = false
 
     // MARK: - Live event geometry (real coords only)
@@ -229,8 +224,6 @@ private struct RailShipmentDetail: View {
     }
 
     /// True when the event chain has at least one real coordinate to plot.
-    /// When false the decorative route bezier renders instead (honest: no
-    /// geocoded scan on file yet — origin/destination yards carry no coords).
     private var hasLiveGeo: Bool { !liveTrailPoints.isEmpty }
 
     // SVG lifecycle stages (8) — verbatim labels + order.
@@ -282,21 +275,8 @@ private struct RailShipmentDetail: View {
         }
         .task { await load() }
         .refreshable { await load() }
-        .onAppear { settlePin(); startAmbientLoops() }
-        .onChange(of: progressFraction) { _, _ in settlePin() }
-        .onChange(of: reduceMotion) { _, _ in settlePin(); startAmbientLoops() }
-    }
-
-    /// Settle the train pin to its real lifecycle fraction (spring), or
-    /// snap when Reduce Motion is on. Mirrors 560's settle().
-    private func settlePin() {
-        if reduceMotion {
-            shownProgress = progressFraction
-            return
-        }
-        withAnimation(.spring(response: 0.70, dampingFraction: 0.85)) {
-            shownProgress = progressFraction
-        }
+        .onAppear { startAmbientLoops() }
+        .onChange(of: reduceMotion) { _, _ in startAmbientLoops() }
     }
 
     /// Start (or stop) the continuous ambient breathing loop shared by the
@@ -362,14 +342,9 @@ private struct RailShipmentDetail: View {
     @ViewBuilder
     private var routeMap: some View {
         if hasLiveGeo {
-            // Real geography on the in-house HERE map: the scan trail draws as
-            // the route line and the latest geocoded scan is the live train
-            // puck. Mirrors Vessel 003 / 560 — real coords only, never a
-            // fabricated curve. (Origin/destination yards carry no coordinates
-            // in the detail contract, so they remain text labels, not pins.)
             railLiveMap
         } else {
-            decorativeRouteMap
+            railLocationPending
         }
     }
 
@@ -385,189 +360,43 @@ private struct RailShipmentDetail: View {
         var layers: [HereMapLayer] = []
         if trail.count >= 2 { layers.append(.route(polyline: trail, colorHex: "#1473FF")) }
         layers.append(.markers(markers))
-        return BespokeMapCanvas(
+        return HereVectorMapView(
             center: center,
             zoom: trail.count >= 2 ? 6 : 9,
             interactive: true,
             tilt: 0,
-            isDark: colorScheme == .dark,
             layers: layers
         )
         .frame(height: 124)
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
     }
 
-    private var decorativeRouteMap: some View {
-        ZStack {
-            GeometryReader { geo in
-                let w = geo.size.width
-                let h = geo.size.height
-                Path { p in
-                    p.move(to: CGPoint(x: 0, y: h * 0.34)); p.addLine(to: CGPoint(x: w, y: h * 0.34))
-                    p.move(to: CGPoint(x: 0, y: h * 0.66)); p.addLine(to: CGPoint(x: w, y: h * 0.66))
-                    for fx in [0.25, 0.50, 0.75] {
-                        p.move(to: CGPoint(x: w * fx, y: 0)); p.addLine(to: CGPoint(x: w * fx, y: h))
-                    }
-                }
-                .stroke(Color.white.opacity(0.06), lineWidth: 0.8)
-
-                Path { p in
-                    p.move(to: CGPoint(x: w * 0.11, y: h * 0.31))
-                    p.addCurve(to: CGPoint(x: w * 0.58, y: h * 0.58),
-                               control1: CGPoint(x: w * 0.30, y: h * 0.39),
-                               control2: CGPoint(x: w * 0.45, y: h * 0.53))
-                    p.addCurve(to: CGPoint(x: w * 0.93, y: h * 0.66),
-                               control1: CGPoint(x: w * 0.73, y: h * 0.65),
-                               control2: CGPoint(x: w * 0.83, y: h * 0.58))
-                }
-                .stroke(LinearGradient.primary,
-                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
-
-                routeNode(label: originYardLabel,
-                          fill: AnyShapeStyle(LinearGradient.diagonal),
-                          at: CGPoint(x: w * 0.11, y: h * 0.31))
-
-                interchangeYard(at: CGPoint(x: w * 0.78, y: h * 0.61))
-
-                routeNode(label: destYardLabel,
-                          fill: AnyShapeStyle(Brand.magenta),
-                          at: CGPoint(x: w * 0.93, y: h * 0.66))
-
-                // Live train pin positioned along the curve by lifecycle progress.
-                trainPin
-                    .position(curvePoint(at: shownProgress, w: w, h: h))
-
-                // ETA pill (top) + status pill (bottom-left) — real/derived.
-                mapPill(etaPillText)
-                    .position(x: w * 0.70, y: h * 0.15)
-                mapPill(statusPillText)
-                    .position(x: w * 0.27, y: h * 0.86)
+    private var railLocationPending: some View {
+        HStack(spacing: Space.s3) {
+            Image(systemName: "location.slash")
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(LinearGradient.diagonal)
+                .frame(width: 38, height: 38)
+                .background(Circle().fill(palette.bgCardSoft))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Location not yet reported")
+                    .font(EType.bodyStrong)
+                    .foregroundStyle(palette.textPrimary)
+                Text("The live route will appear after a verified rail location is received.")
+                    .font(EType.caption)
+                    .foregroundStyle(palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            Spacer(minLength: 0)
         }
+        .padding(Space.s4)
         .frame(height: 124)
-        .background(
-            LinearGradient(colors: [Color(hex: 0x11151C), Color(hex: 0x05060A)],
-                           startPoint: .top, endPoint: .bottom)
+        .background(palette.bgCard)
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+                .strokeBorder(palette.borderFaint, lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous))
-    }
-
-    private var originYardLabel: String {
-        (nonEmpty(detail?.originYard?.name) ?? nonEmpty(detail?.originRailroad) ?? "ORIGIN").uppercased()
-    }
-    private var destYardLabel: String {
-        (nonEmpty(detail?.destinationYard?.name) ?? nonEmpty(detail?.destinationRailroad) ?? "DEST").uppercased()
-    }
-
-    /// Approximate point on the two-segment route curve for t∈0…1.
-    private func curvePoint(at t: CGFloat, w: CGFloat, h: CGFloat) -> CGPoint {
-        let tt = max(0, min(1, t))
-        if tt <= 0.5 {
-            let lt = tt / 0.5
-            return bezier(CGPoint(x: w*0.11, y: h*0.31), CGPoint(x: w*0.30, y: h*0.39),
-                          CGPoint(x: w*0.45, y: h*0.53), CGPoint(x: w*0.58, y: h*0.58), lt)
-        } else {
-            let lt = (tt - 0.5) / 0.5
-            return bezier(CGPoint(x: w*0.58, y: h*0.58), CGPoint(x: w*0.73, y: h*0.65),
-                          CGPoint(x: w*0.83, y: h*0.58), CGPoint(x: w*0.93, y: h*0.66), lt)
-        }
-    }
-    private func bezier(_ p0: CGPoint, _ p1: CGPoint, _ p2: CGPoint, _ p3: CGPoint, _ t: CGFloat) -> CGPoint {
-        let u = 1 - t
-        let x = u*u*u*p0.x + 3*u*u*t*p1.x + 3*u*t*t*p2.x + t*t*t*p3.x
-        let y = u*u*u*p0.y + 3*u*u*t*p1.y + 3*u*t*t*p2.y + t*t*t*p3.y
-        return CGPoint(x: x, y: y)
-    }
-
-    /// Live-position pin riding the route curve. W13 hygiene (E2E audit §4
-    /// animations · 2026-06-10): the non-canonical `tram.fill` glyph is
-    /// replaced by the canonical equipment model rendered through the
-    /// in-house native SVG engine — the same founder-approved lockup
-    /// 560/643 ride. Wave B (2026-06-10): the marker is EQUIPMENT-TRUE —
-    /// the model resolves from the shipment's REAL `carType` via the
-    /// shared `EquipmentKind.resolve(from:)` matcher (a DOT-117 consist
-    /// rides a tank car, an auto-rack consist rides 27 — never an
-    /// unconditional boxcar). Boxcar remains only as the honest rail
-    /// floor when the row carries no car type. The hold state keeps the
-    /// exclamation puck (a status glyph, not a vehicle). The ambient
-    /// halo breathes beneath (Reduce Motion gated).
-    private var markerKind: EquipmentKind {
-        EquipmentKind.resolve(
-            from: detail?.carType,
-            hazmat: (detail?.hazmatClass?.isEmpty == false),
-            modality: .rail
-        )
-    }
-
-    private var trainPin: some View {
-        ZStack {
-            Circle().fill(LinearGradient.primary.opacity(pinBreathing ? 0.32 : 0.18))
-                .frame(width: pinBreathing ? 32 : 26, height: pinBreathing ? 32 : 26)
-            if isHold {
-                Circle().fill(Color(hex: 0x1C2128))
-                    .overlay(Circle().strokeBorder(LinearGradient.primary, lineWidth: 2))
-                    .frame(width: 20, height: 20)
-                Image(systemName: "exclamationmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(Brand.hazmat)
-            } else if let carSVG = EquipmentAnimationCache.shared.svg(for: markerKind) {
-                NativeSVGView(svgString: carSVG)
-                    .frame(width: 58, height: 24)
-            } else {
-                // Fallback ring puck if the model can't load — never a
-                // hand-drawn vehicle.
-                Circle().fill(Color(hex: 0x1C2128))
-                    .overlay(Circle().strokeBorder(LinearGradient.primary, lineWidth: 2))
-                    .frame(width: 20, height: 20)
-            }
-        }
-    }
-
-    private func routeNode(label: String, fill: AnyShapeStyle, at pt: CGPoint) -> some View {
-        ZStack {
-            Circle().fill(Color(hex: 0x1C2128)).frame(width: 16, height: 16)
-            Circle().fill(fill).frame(width: 12, height: 12)
-            Text(label)
-                .font(.system(size: 9, weight: .heavy)).tracking(0.4)
-                .foregroundStyle(palette.textPrimary)
-                .fixedSize()
-                .offset(y: -16)
-        }
-        .position(pt)
-    }
-
-    private func interchangeYard(at pt: CGPoint) -> some View {
-        ZStack {
-            Circle().fill(LinearGradient.diagonal.opacity(0.20)).frame(width: 40, height: 40)
-            Circle()
-                .fill(Color(hex: 0x1C2128))
-                .overlay(Circle().strokeBorder(Color.white.opacity(0.12)))
-                .frame(width: 28, height: 28)
-            Image(systemName: "arrow.triangle.swap")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(palette.textPrimary)
-        }
-        .position(pt)
-    }
-
-    private func mapPill(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 11, weight: .bold)).tracking(0.4).monospacedDigit()
-            .foregroundStyle(palette.textPrimary)
-            .padding(.horizontal, 12).padding(.vertical, 4)
-            .background(Capsule().fill(Color(hex: 0x1C2128)))
-            .overlay(Capsule().strokeBorder(Color.white.opacity(0.10)))
-            .fixedSize()
-    }
-
-    private var etaPillText: String {
-        if let r = remainingDays { return r <= 0 ? "ARRIVING" : String(format: "ETA %@d", trimDays(r)) }
-        return "ETA -"
-    }
-    private var statusPillText: String {
-        let cars = detail?.numberOfCars ?? 0
-        let kind = nonEmpty(detail?.carType) ?? "rail"
-        return cars > 0 ? "\(cars)-car · \(kind)" : kind
     }
 
     // MARK: - 8-stage RAIL lifecycle

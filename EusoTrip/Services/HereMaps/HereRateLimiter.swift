@@ -330,7 +330,7 @@ actor HereRateLimiter {
     }
 
     /// Max retries the standard wrapper will make (read by callers that
-    /// roll their own loop, e.g. HereTileOverlay).
+    /// roll their own transport loop.
     var maxBackoffRetries: Int { limits.maxBackoffRetries }
 
     // MARK: - One-shot gated request with 429 backoff

@@ -83,11 +83,10 @@ struct DriverTripsPane: View {
     @State private var selectedLoadID: String? = nil
     @State private var showSOSSheet: Bool = false
 
-    /// Decoded HERE truck route for the current active trip. When this is
-    /// nil we render the straight-line pickup→delivery connector as a
-    /// placeholder; once HereRoutingClient returns we swap to the real
-    /// road-following gradient polyline. Keyed on `trip.currentLoad?.id`
-    /// so swapping to a new active load re-triggers the fetch.
+    /// Decoded HERE truck route for the current active trip. Until routing
+    /// succeeds, the labeled basemap shows only verified endpoint markers.
+    /// Keyed on `trip.currentLoad?.id` so a new active load refetches instead
+    /// of inheriting stale geometry.
     @State private var activeRoute: HereRoute? = nil
     /// Tracks the load id the current `activeRoute` was computed for.
     /// Guards against stale routes sticking around after the driver
@@ -420,10 +419,9 @@ struct DriverTripsPane: View {
     }
 
     /// Map rendering for the active trip — pickup + delivery + gradient
-    /// polyline between them. Until HERE returns the decoded truck route
-    /// we render the straight pickup→delivery lane connector as a
-    /// placeholder; once `activeRoute` is populated we swap to the real
-    /// road-following polyline (same blue→magenta gradient treatment).
+    /// polyline between them. The line appears only after HERE returns the
+    /// decoded truck route; until then the labeled basemap and endpoint
+    /// markers remain visible without fabricated geometry.
     /// The driver's live position (when wired to CLLocationManager) will
     /// still render as the user-location dot over whichever polyline is
     /// active.
@@ -448,16 +446,21 @@ struct DriverTripsPane: View {
 
             // Canonical OMV vector map + live HERE add-ons (fuel / EV /
             // weather / traffic / sponsored ad-zones). Uses the real decoded
-            // HERE truck-route polyline when ready, else a straight pickup→
-            // delivery connector while the route fetch is in flight.
+            // HERE truck-route polyline when ready; marker-only while the
+            // route fetch is in flight.
             let routeCoords: [HereLatLng] = routeReady
                 ? (activeRoute?.sections ?? [])
                     .flatMap { HereFlexiblePolyline.decode($0.polyline) }
                     .map { HereLatLng($0) }
                 : []
-            let lineCoords: [HereLatLng] = routeCoords.isEmpty
-                ? [HereLatLng(pickup.lat, pickup.lng), HereLatLng(delivery.lat, delivery.lng)]
-                : routeCoords
+            let lineCoords: [HereLatLng] = routeCoords.count >= 2 ? routeCoords : []
+            let markerLayer = HereMapLayer.markers([
+                .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: pickup.city),
+                .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: delivery.city)
+            ])
+            let routeLayers: [HereMapLayer] = lineCoords.count >= 2
+                ? [.route(polyline: lineCoords, colorHex: "#1473FF"), markerLayer]
+                : [markerLayer]
 
             HereLiveMapView(
                 center: .init((pickup.lat + delivery.lat) / 2,
@@ -465,13 +468,7 @@ struct DriverTripsPane: View {
                 zoom: 7,
                 firstPerson: true,
                 route: lineCoords,
-                baseLayers: [
-                    .route(polyline: lineCoords, colorHex: "#1473FF"),
-                    .markers([
-                        .init(at: .init(pickup.lat, pickup.lng), kind: .pickup, label: pickup.city),
-                        .init(at: .init(delivery.lat, delivery.lng), kind: .delivery, label: delivery.city)
-                    ])
-                ],
+                baseLayers: routeLayers,
                 addOns: .driverEnRoute
             )
             .frame(height: 260)
@@ -530,10 +527,9 @@ struct DriverTripsPane: View {
         )
     }
 
-    /// Calls HERE Routing v8 for the given active load and caches the
-    /// decoded polyline into `activeRoute`. Silently falls back to the
-    /// straight-line lane connector if the call fails (missing api key,
-    /// no network, etc.) so the map is never empty.
+    /// Calls HERE Routing v8 for the given active load and caches the decoded
+    /// route. Failure leaves the map marker-only; endpoint order is never
+    /// presented as road geometry.
     @MainActor
     private func fetchActiveRoute(for load: Load) async {
         // Reset the existing route so we never flash a stale polyline
@@ -549,9 +545,6 @@ struct DriverTripsPane: View {
                 activeRouteLoadID = String(load.id)
             }
         } catch {
-            // Keep the straight-line fallback on failure; the error is
-            // visually implicit (user still sees a connector) and will
-            // self-heal on the next pull-to-refresh.
             activeRoute = nil
             activeRouteLoadID = nil
         }

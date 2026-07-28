@@ -28,6 +28,7 @@ private struct ReviewBody: View {
                 modeAndCountryCard
                 laneCard
                 equipmentCard
+                industryWorkflowCard
                 documentsRequiredCard   // T-009 · 2026-05-20
                 ePodLockCard            // T-011 · 2026-05-20
                 pricingCard
@@ -44,6 +45,9 @@ private struct ReviewBody: View {
             if ln != nil {
                 NotificationCenter.default.post(name: .eusoShipperNavSwap, object: nil, userInfo: ["screenId": "254"])
             }
+        }
+        .task(id: industryAssessmentKey) {
+            await draft.prepareIndustryAssessmentForReview()
         }
         // T-010 · 2026-05-20 — confirmation gate. Wraps draft.submit() so
         // a misclick on Post can't fire off an irreversible marketplace
@@ -350,6 +354,113 @@ private struct ReviewBody: View {
         }
     }
 
+    @ViewBuilder
+    private var industryWorkflowCard: some View {
+        if let sectorId = draft.industrySectorId {
+            LifecycleCard(accentWarning: draft.industryAssessmentStatus == "requires_review") {
+                LifecycleSection(label: "INDUSTRY WORKFLOW", icon: "building.2.crop.circle")
+                LifecycleRow(label: "Sector", value: sectorId.replacingOccurrences(of: "_", with: " ").capitalized)
+                if let vertical = draft.vertical {
+                    LifecycleRow(label: "Workflow", value: vertical.displayName)
+                }
+                HStack(spacing: 7) {
+                    if draft.isAssessingIndustry {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: industryStatusIcon)
+                            .font(.system(size: 12, weight: .heavy))
+                            .foregroundStyle(industryStatusColor)
+                    }
+                    Text(industryStatusLabel)
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(palette.textPrimary)
+                    Spacer(minLength: 0)
+                }
+
+                ForEach(draft.industryAssessmentWarnings, id: \.self) { warning in
+                    HStack(alignment: .top, spacing: 7) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10, weight: .heavy))
+                            .foregroundStyle(Brand.warning)
+                            .padding(.top, 2)
+                        Text(warning)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                if let error = draft.industryAssessmentError {
+                    HStack(alignment: .top, spacing: 7) {
+                        Image(systemName: "xmark.octagon.fill")
+                            .font(.system(size: 10, weight: .heavy))
+                            .foregroundStyle(Brand.danger)
+                            .padding(.top, 2)
+                        Text(error)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Brand.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                if draft.industryAssessmentStatus == "requires_review" {
+                    Toggle(isOn: $draft.industryReviewAcknowledged) {
+                        Text("I reviewed the verified coverage and limitations")
+                            .font(.system(size: 11, weight: .heavy))
+                            .foregroundStyle(palette.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .toggleStyle(SwitchToggleStyle(tint: Brand.blue))
+                }
+            }
+        }
+    }
+
+    private var industryAssessmentKey: String {
+        [
+            draft.industrySectorId ?? "",
+            String(draft.industryRuleSetId ?? 0),
+            draft.vertical?.rawValue ?? "",
+            draft.mode.rawValue,
+            draft.originCountry.rawValue,
+            draft.destinationCountry.rawValue,
+            draft.commodity,
+            draft.unNumber,
+            draft.hazmatClass,
+            draft.reeferTempLow.map { String($0) } ?? "",
+            draft.reeferTempHigh.map { String($0) } ?? "",
+        ].joined(separator: "|")
+    }
+
+    private var industryStatusLabel: String {
+        if draft.isAssessingIndustry { return "Checking current rules and source coverage" }
+        switch draft.industryAssessmentStatus {
+        case "ready": return "Ready under the current verified rule set"
+        case "requires_review": return "Review required before posting"
+        case "needs_input": return "Additional shipment details required"
+        case "blocked": return "This workflow cannot be posted"
+        default: return "Assessment unavailable"
+        }
+    }
+
+    private var industryStatusIcon: String {
+        switch draft.industryAssessmentStatus {
+        case "ready": return "checkmark.seal.fill"
+        case "requires_review", "needs_input": return "exclamationmark.triangle.fill"
+        case "blocked": return "xmark.octagon.fill"
+        default: return "questionmark.circle.fill"
+        }
+    }
+
+    private var industryStatusColor: Color {
+        switch draft.industryAssessmentStatus {
+        case "ready": return Brand.success
+        case "requires_review", "needs_input": return Brand.warning
+        case "blocked": return Brand.danger
+        default: return palette.textTertiary
+        }
+    }
+
     private var pricingCard: some View {
         LifecycleCard {
             LifecycleSection(label: "PRICING", icon: "dollarsign.circle")
@@ -442,13 +553,27 @@ private struct ReviewBody: View {
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 18).padding(.vertical, 12)
-                .background(draft.canPostMarketplace
+                .background(canSubmit
                     ? AnyShapeStyle(LinearGradient.diagonal)
                     : AnyShapeStyle(palette.textTertiary))
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             }
             .buttonStyle(.plain)
-            .disabled(draft.isPosting || !draft.canPostMarketplace)
+            .disabled(draft.isPosting || !canSubmit)
+        }
+    }
+
+    private var canSubmit: Bool {
+        guard draft.canPostMarketplace, !draft.isAssessingIndustry else { return false }
+        guard draft.industrySectorId != nil else { return true }
+        guard draft.industryAssessmentId != nil else { return false }
+        switch draft.industryAssessmentStatus {
+        case "ready":
+            return true
+        case "requires_review":
+            return draft.industryReviewAcknowledged
+        default:
+            return false
         }
     }
 
@@ -459,6 +584,18 @@ private struct ReviewBody: View {
     private var postButtonLabel: String {
         if draft.isPosting { return "Posting…" }
         if draft.vertical == nil { return "Pick vertical on Step 2" }
+        if draft.isAssessingIndustry { return "Checking workflow…" }
+        if draft.industrySectorId != nil && draft.industryAssessmentId == nil {
+            return "Complete workflow review"
+        }
+        if draft.industryAssessmentStatus == "requires_review"
+            && !draft.industryReviewAcknowledged {
+            return "Acknowledge workflow review"
+        }
+        if draft.industryAssessmentStatus == "blocked"
+            || draft.industryAssessmentStatus == "needs_input" {
+            return "Resolve workflow requirements"
+        }
         if !draft.canPostMarketplace {
             let missing = draft.preFlightBlockingDocs.filter {
                 !draft.attachedDocuments.contains($0.document)

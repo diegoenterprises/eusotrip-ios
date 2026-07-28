@@ -52,8 +52,8 @@ private struct HazmatBody: View {
     // ─── 2026-05-20 · IO 2026 P0-8 · ERG copilot panel ──────────────
     //
     // Multi-turn conversation grounded in the canonical ERG guide.
-    // Reuses `ERGLookupService.askFollowUp` shipped in P0-7 — same
-    // thought-signature cache keyed by UN number, same dialect-aware
+    // Reuses `ERGLookupService.askFollowUp` shipped in P0-7 with
+    // bounded explicit history keyed by UN number and a dialect-aware
     // reply (P0-4). Surfaces directly under the existing ergCard so
     // the shipper composing the load can ask "What if it spills?",
     // "Can I haul with class 3?", etc. without leaving the wizard.

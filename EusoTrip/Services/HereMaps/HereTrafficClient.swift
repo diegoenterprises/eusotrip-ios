@@ -1,6 +1,6 @@
 //
 //  HereTrafficClient.swift
-//  EusoTrip — REST client for HERE Real-Time Traffic v7.
+//  EusoTrip — authenticated backend client for HERE Real-Time Traffic v7.
 //
 //  Covers both surfaces of the Traffic API:
 //
@@ -29,7 +29,7 @@
 //      criticality=minor,major,critical   (incidents)
 //      type=accident,roadworks,…          (incidents)
 //
-//  Auth: Bearer via HereBearerFetch.
+//  Provider credentials stay on the EusoTrip server.
 //
 //  Powered by ESANG AI™.
 //
@@ -140,11 +140,8 @@ struct HereIncidentDetails: Decodable, Hashable {
 final class HereTrafficClient {
     static let shared = HereTrafficClient()
 
-    private let session: URLSession
-    private let decoder = JSONDecoder()
-
     init(session: URLSession = .shared) {
-        self.session = session
+        _ = session
     }
 
     /// Flow around a point. Radius in meters. Use for en-route
@@ -155,24 +152,39 @@ final class HereTrafficClient {
         radiusMeters: Int = 15_000,
         includeShape: Bool = true
     ) async throws -> [HereTrafficFlowResult] {
-        var comps = URLComponents(string: "https://data.traffic.hereapi.com/v7/flow")!
-        var items: [URLQueryItem] = [
-            URLQueryItem(
-                name: "in",
-                value: "circle:\(center.latitude),\(center.longitude);r=\(radiusMeters)"
+        let rows: [BackendFlow] = try await EusoTripAPI.shared.query(
+            "hereMaps.trafficFlow",
+            input: BackendFlowRequest(
+                bbox: Self.bbox(center: center, radiusMeters: radiusMeters),
+                minJamFactor: 0
             )
-        ]
-        if includeShape {
-            items.append(URLQueryItem(name: "locationReferencing", value: "shape"))
-        }
-        comps.queryItems = items
-        guard let url = comps.url else { throw HereMapsError.badURL }
-
-        let data = try await HereBearerFetch.data(for: url, session: session)
-        do {
-            return try decoder.decode(HereTrafficFlowResponse.self, from: data).results
-        } catch {
-            throw HereMapsError.decoding(String(describing: error))
+        )
+        return rows.map { row in
+            let points = (includeShape ? row.path : []).map {
+                HerePoint(lat: $0.lat, lng: $0.lng)
+            }
+            let location = HereTrafficLocation(
+                shape: HereTrafficShape(
+                    links: points.isEmpty
+                        ? nil
+                        : [HereTrafficLink(points: points, length: nil, functionalClass: nil)]
+                ),
+                length: nil,
+                description: row.description
+            )
+            return HereTrafficFlowResult(
+                location: location,
+                currentFlow: HereTrafficFlow(
+                    speed: row.speedKph,
+                    speedUncapped: nil,
+                    freeFlow: row.freeFlowKph,
+                    jamFactor: row.jamFactor,
+                    confidence: row.confidence,
+                    traversability: row.jamFactor >= 10 ? "closed" : "open",
+                    subSegments: nil
+                ),
+                sourceUpdated: nil
+            )
         }
     }
 
@@ -184,25 +196,105 @@ final class HereTrafficClient {
         radiusMeters: Int = 30_000,
         criticality: [String] = ["major", "critical"]
     ) async throws -> [HereIncident] {
-        var comps = URLComponents(string: "https://data.traffic.hereapi.com/v7/incidents")!
-        var items: [URLQueryItem] = [
-            URLQueryItem(
-                name: "in",
-                value: "circle:\(center.latitude),\(center.longitude);r=\(radiusMeters)"
-            ),
-            URLQueryItem(name: "locationReferencing", value: "shape"),
-        ]
-        if !criticality.isEmpty {
-            items.append(URLQueryItem(name: "criticality", value: criticality.joined(separator: ",")))
+        let minimum: Int = criticality.isEmpty
+            ? 0
+            : (criticality.contains("major") ? 2 : (criticality.contains("critical") ? 3 : 1))
+        let rows: [BackendIncident] = try await EusoTripAPI.shared.query(
+            "hereMaps.trafficIncidents",
+            input: BackendIncidentRequest(
+                bbox: Self.bbox(center: center, radiusMeters: radiusMeters),
+                criticalityMin: minimum
+            )
+        )
+        return rows.map { row in
+            HereIncident(
+                incidentDetails: HereIncidentDetails(
+                    id: row.id,
+                    type: row.type,
+                    criticality: row.severity,
+                    roadClosed: row.severity == "critical",
+                    description: row.description,
+                    summary: row.road,
+                    startTime: row.startTime,
+                    endTime: row.endTime,
+                    verified: nil
+                ),
+                location: HereTrafficLocation(
+                    shape: HereTrafficShape(
+                        links: [
+                            HereTrafficLink(
+                                points: [HerePoint(lat: row.lat, lng: row.lng)],
+                                length: nil,
+                                functionalClass: nil
+                            )
+                        ]
+                    ),
+                    length: nil,
+                    description: row.road
+                ),
+                sourceUpdated: nil
+            )
         }
-        comps.queryItems = items
-        guard let url = comps.url else { throw HereMapsError.badURL }
+    }
 
-        let data = try await HereBearerFetch.data(for: url, session: session)
-        do {
-            return try decoder.decode(HereIncidentsResponse.self, from: data).results
-        } catch {
-            throw HereMapsError.decoding(String(describing: error))
-        }
+    private static func bbox(
+        center: CLLocationCoordinate2D,
+        radiusMeters: Int
+    ) -> BackendBBox {
+        let radius = Double(max(100, radiusMeters))
+        let latDelta = radius / 111_320
+        let cosine = max(0.01, abs(cos(center.latitude * .pi / 180)))
+        let lngDelta = radius / (111_320 * cosine)
+        return BackendBBox(
+            north: min(90, center.latitude + latDelta),
+            south: max(-90, center.latitude - latDelta),
+            east: min(180, center.longitude + lngDelta),
+            west: max(-180, center.longitude - lngDelta)
+        )
+    }
+
+    private struct BackendBBox: Codable {
+        let north: Double
+        let south: Double
+        let east: Double
+        let west: Double
+    }
+
+    private struct BackendFlowRequest: Encodable {
+        let bbox: BackendBBox
+        let minJamFactor: Double
+    }
+
+    private struct BackendFlow: Decodable {
+        let lat: Double
+        let lng: Double
+        let path: [BackendPoint]
+        let jamFactor: Double
+        let speedKph: Double
+        let freeFlowKph: Double
+        let confidence: Double
+        let description: String?
+    }
+
+    private struct BackendPoint: Codable {
+        let lat: Double
+        let lng: Double
+    }
+
+    private struct BackendIncidentRequest: Encodable {
+        let bbox: BackendBBox
+        let criticalityMin: Int
+    }
+
+    private struct BackendIncident: Decodable {
+        let id: String
+        let type: String
+        let severity: String
+        let startTime: String
+        let endTime: String?
+        let description: String
+        let lat: Double
+        let lng: Double
+        let road: String?
     }
 }

@@ -13,7 +13,7 @@
 //  Clearance legend (held beats blocked): held · reciprocal · needs_cert ·
 //  expired · blocked · none.
 //
-//  Author: Mike "Diego" Usoro / Eusorone Technologies, Inc
+//  Sole author: Mike "Diego" Usoro / Eusorone Technologies, Inc.
 //  Powered by ESANG AI™.
 //
 
@@ -72,10 +72,11 @@ struct EscortCertReciprocity: View {
                     LifecycleCard { Text("Loading certifications…").font(EType.caption).foregroundStyle(palette.textSecondary) }
                 } else {
                     if let err = errorMessage { Text(err).font(EType.caption).foregroundStyle(Brand.danger) }
-                    summaryStrip
-                    eligibilityCard
+                    // Section order mirrors the ES-08 SVG twins: map → summary → wallet → gate.
                     reciprocityCard
+                    summaryStrip
                     walletCard
+                    eligibilityCard
                 }
                 Color.clear.frame(height: 110)
             }
@@ -97,7 +98,7 @@ struct EscortCertReciprocity: View {
                 Image(systemName: "checkmark.seal").font(.system(size: 9, weight: .heavy)).foregroundStyle(LinearGradient.diagonal)
                 Text("ESCORT · CERT RECIPROCITY").font(.system(size: 9, weight: .heavy)).tracking(1.0).foregroundStyle(LinearGradient.diagonal)
             }
-            Text("Certification wallet").font(.system(size: 24, weight: .bold)).tracking(-0.4).foregroundStyle(palette.textPrimary)
+            Text("Cert Reciprocity").font(.system(size: 24, weight: .bold)).tracking(-0.4).foregroundStyle(palette.textPrimary)
         }
     }
 
@@ -106,7 +107,8 @@ struct EscortCertReciprocity: View {
             summaryTile("ACTIVE", "\(status?.active ?? 0)", Brand.success)
             summaryTile("EXPIRING", "\(status?.expiringSoon ?? 0)", Brand.warning)
             summaryTile("EXPIRED", "\(status?.expired ?? 0)", Brand.danger)
-            summaryTile("CLEARED", "\(status?.statesCleared.count ?? 0)", Brand.blue)
+            // Cleared = held + reciprocal (matches the twins' "13 states" figure).
+            summaryTile("CLEARED", "\((status?.statesCleared.count ?? 0) + (status?.reciprocalStatesCleared.count ?? 0))", Brand.blue)
         }
     }
 
@@ -173,11 +175,13 @@ struct EscortCertReciprocity: View {
     }
 
     private var legend: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             legendDot("Held", .held)
             legendDot("Recip.", .reciprocal)
-            legendDot("Needs", .needsCert)
+            legendDot("Expired", .expired)
             legendDot("Blocked", .blocked)
+            legendDot("Needs", .needsCert)
+            legendDot("No req", Clearance.none)
         }
         .padding(.top, 6)
     }
@@ -270,8 +274,9 @@ struct EscortCertReciprocity: View {
         }
         var bg: Color {
             switch self {
-            case .held: return Brand.success
-            case .reciprocal: return Brand.blue
+            // Hues mirror the ES-08 SVG twins: held = brand blue, reciprocal = escort purple.
+            case .held: return Brand.blue
+            case .reciprocal: return Brand.escort
             case .needsCert: return Brand.warning
             case .expired: return Brand.danger.opacity(0.7)
             case .blocked: return Brand.danger
@@ -390,14 +395,15 @@ struct EscortCertReciprocityScreen: View {
         Shell(theme: theme) {
             EscortCertReciprocity()
         } nav: {
+            // Escort role enum TRIP·COMMS·PERMIT·ME — mirrors ES-01/ES-02 (ESC-07 axis-I precedent).
             BottomNav(
                 leading: [
-                    NavSlot(label: "Home",        systemImage: "house",                  isCurrent: false),
-                    NavSlot(label: "Assignments", systemImage: "shield.lefthalf.filled", isCurrent: false),
+                    NavSlot(label: "Trip",  systemImage: "house",       isCurrent: false),
+                    NavSlot(label: "Comms", systemImage: "bubble.left", isCurrent: false),
                 ],
                 trailing: [
-                    NavSlot(label: "Corridor", systemImage: "map",    isCurrent: false),
-                    NavSlot(label: "Me",       systemImage: "person", isCurrent: true),
+                    NavSlot(label: "Permit", systemImage: "doc.text", isCurrent: false),
+                    NavSlot(label: "Me",     systemImage: "person",   isCurrent: true),
                 ],
                 orbState: .idle
             )

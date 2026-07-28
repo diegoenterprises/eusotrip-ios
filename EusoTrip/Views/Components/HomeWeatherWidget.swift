@@ -137,9 +137,9 @@ struct HomeWeatherWidget: View {
         case .needsLocation:
             HomeWeatherEnableLocationCard(onTap: handleEnableTap)
         case .updating:
-            // NOT an error — a soft, branded placeholder that keeps
-            // silently retrying. Never renders the word "unavailable".
-            HomeWeatherUpdatingCard()
+            HomeWeatherUpdatingCard {
+                Task { await refresh(force: true) }
+            }
         }
     }
 
@@ -297,40 +297,43 @@ private struct HomeWeatherEnableLocationCard: View {
 // "not available". This is deliberately framed as an in-progress update,
 // not an error — a gentle last-known weather glyph + shimmer that keeps
 // silently retrying (the auto-refresh loop backs off to ~45s in this
-// state). There is no error copy, no retry button, and no "unavailable"
-// text anywhere in this view.
+// state). It also supports an immediate user retry while the background
+// refresh loop continues.
 
 private struct HomeWeatherUpdatingCard: View {
+    let onRetry: () -> Void
     @Environment(\.palette) private var palette
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shimmer = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: Space.s3) {
-            ZStack {
-                Circle()
-                    .fill(LinearGradient.diagonal.opacity(0.18))
-                    .frame(width: 48, height: 48)
-                // A soft, branded weather glyph (cloud) — last-known feel,
-                // never an alarm icon.
-                WeatherGlyph(kind: .cloudy)
-                    .frame(width: 26, height: 26)
-                    .opacity(0.85)
+        Button(action: onRetry) {
+            HStack(alignment: .center, spacing: Space.s3) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient.diagonal.opacity(0.18))
+                        .frame(width: 48, height: 48)
+                    WeatherGlyph(kind: .cloudy)
+                        .frame(width: 26, height: 26)
+                        .opacity(0.85)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Reconnecting weather")
+                        .font(EType.body.weight(.semibold))
+                        .foregroundStyle(palette.textPrimary)
+                    Text("Tap to retry live local conditions.")
+                        .font(EType.micro)
+                        .foregroundStyle(palette.textSecondary)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+                WeatherIcons.utility(.chev, size: 13, tint: palette.textTertiary)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Updating weather…")
-                    .font(EType.body.weight(.semibold))
-                    .foregroundStyle(palette.textPrimary)
-                Text("Fetching the latest local conditions.")
-                    .font(EType.micro)
-                    .foregroundStyle(palette.textSecondary)
-                    .multilineTextAlignment(.leading)
-            }
-            Spacer(minLength: 0)
+            .padding(Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .eusoCard(radius: Radius.lg)
         }
-        .padding(Space.s3)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .eusoCard(radius: Radius.lg)
+        .buttonStyle(.plain)
         .overlay(shimmerSweep.clipShape(RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)))
         .onAppear {
             guard !reduceMotion else { return }
@@ -338,7 +341,8 @@ private struct HomeWeatherUpdatingCard: View {
                 shimmer = true
             }
         }
-        .accessibilityLabel("Updating weather")
+        .accessibilityLabel("Reconnect weather")
+        .accessibilityHint("Retries live local weather now.")
     }
 
     @ViewBuilder private var shimmerSweep: some View {

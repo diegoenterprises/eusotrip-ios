@@ -46,11 +46,50 @@ import SwiftUI
 
 // MARK: - Vertical
 
-/// Three transport verticals the platform serves. Resolved from the
-/// signed-in driver's role (`RAIL_ENGINEER`, `VESSEL_OPERATOR`,
-/// etc.). Default is truck when the role can't be matched.
+/// Three transport verticals the platform serves. Load-scoped screens must
+/// resolve from the load's transport mode first; the signed-in role is only a
+/// backward-compatible fallback for older payloads that predate
+/// `transportMode`.
 enum TripVertical {
     case truck, rail, vessel
+
+    init(transportMode: String?, equipmentType: String? = nil, role: String?) {
+        let mode = (transportMode ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        switch mode {
+        case "truck":
+            self = .truck
+            return
+        case "rail":
+            self = .rail
+            return
+        case "vessel", "barge", "ocean", "marine":
+            self = .vessel
+            return
+        default:
+            break
+        }
+
+        let equipment = (equipmentType ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let railSignals = ["rail", "boxcar", "hopper", "gondola", "locomotive", "intermodal_well"]
+        if railSignals.contains(where: equipment.contains) {
+            self = .rail
+            return
+        }
+        let vesselSignals = [
+            "vessel", "ship", "barge", "marine", "aframax", "suezmax",
+            "vlgc", "lng_carrier", "lpg_carrier", "bulk_carrier"
+        ]
+        if vesselSignals.contains(where: equipment.contains) {
+            self = .vessel
+            return
+        }
+
+        self.init(role: role)
+    }
 
     init(role: String?) {
         let r = (role ?? "").uppercased()

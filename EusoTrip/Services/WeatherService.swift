@@ -240,7 +240,8 @@ final class WeatherService: NSObject, ObservableObject {
             return nil
         }
 
-        // ── Provider chain: on-device WeatherKit → server → NWS → Open-Meteo ──
+        // Provider chain: on-device WeatherKit, server-normalized providers
+        // (WeatherKit/OpenWeather/HERE), NWS, then Open-Meteo.
         //
         // PRIMARY: on-device Apple WeatherKit — the SAME source the iPhone
         // Weather app reads, so the home card matches it (current temp,
@@ -282,9 +283,9 @@ final class WeatherService: NSObject, ObservableObject {
             //              capability in the dev portal — code can't fix)
             //   • Code 7: signing issue, framework not embedded
             let ns = error as NSError
-            print("[WeatherService] on-device WeatherKit failed — domain=\(ns.domain) code=\(ns.code) desc=\(ns.localizedDescription) info=\(ns.userInfo); falling back to server → NWS → Open-Meteo")
-            // Server (WeatherKit/Apple WeatherKit-backed) reliably carries the daily
-            // strip; then US ground truth, then keyless last resort.
+            print("[WeatherService] on-device WeatherKit failed — domain=\(ns.domain) code=\(ns.code) desc=\(ns.localizedDescription); continuing through the configured provider chain")
+            // The server normalizes its configured providers first; then
+            // US ground truth and the keyless global fallback remain.
             if let server = await fetchServerWeather(location: location, placemark: placemark) {
                 return server
             }
@@ -445,7 +446,8 @@ final class WeatherService: NSObject, ObservableObject {
         // failure) and we MUST fall back rather than render an empty
         // shell that looks live.
         guard let cur = server.current,
-              let tC = cur.tempC else {
+              let tC = cur.tempC,
+              let windKph = cur.windKph else {
             return nil
         }
         let code = cur.weatherCode ?? Self.serverWeatherCode(condition: cur.condition, icon: cur.icon)
@@ -561,7 +563,7 @@ final class WeatherService: NSObject, ObservableObject {
             )
         }
 
-        let windMph = Int(kphToMph(cur.windKph ?? 0).rounded())
+        let windMph = Int(kphToMph(windKph).rounded())
         // Honest visibility: nil when the server omitted it (em-dash
         // doctrine) — the old `?? 10` default could suppress LOW VIS.
         let visMi: Int? = cur.visibilityKm.map { Int(kmToMi($0).rounded()) }
@@ -632,7 +634,8 @@ final class WeatherService: NSObject, ObservableObject {
         case "openweather": snap.dataSource = .openWeather
         case "openmeteo":   snap.dataSource = .openMeteo
         case "nws":         snap.dataSource = .nws
-        default:            snap.dataSource = .weatherKit
+        case "here":        snap.dataSource = .here
+        default:            snap.dataSource = .unknown
         }
         snap.uvIndex = cur.uv.map { Int($0.rounded()) }
         snap.alert = alert
@@ -1054,10 +1057,17 @@ final class WeatherService: NSObject, ObservableObject {
         let obs = try await get(obsURL, as: ObsResp.self)
         let p = obs.properties
 
+        // NWS can return a valid observation whose temperature value is
+        // null. Converting the old `.nan` sentinel to Int trapped during
+        // app launch in build 766. Treat an incomplete observation as an
+        // unavailable provider response so the real Open-Meteo fallback
+        // can run instead.
+        guard let tempC = p.temperature?.value, tempC.isFinite,
+              let windKmh = p.windSpeed?.value, windKmh.isFinite else {
+            throw URLError(.cannotParseResponse)
+        }
         // NWS gives temperature in C, wind in km/h, visibility in m.
-        let tempC = p.temperature?.value ?? .nan
         let tempF = Int((tempC * 9.0 / 5.0 + 32.0).rounded())
-        let windKmh = p.windSpeed?.value ?? 0
         let windMph = Int((windKmh * 0.621371).rounded())
         // Honest visibility: nil when the station omitted it — the old
         // `?? 0` default read as "0 mi" and falsely tripped LOW VIS.
